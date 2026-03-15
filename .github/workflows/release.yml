@@ -226,25 +226,26 @@ jobs:
           retention-days: 90
           if-no-files-found: error
 
-# ── Job 5: Publish dry-run (validates packages are publishable) ───────────────
+# ── Job 5: Package verification (validates packages are publishable) ──────────
   publish-dry-run:
-    name: Publish dry-run
+    name: Package verification
     needs: [ci, security]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-      - name: Publish dry-run (dependency order)
+      - name: Verify packages are publishable
         shell: bash
         run: |
-          echo "::group::cargo publish --dry-run (all crates)"
-          cargo publish -p a2a-types --dry-run
-          cargo publish -p a2a-client --dry-run
-          cargo publish -p a2a-server --dry-run
-          cargo publish -p a2a-sdk --dry-run
+          # Use `cargo package` instead of `cargo publish --dry-run` because
+          # publish --dry-run resolves dependencies from the crates.io index,
+          # which fails for workspace crates whose new versions aren't published yet.
+          # `cargo package` resolves workspace dependencies locally.
+          echo "::group::cargo package (all publishable crates)"
+          cargo package --workspace --exclude echo-agent
           echo "::endgroup::"
-          echo "::notice::Dry-run succeeded — all packages pass crates.io validation"
+          echo "::notice::Package verification succeeded — all crates pass validation"
 
 # ── Job 6: Create GitHub release with artifacts & release notes ───────────────
   github-release:
