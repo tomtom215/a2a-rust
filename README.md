@@ -13,9 +13,14 @@ Build, connect, and orchestrate AI agents using a type-safe, async-first SDK wit
 
 ## Motivation
 
-The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
+The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
 
-This project aims to fill that gap: a production-quality, type-safe Rust SDK for A2A that the community can build on. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
+Community Rust efforts exist but target older protocol versions:
+
+- [a2a-rs](https://github.com/EmilLindfors/a2a-rs) — active, full v0.3.0 coverage, hexagonal architecture (not yet v1.0)
+- [A2A](https://github.com/robert-at-pretension-io/A2A) — testing framework and validator (GPL-3.0)
+
+This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
 
 ## Features
 
@@ -230,7 +235,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Project Status
 
-Core implementation is complete with all 11 A2A methods working across both transports. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the detailed roadmap and remaining spec compliance items.
+Core implementation is complete with all 11 A2A methods working across both transports. A [spec compliance audit](docs/implementation/spec-compliance-gaps.md) identified 4 wire-format issues and 5 missing fields/types that must be fixed before public release (Phase 7.5). See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
 
 | Phase | Status |
 |---|---|
@@ -242,6 +247,7 @@ Core implementation is complete with all 11 A2A methods working across both tran
 | 5. Server Tests & Bug Fixes | ✅ Complete |
 | 6. Umbrella Crate & Examples | ✅ Complete |
 | 7. v1.0 Spec Compliance Gaps | ✅ Complete |
+| 7.5 Spec Compliance Fixes | 🔲 Not Started |
 | 8. Caching, Signing & Release | 🔲 Not Started |
 
 ## Minimum Supported Rust Version

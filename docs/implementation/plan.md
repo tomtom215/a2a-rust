@@ -23,6 +23,7 @@
    - [Phase 5 — Server Tests & Bug Fixes](#phase-5--server-tests--bug-fixes) ✅
    - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
    - [Phase 7 — v1.0 Spec Compliance Gaps](#phase-7--v10-spec-compliance-gaps) ✅
+   - [Phase 7.5 — Spec Compliance Fixes](#phase-75--spec-compliance-fixes) 🔲
    - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) 🔲
 7. [Testing Strategy](#7-testing-strategy)
 8. [Quality Gates](#8-quality-gates)
@@ -594,6 +595,30 @@ All demos complete successfully, validating the full client-server pipeline acro
 | `jsonrpc_response_has_a2a_version_header` | `dispatch_tests.rs` | JSON-RPC responses include `A2A-Version: 1.0.0` |
 | `rest_tenant_prefix_routing` | `dispatch_tests.rs` | `/tenants/acme/tasks/{id}` routes correctly |
 | `rest_get_subscribe_allowed` | `dispatch_tests.rs` | `GET /tasks/{id}:subscribe` returns SSE stream |
+
+---
+
+### Phase 7.5 — Spec Compliance Fixes 🔲 NOT STARTED
+
+**Deliverables:** Fix all wire-format breaking gaps and missing types discovered by field-by-field comparison against the A2A v1.0.0 proto and JSON schema.
+
+**Full details:** See [`spec-compliance-gaps.md`](spec-compliance-gaps.md) for the complete gap analysis including exact code changes, wire-format examples, and a verification checklist.
+
+**Summary:** 4 critical (wire-format breaking), 5 high (missing fields/types), 1 low (extra field to remove).
+
+| Step | Severity | Issue | Files |
+|---|---|---|---|
+| 1 | CRITICAL | `TaskState::Pending` → `Submitted` (`TASK_STATE_SUBMITTED`) | `task.rs`, handler, tests, echo-agent |
+| 2 | CRITICAL | `SecurityRequirement` type structure (add `schemes`/`StringList` wrappers) | `security.rs` |
+| 3 | CRITICAL | `AgentCard.security` → `security_requirements`, `AgentSkill.security` → same | `agent_card.rs` |
+| 4 | HIGH | Add `MessageRole::Unspecified` (`ROLE_UNSPECIFIED`) | `message.rs` |
+| 5 | HIGH | Add `ListTasksParams.history_length` | `params.rs` |
+| 6 | HIGH | Add `PasswordOAuthFlow` struct + `OAuthFlows.password` field | `security.rs` |
+| 7 | HIGH | Add `ListPushConfigsParams`/`ListPushConfigsResponse` with pagination | `params.rs`, `responses.rs`, client |
+| 8 | LOW | Remove `AgentCapabilities.state_transition_history` (not in spec) | `agent_card.rs`, echo-agent |
+| 9 | — | Wire-format snapshot tests against spec JSON | tests |
+
+**Estimated effort:** ~4-6 hours.
 
 ---
 
