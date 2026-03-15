@@ -21,6 +21,11 @@ use crate::message::Message;
 // ── TaskId ────────────────────────────────────────────────────────────────────
 
 /// Opaque unique identifier for a [`Task`].
+///
+/// IDs are compared as raw byte strings (via the derived [`PartialEq`] on
+/// the inner `String`). No Unicode normalization is applied, so two IDs
+/// that look identical but use different Unicode representations (e.g.
+/// NFC vs. NFD) will be considered distinct.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TaskId(pub String);
 
@@ -63,6 +68,9 @@ impl AsRef<str> for TaskId {
 /// Opaque unique identifier for a conversation context.
 ///
 /// A context groups related tasks under a single logical conversation thread.
+///
+/// Like [`TaskId`], IDs are compared as raw byte strings without Unicode
+/// normalization.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ContextId(pub String);
 

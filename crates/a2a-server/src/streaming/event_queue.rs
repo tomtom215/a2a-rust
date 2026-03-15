@@ -202,6 +202,14 @@ impl Default for EventQueueManager {
 
 impl EventQueueManager {
     /// Creates a new, empty event queue manager with default capacity.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use a2a_server::EventQueueManager;
+    ///
+    /// let manager = EventQueueManager::new();
+    /// ```
     #[must_use]
     pub fn new() -> Self {
         Self::default()
