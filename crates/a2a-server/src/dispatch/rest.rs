@@ -312,8 +312,8 @@ impl<E: AgentExecutor> std::fmt::Debug for RestDispatcher<E> {
 fn json_ok_response<T: serde::Serialize>(value: &T) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     match serde_json::to_vec(value) {
         Ok(body) => build_json_response(200, body),
-        Err(_e) => {
-            trace_error!(error = %_e, "REST response serialization failed");
+        Err(_err) => {
+            trace_error!(error = %_err, "REST response serialization failed");
             internal_error_response()
         }
     }

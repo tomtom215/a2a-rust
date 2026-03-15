@@ -494,11 +494,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
             return;
         };
         for config in &configs {
-            if let Err(_e) = sender.send(&config.url, event, config).await {
+            if let Err(_err) = sender.send(&config.url, event, config).await {
                 trace_warn!(
                     task_id = %task_id,
                     url = %config.url,
-                    error = %_e,
+                    error = %_err,
                     "push notification delivery failed"
                 );
             }
