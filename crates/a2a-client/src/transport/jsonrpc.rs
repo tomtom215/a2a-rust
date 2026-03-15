@@ -61,6 +61,7 @@ struct Inner {
     client: HttpClient,
     endpoint: String,
     request_timeout: Duration,
+    stream_connect_timeout: Duration,
 }
 
 impl JsonRpcTransport {
@@ -84,6 +85,19 @@ impl JsonRpcTransport {
         endpoint: impl Into<String>,
         request_timeout: Duration,
     ) -> ClientResult<Self> {
+        Self::with_timeouts(endpoint, request_timeout, request_timeout)
+    }
+
+    /// Creates a new transport with separate request and stream connect timeouts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
+    pub fn with_timeouts(
+        endpoint: impl Into<String>,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+    ) -> ClientResult<Self> {
         let endpoint = endpoint.into();
         validate_url(&endpoint)?;
 
@@ -98,6 +112,7 @@ impl JsonRpcTransport {
                 client,
                 endpoint,
                 request_timeout,
+                stream_connect_timeout,
             }),
         })
     }
@@ -208,16 +223,19 @@ impl JsonRpcTransport {
 
         let req = self.build_request(method, params, extra_headers, true)?;
 
-        let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
-            .await
-            .map_err(|_| {
-                trace_error!(method, "stream connect timed out");
-                ClientError::Transport("stream connect timed out".into())
-            })?
-            .map_err(|e| {
-                trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
-            })?;
+        let resp = tokio::time::timeout(
+            self.inner.stream_connect_timeout,
+            self.inner.client.request(req),
+        )
+        .await
+        .map_err(|_| {
+            trace_error!(method, "stream connect timed out");
+            ClientError::Timeout("stream connect timed out".into())
+        })?
+        .map_err(|e| {
+            trace_error!(method, error = %e, "HTTP client error");
+            ClientError::HttpClient(e.to_string())
+        })?;
 
         let status = resp.status();
         if !status.is_success() {

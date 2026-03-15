@@ -16,6 +16,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
 use crate::agent_card::StaticAgentCardHandler;
+use crate::dispatch::cors::CorsConfig;
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
@@ -23,9 +24,11 @@ use crate::streaming::build_sse_response;
 /// REST HTTP request dispatcher.
 ///
 /// Routes requests by HTTP method and path to the underlying [`RequestHandler`].
+/// Optionally applies CORS headers to all responses.
 pub struct RestDispatcher {
     handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
+    cors: Option<CorsConfig>,
 }
 
 impl RestDispatcher {
@@ -39,7 +42,18 @@ impl RestDispatcher {
         Self {
             handler,
             card_handler,
+            cors: None,
         }
+    }
+
+    /// Sets CORS configuration for this dispatcher.
+    ///
+    /// When set, all responses will include CORS headers, and `OPTIONS` preflight
+    /// requests will be handled automatically.
+    #[must_use]
+    pub fn with_cors(mut self, cors: CorsConfig) -> Self {
+        self.cors = Some(cors);
+        self
     }
 
     /// Dispatches an HTTP request to the appropriate handler method.
@@ -53,9 +67,37 @@ impl RestDispatcher {
         let query = req.uri().query().unwrap_or("").to_owned();
         trace_info!(http_method = %method, %path, "dispatching REST request");
 
+        // Handle CORS preflight requests.
+        if method == "OPTIONS" {
+            if let Some(ref cors) = self.cors {
+                return cors.preflight_response();
+            }
+            return health_response();
+        }
+
+        // Reject oversized query strings (DoS protection).
+        if query.len() > MAX_QUERY_STRING_LENGTH {
+            let mut resp = error_json_response(
+                414,
+                &format!(
+                    "query string too long: {} bytes exceeds {} byte limit",
+                    query.len(),
+                    MAX_QUERY_STRING_LENGTH
+                ),
+            );
+            if let Some(ref cors) = self.cors {
+                cors.apply_headers(&mut resp);
+            }
+            return resp;
+        }
+
         // Health check endpoint.
         if method == "GET" && (path == "/health" || path == "/ready") {
-            return health_response();
+            let mut resp = health_response();
+            if let Some(ref cors) = self.cors {
+                cors.apply_headers(&mut resp);
+            }
+            return resp;
         }
 
         // Validate Content-Type for POST/PUT/PATCH requests.
@@ -73,8 +115,8 @@ impl RestDispatcher {
             }
         }
 
-        // Reject path traversal attempts.
-        if path.contains("..") {
+        // Reject path traversal attempts (check both raw and percent-decoded forms).
+        if contains_path_traversal(&path) {
             return error_json_response(400, "invalid path: path traversal not allowed");
         }
 
@@ -89,10 +131,15 @@ impl RestDispatcher {
         }
 
         // Strip optional /tenants/{tenant}/ prefix.
-        let (tenant, rest) = strip_tenant_prefix(&path);
+        let (tenant, rest_path) = strip_tenant_prefix(&path);
 
-        self.dispatch_rest(req, method.as_str(), rest, &query, tenant)
-            .await
+        let mut resp = self
+            .dispatch_rest(req, method.as_str(), rest_path, &query, tenant)
+            .await;
+        if let Some(ref cors) = self.cors {
+            cors.apply_headers(&mut resp);
+        }
+        resp
     }
 
     /// Dispatch on the tenant-stripped path.
@@ -411,6 +458,17 @@ fn percent_decode(input: &str) -> String {
     output
 }
 
+/// Checks if a path contains traversal sequences (`..`) in either raw or
+/// percent-encoded form (`%2E%2E`, `%2e%2e`).
+fn contains_path_traversal(path: &str) -> bool {
+    if path.contains("..") {
+        return true;
+    }
+    // Also check percent-encoded variants.
+    let decoded = percent_decode(path);
+    decoded.contains("..")
+}
+
 /// Returns the numeric value of a hex digit, or `None` if invalid.
 const fn hex_val(b: u8) -> Option<u8> {
     match b {
@@ -425,6 +483,9 @@ const fn hex_val(b: u8) -> Option<u8> {
 fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
     parse_query_param(query, key).map(|v| v == "true" || v == "1")
 }
+
+/// Maximum query string length in bytes (prevents denial-of-service via oversized query params).
+const MAX_QUERY_STRING_LENGTH: usize = 4096;
 
 /// Maximum request body size in bytes (4 MiB).
 const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;

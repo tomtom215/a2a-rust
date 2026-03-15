@@ -48,3 +48,8 @@ http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
 a2a-types = { version = "0.1.0", path = "../a2a-types" }
+criterion = { workspace = true }
+
+[[bench]]
+name = "handler_bench"
+harness = false

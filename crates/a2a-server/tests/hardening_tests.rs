@@ -274,11 +274,15 @@ async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
     // Wait for the TTL to expire.
     tokio::time::sleep(Duration::from_millis(80)).await;
 
-    // Trigger eviction by saving another task (eviction runs on write).
+    // Save another task.
     store
         .save(make_task("new", "ctx", TaskState::Working))
         .await
         .unwrap();
+
+    // Explicitly trigger eviction (eviction is amortized, so may not run on
+    // every save; use run_eviction() to test TTL behavior directly).
+    store.run_eviction().await;
 
     // The old completed task should be evicted.
     let old = store.get(&TaskId::new("old")).await.unwrap();
@@ -308,11 +312,14 @@ async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
 
     tokio::time::sleep(Duration::from_millis(80)).await;
 
-    // Trigger eviction.
+    // Save another task.
     store
         .save(make_task("trigger", "ctx", TaskState::Working))
         .await
         .unwrap();
+
+    // Explicitly trigger eviction.
+    store.run_eviction().await;
 
     // Working task should survive since TTL only applies to terminal tasks.
     let working = store.get(&TaskId::new("working")).await.unwrap();

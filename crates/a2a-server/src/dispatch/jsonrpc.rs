@@ -20,6 +20,7 @@ use a2a_types::jsonrpc::{
     JsonRpcVersion,
 };
 
+use crate::dispatch::cors::CorsConfig;
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
@@ -27,15 +28,30 @@ use crate::streaming::build_sse_response;
 /// JSON-RPC 2.0 request dispatcher.
 ///
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
+/// Optionally applies CORS headers to all responses.
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
+    cors: Option<CorsConfig>,
 }
 
 impl JsonRpcDispatcher {
     /// Creates a new dispatcher wrapping the given handler.
     #[must_use]
     pub const fn new(handler: Arc<RequestHandler>) -> Self {
-        Self { handler }
+        Self {
+            handler,
+            cors: None,
+        }
+    }
+
+    /// Sets CORS configuration for this dispatcher.
+    ///
+    /// When set, all responses will include CORS headers, and `OPTIONS` preflight
+    /// requests will be handled automatically.
+    #[must_use]
+    pub fn with_cors(mut self, cors: CorsConfig) -> Self {
+        self.cors = Some(cors);
+        self
     }
 
     /// Dispatches a JSON-RPC request and returns an HTTP response.
@@ -44,8 +60,28 @@ impl JsonRpcDispatcher {
     /// SSE (`text/event-stream`). All other methods return JSON.
     ///
     /// JSON-RPC errors are always returned as HTTP 200 with an error body.
-    #[allow(clippy::too_many_lines)]
     pub async fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        // Handle CORS preflight requests.
+        if req.method() == "OPTIONS" {
+            if let Some(ref cors) = self.cors {
+                return cors.preflight_response();
+            }
+            return json_response(204, Vec::new());
+        }
+
+        let mut resp = self.dispatch_inner(req).await;
+        if let Some(ref cors) = self.cors {
+            cors.apply_headers(&mut resp);
+        }
+        resp
+    }
+
+    /// Inner dispatch logic (separated to allow CORS wrapping).
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_inner(
         &self,
         req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {

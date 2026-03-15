@@ -36,6 +36,7 @@ version = "0.1.0"
 dependencies = [
  "a2a-types",
  "bytes",
+ "criterion",
  "http-body-util",
  "hyper",
  "hyper-util",

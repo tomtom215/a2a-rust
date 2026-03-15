@@ -97,6 +97,11 @@ impl Default for TaskStoreConfig {
     }
 }
 
+/// Number of writes between automatic eviction sweeps.
+///
+/// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
+const EVICTION_INTERVAL: u64 = 64;
+
 /// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
 ///
 /// Suitable for testing and single-process deployments. Data is lost when the
@@ -108,6 +113,8 @@ impl Default for TaskStoreConfig {
 pub struct InMemoryTaskStore {
     entries: RwLock<HashMap<TaskId, TaskEntry>>,
     config: TaskStoreConfig,
+    /// Counter for amortized eviction (only run every `EVICTION_INTERVAL` writes).
+    write_count: std::sync::atomic::AtomicU64,
 }
 
 impl Default for InMemoryTaskStore {
@@ -125,6 +132,7 @@ impl InMemoryTaskStore {
         Self {
             entries: RwLock::new(HashMap::new()),
             config: TaskStoreConfig::default(),
+            write_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -134,6 +142,7 @@ impl InMemoryTaskStore {
         Self {
             entries: RwLock::new(HashMap::new()),
             config,
+            write_count: std::sync::atomic::AtomicU64::new(0),
         }
     }
 
@@ -196,8 +205,18 @@ impl TaskStore for InMemoryTaskStore {
                 },
             );
 
-            // Run eviction after every write.
-            Self::evict(&mut store, &self.config);
+            // Amortized eviction: only run every EVICTION_INTERVAL writes,
+            // or immediately if the store exceeds max capacity.
+            let count = self
+                .write_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let over_capacity = self
+                .config
+                .max_capacity
+                .is_some_and(|max| store.len() > max);
+            if count.is_multiple_of(EVICTION_INTERVAL) || over_capacity {
+                Self::evict(&mut store, &self.config);
+            }
 
             drop(store);
             Ok(())

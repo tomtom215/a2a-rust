@@ -31,7 +31,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (432 tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (500+ tests).
+- `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
+- SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
+- HTTP header injection prevention for push notification credentials.
+- SSE parser memory limits (16 MiB default) to prevent OOM from malicious streams.
+- Streaming task cancellation via `AbortHandle` on `Drop`.
+- CORS support via `CorsConfig` for browser-based A2A clients.
+- Graceful shutdown via `RequestHandler::shutdown()`.
+- Path traversal protection against percent-encoded bypass (`%2E%2E`).
+- Query string length limits (4 KiB) for DoS protection.
+- Cancellation token map size bounds with automatic stale token cleanup.
+- Amortized task store eviction (every 64 writes instead of every write).
+- `ClientError::Timeout` variant for distinct timeout errors.
+- Separate `stream_connect_timeout` configuration for SSE connections.
+- Server benchmarks for task store and event queue operations.
 
 ### Changed
 

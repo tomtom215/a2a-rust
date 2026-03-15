@@ -231,7 +231,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (432 tests across 4 crates)
+# Run all tests (500+ tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -262,6 +262,10 @@ All phases are complete. The SDK is production-ready with all 11 A2A methods, du
 | 7.5 Spec Compliance Fixes | ✅ Complete |
 | 8. Caching, Signing & Release | ✅ Complete |
 | 9. Production Hardening | ✅ Complete |
+
+## Stability
+
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases.
 
 ## Minimum Supported Rust Version
 

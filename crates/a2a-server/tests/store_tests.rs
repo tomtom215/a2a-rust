@@ -315,11 +315,14 @@ async fn ttl_eviction_removes_terminal_tasks() {
     // Sleep to let TTL expire.
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    // Save another task to trigger eviction.
+    // Save another task.
     store
         .save(make_task("task-new", "ctx", TaskState::Working))
         .await
         .unwrap();
+
+    // Explicitly trigger eviction (eviction is amortized).
+    store.run_eviction().await;
 
     let old = store.get(&TaskId::new("task-old")).await.unwrap();
     assert!(old.is_none(), "expired terminal task should be evicted");
