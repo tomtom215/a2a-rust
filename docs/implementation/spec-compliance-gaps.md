@@ -293,14 +293,14 @@ Recommended implementation order (each step is independently testable):
 
 After all fixes, verify against these spec artifacts:
 
-- [ ] `TaskState` enum values match proto exactly
-- [ ] `SecurityRequirement` JSON matches `{"schemes":{"name":{"list":["scope"]}}}`
-- [ ] `AgentCard` JSON includes `"securityRequirements"` (not `"security"`)
-- [ ] `AgentSkill` JSON includes `"securityRequirements"` (not `"security"`)
-- [ ] `MessageRole` roundtrips `"ROLE_UNSPECIFIED"`
-- [ ] `ListTasksParams` includes `historyLength` in JSON
-- [ ] `OAuthFlows` accepts `"password"` flow in JSON
-- [ ] `ListPushConfigs` returns pagination tokens
-- [ ] `AgentCapabilities` does NOT include `stateTransitionHistory`
-- [ ] All 11 RPC methods work end-to-end with corrected types
-- [ ] Echo agent example still runs successfully
+- [x] `TaskState` enum values match proto exactly
+- [x] `SecurityRequirement` JSON matches `{"schemes":{"name":{"list":["scope"]}}}`
+- [x] `AgentCard` JSON includes `"securityRequirements"` (not `"security"`)
+- [x] `AgentSkill` JSON includes `"securityRequirements"` (not `"security"`)
+- [x] `MessageRole` roundtrips `"ROLE_UNSPECIFIED"`
+- [x] `ListTasksParams` includes `historyLength` in JSON
+- [x] `OAuthFlows` accepts `"password"` flow in JSON
+- [x] `ListPushConfigs` returns pagination tokens
+- [x] `AgentCapabilities` does NOT include `stateTransitionHistory`
+- [x] All 11 RPC methods work end-to-end with corrected types
+- [x] Echo agent example still runs successfully

@@ -157,6 +157,10 @@ pub struct ListTasksParams {
     /// If `true`, include artifact data in the returned tasks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_artifacts: Option<bool>,
+
+    /// Number of historical messages to include per task.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_length: Option<u32>,
 }
 
 // ── GetPushConfigParams ───────────────────────────────────────────────────────
@@ -191,6 +195,28 @@ pub struct DeletePushConfigParams {
 
     /// The server-assigned push config identifier.
     pub id: String,
+}
+
+// ── ListPushConfigsParams ────────────────────────────────────────────────────
+
+/// Parameters for the `ListTaskPushNotificationConfigs` method.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListPushConfigsParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
+    /// The task whose push configs to list.
+    pub task_id: String,
+
+    /// Maximum number of configs to return per page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u32>,
+
+    /// Pagination cursor returned by the previous response.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_token: Option<String>,
 }
 
 // ── GetExtendedAgentCardParams ──────────────────────────────────────────────
@@ -252,6 +278,7 @@ mod tests {
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
+            history_length: None,
         };
         let json = serde_json::to_string(&params).expect("serialize");
         // All optional fields should be absent
@@ -283,5 +310,40 @@ mod tests {
         assert_eq!(back.id, "task-1");
         assert_eq!(back.tenant.as_deref(), Some("my-tenant"));
         assert!(back.metadata.is_some());
+    }
+
+    #[test]
+    fn wire_format_list_tasks_history_length() {
+        let params = ListTasksParams {
+            tenant: None,
+            context_id: None,
+            status: None,
+            page_size: None,
+            page_token: None,
+            status_timestamp_after: None,
+            include_artifacts: None,
+            history_length: Some(10),
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(
+            json.contains("\"historyLength\":10"),
+            "historyLength must appear: {json}"
+        );
+
+        let back: ListTasksParams = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.history_length, Some(10));
+    }
+
+    #[test]
+    fn wire_format_list_push_configs_params() {
+        let params = super::ListPushConfigsParams {
+            tenant: None,
+            task_id: "t1".into(),
+            page_size: Some(20),
+            page_token: None,
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        assert!(json.contains("\"taskId\":\"t1\""));
+        assert!(json.contains("\"pageSize\":20"));
     }
 }

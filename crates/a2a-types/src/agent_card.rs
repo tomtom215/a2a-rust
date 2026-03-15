@@ -13,12 +13,12 @@
 //! - `protocol_version` moved from `AgentCard` to `AgentInterface`
 //! - `AgentInterface.transport` renamed to `protocol_binding`
 //! - `supports_authenticated_extended_card` moved to `AgentCapabilities.extended_agent_card`
-//! - `state_transition_history` retained in `AgentCapabilities`
+//! - Security fields renamed to `security_requirements`
 
 use serde::{Deserialize, Serialize};
 
 use crate::extensions::{AgentCardSignature, AgentExtension};
-use crate::security::{NamedSecuritySchemes, SecurityRequirements};
+use crate::security::{NamedSecuritySchemes, SecurityRequirement};
 
 // ── AgentInterface ────────────────────────────────────────────────────────────
 
@@ -58,10 +58,6 @@ pub struct AgentCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_agent_card: Option<bool>,
 
-    /// Whether the agent maintains a history of task state transitions.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_transition_history: Option<bool>,
-
     /// Optional extensions supported by this agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Vec<AgentExtension>>,
@@ -75,7 +71,6 @@ impl AgentCapabilities {
             streaming: None,
             push_notifications: None,
             extended_agent_card: None,
-            state_transition_history: None,
             extensions: None,
         }
     }
@@ -126,7 +121,7 @@ pub struct AgentSkill {
 
     /// Security requirements specific to this skill.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub security: Option<SecurityRequirements>,
+    pub security_requirements: Option<Vec<SecurityRequirement>>,
 }
 
 // ── AgentCard ─────────────────────────────────────────────────────────────────
@@ -185,7 +180,7 @@ pub struct AgentCard {
 
     /// Global security requirements for the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub security: Option<SecurityRequirements>,
+    pub security_requirements: Option<Vec<SecurityRequirement>>,
 
     /// Cryptographic signatures over this card.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,14 +214,14 @@ mod tests {
                 examples: None,
                 input_modes: None,
                 output_modes: None,
-                security: None,
+                security_requirements: None,
             }],
             capabilities: AgentCapabilities::none(),
             provider: None,
             icon_url: None,
             documentation_url: None,
             security_schemes: None,
-            security: None,
+            security_requirements: None,
             signatures: None,
         }
     }
@@ -269,13 +264,62 @@ mod tests {
     }
 
     #[test]
-    fn state_transition_history_in_capabilities() {
-        let mut card = minimal_card();
-        card.capabilities.state_transition_history = Some(false);
-        let json = serde_json::to_string(&card).expect("serialize");
-        assert!(json.contains("\"stateTransitionHistory\":false"));
+    fn wire_format_security_requirements_field_name() {
+        use crate::security::{SecurityRequirement, StringList};
+        use std::collections::HashMap;
 
-        let back: AgentCard = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.capabilities.state_transition_history, Some(false));
+        let mut card = minimal_card();
+        card.security_requirements = Some(vec![SecurityRequirement {
+            schemes: HashMap::from([("bearer".into(), StringList { list: vec![] })]),
+        }]);
+        let json = serde_json::to_string(&card).unwrap();
+        // Must use "securityRequirements" (not "security")
+        assert!(
+            json.contains("\"securityRequirements\""),
+            "field must be securityRequirements: {json}"
+        );
+        assert!(
+            !json.contains("\"security\":"),
+            "must not have bare 'security' field: {json}"
+        );
+    }
+
+    #[test]
+    fn wire_format_skill_security_requirements() {
+        use crate::security::{SecurityRequirement, StringList};
+        use std::collections::HashMap;
+
+        let skill = AgentSkill {
+            id: "s1".into(),
+            name: "Skill".into(),
+            description: "A skill".into(),
+            tags: vec![],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: Some(vec![SecurityRequirement {
+                schemes: HashMap::from([(
+                    "oauth2".into(),
+                    StringList {
+                        list: vec!["read".into()],
+                    },
+                )]),
+            }]),
+        };
+        let json = serde_json::to_string(&skill).unwrap();
+        assert!(
+            json.contains("\"securityRequirements\""),
+            "skill must use securityRequirements: {json}"
+        );
+    }
+
+    #[test]
+    fn wire_format_capabilities_no_state_transition_history() {
+        let card = minimal_card();
+        let json = serde_json::to_string(&card).unwrap();
+        assert!(
+            !json.contains("stateTransitionHistory"),
+            "stateTransitionHistory must not appear: {json}"
+        );
     }
 }

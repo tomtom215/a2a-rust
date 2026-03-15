@@ -263,7 +263,7 @@ mod tests {
             documentation_url: None,
             capabilities: AgentCapabilities::none(),
             security_schemes: None,
-            security: None,
+            security_requirements: None,
             default_input_modes: vec![],
             default_output_modes: vec![],
             skills: vec![],

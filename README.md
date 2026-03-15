@@ -219,7 +219,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (167 tests across 3 crates)
+# Run all tests (175 tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -235,7 +235,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Project Status
 
-Core implementation is complete with all 11 A2A methods working across both transports. A [spec compliance audit](docs/implementation/spec-compliance-gaps.md) identified 4 wire-format issues and 5 missing fields/types that must be fixed before public release (Phase 7.5). See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
+Core implementation is complete with all 11 A2A methods working across both transports. All wire-format issues identified by the [spec compliance audit](docs/implementation/spec-compliance-gaps.md) have been fixed (Phase 7.5). See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
 
 | Phase | Status |
 |---|---|
@@ -247,7 +247,7 @@ Core implementation is complete with all 11 A2A methods working across both tran
 | 5. Server Tests & Bug Fixes | ✅ Complete |
 | 6. Umbrella Crate & Examples | ✅ Complete |
 | 7. v1.0 Spec Compliance Gaps | ✅ Complete |
-| 7.5 Spec Compliance Fixes | 🔲 Not Started |
+| 7.5 Spec Compliance Fixes | ✅ Complete |
 | 8. Caching, Signing & Release | 🔲 Not Started |
 
 ## Minimum Supported Rust Version

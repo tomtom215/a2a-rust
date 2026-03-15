@@ -11,8 +11,9 @@
 //! which is based on the OpenAPI 3.x security model.
 //! The root discriminated union is [`SecurityScheme`], tagged on the `"type"` field.
 //!
-//! `NamedSecuritySchemes` and `SecurityRequirements` are type aliases used in
-//! [`crate::agent_card::AgentCard`] and [`crate::agent_card::AgentSkill`].
+//! [`NamedSecuritySchemes`] is a type alias, and [`SecurityRequirement`] is a
+//! struct used in [`crate::agent_card::AgentCard`] and
+//! [`crate::agent_card::AgentSkill`].
 
 use std::collections::HashMap;
 
@@ -24,13 +25,25 @@ use serde::{Deserialize, Serialize};
 /// `AgentCard.securitySchemes`.
 pub type NamedSecuritySchemes = HashMap<String, SecurityScheme>;
 
-/// Security requirement list (OpenAPI style).
+/// A list of strings used within a [`SecurityRequirement`] map value.
 ///
-/// Each element of the outer `Vec` is an alternative (logical OR). Within
-/// each `HashMap`, the key is a scheme name (referencing
-/// [`NamedSecuritySchemes`]) and the value is the list of required OAuth
-/// scopes (empty for non-OAuth schemes).
-pub type SecurityRequirements = Vec<HashMap<String, Vec<String>>>;
+/// Proto equivalent: `StringList { repeated string list = 1; }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StringList {
+    /// The string values (e.g. OAuth scopes).
+    pub list: Vec<String>,
+}
+
+/// A security requirement object mapping scheme names to their required scopes.
+///
+/// Proto equivalent: `SecurityRequirement { map<string, StringList> schemes = 1; }`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityRequirement {
+    /// Map from scheme name to required scopes.
+    pub schemes: HashMap<String, StringList>,
+}
 
 // ── SecurityScheme ────────────────────────────────────────────────────────────
 
@@ -150,6 +163,10 @@ pub struct OAuthFlows {
     /// Implicit flow (deprecated in OAuth 2.1 but retained for compatibility).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub implicit: Option<ImplicitFlow>,
+
+    /// Resource owner password credentials flow (deprecated but present in spec).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub password: Option<PasswordOAuthFlow>,
 }
 
 /// OAuth 2.0 authorization code flow.
@@ -213,6 +230,21 @@ pub struct DeviceCodeFlow {
 pub struct ImplicitFlow {
     /// URL of the authorization endpoint.
     pub authorization_url: String,
+
+    /// URL of the refresh token endpoint.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_url: Option<String>,
+
+    /// Available scopes: name → description.
+    pub scopes: HashMap<String, String>,
+}
+
+/// OAuth 2.0 resource owner password credentials flow (deprecated but in spec).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PasswordOAuthFlow {
+    /// URL of the token endpoint.
+    pub token_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -303,6 +335,7 @@ mod tests {
                 }),
                 device_code: None,
                 implicit: None,
+                password: None,
             },
             oauth2_metadata_url: None,
             description: None,
@@ -335,6 +368,56 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&ApiKeyLocation::Cookie).expect("ser"),
             "\"cookie\""
+        );
+    }
+
+    #[test]
+    fn wire_format_security_requirement() {
+        // Spec: {"schemes":{"oauth2":{"list":["read","write"]}}}
+        let req = SecurityRequirement {
+            schemes: HashMap::from([(
+                "oauth2".into(),
+                StringList {
+                    list: vec!["read".into(), "write".into()],
+                },
+            )]),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed["schemes"]["oauth2"]["list"],
+            serde_json::json!(["read", "write"])
+        );
+
+        // Roundtrip
+        let back: SecurityRequirement = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.schemes["oauth2"].list, vec!["read", "write"]);
+    }
+
+    #[test]
+    fn wire_format_password_oauth_flow() {
+        let flows = OAuthFlows {
+            authorization_code: None,
+            client_credentials: None,
+            device_code: None,
+            implicit: None,
+            password: Some(PasswordOAuthFlow {
+                token_url: "https://auth.example.com/token".into(),
+                refresh_url: None,
+                scopes: HashMap::from([("read".into(), "Read access".into())]),
+            }),
+        };
+        let json = serde_json::to_string(&flows).unwrap();
+        assert!(
+            json.contains("\"password\""),
+            "password flow must be present: {json}"
+        );
+
+        let back: OAuthFlows = serde_json::from_str(&json).unwrap();
+        assert!(back.password.is_some());
+        assert_eq!(
+            back.password.unwrap().token_url,
+            "https://auth.example.com/token"
         );
     }
 }

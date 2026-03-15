@@ -63,6 +63,9 @@ impl AsRef<str> for MessageId {
 /// The originator of a [`Message`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
+    /// Proto default (0-value); should not appear in normal usage.
+    #[serde(rename = "ROLE_UNSPECIFIED")]
+    Unspecified,
     /// Sent by the human/client side.
     #[serde(rename = "ROLE_USER")]
     User,
@@ -304,5 +307,14 @@ mod tests {
             !json.contains("\"metadata\""),
             "metadata should be omitted: {json}"
         );
+    }
+
+    #[test]
+    fn wire_format_role_unspecified_roundtrip() {
+        let json = serde_json::to_string(&MessageRole::Unspecified).unwrap();
+        assert_eq!(json, "\"ROLE_UNSPECIFIED\"");
+
+        let back: MessageRole = serde_json::from_str("\"ROLE_UNSPECIFIED\"").unwrap();
+        assert_eq!(back, MessageRole::Unspecified);
     }
 }
