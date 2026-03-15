@@ -78,6 +78,26 @@ impl<E: AgentExecutor> RequestHandler<E> {
         // Look up existing task for continuation.
         let stored_task = self.find_task_by_context(&context_id).await;
 
+        // Context/task mismatch rejection: if message.task_id is set but
+        // doesn't match the stored task found by context_id, reject.
+        if let Some(ref msg_task_id) = params.message.task_id {
+            if let Some(ref stored) = stored_task {
+                if msg_task_id != &stored.id {
+                    return Err(ServerError::InvalidParams(format!(
+                        "message task_id {} does not match task {} found for context {}",
+                        msg_task_id, stored.id, context_id
+                    )));
+                }
+            }
+        }
+
+        // Check return_immediately mode.
+        let return_immediately = params
+            .configuration
+            .as_ref()
+            .and_then(|c| c.return_immediately)
+            .unwrap_or(false);
+
         // Create initial task.
         let task = Task {
             id: task_id.clone(),
@@ -135,6 +155,9 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
         if streaming {
             Ok(SendMessageResult::Stream(reader))
+        } else if return_immediately {
+            // Return the task immediately without waiting for completion.
+            Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
         } else {
             // Poll reader until final event.
             let final_task = self.collect_events(reader, task_id.clone()).await?;
@@ -377,7 +400,8 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Collects all events from a reader until the stream closes, updating the
-    /// task in the store along the way. Returns the final task snapshot.
+    /// task in the store along the way. Delivers push notifications for each
+    /// event when push configs exist. Returns the final task snapshot.
     async fn collect_events(
         &self,
         mut reader: InMemoryQueueReader,
@@ -391,18 +415,20 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
         while let Some(event) = reader.read().await {
             match event {
-                Ok(StreamResponse::StatusUpdate(update)) => {
+                Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
                     last_task.status = TaskStatus {
                         state: update.status.state,
-                        message: update.status.message,
-                        timestamp: update.status.timestamp,
+                        message: update.status.message.clone(),
+                        timestamp: update.status.timestamp.clone(),
                     };
                     self.task_store.save(last_task.clone()).await?;
+                    self.deliver_push(&task_id, stream_resp).await;
                 }
-                Ok(StreamResponse::ArtifactUpdate(update)) => {
+                Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
                     let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
-                    artifacts.push(update.artifact);
+                    artifacts.push(update.artifact.clone());
                     self.task_store.save(last_task.clone()).await?;
+                    self.deliver_push(&task_id, stream_resp).await;
                 }
                 Ok(StreamResponse::Task(task)) => {
                     last_task = task;
@@ -420,6 +446,22 @@ impl<E: AgentExecutor> RequestHandler<E> {
         }
 
         Ok(last_task)
+    }
+
+    /// Delivers a push notification for a streaming event if push configs exist.
+    async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
+        let sender = match self.push_sender {
+            Some(ref s) => s,
+            None => return,
+        };
+        let configs = match self.push_config_store.list(task_id.as_ref()).await {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        for config in &configs {
+            // Best-effort delivery; log nothing on failure for now.
+            let _ = sender.send(&config.url, event, config).await;
+        }
     }
 }
 
