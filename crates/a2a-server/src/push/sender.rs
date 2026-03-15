@@ -5,8 +5,15 @@
 //!
 //! [`PushSender`] abstracts the delivery of streaming events to client webhook
 //! endpoints. [`HttpPushSender`] uses hyper to POST events over HTTP(S).
+//!
+//! # Security
+//!
+//! [`HttpPushSender`] validates webhook URLs to reject private/loopback
+//! addresses (SSRF protection) and sanitizes authentication credentials
+//! to prevent HTTP header injection.
 
 use std::future::Future;
+use std::net::IpAddr;
 use std::pin::Pin;
 
 use a2a_types::error::{A2aError, A2aResult};
@@ -50,10 +57,19 @@ const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::f
 ///
 /// Retries up to 3 times with exponential backoff on
 /// transient HTTP errors.
+///
+/// # Security
+///
+/// - Rejects webhook URLs targeting private/loopback/link-local addresses
+///   to prevent SSRF attacks.
+/// - Validates authentication credentials to prevent HTTP header injection
+///   (rejects values containing CR/LF characters).
 #[derive(Debug)]
 pub struct HttpPushSender {
     client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>,
     request_timeout: std::time::Duration,
+    /// Whether to skip SSRF URL validation (for testing only).
+    allow_private_urls: bool,
 }
 
 impl Default for HttpPushSender {
@@ -76,11 +92,94 @@ impl HttpPushSender {
         Self {
             client,
             request_timeout,
+            allow_private_urls: false,
+        }
+    }
+
+    /// Creates an [`HttpPushSender`] that allows private/loopback URLs.
+    ///
+    /// **Warning:** This disables SSRF protection and should only be used
+    /// in testing or trusted environments.
+    #[must_use]
+    pub const fn allow_private_urls(mut self) -> Self {
+        self.allow_private_urls = true;
+        self
+    }
+}
+
+/// Returns `true` if the given IP address is private, loopback, or link-local.
+#[allow(clippy::missing_const_for_fn)] // IpAddr methods aren't const-stable everywhere
+fn is_private_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()          // 127.0.0.0/8
+                || v4.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+                || v4.is_link_local() // 169.254.0.0/16
+                || v4.is_unspecified() // 0.0.0.0
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
+        }
+        IpAddr::V6(v6) => {
+            v6.is_loopback()          // ::1
+                || v6.is_unspecified() // ::
+                // fc00::/7 (unique local)
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                // fe80::/10 (link-local)
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
         }
     }
 }
 
-#[allow(clippy::manual_async_fn)]
+/// Validates a webhook URL to prevent SSRF attacks.
+///
+/// Rejects URLs targeting private/loopback/link-local addresses.
+#[allow(clippy::case_sensitive_file_extension_comparisons)] // host_lower is already lowercased
+fn validate_webhook_url(url: &str) -> A2aResult<()> {
+    // Parse the URL to extract the host.
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
+
+    let host = uri
+        .host()
+        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
+
+    // Strip brackets from IPv6 addresses (hyper::Uri returns "[::1]" as host).
+    let host_bare = host.trim_start_matches('[').trim_end_matches(']');
+
+    // Try to parse the host as an IP address directly.
+    if let Ok(ip) = host_bare.parse::<IpAddr>() {
+        if is_private_ip(ip) {
+            return Err(A2aError::invalid_params(format!(
+                "webhook URL targets private/loopback address: {host}"
+            )));
+        }
+    }
+
+    // Check for well-known private hostnames.
+    let host_lower = host.to_ascii_lowercase();
+    if host_lower == "localhost"
+        || host_lower.ends_with(".local")
+        || host_lower.ends_with(".internal")
+    {
+        return Err(A2aError::invalid_params(format!(
+            "webhook URL targets local/internal hostname: {host}"
+        )));
+    }
+
+    Ok(())
+}
+
+/// Validates that a header value contains no CR/LF characters.
+fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
+    if value.contains('\r') || value.contains('\n') {
+        return Err(A2aError::invalid_params(format!(
+            "{name} contains invalid characters (CR/LF)"
+        )));
+    }
+    Ok(())
+}
+
+#[allow(clippy::manual_async_fn, clippy::too_many_lines)]
 impl PushSender for HttpPushSender {
     fn send<'a>(
         &'a self,
@@ -90,6 +189,21 @@ impl PushSender for HttpPushSender {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             trace_info!(url, "delivering push notification");
+
+            // SSRF protection: reject private/loopback addresses.
+            if !self.allow_private_urls {
+                validate_webhook_url(url)?;
+            }
+
+            // Header injection protection: validate credentials.
+            if let Some(ref auth) = config.authentication {
+                validate_header_value(&auth.credentials, "authentication credentials")?;
+                validate_header_value(&auth.scheme, "authentication scheme")?;
+            }
+            if let Some(ref token) = config.token {
+                validate_header_value(token, "notification token")?;
+            }
+
             let body_bytes = serde_json::to_vec(event)
                 .map_err(|e| A2aError::internal(format!("push serialization: {e}")))?;
 
@@ -160,5 +274,87 @@ impl PushSender for HttpPushSender {
 
             Err(A2aError::internal(last_err))
         })
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_loopback_ipv4() {
+        assert!(validate_webhook_url("http://127.0.0.1:8080/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_private_10_range() {
+        assert!(validate_webhook_url("http://10.0.0.1/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_private_172_range() {
+        assert!(validate_webhook_url("http://172.16.0.1/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_private_192_168_range() {
+        assert!(validate_webhook_url("http://192.168.1.1/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_link_local() {
+        assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
+    }
+
+    #[test]
+    fn rejects_localhost() {
+        assert!(validate_webhook_url("http://localhost:8080/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_dot_local() {
+        assert!(validate_webhook_url("http://myservice.local/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_dot_internal() {
+        assert!(validate_webhook_url("http://metadata.internal/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv6_loopback() {
+        assert!(validate_webhook_url("http://[::1]:8080/webhook").is_err());
+    }
+
+    #[test]
+    fn accepts_public_url() {
+        assert!(validate_webhook_url("https://example.com/webhook").is_ok());
+    }
+
+    #[test]
+    fn accepts_public_ip() {
+        assert!(validate_webhook_url("https://203.0.113.1/webhook").is_ok());
+    }
+
+    #[test]
+    fn rejects_header_with_crlf() {
+        assert!(validate_header_value("token\r\nX-Injected: value", "test").is_err());
+    }
+
+    #[test]
+    fn rejects_header_with_cr() {
+        assert!(validate_header_value("token\rvalue", "test").is_err());
+    }
+
+    #[test]
+    fn rejects_header_with_lf() {
+        assert!(validate_header_value("token\nvalue", "test").is_err());
+    }
+
+    #[test]
+    fn accepts_clean_header_value() {
+        assert!(validate_header_value("Bearer abc123+/=", "test").is_ok());
     }
 }

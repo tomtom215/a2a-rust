@@ -3,10 +3,10 @@
 #
 # Continuous integration — enforces all quality gates.
 #
-# Jobs: format, clippy, test (default + signing + tls-rustls + tracing),
-#       documentation, cargo-deny (license/advisory), publish dry-run.
+# Jobs: format, clippy, test (default + signing + tls-rustls + tracing + all-features),
+#       documentation, cargo-deny (license/advisory), package validation, nightly.
 #
-# Matrix: stable + MSRV (1.93).
+# Matrix: stable + MSRV (1.93), multi-platform.
 
 name: CI
 
@@ -35,11 +35,12 @@ jobs:
 
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
-    name: Clippy (${{ matrix.rust }})
-    runs-on: ubuntu-latest
+    name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         rust: [stable, "1.93"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -63,14 +64,17 @@ jobs:
         run: cargo clippy --workspace --all-targets --features tracing -- -D warnings
       - name: Clippy (tls-rustls)
         run: cargo clippy -p a2a-client --all-targets --features tls-rustls -- -D warnings
+      - name: Clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # ── Tests ────────────────────────────────────────────────────────────────
   test:
-    name: Test (${{ matrix.rust }})
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.rust }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         rust: [stable, "1.93"]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -93,6 +97,30 @@ jobs:
         run: cargo test --workspace --features tracing
       - name: Test (tls-rustls feature)
         run: cargo test -p a2a-client --features tls-rustls
+      - name: Test (all features)
+        run: cargo test --workspace --all-features
+      - name: Test (no default features)
+        run: cargo test --workspace --no-default-features
+
+  # ── Nightly CI ──────────────────────────────────────────────────────────
+  nightly:
+    name: Nightly (informational)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-nightly-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-nightly-
+      - name: Test (all features, nightly)
+        run: cargo test --workspace --all-features
 
   # ── Documentation ────────────────────────────────────────────────────────
   doc:
@@ -125,9 +153,15 @@ jobs:
         with:
           command: check
 
-  # ── Publish dry-run ──────────────────────────────────────────────────────
-  publish-dry-run:
-    name: Publish dry-run
+  # ── Package validation ──────────────────────────────────────────────────
+  #
+  # Uses `cargo package --workspace` so that inter-workspace path+version
+  # dependencies resolve against sibling crates rather than crates.io.
+  # Individual `cargo package -p <crate>` (and `cargo publish --dry-run`)
+  # resolve deps from the registry, failing when versions aren't published yet.
+  # Excludes echo-agent since it is `publish = false` and omits dep versions.
+  package:
+    name: Package validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,8 +172,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-package-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-publish-
-      - name: Dry-run publish (a2a-types)
-        run: cargo publish -p a2a-types --dry-run
+            ${{ runner.os }}-cargo-package-
+      - name: Package all publishable crates
+        run: cargo package --workspace --exclude echo-agent

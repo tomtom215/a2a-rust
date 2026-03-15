@@ -47,6 +47,9 @@ pub enum ClientError {
         /// The ID of the task requiring authentication.
         task_id: TaskId,
     },
+
+    /// A request or stream connection timed out.
+    Timeout(String),
 }
 
 impl fmt::Display for ClientError {
@@ -64,6 +67,7 @@ impl fmt::Display for ClientError {
             Self::AuthRequired { task_id } => {
                 write!(f, "authentication required for task: {task_id}")
             }
+            Self::Timeout(msg) => write!(f, "timeout: {msg}"),
         }
     }
 }

@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-types"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "A2A protocol v1.0 — pure data types, serde only, no I/O"
 readme      = "../../README.md"
 
@@ -26,6 +26,10 @@ serde      = { workspace = true }
 serde_json = { workspace = true }
 base64     = { version = "0.22", optional = true }
 ring       = { version = "0.17", optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
 proptest  = "1"

@@ -34,6 +34,10 @@ use crate::streaming::{
 /// Maximum allowed length for task/context IDs (prevents memory exhaustion).
 const MAX_ID_LENGTH: usize = 1024;
 
+/// Maximum number of entries in the cancellation token map before a cleanup
+/// sweep is triggered to remove cancelled/dropped tokens.
+const MAX_CANCELLATION_TOKENS: usize = 10_000;
+
 /// The core protocol logic handler.
 ///
 /// Orchestrates task lifecycle, event streaming, push notifications, and
@@ -153,6 +157,11 @@ impl RequestHandler {
         // Store the cancellation token so CancelTask can signal it.
         {
             let mut tokens = self.cancellation_tokens.write().await;
+            // Sweep stale tokens if the map is getting large (prevent unbounded growth
+            // if executors panic and never clean up their tokens).
+            if tokens.len() >= MAX_CANCELLATION_TOKENS {
+                tokens.retain(|_, token| !token.is_cancelled());
+            }
             tokens.insert(task_id.clone(), ctx.cancellation_token.clone());
         }
 
@@ -188,7 +197,7 @@ impl RequestHandler {
                 // Write a failed status update on error.
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
                     status: TaskStatus::with_timestamp(TaskState::Failed),
                     metadata: Some(serde_json::json!({ "error": e.to_string() })),
                 });
@@ -517,8 +526,8 @@ impl RequestHandler {
                     last_task = task;
                     self.task_store.save(last_task.clone()).await?;
                 }
-                Ok(StreamResponse::Message(_)) => {
-                    // Messages are part of history; for now just continue.
+                Ok(StreamResponse::Message(_) | _) => {
+                    // Messages and future stream response variants — continue.
                 }
                 Err(e) => {
                     last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
@@ -551,6 +560,36 @@ impl RequestHandler {
                     "push notification delivery failed"
                 );
             }
+        }
+    }
+}
+
+impl RequestHandler {
+    /// Initiates graceful shutdown of the handler.
+    ///
+    /// This method:
+    /// 1. Cancels all in-flight tasks by signalling their cancellation tokens.
+    /// 2. Destroys all event queues, causing readers to see EOF.
+    ///
+    /// After calling `shutdown()`, new requests will still be accepted but
+    /// in-flight tasks will observe cancellation. The caller should stop
+    /// accepting new connections after calling this method.
+    pub async fn shutdown(&self) {
+        // Cancel all in-flight tasks.
+        {
+            let tokens = self.cancellation_tokens.read().await;
+            for token in tokens.values() {
+                token.cancel();
+            }
+        }
+
+        // Destroy all event queues so readers see EOF.
+        self.event_queue_manager.destroy_all().await;
+
+        // Clear cancellation tokens.
+        {
+            let mut tokens = self.cancellation_tokens.write().await;
+            tokens.clear();
         }
     }
 }

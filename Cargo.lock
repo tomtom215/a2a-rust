@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "a2a-types",
  "criterion",
@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "a2a-client",
  "a2a-server",
@@ -32,10 +32,11 @@ dependencies = [
 
 [[package]]
 name = "a2a-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "a2a-types",
  "bytes",
+ "criterion",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -49,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-types"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "criterion",

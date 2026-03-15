@@ -165,6 +165,7 @@ struct Inner {
     client: HttpClient,
     base_url: String,
     request_timeout: Duration,
+    stream_connect_timeout: Duration,
 }
 
 impl RestTransport {
@@ -186,6 +187,19 @@ impl RestTransport {
         base_url: impl Into<String>,
         request_timeout: Duration,
     ) -> ClientResult<Self> {
+        Self::with_timeouts(base_url, request_timeout, request_timeout)
+    }
+
+    /// Creates a new transport with separate request and stream connect timeouts.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
+    pub fn with_timeouts(
+        base_url: impl Into<String>,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+    ) -> ClientResult<Self> {
         let base_url = base_url.into();
         if base_url.is_empty()
             || (!base_url.starts_with("http://") && !base_url.starts_with("https://"))
@@ -206,6 +220,7 @@ impl RestTransport {
                 client,
                 base_url: base_url.trim_end_matches('/').to_owned(),
                 request_timeout,
+                stream_connect_timeout,
             }),
         })
     }
@@ -366,16 +381,19 @@ impl RestTransport {
 
         let req = self.build_request(method, &params, extra_headers, true)?;
 
-        let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
-            .await
-            .map_err(|_| {
-                trace_error!(method, "stream connect timed out");
-                ClientError::Transport("stream connect timed out".into())
-            })?
-            .map_err(|e| {
-                trace_error!(method, error = %e, "HTTP client error");
-                ClientError::HttpClient(e.to_string())
-            })?;
+        let resp = tokio::time::timeout(
+            self.inner.stream_connect_timeout,
+            self.inner.client.request(req),
+        )
+        .await
+        .map_err(|_| {
+            trace_error!(method, "stream connect timed out");
+            ClientError::Timeout("stream connect timed out".into())
+        })?
+        .map_err(|e| {
+            trace_error!(method, error = %e, "HTTP client error");
+            ClientError::HttpClient(e.to_string())
+        })?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -390,11 +408,14 @@ impl RestTransport {
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let body = resp.into_body();
 
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::new(rx))
+        Ok(EventStream::with_abort_handle(
+            rx,
+            task_handle.abort_handle(),
+        ))
     }
 }
 

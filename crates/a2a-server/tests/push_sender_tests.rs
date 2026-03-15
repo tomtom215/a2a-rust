@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
-use a2a_types::task::{TaskId, TaskState, TaskStatus};
+use a2a_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use a2a_server::push::{HttpPushSender, PushSender};
 
@@ -18,7 +18,7 @@ use a2a_server::push::{HttpPushSender, PushSender};
 fn status_event() -> StreamResponse {
     StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
         task_id: TaskId::new("task-1"),
-        context_id: "ctx".into(),
+        context_id: ContextId::new("ctx"),
         status: TaskStatus::new(TaskState::Working),
         metadata: None,
     })
@@ -100,7 +100,7 @@ async fn successful_delivery_on_first_attempt() {
     let counter = Arc::new(AtomicUsize::new(0));
     let (addr, handle) = mock_server(200, Arc::clone(&counter)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
@@ -122,7 +122,7 @@ async fn retries_on_server_error_and_eventually_fails() {
     let counter = Arc::new(AtomicUsize::new(0));
     let (addr, handle) = mock_server(500, Arc::clone(&counter)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
@@ -149,7 +149,7 @@ async fn retries_on_client_error_status() {
     let counter = Arc::new(AtomicUsize::new(0));
     let (addr, handle) = mock_server(403, Arc::clone(&counter)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
@@ -163,7 +163,7 @@ async fn retries_on_client_error_status() {
 
 #[tokio::test]
 async fn connection_refused_returns_error() {
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     // Use a port that is almost certainly not listening.
     let url = "http://127.0.0.1:1/webhook";
     let config = base_config(url);
@@ -179,7 +179,7 @@ async fn bearer_auth_header_is_sent() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
@@ -209,7 +209,7 @@ async fn basic_auth_header_is_sent() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
@@ -236,7 +236,7 @@ async fn notification_token_header_is_sent() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
     config.token = Some("my-notification-token".into());
@@ -259,7 +259,7 @@ async fn both_auth_and_token_headers_are_sent() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
@@ -292,7 +292,7 @@ async fn request_has_json_content_type() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
@@ -315,7 +315,7 @@ async fn request_uses_post_method() {
     let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
     let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
 
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
@@ -343,7 +343,7 @@ fn http_push_sender_default_creates_instance() {
 
 #[test]
 fn http_push_sender_debug_impl() {
-    let sender = HttpPushSender::new();
+    let sender = HttpPushSender::new().allow_private_urls();
     let dbg = format!("{sender:?}");
     assert!(dbg.contains("HttpPushSender"));
 }

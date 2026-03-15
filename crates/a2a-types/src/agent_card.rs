@@ -76,6 +76,12 @@ impl AgentCapabilities {
     }
 }
 
+impl Default for AgentCapabilities {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 // ── AgentProvider ─────────────────────────────────────────────────────────────
 
 /// The organization that operates or publishes the agent.
@@ -148,6 +154,8 @@ pub struct AgentCard {
     pub version: String,
 
     /// Transport interfaces offered by this agent.
+    ///
+    /// **Spec requirement:** Must contain at least one element.
     pub supported_interfaces: Vec<AgentInterface>,
 
     /// Default MIME types accepted as input.
@@ -157,6 +165,8 @@ pub struct AgentCard {
     pub default_output_modes: Vec<String>,
 
     /// Skills offered by this agent.
+    ///
+    /// **Spec requirement:** Must contain at least one element.
     pub skills: Vec<AgentSkill>,
 
     /// Capability flags.

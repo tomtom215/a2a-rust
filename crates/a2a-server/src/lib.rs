@@ -57,7 +57,7 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
-pub use dispatch::{JsonRpcDispatcher, RestDispatcher};
+pub use dispatch::{CorsConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use handler::{RequestHandler, SendMessageResult};

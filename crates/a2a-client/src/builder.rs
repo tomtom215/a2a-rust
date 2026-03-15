@@ -94,6 +94,16 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the timeout for establishing SSE stream connections.
+    ///
+    /// Once the stream is established, this timeout no longer applies.
+    /// Defaults to 30 seconds.
+    #[must_use]
+    pub const fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.config.stream_connect_timeout = timeout;
+        self
+    }
+
     /// Sets the preferred protocol binding.
     ///
     /// Overrides any binding derived from the agent card.
@@ -169,15 +179,19 @@ impl ClientBuilder {
 
             match binding.as_str() {
                 BINDING_JSONRPC => {
-                    let t = JsonRpcTransport::with_timeout(
+                    let t = JsonRpcTransport::with_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
+                        self.config.stream_connect_timeout,
                     )?;
                     Box::new(t)
                 }
                 BINDING_REST => {
-                    let t =
-                        RestTransport::with_timeout(&self.endpoint, self.config.request_timeout)?;
+                    let t = RestTransport::with_timeouts(
+                        &self.endpoint,
+                        self.config.request_timeout,
+                        self.config.stream_connect_timeout,
+                    )?;
                     Box::new(t)
                 }
                 BINDING_GRPC => {

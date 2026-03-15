@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::artifact::Artifact;
 use crate::message::Message;
-use crate::task::{Task, TaskId, TaskStatus};
+use crate::task::{ContextId, Task, TaskId, TaskStatus};
 
 // ── TaskStatusUpdateEvent ─────────────────────────────────────────────────────
 
@@ -35,7 +35,7 @@ pub struct TaskStatusUpdateEvent {
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
-    pub context_id: String,
+    pub context_id: ContextId,
 
     /// The new task status (state + optional message + timestamp).
     pub status: TaskStatus,
@@ -58,7 +58,7 @@ pub struct TaskArtifactUpdateEvent {
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
-    pub context_id: String,
+    pub context_id: ContextId,
 
     /// The artifact being delivered.
     pub artifact: Artifact,
@@ -83,6 +83,7 @@ pub struct TaskArtifactUpdateEvent {
 ///
 /// Discriminated by field presence (untagged oneof). Exactly one of
 /// `task`, `message`, `statusUpdate`, or `artifactUpdate` is present.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamResponse {
@@ -112,7 +113,7 @@ mod tests {
     fn status_update_event_roundtrip() {
         let event = TaskStatusUpdateEvent {
             task_id: TaskId::new("task-1"),
-            context_id: "ctx-1".to_owned(),
+            context_id: ContextId::new("ctx-1"),
             status: TaskStatus::new(TaskState::Completed),
             metadata: None,
         };
@@ -128,7 +129,7 @@ mod tests {
     fn artifact_update_event_roundtrip() {
         let event = TaskArtifactUpdateEvent {
             task_id: TaskId::new("task-1"),
-            context_id: "ctx-1".to_owned(),
+            context_id: ContextId::new("ctx-1"),
             artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output")]),
             append: Some(false),
             last_chunk: Some(true),
@@ -164,7 +165,7 @@ mod tests {
     fn stream_response_status_update_variant() {
         let event = TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),
-            context_id: "c1".to_owned(),
+            context_id: ContextId::new("c1"),
             status: TaskStatus::new(TaskState::Failed),
             metadata: None,
         };
@@ -177,5 +178,40 @@ mod tests {
 
         let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
         assert!(matches!(back, StreamResponse::StatusUpdate(_)));
+    }
+
+    #[test]
+    fn stream_response_message_variant_roundtrip() {
+        use crate::message::{MessageId, MessageRole, Part};
+        use crate::task::TaskId;
+
+        let msg = crate::message::Message {
+            id: MessageId::new("msg-stream-1"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("streaming response")],
+            task_id: Some(TaskId::new("t1")),
+            context_id: Some(ContextId::new("c1")),
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+        let resp = StreamResponse::Message(msg);
+        let json = serde_json::to_string(&resp).expect("serialize");
+        assert!(
+            !json.contains("\"kind\""),
+            "v1.0 should not have kind tag: {json}"
+        );
+        assert!(json.contains("\"messageId\":\"msg-stream-1\""));
+        assert!(json.contains("\"role\":\"ROLE_AGENT\""));
+
+        let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
+        match back {
+            StreamResponse::Message(m) => {
+                assert_eq!(m.id, MessageId::new("msg-stream-1"));
+                assert_eq!(m.role, MessageRole::Agent);
+                assert_eq!(m.parts.len(), 1);
+            }
+            other => panic!("expected Message variant, got {other:?}"),
+        }
     }
 }
