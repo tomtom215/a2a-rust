@@ -210,8 +210,8 @@ pub trait AgentExecutor: Send + Sync + 'static {
 **Layer 2 — Framework provides `RequestHandler`:**
 
 ```rust
-pub struct RequestHandler<E: AgentExecutor> { ... }
-impl<E: AgentExecutor> RequestHandler<E> {
+pub struct RequestHandler { ... }  // not generic — stores Arc<dyn AgentExecutor>
+impl RequestHandler {
     pub async fn on_send_message(&self, params: MessageSendParams, streaming: bool) -> ServerResult<SendMessageResult>;
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task>;
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse>;
@@ -229,10 +229,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
 ```rust
 // JSON-RPC 2.0: routes PascalCase method names (SendMessage, GetTask, etc.)
-pub struct JsonRpcDispatcher<E: AgentExecutor> { ... }
+pub struct JsonRpcDispatcher { ... }  // not generic
 
 // REST: routes HTTP verb + path (/message:send, /tasks/{id}, etc.)
-pub struct RestDispatcher<E: AgentExecutor> { ... }
+pub struct RestDispatcher { ... }  // not generic
 ```
 
 ### Client Architecture
@@ -328,7 +328,7 @@ src/
   trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
   error.rs                          [135 lines]  ServerError, ServerResult<T>, to_a2a_error() conversion
   executor.rs                       [68 lines]   AgentExecutor trait (Pin<Box<dyn Future>> for object safety)
-  handler.rs                        [504 lines]  RequestHandler<E>: on_send_message, collect_events, find_task_by_context, deliver_push, return_immediately
+  handler.rs                        [504 lines]  RequestHandler: on_send_message, collect_events, find_task_by_context, deliver_push, return_immediately
   builder.rs                        [126 lines]  RequestHandlerBuilder: executor, stores, push, interceptors, agent card
   request_context.rs                [61 lines]   RequestContext: message, task_id, context_id, stored_task, metadata
   call_context.rs                   [50 lines]   CallContext: method name for interceptor use

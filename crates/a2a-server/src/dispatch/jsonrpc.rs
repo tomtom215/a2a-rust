@@ -21,21 +21,20 @@ use a2a_types::jsonrpc::{
 };
 
 use crate::error::ServerError;
-use crate::executor::AgentExecutor;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
 /// JSON-RPC 2.0 request dispatcher.
 ///
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
-pub struct JsonRpcDispatcher<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct JsonRpcDispatcher {
+    handler: Arc<RequestHandler>,
 }
 
-impl<E: AgentExecutor> JsonRpcDispatcher<E> {
+impl JsonRpcDispatcher {
     /// Creates a new dispatcher wrapping the given handler.
     #[must_use]
-    pub const fn new(handler: Arc<RequestHandler<E>>) -> Self {
+    pub const fn new(handler: Arc<RequestHandler>) -> Self {
         Self { handler }
     }
 
@@ -174,7 +173,7 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for JsonRpcDispatcher<E> {
+impl std::fmt::Debug for JsonRpcDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JsonRpcDispatcher").finish()
     }

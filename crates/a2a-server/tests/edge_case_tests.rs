@@ -3,6 +3,8 @@
 
 //! Edge case tests covering gaps identified in the audit.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,56 +27,62 @@ use a2a_server::{ServerError, TaskStoreConfig};
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::with_timestamp(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::with_timestamp(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 
 struct FailingExecutor;
 
 impl AgentExecutor for FailingExecutor {
-    async fn execute(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        Err(A2aError::internal("executor exploded"))
+    fn execute<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            Err(A2aError::internal("executor exploded"))
+        })
     }
 }
 
 struct SlowExecutor;
 
 impl AgentExecutor for SlowExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        // Check for cancellation
-        tokio::select! {
-            _ = ctx.cancellation_token.cancelled() => {
-                Err(A2aError::internal("task was cancelled"))
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::with_timestamp(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            // Check for cancellation
+            tokio::select! {
+                _ = ctx.cancellation_token.cancelled() => {
+                    Err(A2aError::internal("task was cancelled"))
+                }
+                _ = tokio::time::sleep(Duration::from_secs(60)) => {
+                    Ok(())
+                }
             }
-            _ = tokio::time::sleep(Duration::from_secs(60)) => {
-                Ok(())
-            }
-        }
+        })
     }
 }
 

@@ -66,24 +66,26 @@ fn make_send_params(text: &str) -> MessageSendParams {
 struct QuickExecutor;
 
 impl AgentExecutor for QuickExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 

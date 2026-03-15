@@ -49,24 +49,24 @@ gRPC transport is out of scope for Phase 1 (see ADR 0001).
 
 ### Server-Side Transport Adapters
 
-`RequestHandler<E>` is transport-agnostic: it receives typed params and returns typed results. Transport adapters wrap it:
+`RequestHandler` is transport-agnostic: it receives typed params and returns typed results. Because `AgentExecutor` is object-safe (methods return `Pin<Box<dyn Future>>`), `RequestHandler` stores the executor as `Arc<dyn AgentExecutor>` and is **not generic**. Transport adapters wrap it:
 
 ```rust
 // JSON-RPC adapter
-pub struct JsonRpcHandler<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct JsonRpcDispatcher {
+    handler: Arc<RequestHandler>,
 }
-impl<E: AgentExecutor> JsonRpcHandler<E> {
+impl JsonRpcDispatcher {
     // Accepts raw hyper Request, returns hyper Response
-    pub async fn handle(&self, req: Request<Incoming>) -> Response<BoxBody>;
+    pub async fn dispatch(&self, req: Request<Incoming>) -> Response<BoxBody>;
 }
 
 // REST adapter
-pub struct RestHandler<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct RestDispatcher {
+    handler: Arc<RequestHandler>,
 }
-impl<E: AgentExecutor> RestHandler<E> {
-    pub async fn handle(&self, req: Request<Incoming>) -> Response<BoxBody>;
+impl RestDispatcher {
+    pub async fn dispatch(&self, req: Request<Incoming>) -> Response<BoxBody>;
 }
 ```
 

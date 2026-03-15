@@ -3,6 +3,9 @@
 
 //! Tests for handler-level state transition validation.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use a2a_types::error::A2aResult;
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_types::message::{Message, MessageId, MessageRole, Part};
@@ -21,17 +24,19 @@ use a2a_server::streaming::EventQueueWriter;
 struct InvalidTransitionExecutor;
 
 impl AgentExecutor for InvalidTransitionExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        // Skip Working and go directly to Completed — this is invalid.
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Skip Working and go directly to Completed — this is invalid.
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 
@@ -39,24 +44,26 @@ impl AgentExecutor for InvalidTransitionExecutor {
 struct ValidTransitionExecutor;
 
 impl AgentExecutor for ValidTransitionExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 
@@ -64,40 +71,42 @@ impl AgentExecutor for ValidTransitionExecutor {
 struct InputRequiredExecutor;
 
 impl AgentExecutor for InputRequiredExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::InputRequired),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::InputRequired),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 
@@ -181,10 +190,12 @@ async fn input_required_roundtrip_transitions_succeed() {
 struct HungExecutor;
 
 impl AgentExecutor for HungExecutor {
-    async fn execute(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        // Sleep indefinitely — should be killed by timeout.
-        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-        Ok(())
+    fn execute<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Sleep indefinitely — should be killed by timeout.
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            Ok(())
+        })
     }
 }
 

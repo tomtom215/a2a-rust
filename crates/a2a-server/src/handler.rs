@@ -38,8 +38,12 @@ const MAX_ID_LENGTH: usize = 1024;
 ///
 /// Orchestrates task lifecycle, event streaming, push notifications, and
 /// interceptor chains for all A2A methods.
-pub struct RequestHandler<E: AgentExecutor> {
-    pub(crate) executor: Arc<E>,
+///
+/// `RequestHandler` is **not** generic — it stores the executor as
+/// `Arc<dyn AgentExecutor>`, enabling dynamic dispatch and simplifying
+/// the downstream API (dispatchers, builder, etc.).
+pub struct RequestHandler {
+    pub(crate) executor: Arc<dyn AgentExecutor>,
     pub(crate) task_store: Box<dyn TaskStore>,
     pub(crate) push_config_store: Box<dyn PushConfigStore>,
     pub(crate) push_sender: Option<Box<dyn PushSender>>,
@@ -52,7 +56,7 @@ pub struct RequestHandler<E: AgentExecutor> {
         Arc<tokio::sync::RwLock<HashMap<TaskId, tokio_util::sync::CancellationToken>>>,
 }
 
-impl<E: AgentExecutor> RequestHandler<E> {
+impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
     /// # Errors
@@ -551,7 +555,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for RequestHandler<E> {
+impl std::fmt::Debug for RequestHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHandler")
             .field("push_sender", &self.push_sender.is_some())

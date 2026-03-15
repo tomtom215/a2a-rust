@@ -66,46 +66,54 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ### Implement an agent
 
 ```rust
+use std::future::Future;
+use std::pin::Pin;
 use a2a_sdk::prelude::*;
 
 struct MyAgent;
 
 impl AgentExecutor for MyAgent {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
-        // Transition to Working
-        queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus::new(TaskState::Working),
-            metadata: None,
-        })).await?;
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Transition to Working
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            })).await?;
 
-        // Produce an artifact
-        queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
-            append: None,
-            last_chunk: Some(true),
-            metadata: None,
-        })).await?;
+            // Produce an artifact
+            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
+                append: None,
+                last_chunk: Some(true),
+                metadata: None,
+            })).await?;
 
-        // Mark completed
-        queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: ctx.task_id.clone(),
-            context_id: ctx.context_id.clone(),
-            status: TaskStatus::new(TaskState::Completed),
-            metadata: None,
-        })).await?;
+            // Mark completed
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Completed),
+                metadata: None,
+            })).await?;
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 ```
+
+> **Note:** `AgentExecutor` is object-safe — methods return `Pin<Box<dyn Future>>`.
+> This means `RequestHandler`, `RestDispatcher`, and `JsonRpcDispatcher` are **not generic**;
+> they store the executor as `Arc<dyn AgentExecutor>` for easy composition.
 
 ### Start a server
 
@@ -223,7 +231,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (379 tests across 4 crates)
+# Run all tests (432 tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example

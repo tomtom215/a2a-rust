@@ -17,22 +17,21 @@ use hyper::body::Incoming;
 
 use crate::agent_card::StaticAgentCardHandler;
 use crate::error::ServerError;
-use crate::executor::AgentExecutor;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
 /// REST HTTP request dispatcher.
 ///
 /// Routes requests by HTTP method and path to the underlying [`RequestHandler`].
-pub struct RestDispatcher<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct RestDispatcher {
+    handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
 }
 
-impl<E: AgentExecutor> RestDispatcher<E> {
+impl RestDispatcher {
     /// Creates a new REST dispatcher.
     #[must_use]
-    pub fn new(handler: Arc<RequestHandler<E>>) -> Self {
+    pub fn new(handler: Arc<RequestHandler>) -> Self {
         let card_handler = handler
             .agent_card
             .as_ref()
@@ -301,7 +300,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for RestDispatcher<E> {
+impl std::fmt::Debug for RestDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RestDispatcher").finish()
     }

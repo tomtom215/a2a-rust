@@ -3,6 +3,8 @@
 
 //! Edge case tests for REST and JSON-RPC dispatch layers via real HTTP.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -21,28 +23,30 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::with_timestamp(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
-        Ok(())
+    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::with_timestamp(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::with_timestamp(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
     }
 }
 
-fn make_handler() -> Arc<a2a_server::RequestHandler<EchoExecutor>> {
+fn make_handler() -> Arc<a2a_server::RequestHandler> {
     Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
             .build()
@@ -52,7 +56,7 @@ fn make_handler() -> Arc<a2a_server::RequestHandler<EchoExecutor>> {
 
 /// Start a server on a random port and return the address.
 async fn start_rest_server(
-    handler: Arc<a2a_server::RequestHandler<EchoExecutor>>,
+    handler: Arc<a2a_server::RequestHandler>,
 ) -> std::net::SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
