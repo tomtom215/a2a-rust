@@ -37,8 +37,11 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
 - **State transition validation** — `TaskState::can_transition_to()` enforces valid state machine transitions at the handler level
 - **Executor timeout** — configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors
-- **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection, health/readiness endpoints
-- **Task store management** — configurable TTL-based eviction, capacity limits, and cursor-based pagination via `TaskStoreConfig`
+- **CORS support** — `CorsConfig` for browser-based A2A clients with preflight handling
+- **Graceful shutdown** — `RequestHandler::shutdown()` cancels all tokens and destroys queues
+- **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection (including percent-encoded bypass), query string length limits, health/readiness endpoints
+- **Task store management** — configurable TTL-based eviction, capacity limits, amortized eviction (every 64 writes), and cursor-based pagination via `TaskStoreConfig`
+- **Security** — SSRF protection for push webhooks, header injection prevention, SSE memory limits, cancellation token map bounds with stale cleanup
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -243,11 +246,17 @@ cargo fmt --all -- --check
 
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# Run benchmarks (task store, event queue)
+cargo bench -p a2a-server
+
+# Fuzz JSON deserialization (requires nightly)
+cd fuzz && cargo +nightly fuzz run json_deser
 ```
 
 ## Project Status
 
-All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
+All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap and [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned beyond-spec extensions.
 
 | Phase | Status |
 |---|---|
