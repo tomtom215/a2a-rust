@@ -5,8 +5,8 @@
 //!
 //! A [`Task`] is the stateful unit of work managed by an agent. Its lifecycle
 //! is tracked through [`TaskStatus`] and [`TaskState`]. The [`TaskState`] enum
-//! uses kebab-case serialization to match the A2A wire format (e.g.
-//! `"input-required"`).
+//! uses `SCREAMING_SNAKE_CASE` with type prefix per `ProtoJSON` convention
+//! (e.g. `"TASK_STATE_INPUT_REQUIRED"`).
 //!
 //! # ID newtypes
 //!
@@ -134,29 +134,37 @@ impl From<u64> for TaskVersion {
 
 /// The lifecycle state of a [`Task`].
 ///
-/// Uses kebab-case serialization to match the A2A wire format
-/// (e.g. `TaskState::InputRequired` ↔ `"input-required"`).
+/// Uses `SCREAMING_SNAKE_CASE` with `TASK_STATE_` prefix per `ProtoJSON`
+/// convention (e.g. `TaskState::InputRequired` ↔ `"TASK_STATE_INPUT_REQUIRED"`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum TaskState {
+    /// Proto default (0-value); should not appear in normal usage.
+    #[serde(rename = "TASK_STATE_UNSPECIFIED")]
+    Unspecified,
     /// Task received, not yet started.
+    #[serde(rename = "TASK_STATE_SUBMITTED")]
     Submitted,
     /// Task is actively being processed.
+    #[serde(rename = "TASK_STATE_WORKING")]
     Working,
     /// Agent requires additional input from the client to proceed.
+    #[serde(rename = "TASK_STATE_INPUT_REQUIRED")]
     InputRequired,
     /// Agent requires the client to complete an authentication step.
+    #[serde(rename = "TASK_STATE_AUTH_REQUIRED")]
     AuthRequired,
     /// Task finished successfully.
+    #[serde(rename = "TASK_STATE_COMPLETED")]
     Completed,
     /// Task finished with an error.
+    #[serde(rename = "TASK_STATE_FAILED")]
     Failed,
     /// Task was canceled by the client.
+    #[serde(rename = "TASK_STATE_CANCELED")]
     Canceled,
     /// Task was rejected by the agent before execution.
+    #[serde(rename = "TASK_STATE_REJECTED")]
     Rejected,
-    /// Task state is unknown (e.g. after a server restart without persistence).
-    Unknown,
 }
 
 impl TaskState {
@@ -174,8 +182,8 @@ impl TaskState {
 
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Use serde to produce the canonical kebab-case wire representation.
-        let s = serde_json::to_string(self).unwrap_or_else(|_| "unknown".into());
+        // Use serde to produce the canonical SCREAMING_SNAKE_CASE representation.
+        let s = serde_json::to_string(self).unwrap_or_else(|_| "TASK_STATE_UNSPECIFIED".into());
         // serde_json wraps strings in quotes; strip them.
         f.write_str(s.trim_matches('"'))
     }
@@ -264,14 +272,22 @@ mod tests {
     }
 
     #[test]
-    fn task_state_kebab_case() {
+    fn task_state_screaming_snake_case() {
         assert_eq!(
             serde_json::to_string(&TaskState::InputRequired).expect("ser"),
-            "\"input-required\""
+            "\"TASK_STATE_INPUT_REQUIRED\""
         );
         assert_eq!(
             serde_json::to_string(&TaskState::AuthRequired).expect("ser"),
-            "\"auth-required\""
+            "\"TASK_STATE_AUTH_REQUIRED\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskState::Submitted).expect("ser"),
+            "\"TASK_STATE_SUBMITTED\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TaskState::Unspecified).expect("ser"),
+            "\"TASK_STATE_UNSPECIFIED\""
         );
     }
 

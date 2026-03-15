@@ -27,7 +27,7 @@ serde      = { version = ">=1.0.200, <2", features = ["derive"] }
 serde_json = { version = ">=1.0.115, <2" }
 
 # Async runtime
-tokio = { version = ">=1.38, <2", features = ["rt", "net", "io-util", "sync", "time"] }
+tokio = { version = ">=1.38, <2", features = ["rt", "net", "io-util", "sync", "time", "macros"] }
 
 # HTTP stack
 hyper          = { version = ">=1.4, <2",   features = ["client", "server", "http1", "http2"] }

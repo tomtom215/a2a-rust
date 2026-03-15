@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! A2A protocol 0.3.0 — HTTP client (hyper-backed).
+//! A2A protocol v1.0 — HTTP client (hyper-backed).
 //!
 //! This crate provides [`A2aClient`], a full-featured client for communicating
 //! with any A2A-compliant agent over HTTP.
@@ -10,16 +10,17 @@
 //!
 //! ```rust,no_run
 //! use a2a_client::ClientBuilder;
-//! use a2a_types::{MessageSendParams, Message, MessageRole, Part, TextPart, MessageId};
+//! use a2a_types::{MessageSendParams, Message, MessageRole, Part, MessageId};
 //!
 //! # async fn example() -> Result<(), a2a_client::error::ClientError> {
 //! let client = ClientBuilder::new("http://localhost:8080").build()?;
 //!
 //! let params = MessageSendParams {
+//!     tenant: None,
 //!     message: Message {
 //!         id: MessageId::new("msg-1"),
 //!         role: MessageRole::User,
-//!         parts: vec![Part::Text(TextPart::new("Hello, agent!"))],
+//!         parts: vec![Part::text("Hello, agent!")],
 //!         task_id: None,
 //!         context_id: None,
 //!         reference_task_ids: None,
@@ -40,10 +41,11 @@
 //!
 //! ```rust,no_run
 //! # use a2a_client::ClientBuilder;
-//! # use a2a_types::{MessageSendParams, Message, MessageRole, Part, TextPart, MessageId, StreamResponse};
+//! # use a2a_types::{MessageSendParams, Message, MessageRole, Part, MessageId, StreamResponse};
 //! # async fn example() -> Result<(), a2a_client::error::ClientError> {
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
 //! # let params = MessageSendParams {
+//! #     tenant: None,
 //! #     message: Message { id: MessageId::new("m"), role: MessageRole::User,
 //! #         parts: vec![], task_id: None, context_id: None,
 //! #         reference_task_ids: None, extensions: None, metadata: None },
@@ -53,8 +55,7 @@
 //! while let Some(event) = stream.next().await {
 //!     match event? {
 //!         StreamResponse::StatusUpdate(ev) => {
-//!             println!("State: {:?}", ev.state);
-//!             if ev.r#final { break; }
+//!             println!("State: {:?}", ev.status.state);
 //!         }
 //!         _ => {}
 //!     }

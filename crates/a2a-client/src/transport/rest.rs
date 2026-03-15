@@ -11,17 +11,17 @@
 //!
 //! | A2A method | HTTP verb | Path |
 //! |---|---|---|
-//! | `message/send` | POST | `/messages/send` |
-//! | `message/stream` | POST | `/messages/stream` |
-//! | `tasks/get` | GET | `/tasks/{id}` |
-//! | `tasks/cancel` | POST | `/tasks/{id}/cancel` |
-//! | `tasks/list` | GET | `/tasks` |
-//! | `tasks/resubscribe` | GET | `/tasks/{id}/subscribe` |
-//! | `tasks/pushNotificationConfig/set` | POST | `/tasks/{taskId}/push-config` |
-//! | `tasks/pushNotificationConfig/get` | GET | `/tasks/{taskId}/push-config/{id}` |
-//! | `tasks/pushNotificationConfig/list` | GET | `/tasks/{taskId}/push-config` |
-//! | `tasks/pushNotificationConfig/delete` | DELETE | `/tasks/{taskId}/push-config/{id}` |
-//! | `agent/authenticatedExtendedCard` | GET | `/agent/authenticatedExtendedCard` |
+//! | `SendMessage` | POST | `/message:send` |
+//! | `SendStreamingMessage` | POST | `/message:stream` |
+//! | `GetTask` | GET | `/tasks/{id}` |
+//! | `CancelTask` | POST | `/tasks/{id}:cancel` |
+//! | `ListTasks` | GET | `/tasks` |
+//! | `SubscribeToTask` | POST | `/tasks/{id}:subscribe` |
+//! | `CreateTaskPushNotificationConfig` | POST | `/tasks/{id}/pushNotificationConfigs` |
+//! | `GetTaskPushNotificationConfig` | GET | `/tasks/{id}/pushNotificationConfigs/{configId}` |
+//! | `ListTaskPushNotificationConfigs` | GET | `/tasks/{id}/pushNotificationConfigs` |
+//! | `DeleteTaskPushNotificationConfig` | DELETE | `/tasks/{id}/pushNotificationConfigs/{configId}` |
+//! | `GetExtendedAgentCard` | GET | `/extendedAgentCard` |
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -72,69 +72,69 @@ struct Route {
 #[allow(clippy::too_many_lines)]
 fn route_for(method: &str) -> Option<Route> {
     match method {
-        "message/send" => Some(Route {
+        "SendMessage" => Some(Route {
             http_method: HttpMethod::Post,
-            path_template: "/messages/send",
+            path_template: "/message:send",
             path_params: &[],
             streaming: false,
         }),
-        "message/stream" => Some(Route {
+        "SendStreamingMessage" => Some(Route {
             http_method: HttpMethod::Post,
-            path_template: "/messages/stream",
+            path_template: "/message:stream",
             path_params: &[],
             streaming: true,
         }),
-        "tasks/get" => Some(Route {
+        "GetTask" => Some(Route {
             http_method: HttpMethod::Get,
             path_template: "/tasks/{id}",
             path_params: &["id"],
             streaming: false,
         }),
-        "tasks/cancel" => Some(Route {
+        "CancelTask" => Some(Route {
             http_method: HttpMethod::Post,
-            path_template: "/tasks/{id}/cancel",
+            path_template: "/tasks/{id}:cancel",
             path_params: &["id"],
             streaming: false,
         }),
-        "tasks/list" => Some(Route {
+        "ListTasks" => Some(Route {
             http_method: HttpMethod::Get,
             path_template: "/tasks",
             path_params: &[],
             streaming: false,
         }),
-        "tasks/resubscribe" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/tasks/{id}/subscribe",
+        "SubscribeToTask" => Some(Route {
+            http_method: HttpMethod::Post,
+            path_template: "/tasks/{id}:subscribe",
             path_params: &["id"],
             streaming: true,
         }),
-        "tasks/pushNotificationConfig/set" => Some(Route {
+        "CreateTaskPushNotificationConfig" => Some(Route {
             http_method: HttpMethod::Post,
-            path_template: "/tasks/{taskId}/push-config",
+            path_template: "/tasks/{taskId}/pushNotificationConfigs",
             path_params: &["taskId"],
             streaming: false,
         }),
-        "tasks/pushNotificationConfig/get" => Some(Route {
+        "GetTaskPushNotificationConfig" => Some(Route {
             http_method: HttpMethod::Get,
-            path_template: "/tasks/{taskId}/push-config/{id}",
+            path_template: "/tasks/{taskId}/pushNotificationConfigs/{id}",
             path_params: &["taskId", "id"],
             streaming: false,
         }),
-        "tasks/pushNotificationConfig/list" => Some(Route {
+        "ListTaskPushNotificationConfigs" => Some(Route {
             http_method: HttpMethod::Get,
-            path_template: "/tasks/{taskId}/push-config",
+            path_template: "/tasks/{taskId}/pushNotificationConfigs",
             path_params: &["taskId"],
             streaming: false,
         }),
-        "tasks/pushNotificationConfig/delete" => Some(Route {
+        "DeleteTaskPushNotificationConfig" => Some(Route {
             http_method: HttpMethod::Delete,
-            path_template: "/tasks/{taskId}/push-config/{id}",
+            path_template: "/tasks/{taskId}/pushNotificationConfigs/{id}",
             path_params: &["taskId", "id"],
             streaming: false,
         }),
-        "agent/authenticatedExtendedCard" => Some(Route {
+        "GetExtendedAgentCard" => Some(Route {
             http_method: HttpMethod::Get,
-            path_template: "/agent/authenticatedExtendedCard",
+            path_template: "/extendedAgentCard",
             path_params: &[],
             streaming: false,
         }),
@@ -419,10 +419,10 @@ mod tests {
 
     #[test]
     fn route_for_known_methods() {
-        assert!(route_for("message/send").is_some());
-        assert!(route_for("tasks/get").is_some());
-        assert!(route_for("tasks/list").is_some());
-        assert!(route_for("message/stream").is_some_and(|r| r.streaming));
+        assert!(route_for("SendMessage").is_some());
+        assert!(route_for("GetTask").is_some());
+        assert!(route_for("ListTasks").is_some());
+        assert!(route_for("SendStreamingMessage").is_some_and(|r| r.streaming));
     }
 
     #[test]
@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn build_uri_extracts_path_param() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
-        let route = route_for("tasks/get").unwrap();
+        let route = route_for("GetTask").unwrap();
         let params = serde_json::json!({"id": "task-123", "historyLength": 5});
         let (uri, remaining) = transport.build_uri(&route, &params).unwrap();
         assert_eq!(uri, "http://localhost:8080/tasks/task-123");
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn build_uri_no_path_params() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
-        let route = route_for("tasks/list").unwrap();
+        let route = route_for("ListTasks").unwrap();
         let params = serde_json::json!({"pageSize": 10});
         let (uri, remaining) = transport.build_uri(&route, &params).unwrap();
         assert_eq!(uri, "http://localhost:8080/tasks");

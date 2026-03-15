@@ -6,7 +6,7 @@
 //! A2A agents publish their [`AgentCard`] at a well-known URL. This module
 //! provides helpers to fetch and parse the card.
 //!
-//! The default discovery path is `/.well-known/agent-card.json` appended to
+//! The default discovery path is `/.well-known/agent.json` appended to
 //! the agent's base URL.
 
 use std::time::Duration;
@@ -23,7 +23,7 @@ use a2a_types::AgentCard;
 use crate::error::{ClientError, ClientResult};
 
 /// The standard well-known path for agent card discovery.
-pub const AGENT_CARD_PATH: &str = "/.well-known/agent-card.json";
+pub const AGENT_CARD_PATH: &str = "/.well-known/agent.json";
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -130,13 +130,13 @@ mod tests {
     #[test]
     fn build_card_url_standard() {
         let url = build_card_url("http://localhost:8080", AGENT_CARD_PATH).unwrap();
-        assert_eq!(url, "http://localhost:8080/.well-known/agent-card.json");
+        assert_eq!(url, "http://localhost:8080/.well-known/agent.json");
     }
 
     #[test]
     fn build_card_url_trailing_slash() {
         let url = build_card_url("http://localhost:8080/", AGENT_CARD_PATH).unwrap();
-        assert_eq!(url, "http://localhost:8080/.well-known/agent-card.json");
+        assert_eq!(url, "http://localhost:8080/.well-known/agent.json");
     }
 
     #[test]

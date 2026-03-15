@@ -7,7 +7,7 @@
 
 //! Security scheme types for A2A agent authentication.
 //!
-//! These types follow the security-scheme specification used by A2A 0.3.0,
+//! These types follow the security-scheme specification used by A2A v1.0,
 //! which is based on the OpenAPI 3.x security model.
 //! The root discriminated union is [`SecurityScheme`], tagged on the `"type"` field.
 //!
@@ -168,6 +168,10 @@ pub struct AuthorizationCodeFlow {
 
     /// Available scopes: name → description.
     pub scopes: HashMap<String, String>,
+
+    /// Whether PKCE (RFC 7636) is required for this flow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pkce_required: Option<bool>,
 }
 
 /// OAuth 2.0 client credentials flow.

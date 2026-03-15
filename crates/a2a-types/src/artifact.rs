@@ -105,14 +105,14 @@ impl Artifact {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{Part, TextPart};
+    use crate::message::Part;
 
     #[test]
     fn artifact_roundtrip() {
-        let artifact = Artifact::new("art-1", vec![Part::Text(TextPart::new("result content"))]);
+        let artifact = Artifact::new("art-1", vec![Part::text("result content")]);
         let json = serde_json::to_string(&artifact).expect("serialize");
         assert!(json.contains("\"artifactId\":\"art-1\""));
-        assert!(json.contains("\"kind\":\"text\""));
+        assert!(json.contains("\"text\":\"result content\""));
 
         let back: Artifact = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.id, ArtifactId::new("art-1"));
@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn optional_fields_omitted() {
-        let artifact = Artifact::new("art-2", vec![Part::Text(TextPart::new("x"))]);
+        let artifact = Artifact::new("art-2", vec![Part::text("x")]);
         let json = serde_json::to_string(&artifact).expect("serialize");
         assert!(!json.contains("\"name\""), "name should be omitted");
         assert!(
