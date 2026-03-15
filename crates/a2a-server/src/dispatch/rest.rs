@@ -61,6 +61,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     /// | `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `on_delete_push_config` |
     /// | `GET` | `/extendedAgentCard` | `on_get_extended_agent_card` |
     /// | `GET` | `/.well-known/agent.json` | static agent card |
+    /// | `GET` | `/health` | health check |
     #[allow(clippy::too_many_lines)]
     pub async fn dispatch(
         &self,
@@ -70,6 +71,31 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         let path = req.uri().path().to_owned();
         let query = req.uri().query().unwrap_or("").to_owned();
         trace_info!(http_method = %method, %path, "dispatching REST request");
+
+        // Health check endpoint.
+        if method == "GET" && (path == "/health" || path == "/ready") {
+            return health_response();
+        }
+
+        // Validate Content-Type for POST/PUT/PATCH requests.
+        if method == "POST" || method == "PUT" || method == "PATCH" {
+            if let Some(ct) = req.headers().get("content-type") {
+                let ct_str = ct.to_str().unwrap_or("");
+                if !ct_str.starts_with("application/json")
+                    && !ct_str.starts_with(a2a_types::A2A_CONTENT_TYPE)
+                {
+                    return error_json_response(
+                        415,
+                        &format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
+                    );
+                }
+            }
+        }
+
+        // Reject path traversal attempts.
+        if path.contains("..") {
+            return error_json_response(400, "invalid path: path traversal not allowed");
+        }
 
         // Agent card is always at the well-known path (no tenant prefix).
         if method == "GET" && path == "/.well-known/agent.json" {
@@ -155,9 +181,9 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         req: hyper::Request<Incoming>,
         streaming: bool,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match req.into_body().collect().await {
-            Ok(c) => c.to_bytes(),
-            Err(e) => return error_json_response(400, &e.to_string()),
+        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+            Ok(bytes) => bytes,
+            Err(msg) => return error_json_response(413, &msg),
         };
         let params: a2a_types::params::MessageSendParams = match serde_json::from_slice(&body_bytes)
         {
@@ -228,9 +254,9 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         req: hyper::Request<Incoming>,
         _task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match req.into_body().collect().await {
-            Ok(c) => c.to_bytes(),
-            Err(e) => return error_json_response(400, &e.to_string()),
+        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+            Ok(bytes) => bytes,
+            Err(msg) => return error_json_response(413, &msg),
         };
         let config: a2a_types::push::TaskPushNotificationConfig =
             match serde_json::from_slice(&body_bytes) {
@@ -380,6 +406,41 @@ fn parse_query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
 /// Parses a single query parameter value as `bool`.
 fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
     parse_query_param(query, key).map(|v| v == "true" || v == "1")
+}
+
+/// Maximum request body size in bytes (4 MiB).
+const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
+
+/// Reads a request body with a size limit.
+async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
+    let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
+    if let Some(upper) = size_hint.upper() {
+        if upper as usize > max_size {
+            return Err(format!(
+                "request body too large: {upper} bytes exceeds {max_size} byte limit"
+            ));
+        }
+    }
+    let collected = body.collect().await.map_err(|e| e.to_string())?;
+    let bytes = collected.to_bytes();
+    if bytes.len() > max_size {
+        return Err(format!(
+            "request body too large: {} bytes exceeds {max_size} byte limit",
+            bytes.len()
+        ));
+    }
+    Ok(bytes)
+}
+
+/// Returns a health check response.
+fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let body = serde_json::json!({ "status": "ok" });
+    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    hyper::Response::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(bytes)).boxed())
+        .expect("response builder should not fail with valid headers")
 }
 
 /// Parses `ListTasksParams` from URL query parameters.

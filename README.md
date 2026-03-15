@@ -62,47 +62,43 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ### Implement an agent
 
 ```rust
-use std::future::Future;
-use std::pin::Pin;
 use a2a_sdk::prelude::*;
 
 struct MyAgent;
 
 impl AgentExecutor for MyAgent {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Transition to Working
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            })).await?;
+    async fn execute(
+        &self,
+        ctx: &RequestContext,
+        queue: &dyn EventQueueWriter,
+    ) -> A2aResult<()> {
+        // Transition to Working
+        queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: ctx.task_id.clone(),
+            context_id: ctx.context_id.clone(),
+            status: TaskStatus::new(TaskState::Working),
+            metadata: None,
+        })).await?;
 
-            // Produce an artifact
-            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            })).await?;
+        // Produce an artifact
+        queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: ctx.task_id.clone(),
+            context_id: ctx.context_id.clone(),
+            artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
+            append: None,
+            last_chunk: Some(true),
+            metadata: None,
+        })).await?;
 
-            // Mark completed
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            })).await?;
+        // Mark completed
+        queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: ctx.task_id.clone(),
+            context_id: ctx.context_id.clone(),
+            status: TaskStatus::new(TaskState::Completed),
+            metadata: None,
+        })).await?;
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 ```

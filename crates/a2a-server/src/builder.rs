@@ -16,7 +16,7 @@ use crate::executor::AgentExecutor;
 use crate::handler::RequestHandler;
 use crate::interceptor::{ServerInterceptor, ServerInterceptorChain};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
-use crate::store::{InMemoryTaskStore, TaskStore};
+use crate::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use crate::streaming::EventQueueManager;
 
 /// Fluent builder for [`RequestHandler`].
@@ -35,6 +35,7 @@ use crate::streaming::EventQueueManager;
 pub struct RequestHandlerBuilder<E: AgentExecutor> {
     executor: E,
     task_store: Option<Box<dyn TaskStore>>,
+    task_store_config: TaskStoreConfig,
     push_config_store: Option<Box<dyn PushConfigStore>>,
     push_sender: Option<Box<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
@@ -48,6 +49,7 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
         Self {
             executor,
             task_store: None,
+            task_store_config: TaskStoreConfig::default(),
             push_config_store: None,
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
@@ -59,6 +61,15 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
     #[must_use]
     pub fn with_task_store(mut self, store: impl TaskStore + 'static) -> Self {
         self.task_store = Some(Box::new(store));
+        self
+    }
+
+    /// Configures the default [`InMemoryTaskStore`] with custom TTL and capacity settings.
+    ///
+    /// This is ignored if a custom task store is set via [`with_task_store`](Self::with_task_store).
+    #[must_use]
+    pub fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+        self.task_store_config = config;
         self
     }
 
@@ -100,7 +111,7 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
             executor: Arc::new(self.executor),
             task_store: self
                 .task_store
-                .unwrap_or_else(|| Box::new(InMemoryTaskStore::new())),
+                .unwrap_or_else(|| Box::new(InMemoryTaskStore::with_config(self.task_store_config))),
             push_config_store: self
                 .push_config_store
                 .unwrap_or_else(|| Box::new(InMemoryPushConfigStore::new())),
@@ -117,6 +128,7 @@ impl<E: AgentExecutor> std::fmt::Debug for RequestHandlerBuilder<E> {
         f.debug_struct("RequestHandlerBuilder")
             .field("executor", &"...")
             .field("task_store", &self.task_store.is_some())
+            .field("task_store_config", &self.task_store_config)
             .field("push_config_store", &self.push_config_store.is_some())
             .field("push_sender", &self.push_sender.is_some())
             .field("interceptors", &self.interceptors)

@@ -64,7 +64,7 @@ pub use handler::{RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use push::{HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushSender};
 pub use request_context::RequestContext;
-pub use store::{InMemoryTaskStore, TaskStore};
+pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };
