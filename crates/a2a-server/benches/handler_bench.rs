@@ -5,8 +5,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
 use a2a_server::store::{InMemoryTaskStore, TaskStore};
+use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_types::params::ListTasksParams;
