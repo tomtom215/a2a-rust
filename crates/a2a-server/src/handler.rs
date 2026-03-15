@@ -103,11 +103,14 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let reader = reader
             .ok_or_else(|| ServerError::Internal("event queue already exists for task".into()))?;
 
-        // Spawn executor task.
+        // Spawn executor task. The spawned task owns the only writer clone
+        // needed; drop the local reference and the manager's reference so the
+        // channel closes when the executor finishes.
         let executor = Arc::clone(&self.executor);
-        let writer_clone = Arc::clone(&writer);
+        let task_id_for_cleanup = task_id.clone();
+        let event_queue_mgr = self.event_queue_manager.clone();
         tokio::spawn(async move {
-            let result = executor.execute(&ctx, writer_clone.as_ref()).await;
+            let result = executor.execute(&ctx, writer.as_ref()).await;
             if let Err(e) = result {
                 // Write a failed status update on error.
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -120,10 +123,12 @@ impl<E: AgentExecutor> RequestHandler<E> {
                     },
                     metadata: Some(serde_json::json!({ "error": e.to_string() })),
                 });
-                let _ = writer_clone.write(fail_event).await;
+                let _ = writer.write(fail_event).await;
             }
-            // Close by dropping the writer (channel closes when all senders drop).
-            drop(writer_clone);
+            // Drop the writer and remove the manager's reference so the
+            // channel closes and readers see EOF.
+            drop(writer);
+            event_queue_mgr.destroy(&task_id_for_cleanup).await;
         });
 
         self.interceptors.run_after(&call_ctx).await?;
