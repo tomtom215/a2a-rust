@@ -1,0 +1,82 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Tom F.
+
+//! Compile-time assertions that all public types implement Send + Sync.
+//!
+//! These tests don't run at runtime — they verify at compile time that the
+//! types can be shared across threads, which is essential for async runtimes.
+
+fn assert_send_sync<T: Send + Sync>() {}
+
+#[test]
+fn server_types_are_send_sync() {
+    // Core handler types
+    assert_send_sync::<a2a_server::RequestHandler>();
+    assert_send_sync::<a2a_server::RequestHandlerBuilder>();
+    assert_send_sync::<a2a_server::JsonRpcDispatcher>();
+    assert_send_sync::<a2a_server::RestDispatcher>();
+
+    // Agent card handlers
+    assert_send_sync::<a2a_server::StaticAgentCardHandler>();
+
+    // Store types
+    assert_send_sync::<a2a_server::InMemoryTaskStore>();
+    assert_send_sync::<a2a_server::InMemoryPushConfigStore>();
+
+    // Error types
+    assert_send_sync::<a2a_server::ServerError>();
+
+    // Config types
+    assert_send_sync::<a2a_server::CorsConfig>();
+    assert_send_sync::<a2a_server::TaskStoreConfig>();
+
+    // Streaming types
+    assert_send_sync::<a2a_server::EventQueueManager>();
+    assert_send_sync::<a2a_server::InMemoryQueueReader>();
+    assert_send_sync::<a2a_server::InMemoryQueueWriter>();
+}
+
+#[test]
+fn types_types_are_send_sync() {
+    // Core protocol types
+    assert_send_sync::<a2a_types::task::Task>();
+    assert_send_sync::<a2a_types::task::TaskStatus>();
+    assert_send_sync::<a2a_types::task::TaskState>();
+    assert_send_sync::<a2a_types::task::TaskId>();
+    assert_send_sync::<a2a_types::task::ContextId>();
+
+    // Message types
+    assert_send_sync::<a2a_types::message::Message>();
+    assert_send_sync::<a2a_types::message::Part>();
+    assert_send_sync::<a2a_types::message::MessageRole>();
+
+    // Agent card types
+    assert_send_sync::<a2a_types::agent_card::AgentCard>();
+    assert_send_sync::<a2a_types::agent_card::AgentCapabilities>();
+    assert_send_sync::<a2a_types::agent_card::AgentInterface>();
+    assert_send_sync::<a2a_types::agent_card::AgentSkill>();
+
+    // Event types
+    assert_send_sync::<a2a_types::events::StreamResponse>();
+    assert_send_sync::<a2a_types::events::TaskStatusUpdateEvent>();
+    assert_send_sync::<a2a_types::events::TaskArtifactUpdateEvent>();
+
+    // JSON-RPC types
+    assert_send_sync::<a2a_types::jsonrpc::JsonRpcRequest>();
+    assert_send_sync::<a2a_types::jsonrpc::JsonRpcError>();
+    assert_send_sync::<a2a_types::jsonrpc::JsonRpcVersion>();
+
+    // Error types
+    assert_send_sync::<a2a_types::error::A2aError>();
+    assert_send_sync::<a2a_types::error::ErrorCode>();
+
+    // Push types
+    assert_send_sync::<a2a_types::push::TaskPushNotificationConfig>();
+    assert_send_sync::<a2a_types::push::AuthenticationInfo>();
+
+    // Param types
+    assert_send_sync::<a2a_types::params::MessageSendParams>();
+    assert_send_sync::<a2a_types::params::TaskQueryParams>();
+    assert_send_sync::<a2a_types::params::ListTasksParams>();
+    assert_send_sync::<a2a_types::params::CancelTaskParams>();
+}

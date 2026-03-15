@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-15
+
 ### Added
 
 - Initial implementation of the A2A (Agent-to-Agent) v1.0.0 protocol specification.
@@ -73,12 +75,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - (Nothing removed — this is the initial release.)
-
-<!--
-## [0.1.0] - YYYY-MM-DD
-
-### Added
-### Changed
-### Fixed
-### Removed
--->

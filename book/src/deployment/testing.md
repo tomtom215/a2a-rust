@@ -1,0 +1,233 @@
+# Testing Your Agent
+
+a2a-rust makes it easy to test agents at multiple levels: unit testing executors, integration testing with real HTTP, and property-based testing with fuzz targets.
+
+## Unit Testing Executors
+
+Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
+
+```rust
+use a2a_sdk::prelude::*;
+use a2a_sdk::server::{RequestContext, EventQueueManager};
+
+#[tokio::test]
+async fn test_calculator_executor() {
+    let executor = CalcExecutor;
+
+    // Create a queue manager and get a writer
+    let manager = EventQueueManager::new(64, 16 * 1024 * 1024);
+    let (writer, mut reader) = manager.create_queue("test-task");
+
+    // Build the request context
+    let ctx = RequestContext {
+        task_id: TaskId::new("test-task"),
+        context_id: "ctx-1".into(),
+        message: Message {
+            id: MessageId::new("msg-1"),
+            role: MessageRole::User,
+            parts: vec![Part::text("3 + 5")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        },
+        tenant: None,
+    };
+
+    // Run the executor
+    executor.execute(&ctx, &*writer).await.unwrap();
+
+    // Read events from the queue
+    let events: Vec<_> = collect_events(&mut reader).await;
+
+    // Verify: Working → ArtifactUpdate → Completed
+    assert!(matches!(&events[0],
+        StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Working));
+    assert!(matches!(&events[1],
+        StreamResponse::ArtifactUpdate(e) if extract_text(&e.artifact) == "8"));
+    assert!(matches!(&events[2],
+        StreamResponse::StatusUpdate(e) if e.status.state == TaskState::Completed));
+}
+```
+
+## Integration Testing with HTTP
+
+Test the full stack by starting a real server and using a client:
+
+```rust
+use a2a_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
+use a2a_sdk::client::ClientBuilder;
+use std::sync::Arc;
+
+#[tokio::test]
+async fn test_end_to_end() {
+    // Build handler and server
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(CalcExecutor).build().unwrap()
+    );
+    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
+    let addr = start_test_server(dispatcher).await;
+
+    // Build client
+    let client = ClientBuilder::new(format!("http://{addr}"))
+        .build()
+        .unwrap();
+
+    // Send a message
+    let response = client.send_message(MessageSendParams {
+        tenant: None,
+        message: Message {
+            id: MessageId::new("test-msg"),
+            role: MessageRole::User,
+            parts: vec![Part::text("10 + 20")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        },
+        configuration: None,
+        metadata: None,
+    }).await.unwrap();
+
+    // Verify
+    if let SendMessageResponse::Task(task) = response {
+        assert_eq!(task.status.state, TaskState::Completed);
+    } else {
+        panic!("expected task response");
+    }
+}
+
+async fn start_test_server(
+    dispatcher: Arc<JsonRpcDispatcher>,
+) -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let d = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let svc = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&d);
+                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                ).serve_connection(io, svc).await;
+            });
+        }
+    });
+
+    addr
+}
+```
+
+## Testing Both Transports
+
+Run the same tests against both JSON-RPC and REST:
+
+```rust
+#[tokio::test]
+async fn test_jsonrpc_transport() {
+    let addr = start_jsonrpc_server().await;
+    let client = ClientBuilder::new(format!("http://{addr}")).build().unwrap();
+    run_test_suite(&client).await;
+}
+
+#[tokio::test]
+async fn test_rest_transport() {
+    let addr = start_rest_server().await;
+    let client = ClientBuilder::new(format!("http://{addr}"))
+        .with_protocol_binding("REST")
+        .build().unwrap();
+    run_test_suite(&client).await;
+}
+
+async fn run_test_suite(client: &A2aClient) {
+    // Test send_message, stream_message, get_task, etc.
+}
+```
+
+## Testing Streaming
+
+```rust
+#[tokio::test]
+async fn test_streaming() {
+    let addr = start_server().await;
+    let client = ClientBuilder::new(format!("http://{addr}")).build().unwrap();
+
+    let mut stream = client.stream_message(params).await.unwrap();
+    let mut events = vec![];
+
+    while let Some(event) = stream.next().await {
+        events.push(event.unwrap());
+    }
+
+    // Verify event sequence
+    assert!(events.len() >= 3); // Working + Artifact + Completed
+}
+```
+
+## Wire Format Tests
+
+Verify JSON serialization matches the A2A spec:
+
+```rust
+#[test]
+fn task_state_wire_format() {
+    let status = TaskStatus::new(TaskState::Completed);
+    let json = serde_json::to_string(&status).unwrap();
+    assert!(json.contains("\"TASK_STATE_COMPLETED\""));
+}
+
+#[test]
+fn message_role_wire_format() {
+    let msg = Message {
+        id: MessageId::new("m1"),
+        role: MessageRole::User,
+        parts: vec![Part::text("hi")],
+        // ...
+    };
+    let json = serde_json::to_string(&msg).unwrap();
+    assert!(json.contains("\"ROLE_USER\""));
+    assert!(json.contains("\"messageId\""));
+}
+```
+
+## Fuzz Testing
+
+The `fuzz/` directory contains fuzz targets for JSON parsing:
+
+```bash
+# Requires nightly Rust
+cd fuzz
+cargo +nightly fuzz run fuzz_target
+```
+
+Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
+
+## Running the Test Suite
+
+```bash
+# All tests
+cargo test --workspace
+
+# Specific crate
+cargo test -p a2a-server
+
+# With output
+cargo test --workspace -- --nocapture
+
+# Specific test
+cargo test test_calculator_executor
+```
+
+## Next Steps
+
+- **[Production Hardening](./production.md)** — Preparing for deployment
+- **[Pitfalls & Lessons Learned](../reference/pitfalls.md)** — Common testing mistakes

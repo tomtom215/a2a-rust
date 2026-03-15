@@ -1,0 +1,28 @@
+[book]
+title = "a2a-rust"
+description = "Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0.0"
+authors = ["Tom F."]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "ayu"
+git-repository-url = "https://github.com/tomtom215/a2a-rust"
+edit-url-template = "https://github.com/tomtom215/a2a-rust/edit/main/book/{path}"
+additional-css = ["theme/custom.css"]
+additional-js = ["theme/mermaid-loader.js"]
+no-section-label = false
+
+[output.html.fold]
+enable = true
+level = 1
+
+[output.html.search]
+enable = true
+limit-results = 20
+boost-hierarchy = 2

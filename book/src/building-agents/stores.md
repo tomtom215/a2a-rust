@@ -1,0 +1,164 @@
+# Task & Config Stores
+
+a2a-rust uses pluggable storage backends for tasks and push notification configs. The built-in in-memory stores work for development and testing. For production, implement the traits for your database.
+
+## TaskStore Trait
+
+The `TaskStore` trait defines how tasks are persisted:
+
+```rust
+pub trait TaskStore: Send + Sync + 'static {
+    fn get(&self, tenant: Option<&str>, id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + '_>>;
+
+    fn put(&self, tenant: Option<&str>, task: Task)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+
+    fn list(&self, tenant: Option<&str>, params: &ListTasksParams)
+        -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + '_>>;
+
+    fn delete(&self, tenant: Option<&str>, id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+}
+```
+
+### InMemoryTaskStore
+
+The default implementation with optional TTL and capacity limits:
+
+```rust
+use a2a_sdk::server::{InMemoryTaskStore, TaskStoreConfig};
+use std::time::Duration;
+
+// Default: no limits
+let store = InMemoryTaskStore::new();
+
+// With limits
+let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+    ttl: Some(Duration::from_secs(3600)),
+    max_capacity: Some(10_000),
+});
+```
+
+Features:
+- Thread-safe (`DashMap`-based or `RwLock<HashMap>`)
+- Automatic TTL eviction on access
+- Capacity eviction (oldest first) when limit exceeded
+- Pagination support with cursor tokens
+- Filtering by `context_id`, `status`, and `timestamp`
+
+### Custom Implementation
+
+```rust
+struct PostgresTaskStore {
+    pool: sqlx::PgPool,
+}
+
+impl TaskStore for PostgresTaskStore {
+    fn get(&self, tenant: Option<&str>, id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + '_>>
+    {
+        Box::pin(async move {
+            let row = sqlx::query_as("SELECT data FROM tasks WHERE id = $1 AND tenant = $2")
+                .bind(id)
+                .bind(tenant)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| A2aError::internal(e.to_string()))?;
+
+            Ok(row.map(|r| serde_json::from_value(r.data).unwrap()))
+        })
+    }
+
+    // ... implement put, list, delete similarly
+}
+```
+
+## PushConfigStore Trait
+
+The `PushConfigStore` trait manages push notification configurations:
+
+```rust
+pub trait PushConfigStore: Send + Sync + 'static {
+    fn create(&self, tenant: Option<&str>, config: TaskPushNotificationConfig)
+        -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + '_>>;
+
+    fn get(&self, tenant: Option<&str>, task_id: &str, id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + '_>>;
+
+    fn list(&self, tenant: Option<&str>, task_id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + '_>>;
+
+    fn delete(&self, tenant: Option<&str>, task_id: &str, id: &str)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+}
+```
+
+### InMemoryPushConfigStore
+
+The default implementation stores configs in a `HashMap`:
+
+```rust
+use a2a_sdk::server::InMemoryPushConfigStore;
+
+let store = InMemoryPushConfigStore::new();
+```
+
+Features:
+- Server-assigned config IDs (UUIDs)
+- Per-task config limits (prevents abuse)
+- Thread-safe access
+
+## Wiring Custom Stores
+
+```rust
+let handler = RequestHandlerBuilder::new(executor)
+    .with_task_store(PostgresTaskStore::new(pool.clone()))
+    .with_push_config_store(PostgresPushConfigStore::new(pool))
+    .build()
+    .unwrap();
+```
+
+## Design Considerations
+
+### Object Safety
+
+Both traits use `Pin<Box<dyn Future>>` return types for object safety. This allows the handler to store them as `Arc<dyn TaskStore>`.
+
+### Tenant Isolation
+
+The `tenant` parameter is passed to every store operation. Your implementation should use it to partition data:
+
+```sql
+-- Good: tenant-aware query
+SELECT * FROM tasks WHERE tenant = $1 AND id = $2;
+
+-- Bad: no tenant isolation
+SELECT * FROM tasks WHERE id = $1;
+```
+
+### Pagination
+
+The `list` method receives `ListTasksParams` with:
+- `page_size` — Number of results per page (1-100, default 50)
+- `page_token` — Opaque cursor for the next page
+- Various filter fields
+
+Your implementation should return a `TaskListResponse` with a `next_page_token` if more results exist.
+
+### Concurrency
+
+Both traits require `Send + Sync`. Use connection pools, not single connections:
+
+```rust
+// Good
+struct MyStore { pool: sqlx::PgPool }
+
+// Bad — not Send + Sync
+struct MyStore { conn: sqlx::PgConnection }
+```
+
+## Next Steps
+
+- **[Production Hardening](../deployment/production.md)** — Deployment checklist
+- **[Configuration Reference](../reference/configuration.md)** — All configuration options

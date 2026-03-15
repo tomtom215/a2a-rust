@@ -45,6 +45,7 @@ pub struct AgentInterface {
 /// Optional capability flags advertised by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[non_exhaustive]
 pub struct AgentCapabilities {
     /// Whether the agent supports streaming via `SendStreamingMessage`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -73,6 +74,27 @@ impl AgentCapabilities {
             extended_agent_card: None,
             extensions: None,
         }
+    }
+
+    /// Sets the streaming capability flag.
+    #[must_use]
+    pub const fn with_streaming(mut self, streaming: bool) -> Self {
+        self.streaming = Some(streaming);
+        self
+    }
+
+    /// Sets the push notifications capability flag.
+    #[must_use]
+    pub const fn with_push_notifications(mut self, push: bool) -> Self {
+        self.push_notifications = Some(push);
+        self
+    }
+
+    /// Sets the extended agent card capability flag.
+    #[must_use]
+    pub const fn with_extended_agent_card(mut self, extended: bool) -> Self {
+        self.extended_agent_card = Some(extended);
+        self
     }
 }
 

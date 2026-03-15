@@ -1,0 +1,152 @@
+/* a2a-rust documentation theme */
+
+/* ── Brand colors ─────────────────────────────────────────────────────────── */
+
+:root {
+    --a2a-primary: #2563eb;
+    --a2a-primary-dark: #1d4ed8;
+    --a2a-accent: #059669;
+    --a2a-bg-code: #f8fafc;
+    --a2a-border: #e2e8f0;
+}
+
+/* ── Typography ───────────────────────────────────────────────────────────── */
+
+.content main {
+    max-width: 52rem;
+    font-size: 1.05rem;
+    line-height: 1.7;
+}
+
+.content main h1 {
+    border-bottom: 2px solid var(--a2a-primary);
+    padding-bottom: 0.3em;
+    margin-bottom: 1em;
+}
+
+.content main h2 {
+    margin-top: 2em;
+    border-bottom: 1px solid var(--a2a-border);
+    padding-bottom: 0.2em;
+}
+
+/* ── Code blocks ──────────────────────────────────────────────────────────── */
+
+.content main pre {
+    border: 1px solid var(--a2a-border);
+    border-radius: 6px;
+    padding: 1em;
+}
+
+.content main code {
+    font-size: 0.9em;
+}
+
+.content main pre > code {
+    font-size: 0.88em;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────────────── */
+
+.content main table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1em 0;
+}
+
+.content main table th {
+    background-color: var(--a2a-bg-code);
+    border: 1px solid var(--a2a-border);
+    padding: 0.5em 0.75em;
+    text-align: left;
+    font-weight: 600;
+}
+
+.content main table td {
+    border: 1px solid var(--a2a-border);
+    padding: 0.5em 0.75em;
+}
+
+.content main table tr:nth-child(even) {
+    background-color: var(--a2a-bg-code);
+}
+
+/* ── Links ────────────────────────────────────────────────────────────────── */
+
+.content main a {
+    color: var(--a2a-primary);
+    text-decoration: none;
+}
+
+.content main a:hover {
+    color: var(--a2a-primary-dark);
+    text-decoration: underline;
+}
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+
+.sidebar .sidebar-scrollbox {
+    padding-top: 1em;
+}
+
+.sidebar .chapter li.chapter-item {
+    margin-top: 0.3em;
+}
+
+/* ── Blockquotes (tips/notes) ─────────────────────────────────────────────── */
+
+.content main blockquote {
+    border-left: 4px solid var(--a2a-primary);
+    background-color: var(--a2a-bg-code);
+    padding: 0.75em 1em;
+    margin: 1em 0;
+    border-radius: 0 6px 6px 0;
+}
+
+.content main blockquote p {
+    margin: 0;
+}
+
+/* ── ASCII diagrams ───────────────────────────────────────────────────────── */
+
+.content main pre code:not([class*="language-"]) {
+    color: var(--fg);
+}
+
+/* ── Dark theme adjustments ───────────────────────────────────────────────── */
+
+.ayu .content main table th,
+.navy .content main table th,
+.coal .content main table th {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.ayu .content main table td,
+.navy .content main table td,
+.coal .content main table td {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ayu .content main table th,
+.navy .content main table th,
+.coal .content main table th {
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.ayu .content main table tr:nth-child(even),
+.navy .content main table tr:nth-child(even),
+.coal .content main table tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.ayu .content main blockquote,
+.navy .content main blockquote,
+.coal .content main blockquote {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.ayu .content main pre,
+.navy .content main pre,
+.coal .content main pre {
+    border-color: rgba(255, 255, 255, 0.1);
+}
