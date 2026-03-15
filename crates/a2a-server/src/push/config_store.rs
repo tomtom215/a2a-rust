@@ -58,6 +58,11 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
+/// Maximum number of push notification configs allowed per task.
+///
+/// Prevents a malicious client from creating unbounded push configs.
+const MAX_PUSH_CONFIGS_PER_TASK: usize = 100;
+
 /// In-memory [`PushConfigStore`] backed by a `HashMap`.
 #[derive(Debug, Default)]
 pub struct InMemoryPushConfigStore {
@@ -88,6 +93,19 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
             let key = (config.task_id.clone(), id);
             let mut store = self.configs.write().await;
+
+            // Reject if this is a new config and the per-task limit is reached.
+            if !store.contains_key(&key) {
+                let task_id = &config.task_id;
+                let count = store.keys().filter(|(tid, _)| tid == task_id).count();
+                if count >= MAX_PUSH_CONFIGS_PER_TASK {
+                    drop(store);
+                    return Err(a2a_types::error::A2aError::invalid_params(format!(
+                        "push config limit exceeded: task {task_id} already has {count} configs (max {MAX_PUSH_CONFIGS_PER_TASK})"
+                    )));
+                }
+            }
+
             store.insert(key, config.clone());
             drop(store);
             Ok(config)

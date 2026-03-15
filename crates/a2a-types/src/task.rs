@@ -33,6 +33,7 @@ impl TaskId {
 }
 
 impl std::fmt::Display for TaskId {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
@@ -51,6 +52,7 @@ impl From<&str> for TaskId {
 }
 
 impl AsRef<str> for TaskId {
+    #[inline]
     fn as_ref(&self) -> &str {
         &self.0
     }
@@ -73,6 +75,7 @@ impl ContextId {
 }
 
 impl std::fmt::Display for ContextId {
+    #[inline]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
     }
@@ -91,6 +94,7 @@ impl From<&str> for ContextId {
 }
 
 impl AsRef<str> for ContextId {
+    #[inline]
     fn as_ref(&self) -> &str {
         &self.0
     }
@@ -172,6 +176,7 @@ impl TaskState {
     /// Returns `true` if this state is a terminal (final) state.
     ///
     /// Terminal states: `Completed`, `Failed`, `Canceled`, `Rejected`.
+    #[inline]
     #[must_use]
     pub const fn is_terminal(self) -> bool {
         matches!(
@@ -185,6 +190,7 @@ impl TaskState {
     ///
     /// Terminal states cannot transition to any other state.
     /// `Unspecified` can transition to any state.
+    #[inline]
     #[must_use]
     pub const fn can_transition_to(self, next: Self) -> bool {
         // Terminal states are final — no transitions allowed.

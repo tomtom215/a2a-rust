@@ -96,7 +96,7 @@
 //! # }
 //! ```
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]

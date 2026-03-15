@@ -102,6 +102,10 @@ impl Default for TaskStoreConfig {
 /// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
 const EVICTION_INTERVAL: u64 = 64;
 
+/// Maximum allowed page size for list queries. Larger values are clamped to
+/// this limit to prevent a single request from requesting billions of tasks.
+const MAX_PAGE_SIZE: u32 = 1000;
+
 /// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
 ///
 /// Suitable for testing and single-process deployments. Data is lost when the
@@ -109,6 +113,17 @@ const EVICTION_INTERVAL: u64 = 64;
 ///
 /// Supports TTL-based eviction of terminal tasks and a maximum capacity limit
 /// to prevent unbounded memory growth.
+///
+/// # Eviction behavior
+///
+/// Eviction runs automatically every 64 writes (`EVICTION_INTERVAL`) and
+/// whenever the store exceeds `max_capacity`. However, if the system goes
+/// idle (no `save()` calls), completed tasks may persist in memory longer
+/// than their TTL.
+///
+/// **Operators should call [`run_eviction()`](Self::run_eviction) periodically**
+/// (e.g. every 60 seconds via `tokio::time::interval`) to ensure timely
+/// cleanup of terminal tasks during idle periods.
 #[derive(Debug)]
 pub struct InMemoryTaskStore {
     entries: RwLock<HashMap<TaskId, TaskEntry>>,
@@ -276,10 +291,10 @@ impl TaskStore for InMemoryTaskStore {
                 }
             }
 
-            // Treat page_size of 0 as "use default" per defensive convention.
+            // Treat page_size of 0 as "use default"; clamp to MAX_PAGE_SIZE.
             let page_size = match params.page_size {
                 Some(0) | None => 50_usize,
-                Some(n) => n as usize,
+                Some(n) => (n.min(MAX_PAGE_SIZE)) as usize,
             };
             let next_page_token = if tasks.len() > page_size {
                 tasks
