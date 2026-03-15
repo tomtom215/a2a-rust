@@ -58,9 +58,7 @@ impl ServerInterceptor for RejectingInterceptor {
         &'a self,
         _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(A2aError::new(ErrorCode::UnsupportedOperation, "rejected"))
-        })
+        Box::pin(async move { Err(A2aError::new(ErrorCode::UnsupportedOperation, "rejected")) })
     }
 
     fn after<'a>(

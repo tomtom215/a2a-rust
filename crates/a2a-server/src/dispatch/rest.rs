@@ -473,10 +473,7 @@ fn build_json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<By
             // Fallback: plain 500 response if builder fails (should never happen
             // with valid static header names).
             hyper::Response::new(
-                Full::new(Bytes::from_static(
-                    br#"{"error":"response build error"}"#,
-                ))
-                .boxed(),
+                Full::new(Bytes::from_static(br#"{"error":"response build error"}"#)).boxed(),
             )
         })
 }

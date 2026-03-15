@@ -34,7 +34,11 @@ use a2a_server::streaming::{EventQueueReader, EventQueueWriter};
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Write a working status update.
             queue
@@ -77,10 +81,12 @@ impl AgentExecutor for EchoExecutor {
 struct FailingExecutor;
 
 impl AgentExecutor for FailingExecutor {
-    fn execute<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(A2aError::internal("executor exploded"))
-        })
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move { Err(A2aError::internal("executor exploded")) })
     }
 }
 
@@ -88,7 +94,11 @@ impl AgentExecutor for FailingExecutor {
 struct CancelableExecutor;
 
 impl AgentExecutor for CancelableExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -105,10 +115,12 @@ impl AgentExecutor for CancelableExecutor {
         })
     }
 
-    fn cancel<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Ok(())
-        })
+    fn cancel<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
     }
 }
 

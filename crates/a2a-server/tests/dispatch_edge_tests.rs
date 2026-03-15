@@ -23,7 +23,11 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -47,17 +51,11 @@ impl AgentExecutor for EchoExecutor {
 }
 
 fn make_handler() -> Arc<a2a_server::RequestHandler> {
-    Arc::new(
-        RequestHandlerBuilder::new(EchoExecutor)
-            .build()
-            .unwrap(),
-    )
+    Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap())
 }
 
 /// Start a server on a random port and return the address.
-async fn start_rest_server(
-    handler: Arc<a2a_server::RequestHandler>,
-) -> std::net::SocketAddr {
+async fn start_rest_server(handler: Arc<a2a_server::RequestHandler>) -> std::net::SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -176,14 +174,7 @@ async fn rest_list_tasks_empty() {
 #[tokio::test]
 async fn rest_tenant_prefix_stripping() {
     let addr = start_rest_server(make_handler()).await;
-    let (status, body) = http_request(
-        addr,
-        "GET",
-        "/tenants/my-tenant/tasks",
-        None,
-        None,
-    )
-    .await;
+    let (status, body) = http_request(addr, "GET", "/tenants/my-tenant/tasks", None, None).await;
     assert_eq!(status, 200);
     assert!(body.contains("tasks"));
 }
@@ -246,11 +237,9 @@ async fn jsonrpc_unknown_method() {
             let d = Arc::clone(&d);
             async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
         });
-        let _ = hyper_util::server::conn::auto::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-        .serve_connection(io, service)
-        .await;
+        let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await;
     });
 
     let body = serde_json::json!({
@@ -287,11 +276,9 @@ async fn jsonrpc_invalid_json() {
             let d = Arc::clone(&d);
             async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
         });
-        let _ = hyper_util::server::conn::auto::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-        .serve_connection(io, service)
-        .await;
+        let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await;
     });
 
     let (status, resp_body) = http_request(
@@ -321,21 +308,12 @@ async fn jsonrpc_unsupported_content_type() {
             let d = Arc::clone(&d);
             async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
         });
-        let _ = hyper_util::server::conn::auto::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-        .serve_connection(io, service)
-        .await;
+        let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await;
     });
 
-    let (status, resp_body) = http_request(
-        addr,
-        "POST",
-        "/",
-        Some("{}"),
-        Some("text/xml"),
-    )
-    .await;
+    let (status, resp_body) = http_request(addr, "POST", "/", Some("{}"), Some("text/xml")).await;
     assert_eq!(status, 200);
     assert!(resp_body.contains("Parse error"));
 }

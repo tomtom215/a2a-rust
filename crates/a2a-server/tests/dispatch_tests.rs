@@ -37,7 +37,11 @@ use a2a_server::streaming::EventQueueWriter;
 struct SimpleExecutor;
 
 impl AgentExecutor for SimpleExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Transition through Working before Completed (valid state machine).
             queue

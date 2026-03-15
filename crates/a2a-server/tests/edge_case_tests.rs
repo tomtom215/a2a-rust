@@ -27,7 +27,11 @@ use a2a_server::{ServerError, TaskStoreConfig};
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -53,17 +57,23 @@ impl AgentExecutor for EchoExecutor {
 struct FailingExecutor;
 
 impl AgentExecutor for FailingExecutor {
-    fn execute<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            Err(A2aError::internal("executor exploded"))
-        })
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move { Err(A2aError::internal("executor exploded")) })
     }
 }
 
 struct SlowExecutor;
 
 impl AgentExecutor for SlowExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -108,10 +118,10 @@ fn make_send_params(text: &str) -> MessageSendParams {
 
 #[tokio::test]
 async fn send_message_basic_flow() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
-    let result = handler.on_send_message(make_send_params("hello"), false).await;
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
+    let result = handler
+        .on_send_message(make_send_params("hello"), false)
+        .await;
     match result.unwrap() {
         a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
             assert_eq!(task.status.state, TaskState::Completed);
@@ -122,10 +132,10 @@ async fn send_message_basic_flow() {
 
 #[tokio::test]
 async fn send_message_executor_failure_marks_task_failed() {
-    let handler = RequestHandlerBuilder::new(FailingExecutor)
-        .build()
-        .unwrap();
-    let result = handler.on_send_message(make_send_params("hello"), false).await;
+    let handler = RequestHandlerBuilder::new(FailingExecutor).build().unwrap();
+    let result = handler
+        .on_send_message(make_send_params("hello"), false)
+        .await;
     // The executor fails, which should result in a Failed task
     match result {
         Ok(a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
@@ -140,11 +150,7 @@ async fn send_message_executor_failure_marks_task_failed() {
 
 #[tokio::test]
 async fn cancel_task_signals_cancellation_token() {
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(SlowExecutor)
-            .build()
-            .unwrap(),
-    );
+    let handler = Arc::new(RequestHandlerBuilder::new(SlowExecutor).build().unwrap());
 
     // Start a streaming task (which won't block waiting for completion)
     let params = make_send_params("slow task");
@@ -157,26 +163,38 @@ async fn cancel_task_signals_cancellation_token() {
             tokio::time::sleep(Duration::from_millis(50)).await;
 
             // List tasks to find our task
-            let list_result = handler.on_list_tasks(ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(10),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            }).await.unwrap();
+            let list_result = handler
+                .on_list_tasks(ListTasksParams {
+                    tenant: None,
+                    context_id: None,
+                    status: None,
+                    page_size: Some(10),
+                    page_token: None,
+                    status_timestamp_after: None,
+                    include_artifacts: None,
+                    history_length: None,
+                })
+                .await
+                .unwrap();
 
-            assert!(!list_result.tasks.is_empty(), "should have at least one task");
+            assert!(
+                !list_result.tasks.is_empty(),
+                "should have at least one task"
+            );
 
             // Find a non-terminal task to cancel
-            if let Some(task) = list_result.tasks.iter().find(|t| !t.status.state.is_terminal()) {
-                let cancel_result = handler.on_cancel_task(a2a_types::params::CancelTaskParams {
-                    tenant: None,
-                    id: task.id.to_string(),
-                    metadata: None,
-                }).await;
+            if let Some(task) = list_result
+                .tasks
+                .iter()
+                .find(|t| !t.status.state.is_terminal())
+            {
+                let cancel_result = handler
+                    .on_cancel_task(a2a_types::params::CancelTaskParams {
+                        tenant: None,
+                        id: task.id.to_string(),
+                        metadata: None,
+                    })
+                    .await;
                 match cancel_result {
                     Ok(cancelled) => {
                         assert_eq!(cancelled.status.state, TaskState::Canceled);
@@ -193,9 +211,7 @@ async fn cancel_task_signals_cancellation_token() {
 
 #[tokio::test]
 async fn get_task_not_found() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
         .on_get_task(TaskQueryParams {
             tenant: None,
@@ -208,9 +224,7 @@ async fn get_task_not_found() {
 
 #[tokio::test]
 async fn cancel_task_not_found() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
         .on_cancel_task(a2a_types::params::CancelTaskParams {
             tenant: None,
@@ -223,12 +237,13 @@ async fn cancel_task_not_found() {
 
 #[tokio::test]
 async fn cancel_completed_task_returns_not_cancelable() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
 
     // First, complete a task
-    let result = handler.on_send_message(make_send_params("hello"), false).await.unwrap();
+    let result = handler
+        .on_send_message(make_send_params("hello"), false)
+        .await
+        .unwrap();
     let task_id = match result {
         a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => task.id,
         _ => panic!("expected task"),
@@ -242,17 +257,21 @@ async fn cancel_completed_task_returns_not_cancelable() {
             metadata: None,
         })
         .await;
-    assert!(matches!(cancel_result, Err(ServerError::TaskNotCancelable(_))));
+    assert!(matches!(
+        cancel_result,
+        Err(ServerError::TaskNotCancelable(_))
+    ));
 }
 
 #[tokio::test]
 async fn list_tasks_pagination_page_size_zero_defaults() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
 
     // Create a task
-    handler.on_send_message(make_send_params("hello"), false).await.unwrap();
+    handler
+        .on_send_message(make_send_params("hello"), false)
+        .await
+        .unwrap();
 
     // List with page_size = 0 (should default to 50, not return empty)
     let result = handler
@@ -268,25 +287,25 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
         })
         .await
         .unwrap();
-    assert!(!result.tasks.is_empty(), "page_size=0 should default to 50, not empty");
+    assert!(
+        !result.tasks.is_empty(),
+        "page_size=0 should default to 50, not empty"
+    );
 }
 
 #[tokio::test]
 async fn push_config_not_supported_without_sender() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
 
-    let config = a2a_types::push::TaskPushNotificationConfig::new("task-1", "http://example.com/webhook");
+    let config =
+        a2a_types::push::TaskPushNotificationConfig::new("task-1", "http://example.com/webhook");
     let result = handler.on_set_push_config(config).await;
     assert!(matches!(result, Err(ServerError::PushNotSupported)));
 }
 
 #[tokio::test]
 async fn extended_agent_card_not_configured() {
-    let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .build()
-        .unwrap();
+    let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler.on_get_extended_agent_card().await;
     assert!(matches!(result, Err(ServerError::Internal(_))));
 }
@@ -326,16 +345,19 @@ async fn task_store_eviction_on_write() {
     }
 
     // The oldest completed task should have been evicted
-    let list = a2a_server::TaskStore::list(&store, &ListTasksParams {
-        tenant: None,
-        context_id: None,
-        status: None,
-        page_size: Some(50),
-        page_token: None,
-        status_timestamp_after: None,
-        include_artifacts: None,
-        history_length: None,
-    })
+    let list = a2a_server::TaskStore::list(
+        &store,
+        &ListTasksParams {
+            tenant: None,
+            context_id: None,
+            status: None,
+            page_size: Some(50),
+            page_token: None,
+            status_timestamp_after: None,
+            include_artifacts: None,
+            history_length: None,
+        },
+    )
     .await
     .unwrap();
     assert_eq!(list.tasks.len(), 2, "should have evicted one task");
@@ -459,19 +481,43 @@ async fn part_constructors() {
 #[tokio::test]
 async fn server_error_to_a2a_error_mapping() {
     let mappings: Vec<(ServerError, ErrorCode)> = vec![
-        (ServerError::TaskNotFound(TaskId::new("x")), ErrorCode::TaskNotFound),
-        (ServerError::TaskNotCancelable(TaskId::new("x")), ErrorCode::TaskNotCancelable),
-        (ServerError::InvalidParams("x".into()), ErrorCode::InvalidParams),
-        (ServerError::MethodNotFound("x".into()), ErrorCode::MethodNotFound),
-        (ServerError::PushNotSupported, ErrorCode::PushNotificationNotSupported),
+        (
+            ServerError::TaskNotFound(TaskId::new("x")),
+            ErrorCode::TaskNotFound,
+        ),
+        (
+            ServerError::TaskNotCancelable(TaskId::new("x")),
+            ErrorCode::TaskNotCancelable,
+        ),
+        (
+            ServerError::InvalidParams("x".into()),
+            ErrorCode::InvalidParams,
+        ),
+        (
+            ServerError::MethodNotFound("x".into()),
+            ErrorCode::MethodNotFound,
+        ),
+        (
+            ServerError::PushNotSupported,
+            ErrorCode::PushNotificationNotSupported,
+        ),
         (ServerError::Internal("x".into()), ErrorCode::InternalError),
         (ServerError::Transport("x".into()), ErrorCode::InternalError),
-        (ServerError::HttpClient("x".into()), ErrorCode::InternalError),
-        (ServerError::PayloadTooLarge("x".into()), ErrorCode::InternalError),
+        (
+            ServerError::HttpClient("x".into()),
+            ErrorCode::InternalError,
+        ),
+        (
+            ServerError::PayloadTooLarge("x".into()),
+            ErrorCode::InternalError,
+        ),
     ];
     for (server_err, expected_code) in mappings {
         let a2a_err = server_err.to_a2a_error();
-        assert_eq!(a2a_err.code, expected_code, "mapping failed for {server_err}");
+        assert_eq!(
+            a2a_err.code, expected_code,
+            "mapping failed for {server_err}"
+        );
     }
 }
 
@@ -495,7 +541,10 @@ async fn server_error_display_all_variants() {
     ];
     for err in &errors {
         let display = err.to_string();
-        assert!(!display.is_empty(), "display should not be empty for {err:?}");
+        assert!(
+            !display.is_empty(),
+            "display should not be empty for {err:?}"
+        );
     }
 }
 
@@ -596,7 +645,9 @@ async fn task_store_background_eviction() {
     store.run_eviction().await;
 
     // Task should be evicted
-    let result = a2a_server::TaskStore::get(&store, &TaskId::new("evict-me")).await.unwrap();
+    let result = a2a_server::TaskStore::get(&store, &TaskId::new("evict-me"))
+        .await
+        .unwrap();
     assert!(result.is_none(), "expired task should have been evicted");
 }
 
@@ -607,10 +658,16 @@ async fn executor_timeout() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_send_params("timeout test"), false).await;
+    let result = handler
+        .on_send_message(make_send_params("timeout test"), false)
+        .await;
     match result {
         Ok(a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
-            assert_eq!(task.status.state, TaskState::Failed, "should be failed due to timeout");
+            assert_eq!(
+                task.status.state,
+                TaskState::Failed,
+                "should be failed due to timeout"
+            );
         }
         Err(_) => {
             // Also acceptable

@@ -66,7 +66,11 @@ fn make_send_params(text: &str) -> MessageSendParams {
 struct QuickExecutor;
 
 impl AgentExecutor for QuickExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {

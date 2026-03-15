@@ -42,7 +42,11 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Transition to Working.
             queue
@@ -143,9 +147,7 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-async fn start_jsonrpc_server(
-    handler: Arc<a2a_server::handler::RequestHandler>,
-) -> SocketAddr {
+async fn start_jsonrpc_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -178,9 +180,7 @@ async fn start_jsonrpc_server(
     addr
 }
 
-async fn start_rest_server(
-    handler: Arc<a2a_server::handler::RequestHandler>,
-) -> SocketAddr {
+async fn start_rest_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

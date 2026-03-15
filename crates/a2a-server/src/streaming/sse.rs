@@ -190,8 +190,7 @@ pub fn build_sse_response(
             // Fallback: empty 500 response if builder fails (should never happen
             // with valid static header names).
             hyper::Response::new(
-                http_body_util::Full::new(Bytes::from_static(b"SSE response build error"))
-                    .boxed(),
+                http_body_util::Full::new(Bytes::from_static(b"SSE response build error")).boxed(),
             )
         })
 }

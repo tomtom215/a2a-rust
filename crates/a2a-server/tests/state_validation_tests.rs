@@ -24,7 +24,11 @@ use a2a_server::streaming::EventQueueWriter;
 struct InvalidTransitionExecutor;
 
 impl AgentExecutor for InvalidTransitionExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Skip Working and go directly to Completed — this is invalid.
             queue
@@ -44,7 +48,11 @@ impl AgentExecutor for InvalidTransitionExecutor {
 struct ValidTransitionExecutor;
 
 impl AgentExecutor for ValidTransitionExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -71,7 +79,11 @@ impl AgentExecutor for ValidTransitionExecutor {
 struct InputRequiredExecutor;
 
 impl AgentExecutor for InputRequiredExecutor {
-    fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -190,7 +202,11 @@ async fn input_required_roundtrip_transitions_succeed() {
 struct HungExecutor;
 
 impl AgentExecutor for HungExecutor {
-    fn execute<'a>(&'a self, _ctx: &'a RequestContext, _queue: &'a dyn EventQueueWriter) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn execute<'a>(
+        &'a self,
+        _ctx: &'a RequestContext,
+        _queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Sleep indefinitely — should be killed by timeout.
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
