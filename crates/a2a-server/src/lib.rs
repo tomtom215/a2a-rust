@@ -28,6 +28,18 @@
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] |
+//!
+//! # Transport limitations
+//!
+//! The A2A specification lists gRPC as an optional transport binding. This
+//! implementation currently supports **HTTP + SSE only**; gRPC transport is
+//! not yet implemented.
+//!
+//! # Rate limiting
+//!
+//! This library does **not** perform request rate limiting. Deployments that
+//! require rate limiting should handle it in a reverse proxy (e.g. nginx,
+//! Envoy) or a middleware layer in front of the A2A handler.
 
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]

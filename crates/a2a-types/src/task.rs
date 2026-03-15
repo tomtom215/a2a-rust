@@ -21,6 +21,11 @@ use crate::message::Message;
 // ── TaskId ────────────────────────────────────────────────────────────────────
 
 /// Opaque unique identifier for a [`Task`].
+///
+/// IDs are compared as raw byte strings (via the derived [`PartialEq`] on
+/// the inner `String`). No Unicode normalization is applied, so two IDs
+/// that look identical but use different Unicode representations (e.g.
+/// NFC vs. NFD) will be considered distinct.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TaskId(pub String);
 
@@ -63,6 +68,9 @@ impl AsRef<str> for TaskId {
 /// Opaque unique identifier for a conversation context.
 ///
 /// A context groups related tasks under a single logical conversation thread.
+///
+/// Like [`TaskId`], IDs are compared as raw byte strings without Unicode
+/// normalization.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ContextId(pub String);
 
@@ -217,10 +225,18 @@ impl TaskState {
 
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Use serde to produce the canonical SCREAMING_SNAKE_CASE representation.
-        let s = serde_json::to_string(self).unwrap_or_else(|_| "TASK_STATE_UNSPECIFIED".into());
-        // serde_json wraps strings in quotes; strip them.
-        f.write_str(s.trim_matches('"'))
+        let s = match self {
+            Self::Unspecified => "TASK_STATE_UNSPECIFIED",
+            Self::Submitted => "TASK_STATE_SUBMITTED",
+            Self::Working => "TASK_STATE_WORKING",
+            Self::InputRequired => "TASK_STATE_INPUT_REQUIRED",
+            Self::AuthRequired => "TASK_STATE_AUTH_REQUIRED",
+            Self::Completed => "TASK_STATE_COMPLETED",
+            Self::Failed => "TASK_STATE_FAILED",
+            Self::Canceled => "TASK_STATE_CANCELED",
+            Self::Rejected => "TASK_STATE_REJECTED",
+        };
+        f.write_str(s)
     }
 }
 

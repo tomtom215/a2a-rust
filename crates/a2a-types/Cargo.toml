@@ -34,6 +34,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 proptest  = "1"
 criterion = { workspace = true }
+ring      = "0.17"
+base64    = "0.22"
 
 [[bench]]
 name = "json_serde"

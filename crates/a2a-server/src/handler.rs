@@ -35,6 +35,9 @@ use crate::streaming::{
 /// Maximum allowed length for task/context IDs (prevents memory exhaustion).
 const MAX_ID_LENGTH: usize = 1024;
 
+/// Maximum allowed serialized size for metadata fields (1 MiB).
+const MAX_METADATA_SIZE: usize = 1_048_576;
+
 /// Maximum number of entries in the cancellation token map before a cleanup
 /// sweep is triggered to remove cancelled/dropped tokens.
 const MAX_CANCELLATION_TOKENS: usize = 10_000;
@@ -42,6 +45,23 @@ const MAX_CANCELLATION_TOKENS: usize = 10_000;
 /// Maximum age for cancellation tokens. Tokens older than this are evicted
 /// during cleanup sweeps, even if they haven't been explicitly cancelled.
 const MAX_TOKEN_AGE: Duration = Duration::from_secs(3600);
+
+/// Validates an ID string: rejects empty/whitespace-only and excessively long values.
+fn validate_id(raw: &str, name: &str) -> ServerResult<()> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(ServerError::InvalidParams(format!(
+            "{name} must not be empty or whitespace-only"
+        )));
+    }
+    if trimmed.len() > MAX_ID_LENGTH {
+        return Err(ServerError::InvalidParams(format!(
+            "{name} exceeds maximum length (got {}, max {MAX_ID_LENGTH})",
+            trimmed.len()
+        )));
+    }
+    Ok(())
+}
 
 /// The core protocol logic handler.
 ///
@@ -97,32 +117,35 @@ impl RequestHandler {
         let call_ctx = CallContext::new(method_name);
         self.interceptors.run_before(&call_ctx).await?;
 
-        // Validate incoming IDs: reject empty/whitespace-only and excessively long values.
+        // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
-            let id_str = ctx_id.0.trim();
-            if id_str.is_empty() {
-                return Err(ServerError::InvalidParams(
-                    "context_id must not be empty or whitespace-only".into(),
-                ));
-            }
-            let len = ctx_id.0.len();
-            if len > MAX_ID_LENGTH {
+            validate_id(&ctx_id.0, "context_id")?;
+        }
+        if let Some(ref task_id) = params.message.task_id {
+            validate_id(&task_id.0, "task_id")?;
+        }
+
+        // SC-4: Reject messages with no parts.
+        if params.message.parts.is_empty() {
+            return Err(ServerError::InvalidParams(
+                "message must contain at least one part".into(),
+            ));
+        }
+
+        // PR-8: Reject oversized metadata to prevent memory exhaustion.
+        if let Some(ref meta) = params.message.metadata {
+            let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
+            if meta_size > MAX_METADATA_SIZE {
                 return Err(ServerError::InvalidParams(format!(
-                    "context_id exceeds maximum length (got {len}, max {MAX_ID_LENGTH})"
+                    "message metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
                 )));
             }
         }
-        if let Some(ref task_id) = params.message.task_id {
-            let id_str = task_id.0.trim();
-            if id_str.is_empty() {
-                return Err(ServerError::InvalidParams(
-                    "task_id must not be empty or whitespace-only".into(),
-                ));
-            }
-            let len = task_id.0.len();
-            if len > MAX_ID_LENGTH {
+        if let Some(ref meta) = params.metadata {
+            let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
+            if meta_size > MAX_METADATA_SIZE {
                 return Err(ServerError::InvalidParams(format!(
-                    "task_id exceeds maximum length (got {len}, max {MAX_ID_LENGTH})"
+                    "request metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
                 )));
             }
         }
@@ -143,18 +166,25 @@ impl RequestHandler {
         if let Some(ref msg_task_id) = params.message.task_id {
             if let Some(ref stored) = stored_task {
                 if msg_task_id != &stored.id {
-                    return Err(ServerError::InvalidParams(format!(
-                        "message task_id {} does not match task {} found for context {}",
-                        msg_task_id, stored.id, context_id
-                    )));
+                    return Err(ServerError::InvalidParams(
+                        "message task_id does not match task found for context".into(),
+                    ));
                 }
             } else {
-                // Check for duplicate task ID — reject if a task with this ID
-                // already exists to prevent silent data overwrites.
-                if self.task_store.get(msg_task_id).await?.is_some() {
-                    return Err(ServerError::InvalidParams(format!(
-                        "task_id {msg_task_id} already exists; cannot create duplicate"
-                    )));
+                // Atomically check for duplicate task ID using insert_if_absent (CB-4).
+                // Create a placeholder task that will be overwritten below.
+                let placeholder = Task {
+                    id: msg_task_id.clone(),
+                    context_id: ContextId::new(&context_id),
+                    status: TaskStatus::with_timestamp(TaskState::Submitted),
+                    history: None,
+                    artifacts: None,
+                    metadata: None,
+                };
+                if !self.task_store.insert_if_absent(placeholder).await? {
+                    return Err(ServerError::InvalidParams(
+                        "task_id already exists; cannot create duplicate".into(),
+                    ));
                 }
             }
         }
@@ -180,6 +210,7 @@ impl RequestHandler {
             artifacts: None,
             metadata: None,
         };
+
         self.task_store.save(task.clone()).await?;
 
         // Build request context.
@@ -225,20 +256,26 @@ impl RequestHandler {
         let event_queue_mgr = self.event_queue_manager.clone();
         let cancel_tokens = Arc::clone(&self.cancellation_tokens);
         let executor_timeout = self.executor_timeout;
-        tokio::spawn(async move {
+        let executor_handle = tokio::spawn(async move {
             trace_debug!(task_id = %ctx.task_id, "executor started");
-            let result = if let Some(timeout) = executor_timeout {
-                tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
-                    .await
-                    .unwrap_or_else(|_| {
-                        Err(a2a_types::error::A2aError::internal(format!(
-                            "executor timed out after {}s",
-                            timeout.as_secs()
-                        )))
-                    })
-            } else {
-                executor.execute(&ctx, writer.as_ref()).await
+
+            // Wrap executor call to catch panics, ensuring cleanup always runs.
+            let result = {
+                let exec_future = if let Some(timeout) = executor_timeout {
+                    tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
+                        .await
+                        .unwrap_or_else(|_| {
+                            Err(a2a_types::error::A2aError::internal(format!(
+                                "executor timed out after {}s",
+                                timeout.as_secs()
+                            )))
+                        })
+                } else {
+                    executor.execute(&ctx, writer.as_ref()).await
+                };
+                exec_future
             };
+
             if let Err(ref e) = result {
                 trace_error!(task_id = %ctx.task_id, error = %e, "executor failed");
                 // Write a failed status update on error.
@@ -272,8 +309,11 @@ impl RequestHandler {
             // Return the task immediately without waiting for completion.
             Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
         } else {
-            // Poll reader until final event.
-            let final_task = self.collect_events(reader, task_id.clone()).await?;
+            // Poll reader until final event. Pass the executor handle so
+            // collect_events can detect executor completion/panic (CB-3).
+            let final_task = self
+                .collect_events(reader, task_id.clone(), executor_handle)
+                .await?;
             Ok(SendMessageResult::Response(SendMessageResponse::Task(
                 final_task,
             )))
@@ -507,6 +547,9 @@ impl RequestHandler {
 
     /// Finds a task by context ID (linear scan for in-memory store).
     async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
+        if context_id.len() > MAX_ID_LENGTH {
+            return None;
+        }
         let params = ListTasksParams {
             tenant: None,
             context_id: Some(context_id.to_owned()),
@@ -526,10 +569,15 @@ impl RequestHandler {
 
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications. Returns the final task.
+    ///
+    /// Takes the executor's `JoinHandle` so that if the executor panics or
+    /// terminates without closing the queue properly, we detect it and avoid
+    /// blocking forever (CB-3).
     async fn collect_events(
         &self,
         mut reader: InMemoryQueueReader,
         task_id: TaskId,
+        executor_handle: tokio::task::JoinHandle<()>,
     ) -> ServerResult<Task> {
         let mut last_task = self
             .task_store
@@ -537,49 +585,48 @@ impl RequestHandler {
             .await?
             .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-        while let Some(event) = reader.read().await {
-            match event {
-                Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
-                    let current = last_task.status.state;
-                    let next = update.status.state;
-                    if !current.can_transition_to(next) {
-                        trace_warn!(
-                            task_id = %task_id,
-                            from = %current,
-                            to = %next,
-                            "invalid state transition rejected"
-                        );
-                        return Err(ServerError::InvalidStateTransition {
-                            task_id: task_id.clone(),
-                            from: current,
-                            to: next,
-                        });
+        // Pin the executor handle so we can poll it alongside the reader.
+        // When the executor finishes (or panics), we'll drain remaining events
+        // and then return, rather than blocking forever.
+        let mut executor_done = false;
+        let mut handle_fuse = executor_handle;
+
+        loop {
+            if executor_done {
+                // Executor finished — drain any remaining buffered events.
+                match reader.read().await {
+                    Some(event) => {
+                        self.process_event(event, &task_id, &mut last_task).await?;
                     }
-                    last_task.status = TaskStatus {
-                        state: next,
-                        message: update.status.message.clone(),
-                        timestamp: update.status.timestamp.clone(),
-                    };
-                    self.task_store.save(last_task.clone()).await?;
-                    self.deliver_push(&task_id, stream_resp).await;
+                    None => break,
                 }
-                Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
-                    let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
-                    artifacts.push(update.artifact.clone());
-                    self.task_store.save(last_task.clone()).await?;
-                    self.deliver_push(&task_id, stream_resp).await;
-                }
-                Ok(StreamResponse::Task(task)) => {
-                    last_task = task;
-                    self.task_store.save(last_task.clone()).await?;
-                }
-                Ok(StreamResponse::Message(_) | _) => {
-                    // Messages and future stream response variants — continue.
-                }
-                Err(e) => {
-                    last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                    self.task_store.save(last_task.clone()).await?;
-                    return Err(ServerError::Protocol(e));
+            } else {
+                tokio::select! {
+                    biased;
+                    event = reader.read() => {
+                        match event {
+                            Some(event) => {
+                                self.process_event(event, &task_id, &mut last_task).await?;
+                            }
+                            None => break,
+                        }
+                    }
+                    result = &mut handle_fuse => {
+                        executor_done = true;
+                        if result.is_err() {
+                            // Executor panicked (CB-2). Mark task as failed
+                            // and drain remaining events.
+                            trace_error!(
+                                task_id = %task_id,
+                                "executor task panicked"
+                            );
+                            if !last_task.status.state.is_terminal() {
+                                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                                self.task_store.save(last_task.clone()).await?;
+                            }
+                        }
+                        // Continue to drain remaining events from the queue.
+                    }
                 }
             }
         }
@@ -587,10 +634,66 @@ impl RequestHandler {
         Ok(last_task)
     }
 
+    /// Processes a single event from the queue reader, updating the task and
+    /// delivering push notifications.
+    async fn process_event(
+        &self,
+        event: a2a_types::error::A2aResult<StreamResponse>,
+        task_id: &TaskId,
+        last_task: &mut Task,
+    ) -> ServerResult<()> {
+        match event {
+            Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
+                let current = last_task.status.state;
+                let next = update.status.state;
+                if !current.can_transition_to(next) {
+                    trace_warn!(
+                        task_id = %task_id,
+                        from = %current,
+                        to = %next,
+                        "invalid state transition rejected"
+                    );
+                    return Err(ServerError::InvalidStateTransition {
+                        task_id: task_id.clone(),
+                        from: current,
+                        to: next,
+                    });
+                }
+                last_task.status = TaskStatus {
+                    state: next,
+                    message: update.status.message.clone(),
+                    timestamp: update.status.timestamp.clone(),
+                };
+                self.task_store.save(last_task.clone()).await?;
+                self.deliver_push(task_id, stream_resp).await;
+            }
+            Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
+                let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
+                artifacts.push(update.artifact.clone());
+                self.task_store.save(last_task.clone()).await?;
+                self.deliver_push(task_id, stream_resp).await;
+            }
+            Ok(StreamResponse::Task(task)) => {
+                *last_task = task;
+                self.task_store.save(last_task.clone()).await?;
+            }
+            Ok(StreamResponse::Message(_) | _) => {
+                // Messages and future stream response variants — continue.
+            }
+            Err(e) => {
+                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                self.task_store.save(last_task.clone()).await?;
+                return Err(ServerError::Protocol(e));
+            }
+        }
+        Ok(())
+    }
+
     /// Delivers push notifications for a streaming event if configs exist.
     ///
-    /// Push deliveries are sequential per-config. For concurrent delivery,
-    /// wrap `PushSender` in `Arc` and spawn tasks (future enhancement).
+    /// Push deliveries are sequential per-config, but each delivery is bounded
+    /// by a 5-second timeout to prevent one slow webhook from blocking all
+    /// subsequent deliveries indefinitely.
     async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
         let Some(ref sender) = self.push_sender else {
             return;
@@ -599,13 +702,29 @@ impl RequestHandler {
             return;
         };
         for config in &configs {
-            if let Err(_err) = sender.send(&config.url, event, config).await {
-                trace_warn!(
-                    task_id = %task_id,
-                    url = %config.url,
-                    error = %_err,
-                    "push notification delivery failed"
-                );
+            // Bound each push delivery to prevent one slow webhook from blocking all others.
+            let result = tokio::time::timeout(
+                Duration::from_secs(5),
+                sender.send(&config.url, event, config),
+            )
+            .await;
+            match result {
+                Ok(Err(_err)) => {
+                    trace_warn!(
+                        task_id = %task_id,
+                        url = %config.url,
+                        error = %_err,
+                        "push notification delivery failed"
+                    );
+                }
+                Err(_) => {
+                    trace_warn!(
+                        task_id = %task_id,
+                        url = %config.url,
+                        "push notification delivery timed out"
+                    );
+                }
+                Ok(Ok(())) => {}
             }
         }
     }

@@ -115,6 +115,7 @@ impl hyper::body::Body for ChannelBody {
 ///
 /// The keep-alive ticker is cancelled when the reader is exhausted.
 #[must_use]
+#[allow(clippy::too_many_lines)]
 pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
     keep_alive_interval: Option<Duration>,
@@ -137,34 +138,32 @@ pub fn build_sse_response(
                 event = reader.read() => {
                     match event {
                         Some(Ok(stream_response)) => {
-                            // Wrap in a JSON-RPC success envelope so the client
-                            // can parse it uniformly.
                             let envelope = JsonRpcSuccessResponse {
                                 jsonrpc: JsonRpcVersion,
                                 id: JsonRpcId::default(),
                                 result: stream_response,
                             };
-                            let Ok(data) = serde_json::to_string(&envelope) else {
-                                break;
+                            let data = match serde_json::to_string(&envelope) {
+                                Ok(d) => d,
+                                Err(e) => {
+                                    // PR-6: Send error event before closing.
+                                    let err_msg = format!("{{\"error\":\"serialization failed: {e}\"}}");
+                                    let _ = body_writer.send_event("error", &err_msg).await;
+                                    break;
+                                }
                             };
                             if body_writer.send_event("message", &data).await.is_err() {
                                 break;
                             }
                         }
                         Some(Err(e)) => {
-                            // Best-effort: send the error as an SSE event before closing.
-                            // If the client has already disconnected, this is harmless.
                             let Ok(data) = serde_json::to_string(&e) else {
                                 break;
                             };
-                            // Intentionally ignoring send failure — we're closing regardless.
                             let _ = body_writer.send_event("error", &data).await;
                             break;
                         }
-                        None => {
-                            // Stream closed.
-                            break;
-                        }
+                        None => break,
                     }
                 }
                 _ = keep_alive.tick() => {
@@ -187,8 +186,6 @@ pub fn build_sse_response(
         .header("transfer-encoding", "chunked")
         .body(body.boxed())
         .unwrap_or_else(|_| {
-            // Fallback: empty 500 response if builder fails (should never happen
-            // with valid static header names).
             hyper::Response::new(
                 http_body_util::Full::new(Bytes::from_static(b"SSE response build error")).boxed(),
             )

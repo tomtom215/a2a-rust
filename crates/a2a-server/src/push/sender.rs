@@ -226,7 +226,12 @@ impl PushSender for HttpPushSender {
                             builder = builder
                                 .header("authorization", format!("Basic {}", auth.credentials));
                         }
-                        _ => {}
+                        _ => {
+                            trace_warn!(
+                                scheme = auth.scheme.as_str(),
+                                "unknown authentication scheme; no auth header set"
+                            );
+                        }
                     }
                 }
 
