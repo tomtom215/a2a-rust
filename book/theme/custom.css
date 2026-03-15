@@ -109,7 +109,19 @@
     margin: 0;
 }
 
-/* ── ASCII diagrams ───────────────────────────────────────────────────────── */
+/* ── Mermaid diagrams ─────────────────────────────────────────────────────── */
+
+.mermaid {
+    text-align: center;
+    margin: 1.5em 0;
+}
+
+.mermaid svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ── ASCII diagrams (fallback) ────────────────────────────────────────────── */
 
 .content main pre code:not([class*="language-"]) {
     color: var(--fg);

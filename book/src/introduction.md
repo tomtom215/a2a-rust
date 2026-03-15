@@ -30,17 +30,18 @@ Rust gives you performance, safety, and correctness without compromise:
 
 a2a-rust is organized as a Cargo workspace with four crates:
 
-```
-┌─────────────────────────────────────────────────┐
-│                    a2a-sdk                       │
-│          (umbrella re-exports + prelude)         │
-├───────────────────────┬─────────────────────────┤
-│      a2a-client       │       a2a-server        │
-│     (HTTP client)     │   (agent framework)     │
-├───────────────────────┴─────────────────────────┤
-│                    a2a-types                     │
-│          (wire types, serde, no I/O)            │
-└─────────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 2
+    sdk["a2a-sdk\n(umbrella re-exports + prelude)"]:2
+    client["a2a-client\n(HTTP client)"]
+    server["a2a-server\n(agent framework)"]
+    types["a2a-types\n(wire types, serde, no I/O)"]:2
+
+    style sdk fill:#e0e7ff,stroke:#4f46e5,color:#1e1b4b
+    style client fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    style server fill:#dbeafe,stroke:#2563eb,color:#1e3a5f
+    style types fill:#f0fdf4,stroke:#16a34a,color:#14532d
 ```
 
 | Crate | Purpose |
