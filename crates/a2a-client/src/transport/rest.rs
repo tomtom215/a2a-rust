@@ -390,11 +390,14 @@ impl RestTransport {
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let body = resp.into_body();
 
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::new(rx))
+        Ok(EventStream::with_abort_handle(
+            rx,
+            task_handle.abort_handle(),
+        ))
     }
 }
 

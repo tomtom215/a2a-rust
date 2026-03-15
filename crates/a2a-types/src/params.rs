@@ -47,6 +47,17 @@ pub struct SendMessageConfiguration {
     pub return_immediately: Option<bool>,
 }
 
+impl Default for SendMessageConfiguration {
+    fn default() -> Self {
+        Self {
+            accepted_output_modes: vec!["text/plain".to_owned()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: None,
+        }
+    }
+}
+
 // ── MessageSendParams ─────────────────────────────────────────────────────────
 
 /// Parameters for the `SendMessage` and `SendStreamingMessage` methods.

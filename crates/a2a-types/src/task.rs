@@ -136,6 +136,7 @@ impl From<u64> for TaskVersion {
 ///
 /// Uses `SCREAMING_SNAKE_CASE` with `TASK_STATE_` prefix per `ProtoJSON`
 /// convention (e.g. `TaskState::InputRequired` ↔ `"TASK_STATE_INPUT_REQUIRED"`).
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskState {
     /// Proto default (0-value); should not appear in normal usage.
@@ -380,5 +381,76 @@ mod tests {
 
         let back: TaskState = serde_json::from_str("\"TASK_STATE_SUBMITTED\"").unwrap();
         assert_eq!(back, TaskState::Submitted);
+    }
+
+    #[test]
+    fn task_version_serde_roundtrip() {
+        let v = TaskVersion::new(42);
+        let json = serde_json::to_string(&v).expect("serialize");
+        assert_eq!(json, "42");
+
+        let back: TaskVersion = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back, TaskVersion::new(42));
+
+        // Also test zero
+        let v0 = TaskVersion::new(0);
+        let json0 = serde_json::to_string(&v0).expect("serialize zero");
+        assert_eq!(json0, "0");
+        let back0: TaskVersion = serde_json::from_str(&json0).expect("deserialize zero");
+        assert_eq!(back0, TaskVersion::new(0));
+
+        // And u64::MAX
+        let vmax = TaskVersion::new(u64::MAX);
+        let json_max = serde_json::to_string(&vmax).expect("serialize max");
+        let back_max: TaskVersion = serde_json::from_str(&json_max).expect("deserialize max");
+        assert_eq!(back_max, vmax);
+    }
+
+    #[test]
+    fn empty_string_ids_work() {
+        let tid = TaskId::new("");
+        let json = serde_json::to_string(&tid).expect("serialize empty TaskId");
+        assert_eq!(json, "\"\"");
+        let back: TaskId = serde_json::from_str(&json).expect("deserialize empty TaskId");
+        assert_eq!(back, TaskId::new(""));
+
+        let cid = ContextId::new("");
+        let json = serde_json::to_string(&cid).expect("serialize empty ContextId");
+        assert_eq!(json, "\"\"");
+        let back: ContextId = serde_json::from_str(&json).expect("deserialize empty ContextId");
+        assert_eq!(back, ContextId::new(""));
+
+        // A task with empty IDs should still roundtrip.
+        let task = Task {
+            id: TaskId::new(""),
+            context_id: ContextId::new(""),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        let json = serde_json::to_string(&task).expect("serialize task with empty ids");
+        let back: Task = serde_json::from_str(&json).expect("deserialize task with empty ids");
+        assert_eq!(back.id, TaskId::new(""));
+        assert_eq!(back.context_id, ContextId::new(""));
+    }
+
+    #[test]
+    fn task_state_display_trait() {
+        assert_eq!(TaskState::Working.to_string(), "TASK_STATE_WORKING");
+        assert_eq!(TaskState::Completed.to_string(), "TASK_STATE_COMPLETED");
+        assert_eq!(TaskState::Failed.to_string(), "TASK_STATE_FAILED");
+        assert_eq!(TaskState::Canceled.to_string(), "TASK_STATE_CANCELED");
+        assert_eq!(TaskState::Rejected.to_string(), "TASK_STATE_REJECTED");
+        assert_eq!(TaskState::Submitted.to_string(), "TASK_STATE_SUBMITTED");
+        assert_eq!(
+            TaskState::InputRequired.to_string(),
+            "TASK_STATE_INPUT_REQUIRED"
+        );
+        assert_eq!(
+            TaskState::AuthRequired.to_string(),
+            "TASK_STATE_AUTH_REQUIRED"
+        );
+        assert_eq!(TaskState::Unspecified.to_string(), "TASK_STATE_UNSPECIFIED");
     }
 }

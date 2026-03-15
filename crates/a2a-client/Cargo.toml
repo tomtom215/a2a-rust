@@ -39,6 +39,10 @@ rustls         = { version = ">=0.23, <0.24", optional = true, default-features 
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 criterion = { workspace = true }

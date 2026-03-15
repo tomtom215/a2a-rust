@@ -25,6 +25,10 @@ tracing = ["a2a-client/tracing", "a2a-server/tracing"]
 ## Enable HTTPS support via rustls.
 tls-rustls = ["a2a-client/tls-rustls"]
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 a2a-types  = { version = "0.1.0", path = "../a2a-types" }
 a2a-client = { version = "0.1.0", path = "../a2a-client" }

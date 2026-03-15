@@ -32,6 +32,7 @@
 use a2a_types::{JsonRpcResponse, StreamResponse};
 use hyper::body::Bytes;
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::sse_parser::SseParser;
@@ -48,6 +49,9 @@ pub(crate) type BodyChunk = ClientResult<Bytes>;
 /// Created by [`crate::A2aClient::stream_message`] or
 /// [`crate::A2aClient::subscribe_to_task`]. Call [`EventStream::next`] in a loop
 /// to consume events.
+///
+/// When dropped, the background body-reader task is aborted to prevent
+/// resource leaks.
 pub struct EventStream {
     /// Channel receiver delivering raw byte chunks from the HTTP body.
     rx: mpsc::Receiver<BodyChunk>,
@@ -55,18 +59,41 @@ pub struct EventStream {
     parser: SseParser,
     /// Whether the stream has been signalled as terminated.
     done: bool,
+    /// Handle to abort the background body-reader task on drop.
+    abort_handle: Option<AbortHandle>,
 }
 
 impl EventStream {
-    /// Creates a new [`EventStream`] from a channel receiver.
+    /// Creates a new [`EventStream`] from a channel receiver (without abort handle).
     ///
     /// The channel must be fed raw HTTP body bytes from a background task.
+    /// Prefer [`EventStream::with_abort_handle`] to ensure the background task
+    /// is cancelled when the stream is dropped.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn new(rx: mpsc::Receiver<BodyChunk>) -> Self {
         Self {
             rx,
             parser: SseParser::new(),
             done: false,
+            abort_handle: None,
+        }
+    }
+
+    /// Creates a new [`EventStream`] with an abort handle for the body-reader task.
+    ///
+    /// When the `EventStream` is dropped, the abort handle is used to cancel
+    /// the background task, preventing resource leaks.
+    #[must_use]
+    pub(crate) fn with_abort_handle(
+        rx: mpsc::Receiver<BodyChunk>,
+        abort_handle: AbortHandle,
+    ) -> Self {
+        Self {
+            rx,
+            parser: SseParser::new(),
+            done: false,
+            abort_handle: Some(abort_handle),
         }
     }
 
@@ -79,8 +106,13 @@ impl EventStream {
     pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>> {
         loop {
             // First, drain any frames the parser already has buffered.
-            if let Some(frame) = self.parser.next_frame() {
-                return Some(self.decode_frame(&frame.data));
+            if let Some(result) = self.parser.next_frame() {
+                match result {
+                    Ok(frame) => return Some(self.decode_frame(&frame.data)),
+                    Err(e) => {
+                        return Some(Err(ClientError::Transport(e.to_string())));
+                    }
+                }
             }
 
             if self.done {
@@ -93,8 +125,13 @@ impl EventStream {
                     // Channel closed — body reader task exited.
                     self.done = true;
                     // Drain any remaining parser frames.
-                    if let Some(frame) = self.parser.next_frame() {
-                        return Some(self.decode_frame(&frame.data));
+                    if let Some(result) = self.parser.next_frame() {
+                        match result {
+                            Ok(frame) => return Some(self.decode_frame(&frame.data)),
+                            Err(e) => {
+                                return Some(Err(ClientError::Transport(e.to_string())));
+                            }
+                        }
                     }
                     return None;
                 }
@@ -137,6 +174,14 @@ impl EventStream {
     }
 }
 
+impl Drop for EventStream {
+    fn drop(&mut self) {
+        if let Some(handle) = self.abort_handle.take() {
+            handle.abort();
+        }
+    }
+}
+
 #[allow(clippy::missing_fields_in_debug)]
 impl std::fmt::Debug for EventStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -169,7 +214,7 @@ mod tests {
     fn make_status_event(state: TaskState, _is_final: bool) -> StreamResponse {
         StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),
-            context_id: "c1".to_owned(),
+            context_id: a2a_types::ContextId::new("c1"),
             status: TaskStatus {
                 state,
                 message: None,

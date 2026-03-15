@@ -73,7 +73,10 @@ pub struct Artifact {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Content parts (must contain at least one element).
+    /// Content parts.
+    ///
+    /// **Spec requirement:** Must contain at least one element. The A2A
+    /// protocol does not define behavior for empty parts lists.
     pub parts: Vec<Part>,
 
     /// URIs of extensions used in this artifact.

@@ -188,7 +188,7 @@ impl RequestHandler {
                 // Write a failed status update on error.
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
                     status: TaskStatus::with_timestamp(TaskState::Failed),
                     metadata: Some(serde_json::json!({ "error": e.to_string() })),
                 });
@@ -517,8 +517,8 @@ impl RequestHandler {
                     last_task = task;
                     self.task_store.save(last_task.clone()).await?;
                 }
-                Ok(StreamResponse::Message(_)) => {
-                    // Messages are part of history; for now just continue.
+                Ok(StreamResponse::Message(_) | _) => {
+                    // Messages and future stream response variants — continue.
                 }
                 Err(e) => {
                     last_task.status = TaskStatus::with_timestamp(TaskState::Failed);

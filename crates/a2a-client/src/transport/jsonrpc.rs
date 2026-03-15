@@ -233,11 +233,14 @@ impl JsonRpcTransport {
         let body = resp.into_body();
 
         // Spawn a background task that reads body chunks and forwards them.
-        tokio::spawn(async move {
+        let task_handle = tokio::spawn(async move {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::new(rx))
+        Ok(EventStream::with_abort_handle(
+            rx,
+            task_handle.abort_handle(),
+        ))
     }
 }
 

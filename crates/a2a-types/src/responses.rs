@@ -25,6 +25,7 @@ use crate::task::Task;
 ///
 /// Discriminated by field presence (untagged oneof): `{"task": {...}}` or
 /// `{"message": {...}}`.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {

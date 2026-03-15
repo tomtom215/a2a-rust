@@ -27,6 +27,10 @@ serde_json = { workspace = true }
 base64     = { version = "0.22", optional = true }
 ring       = { version = "0.17", optional = true }
 
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dev-dependencies]
 proptest  = "1"
 criterion = { workspace = true }

@@ -26,7 +26,7 @@ use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdat
 use a2a_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_types::params::MessageSendParams;
 use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{TaskState, TaskStatus};
+use a2a_types::task::{ContextId, TaskState, TaskStatus};
 
 use a2a_client::ClientBuilder;
 use a2a_server::builder::RequestHandlerBuilder;
@@ -52,7 +52,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
                     status: TaskStatus::new(TaskState::Working),
                     metadata: None,
                 }))
@@ -74,7 +74,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
                     artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
                     append: None,
                     last_chunk: Some(true),
@@ -86,7 +86,7 @@ impl AgentExecutor for EchoExecutor {
             queue
                 .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
                     status: TaskStatus::new(TaskState::Completed),
                     metadata: None,
                 }))
@@ -299,6 +299,7 @@ async fn main() {
         SendMessageResponse::Message(msg) => {
             println!("  Got immediate message: {msg:?}");
         }
+        _ => {}
     }
     println!();
 
@@ -328,6 +329,9 @@ async fn main() {
             }
             Ok(StreamResponse::Message(msg)) => {
                 println!("  Message: {msg:?}");
+            }
+            Ok(_) => {
+                // Future stream response variants — ignore gracefully.
             }
             Err(e) => {
                 println!("  Stream error: {e}");
@@ -367,6 +371,7 @@ async fn main() {
         SendMessageResponse::Message(msg) => {
             println!("  Got immediate message: {msg:?}");
         }
+        _ => {}
     }
     println!();
 

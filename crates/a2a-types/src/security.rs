@@ -48,6 +48,7 @@ pub struct SecurityRequirement {
 // ── SecurityScheme ────────────────────────────────────────────────────────────
 
 /// A security scheme supported by an agent, discriminated by the `"type"` field.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SecurityScheme {
@@ -145,7 +146,7 @@ pub struct OAuth2SecurityScheme {
 /// Available OAuth 2.0 flows for an [`OAuth2SecurityScheme`].
 ///
 /// Mirrors the OpenAPI 3.x `OAuthFlows` object.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthFlows {
     /// Authorization code flow.

@@ -61,6 +61,7 @@ impl AsRef<str> for MessageId {
 // ── MessageRole ───────────────────────────────────────────────────────────────
 
 /// The originator of a [`Message`].
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
     /// Proto default (0-value); should not appear in normal usage.
@@ -72,6 +73,13 @@ pub enum MessageRole {
     /// Sent by the agent.
     #[serde(rename = "ROLE_AGENT")]
     Agent,
+}
+
+impl std::fmt::Display for MessageRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = serde_json::to_string(self).unwrap_or_else(|_| "ROLE_UNSPECIFIED".into());
+        f.write_str(s.trim_matches('"'))
+    }
 }
 
 // ── Message ───────────────────────────────────────────────────────────────────
@@ -93,7 +101,10 @@ pub struct Message {
     /// Role of the message originator.
     pub role: MessageRole,
 
-    /// Message content parts (must contain at least one element).
+    /// Message content parts.
+    ///
+    /// **Spec requirement:** Must contain at least one element. The A2A
+    /// protocol does not define behavior for empty parts lists.
     pub parts: Vec<Part>,
 
     /// Task this message belongs to, if any.
@@ -196,6 +207,7 @@ impl Part {
 ///
 /// In JSON, exactly one field is present: `"text"`, `"raw"`, `"url"`, or
 /// `"data"`.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PartContent {
@@ -316,5 +328,77 @@ mod tests {
 
         let back: MessageRole = serde_json::from_str("\"ROLE_UNSPECIFIED\"").unwrap();
         assert_eq!(back, MessageRole::Unspecified);
+    }
+
+    #[test]
+    fn message_role_display_trait() {
+        assert_eq!(MessageRole::User.to_string(), "ROLE_USER");
+        assert_eq!(MessageRole::Agent.to_string(), "ROLE_AGENT");
+        assert_eq!(MessageRole::Unspecified.to_string(), "ROLE_UNSPECIFIED");
+    }
+
+    #[test]
+    fn mixed_part_message_roundtrip() {
+        let msg = Message {
+            id: MessageId::new("msg-mixed"),
+            role: MessageRole::Agent,
+            parts: vec![
+                Part::text("Here is the result"),
+                Part::raw("aGVsbG8="),
+                Part::url("https://example.com/output.pdf"),
+            ],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize mixed-part message");
+        assert!(json.contains("\"text\":\"Here is the result\""));
+        assert!(json.contains("\"raw\":\"aGVsbG8=\""));
+        assert!(json.contains("\"url\":\"https://example.com/output.pdf\""));
+
+        let back: Message = serde_json::from_str(&json).expect("deserialize mixed-part message");
+        assert_eq!(back.parts.len(), 3);
+        assert!(
+            matches!(&back.parts[0].content, PartContent::Text { text } if text == "Here is the result")
+        );
+        assert!(matches!(&back.parts[1].content, PartContent::Raw { raw } if raw == "aGVsbG8="));
+        assert!(
+            matches!(&back.parts[2].content, PartContent::Url { url } if url == "https://example.com/output.pdf")
+        );
+    }
+
+    #[test]
+    fn message_with_reference_task_ids() {
+        use crate::task::TaskId;
+
+        let msg = Message {
+            id: MessageId::new("msg-ref"),
+            role: MessageRole::User,
+            parts: vec![Part::text("check these tasks")],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: Some(vec![TaskId::new("task-100"), TaskId::new("task-200")]),
+            extensions: None,
+            metadata: None,
+        };
+
+        let json = serde_json::to_string(&msg).expect("serialize");
+        assert!(
+            json.contains("\"referenceTaskIds\""),
+            "referenceTaskIds should be present: {json}"
+        );
+        assert!(json.contains("\"task-100\""));
+        assert!(json.contains("\"task-200\""));
+
+        let back: Message = serde_json::from_str(&json).expect("deserialize");
+        let refs = back
+            .reference_task_ids
+            .expect("should have reference_task_ids");
+        assert_eq!(refs.len(), 2);
+        assert_eq!(refs[0], TaskId::new("task-100"));
+        assert_eq!(refs[1], TaskId::new("task-200"));
     }
 }

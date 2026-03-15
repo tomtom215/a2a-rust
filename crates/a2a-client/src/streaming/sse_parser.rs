@@ -12,6 +12,7 @@
 //! - Keep-alive comment lines (`: keep-alive`), silently ignored.
 //! - `event:`, `id:`, and `retry:` fields.
 //! - Double-newline event dispatch (`\n\n` terminates each frame).
+//! - Configurable maximum event size to prevent unbounded memory growth.
 
 // ── SseFrame ──────────────────────────────────────────────────────────────────
 
@@ -34,6 +35,38 @@ pub struct SseFrame {
     pub retry: Option<u64>,
 }
 
+// ── SseParseError ──────────────────────────────────────────────────────────────
+
+/// Errors that can occur during SSE parsing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SseParseError {
+    /// A single event exceeded the configured maximum size.
+    EventTooLarge {
+        /// The configured limit in bytes.
+        limit: usize,
+        /// The approximate size that was reached.
+        actual: usize,
+    },
+}
+
+impl std::fmt::Display for SseParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EventTooLarge { limit, actual } => {
+                write!(
+                    f,
+                    "SSE event too large: {actual} bytes exceeds {limit} byte limit"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for SseParseError {}
+
+/// Default maximum event size: 16 MiB.
+const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
+
 // ── SseParser ─────────────────────────────────────────────────────────────────
 
 /// Stateful SSE byte-stream parser.
@@ -43,12 +76,23 @@ pub struct SseFrame {
 ///
 /// The parser buffers bytes internally until a complete line is available,
 /// then processes each line according to the SSE spec.
-#[derive(Debug, Default)]
+///
+/// # Memory limits
+///
+/// The parser enforces a configurable maximum event size (default 16 MiB) to
+/// prevent unbounded memory growth from malicious or malformed streams. When
+/// the limit is exceeded, the current event is discarded and an error is
+/// queued. Use [`SseParser::with_max_event_size`] to configure the limit.
+#[derive(Debug)]
 pub struct SseParser {
     /// Bytes accumulated since the last newline.
     line_buf: Vec<u8>,
     /// Data lines accumulated since the last blank line.
     data_lines: Vec<String>,
+    /// Approximate accumulated size of the current event in bytes.
+    current_event_size: usize,
+    /// Maximum allowed event size in bytes.
+    max_event_size: usize,
     /// Current `event:` field value.
     event_type: Option<String>,
     /// Current `id:` field value.
@@ -56,16 +100,43 @@ pub struct SseParser {
     /// Current `retry:` field value.
     retry: Option<u64>,
     /// Complete frames ready for consumption.
-    ready: Vec<SseFrame>,
+    ready: Vec<Result<SseFrame, SseParseError>>,
     /// Whether the UTF-8 BOM has already been checked/stripped.
     bom_checked: bool,
 }
 
+impl Default for SseParser {
+    fn default() -> Self {
+        Self {
+            line_buf: Vec::new(),
+            data_lines: Vec::new(),
+            current_event_size: 0,
+            max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            event_type: None,
+            id: None,
+            retry: None,
+            ready: Vec::new(),
+            bom_checked: false,
+        }
+    }
+}
+
 impl SseParser {
-    /// Creates a new, empty [`SseParser`].
+    /// Creates a new, empty [`SseParser`] with default limits (16 MiB max event size).
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new [`SseParser`] with a custom maximum event size.
+    ///
+    /// Events exceeding this limit will be discarded and an error queued.
+    #[must_use]
+    pub fn with_max_event_size(max_event_size: usize) -> Self {
+        Self {
+            max_event_size,
+            ..Self::default()
+        }
     }
 
     /// Returns the number of complete frames waiting to be consumed.
@@ -103,7 +174,9 @@ impl SseParser {
     }
 
     /// Returns the next complete [`SseFrame`], or `None` if none are ready.
-    pub fn next_frame(&mut self) -> Option<SseFrame> {
+    ///
+    /// Returns `Err` if an event exceeded the maximum size limit.
+    pub fn next_frame(&mut self) -> Option<Result<SseFrame, SseParseError>> {
         if self.ready.is_empty() {
             None
         } else {
@@ -147,6 +220,21 @@ impl SseParser {
             },
         );
 
+        // Track event size for memory protection.
+        self.current_event_size += value.len();
+        if self.current_event_size > self.max_event_size {
+            // Discard the current event and queue an error.
+            let error = SseParseError::EventTooLarge {
+                limit: self.max_event_size,
+                actual: self.current_event_size,
+            };
+            self.data_lines.clear();
+            self.event_type = None;
+            self.current_event_size = 0;
+            self.ready.push(Err(error));
+            return;
+        }
+
         match field {
             "data" => self.data_lines.push(value),
             "event" => self.event_type = Some(value),
@@ -173,6 +261,7 @@ impl SseParser {
         if self.data_lines.is_empty() {
             // No data lines → not a real event; reset event-type only.
             self.event_type = None;
+            self.current_event_size = 0;
             return;
         }
 
@@ -190,7 +279,8 @@ impl SseParser {
         };
 
         self.data_lines.clear();
-        self.ready.push(frame);
+        self.current_event_size = 0;
+        self.ready.push(Ok(frame));
     }
 }
 
@@ -205,7 +295,7 @@ mod tests {
         p.feed(input.as_bytes());
         let mut frames = Vec::new();
         while let Some(f) = p.next_frame() {
-            frames.push(f);
+            frames.push(f.expect("unexpected error"));
         }
         frames
     }
@@ -267,7 +357,7 @@ mod tests {
         for byte in b"data: fragmented\n\n" {
             p.feed(std::slice::from_ref(byte));
         }
-        let frame = p.next_frame().expect("expected frame");
+        let frame = p.next_frame().expect("expected frame").expect("no error");
         assert_eq!(frame.data, "fragmented");
     }
 
@@ -286,5 +376,37 @@ mod tests {
         let frames = parse_all(&input);
         assert_eq!(frames.len(), 1);
         assert_eq!(frames[0].data, json);
+    }
+
+    #[test]
+    fn event_too_large_returns_error() {
+        let mut p = SseParser::with_max_event_size(32);
+        // Feed data that exceeds the 32-byte limit.
+        let big_line = format!("data: {}\n\n", "x".repeat(64));
+        p.feed(big_line.as_bytes());
+        let result = p.next_frame().expect("expected result");
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SseParseError::EventTooLarge { limit, .. } => {
+                assert_eq!(limit, 32);
+            }
+        }
+    }
+
+    #[test]
+    fn events_after_oversized_event_still_parse() {
+        let mut p = SseParser::with_max_event_size(16);
+        // First event is too large.
+        let big = format!("data: {}\n\n", "x".repeat(32));
+        // Second event is small enough.
+        let small = "data: ok\n\n";
+        p.feed(big.as_bytes());
+        p.feed(small.as_bytes());
+
+        let first = p.next_frame().expect("expected result");
+        assert!(first.is_err());
+
+        let second = p.next_frame().expect("expected result");
+        assert_eq!(second.unwrap().data, "ok");
     }
 }

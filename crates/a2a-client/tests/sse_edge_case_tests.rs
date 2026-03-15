@@ -3,14 +3,14 @@
 
 //! Edge case tests for the SSE parser.
 
-use a2a_client::streaming::SseParser;
+use a2a_client::streaming::{SseParseError, SseParser};
 
 fn parse_all(input: &[u8]) -> Vec<a2a_client::streaming::SseFrame> {
     let mut p = SseParser::new();
     p.feed(input);
     let mut frames = Vec::new();
     while let Some(f) = p.next_frame() {
-        frames.push(f);
+        frames.push(f.expect("unexpected parse error"));
     }
     frames
 }
@@ -122,4 +122,103 @@ fn retry_with_non_numeric_value_is_ignored() {
 fn consecutive_blank_lines_produce_no_extra_events() {
     let frames = parse_all(b"data: first\n\n\n\ndata: second\n\n");
     assert_eq!(frames.len(), 2);
+}
+
+// ── Field name only (no colon) ───────────────────────────────────────────────
+
+#[test]
+fn field_name_only_no_colon() {
+    // Per SSE spec, a line with no colon is treated as a field name with an
+    // empty string value. Unknown fields are ignored.
+    let frames = parse_all(b"data\ndata: real\n\n");
+    assert_eq!(frames.len(), 1);
+    // "data" with no colon should be treated as data field with empty value.
+    // Combined with the second line, we expect two data lines joined by \n.
+    assert!(frames[0].data.contains("real"));
+}
+
+#[test]
+fn field_name_only_data_dispatches() {
+    // A bare "data" line (no colon) followed by a blank line should dispatch
+    // a frame with empty data.
+    let frames = parse_all(b"data\n\n");
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].data, "");
+}
+
+#[test]
+fn field_name_only_unknown_is_ignored() {
+    // Unknown field names without a colon are silently ignored per spec.
+    let frames = parse_all(b"foobar\ndata: valid\n\n");
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].data, "valid");
+}
+
+// ── Extremely long field names ───────────────────────────────────────────────
+
+#[test]
+fn extremely_long_field_name_is_ignored() {
+    // A line with a very long unknown field name should be silently ignored.
+    let long_field = "x".repeat(10_000);
+    let input = format!("{long_field}: value\ndata: valid\n\n");
+    let frames = parse_all(input.as_bytes());
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].data, "valid");
+}
+
+#[test]
+fn extremely_long_field_name_no_colon() {
+    // A line with a very long field name and no colon.
+    let long_field = "x".repeat(10_000);
+    let input = format!("{long_field}\ndata: valid\n\n");
+    let frames = parse_all(input.as_bytes());
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].data, "valid");
+}
+
+// ── Event size limit ─────────────────────────────────────────────────────────
+
+#[test]
+fn with_max_event_size_rejects_oversized_event() {
+    let mut p = SseParser::with_max_event_size(64);
+    // Feed data that exceeds the 64-byte limit.
+    let big = format!("data: {}\n\n", "z".repeat(100));
+    p.feed(big.as_bytes());
+
+    let result = p.next_frame().expect("should have a result");
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        SseParseError::EventTooLarge { limit, actual } => {
+            assert_eq!(limit, 64);
+            assert!(actual > 64);
+        }
+    }
+}
+
+#[test]
+fn with_max_event_size_allows_small_events() {
+    let mut p = SseParser::with_max_event_size(1024);
+    p.feed(b"data: small\n\n");
+
+    let result = p.next_frame().expect("should have a result");
+    let frame = result.expect("should not error");
+    assert_eq!(frame.data, "small");
+}
+
+#[test]
+fn with_max_event_size_recovery_after_oversized() {
+    // After rejecting an oversized event, the parser should still parse
+    // subsequent smaller events correctly.
+    let mut p = SseParser::with_max_event_size(32);
+
+    let big = format!("data: {}\n\n", "a".repeat(64));
+    let small = "data: ok\n\n";
+    p.feed(big.as_bytes());
+    p.feed(small.as_bytes());
+
+    let first = p.next_frame().expect("first result");
+    assert!(first.is_err(), "oversized event should error");
+
+    let second = p.next_frame().expect("second result");
+    assert_eq!(second.unwrap().data, "ok");
 }
