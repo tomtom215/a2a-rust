@@ -70,6 +70,20 @@ impl TaskListResponse {
     }
 }
 
+// ── ListPushConfigsResponse ────────────────────────────────────────────────────
+
+/// The result of a `ListTaskPushNotificationConfigs` call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListPushConfigsResponse {
+    /// The push notification configs in this page of results.
+    pub configs: Vec<crate::push::TaskPushNotificationConfig>,
+
+    /// Pagination token for the next page; absent on the last page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page_token: Option<String>,
+}
+
 // ── AuthenticatedExtendedCardResponse ─────────────────────────────────────────
 
 /// The full (private) agent card returned by `agent/authenticatedExtendedCard`.

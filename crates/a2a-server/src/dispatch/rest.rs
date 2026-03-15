@@ -393,5 +393,6 @@ fn parse_list_tasks_query(query: &str, tenant: Option<&str>) -> a2a_types::param
         page_token: parse_query_param(query, "pageToken").map(str::to_owned),
         status_timestamp_after: parse_query_param(query, "statusTimestampAfter").map(str::to_owned),
         include_artifacts: parse_query_param_bool(query, "includeArtifacts"),
+        history_length: parse_query_param_u32(query, "historyLength"),
     }
 }

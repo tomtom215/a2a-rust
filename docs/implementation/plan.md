@@ -23,7 +23,7 @@
    - [Phase 5 — Server Tests & Bug Fixes](#phase-5--server-tests--bug-fixes) ✅
    - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
    - [Phase 7 — v1.0 Spec Compliance Gaps](#phase-7--v10-spec-compliance-gaps) ✅
-   - [Phase 7.5 — Spec Compliance Fixes](#phase-75--spec-compliance-fixes) 🔲
+   - [Phase 7.5 — Spec Compliance Fixes](#phase-75--spec-compliance-fixes) ✅
    - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) 🔲
 7. [Testing Strategy](#7-testing-strategy)
 8. [Quality Gates](#8-quality-gates)
@@ -382,7 +382,7 @@ crates/a2a-server/tests/
 | examples | 416 |
 | integration tests | 2,019 |
 | **Total** | **~11,600** |
-| **Tests** | **167 (52 types + 51+8 client + 56 server)** |
+| **Tests** | **175 (59 types + 51+8 client + 56 server + 1 sdk)** |
 
 ---
 
@@ -598,7 +598,7 @@ All demos complete successfully, validating the full client-server pipeline acro
 
 ---
 
-### Phase 7.5 — Spec Compliance Fixes 🔲 NOT STARTED
+### Phase 7.5 — Spec Compliance Fixes ✅ COMPLETE
 
 **Deliverables:** Fix all wire-format breaking gaps and missing types discovered by field-by-field comparison against the A2A v1.0.0 proto and JSON schema.
 

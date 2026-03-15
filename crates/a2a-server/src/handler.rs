@@ -102,7 +102,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
-            status: TaskStatus::new(TaskState::Pending),
+            status: TaskStatus::new(TaskState::Submitted),
             history: None,
             artifacts: None,
             metadata: None,
@@ -391,6 +391,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
+            history_length: None,
         };
         self.task_store
             .list(&params)

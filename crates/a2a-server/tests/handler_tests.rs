@@ -182,14 +182,14 @@ fn minimal_agent_card() -> AgentCard {
             examples: None,
             input_modes: None,
             output_modes: None,
-            security: None,
+            security_requirements: None,
         }],
         capabilities: AgentCapabilities::none(),
         provider: None,
         icon_url: None,
         documentation_url: None,
         security_schemes: None,
-        security: None,
+        security_requirements: None,
         signatures: None,
     }
 }
@@ -350,6 +350,7 @@ async fn list_tasks_returns_created_tasks() {
         page_token: None,
         status_timestamp_after: None,
         include_artifacts: None,
+        history_length: None,
     };
     let result = handler.on_list_tasks(params).await.expect("list tasks");
     assert_eq!(result.tasks.len(), 2);
@@ -379,6 +380,7 @@ async fn cancel_task_on_working_task() {
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
+            history_length: None,
         })
         .await
         .expect("list tasks");
@@ -689,8 +691,8 @@ async fn return_immediately_returns_pending_task() {
         SendMessageResult::Response(SendMessageResponse::Task(task)) => {
             assert_eq!(
                 task.status.state,
-                TaskState::Pending,
-                "return_immediately should return Pending task"
+                TaskState::Submitted,
+                "return_immediately should return Submitted task"
             );
         }
         _ => panic!("expected Response(Task)"),
@@ -761,6 +763,7 @@ async fn task_continuation_same_context_finds_stored_task() {
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
+            history_length: None,
         })
         .await
         .expect("list tasks");

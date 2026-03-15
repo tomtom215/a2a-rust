@@ -6,7 +6,10 @@
 //! Provides `set_push_config`, `get_push_config`, `list_push_configs`, and
 //! `delete_push_config` on [`A2aClient`].
 
-use a2a_types::{DeletePushConfigParams, GetPushConfigParams, TaskPushNotificationConfig};
+use a2a_types::{
+    DeletePushConfigParams, GetPushConfigParams, ListPushConfigsParams, ListPushConfigsResponse,
+    TaskPushNotificationConfig,
+};
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
@@ -90,7 +93,7 @@ impl A2aClient {
             .map_err(ClientError::Serialization)
     }
 
-    /// Lists all push notification configurations for a task.
+    /// Lists push notification configurations for a task with pagination.
     ///
     /// Calls `ListTaskPushNotificationConfigs`.
     ///
@@ -99,12 +102,12 @@ impl A2aClient {
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn list_push_configs(
         &self,
-        task_id: impl Into<String>,
-    ) -> ClientResult<Vec<TaskPushNotificationConfig>> {
+        params: ListPushConfigsParams,
+    ) -> ClientResult<ListPushConfigsResponse> {
         const METHOD: &str = "ListTaskPushNotificationConfigs";
 
-        let params = serde_json::json!({ "taskId": task_id.into() });
-        let mut req = ClientRequest::new(METHOD, params);
+        let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
+        let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
         let result = self
@@ -119,7 +122,7 @@ impl A2aClient {
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<Vec<TaskPushNotificationConfig>>(result)
+        serde_json::from_value::<ListPushConfigsResponse>(result)
             .map_err(ClientError::Serialization)
     }
 

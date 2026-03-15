@@ -91,14 +91,14 @@ fn minimal_agent_card() -> AgentCard {
             examples: None,
             input_modes: None,
             output_modes: None,
-            security: None,
+            security_requirements: None,
         }],
         capabilities: AgentCapabilities::none(),
         provider: None,
         icon_url: None,
         documentation_url: None,
         security_schemes: None,
-        security: None,
+        security_requirements: None,
         signatures: None,
     }
 }
