@@ -29,4 +29,10 @@ uuid           = { workspace = true }
 bytes          = "1"
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
+hyper = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }
+bytes = "1"
+serde_json = { workspace = true }
+a2a-types = { path = "../a2a-types" }
