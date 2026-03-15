@@ -155,12 +155,11 @@ jobs:
 
   # ── Package validation ──────────────────────────────────────────────────
   #
-  # Uses `cargo package` instead of `cargo publish --dry-run` because
-  # dry-run publish resolves inter-workspace dependencies from crates.io.
-  # When workspace crate versions haven't been published yet, this causes
-  # spurious resolution failures. `cargo package` validates that each
-  # crate packages correctly using the local workspace, which is the
-  # correct pre-publish check for CI.
+  # Uses `cargo package --workspace` so that inter-workspace path+version
+  # dependencies resolve against sibling crates rather than crates.io.
+  # Individual `cargo package -p <crate>` (and `cargo publish --dry-run`)
+  # resolve deps from the registry, failing when versions aren't published yet.
+  # Excludes echo-agent since it is `publish = false` and omits dep versions.
   package:
     name: Package validation
     runs-on: ubuntu-latest
@@ -176,11 +175,5 @@ jobs:
           key: ${{ runner.os }}-cargo-package-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-package-
-      - name: Package (a2a-types)
-        run: cargo package -p a2a-types
-      - name: Package (a2a-client)
-        run: cargo package -p a2a-client
-      - name: Package (a2a-server)
-        run: cargo package -p a2a-server
-      - name: Package (a2a-sdk)
-        run: cargo package -p a2a-sdk
+      - name: Package all publishable crates
+        run: cargo package --workspace --exclude echo-agent
