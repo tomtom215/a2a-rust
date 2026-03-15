@@ -8,9 +8,9 @@
 //!
 //! | Method | Response type |
 //! |---|---|
-//! | `message/send` | [`SendMessageResponse`] |
-//! | `tasks/list` | [`TaskListResponse`] |
-//! | `agent/authenticatedExtendedCard` | [`AgentCard`] (re-exported as [`AuthenticatedExtendedCardResponse`]) |
+//! | `SendMessage` | [`SendMessageResponse`] |
+//! | `ListTasks` | [`TaskListResponse`] |
+//! | `GetExtendedAgentCard` | [`AgentCard`] (re-exported as [`AuthenticatedExtendedCardResponse`]) |
 
 use serde::{Deserialize, Serialize};
 
@@ -20,12 +20,13 @@ use crate::task::Task;
 
 // ── SendMessageResponse ───────────────────────────────────────────────────────
 
-/// The result of a `message/send` call: either a completed [`Task`] or an
+/// The result of a `SendMessage` call: either a completed [`Task`] or an
 /// immediate [`Message`] response.
 ///
-/// Discriminated on the `"kind"` field: `"task"` or `"message"`.
+/// Discriminated by field presence (untagged oneof): `{"task": {...}}` or
+/// `{"message": {...}}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {
     /// The agent accepted the message and created (or updated) a task.
     Task(Task),
@@ -36,8 +37,7 @@ pub enum SendMessageResponse {
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
-/// The result of a `tasks/list` call: a page of tasks with an optional
-/// continuation token.
+/// The result of a `ListTasks` call: a page of tasks with pagination.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskListResponse {
@@ -47,6 +47,14 @@ pub struct TaskListResponse {
     /// Pagination token for the next page; absent on the last page.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_page_token: Option<String>,
+
+    /// The requested page size.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page_size: Option<u32>,
+
+    /// Total number of tasks matching the query (across all pages).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_size: Option<u32>,
 }
 
 impl TaskListResponse {
@@ -56,6 +64,8 @@ impl TaskListResponse {
         Self {
             tasks,
             next_page_token: None,
+            page_size: None,
+            total_size: None,
         }
     }
 }
@@ -73,7 +83,7 @@ pub type AuthenticatedExtendedCardResponse = AgentCard;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{MessageId, MessageRole, Part, TextPart};
+    use crate::message::{MessageId, MessageRole, Part};
     use crate::task::{ContextId, TaskId, TaskState, TaskStatus};
 
     fn make_task() -> Task {
@@ -91,7 +101,7 @@ mod tests {
         Message {
             id: MessageId::new("m1"),
             role: MessageRole::Agent,
-            parts: vec![Part::Text(TextPart::new("hi"))],
+            parts: vec![Part::text("hi")],
             task_id: None,
             context_id: None,
             reference_task_ids: None,
@@ -104,7 +114,10 @@ mod tests {
     fn send_message_response_task_variant() {
         let resp = SendMessageResponse::Task(make_task());
         let json = serde_json::to_string(&resp).expect("serialize");
-        assert!(json.contains("\"kind\":\"task\""));
+        assert!(
+            !json.contains("\"kind\""),
+            "v1.0 should not have kind: {json}"
+        );
 
         let back: SendMessageResponse = serde_json::from_str(&json).expect("deserialize");
         assert!(matches!(back, SendMessageResponse::Task(_)));
@@ -114,7 +127,10 @@ mod tests {
     fn send_message_response_message_variant() {
         let resp = SendMessageResponse::Message(make_message());
         let json = serde_json::to_string(&resp).expect("serialize");
-        assert!(json.contains("\"kind\":\"message\""));
+        assert!(
+            !json.contains("\"kind\""),
+            "v1.0 should not have kind: {json}"
+        );
 
         let back: SendMessageResponse = serde_json::from_str(&json).expect("deserialize");
         assert!(matches!(back, SendMessageResponse::Message(_)));
@@ -125,6 +141,8 @@ mod tests {
         let resp = TaskListResponse {
             tasks: vec![make_task()],
             next_page_token: Some("cursor-abc".into()),
+            page_size: Some(10),
+            total_size: Some(1),
         };
         let json = serde_json::to_string(&resp).expect("serialize");
         assert!(json.contains("\"nextPageToken\":\"cursor-abc\""));

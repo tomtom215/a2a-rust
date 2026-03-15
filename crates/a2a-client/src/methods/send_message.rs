@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! `message/send` and `message/stream` client methods.
+//! `SendMessage` and `SendStreamingMessage` client methods.
 
 use a2a_types::{MessageSendParams, SendMessageResponse};
 
@@ -13,7 +13,7 @@ use crate::streaming::EventStream;
 impl A2aClient {
     /// Sends a message to the agent and waits for a complete response.
     ///
-    /// Calls the `message/send` JSON-RPC method. The agent may respond with
+    /// Calls the `SendMessage` JSON-RPC method. The agent may respond with
     /// either a completed [`Task`] or an immediate [`Message`].
     ///
     /// # Errors
@@ -26,7 +26,7 @@ impl A2aClient {
         &self,
         params: MessageSendParams,
     ) -> ClientResult<SendMessageResponse> {
-        const METHOD: &str = "message/send";
+        const METHOD: &str = "SendMessage";
 
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 
@@ -51,15 +51,14 @@ impl A2aClient {
     /// Sends a message and returns a streaming [`EventStream`] of progress
     /// events.
     ///
-    /// Calls the `message/stream` JSON-RPC method. The agent responds with an
-    /// SSE stream of [`a2a_types::StreamResponse`] events ending with a
-    /// `final: true` [`a2a_types::TaskStatusUpdateEvent`].
+    /// Calls the `SendStreamingMessage` JSON-RPC method. The agent responds
+    /// with an SSE stream of [`a2a_types::StreamResponse`] events.
     ///
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport or protocol errors.
     pub async fn stream_message(&self, params: MessageSendParams) -> ClientResult<EventStream> {
-        const METHOD: &str = "message/stream";
+        const METHOD: &str = "SendStreamingMessage";
 
         let params_value = serde_json::to_value(&params).map_err(ClientError::Serialization)?;
 

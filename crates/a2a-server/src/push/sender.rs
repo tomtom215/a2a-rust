@@ -11,7 +11,7 @@ use std::pin::Pin;
 
 use a2a_types::error::{A2aError, A2aResult};
 use a2a_types::events::StreamResponse;
-use a2a_types::push::PushNotificationConfig;
+use a2a_types::push::TaskPushNotificationConfig;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper_util::client::legacy::Client;
@@ -30,7 +30,7 @@ pub trait PushSender: Send + Sync + 'static {
         &'a self,
         url: &'a str,
         event: &'a StreamResponse,
-        config: &'a PushNotificationConfig,
+        config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
@@ -63,7 +63,7 @@ impl PushSender for HttpPushSender {
         &'a self,
         url: &'a str,
         event: &'a StreamResponse,
-        config: &'a PushNotificationConfig,
+        config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let body_bytes = serde_json::to_vec(event)
@@ -85,20 +85,16 @@ impl PushSender for HttpPushSender {
 
                 // Set authentication headers from config.
                 if let Some(ref auth) = config.authentication {
-                    if let Some(ref creds) = auth.credentials {
-                        for scheme in &auth.schemes {
-                            match scheme.as_str() {
-                                "bearer" => {
-                                    builder =
-                                        builder.header("authorization", format!("Bearer {creds}"));
-                                }
-                                "basic" => {
-                                    builder =
-                                        builder.header("authorization", format!("Basic {creds}"));
-                                }
-                                _ => {}
-                            }
+                    match auth.scheme.as_str() {
+                        "bearer" => {
+                            builder = builder
+                                .header("authorization", format!("Bearer {}", auth.credentials));
                         }
+                        "basic" => {
+                            builder = builder
+                                .header("authorization", format!("Basic {}", auth.credentials));
+                        }
+                        _ => {}
                     }
                 }
 

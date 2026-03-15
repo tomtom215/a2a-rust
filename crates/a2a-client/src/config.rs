@@ -8,7 +8,19 @@
 
 use std::time::Duration;
 
-use a2a_types::TransportProtocol;
+// ── ProtocolBinding ─────────────────────────────────────────────────────────
+
+/// Protocol binding identifier.
+///
+/// In v1.0, protocol bindings are free-form strings (`"JSONRPC"`, `"REST"`,
+/// `"GRPC"`) rather than a fixed enum.
+pub const BINDING_JSONRPC: &str = "JSONRPC";
+
+/// REST protocol binding.
+pub const BINDING_REST: &str = "REST";
+
+/// gRPC protocol binding.
+pub const BINDING_GRPC: &str = "GRPC";
 
 // ── TlsConfig ────────────────────────────────────────────────────────────────
 
@@ -49,11 +61,11 @@ impl Default for TlsConfig {
 /// fields; most users only need to set the agent URL.
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
-    /// Ordered list of preferred transport protocols.
+    /// Ordered list of preferred protocol bindings.
     ///
     /// The client tries each in order, selecting the first one supported by the
-    /// target agent's card. Defaults to `[JsonRpc]`.
-    pub preferred_transports: Vec<TransportProtocol>,
+    /// target agent's card. Defaults to `["JSONRPC"]`.
+    pub preferred_bindings: Vec<String>,
 
     /// MIME types the client will advertise in `acceptedOutputModes`.
     ///
@@ -90,7 +102,7 @@ impl ClientConfig {
     #[must_use]
     pub fn default_http() -> Self {
         Self {
-            preferred_transports: vec![TransportProtocol::JsonRpc],
+            preferred_bindings: vec![BINDING_JSONRPC.into()],
             accepted_output_modes: vec!["text/plain".into(), "application/json".into()],
             history_length: None,
             return_immediately: false,
@@ -104,7 +116,7 @@ impl ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
-            preferred_transports: vec![TransportProtocol::JsonRpc],
+            preferred_bindings: vec![BINDING_JSONRPC.into()],
             accepted_output_modes: vec!["text/plain".into(), "application/json".into()],
             history_length: None,
             return_immediately: false,
@@ -122,9 +134,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_has_jsonrpc_transport() {
+    fn default_config_has_jsonrpc_binding() {
         let cfg = ClientConfig::default();
-        assert_eq!(cfg.preferred_transports, vec![TransportProtocol::JsonRpc]);
+        assert_eq!(cfg.preferred_bindings, vec![BINDING_JSONRPC]);
     }
 
     #[test]

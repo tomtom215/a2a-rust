@@ -46,7 +46,7 @@ pub(crate) type BodyChunk = ClientResult<Bytes>;
 /// An async stream of [`StreamResponse`] events from an SSE endpoint.
 ///
 /// Created by [`crate::A2aClient::stream_message`] or
-/// [`crate::A2aClient::resubscribe`]. Call [`EventStream::next`] in a loop
+/// [`crate::A2aClient::subscribe_to_task`]. Call [`EventStream::next`] in a loop
 /// to consume events.
 pub struct EventStream {
     /// Channel receiver delivering raw byte chunks from the HTTP body.
@@ -149,11 +149,10 @@ impl std::fmt::Debug for EventStream {
 }
 
 /// Returns `true` if `event` is the terminal event for its stream.
-#[allow(clippy::match_like_matches_macro)]
 const fn is_terminal(event: &StreamResponse) -> bool {
     matches!(
         event,
-        StreamResponse::StatusUpdate(ev) if ev.r#final
+        StreamResponse::StatusUpdate(ev) if ev.status.state.is_terminal()
     )
 }
 
@@ -163,17 +162,20 @@ const fn is_terminal(event: &StreamResponse) -> bool {
 mod tests {
     use super::*;
     use a2a_types::{
-        ContextId, JsonRpcSuccessResponse, JsonRpcVersion, TaskId, TaskState, TaskStatusUpdateEvent,
+        JsonRpcSuccessResponse, JsonRpcVersion, TaskId, TaskState, TaskStatus,
+        TaskStatusUpdateEvent,
     };
 
-    fn make_status_event(state: TaskState, is_final: bool) -> StreamResponse {
+    fn make_status_event(state: TaskState, _is_final: bool) -> StreamResponse {
         StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            state,
-            message: None,
+            context_id: "c1".to_owned(),
+            status: TaskStatus {
+                state,
+                message: None,
+                timestamp: None,
+            },
             metadata: None,
-            r#final: is_final,
         })
     }
 

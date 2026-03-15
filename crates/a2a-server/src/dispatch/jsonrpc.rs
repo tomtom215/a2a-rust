@@ -41,7 +41,7 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
 
     /// Dispatches a JSON-RPC request and returns an HTTP response.
     ///
-    /// For `message/stream` and `tasks/resubscribe`, the response uses
+    /// For `SendStreamingMessage` and `SubscribeToTask`, the response uses
     /// SSE (`text/event-stream`). All other methods return JSON.
     ///
     /// JSON-RPC errors are always returned as HTTP 200 with an error body.
@@ -65,39 +65,37 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
         let id = rpc_req.id.clone();
 
         match rpc_req.method.as_str() {
-            "message/send" => self.dispatch_send_message(id, &rpc_req, false).await,
-            "message/stream" => self.dispatch_send_message(id, &rpc_req, true).await,
-            "tasks/get" => match parse_params::<a2a_types::params::TaskQueryParams>(&rpc_req) {
+            "SendMessage" => self.dispatch_send_message(id, &rpc_req, false).await,
+            "SendStreamingMessage" => self.dispatch_send_message(id, &rpc_req, true).await,
+            "GetTask" => match parse_params::<a2a_types::params::TaskQueryParams>(&rpc_req) {
                 Ok(p) => match self.handler.on_get_task(p).await {
                     Ok(r) => success_response(id, &r),
                     Err(e) => error_response(id, &e),
                 },
                 Err(e) => error_response(id, &e),
             },
-            "tasks/list" => match parse_params::<a2a_types::params::ListTasksParams>(&rpc_req) {
+            "ListTasks" => match parse_params::<a2a_types::params::ListTasksParams>(&rpc_req) {
                 Ok(p) => match self.handler.on_list_tasks(p).await {
                     Ok(r) => success_response(id, &r),
                     Err(e) => error_response(id, &e),
                 },
                 Err(e) => error_response(id, &e),
             },
-            "tasks/cancel" => match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
+            "CancelTask" => match parse_params::<a2a_types::params::CancelTaskParams>(&rpc_req) {
                 Ok(p) => match self.handler.on_cancel_task(p).await {
                     Ok(r) => success_response(id, &r),
                     Err(e) => error_response(id, &e),
                 },
                 Err(e) => error_response(id, &e),
             },
-            "tasks/resubscribe" => {
-                match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
-                    Ok(p) => match self.handler.on_resubscribe(p).await {
-                        Ok(reader) => build_sse_response(reader, None),
-                        Err(e) => error_response(id, &e),
-                    },
+            "SubscribeToTask" => match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
+                Ok(p) => match self.handler.on_resubscribe(p).await {
+                    Ok(reader) => build_sse_response(reader, None),
                     Err(e) => error_response(id, &e),
-                }
-            }
-            "tasks/pushNotificationConfig/set" => {
+                },
+                Err(e) => error_response(id, &e),
+            },
+            "CreateTaskPushNotificationConfig" => {
                 match parse_params::<a2a_types::push::TaskPushNotificationConfig>(&rpc_req) {
                     Ok(p) => match self.handler.on_set_push_config(p).await {
                         Ok(r) => success_response(id, &r),
@@ -106,7 +104,7 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
                     Err(e) => error_response(id, &e),
                 }
             }
-            "tasks/pushNotificationConfig/get" => {
+            "GetTaskPushNotificationConfig" => {
                 match parse_params::<a2a_types::params::GetPushConfigParams>(&rpc_req) {
                     Ok(p) => match self.handler.on_get_push_config(p).await {
                         Ok(r) => success_response(id, &r),
@@ -115,16 +113,16 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
                     Err(e) => error_response(id, &e),
                 }
             }
-            "tasks/pushNotificationConfig/list" => {
+            "ListTaskPushNotificationConfigs" => {
                 match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
-                    Ok(p) => match self.handler.on_list_push_configs(p.id).await {
+                    Ok(p) => match self.handler.on_list_push_configs(&p.id).await {
                         Ok(r) => success_response(id, &r),
                         Err(e) => error_response(id, &e),
                     },
                     Err(e) => error_response(id, &e),
                 }
             }
-            "tasks/pushNotificationConfig/delete" => {
+            "DeleteTaskPushNotificationConfig" => {
                 match parse_params::<a2a_types::params::DeletePushConfigParams>(&rpc_req) {
                     Ok(p) => match self.handler.on_delete_push_config(p).await {
                         Ok(()) => success_response(id, &serde_json::json!({})),
@@ -133,12 +131,10 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
                     Err(e) => error_response(id, &e),
                 }
             }
-            "agent/authenticatedExtendedCard" => {
-                match self.handler.on_get_authenticated_extended_card().await {
-                    Ok(r) => success_response(id, &r),
-                    Err(e) => error_response(id, &e),
-                }
-            }
+            "GetExtendedAgentCard" => match self.handler.on_get_extended_agent_card().await {
+                Ok(r) => success_response(id, &r),
+                Err(e) => error_response(id, &e),
+            },
             other => {
                 let err = ServerError::MethodNotFound(other.to_owned());
                 error_response(id, &err)

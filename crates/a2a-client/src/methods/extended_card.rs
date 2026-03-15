@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! `agent/authenticatedExtendedCard` client method.
+//! `GetExtendedAgentCard` client method.
 
 use a2a_types::AuthenticatedExtendedCardResponse;
 
@@ -12,9 +12,9 @@ use crate::interceptor::{ClientRequest, ClientResponse};
 impl A2aClient {
     /// Fetches the full (private) agent card, authenticating the request.
     ///
-    /// Calls `agent/authenticatedExtendedCard`. The returned card may include
+    /// Calls `GetExtendedAgentCard`. The returned card may include
     /// private skills, security schemes, or additional interfaces not exposed
-    /// in the public `/.well-known/agent-card.json`.
+    /// in the public `/.well-known/agent.json`.
     ///
     /// The caller must have registered auth credentials via
     /// [`crate::auth::AuthInterceptor`] or equivalent before calling this
@@ -22,13 +22,9 @@ impl A2aClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Protocol`] with
-    /// [`a2a_types::ErrorCode::AuthenticationFailed`] if the auth credentials
-    /// are missing or invalid.
-    pub async fn get_authenticated_extended_card(
-        &self,
-    ) -> ClientResult<AuthenticatedExtendedCardResponse> {
-        const METHOD: &str = "agent/authenticatedExtendedCard";
+    /// Returns [`ClientError`] on transport or protocol errors.
+    pub async fn get_extended_agent_card(&self) -> ClientResult<AuthenticatedExtendedCardResponse> {
+        const METHOD: &str = "GetExtendedAgentCard";
 
         let mut req = ClientRequest::new(METHOD, serde_json::Value::Null);
         self.interceptors.run_before(&mut req).await?;

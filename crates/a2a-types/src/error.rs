@@ -5,7 +5,7 @@
 //!
 //! This module defines [`A2aError`], the canonical error type for all A2A
 //! protocol operations, along with [`ErrorCode`] carrying every standard error
-//! code defined by A2A 0.3.0 and the underlying JSON-RPC 2.0 specification.
+//! code defined by A2A v1.0 and the underlying JSON-RPC 2.0 specification.
 
 use std::fmt;
 
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 // ── Error codes ──────────────────────────────────────────────────────────────
 
-/// Numeric error codes defined by JSON-RPC 2.0 and the A2A 0.3.0 specification.
+/// Numeric error codes defined by JSON-RPC 2.0 and the A2A v1.0 specification.
 ///
 /// JSON-RPC standard codes occupy the `-32700` to `-32600` range.
 /// A2A-specific codes occupy `-32001` to `-32099`.
@@ -44,18 +44,14 @@ pub enum ErrorCode {
     UnsupportedOperation = -32004,
     /// The requested content type is not supported (`-32005`).
     ContentTypeNotSupported = -32005,
-    /// The requested protocol version is not supported (`-32006`).
-    VersionNotSupported = -32006,
-    /// A required extension is not supported (`-32007`).
-    ExtensionSupportRequired = -32007,
-    /// The message is invalid (`-32008`).
-    InvalidMessage = -32008,
-    /// Authentication failed (`-32009`).
-    AuthenticationFailed = -32009,
-    /// Authorization failed (`-32010`).
-    AuthorizationFailed = -32010,
-    /// The requested mode is not supported (`-32011`).
-    UnsupportedMode = -32011,
+    /// The agent returned an invalid response (`-32006`).
+    InvalidAgentResponse = -32006,
+    /// Extended agent card not configured (`-32007`).
+    ExtendedAgentCardNotConfigured = -32007,
+    /// A required extension is not supported (`-32008`).
+    ExtensionSupportRequired = -32008,
+    /// The requested protocol version is not supported (`-32009`).
+    VersionNotSupported = -32009,
 }
 
 impl ErrorCode {
@@ -79,12 +75,10 @@ impl ErrorCode {
             Self::PushNotificationNotSupported => "Push notification not supported",
             Self::UnsupportedOperation => "Unsupported operation",
             Self::ContentTypeNotSupported => "Content type not supported",
-            Self::VersionNotSupported => "Version not supported",
+            Self::InvalidAgentResponse => "Invalid agent response",
+            Self::ExtendedAgentCardNotConfigured => "Extended agent card not configured",
             Self::ExtensionSupportRequired => "Extension support required",
-            Self::InvalidMessage => "Invalid message",
-            Self::AuthenticationFailed => "Authentication failed",
-            Self::AuthorizationFailed => "Authorization failed",
-            Self::UnsupportedMode => "Unsupported mode",
+            Self::VersionNotSupported => "Version not supported",
         }
     }
 }
@@ -110,12 +104,10 @@ impl TryFrom<i32> for ErrorCode {
             -32003 => Ok(Self::PushNotificationNotSupported),
             -32004 => Ok(Self::UnsupportedOperation),
             -32005 => Ok(Self::ContentTypeNotSupported),
-            -32006 => Ok(Self::VersionNotSupported),
-            -32007 => Ok(Self::ExtensionSupportRequired),
-            -32008 => Ok(Self::InvalidMessage),
-            -32009 => Ok(Self::AuthenticationFailed),
-            -32010 => Ok(Self::AuthorizationFailed),
-            -32011 => Ok(Self::UnsupportedMode),
+            -32006 => Ok(Self::InvalidAgentResponse),
+            -32007 => Ok(Self::ExtendedAgentCardNotConfigured),
+            -32008 => Ok(Self::ExtensionSupportRequired),
+            -32009 => Ok(Self::VersionNotSupported),
             other => Err(other),
         }
     }
@@ -203,28 +195,22 @@ impl A2aError {
         Self::new(ErrorCode::UnsupportedOperation, msg)
     }
 
-    /// Creates an "Authentication failed" error.
-    #[must_use]
-    pub fn authentication_failed(msg: impl Into<String>) -> Self {
-        Self::new(ErrorCode::AuthenticationFailed, msg)
-    }
-
-    /// Creates an "Authorization failed" error.
-    #[must_use]
-    pub fn authorization_failed(msg: impl Into<String>) -> Self {
-        Self::new(ErrorCode::AuthorizationFailed, msg)
-    }
-
     /// Creates a "Parse error" error.
     #[must_use]
     pub fn parse_error(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::ParseError, msg)
     }
 
-    /// Creates an "Invalid message" error.
+    /// Creates an "Invalid agent response" error.
     #[must_use]
-    pub fn invalid_message(msg: impl Into<String>) -> Self {
-        Self::new(ErrorCode::InvalidMessage, msg)
+    pub fn invalid_agent_response(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::InvalidAgentResponse, msg)
+    }
+
+    /// Creates an "Extended agent card not configured" error.
+    #[must_use]
+    pub fn extended_card_not_configured(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ExtendedAgentCardNotConfigured, msg)
     }
 }
 

@@ -4,7 +4,7 @@
 //! Agent extension and card-signature types.
 //!
 //! Extensions allow agents to advertise optional capabilities beyond the core
-//! A2A 0.3.0 specification. [`AgentExtension`] is referenced by
+//! A2A v1.0 specification. [`AgentExtension`] is referenced by
 //! [`crate::agent_card::AgentCapabilities`].
 
 use serde::{Deserialize, Serialize};
@@ -54,14 +54,20 @@ impl AgentExtension {
 
 /// A cryptographic signature over an [`crate::agent_card::AgentCard`].
 ///
-/// The exact schema for this type is an extension point in A2A 0.3.0 and is
-/// expected to be defined by a future signature specification. The raw
-/// [`serde_json::Value`] representation is used until the schema is finalised.
+/// In v1.0, this is a structured type with JWS-style fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentCardSignature(
-    /// Raw JSON object carrying the signature fields.
-    pub serde_json::Value,
-);
+#[serde(rename_all = "camelCase")]
+pub struct AgentCardSignature {
+    /// The JWS protected header (base64url-encoded).
+    pub protected: String,
+
+    /// The JWS signature (base64url-encoded).
+    pub signature: String,
+
+    /// Additional unprotected header parameters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header: Option<serde_json::Value>,
+}
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 

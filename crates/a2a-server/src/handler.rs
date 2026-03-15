@@ -4,15 +4,15 @@
 //! Core request handler — protocol logic layer.
 //!
 //! [`RequestHandler`] wires together the executor, stores, push sender,
-//! interceptors, and event queue manager to implement all A2A 0.3.0 methods.
+//! interceptors, and event queue manager to implement all A2A v1.0 methods.
 
 use std::sync::Arc;
 
 use a2a_types::agent_card::AgentCard;
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_types::params::{
-    DeletePushConfigParams, GetPushConfigParams, ListTasksParams, MessageSendParams, TaskIdParams,
-    TaskQueryParams,
+    CancelTaskParams, DeletePushConfigParams, GetPushConfigParams, ListTasksParams,
+    MessageSendParams, TaskIdParams, TaskQueryParams,
 };
 use a2a_types::push::TaskPushNotificationConfig;
 use a2a_types::responses::{SendMessageResponse, TaskListResponse};
@@ -44,7 +44,7 @@ pub struct RequestHandler<E: AgentExecutor> {
 }
 
 impl<E: AgentExecutor> RequestHandler<E> {
-    /// Handles a `message/send` or `message/stream` request.
+    /// Handles a `SendMessage` or `SendStreamingMessage` request.
     ///
     /// When `streaming` is `true`, the returned response wraps an SSE reader.
     /// When `false`, the method blocks until the executor finishes and returns
@@ -61,9 +61,9 @@ impl<E: AgentExecutor> RequestHandler<E> {
         streaming: bool,
     ) -> ServerResult<SendMessageResult> {
         let call_ctx = CallContext::new(if streaming {
-            "message/stream"
+            "SendStreamingMessage"
         } else {
-            "message/send"
+            "SendMessage"
         });
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -112,11 +112,13 @@ impl<E: AgentExecutor> RequestHandler<E> {
                 // Write a failed status update on error.
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(&ctx.context_id),
-                    state: TaskState::Failed,
-                    message: None,
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus {
+                        state: TaskState::Failed,
+                        message: None,
+                        timestamp: None,
+                    },
                     metadata: Some(serde_json::json!({ "error": e.to_string() })),
-                    r#final: true,
                 });
                 let _ = writer_clone.write(fail_event).await;
             }
@@ -137,32 +139,33 @@ impl<E: AgentExecutor> RequestHandler<E> {
         }
     }
 
-    /// Handles a `tasks/get` request.
+    /// Handles a `GetTask` request.
     ///
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
-        let call_ctx = CallContext::new("tasks/get");
+        let call_ctx = CallContext::new("GetTask");
         self.interceptors.run_before(&call_ctx).await?;
 
+        let task_id = TaskId::new(&params.id);
         let task = self
             .task_store
-            .get(&params.id)
+            .get(&task_id)
             .await?
-            .ok_or_else(|| ServerError::TaskNotFound(params.id.clone()))?;
+            .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
 
         self.interceptors.run_after(&call_ctx).await?;
         Ok(task)
     }
 
-    /// Handles a `tasks/list` request.
+    /// Handles a `ListTasks` request.
     ///
     /// # Errors
     ///
     /// Returns a [`ServerError`] if the store operation fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
-        let call_ctx = CallContext::new("tasks/list");
+        let call_ctx = CallContext::new("ListTasks");
         self.interceptors.run_before(&call_ctx).await?;
 
         let result = self.task_store.list(&params).await?;
@@ -171,24 +174,25 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(result)
     }
 
-    /// Handles a `tasks/cancel` request.
+    /// Handles a `CancelTask` request.
     ///
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist, or
     /// [`ServerError::TaskNotCancelable`] if the task is in a terminal state.
-    pub async fn on_cancel_task(&self, params: TaskIdParams) -> ServerResult<Task> {
-        let call_ctx = CallContext::new("tasks/cancel");
+    pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
+        let call_ctx = CallContext::new("CancelTask");
         self.interceptors.run_before(&call_ctx).await?;
 
+        let task_id = TaskId::new(&params.id);
         let task = self
             .task_store
-            .get(&params.id)
+            .get(&task_id)
             .await?
-            .ok_or_else(|| ServerError::TaskNotFound(params.id.clone()))?;
+            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
         if task.status.state.is_terminal() {
-            return Err(ServerError::TaskNotCancelable(params.id));
+            return Err(ServerError::TaskNotCancelable(task_id));
         }
 
         // Build a request context for the cancel call.
@@ -197,17 +201,17 @@ impl<E: AgentExecutor> RequestHandler<E> {
                 id: a2a_types::message::MessageId::new(uuid::Uuid::new_v4().to_string()),
                 role: a2a_types::message::MessageRole::User,
                 parts: vec![],
-                task_id: Some(params.id.clone()),
+                task_id: Some(task_id.clone()),
                 context_id: Some(task.context_id.clone()),
                 reference_task_ids: None,
                 extensions: None,
                 metadata: None,
             },
-            params.id.clone(),
+            task_id.clone(),
             task.context_id.0.clone(),
         );
 
-        let (writer, _reader) = self.event_queue_manager.get_or_create(&params.id).await;
+        let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
         self.executor.cancel(&ctx, writer.as_ref()).await?;
 
         // Update task state.
@@ -219,23 +223,25 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(updated)
     }
 
-    /// Handles a `tasks/resubscribe` request.
+    /// Handles a `SubscribeToTask` request.
     ///
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
-        let call_ctx = CallContext::new("tasks/resubscribe");
+        let call_ctx = CallContext::new("SubscribeToTask");
         self.interceptors.run_before(&call_ctx).await?;
+
+        let task_id = TaskId::new(&params.id);
 
         // Verify the task exists.
         let _task = self
             .task_store
-            .get(&params.id)
+            .get(&task_id)
             .await?
-            .ok_or_else(|| ServerError::TaskNotFound(params.id.clone()))?;
+            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-        let (_writer, reader) = self.event_queue_manager.get_or_create(&params.id).await;
+        let (_writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
         let reader = reader.ok_or_else(|| {
             ServerError::Internal("no event queue available for resubscribe".into())
         })?;
@@ -244,7 +250,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(reader)
     }
 
-    /// Handles a `tasks/pushNotificationConfig/set` request.
+    /// Handles a `CreateTaskPushNotificationConfig` request.
     ///
     /// # Errors
     ///
@@ -256,7 +262,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         if self.push_sender.is_none() {
             return Err(ServerError::PushNotSupported);
         }
-        let call_ctx = CallContext::new("tasks/pushNotificationConfig/set");
+        let call_ctx = CallContext::new("CreateTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
 
         let result = self.push_config_store.set(config).await?;
@@ -265,7 +271,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(result)
     }
 
-    /// Handles a `tasks/pushNotificationConfig/get` request.
+    /// Handles a `GetTaskPushNotificationConfig` request.
     ///
     /// # Errors
     ///
@@ -274,7 +280,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         &self,
         params: GetPushConfigParams,
     ) -> ServerResult<TaskPushNotificationConfig> {
-        let call_ctx = CallContext::new("tasks/pushNotificationConfig/get");
+        let call_ctx = CallContext::new("GetTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
 
         let config = self
@@ -292,31 +298,31 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(config)
     }
 
-    /// Handles a `tasks/pushNotificationConfig/list` request.
+    /// Handles a `ListTaskPushNotificationConfigs` request.
     ///
     /// # Errors
     ///
     /// Returns a [`ServerError`] if the store operation fails.
     pub async fn on_list_push_configs(
         &self,
-        task_id: TaskId,
+        task_id: &str,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
-        let call_ctx = CallContext::new("tasks/pushNotificationConfig/list");
+        let call_ctx = CallContext::new("ListTaskPushNotificationConfigs");
         self.interceptors.run_before(&call_ctx).await?;
 
-        let configs = self.push_config_store.list(&task_id).await?;
+        let configs = self.push_config_store.list(task_id).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
         Ok(configs)
     }
 
-    /// Handles a `tasks/pushNotificationConfig/delete` request.
+    /// Handles a `DeleteTaskPushNotificationConfig` request.
     ///
     /// # Errors
     ///
     /// Returns a [`ServerError`] if the store operation fails.
     pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
-        let call_ctx = CallContext::new("tasks/pushNotificationConfig/delete");
+        let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
 
         self.push_config_store
@@ -327,13 +333,13 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(())
     }
 
-    /// Handles an `agent/authenticatedExtendedCard` request.
+    /// Handles a `GetExtendedAgentCard` request.
     ///
     /// # Errors
     ///
     /// Returns [`ServerError::Internal`] if no agent card is configured.
-    pub async fn on_get_authenticated_extended_card(&self) -> ServerResult<AgentCard> {
-        let call_ctx = CallContext::new("agent/authenticatedExtendedCard");
+    pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard> {
+        let call_ctx = CallContext::new("GetExtendedAgentCard");
         self.interceptors.run_before(&call_ctx).await?;
 
         let card = self
@@ -350,7 +356,8 @@ impl<E: AgentExecutor> RequestHandler<E> {
     /// Finds a task by context ID (linear scan for in-memory store).
     async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
         let params = ListTasksParams {
-            context_id: Some(ContextId::new(context_id)),
+            tenant: None,
+            context_id: Some(context_id.to_owned()),
             status: None,
             page_size: Some(1),
             page_token: None,
@@ -381,9 +388,9 @@ impl<E: AgentExecutor> RequestHandler<E> {
             match event {
                 Ok(StreamResponse::StatusUpdate(update)) => {
                     last_task.status = TaskStatus {
-                        state: update.state,
-                        message: update.message,
-                        timestamp: None,
+                        state: update.status.state,
+                        message: update.status.message,
+                        timestamp: update.status.timestamp,
                     };
                     self.task_store.save(last_task.clone()).await?;
                 }

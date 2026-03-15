@@ -49,18 +49,18 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     ///
     /// | Method | Path | Handler |
     /// |---|---|---|
-    /// | `POST` | `/messages/send` | `on_send_message(streaming: false)` |
-    /// | `POST` | `/messages/stream` | `on_send_message(streaming: true)` |
+    /// | `POST` | `/message:send` | `on_send_message(streaming: false)` |
+    /// | `POST` | `/message:stream` | `on_send_message(streaming: true)` |
     /// | `GET` | `/tasks/{id}` | `on_get_task` |
-    /// | `POST` | `/tasks/{id}/cancel` | `on_cancel_task` |
+    /// | `POST` | `/tasks/{id}:cancel` | `on_cancel_task` |
     /// | `GET` | `/tasks` | `on_list_tasks` |
-    /// | `GET` | `/tasks/{id}/subscribe` | `on_resubscribe` |
-    /// | `POST` | `/tasks/{taskId}/push-config` | `on_set_push_config` |
-    /// | `GET` | `/tasks/{taskId}/push-config/{id}` | `on_get_push_config` |
-    /// | `GET` | `/tasks/{taskId}/push-config` | `on_list_push_configs` |
-    /// | `DELETE` | `/tasks/{taskId}/push-config/{id}` | `on_delete_push_config` |
-    /// | `GET` | `/agent/authenticatedExtendedCard` | `on_get_authenticated_extended_card` |
-    /// | `GET` | `/.well-known/agent-card.json` | static agent card |
+    /// | `POST` | `/tasks/{id}:subscribe` | `on_resubscribe` |
+    /// | `POST` | `/tasks/{taskId}/pushNotificationConfigs` | `on_set_push_config` |
+    /// | `GET` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `on_get_push_config` |
+    /// | `GET` | `/tasks/{taskId}/pushNotificationConfigs` | `on_list_push_configs` |
+    /// | `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `on_delete_push_config` |
+    /// | `GET` | `/extendedAgentCard` | `on_get_extended_agent_card` |
+    /// | `GET` | `/.well-known/agent.json` | static agent card |
     #[allow(clippy::too_many_lines)]
     pub async fn dispatch(
         &self,
@@ -68,20 +68,37 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let method = req.method().clone();
         let path = req.uri().path().to_owned();
+
+        // Handle colon-suffixed routes first (e.g. /message:send, /tasks/{id}:cancel).
+        match (method.as_str(), path.as_str()) {
+            ("POST", "/message:send") => return self.handle_send(req, false).await,
+            ("POST", "/message:stream") => return self.handle_send(req, true).await,
+            _ => {}
+        }
+
+        // Check for colon-action routes on tasks: /tasks/{id}:cancel, /tasks/{id}:subscribe
+        if let Some(rest) = path.strip_prefix("/tasks/") {
+            if let Some((id, action)) = rest.split_once(':') {
+                if !id.is_empty() {
+                    match (method.as_str(), action) {
+                        ("POST", "cancel") => return self.handle_cancel_task(id).await,
+                        ("POST", "subscribe") => return self.handle_resubscribe(id).await,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
         match (method.as_str(), segments.as_slice()) {
             // Agent card.
-            ("GET", [".well-known", "agent-card.json"]) => self
+            ("GET", [".well-known", "agent.json"]) => self
                 .card_handler
                 .as_ref()
                 .map_or_else(not_found_response, |h| {
                     h.handle().map(http_body_util::BodyExt::boxed)
                 }),
-
-            // Messages.
-            ("POST", ["messages", "send"]) => self.handle_send(req, false).await,
-            ("POST", ["messages", "stream"]) => self.handle_send(req, true).await,
 
             // Tasks.
             ("GET", ["tasks"]) => {
@@ -89,25 +106,23 @@ impl<E: AgentExecutor> RestDispatcher<E> {
                 self.handle_list_tasks(query).await
             }
             ("GET", ["tasks", id]) => self.handle_get_task(id).await,
-            ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id).await,
-            ("GET", ["tasks", id, "subscribe"]) => self.handle_resubscribe(id).await,
 
-            // Push config.
-            ("POST", ["tasks", task_id, "push-config"]) => {
+            // Push notification configs.
+            ("POST", ["tasks", task_id, "pushNotificationConfigs"]) => {
                 self.handle_set_push_config(req, task_id).await
             }
-            ("GET", ["tasks", task_id, "push-config", config_id]) => {
+            ("GET", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
                 self.handle_get_push_config(task_id, config_id).await
             }
-            ("GET", ["tasks", task_id, "push-config"]) => {
+            ("GET", ["tasks", task_id, "pushNotificationConfigs"]) => {
                 self.handle_list_push_configs(task_id).await
             }
-            ("DELETE", ["tasks", task_id, "push-config", config_id]) => {
+            ("DELETE", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
                 self.handle_delete_push_config(task_id, config_id).await
             }
 
             // Extended card.
-            ("GET", ["agent", "authenticatedExtendedCard"]) => self.handle_extended_card().await,
+            ("GET", ["extendedAgentCard"]) => self.handle_extended_card().await,
 
             _ => not_found_response(),
         }
@@ -138,7 +153,8 @@ impl<E: AgentExecutor> RestDispatcher<E> {
 
     async fn handle_get_task(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_types::params::TaskQueryParams {
-            id: a2a_types::task::TaskId::new(id),
+            tenant: None,
+            id: id.to_owned(),
             history_length: None,
         };
         match self.handler.on_get_task(params).await {
@@ -150,6 +166,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     async fn handle_list_tasks(&self, _query: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         // For simplicity, list all tasks (query param parsing can be extended).
         let params = a2a_types::params::ListTasksParams {
+            tenant: None,
             context_id: None,
             status: None,
             page_size: None,
@@ -164,8 +181,10 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     }
 
     async fn handle_cancel_task(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_types::params::TaskIdParams {
-            id: a2a_types::task::TaskId::new(id),
+        let params = a2a_types::params::CancelTaskParams {
+            tenant: None,
+            id: id.to_owned(),
+            metadata: None,
         };
         match self.handler.on_cancel_task(params).await {
             Ok(task) => json_ok_response(&task),
@@ -175,7 +194,8 @@ impl<E: AgentExecutor> RestDispatcher<E> {
 
     async fn handle_resubscribe(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_types::params::TaskIdParams {
-            id: a2a_types::task::TaskId::new(id),
+            tenant: None,
+            id: id.to_owned(),
         };
         match self.handler.on_resubscribe(params).await {
             Ok(reader) => build_sse_response(reader, None),
@@ -209,7 +229,8 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         config_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_types::params::GetPushConfigParams {
-            task_id: a2a_types::task::TaskId::new(task_id),
+            tenant: None,
+            task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };
         match self.handler.on_get_push_config(params).await {
@@ -222,11 +243,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         &self,
         task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self
-            .handler
-            .on_list_push_configs(a2a_types::task::TaskId::new(task_id))
-            .await
-        {
+        match self.handler.on_list_push_configs(task_id).await {
             Ok(configs) => json_ok_response(&configs),
             Err(e) => server_error_to_response(&e),
         }
@@ -238,7 +255,8 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         config_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_types::params::DeletePushConfigParams {
-            task_id: a2a_types::task::TaskId::new(task_id),
+            tenant: None,
+            task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };
         match self.handler.on_delete_push_config(params).await {
@@ -248,7 +266,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     }
 
     async fn handle_extended_card(&self) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self.handler.on_get_authenticated_extended_card().await {
+        match self.handler.on_get_extended_agent_card().await {
             Ok(card) => json_ok_response(&card),
             Err(e) => server_error_to_response(&e),
         }

@@ -115,7 +115,7 @@ impl TaskStore for InMemoryTaskStore {
                 .values()
                 .filter(|t| {
                     if let Some(ref ctx) = params.context_id {
-                        if t.context_id != *ctx {
+                        if t.context_id.0 != *ctx {
                             return false;
                         }
                     }

@@ -3,30 +3,30 @@
 
 //! JSON-RPC method parameter types.
 //!
-//! Each A2A 0.3.0 method has a corresponding `Params` struct that maps to the
+//! Each A2A v1.0 method has a corresponding `Params` struct that maps to the
 //! `params` field of a [`crate::jsonrpc::JsonRpcRequest`].
 //!
 //! | Method | Params type |
 //! |---|---|
-//! | `message/send` | [`MessageSendParams`] |
-//! | `message/stream` | [`MessageSendParams`] |
-//! | `tasks/get` | [`TaskQueryParams`] |
-//! | `tasks/cancel` | [`TaskIdParams`] |
-//! | `tasks/list` | [`ListTasksParams`] |
-//! | `tasks/resubscribe` | [`TaskIdParams`] |
-//! | `tasks/pushNotificationConfig/set` | [`crate::push::TaskPushNotificationConfig`] |
-//! | `tasks/pushNotificationConfig/get` | [`GetPushConfigParams`] |
-//! | `tasks/pushNotificationConfig/delete` | [`DeletePushConfigParams`] |
+//! | `SendMessage` | [`MessageSendParams`] |
+//! | `SendStreamingMessage` | [`MessageSendParams`] |
+//! | `GetTask` | [`TaskQueryParams`] |
+//! | `CancelTask` | [`CancelTaskParams`] |
+//! | `ListTasks` | [`ListTasksParams`] |
+//! | `SubscribeToTask` | [`TaskIdParams`] |
+//! | `CreateTaskPushNotificationConfig` | [`crate::push::TaskPushNotificationConfig`] |
+//! | `GetTaskPushNotificationConfig` | [`GetPushConfigParams`] |
+//! | `DeleteTaskPushNotificationConfig` | [`DeletePushConfigParams`] |
 
 use serde::{Deserialize, Serialize};
 
 use crate::message::Message;
 use crate::push::TaskPushNotificationConfig;
-use crate::task::{ContextId, TaskId, TaskState};
+use crate::task::TaskState;
 
 // ── SendMessageConfiguration ──────────────────────────────────────────────────
 
-/// Optional configuration for a `message/send` or `message/stream` call.
+/// Optional configuration for a `SendMessage` or `SendStreamingMessage` call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageConfiguration {
@@ -49,10 +49,14 @@ pub struct SendMessageConfiguration {
 
 // ── MessageSendParams ─────────────────────────────────────────────────────────
 
-/// Parameters for the `message/send` and `message/stream` methods.
+/// Parameters for the `SendMessage` and `SendStreamingMessage` methods.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageSendParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// The message to send to the agent.
     pub message: Message,
 
@@ -67,12 +71,16 @@ pub struct MessageSendParams {
 
 // ── TaskQueryParams ───────────────────────────────────────────────────────────
 
-/// Parameters for the `tasks/get` method.
+/// Parameters for the `GetTask` method.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskQueryParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// ID of the task to retrieve.
-    pub id: TaskId,
+    pub id: String,
 
     /// Number of historical messages to include in the response.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -83,26 +91,52 @@ pub struct TaskQueryParams {
 
 /// Minimal parameters identifying a single task by ID.
 ///
-/// Used for `tasks/cancel` and `tasks/resubscribe`.
+/// Used for `SubscribeToTask`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskIdParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// ID of the target task.
-    pub id: TaskId,
+    pub id: String,
+}
+
+// ── CancelTaskParams ────────────────────────────────────────────────────────
+
+/// Parameters for the `CancelTask` method.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelTaskParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
+    /// ID of the task to cancel.
+    pub id: String,
+
+    /// Arbitrary metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 // ── ListTasksParams ───────────────────────────────────────────────────────────
 
-/// Parameters for the `tasks/list` method.
+/// Parameters for the `ListTasks` method.
 ///
 /// All fields are optional filters; omitting them returns all tasks visible to
 /// the caller (subject to the server's default page size).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListTasksParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// Filter to tasks belonging to this conversation context.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub context_id: Option<ContextId>,
+    pub context_id: Option<String>,
 
     /// Filter to tasks in this state.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,12 +161,16 @@ pub struct ListTasksParams {
 
 // ── GetPushConfigParams ───────────────────────────────────────────────────────
 
-/// Parameters for the `tasks/pushNotificationConfig/get` method.
+/// Parameters for the `GetTaskPushNotificationConfig` method.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetPushConfigParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// The task whose push config to retrieve.
-    pub task_id: TaskId,
+    pub task_id: String,
 
     /// The server-assigned push config identifier.
     pub id: String,
@@ -140,15 +178,30 @@ pub struct GetPushConfigParams {
 
 // ── DeletePushConfigParams ────────────────────────────────────────────────────
 
-/// Parameters for the `tasks/pushNotificationConfig/delete` method.
+/// Parameters for the `DeleteTaskPushNotificationConfig` method.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeletePushConfigParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+
     /// The task whose push config to delete.
-    pub task_id: TaskId,
+    pub task_id: String,
 
     /// The server-assigned push config identifier.
     pub id: String,
+}
+
+// ── GetExtendedAgentCardParams ──────────────────────────────────────────────
+
+/// Parameters for the `GetExtendedAgentCard` method.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetExtendedAgentCardParams {
+    /// Optional tenant for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -156,13 +209,13 @@ pub struct DeletePushConfigParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::message::{MessageId, MessageRole, Part, TextPart};
+    use crate::message::{MessageId, MessageRole, Part};
 
     fn make_message() -> Message {
         Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,
-            parts: vec![Part::Text(TextPart::new("hello"))],
+            parts: vec![Part::text("hello")],
             task_id: None,
             context_id: None,
             reference_task_ids: None,
@@ -174,6 +227,7 @@ mod tests {
     #[test]
     fn message_send_params_roundtrip() {
         let params = MessageSendParams {
+            tenant: None,
             message: make_message(),
             configuration: Some(SendMessageConfiguration {
                 accepted_output_modes: vec!["text/plain".into()],
@@ -191,6 +245,7 @@ mod tests {
     #[test]
     fn list_tasks_params_empty_roundtrip() {
         let params = ListTasksParams {
+            tenant: None,
             context_id: None,
             status: None,
             page_size: None,
@@ -206,12 +261,27 @@ mod tests {
     #[test]
     fn task_query_params_roundtrip() {
         let params = TaskQueryParams {
-            id: TaskId::new("task-1"),
+            tenant: None,
+            id: "task-1".into(),
             history_length: Some(5),
         };
         let json = serde_json::to_string(&params).expect("serialize");
         let back: TaskQueryParams = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(back.id, TaskId::new("task-1"));
+        assert_eq!(back.id, "task-1");
         assert_eq!(back.history_length, Some(5));
+    }
+
+    #[test]
+    fn cancel_task_params_roundtrip() {
+        let params = CancelTaskParams {
+            tenant: Some("my-tenant".into()),
+            id: "task-1".into(),
+            metadata: Some(serde_json::json!({"reason": "no longer needed"})),
+        };
+        let json = serde_json::to_string(&params).expect("serialize");
+        let back: CancelTaskParams = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.id, "task-1");
+        assert_eq!(back.tenant.as_deref(), Some("my-tenant"));
+        assert!(back.metadata.is_some());
     }
 }

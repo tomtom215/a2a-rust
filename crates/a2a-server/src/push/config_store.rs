@@ -9,7 +9,6 @@ use std::pin::Pin;
 
 use a2a_types::error::A2aResult;
 use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::task::TaskId;
 use tokio::sync::RwLock;
 
 /// Trait for storing push notification configurations.
@@ -33,7 +32,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
     fn get<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>>;
 
@@ -44,7 +43,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
     fn list<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>>;
 
     /// Deletes a push notification config by task ID and config ID.
@@ -54,7 +53,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
     fn delete<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
@@ -62,7 +61,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
 /// In-memory [`PushConfigStore`] backed by a `HashMap`.
 #[derive(Debug, Default)]
 pub struct InMemoryPushConfigStore {
-    configs: RwLock<HashMap<(TaskId, String), TaskPushNotificationConfig>>,
+    configs: RwLock<HashMap<(String, String), TaskPushNotificationConfig>>,
 }
 
 impl InMemoryPushConfigStore {
@@ -82,11 +81,10 @@ impl PushConfigStore for InMemoryPushConfigStore {
         Box::pin(async move {
             // Assign an ID if not present.
             let id = config
-                .push_notification_config
                 .id
                 .clone()
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-            config.push_notification_config.id = Some(id.clone());
+            config.id = Some(id.clone());
 
             let key = (config.task_id.clone(), id);
             let mut store = self.configs.write().await;
@@ -98,13 +96,13 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
     fn get<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>>
     {
         Box::pin(async move {
             let store = self.configs.read().await;
-            let key = (task_id.clone(), id.to_owned());
+            let key = (task_id.to_owned(), id.to_owned());
             let result = store.get(&key).cloned();
             drop(store);
             Ok(result)
@@ -113,7 +111,7 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
     fn list<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
             let store = self.configs.read().await;
@@ -129,12 +127,12 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
     fn delete<'a>(
         &'a self,
-        task_id: &'a TaskId,
+        task_id: &'a str,
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let mut store = self.configs.write().await;
-            let key = (task_id.clone(), id.to_owned());
+            let key = (task_id.to_owned(), id.to_owned());
             store.remove(&key);
             drop(store);
             Ok(())

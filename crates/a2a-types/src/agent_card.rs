@@ -4,50 +4,40 @@
 //! Agent card and capability discovery types.
 //!
 //! The [`AgentCard`] is the root discovery document served by an A2A agent at
-//! `/.well-known/agent-card.json`. It describes the agent's identity,
-//! capabilities, skills, security requirements, and transport preferences.
+//! `/.well-known/agent.json`. It describes the agent's identity,
+//! capabilities, skills, security requirements, and supported interfaces.
 //!
-//! # Transport protocol
+//! # v1.0 changes
 //!
-//! [`TransportProtocol`] uses `SCREAMING_SNAKE_CASE`-adjacent serialization.
-//! `JSONRPC` and `GRPC` do not contain underscores in their wire representations,
-//! so explicit `#[serde(rename)]` attributes are used where the derive would
-//! produce a different result.
+//! - `url` and `preferred_transport` replaced by `supported_interfaces`
+//! - `protocol_version` moved from `AgentCard` to `AgentInterface`
+//! - `AgentInterface.transport` renamed to `protocol_binding`
+//! - `supports_authenticated_extended_card` moved to `AgentCapabilities.extended_agent_card`
+//! - `state_transition_history` removed from `AgentCapabilities`
 
 use serde::{Deserialize, Serialize};
 
 use crate::extensions::{AgentCardSignature, AgentExtension};
 use crate::security::{NamedSecuritySchemes, SecurityRequirements};
 
-// ── TransportProtocol ─────────────────────────────────────────────────────────
-
-/// The transport protocol used by an agent interface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum TransportProtocol {
-    /// JSON-RPC 2.0 over HTTP(S).
-    #[serde(rename = "JSONRPC")]
-    JsonRpc,
-
-    /// gRPC.
-    #[serde(rename = "GRPC")]
-    Grpc,
-
-    /// HTTP REST.
-    #[serde(rename = "REST")]
-    Rest,
-}
-
 // ── AgentInterface ────────────────────────────────────────────────────────────
 
-/// An alternative transport interface offered by an agent.
+/// A transport interface offered by an agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentInterface {
     /// Base URL of this interface endpoint.
     pub url: String,
 
-    /// Transport protocol for this interface.
-    pub transport: TransportProtocol,
+    /// Protocol binding identifier (e.g. `"JSONRPC"`, `"REST"`, `"GRPC"`).
+    pub protocol_binding: String,
+
+    /// A2A protocol version string (e.g. `"1.0.0"`).
+    pub protocol_version: String,
+
+    /// Optional tenant identifier for multi-tenancy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
 }
 
 // ── AgentCapabilities ─────────────────────────────────────────────────────────
@@ -56,7 +46,7 @@ pub struct AgentInterface {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentCapabilities {
-    /// Whether the agent supports streaming via `message/stream`.
+    /// Whether the agent supports streaming via `SendStreamingMessage`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming: Option<bool>,
 
@@ -64,9 +54,9 @@ pub struct AgentCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub push_notifications: Option<bool>,
 
-    /// Whether the agent retains full state-transition history.
+    /// Whether this agent serves an authenticated extended card.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub state_transition_history: Option<bool>,
+    pub extended_agent_card: Option<bool>,
 
     /// Optional extensions supported by this agent.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,7 +70,7 @@ impl AgentCapabilities {
         Self {
             streaming: None,
             push_notifications: None,
-            state_transition_history: None,
+            extended_agent_card: None,
             extensions: None,
         }
     }
@@ -138,15 +128,16 @@ pub struct AgentSkill {
 
 /// The root discovery document for an A2A agent.
 ///
-/// Served at `/.well-known/agent-card.json`. Clients fetch this document to
-/// discover the agent's endpoint URL, capabilities, skills, and security
+/// Served at `/.well-known/agent.json`. Clients fetch this document to
+/// discover the agent's interfaces, capabilities, skills, and security
 /// requirements before establishing a session.
+///
+/// In v1.0, `protocol_version` and `url` moved to [`AgentInterface`], and
+/// `supported_interfaces` replaces the old `url`/`preferred_transport`/
+/// `additional_interfaces` fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentCard {
-    /// A2A protocol version string (e.g. `"0.3.0"`).
-    pub protocol_version: String,
-
     /// Display name of the agent.
     pub name: String,
 
@@ -156,15 +147,8 @@ pub struct AgentCard {
     /// Semantic version of this agent implementation.
     pub version: String,
 
-    /// Base URL of the agent's primary RPC endpoint.
-    pub url: String,
-
-    /// Preferred transport protocol.
-    pub preferred_transport: TransportProtocol,
-
-    /// Additional transport interfaces offered by this agent.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_interfaces: Option<Vec<AgentInterface>>,
+    /// Transport interfaces offered by this agent.
+    pub supported_interfaces: Vec<AgentInterface>,
 
     /// Default MIME types accepted as input.
     pub default_input_modes: Vec<String>,
@@ -198,10 +182,6 @@ pub struct AgentCard {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub security: Option<SecurityRequirements>,
 
-    /// Whether this agent serves an authenticated extended card.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub supports_authenticated_extended_card: Option<bool>,
-
     /// Cryptographic signatures over this card.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signatures: Option<Vec<AgentCardSignature>>,
@@ -215,13 +195,15 @@ mod tests {
 
     fn minimal_card() -> AgentCard {
         AgentCard {
-            protocol_version: "0.3.0".into(),
             name: "Test Agent".into(),
             description: "A test agent".into(),
             version: "1.0.0".into(),
-            url: "https://agent.example.com/rpc".into(),
-            preferred_transport: TransportProtocol::JsonRpc,
-            additional_interfaces: None,
+            supported_interfaces: vec![AgentInterface {
+                url: "https://agent.example.com/rpc".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
             default_input_modes: vec!["text/plain".into()],
             default_output_modes: vec!["text/plain".into()],
             skills: vec![AgentSkill {
@@ -240,43 +222,25 @@ mod tests {
             documentation_url: None,
             security_schemes: None,
             security: None,
-            supports_authenticated_extended_card: None,
             signatures: None,
         }
-    }
-
-    #[test]
-    fn transport_protocol_serialization() {
-        assert_eq!(
-            serde_json::to_string(&TransportProtocol::JsonRpc).expect("ser"),
-            "\"JSONRPC\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TransportProtocol::Grpc).expect("ser"),
-            "\"GRPC\""
-        );
-        assert_eq!(
-            serde_json::to_string(&TransportProtocol::Rest).expect("ser"),
-            "\"REST\""
-        );
-    }
-
-    #[test]
-    fn transport_protocol_deserialization() {
-        let p: TransportProtocol = serde_json::from_str("\"JSONRPC\"").expect("deser");
-        assert_eq!(p, TransportProtocol::JsonRpc);
     }
 
     #[test]
     fn agent_card_roundtrip() {
         let card = minimal_card();
         let json = serde_json::to_string(&card).expect("serialize");
-        assert!(json.contains("\"protocolVersion\":\"0.3.0\""));
-        assert!(json.contains("\"preferredTransport\":\"JSONRPC\""));
+        assert!(json.contains("\"supportedInterfaces\""));
+        assert!(json.contains("\"protocolBinding\":\"JSONRPC\""));
+        assert!(json.contains("\"protocolVersion\":\"1.0.0\""));
+        assert!(
+            !json.contains("\"preferredTransport\""),
+            "v1.0 removed this field"
+        );
 
         let back: AgentCard = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.name, "Test Agent");
-        assert_eq!(back.preferred_transport, TransportProtocol::JsonRpc);
+        assert_eq!(back.supported_interfaces[0].protocol_binding, "JSONRPC");
     }
 
     #[test]
@@ -289,5 +253,13 @@ mod tests {
             !json.contains("\"securitySchemes\""),
             "securitySchemes should be absent"
         );
+    }
+
+    #[test]
+    fn extended_agent_card_in_capabilities() {
+        let mut card = minimal_card();
+        card.capabilities.extended_agent_card = Some(true);
+        let json = serde_json::to_string(&card).expect("serialize");
+        assert!(json.contains("\"extendedAgentCard\":true"));
     }
 }

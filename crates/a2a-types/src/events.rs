@@ -3,34 +3,31 @@
 
 //! Server-sent event types for A2A streaming.
 //!
-//! When a client calls `message/stream` or `tasks/resubscribe`, the server
+//! When a client calls `SendStreamingMessage` or `SubscribeToTask`, the server
 //! responds with a stream of Server-Sent Events. Each event carries a
-//! [`StreamResponse`] JSON payload discriminated on the `"kind"` field.
+//! [`StreamResponse`] JSON payload discriminated by field presence (untagged).
 //!
 //! # Stream event variants
 //!
-//! | `kind` value | Rust type |
+//! | JSON field | Rust variant |
 //! |---|---|
 //! | `"task"` | [`crate::task::Task`] |
 //! | `"message"` | [`crate::message::Message`] |
-//! | `"status-update"` | [`TaskStatusUpdateEvent`] |
-//! | `"artifact-update"` | [`TaskArtifactUpdateEvent`] |
+//! | `"statusUpdate"` | [`TaskStatusUpdateEvent`] |
+//! | `"artifactUpdate"` | [`TaskArtifactUpdateEvent`] |
 
 use serde::{Deserialize, Serialize};
 
 use crate::artifact::Artifact;
 use crate::message::Message;
-use crate::task::{ContextId, Task, TaskId, TaskState};
+use crate::task::{Task, TaskId, TaskStatus};
 
 // ── TaskStatusUpdateEvent ─────────────────────────────────────────────────────
 
 /// A streaming event that reports a change in task state.
 ///
-/// The `r#final` field uses the raw identifier syntax because `final` is a
-/// reserved keyword in Rust; it serializes as `"final"` in JSON.
-///
-/// The wire `kind` field (`"status-update"`) is injected by the enclosing
-/// [`StreamResponse`] discriminated union.
+/// In v1.0, this wraps [`TaskStatus`] directly instead of separate
+/// `state`/`message` fields. The `final` field has been removed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatusUpdateEvent {
@@ -38,24 +35,14 @@ pub struct TaskStatusUpdateEvent {
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
-    pub context_id: ContextId,
+    pub context_id: String,
 
-    /// New task state.
-    pub state: TaskState,
-
-    /// Optional agent message accompanying this status change.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<Message>,
+    /// The new task status (state + optional message + timestamp).
+    pub status: TaskStatus,
 
     /// Arbitrary metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
-
-    /// Whether this is the last event for this task stream.
-    ///
-    /// Uses the raw identifier `r#final` because `final` is a Rust keyword.
-    #[serde(rename = "final")]
-    pub r#final: bool,
 }
 
 // ── TaskArtifactUpdateEvent ───────────────────────────────────────────────────
@@ -71,7 +58,7 @@ pub struct TaskArtifactUpdateEvent {
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
-    pub context_id: ContextId,
+    pub context_id: String,
 
     /// The artifact being delivered.
     pub artifact: Artifact,
@@ -94,10 +81,10 @@ pub struct TaskArtifactUpdateEvent {
 
 /// A single event payload in an A2A streaming response.
 ///
-/// Discriminated on the `"kind"` field. Clients receive these events via
-/// Server-Sent Events (SSE).
+/// Discriminated by field presence (untagged oneof). Exactly one of
+/// `task`, `message`, `statusUpdate`, or `artifactUpdate` is present.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 pub enum StreamResponse {
     /// A complete task object (initial response before streaming begins).
     Task(Task),
@@ -106,11 +93,9 @@ pub enum StreamResponse {
     Message(Message),
 
     /// A task state change event.
-    #[serde(rename = "status-update")]
     StatusUpdate(TaskStatusUpdateEvent),
 
     /// An artifact delivery event.
-    #[serde(rename = "artifact-update")]
     ArtifactUpdate(TaskArtifactUpdateEvent),
 }
 
@@ -120,36 +105,31 @@ pub enum StreamResponse {
 mod tests {
     use super::*;
     use crate::artifact::ArtifactId;
-    use crate::message::{Part, TextPart};
-    use crate::task::TaskStatus;
+    use crate::message::Part;
+    use crate::task::{ContextId, TaskState};
 
     #[test]
     fn status_update_event_roundtrip() {
         let event = TaskStatusUpdateEvent {
             task_id: TaskId::new("task-1"),
-            context_id: ContextId::new("ctx-1"),
-            state: TaskState::Completed,
-            message: None,
+            context_id: "ctx-1".to_owned(),
+            status: TaskStatus::new(TaskState::Completed),
             metadata: None,
-            r#final: true,
         };
         let json = serde_json::to_string(&event).expect("serialize");
-        assert!(json.contains("\"final\":true"), "final field: {json}");
+        assert!(!json.contains("\"final\""), "v1.0 removed final field");
+        assert!(json.contains("\"status\""), "should have status field");
 
         let back: TaskStatusUpdateEvent = serde_json::from_str(&json).expect("deserialize");
-        assert!(back.r#final);
-        assert_eq!(back.state, TaskState::Completed);
+        assert_eq!(back.status.state, TaskState::Completed);
     }
 
     #[test]
     fn artifact_update_event_roundtrip() {
         let event = TaskArtifactUpdateEvent {
             task_id: TaskId::new("task-1"),
-            context_id: ContextId::new("ctx-1"),
-            artifact: Artifact::new(
-                ArtifactId::new("art-1"),
-                vec![Part::Text(TextPart::new("output"))],
-            ),
+            context_id: "ctx-1".to_owned(),
+            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output")]),
             append: Some(false),
             last_chunk: Some(true),
             metadata: None,
@@ -171,10 +151,9 @@ mod tests {
         };
         let resp = StreamResponse::Task(task);
         let json = serde_json::to_string(&resp).expect("serialize");
-        // StreamResponse::Task adds kind="task" via the outer enum tag
         assert!(
-            json.contains("\"kind\":\"task\""),
-            "expected task kind: {json}"
+            !json.contains("\"kind\""),
+            "v1.0 should not have kind tag: {json}"
         );
 
         let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
@@ -185,17 +164,15 @@ mod tests {
     fn stream_response_status_update_variant() {
         let event = TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            state: TaskState::Failed,
-            message: None,
+            context_id: "c1".to_owned(),
+            status: TaskStatus::new(TaskState::Failed),
             metadata: None,
-            r#final: true,
         };
         let resp = StreamResponse::StatusUpdate(event);
         let json = serde_json::to_string(&resp).expect("serialize");
         assert!(
-            json.contains("\"kind\":\"status-update\""),
-            "expected status-update kind: {json}"
+            !json.contains("\"kind\""),
+            "v1.0 should not have kind tag: {json}"
         );
 
         let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! A2A protocol 0.3.0 — pure data types with serde support.
+//! A2A protocol v1.0 — pure data types with serde support.
 //!
 //! This crate provides all wire types for the A2A protocol with zero I/O
 //! dependencies. Add `a2a-client` or `a2a-server` for HTTP transport.
@@ -12,14 +12,14 @@
 //! |---|---|
 //! | [`error`] | [`error::A2aError`], [`error::ErrorCode`], [`error::A2aResult`] |
 //! | [`task`] | [`task::Task`], [`task::TaskStatus`], [`task::TaskState`], ID newtypes |
-//! | [`message`] | [`message::Message`], [`message::Part`], file/text/data parts |
+//! | [`message`] | [`message::Message`], [`message::Part`], [`message::PartContent`] |
 //! | [`artifact`] | [`artifact::Artifact`], [`artifact::ArtifactId`] |
 //! | [`agent_card`] | [`agent_card::AgentCard`], capabilities, skills |
 //! | [`security`] | [`security::SecurityScheme`] variants, OAuth flows |
 //! | [`events`] | [`events::StreamResponse`], status/artifact update events |
 //! | [`jsonrpc`] | [`jsonrpc::JsonRpcRequest`], [`jsonrpc::JsonRpcResponse`] |
 //! | [`params`] | Method parameter structs |
-//! | [`push`] | [`push::PushNotificationConfig`] |
+//! | [`push`] | [`push::TaskPushNotificationConfig`] |
 //! | [`extensions`] | [`extensions::AgentExtension`], [`extensions::AgentCardSignature`] |
 //! | [`responses`] | [`responses::SendMessageResponse`], [`responses::TaskListResponse`] |
 
@@ -43,9 +43,7 @@ pub mod task;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
-pub use agent_card::{
-    AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill, TransportProtocol,
-};
+pub use agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentProvider, AgentSkill};
 pub use artifact::{Artifact, ArtifactId};
 pub use error::{A2aError, A2aResult, ErrorCode};
 pub use events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
@@ -54,15 +52,12 @@ pub use jsonrpc::{
     JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
     JsonRpcSuccessResponse, JsonRpcVersion,
 };
-pub use message::{
-    DataPart, FileContent, FilePart, FileWithBytes, FileWithUri, Message, MessageId, MessageRole,
-    Part, TextPart,
-};
+pub use message::{Message, MessageId, MessageRole, Part, PartContent};
 pub use params::{
-    DeletePushConfigParams, GetPushConfigParams, ListTasksParams, MessageSendParams,
-    SendMessageConfiguration, TaskIdParams, TaskQueryParams,
+    CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams, GetPushConfigParams,
+    ListTasksParams, MessageSendParams, SendMessageConfiguration, TaskIdParams, TaskQueryParams,
 };
-pub use push::{PushNotificationAuthInfo, PushNotificationConfig, TaskPushNotificationConfig};
+pub use push::{AuthenticationInfo, TaskPushNotificationConfig};
 pub use responses::{AuthenticatedExtendedCardResponse, SendMessageResponse, TaskListResponse};
 pub use security::{
     ApiKeyLocation, ApiKeySecurityScheme, AuthorizationCodeFlow, ClientCredentialsFlow,
