@@ -14,9 +14,7 @@
 //!
 //! Run with: `cargo run -p echo-agent`
 
-use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -42,58 +40,52 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Transition to Working.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        // Transition to Working.
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            }))
+            .await?;
 
-            // Extract text from the incoming message.
-            let input_text = ctx
-                .message
-                .parts
-                .iter()
-                .find_map(|p| match &p.content {
-                    a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
-                    _ => None,
-                })
-                .unwrap_or("<no text>");
+        // Extract text from the incoming message.
+        let input_text = ctx
+            .message
+            .parts
+            .iter()
+            .find_map(|p| match &p.content {
+                a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
+                _ => None,
+            })
+            .unwrap_or("<no text>");
 
-            // Echo back as an artifact.
-            let echo_text = format!("Echo: {input_text}");
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
-                .await?;
+        // Echo back as an artifact.
+        let echo_text = format!("Echo: {input_text}");
+        queue
+            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
+                append: None,
+                last_chunk: Some(true),
+                metadata: None,
+            }))
+            .await?;
 
-            // Transition to Completed.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
+        // Transition to Completed.
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Completed),
+                metadata: None,
+            }))
+            .await?;
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 

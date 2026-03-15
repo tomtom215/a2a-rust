@@ -50,10 +50,23 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
         &self,
         req: hyper::Request<Incoming>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        // Read body.
-        let body_bytes = match req.into_body().collect().await {
-            Ok(collected) => collected.to_bytes(),
-            Err(e) => return parse_error_response(None, &e.to_string()),
+        // Validate Content-Type if present.
+        if let Some(ct) = req.headers().get("content-type") {
+            let ct_str = ct.to_str().unwrap_or("");
+            if !ct_str.starts_with("application/json")
+                && !ct_str.starts_with(a2a_types::A2A_CONTENT_TYPE)
+            {
+                return parse_error_response(
+                    None,
+                    &format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
+                );
+            }
+        }
+
+        // Read body with size limit (default 4 MiB).
+        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+            Ok(bytes) => bytes,
+            Err(msg) => return parse_error_response(None, &msg),
         };
 
         // Deserialize JSON-RPC request.
@@ -216,6 +229,34 @@ fn parse_error_response(
     );
     let body = serde_json::to_vec(&resp).unwrap_or_default();
     json_response(200, body)
+}
+
+/// Maximum request body size in bytes (4 MiB).
+const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
+
+/// Reads a request body with a size limit.
+///
+/// Returns an error message if the body exceeds the limit or cannot be read.
+async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
+    // Check Content-Length header upfront if present.
+    let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
+    if let Some(upper) = size_hint.upper() {
+        if upper > max_size as u64 {
+            return Err(format!(
+                "request body too large: {upper} bytes exceeds {max_size} byte limit"
+            ));
+        }
+    }
+
+    let collected = body.collect().await.map_err(|e| e.to_string())?;
+    let bytes = collected.to_bytes();
+    if bytes.len() > max_size {
+        return Err(format!(
+            "request body too large: {} bytes exceeds {max_size} byte limit",
+            bytes.len()
+        ));
+    }
+    Ok(bytes)
 }
 
 /// Builds a JSON HTTP response with the given status and body.

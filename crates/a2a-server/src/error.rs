@@ -41,6 +41,8 @@ pub enum ServerError {
     MethodNotFound(String),
     /// An A2A protocol error propagated from the executor.
     Protocol(A2aError),
+    /// The request body exceeds the configured size limit.
+    PayloadTooLarge(String),
 }
 
 impl fmt::Display for ServerError {
@@ -57,6 +59,7 @@ impl fmt::Display for ServerError {
             Self::Internal(msg) => write!(f, "internal error: {msg}"),
             Self::MethodNotFound(m) => write!(f, "method not found: {m}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
+            Self::PayloadTooLarge(msg) => write!(f, "payload too large: {msg}"),
         }
     }
 }
@@ -102,9 +105,10 @@ impl ServerError {
             ),
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
-            Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
-                A2aError::internal(msg.clone())
-            }
+            Self::HttpClient(msg)
+            | Self::Transport(msg)
+            | Self::Internal(msg)
+            | Self::PayloadTooLarge(msg) => A2aError::internal(msg.clone()),
         }
     }
 }

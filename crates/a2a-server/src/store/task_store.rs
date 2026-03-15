@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::time::{Duration, Instant};
 
 use a2a_types::error::A2aResult;
 use a2a_types::params::ListTasksParams;
@@ -65,20 +66,109 @@ pub trait TaskStore: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
+/// Entry in the in-memory task store, tracking creation time for TTL eviction.
+#[derive(Debug, Clone)]
+struct TaskEntry {
+    /// The stored task.
+    task: Task,
+    /// When this entry was last written (for TTL-based eviction).
+    last_updated: Instant,
+}
+
+/// Configuration for [`InMemoryTaskStore`].
+#[derive(Debug, Clone)]
+pub struct TaskStoreConfig {
+    /// Maximum number of tasks to keep in the store. Once exceeded, the oldest
+    /// completed/failed tasks are evicted. `None` means no limit.
+    pub max_capacity: Option<usize>,
+
+    /// Time-to-live for completed or failed tasks. Tasks in terminal states
+    /// older than this duration are evicted on the next write operation.
+    /// `None` means no TTL-based eviction.
+    pub task_ttl: Option<Duration>,
+}
+
+impl Default for TaskStoreConfig {
+    fn default() -> Self {
+        Self {
+            max_capacity: Some(10_000),
+            task_ttl: Some(Duration::from_secs(3600)), // 1 hour
+        }
+    }
+}
+
 /// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
 ///
 /// Suitable for testing and single-process deployments. Data is lost when the
 /// process exits.
-#[derive(Debug, Default)]
+///
+/// Supports TTL-based eviction of terminal tasks and a maximum capacity limit
+/// to prevent unbounded memory growth.
+#[derive(Debug)]
 pub struct InMemoryTaskStore {
-    tasks: RwLock<HashMap<TaskId, Task>>,
+    entries: RwLock<HashMap<TaskId, TaskEntry>>,
+    config: TaskStoreConfig,
+}
+
+impl Default for InMemoryTaskStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryTaskStore {
-    /// Creates a new empty in-memory task store.
+    /// Creates a new empty in-memory task store with default configuration.
+    ///
+    /// Default: max 10,000 tasks, 1-hour TTL for terminal tasks.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            entries: RwLock::new(HashMap::new()),
+            config: TaskStoreConfig::default(),
+        }
+    }
+
+    /// Creates a new in-memory task store with custom configuration.
+    #[must_use]
+    pub fn with_config(config: TaskStoreConfig) -> Self {
+        Self {
+            entries: RwLock::new(HashMap::new()),
+            config,
+        }
+    }
+
+    /// Evicts expired and over-capacity entries (must be called with write lock held).
+    fn evict(store: &mut HashMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
+        let now = Instant::now();
+
+        // TTL eviction: remove terminal tasks older than the TTL.
+        if let Some(ttl) = config.task_ttl {
+            store.retain(|_, entry| {
+                if entry.task.status.state.is_terminal() {
+                    now.duration_since(entry.last_updated) < ttl
+                } else {
+                    true
+                }
+            });
+        }
+
+        // Capacity eviction: remove oldest terminal tasks if over capacity.
+        if let Some(max) = config.max_capacity {
+            if store.len() > max {
+                let overflow = store.len() - max;
+                // Collect terminal tasks sorted by age (oldest first).
+                let mut terminal: Vec<(TaskId, Instant)> = store
+                    .iter()
+                    .filter(|(_, e)| e.task.status.state.is_terminal())
+                    .map(|(id, e)| (id.clone(), e.last_updated))
+                    .collect();
+                terminal.sort_by_key(|(_, t)| *t);
+
+                for (id, _) in terminal.into_iter().take(overflow) {
+                    store.remove(&id);
+                }
+            }
+        }
     }
 }
 
@@ -87,8 +177,19 @@ impl TaskStore for InMemoryTaskStore {
     fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             trace_debug!(task_id = %task.id, state = ?task.status.state, "saving task");
-            let mut store = self.tasks.write().await;
-            store.insert(task.id.clone(), task);
+            let mut store = self.entries.write().await;
+
+            store.insert(
+                task.id.clone(),
+                TaskEntry {
+                    task,
+                    last_updated: Instant::now(),
+                },
+            );
+
+            // Run eviction after every write.
+            Self::evict(&mut store, &self.config);
+
             drop(store);
             Ok(())
         })
@@ -100,8 +201,8 @@ impl TaskStore for InMemoryTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
         Box::pin(async move {
             trace_debug!(task_id = %id, "fetching task");
-            let store = self.tasks.read().await;
-            let result = store.get(id).cloned();
+            let store = self.entries.read().await;
+            let result = store.get(id).map(|e| e.task.clone());
             drop(store);
             Ok(result)
         })
@@ -112,23 +213,23 @@ impl TaskStore for InMemoryTaskStore {
         params: &'a ListTasksParams,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.tasks.read().await;
+            let store = self.entries.read().await;
             let mut tasks: Vec<Task> = store
                 .values()
-                .filter(|t| {
+                .filter(|e| {
                     if let Some(ref ctx) = params.context_id {
-                        if t.context_id.0 != *ctx {
+                        if e.task.context_id.0 != *ctx {
                             return false;
                         }
                     }
                     if let Some(ref status) = params.status {
-                        if t.status.state != *status {
+                        if e.task.status.state != *status {
                             return false;
                         }
                     }
                     true
                 })
-                .cloned()
+                .map(|e| e.task.clone())
                 .collect();
             drop(store);
 
@@ -147,7 +248,7 @@ impl TaskStore for InMemoryTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let mut store = self.tasks.write().await;
+            let mut store = self.entries.write().await;
             store.remove(id);
             drop(store);
             Ok(())

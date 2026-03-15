@@ -6,6 +6,7 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_types::artifact::Artifact;
@@ -33,46 +34,40 @@ use a2a_server::streaming::{EventQueueReader, EventQueueWriter};
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Write a working status update.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        // Write a working status update.
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            }))
+            .await?;
 
-            // Write an artifact.
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    artifact: Artifact::new("art-1", vec![Part::text("echo response")]),
-                    append: None,
-                    last_chunk: None,
-                    metadata: None,
-                }))
-                .await?;
+        // Write an artifact.
+        queue
+            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                artifact: Artifact::new("art-1", vec![Part::text("echo response")]),
+                append: None,
+                last_chunk: None,
+                metadata: None,
+            }))
+            .await?;
 
-            // Write completed status.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
+        // Write completed status.
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Completed),
+                metadata: None,
+            }))
+            .await?;
 
-            Ok(())
-        })
+        Ok(())
     }
 }
 
@@ -80,12 +75,8 @@ impl AgentExecutor for EchoExecutor {
 struct FailingExecutor;
 
 impl AgentExecutor for FailingExecutor {
-    fn execute<'a>(
-        &'a self,
-        _ctx: &'a RequestContext,
-        _queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move { Err(A2aError::internal("executor exploded")) })
+    async fn execute(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        Err(A2aError::internal("executor exploded"))
     }
 }
 
@@ -93,33 +84,23 @@ impl AgentExecutor for FailingExecutor {
 struct CancelableExecutor;
 
 impl AgentExecutor for CancelableExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
-            // Simulate long-running work by sleeping (won't actually block tests
-            // because we test cancel on already-stored tasks).
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            Ok(())
-        })
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            }))
+            .await?;
+        // Simulate long-running work by sleeping (won't actually block tests
+        // because we test cancel on already-stored tasks).
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        Ok(())
     }
 
-    fn cancel<'a>(
-        &'a self,
-        _ctx: &'a RequestContext,
-        _queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move { Ok(()) })
+    async fn cancel(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        Ok(())
     }
 }
 

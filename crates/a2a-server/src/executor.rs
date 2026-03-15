@@ -7,11 +7,8 @@
 //! logic. The server framework calls [`execute`](AgentExecutor::execute) for
 //! every incoming `message/send` or `message/stream` request and
 //! [`cancel`](AgentExecutor::cancel) for `tasks/cancel`.
-//!
-//! The trait is object-safe so it can be stored as `Arc<dyn AgentExecutor>`.
 
 use std::future::Future;
-use std::pin::Pin;
 
 use a2a_types::error::A2aResult;
 
@@ -25,10 +22,33 @@ use crate::streaming::EventQueueWriter;
 /// spawned task and should signal completion by writing a terminal status
 /// update and returning `Ok(())`.
 ///
-/// # Object safety
+/// # Generics
 ///
-/// This trait is designed to be used as `Arc<dyn AgentExecutor>`. All methods
-/// return `Pin<Box<dyn Future>>` rather than using `async fn`.
+/// [`RequestHandler`](crate::RequestHandler) is generic over `E: AgentExecutor`,
+/// so this trait uses `impl Future` return types for zero-cost async. No
+/// `Pin<Box<dyn Future>>` overhead is required.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use a2a_server::executor::AgentExecutor;
+/// use a2a_server::request_context::RequestContext;
+/// use a2a_server::streaming::EventQueueWriter;
+/// use a2a_types::error::A2aResult;
+///
+/// struct MyAgent;
+///
+/// impl AgentExecutor for MyAgent {
+///     async fn execute(
+///         &self,
+///         ctx: &RequestContext,
+///         queue: &dyn EventQueueWriter,
+///     ) -> A2aResult<()> {
+///         // Write status updates and artifacts to `queue`.
+///         Ok(())
+///     }
+/// }
+/// ```
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Executes agent logic for the given request.
     ///
@@ -43,12 +63,12 @@ pub trait AgentExecutor: Send + Sync + 'static {
         &'a self,
         ctx: &'a RequestContext,
         queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+    ) -> impl Future<Output = A2aResult<()>> + Send + 'a;
 
     /// Cancels an in-progress task.
     ///
     /// The default implementation returns an error indicating the task is not
-    /// cancelable.
+    /// cancelable. Override this to support task cancellation.
     ///
     /// # Errors
     ///
@@ -58,11 +78,11 @@ pub trait AgentExecutor: Send + Sync + 'static {
         &'a self,
         ctx: &'a RequestContext,
         _queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
+    ) -> impl Future<Output = A2aResult<()>> + Send + 'a {
+        async move {
             Err(a2a_types::error::A2aError::task_not_cancelable(
                 &ctx.task_id,
             ))
-        })
+        }
     }
 }

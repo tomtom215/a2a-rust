@@ -6,15 +6,16 @@
 //! Starts a hyper server with both JSON-RPC and REST dispatchers and tests
 //! request routing, response formats, and error handling.
 
-use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
 use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use std::future::Future;
+use std::pin::Pin;
+
 use a2a_types::error::A2aResult;
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
 use a2a_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse};
@@ -36,22 +37,16 @@ use a2a_server::streaming::EventQueueWriter;
 struct SimpleExecutor;
 
 impl AgentExecutor for SimpleExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ctx.context_id.clone(),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
-            Ok(())
-        })
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Completed),
+                metadata: None,
+            }))
+            .await?;
+        Ok(())
     }
 }
 
@@ -969,4 +964,129 @@ async fn rest_get_subscribe_allowed() {
         404,
         "GET /tasks/:id:subscribe should be routed"
     );
+}
+
+// ── Hardening dispatch tests ────────────────────────────────────────────────
+
+#[tokio::test]
+async fn jsonrpc_rejects_wrong_content_type() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    let rpc = JsonRpcRequest::with_params(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc).unwrap();
+
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "text/plain")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let result: JsonRpcErrorResponse = serde_json::from_slice(&body).expect("parse error");
+    assert_eq!(
+        result.error.code, -32700,
+        "wrong content type should be ParseError"
+    );
+}
+
+#[tokio::test]
+async fn jsonrpc_accepts_a2a_content_type() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    let rpc = JsonRpcRequest::with_params(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc).unwrap();
+
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/a2a+json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let result: serde_json::Value = serde_json::from_slice(&body).expect("parse");
+    assert!(
+        result.get("result").is_some(),
+        "a2a+json should be accepted"
+    );
+}
+
+#[tokio::test]
+async fn rest_rejects_wrong_content_type_on_post() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:send"))
+        .header("content-type", "text/xml")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 415, "wrong content type should return 415");
+}
+
+#[tokio::test]
+async fn rest_health_endpoint_returns_ok() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/health"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let value: serde_json::Value = serde_json::from_slice(&body).expect("parse health");
+    assert_eq!(value["status"], "ok");
+}
+
+#[tokio::test]
+async fn rest_ready_endpoint_returns_ok() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/ready"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+}
+
+#[tokio::test]
+async fn rest_rejects_path_traversal() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/../../../etc/passwd"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 400, "path traversal should be rejected");
 }
