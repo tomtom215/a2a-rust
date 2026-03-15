@@ -17,6 +17,10 @@ documentation          = "https://docs.rs/a2a-client"
 keywords               = ["a2a", "agent", "client", "http"]
 categories             = ["network-programming", "web-programming"]
 
+[features]
+## Enable HTTPS support via rustls (no OpenSSL system dependency).
+tls-rustls = []
+
 [dependencies]
 a2a-types      = { path = "../a2a-types" }
 serde_json     = { workspace = true }
@@ -25,3 +29,6 @@ http-body-util = { workspace = true }
 hyper-util     = { workspace = true }
 tokio          = { workspace = true }
 uuid           = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
