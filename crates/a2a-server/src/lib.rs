@@ -3,14 +3,10 @@
 
 //! A2A protocol 0.3.0 — server framework.
 //!
-//! Provides [`RequestHandler`] and [`AgentExecutor`] for implementing A2A
-//! agents over HTTP/1.1 and HTTP/2 using [`hyper`] 1.x.
+//! Provides `RequestHandler` and `AgentExecutor` for implementing A2A
+//! agents over HTTP/1.1 and HTTP/2 using hyper 1.x.
 //!
-//! # Example
-//!
-//! ```rust,no_run
-//! // Coming in Phase 3 — server framework implementation.
-//! ```
+//! Full implementation arrives in Phase 3.
 
 #![warn(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
