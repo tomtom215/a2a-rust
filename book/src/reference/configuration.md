@@ -83,11 +83,26 @@ Complete reference of all configuration options across a2a-rust crates.
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via `tracing` crate |
 
+### `a2a-client`
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `tracing` | Off | Structured logging via `tracing` crate |
+| `tls-rustls` | Off | HTTPS via rustls (no OpenSSL dependency) |
+
 ### `a2a-types`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `card-signing` | Off | Ed25519 agent card signatures |
+| `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+
+### `a2a-sdk` (umbrella)
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `signing` | Off | Enables `signing` in all sub-crates |
+| `tracing` | Off | Enables `tracing` in client and server |
+| `tls-rustls` | Off | Enables `tls-rustls` in client |
 
 ## Environment Variables
 
