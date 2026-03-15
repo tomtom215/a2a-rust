@@ -59,10 +59,6 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
     ///
     /// Serializes the produced card, computes an `ETag`, and checks
     /// conditional request headers before returning the response.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the response builder fails (should never happen).
     #[allow(clippy::future_not_send)] // Body impl may not be Sync
     pub async fn handle(
         &self,
@@ -101,7 +97,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
                             .header("last-modified", &last_modified)
                             .header("cache-control", self.cache_config.header_value())
                             .body(Full::new(Bytes::new()))
-                            .expect("response builder should not fail with valid headers")
+                            .unwrap_or_else(|_| fallback_error_response())
                     } else {
                         hyper::Response::builder()
                             .status(200)
@@ -111,7 +107,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
                             .header("last-modified", &last_modified)
                             .header("cache-control", self.cache_config.header_value())
                             .body(Full::new(Bytes::from(json)))
-                            .expect("response builder should not fail with valid headers")
+                            .unwrap_or_else(|_| fallback_error_response())
                     }
                 }
                 Err(e) => error_response(500, &format!("serialization error: {e}")),
@@ -121,10 +117,6 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
     }
 
     /// Handles a request without conditional headers (legacy compatibility).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the response builder fails (should never happen).
     pub async fn handle_unconditional(&self) -> hyper::Response<Full<Bytes>> {
         match self.producer.produce().await {
             Ok(card) => match serde_json::to_vec(&card) {
@@ -139,7 +131,7 @@ impl<P: AgentCardProducer> DynamicAgentCardHandler<P> {
                         .header("last-modified", &last_modified)
                         .header("cache-control", self.cache_config.header_value())
                         .body(Full::new(Bytes::from(json)))
-                        .expect("response builder should not fail with valid headers")
+                        .unwrap_or_else(|_| fallback_error_response())
                 }
                 Err(e) => error_response(500, &format!("serialization error: {e}")),
             },
@@ -190,5 +182,13 @@ fn error_response(status: u16, message: &str) -> hyper::Response<Full<Bytes>> {
         .status(status)
         .header("content-type", "application/json")
         .body(Full::new(Bytes::from(bytes)))
-        .expect("response builder should not fail with valid headers")
+        .unwrap_or_else(|_| fallback_error_response())
+}
+
+/// Fallback response when the response builder itself fails (should never happen
+/// with valid static header names, but avoids panicking in production).
+fn fallback_error_response() -> hyper::Response<Full<Bytes>> {
+    hyper::Response::new(Full::new(Bytes::from_static(
+        br#"{"error":"internal server error"}"#,
+    )))
 }

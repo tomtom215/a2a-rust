@@ -110,9 +110,8 @@ impl JsonRpcDispatcher {
             Err(e) => return parse_error_response(None, &e.to_string()),
         };
 
-        if raw.is_array() {
+        if let Some(items) = raw.as_array() {
             // Batch request: dispatch each element, collect responses.
-            let items = raw.as_array().unwrap();
             if items.is_empty() {
                 return parse_error_response(None, "empty batch request");
             }
