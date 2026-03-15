@@ -24,7 +24,8 @@
    - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
    - [Phase 7 — v1.0 Spec Compliance Gaps](#phase-7--v10-spec-compliance-gaps) ✅
    - [Phase 7.5 — Spec Compliance Fixes](#phase-75--spec-compliance-fixes) ✅
-   - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) 🔲
+   - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) ✅
+   - [Phase 9 — Production Hardening](#phase-9--production-hardening) ✅
 7. [Testing Strategy](#7-testing-strategy)
 8. [Quality Gates](#8-quality-gates)
 9. [Coding Standards](#9-coding-standards)
@@ -71,14 +72,15 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 | `uuid` | `>=1.8, <2` | Task/Message/Artifact ID generation | `v4` |
 | `bytes` | `1` | Zero-copy byte buffer (used by hyper/SSE) | default |
 
-### Optional Dependencies (feature-gated, not yet implemented)
+### Optional Dependencies (feature-gated)
 
 | Crate | Feature Flag | Justification |
 |---|---|---|
 | `tracing` | `tracing` | Structured logging; zero cost when disabled |
 | `rustls` | `tls-rustls` | TLS for HTTPS without OpenSSL system dep |
-| `tokio-rustls` | `tls-rustls` | Tokio-integrated TLS |
+| `hyper-rustls` | `tls-rustls` | HTTPS connector for hyper |
 | `webpki-roots` | `tls-rustls` | Mozilla root certificates |
+| `rustls-pki-types` | `tls-rustls` | Certificate type definitions |
 
 ### Dev/Test Only
 
@@ -284,23 +286,25 @@ benches/
   json_serde.rs                     [122 lines]  5 criterion benchmarks: AgentCard/Task serialize+deserialize, Message serialize
 ```
 
-### `crates/a2a-client/` (3,679 lines)
+### `crates/a2a-client/` (3,909 lines)
 
 ```
-Cargo.toml                          [~42 lines]  a2a-types + hyper + tokio + uuid; criterion bench
+Cargo.toml                          [~46 lines]  a2a-types + hyper + tokio + uuid; optional tracing + rustls; criterion bench
 src/
-  lib.rs                            [127 lines]  module declarations + pub use re-exports + doc examples
+  lib.rs                            [132 lines]  module declarations + pub use re-exports + doc examples
+  trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
+  tls.rs                            [104 lines]  TLS via hyper-rustls: default config, custom CA roots (feature-gated)
   error.rs                          [140 lines]  ClientError (Http, Serialization, Protocol, Transport, etc.), ClientResult<T>
   config.rs                         [156 lines]  ClientConfig, TlsConfig; transport binding constants (JSONRPC, REST, HTTP+JSON)
   client.rs                         [132 lines]  A2aClient struct, from_card(), config()
   builder.rs                        [285 lines]  ClientBuilder: endpoint, timeout, protocol binding, interceptors, TLS, build()
-  discovery.rs                      [306 lines]  resolve_agent_card(), CachingCardResolver (ETag/Last-Modified conditional requests)
+  discovery.rs                      [315 lines]  resolve_agent_card(), CachingCardResolver (ETag/Last-Modified conditional requests)
   interceptor.rs                    [287 lines]  CallInterceptor trait, InterceptorChain, ClientRequest, ClientResponse
   auth.rs                           [282 lines]  AuthInterceptor, CredentialsStore trait, InMemoryCredentialsStore, SessionId
   transport/
     mod.rs                          [86 lines]   Transport trait definition; truncate_body() helper; re-exports
-    jsonrpc.rs                      [325 lines]  JSON-RPC over HTTP: build request, parse response, SSE streaming, body reader
-    rest.rs                         [504 lines]  REST over HTTP: route mapping, path/query params, verb mapping, streaming
+    jsonrpc.rs                      [359 lines]  JSON-RPC over HTTP: build request, parse response, SSE streaming, body reader
+    rest.rs                         [533 lines]  REST over HTTP: route mapping, path/query params, verb mapping, streaming
   methods/
     mod.rs                          [13 lines]   re-exports
     send_message.rs                 [72 lines]   send_message() + stream_message()
@@ -315,23 +319,24 @@ benches/
   sse_parse.rs                      [71 lines]   3 criterion benchmarks: single/batch/fragmented SSE parsing
 ```
 
-### `crates/a2a-server/` (5,322 lines)
+### `crates/a2a-server/` (5,399 lines)
 
 ```
-Cargo.toml                          [~43 lines]  a2a-types + hyper + tokio + uuid + bytes
+Cargo.toml                          [~46 lines]  a2a-types + hyper + tokio + uuid + bytes; optional tracing
 src/
-  lib.rs                            [67 lines]   module declarations + pub use re-exports
+  lib.rs                            [70 lines]   module declarations + pub use re-exports
+  trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
   error.rs                          [135 lines]  ServerError, ServerResult<T>, to_a2a_error() conversion
   executor.rs                       [68 lines]   AgentExecutor trait (Pin<Box<dyn Future>> for object safety)
-  handler.rs                        [489 lines]  RequestHandler<E>: on_send_message, collect_events, find_task_by_context, deliver_push, return_immediately
+  handler.rs                        [504 lines]  RequestHandler<E>: on_send_message, collect_events, find_task_by_context, deliver_push, return_immediately
   builder.rs                        [126 lines]  RequestHandlerBuilder: executor, stores, push, interceptors, agent card
   request_context.rs                [61 lines]   RequestContext: message, task_id, context_id, stored_task, metadata
   call_context.rs                   [50 lines]   CallContext: method name for interceptor use
   interceptor.rs                    [111 lines]  ServerInterceptor trait, ServerInterceptorChain (before/after hooks)
   dispatch/
     mod.rs                          [10 lines]   re-exports
-    jsonrpc.rs                      [228 lines]  JSON-RPC 2.0 dispatcher: route PascalCase methods, serialize responses, A2A-Version header
-    rest.rs                         [398 lines]  REST dispatcher: route HTTP verb + path, colon-suffixed actions, tenant prefix, query parsing
+    jsonrpc.rs                      [229 lines]  JSON-RPC 2.0 dispatcher: route PascalCase methods, serialize responses, A2A-Version header
+    rest.rs                         [399 lines]  REST dispatcher: route HTTP verb + path, colon-suffixed actions, tenant prefix, query parsing
   agent_card/
     mod.rs                          [14 lines]   re-exports; CORS_ALLOW_ALL constant; caching module
     static_handler.rs               [191 lines]  StaticAgentCardHandler: pre-serialized AgentCard + ETag/Last-Modified/Cache-Control + 304
@@ -339,15 +344,15 @@ src/
     caching.rs                      [336 lines]  HTTP caching: make_etag (FNV-1a), format_http_date (RFC 7231), check_conditional, CacheConfig
   streaming/
     mod.rs                          [12 lines]   re-exports
-    sse.rs                          [192 lines]  build_sse_response (wraps events in JSON-RPC envelopes), SseBodyWriter, keep-alive
+    sse.rs                          [193 lines]  build_sse_response (wraps events in JSON-RPC envelopes), SseBodyWriter, keep-alive
     event_queue.rs                  [173 lines]  EventQueueWriter/Reader traits, InMemoryQueue (mpsc), EventQueueManager
   push/
     mod.rs                          [10 lines]   re-exports
-    sender.rs                       [131 lines]  PushSender trait, HttpPushSender impl
+    sender.rs                       [137 lines]  PushSender trait, HttpPushSender impl
     config_store.rs                 [141 lines]  PushConfigStore trait, InMemoryPushConfigStore
   store/
     mod.rs                          [8 lines]    re-exports
-    task_store.rs                   [154 lines]  TaskStore trait, InMemoryTaskStore (with list filtering)
+    task_store.rs                   [156 lines]  TaskStore trait, InMemoryTaskStore (with list filtering)
 ```
 
 ### `crates/a2a-sdk/` (83 lines)
@@ -358,13 +363,14 @@ src/
   lib.rs                            [83 lines]   types/client/server modules + prelude with common re-exports
 ```
 
-### `examples/` (415 lines)
+### `examples/` (427 lines)
 
 ```
 echo-agent/
-  Cargo.toml                        [~24 lines]
-  src/main.rs                       [415 lines]  Full-stack demo: EchoExecutor, JSON-RPC + REST servers,
-                                                 5 demos (sync/streaming × JSON-RPC/REST + GetTask)
+  Cargo.toml                        [~29 lines]  optional tracing + tracing-subscriber features
+  src/main.rs                       [427 lines]  Full-stack demo: EchoExecutor, JSON-RPC + REST servers,
+                                                 5 demos (sync/streaming × JSON-RPC/REST + GetTask),
+                                                 optional tracing-subscriber setup
 ```
 
 ### Integration Tests (2,022 lines)
@@ -385,13 +391,13 @@ crates/a2a-server/tests/
 | Component | Lines |
 |---|---|
 | a2a-types | 4,098 |
-| a2a-client | 3,679 |
-| a2a-server | 5,322 |
+| a2a-client | 3,909 |
+| a2a-server | 5,399 |
 | a2a-sdk | 83 |
-| examples | 415 |
+| examples | 427 |
 | integration tests | 2,022 |
-| **Total** | **~15,600** |
-| **Tests** | **220 (84 types + 62 client + 60 server + 1 sdk + 8 proptest + 5 benches)** |
+| **Total** | **~15,938** |
+| **Tests** | **225 (84 types + 66 client + 60 server + 1 sdk + 8 proptest + 5 benches + 1 doc-test)** |
 
 ---
 
@@ -670,9 +676,61 @@ Files: `crates/a2a-types/src/signing.rs`
 | `CONTRIBUTING.md` update | ✅ | Testing guide, PR checklist, benchmark docs |
 | Publish dry-run | ✅ | `a2a-types` passes; client/server/sdk need types published first |
 | Version alignment | ✅ | All crates at `0.1.0`, descriptions updated to v1.0 |
-| `tracing` feature flag | 🔲 | Optional structured logging (future work) |
-| TLS support | 🔲 | `tls-rustls` feature for HTTPS (future work) |
-| CI pipeline hardening | 🔲 | Enforce all quality gates in GitHub Actions (future work) |
+| `tracing` feature flag | ✅ | Implemented in Phase 9A |
+| TLS support | ✅ | Implemented in Phase 9B |
+| CI pipeline hardening | ✅ | Implemented in Phase 9C |
+
+---
+
+### Phase 9 — Production Hardening ✅ COMPLETE
+
+**Deliverables:** Feature-gated tracing, TLS support, and hardened CI pipeline. 225 tests passing.
+
+#### 9A. `tracing` Feature Flag ✅
+
+| Item | Status |
+|---|---|
+| `tracing` workspace dependency (optional) | ✅ `>=0.1.40, <0.2` |
+| Feature-gate in `a2a-client` and `a2a-server` | ✅ Behind `tracing` feature flag |
+| Conditional trace macros (zero cost when disabled) | ✅ `trace_info!`, `trace_debug!`, `trace_warn!`, `trace_error!` |
+| Client instrumentation | ✅ JSON-RPC + REST transport requests, SSE streams, discovery |
+| Server instrumentation | ✅ Handler dispatch, executor lifecycle, push delivery, task store, SSE |
+| Echo-agent `tracing-subscriber` setup | ✅ Optional via `tracing` feature, `RUST_LOG` env filter |
+| SDK umbrella feature | ✅ `a2a-sdk/tracing` enables both client + server tracing |
+
+Files: `crates/a2a-client/src/trace.rs`, `crates/a2a-server/src/trace.rs`
+
+#### 9B. TLS Support (`tls-rustls` feature) ✅
+
+| Item | Status |
+|---|---|
+| `hyper-rustls` + `rustls` + `webpki-roots` deps | ✅ Feature-gated behind `tls-rustls` |
+| HTTPS connector for JSON-RPC transport | ✅ Conditional `HttpClient` type alias |
+| HTTPS connector for REST transport | ✅ Conditional `HttpClient` type alias |
+| HTTPS connector for discovery | ✅ Conditional client creation |
+| `default_tls_config()` — Mozilla root certs | ✅ TLS 1.2+, ring crypto provider |
+| `tls_config_with_extra_roots()` — custom CA certs | ✅ For enterprise/internal PKI |
+| `TlsConfig` enum in `config.rs` | ✅ `Disabled` / `Rustls` variants |
+| SDK umbrella feature | ✅ `a2a-sdk/tls-rustls` enables client TLS |
+| Unit tests | ✅ 4 tests: config creation, client creation, custom roots |
+
+Files: `crates/a2a-client/src/tls.rs`
+
+#### 9C. CI Pipeline Hardening ✅
+
+| Item | Status |
+|---|---|
+| Matrix strategy (stable + MSRV 1.93) | ✅ Clippy + test on both |
+| Format check job | ✅ `cargo fmt --all -- --check` |
+| Clippy job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
+| Test job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
+| Documentation build | ✅ `RUSTDOCFLAGS="-D warnings"` |
+| `cargo-deny` check | ✅ License/advisory/ban compliance |
+| Publish dry-run | ✅ `a2a-types` publish verification |
+| Cargo caching | ✅ `actions/cache@v4` for registry + target |
+| `dtolnay/rust-toolchain` for reproducible installs | ✅ Stable + MSRV matrix |
+
+Files: `.github/workflows/ci.yml`
 
 ---
 
@@ -683,10 +741,12 @@ Files: `crates/a2a-types/src/signing.rs`
 | Crate | Unit Tests | Integration Tests | Property/Corpus | Doc-Tests | Total |
 |---|---|---|---|---|---|
 | `a2a-types` | 59 | 25 | 17 | — | 101 |
-| `a2a-client` | 54 | — | — | 8 | 62 |
+| `a2a-client` | 58 | — | — | 8 | 66 |
 | `a2a-server` | 24 | 24 | — | — | 48 |
 | `a2a-sdk` | — | — | — | 1 | 1 |
-| **Total** | **137** | **49** | **17** | **9** | **212** |
+| **Total** | **141** | **49** | **17** | **9** | **216** |
+
+*Note: 4 additional TLS tests run with `--features tls-rustls`. Total with all features: 225.*
 
 ### Test Patterns
 
@@ -719,7 +779,7 @@ Examples:
 
 ## 8. Quality Gates
 
-All gates must pass before tagging a release. Currently enforced manually; CI hardening is a Phase 8 task.
+All gates must pass before tagging a release. Enforced by CI (`.github/workflows/ci.yml`) on stable + MSRV (1.93).
 
 ```bash
 # Formatting (zero diffs allowed)

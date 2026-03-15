@@ -32,8 +32,11 @@ use std::time::Duration;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::header;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
 
@@ -45,7 +48,11 @@ use crate::transport::Transport;
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
 
+#[cfg(not(feature = "tls-rustls"))]
 type HttpClient = Client<HttpConnector, Full<Bytes>>;
+
+#[cfg(feature = "tls-rustls")]
+type HttpClient = crate::tls::HttpsClient;
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 
@@ -188,7 +195,12 @@ impl RestTransport {
             )));
         }
 
+        #[cfg(not(feature = "tls-rustls"))]
         let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+
+        #[cfg(feature = "tls-rustls")]
+        let client = crate::tls::build_https_client();
+
         Ok(Self {
             inner: Arc::new(Inner {
                 client,
@@ -296,14 +308,23 @@ impl RestTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
+        trace_info!(method, base_url = %self.inner.base_url, "sending REST request");
+
         let req = self.build_request(method, &params, extra_headers, false)?;
 
         let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
             .await
-            .map_err(|_| ClientError::Transport("request timed out".into()))?
-            .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+            .map_err(|_| {
+                trace_error!(method, "request timed out");
+                ClientError::Transport("request timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
+        trace_debug!(method, %status, "received response");
         let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
 
         if !status.is_success() {
@@ -341,12 +362,20 @@ impl RestTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
+        trace_info!(method, base_url = %self.inner.base_url, "opening REST SSE stream");
+
         let req = self.build_request(method, &params, extra_headers, true)?;
 
         let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
             .await
-            .map_err(|_| ClientError::Transport("stream connect timed out".into()))?
-            .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+            .map_err(|_| {
+                trace_error!(method, "stream connect timed out");
+                ClientError::Transport("stream connect timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
         if !status.is_success() {

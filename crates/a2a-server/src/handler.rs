@@ -60,11 +60,14 @@ impl<E: AgentExecutor> RequestHandler<E> {
         params: MessageSendParams,
         streaming: bool,
     ) -> ServerResult<SendMessageResult> {
-        let call_ctx = CallContext::new(if streaming {
+        let method_name = if streaming {
             "SendStreamingMessage"
         } else {
             "SendMessage"
-        });
+        };
+        trace_info!(method = method_name, streaming, "handling send message");
+
+        let call_ctx = CallContext::new(method_name);
         self.interceptors.run_before(&call_ctx).await?;
 
         // Generate task and context IDs.
@@ -99,6 +102,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
             .unwrap_or(false);
 
         // Create initial task.
+        trace_debug!(
+            task_id = %task_id,
+            context_id = %context_id,
+            "creating task"
+        );
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
@@ -130,8 +138,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let task_id_for_cleanup = task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
         tokio::spawn(async move {
+            trace_debug!(task_id = %ctx.task_id, "executor started");
             let result = executor.execute(&ctx, writer.as_ref()).await;
-            if let Err(e) = result {
+            if let Err(ref e) = result {
+                trace_error!(task_id = %ctx.task_id, error = %e, "executor failed");
                 // Write a failed status update on error.
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
@@ -173,6 +183,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
+        trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
         let call_ctx = CallContext::new("GetTask");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -193,6 +204,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     ///
     /// Returns a [`ServerError`] if the store operation fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
+        trace_info!(method = "ListTasks", "handling list tasks");
         let call_ctx = CallContext::new("ListTasks");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -209,6 +221,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist, or
     /// [`ServerError::TaskNotCancelable`] if the task is in a terminal state.
     pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
+        trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         let call_ctx = CallContext::new("CancelTask");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -257,6 +270,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
+        trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
         let call_ctx = CallContext::new("SubscribeToTask");
         self.interceptors.run_before(&call_ctx).await?;
 

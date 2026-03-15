@@ -103,6 +103,9 @@
 
 // ── Modules ───────────────────────────────────────────────────────────────────
 
+#[macro_use]
+mod trace;
+
 pub mod auth;
 pub mod builder;
 pub mod client;
@@ -112,6 +115,8 @@ pub mod error;
 pub mod interceptor;
 pub mod methods;
 pub mod streaming;
+#[cfg(feature = "tls-rustls")]
+pub mod tls;
 pub mod transport;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────

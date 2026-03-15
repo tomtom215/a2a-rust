@@ -69,6 +69,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         let method = req.method().clone();
         let path = req.uri().path().to_owned();
         let query = req.uri().query().unwrap_or("").to_owned();
+        trace_info!(http_method = %method, %path, "dispatching REST request");
 
         // Agent card is always at the well-known path (no tenant prefix).
         if method == "GET" && path == "/.well-known/agent.json" {

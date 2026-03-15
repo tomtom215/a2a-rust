@@ -173,6 +173,12 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 # 5. With signing feature (if changes touch signing code)
 cargo clippy --workspace --all-targets --features signing
 cargo test --workspace --features signing
+
+# 6. With tracing feature (if changes touch tracing code)
+cargo test --workspace --features tracing
+
+# 7. With TLS feature (if changes touch TLS code)
+cargo test -p a2a-client --features tls-rustls
 ```
 
 ---

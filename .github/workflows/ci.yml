@@ -1,7 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F.
 #
-# Continuous integration — format, lint, test, doc.
+# Continuous integration — enforces all quality gates.
+#
+# Jobs: format, clippy, test (default + signing + tls-rustls + tracing),
+#       documentation, cargo-deny (license/advisory), publish dry-run.
+#
+# Matrix: stable + MSRV (1.93).
 
 name: CI
 
@@ -16,36 +21,125 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # ── Format check ─────────────────────────────────────────────────────────
   fmt:
-    name: Format check
+    name: Format
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+  # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
-    name: Clippy
+    name: Clippy (${{ matrix.rust }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, "1.93"]
     steps:
       - uses: actions/checkout@v4
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-clippy-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-clippy-${{ matrix.rust }}-
+      - name: Clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (signing)
+        run: cargo clippy --workspace --all-targets --features signing -- -D warnings
+      - name: Clippy (tracing)
+        run: cargo clippy --workspace --all-targets --features tracing -- -D warnings
+      - name: Clippy (tls-rustls)
+        run: cargo clippy -p a2a-client --all-targets --features tls-rustls -- -D warnings
 
+  # ── Tests ────────────────────────────────────────────────────────────────
   test:
-    name: Test
+    name: Test (${{ matrix.rust }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: [stable, "1.93"]
     steps:
       - uses: actions/checkout@v4
-      - name: Run tests
-        run: cargo test --workspace --all-targets
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ matrix.rust }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-${{ matrix.rust }}-
+      - name: Test (default features)
+        run: cargo test --workspace
+      - name: Test (signing feature)
+        run: cargo test --workspace --features signing
+      - name: Test (tracing feature)
+        run: cargo test --workspace --features tracing
+      - name: Test (tls-rustls feature)
+        run: cargo test -p a2a-client --features tls-rustls
 
+  # ── Documentation ────────────────────────────────────────────────────────
   doc:
-    name: Doc
+    name: Documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build docs
-        run: cargo doc --workspace --no-deps --document-private-items
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-doc-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-doc-
+      - name: Build docs (zero warnings)
+        run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
+
+  # ── cargo-deny (license/advisory compliance) ─────────────────────────────
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  # ── Publish dry-run ──────────────────────────────────────────────────────
+  publish-dry-run:
+    name: Publish dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-publish-
+      - name: Dry-run publish (a2a-types)
+        run: cargo publish -p a2a-types --dry-run

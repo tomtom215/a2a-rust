@@ -22,8 +22,11 @@ use std::time::Duration;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::header;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -36,7 +39,11 @@ use crate::transport::Transport;
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
 
+#[cfg(not(feature = "tls-rustls"))]
 type HttpClient = Client<HttpConnector, Full<Bytes>>;
+
+#[cfg(feature = "tls-rustls")]
+type HttpClient = crate::tls::HttpsClient;
 
 // ── JsonRpcTransport ──────────────────────────────────────────────────────────
 
@@ -80,7 +87,11 @@ impl JsonRpcTransport {
         let endpoint = endpoint.into();
         validate_url(&endpoint)?;
 
+        #[cfg(not(feature = "tls-rustls"))]
         let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+
+        #[cfg(feature = "tls-rustls")]
+        let client = crate::tls::build_https_client();
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -138,18 +149,29 @@ impl JsonRpcTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
+        trace_info!(method, endpoint = %self.inner.endpoint, "sending JSON-RPC request");
+
         let req = self.build_request(method, params, extra_headers, false)?;
 
         let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
             .await
-            .map_err(|_| ClientError::Transport("request timed out".into()))?
-            .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+            .map_err(|_| {
+                trace_error!(method, "request timed out");
+                ClientError::Transport("request timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
+        trace_debug!(method, %status, "received response");
+
         let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
+            trace_warn!(method, %status, "unexpected HTTP status");
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
@@ -160,8 +182,12 @@ impl JsonRpcTransport {
             serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)?;
 
         match envelope {
-            JsonRpcResponse::Success(ok) => Ok(ok.result),
+            JsonRpcResponse::Success(ok) => {
+                trace_info!(method, "request succeeded");
+                Ok(ok.result)
+            }
             JsonRpcResponse::Error(err) => {
+                trace_warn!(method, code = err.error.code, "JSON-RPC error response");
                 let a2a = a2a_types::A2aError::new(
                     a2a_types::ErrorCode::try_from(err.error.code)
                         .unwrap_or(a2a_types::ErrorCode::InternalError),
@@ -178,12 +204,20 @@ impl JsonRpcTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
+        trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
+
         let req = self.build_request(method, params, extra_headers, true)?;
 
         let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
             .await
-            .map_err(|_| ClientError::Transport("stream connect timed out".into()))?
-            .map_err(|e| ClientError::HttpClient(e.to_string()))?;
+            .map_err(|_| {
+                trace_error!(method, "stream connect timed out");
+                ClientError::Transport("stream connect timed out".into())
+            })?
+            .map_err(|e| {
+                trace_error!(method, error = %e, "HTTP client error");
+                ClientError::HttpClient(e.to_string())
+            })?;
 
         let status = resp.status();
         if !status.is_success() {

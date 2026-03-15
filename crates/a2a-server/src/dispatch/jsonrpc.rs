@@ -63,6 +63,7 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
         };
 
         let id = rpc_req.id.clone();
+        trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
 
         match rpc_req.method.as_str() {
             "SendMessage" => self.dispatch_send_message(id, &rpc_req, false).await,
