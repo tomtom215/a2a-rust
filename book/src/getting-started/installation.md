@@ -49,14 +49,21 @@ This is useful when:
 
 | Feature | Default | Description |
 |---------|---------|-------------|
-| `card-signing` | Off | Ed25519 agent card signature support |
+| `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+
+### `a2a-client`
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `tls-rustls` | Off | HTTPS via rustls (no OpenSSL required) |
 
 Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
 a2a-server = { version = "0.2", features = ["tracing"] }
-a2a-types = { version = "0.2", features = ["card-signing"] }
+a2a-types = { version = "0.2", features = ["signing"] }
+a2a-client = { version = "0.2", features = ["tls-rustls"] }
 ```
 
 ## Verifying the Installation

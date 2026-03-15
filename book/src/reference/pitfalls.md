@@ -128,7 +128,7 @@ The `fuzz/` directory contains its own `Cargo.toml` with `[workspace]` to preven
 
 ### Feature unification across workspace
 
-Enabling a feature in one crate (e.g., `card-signing` in `a2a-types`) enables it for all crates in the workspace during `cargo test --workspace`. Use `--no-default-features` or per-crate test commands when testing feature gates.
+Enabling a feature in one crate (e.g., `signing` in `a2a-types`) enables it for all crates in the workspace during `cargo test --workspace`. Use `--no-default-features` or per-crate test commands when testing feature gates.
 
 ## Testing Pitfalls
 

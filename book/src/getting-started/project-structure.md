@@ -28,7 +28,9 @@ a2a-rust/
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
 │   │       ├── transport/      # JsonRpcTransport, RestTransport
-│   │       ├── sse/            # SSE parser, EventStream
+│   │       ├── streaming/      # SSE parser, EventStream
+│   │       ├── methods/        # send_message, tasks, push_config
+│   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
 │   │       └── interceptor.rs  # CallInterceptor, InterceptorChain
 │   │
 │   ├── a2a-server/         # Server framework
@@ -42,7 +44,7 @@ a2a-rust/
 │   │       ├── push/           # PushConfigStore, PushSender
 │   │       ├── streaming/      # EventQueueWriter, EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
-│   │       ├── config.rs       # CorsConfig, TaskStoreConfig
+│   │       ├── metrics.rs      # Metrics trait, NoopMetrics
 │   │       └── request_context.rs  # RequestContext
 │   │
 │   └── a2a-sdk/            # Umbrella crate

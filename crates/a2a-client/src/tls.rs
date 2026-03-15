@@ -11,7 +11,7 @@
 //!
 //! For enterprise/internal PKI, use [`tls_config_with_extra_roots`] to create
 //! a [`rustls::ClientConfig`] with additional trust anchors, then pass it to
-//! [`build_https_client`].
+//! the client builder.
 
 use http_body_util::Full;
 use hyper::body::Bytes;

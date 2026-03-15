@@ -188,26 +188,31 @@ This starts servers on random ports and runs 5 demos:
 
 ## Architecture
 
-```
-┌───────────────────────────────────────────────┐
-│                 User Code                     │
-│  (implements AgentExecutor or uses Client)    │
-└──────────────────────┬────────────────────────┘
-                       │
-┌──────────────────────▼────────────────────────┐
-│           a2a-server / a2a-client             │
-│   RequestHandler · AgentExecutor · Client     │
-└──────────────────────┬────────────────────────┘
-                       │
-┌──────────────────────▼────────────────────────┐
-│              Transport Layer                  │
-│   JsonRpcDispatcher · RestDispatcher          │
-│   JsonRpcTransport  · RestTransport           │
-└──────────────────────┬────────────────────────┘
-                       │
-┌──────────────────────▼────────────────────────┐
-│                hyper 1.x                      │
-└───────────────────────────────────────────────┘
+```mermaid
+block-beta
+    columns 1
+    block:user["User Code"]
+        columns 1
+        u1["implements AgentExecutor or uses Client"]
+    end
+    space
+    block:framework["a2a-server / a2a-client"]
+        columns 1
+        f1["RequestHandler · AgentExecutor · Client"]
+    end
+    space
+    block:transport["Transport Layer"]
+        columns 1
+        t1["JsonRpcDispatcher · RestDispatcher"]
+        t2["JsonRpcTransport · RestTransport"]
+    end
+    space
+    block:http["hyper 1.x"]
+        columns 1
+        h1["HTTP/1.1 + HTTP/2"]
+    end
+
+    user --> framework --> transport --> http
 ```
 
 The server uses a 3-layer architecture:

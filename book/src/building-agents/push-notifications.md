@@ -4,18 +4,21 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 
 ## How Push Notifications Work
 
-```
-Client                           Agent Server                    Client Webhook
-  │                                │                                │
-  │── CreatePushNotificationConfig─→│                                │
-  │←── config with server ID ──────│                                │
-  │                                │                                │
-  │── SendMessage ────────────────→│                                │
-  │←── Task (submitted) ──────────│                                │
-  │                                │  (executor runs)              │
-  │                                │── POST event ────────────────→│
-  │                                │── POST event ────────────────→│
-  │                                │                                │
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Agent Server
+    participant W as Client Webhook
+
+    C->>S: CreatePushNotificationConfig
+    S-->>C: Config with server ID
+
+    C->>S: SendMessage
+    S-->>C: Task (submitted)
+
+    Note right of S: Executor runs
+    S->>W: POST event
+    S->>W: POST event
 ```
 
 1. Client registers a webhook URL via `CreateTaskPushNotificationConfig`
