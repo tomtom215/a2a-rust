@@ -1,0 +1,17 @@
+/target
+
+# Environment secrets
+.env
+.env.*
+
+# IDE directories
+.idea/
+.vscode/
+*.iml
+
+# macOS artifacts
+.DS_Store
+
+# Editor swap files
+*.swp
+*.swo

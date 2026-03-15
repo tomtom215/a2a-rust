@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# cargo-deny configuration — license allowlist, banned crates, source policy.
+# Run: cargo deny check
+
+[graph]
+all-features    = false
+no-default-features = false
+
+# ---------------------------------------------------------------------------
+# License policy
+# ---------------------------------------------------------------------------
+[licenses]
+# Require high confidence for license detection
+confidence-threshold = 0.8
+
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+]
+
+# ---------------------------------------------------------------------------
+# Security advisories
+# ---------------------------------------------------------------------------
+[advisories]
+db-path   = "~/.cargo/advisory-db"
+db-urls   = ["https://github.com/rustsec/advisory-db"]
+yanked    = "warn"
+
+# ---------------------------------------------------------------------------
+# Banned crates
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards         = "warn"
+
+deny = [
+    # System OpenSSL dep breaks musl/alpine cross-compilation
+    { name = "openssl-sys" },
+    # reqwest carries 30+ transitive deps we do not need
+    { name = "reqwest" },
+]
+
+# ---------------------------------------------------------------------------
+# Source policy — only crates.io, no unknown git sources
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git      = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Clippy configuration — pedantic + nursery lint levels.
+# Lint levels are set in each crate's lib.rs; this file holds per-lint overrides.
+
+# Allow module_name_repetitions: common pattern in Rust SDKs (e.g. ClientError, ClientBuilder)
+# is clearer than forcing callers to write a2a_client::Error or a2a_client::Builder.
+# Minimum function line count before suggesting extraction
+too-many-lines-threshold = 60
+
+# Maximum number of function arguments before warning
+too-many-arguments-threshold = 7
+
+# Cognitive complexity threshold
+cognitive-complexity-threshold = 25
