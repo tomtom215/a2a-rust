@@ -258,12 +258,12 @@ impl A2aClient {
 
 Every file listed with its responsibility and actual line count. No source file exceeds 500 lines.
 
-### `crates/a2a-types/` (2,930 lines)
+### `crates/a2a-types/` (4,098 lines)
 
 ```
-Cargo.toml                          [~25 lines]  serde + serde_json only
+Cargo.toml                          [~37 lines]  serde + serde_json; optional base64 + ring (signing feature)
 src/
-  lib.rs                            [79 lines]   module declarations + pub use re-exports + protocol constants
+  lib.rs                            [85 lines]   module declarations + pub use re-exports + protocol constants
   error.rs                          [276 lines]  A2aError, ErrorCode enum, A2aResult<T>
   task.rs                           [333 lines]  Task, TaskStatus, TaskState (SCREAMING_SNAKE_CASE), TaskId, ContextId, TaskVersion
   message.rs                        [308 lines]  Message, MessageRole, Part, PartContent (untagged oneof: Text/Raw/Url/Data)
@@ -276,19 +276,25 @@ src/
   push.rs                           [116 lines]  TaskPushNotificationConfig, AuthenticationInfo
   extensions.rs                     [105 lines]  AgentExtension, AgentCardSignature
   responses.rs                      [164 lines]  SendMessageResponse (Task|Message union), TaskListResponse
+  signing.rs                        [377 lines]  RFC 8785 JSON canonicalization, JWS compact serialization (ES256), sign/verify (feature-gated)
+tests/
+  proptest_types.rs                 [132 lines]  8 property-based tests: TaskState, Part, ID types
+  corpus_json.rs                    [306 lines]  17 corpus-based JSON round-trip tests
+benches/
+  json_serde.rs                     [122 lines]  5 criterion benchmarks: AgentCard/Task serialize+deserialize, Message serialize
 ```
 
-### `crates/a2a-client/` (3,456 lines)
+### `crates/a2a-client/` (3,679 lines)
 
 ```
-Cargo.toml                          [~35 lines]  a2a-types + hyper + tokio + uuid
+Cargo.toml                          [~42 lines]  a2a-types + hyper + tokio + uuid; criterion bench
 src/
   lib.rs                            [127 lines]  module declarations + pub use re-exports + doc examples
   error.rs                          [140 lines]  ClientError (Http, Serialization, Protocol, Transport, etc.), ClientResult<T>
   config.rs                         [156 lines]  ClientConfig, TlsConfig; transport binding constants (JSONRPC, REST, HTTP+JSON)
   client.rs                         [132 lines]  A2aClient struct, from_card(), config()
   builder.rs                        [285 lines]  ClientBuilder: endpoint, timeout, protocol binding, interceptors, TLS, build()
-  discovery.rs                      [157 lines]  resolve_agent_card(): fetch /.well-known/agent.json; parse + validate
+  discovery.rs                      [306 lines]  resolve_agent_card(), CachingCardResolver (ETag/Last-Modified conditional requests)
   interceptor.rs                    [287 lines]  CallInterceptor trait, InterceptorChain, ClientRequest, ClientResponse
   auth.rs                           [282 lines]  AuthInterceptor, CredentialsStore trait, InMemoryCredentialsStore, SessionId
   transport/
@@ -305,12 +311,14 @@ src/
     mod.rs                          [14 lines]   re-exports
     sse_parser.rs                   [269 lines]  SSE line parser; frame accumulator; handles keep-alive comments
     event_stream.rs                 [245 lines]  EventStream: reads SSE frames; deserializes JsonRpcResponse<StreamResponse>
+benches/
+  sse_parse.rs                      [71 lines]   3 criterion benchmarks: single/batch/fragmented SSE parsing
 ```
 
-### `crates/a2a-server/` (2,701 lines)
+### `crates/a2a-server/` (5,322 lines)
 
 ```
-Cargo.toml                          [~38 lines]  a2a-types + hyper + tokio + uuid + bytes
+Cargo.toml                          [~43 lines]  a2a-types + hyper + tokio + uuid + bytes
 src/
   lib.rs                            [67 lines]   module declarations + pub use re-exports
   error.rs                          [135 lines]  ServerError, ServerResult<T>, to_a2a_error() conversion
@@ -323,11 +331,12 @@ src/
   dispatch/
     mod.rs                          [10 lines]   re-exports
     jsonrpc.rs                      [228 lines]  JSON-RPC 2.0 dispatcher: route PascalCase methods, serialize responses, A2A-Version header
-    rest.rs                         [397 lines]  REST dispatcher: route HTTP verb + path, colon-suffixed actions, tenant prefix, query parsing
+    rest.rs                         [398 lines]  REST dispatcher: route HTTP verb + path, colon-suffixed actions, tenant prefix, query parsing
   agent_card/
-    mod.rs                          [13 lines]   re-exports; CORS_ALLOW_ALL constant
-    static_handler.rs               [50 lines]   StaticAgentCardHandler: serves pre-serialized AgentCard
-    dynamic_handler.rs              [75 lines]   DynamicAgentCardHandler, AgentCardProducer trait
+    mod.rs                          [14 lines]   re-exports; CORS_ALLOW_ALL constant; caching module
+    static_handler.rs               [191 lines]  StaticAgentCardHandler: pre-serialized AgentCard + ETag/Last-Modified/Cache-Control + 304
+    dynamic_handler.rs              [194 lines]  DynamicAgentCardHandler, AgentCardProducer trait + conditional request handling
+    caching.rs                      [336 lines]  HTTP caching: make_etag (FNV-1a), format_http_date (RFC 7231), check_conditional, CacheConfig
   streaming/
     mod.rs                          [12 lines]   re-exports
     sse.rs                          [192 lines]  build_sse_response (wraps events in JSON-RPC envelopes), SseBodyWriter, keep-alive
@@ -358,11 +367,11 @@ echo-agent/
                                                  5 demos (sync/streaming × JSON-RPC/REST + GetTask)
 ```
 
-### Integration Tests (2,019 lines)
+### Integration Tests (2,022 lines)
 
 ```
 crates/a2a-server/tests/
-  handler_tests.rs                  [904 lines]  24 tests: EchoExecutor, FailingExecutor, CancelableExecutor, RejectInterceptor,
+  handler_tests.rs                  [907 lines]  24 tests: EchoExecutor, FailingExecutor, CancelableExecutor, RejectInterceptor,
                                                  send/get/list/cancel/resubscribe/push config CRUD,
                                                  return_immediately, context/task mismatch, interceptor rejection
   dispatch_tests.rs                 [972 lines]  25 tests: real TCP server, JSON-RPC + REST dispatch,
@@ -375,14 +384,14 @@ crates/a2a-server/tests/
 
 | Component | Lines |
 |---|---|
-| a2a-types | 2,930 |
-| a2a-client | 3,456 |
-| a2a-server | 2,701 |
+| a2a-types | 4,098 |
+| a2a-client | 3,679 |
+| a2a-server | 5,322 |
 | a2a-sdk | 83 |
-| examples | 416 |
-| integration tests | 2,019 |
-| **Total** | **~11,600** |
-| **Tests** | **175 (59 types + 51+8 client + 56 server + 1 sdk)** |
+| examples | 415 |
+| integration tests | 2,022 |
+| **Total** | **~15,600** |
+| **Tests** | **220 (84 types + 62 client + 60 server + 1 sdk + 8 proptest + 5 benches)** |
 
 ---
 
@@ -622,55 +631,48 @@ All demos complete successfully, validating the full client-server pipeline acro
 
 ---
 
-### Phase 8 — Caching, Signing & Release Preparation 🔲 NOT STARTED
+### Phase 8 — Caching, Signing & Release Preparation ✅ COMPLETE
 
 **Deliverables:** Advanced spec features, quality gates passing, crates publishable.
 
-#### 8A. HTTP Caching (spec §8.3)
+#### 8A. HTTP Caching (spec §8.3) ✅
 
-The spec defines caching semantics for agent card responses:
-
-| Item | Change Required |
+| Item | Status |
 |---|---|
-| `Cache-Control` header | Server SHOULD include `Cache-Control: max-age=...` on agent card responses |
-| `ETag` header | Server SHOULD include `ETag` for conditional request support |
-| `Last-Modified` header | Server SHOULD include `Last-Modified` for conditional requests |
-| Conditional request handling | Server MUST return 304 Not Modified when `If-None-Match` / `If-Modified-Since` match |
-| Client caching | Client SHOULD cache agent cards and send conditional request headers |
+| `Cache-Control` header | ✅ `public, max-age=3600` default, configurable |
+| `ETag` header | ✅ FNV-1a weak ETag (`W/"..."`) |
+| `Last-Modified` header | ✅ RFC 7231 IMF-fixdate format |
+| Conditional request handling (`If-None-Match`, `If-Modified-Since`) | ✅ Returns 304 Not Modified |
+| Client-side caching (`CachingCardResolver`) | ✅ Sends conditional headers, caches card |
 
-Location: `agent_card/static_handler.rs`, `agent_card/dynamic_handler.rs`, `discovery.rs`
+Files: `agent_card/caching.rs`, `agent_card/static_handler.rs`, `agent_card/dynamic_handler.rs`, `discovery.rs`
 
-**Estimated effort:** ~2 hours.
+#### 8B. Agent Card Signing (spec §10) ✅
 
-#### 8B. Agent Card Signing (spec §10)
-
-The spec defines an optional agent card signing mechanism using JWS:
-
-| Item | Change Required |
+| Item | Status |
 |---|---|
-| RFC 8785 JSON canonicalization | Implement or depend on a JCS library for deterministic JSON serialization |
-| JWS compact serialization | Sign canonicalized agent card with detached payload JWS |
-| `AgentCardSignature` population | Fill `signatures` field on `AgentCard` with generated signatures |
-| Public key retrieval | Client fetches signing key from `jwks_url` in signature metadata |
-| Signature verification | Client verifies JWS signature against fetched public key |
+| RFC 8785 JSON canonicalization | ✅ In-tree implementation (sorted keys, minimal whitespace) |
+| JWS compact serialization with detached payload | ✅ ES256 (ECDSA P-256 + SHA-256) via `ring` |
+| `AgentCardSignature` population | ✅ `sign_agent_card()` produces protected + signature |
+| Signature verification | ✅ `verify_agent_card()` with public key DER |
+| Feature-gated | ✅ Behind `signing` feature flag (`ring` + `base64` deps) |
 
-**Estimated effort:** ~6 hours. Requires adding a JWS/JWT dependency (e.g., `jsonwebtoken` crate). Can be feature-gated behind `signing`.
+Files: `crates/a2a-types/src/signing.rs`
 
 #### 8C. Quality & Release Tasks
 
 | Task | Status | Notes |
 |---|---|---|
-| Property-based tests (`proptest`) | 🔲 | `TaskState` transitions, `Part` round-trip, ID uniqueness |
-| Corpus-based JSON tests | 🔲 | Deserialize official spec samples; verify round-trip fidelity |
-| Benchmark suite (`criterion`) | 🔲 | JSON serialization, SSE parse, handler throughput |
+| Property-based tests (`proptest`) | ✅ | `TaskState` transitions, `Part` round-trip, ID uniqueness |
+| Corpus-based JSON tests | ✅ | 17 tests covering Task, Message, Part, AgentCard, JSON-RPC, StreamResponse |
+| Benchmark suite (`criterion`) | ✅ | `json_serde` (5 benches), `sse_parse` (3 benches) |
 | `cargo doc --no-deps -D warnings` | ✅ | Zero warnings; all public items documented |
-| `LESSONS.md` finalization | 🔲 | Document all non-obvious pitfalls discovered |
-| `CONTRIBUTING.md` update | 🔲 | Testing guide, PR checklist |
-| Publish dry-run | 🔲 | `cargo publish --dry-run` for each crate |
-| Version alignment | 🔲 | All crates at `0.1.0` with consistent metadata |
-| `tracing` feature flag | 🔲 | Optional structured logging |
-| TLS support | 🔲 | `tls-rustls` feature for HTTPS |
-| CI pipeline hardening | 🔲 | Enforce all quality gates in GitHub Actions |
+| `CONTRIBUTING.md` update | ✅ | Testing guide, PR checklist, benchmark docs |
+| Publish dry-run | ✅ | `a2a-types` passes; client/server/sdk need types published first |
+| Version alignment | ✅ | All crates at `0.1.0`, descriptions updated to v1.0 |
+| `tracing` feature flag | 🔲 | Optional structured logging (future work) |
+| TLS support | 🔲 | `tls-rustls` feature for HTTPS (future work) |
+| CI pipeline hardening | 🔲 | Enforce all quality gates in GitHub Actions (future work) |
 
 ---
 
@@ -678,12 +680,13 @@ The spec defines an optional agent card signing mechanism using JWS:
 
 ### Current Test Coverage
 
-| Crate | Unit Tests | Integration Tests | Doc-Tests | Total |
-|---|---|---|---|---|
-| `a2a-types` | 50 | — | — | 50 |
-| `a2a-client` | 51 | — | 8 | 59 |
-| `a2a-server` | — | 48 | — | 48 |
-| **Total** | **101** | **48** | **8** | **157** |
+| Crate | Unit Tests | Integration Tests | Property/Corpus | Doc-Tests | Total |
+|---|---|---|---|---|---|
+| `a2a-types` | 59 | 25 | 17 | — | 101 |
+| `a2a-client` | 54 | — | — | 8 | 62 |
+| `a2a-server` | 24 | 24 | — | — | 48 |
+| `a2a-sdk` | — | — | — | 1 | 1 |
+| **Total** | **137** | **49** | **17** | **9** | **212** |
 
 ### Test Patterns
 

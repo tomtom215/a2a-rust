@@ -17,7 +17,11 @@ documentation          = "https://docs.rs/a2a-sdk"
 keywords               = ["a2a", "agent", "sdk"]
 categories             = ["network-programming", "web-programming", "api-bindings"]
 
+[features]
+## Enable agent card signing.
+signing = ["a2a-types/signing", "a2a-server/signing", "a2a-client/signing"]
+
 [dependencies]
-a2a-types  = { path = "../a2a-types" }
-a2a-client = { path = "../a2a-client" }
-a2a-server = { path = "../a2a-server" }
+a2a-types  = { version = "0.1.0", path = "../a2a-types" }
+a2a-client = { version = "0.1.0", path = "../a2a-client" }
+a2a-server = { version = "0.1.0", path = "../a2a-server" }

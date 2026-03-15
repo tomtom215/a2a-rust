@@ -50,6 +50,8 @@ pub mod params;
 pub mod push;
 pub mod responses;
 pub mod security;
+#[cfg(feature = "signing")]
+pub mod signing;
 pub mod task;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────

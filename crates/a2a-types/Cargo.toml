@@ -4,7 +4,7 @@
 [package]
 name        = "a2a-types"
 version     = "0.1.0"
-description = "A2A protocol 0.3.0 — pure data types, serde only, no I/O"
+description = "A2A protocol v1.0 — pure data types, serde only, no I/O"
 readme      = "../../README.md"
 
 edition.workspace      = true
@@ -17,6 +17,20 @@ documentation          = "https://docs.rs/a2a-types"
 keywords               = ["a2a", "agent", "protocol", "types"]
 categories             = ["api-bindings"]
 
+[features]
+## Enable agent card signing (JWS, RFC 8785 canonicalization).
+signing = ["dep:base64", "dep:ring"]
+
 [dependencies]
 serde      = { workspace = true }
 serde_json = { workspace = true }
+base64     = { version = "0.22", optional = true }
+ring       = { version = "0.17", optional = true }
+
+[dev-dependencies]
+proptest  = "1"
+criterion = { workspace = true }
+
+[[bench]]
+name = "json_serde"
+harness = false
