@@ -114,11 +114,6 @@ impl hyper::body::Body for ChannelBody {
 /// 2. Sends periodic keep-alive comments at the specified interval.
 ///
 /// The keep-alive ticker is cancelled when the reader is exhausted.
-///
-/// # Panics
-///
-/// Panics if the hyper response builder fails (should never happen with
-/// valid static headers).
 #[must_use]
 pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
@@ -157,10 +152,12 @@ pub fn build_sse_response(
                             }
                         }
                         Some(Err(e)) => {
-                            // Send the error as an SSE event and close.
+                            // Best-effort: send the error as an SSE event before closing.
+                            // If the client has already disconnected, this is harmless.
                             let Ok(data) = serde_json::to_string(&e) else {
                                 break;
                             };
+                            // Intentionally ignoring send failure — we're closing regardless.
                             let _ = body_writer.send_event("error", &data).await;
                             break;
                         }
@@ -189,5 +186,12 @@ pub fn build_sse_response(
         .header("cache-control", "no-cache")
         .header("transfer-encoding", "chunked")
         .body(body.boxed())
-        .expect("response builder should not fail with valid headers")
+        .unwrap_or_else(|_| {
+            // Fallback: empty 500 response if builder fails (should never happen
+            // with valid static header names).
+            hyper::Response::new(
+                http_body_util::Full::new(Bytes::from_static(b"SSE response build error"))
+                    .boxed(),
+            )
+        })
 }

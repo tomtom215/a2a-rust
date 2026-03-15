@@ -133,6 +133,9 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
             interceptors: self.interceptors,
             agent_card: self.agent_card,
             executor_timeout: self.executor_timeout,
+            cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         })
     }
 }
