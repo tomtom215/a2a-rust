@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "a2a-client"
+version     = "0.1.0"
+description = "A2A protocol 0.3.0 — HTTP client (hyper-backed)"
+readme      = "../../README.md"
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+documentation          = "https://docs.rs/a2a-client"
+keywords               = ["a2a", "agent", "client", "http"]
+categories             = ["network-programming", "web-programming"]
+
+[dependencies]
+a2a-types      = { path = "../a2a-types" }
+serde_json     = { workspace = true }
+hyper          = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util     = { workspace = true }
+tokio          = { workspace = true }
+uuid           = { workspace = true }

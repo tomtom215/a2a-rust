@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "a2a-sdk"
+version     = "0.1.0"
+description = "A2A protocol 0.3.0 — convenience umbrella re-export crate"
+readme      = "../../README.md"
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+documentation          = "https://docs.rs/a2a-sdk"
+keywords               = ["a2a", "agent", "sdk"]
+categories             = ["network-programming", "web-programming", "api-bindings"]
+
+[dependencies]
+a2a-types  = { path = "../a2a-types" }
+a2a-client = { path = "../a2a-client" }
+a2a-server = { path = "../a2a-server" }

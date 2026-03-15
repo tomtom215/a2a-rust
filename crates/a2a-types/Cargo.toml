@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "a2a-types"
+version     = "0.1.0"
+description = "A2A protocol 0.3.0 — pure data types, serde only, no I/O"
+readme      = "../../README.md"
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+documentation          = "https://docs.rs/a2a-types"
+keywords               = ["a2a", "agent", "protocol", "types"]
+categories             = ["api-bindings"]
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
