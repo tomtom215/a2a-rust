@@ -22,8 +22,8 @@
    - [Phase 4 — v1.0 Protocol Upgrade](#phase-4--v10-protocol-upgrade) ✅
    - [Phase 5 — Server Tests & Bug Fixes](#phase-5--server-tests--bug-fixes) ✅
    - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
-   - [Phase 7 — v1.0 Spec Gaps & Hardening](#phase-7--v10-spec-gaps--hardening) 🔲
-   - [Phase 8 — Quality & Release Preparation](#phase-8--quality--release-preparation) 🔲
+   - [Phase 7 — v1.0 Spec Compliance Gaps](#phase-7--v10-spec-compliance-gaps) 🔲
+   - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) 🔲
 7. [Testing Strategy](#7-testing-strategy)
 8. [Quality Gates](#8-quality-gates)
 9. [Coding Standards](#9-coding-standards)
@@ -465,7 +465,6 @@ Key changes:
 - `StreamResponse`: tagged `kind` → untagged oneof (discriminated by field presence)
 - `AgentCard`: flat `url`/`preferred_transport` → `supported_interfaces: Vec<AgentInterface>`
 - `ContextId` newtype added (was plain `String`)
-- `AgentCapabilities.state_transition_history` removed
 - `AgentCapabilities.extended_agent_card` added
 - Agent card path: `/.well-known/agent-card.json` → `/.well-known/agent.json`
 - JSON-RPC method names: `snake/case` → `PascalCase` (e.g., `message/send` → `SendMessage`)
@@ -520,55 +519,129 @@ All demos complete successfully, validating the full client-server pipeline acro
 
 ---
 
-### Phase 7 — v1.0 Spec Gaps & Hardening 🔲 NOT STARTED
+### Phase 7 — v1.0 Spec Compliance Gaps 🔲 NOT STARTED
 
-**Deliverables:** Close remaining gaps against the A2A v1.0.0 specification. Additional test coverage for edge cases.
+**Deliverables:** Close all remaining gaps between our implementation and the A2A v1.0.0 specification. Each sub-phase is independently implementable and testable.
 
-#### 7a. REST Query Parameter Parsing for ListTasks
+#### 7A. Type & Field Fixes (`a2a-types`)
 
-The REST dispatcher's `handle_list_tasks` currently ignores query parameters. Implement parsing of:
-- `context_id` — filter tasks by conversation context
-- `status` — filter by task state
-- `page_size` / `page_token` — pagination
-- `status_timestamp_after` — timestamp filtering
-- `include_artifacts` — control artifact inclusion
+Missing or incorrect fields discovered by comparing wire types against the spec:
 
-Location: `crates/a2a-server/src/dispatch/rest.rs` → `handle_list_tasks`
+| Item | File | Change Required |
+|---|---|---|
+| `Task` missing timestamps | `task.rs` | Add `created_at: Option<String>` and `updated_at: Option<String>` (ISO 8601 datetime) |
+| `TaskState::Submitted` naming | `task.rs` | Spec uses `TASK_STATE_PENDING`, not `TASK_STATE_SUBMITTED` — rename variant |
+| `AgentCapabilities` missing field | `agent_card.rs` | Add `state_transition_history: Option<bool>` (spec still defines this alongside `extended_agent_card`) |
+| `Artifact` missing `media_type` | `artifact.rs` | Add `media_type: Option<String>` field (MIME type of artifact content) |
+| `PushNotificationConfig` missing `created_at` | `push.rs` | Add `created_at: Option<String>` field |
+| `PushNotificationConfig.id` serde rename | `push.rs` | Verify serializes as `configId` per spec (add `#[serde(rename = "configId")]` if missing) |
+| `ListTasksParams` missing `history_length` | `params.rs` | Add `history_length: Option<u32>` field |
+| Protocol binding constant | `agent_card.rs` | Spec uses `"HTTP+JSON"` not `"REST"` for the REST binding — verify and align |
 
-#### 7b. Tenant-Prefixed REST Routes
+**Estimated effort:** ~2 hours. Mechanical field additions with serde annotations and unit tests.
 
-The v1.0 spec supports optional tenant-prefixed routes (e.g., `/tenants/{tenant}/tasks/{id}`). Currently not implemented.
+#### 7B. REST Dispatch Fixes (`a2a-server`)
 
-Location: `crates/a2a-server/src/dispatch/rest.rs` — add optional prefix matching
+| Item | File | Change Required |
+|---|---|---|
+| ListTasks query parameter parsing | `dispatch/rest.rs` | Parse `context_id`, `status`, `page_size`, `page_token`, `status_timestamp_after`, `include_artifacts` from URL query string |
+| REST error status codes | `dispatch/rest.rs` | `PushNotSupported` → 400 (not 501); add 415 for `ContentTypeNotSupported`; add 502 for upstream failures |
+| Agent card path verification | `agent_card/static_handler.rs` | Ensure `/.well-known/agent.json` is the served path (not `agent-card.json`) |
+| Tenant-prefixed REST routes | `dispatch/rest.rs` | Support optional `/tenants/{tenant}/` prefix on all routes |
+| `SubscribeToTask` as GET | `dispatch/rest.rs` | Allow `GET /tasks/{id}:subscribe` in addition to POST |
 
-#### 7c. SubscribeToTask as GET in REST
+**Estimated effort:** ~3 hours. Query parsing is the largest item.
 
-The REST dispatcher currently only handles `POST /tasks/{id}:subscribe`. The v1.0 spec also allows `GET /tasks/{id}:subscribe` for SSE.
+#### 7C. Protocol Headers (`a2a-server` + `a2a-client`)
 
-Location: `crates/a2a-server/src/dispatch/rest.rs` — add GET handler for subscribe routes
+The spec defines protocol-level HTTP headers that we don't yet send or validate:
 
-#### 7d. Additional Server Tests
+| Header | Direction | Requirement |
+|---|---|---|
+| `A2A-Version: 1.0.0` | Both | Server MUST include in responses; client SHOULD include in requests |
+| `A2A-Extensions: ext1,ext2` | Both | List of active extensions; omit if none |
+| `Content-Type: application/a2a+json` | Both | Spec-defined media type for A2A payloads (fallback: `application/json`) |
 
-| Test area | Description |
-|---|---|
-| Interceptor chain | Test before/after hooks, rejection (interceptor returns error stops processing) |
-| Task continuation | Same `context_id` in second request finds previous task via `stored_task` |
-| Concurrent send + cancel | Race condition between executor running and cancel request arriving |
-| Push notification delivery | `PushSender` called during `collect_events` when push configs exist |
-| REST query parsing | Verify `ListTasks` filters work with URL query parameters |
-| Error edge cases | Malformed JSON bodies, missing required fields, oversized payloads |
+Locations:
+- Server: `dispatch/jsonrpc.rs`, `dispatch/rest.rs` — add headers to all responses
+- Client: `transport/jsonrpc.rs`, `transport/rest.rs` — add headers to all requests
 
-#### 7e. Client-Side Improvements
+**Estimated effort:** ~1.5 hours. Straightforward header insertion.
 
-- REST `ListTasks` should pass query parameters in URL (not body) for GET requests
-- Better error messages when server returns unexpected response shapes
-- Connection keep-alive verification
+#### 7D. Handler & Protocol Logic Fixes (`a2a-server`)
+
+| Item | File | Change Required |
+|---|---|---|
+| Interceptor chain enforcement | `handler.rs` | Run `ServerInterceptor.before()` / `.after()` hooks on every request; interceptor error stops processing |
+| Task continuation via `context_id` | `handler.rs` | When a second `SendMessage` arrives with the same `context_id`, look up the existing task and pass it as `stored_task` in `RequestContext` |
+| `return_immediately` mode | `handler.rs` | When `SendMessageConfiguration.return_immediately == true`, return the task immediately after spawning the executor (don't wait for completion) |
+| Push delivery during events | `handler.rs` | During `collect_events`, if push configs exist for the task, call `PushSender` for each status/artifact event |
+| Context/task mismatch rejection | `handler.rs` | If `message.task_id` is set but doesn't match the task found by `context_id`, return `InvalidParams` error |
+
+**Estimated effort:** ~4 hours. `return_immediately` and push delivery are the most involved.
+
+#### 7E. Client-Side Fixes (`a2a-client`)
+
+| Item | File | Change Required |
+|---|---|---|
+| REST `ListTasks` query params | `transport/rest.rs` | Send `ListTasksParams` fields as URL query parameters on GET (not in body) |
+| REST `GetTask` query params | `transport/rest.rs` | Send `history_length` as query parameter on GET |
+| Protocol headers | `transport/*.rs` | Send `A2A-Version` and `Content-Type: application/a2a+json` headers |
+| Better error diagnostics | `error.rs` | Include response body snippet in error messages for unexpected response shapes |
+
+**Estimated effort:** ~2 hours. Mostly query parameter handling.
+
+#### 7F. Additional Tests
+
+| Test Area | Description | Location |
+|---|---|---|
+| Interceptor chain | Test before/after hooks; verify interceptor error stops processing | `tests/handler_tests.rs` |
+| Task continuation | Same `context_id` in second request finds previous task via `stored_task` | `tests/handler_tests.rs` |
+| Concurrent send + cancel | Race condition between executor running and cancel request arriving | `tests/handler_tests.rs` |
+| Push notification delivery | `PushSender` called during `collect_events` when push configs exist | `tests/handler_tests.rs` |
+| REST query parsing | Verify `ListTasks` filters work with URL query parameters | `tests/dispatch_tests.rs` |
+| Protocol headers | Verify `A2A-Version` header present in server responses | `tests/dispatch_tests.rs` |
+| Error edge cases | Malformed JSON bodies, missing required fields, oversized payloads | `tests/dispatch_tests.rs` |
+
+**Estimated effort:** ~3 hours. Can be written incrementally alongside 7D/7E.
 
 ---
 
-### Phase 8 — Quality & Release Preparation 🔲 NOT STARTED
+### Phase 8 — Caching, Signing & Release Preparation 🔲 NOT STARTED
 
-**Deliverables:** All quality gates passing, documentation complete, crates publishable.
+**Deliverables:** Advanced spec features, quality gates passing, crates publishable.
+
+#### 8A. HTTP Caching (spec §8.3)
+
+The spec defines caching semantics for agent card responses:
+
+| Item | Change Required |
+|---|---|
+| `Cache-Control` header | Server SHOULD include `Cache-Control: max-age=...` on agent card responses |
+| `ETag` header | Server SHOULD include `ETag` for conditional request support |
+| `Last-Modified` header | Server SHOULD include `Last-Modified` for conditional requests |
+| Conditional request handling | Server MUST return 304 Not Modified when `If-None-Match` / `If-Modified-Since` match |
+| Client caching | Client SHOULD cache agent cards and send conditional request headers |
+
+Location: `agent_card/static_handler.rs`, `agent_card/dynamic_handler.rs`, `discovery.rs`
+
+**Estimated effort:** ~2 hours.
+
+#### 8B. Agent Card Signing (spec §10)
+
+The spec defines an optional agent card signing mechanism using JWS:
+
+| Item | Change Required |
+|---|---|
+| RFC 8785 JSON canonicalization | Implement or depend on a JCS library for deterministic JSON serialization |
+| JWS compact serialization | Sign canonicalized agent card with detached payload JWS |
+| `AgentCardSignature` population | Fill `signatures` field on `AgentCard` with generated signatures |
+| Public key retrieval | Client fetches signing key from `jwks_url` in signature metadata |
+| Signature verification | Client verifies JWS signature against fetched public key |
+
+**Estimated effort:** ~6 hours. Requires adding a JWS/JWT dependency (e.g., `jsonwebtoken` crate). Can be feature-gated behind `signing`.
+
+#### 8C. Quality & Release Tasks
 
 | Task | Status | Notes |
 |---|---|---|
@@ -804,10 +877,10 @@ CORS: Access-Control-Allow-Origin: *
 | Transport binding | `preferred_transport` enum | `protocol_binding` string |
 | Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent.json` |
 | Context ID | plain `String` | `ContextId` newtype |
-| Capabilities | `state_transition_history` | `extended_agent_card` (replaces it) |
+| Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` still present |
 
 ---
 
-*Document version: 2.0 — post-implementation update*
+*Document version: 3.0 — spec gap analysis integrated*
 *Last updated: 2026-03-15*
 *Author: Tom F.*
