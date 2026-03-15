@@ -321,10 +321,10 @@ fn json_ok_response<T: serde::Serialize>(value: &T) -> hyper::Response<BoxBody<B
 
 fn error_json_response(status: u16, message: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let body = serde_json::json!({ "error": message });
-    match serde_json::to_vec(&body) {
-        Ok(bytes) => build_json_response(status, bytes),
-        Err(_) => internal_error_response(),
-    }
+    serde_json::to_vec(&body).map_or_else(
+        |_| internal_error_response(),
+        |bytes| build_json_response(status, bytes),
+    )
 }
 
 /// Fallback when serialization itself fails.
@@ -347,10 +347,10 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
         _ => 500,
     };
     let a2a_err = err.to_a2a_error();
-    match serde_json::to_vec(&a2a_err) {
-        Ok(body) => build_json_response(status, body),
-        Err(_) => internal_error_response(),
-    }
+    serde_json::to_vec(&a2a_err).map_or_else(
+        |_| internal_error_response(),
+        |body| build_json_response(status, body),
+    )
 }
 
 // ── Query parsing helpers ───────────────────────────────────────────────────

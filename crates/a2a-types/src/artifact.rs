@@ -58,7 +58,7 @@ impl AsRef<str> for ArtifactId {
 ///
 /// Each artifact has a unique [`ArtifactId`] and carries its content as a
 /// non-empty list of [`Part`] values.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     /// Unique artifact identifier.

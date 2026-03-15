@@ -194,28 +194,17 @@ impl TaskState {
         if matches!(self, Self::Unspecified) {
             return true;
         }
-        match (self, next) {
+        matches!(
+            (self, next),
             // Submitted → Working, Failed, Canceled, Rejected
-            (Self::Submitted, Self::Working)
-            | (Self::Submitted, Self::Failed)
-            | (Self::Submitted, Self::Canceled)
-            | (Self::Submitted, Self::Rejected) => true,
+            (Self::Submitted, Self::Working | Self::Failed | Self::Canceled | Self::Rejected)
             // Working → Completed, Failed, Canceled, InputRequired, AuthRequired
-            (Self::Working, Self::Completed)
-            | (Self::Working, Self::Failed)
-            | (Self::Working, Self::Canceled)
-            | (Self::Working, Self::InputRequired)
-            | (Self::Working, Self::AuthRequired) => true,
-            // InputRequired → Working, Failed, Canceled
-            (Self::InputRequired, Self::Working)
-            | (Self::InputRequired, Self::Failed)
-            | (Self::InputRequired, Self::Canceled) => true,
-            // AuthRequired → Working, Failed, Canceled
-            (Self::AuthRequired, Self::Working)
-            | (Self::AuthRequired, Self::Failed)
-            | (Self::AuthRequired, Self::Canceled) => true,
-            _ => false,
-        }
+            | (Self::Working,
+               Self::Completed | Self::Failed | Self::Canceled | Self::InputRequired | Self::AuthRequired)
+            // InputRequired / AuthRequired → Working, Failed, Canceled
+            | (Self::InputRequired | Self::AuthRequired,
+               Self::Working | Self::Failed | Self::Canceled)
+        )
     }
 }
 
@@ -232,7 +221,7 @@ impl std::fmt::Display for TaskState {
 
 /// The current status of a [`Task`], combining state with an optional message
 /// and timestamp.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatus {
     /// Current lifecycle state.
@@ -268,7 +257,7 @@ impl TaskStatus {
 /// [`crate::responses::SendMessageResponse`]. Standalone `Task` values received
 /// over the wire may include `kind`; serde silently tolerates unknown fields, so
 /// no action is needed on the receiving side.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     /// Unique task identifier.

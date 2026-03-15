@@ -138,13 +138,14 @@ impl<E: AgentExecutor> RequestHandler<E> {
         tokio::spawn(async move {
             trace_debug!(task_id = %ctx.task_id, "executor started");
             let result = if let Some(timeout) = executor_timeout {
-                match tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref())).await {
-                    Ok(r) => r,
-                    Err(_) => Err(a2a_types::error::A2aError::internal(format!(
-                        "executor timed out after {}s",
-                        timeout.as_secs()
-                    ))),
-                }
+                tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(a2a_types::error::A2aError::internal(format!(
+                            "executor timed out after {}s",
+                            timeout.as_secs()
+                        )))
+                    })
             } else {
                 executor.execute(&ctx, writer.as_ref()).await
             };
@@ -186,6 +187,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `GetTask`. Returns [`ServerError::TaskNotFound`] if missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
         trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
         let call_ctx = CallContext::new("GetTask");
@@ -203,6 +208,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `ListTasks`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
         trace_info!(method = "ListTasks", "handling list tasks");
         let call_ctx = CallContext::new("ListTasks");
@@ -215,6 +224,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `CancelTask`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
     pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         let call_ctx = CallContext::new("CancelTask");
@@ -260,6 +273,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `SubscribeToTask`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
         let call_ctx = CallContext::new("SubscribeToTask");
@@ -284,6 +301,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `CreateTaskPushNotificationConfig`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::PushNotSupported`] if no push sender is configured.
     pub async fn on_set_push_config(
         &self,
         config: TaskPushNotificationConfig,
@@ -301,6 +322,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `GetTaskPushNotificationConfig`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::InvalidParams`] if the config is not found.
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
@@ -324,6 +349,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `ListTaskPushNotificationConfigs`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
@@ -338,6 +367,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `DeleteTaskPushNotificationConfig`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
         let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
@@ -351,6 +384,10 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Handles `GetExtendedAgentCard`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::Internal`] if no agent card is configured.
     pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard> {
         let call_ctx = CallContext::new("GetExtendedAgentCard");
         self.interceptors.run_before(&call_ctx).await?;
