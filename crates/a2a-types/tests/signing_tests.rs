@@ -289,7 +289,7 @@ fn canonicalize_card_keys_are_sorted() {
 fn canonicalize_card_has_no_extra_whitespace() {
     let card = minimal_card();
     let canonical = canonicalize_card(&card).unwrap();
-    let s = String::from_utf8(canonical).unwrap();
+    let s = String::from_utf8(canonical.clone()).unwrap();
 
     // The canonical form must not contain unquoted whitespace between tokens.
     // A quick heuristic: no " : " or " , " patterns.
