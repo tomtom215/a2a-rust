@@ -29,9 +29,11 @@ name = "a2a-server"
 version = "0.1.0"
 dependencies = [
  "a2a-types",
+ "bytes",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "serde",
  "serde_json",
  "tokio",
  "uuid",
