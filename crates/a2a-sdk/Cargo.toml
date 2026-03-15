@@ -4,7 +4,7 @@
 [package]
 name        = "a2a-sdk"
 version     = "0.1.0"
-description = "A2A protocol 0.3.0 — convenience umbrella re-export crate"
+description = "A2A protocol v1.0 — convenience umbrella re-export crate"
 readme      = "../../README.md"
 
 edition.workspace      = true

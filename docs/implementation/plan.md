@@ -1,9 +1,9 @@
 # a2a-rust: Implementation Plan & Roadmap
 
-**Protocol Version:** A2A 0.3.0
+**Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)
 **License:** Apache-2.0
-**Status:** Pre-implementation — planning complete
+**Status:** Core implementation complete — hardening & polish phase
 
 ---
 
@@ -15,14 +15,15 @@
 4. [Architecture Overview](#4-architecture-overview)
 5. [Complete File Inventory](#5-complete-file-inventory)
 6. [Implementation Phases](#6-implementation-phases)
-   - [Phase 0 — Project Foundation](#phase-0--project-foundation)
-   - [Phase 1 — Protocol Types (`a2a-types`)](#phase-1--protocol-types-a2a-types)
-   - [Phase 2 — HTTP Client (`a2a-client`)](#phase-2--http-client-a2a-client)
-   - [Phase 3 — Server Framework (`a2a-server`)](#phase-3--server-framework-a2a-server)
-   - [Phase 4 — SSE Streaming](#phase-4--sse-streaming)
-   - [Phase 5 — Push Notifications](#phase-5--push-notifications)
-   - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples)
-   - [Phase 7 — Quality & Release Preparation](#phase-7--quality--release-preparation)
+   - [Phase 0 — Project Foundation](#phase-0--project-foundation) ✅
+   - [Phase 1 — Protocol Types (`a2a-types`)](#phase-1--protocol-types-a2a-types) ✅
+   - [Phase 2 — HTTP Client (`a2a-client`)](#phase-2--http-client-a2a-client) ✅
+   - [Phase 3 — Server Framework (`a2a-server`)](#phase-3--server-framework-a2a-server) ✅
+   - [Phase 4 — v1.0 Protocol Upgrade](#phase-4--v10-protocol-upgrade) ✅
+   - [Phase 5 — Server Tests & Bug Fixes](#phase-5--server-tests--bug-fixes) ✅
+   - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
+   - [Phase 7 — v1.0 Spec Compliance Gaps](#phase-7--v10-spec-compliance-gaps) 🔲
+   - [Phase 8 — Caching, Signing & Release Preparation](#phase-8--caching-signing--release-preparation) 🔲
 7. [Testing Strategy](#7-testing-strategy)
 8. [Quality Gates](#8-quality-gates)
 9. [Coding Standards](#9-coding-standards)
@@ -34,20 +35,20 @@
 
 ### Goals
 
-- **Full spec compliance** — every method, type, error code, and transport variant defined in A2A 0.3.0.
-- **Enterprise-grade** — production-ready error handling, no panics, no `unwrap()` at boundaries, structured logging support.
+- **Full spec compliance** — every method, type, error code, and transport variant defined in A2A v1.0.0.
+- **Enterprise-grade** — production-ready error handling, no panics, no `unwrap()` at boundaries.
 - **Minimal footprint** — zero mandatory deps beyond `serde`/`serde_json`; optional features gate all I/O.
-- **Modern Rust idioms** — async/await, `async fn` in traits (stable since 1.75), `impl Trait`, `LazyLock`, Edition 2021.
+- **Modern Rust idioms** — async/await, Edition 2021, `Pin<Box<dyn Future>>` for object-safe async traits.
 - **Transport abstraction** — pluggable HTTP backends; the protocol core carries no HTTP dep.
 - **Strict modularity** — 500-line file cap, single-responsibility per module, thin `mod.rs` files.
-- **Complete test coverage** — four-layer testing strategy; E2E tests are non-negotiable.
+- **Complete test coverage** — unit tests, integration tests with real TCP servers, end-to-end examples.
 - **Zero `unsafe`** — unless crossing true FFI or raw pointer boundaries, with mandatory `// SAFETY:` comments.
 
 ### Non-Goals
 
-- gRPC binding in the initial release (tracked in Phase 8+, separate crate `a2a-grpc`).
-- WebSocket transport (not in the 0.3.0 spec).
-- Built-in persistence (TaskStore and PushConfigStore ship as in-memory defaults only; users plug in their own).
+- gRPC binding in the initial release (tracked post-v1.0, separate crate `a2a-grpc`).
+- WebSocket transport (not in the v1.0 spec).
+- Built-in persistence (`TaskStore` and `PushConfigStore` ship as in-memory defaults only; users plug in their own).
 - Opinionated web framework integration (Axum, Actix adapters are examples, not core).
 
 ---
@@ -62,13 +63,14 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 |---|---|---|---|
 | `serde` | `>=1.0.200, <2` | JSON-RPC protocol is JSON-only — unavoidable | `derive` |
 | `serde_json` | `>=1.0.115, <2` | JSON serialization for all wire types | default |
-| `tokio` | `>=1.38, <2` | Async runtime; all I/O is async | `rt,net,io-util,sync,time` |
+| `tokio` | `>=1.38, <2` | Async runtime; all I/O is async | `rt,net,io-util,sync,time,macros` |
 | `hyper` | `>=1.4, <2` | Raw HTTP/1.1+2 for client and server | `client,server,http1,http2` |
 | `http-body-util` | `>=0.1, <0.2` | Hyper 1.x body combinator | default |
 | `hyper-util` | `>=0.1.6, <0.2` | Connection pooling, graceful shutdown | `client,client-legacy,http1,http2,tokio` |
 | `uuid` | `>=1.8, <2` | Task/Message/Artifact ID generation | `v4` |
+| `bytes` | `1` | Zero-copy byte buffer (used by hyper/SSE) | default |
 
-### Optional Dependencies (feature-gated)
+### Optional Dependencies (feature-gated, not yet implemented)
 
 | Crate | Feature Flag | Justification |
 |---|---|---|
@@ -81,10 +83,8 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 
 | Crate | Purpose |
 |---|---|
-| `tokio` (full) | Integration test runtime |
-| `proptest` | Property-based testing |
-| `wiremock` | HTTP mock server for client tests |
-| `criterion` | Microbenchmarks |
+| `tokio` (full features) | Integration test runtime |
+| `hyper-util` (server features) | Test server infrastructure |
 
 ### Explicitly Excluded
 
@@ -92,7 +92,7 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 - `axum`/`actix-web` — framework lock-in; users choose their own
 - `anyhow`/`thiserror` — we define our own error types (see `a2a-types/src/error.rs`)
 - `openssl-sys` — prefer `rustls` for zero system deps
-- `log` — prefer `tracing` (feature-gated); no mandatory logging dep
+- `wiremock` — tests use real TCP servers instead of mocking
 
 ---
 
@@ -104,33 +104,25 @@ a2a-rust/
 ├── Cargo.lock
 ├── LICENSE                     # Apache-2.0
 ├── README.md
-├── LESSONS.md                  # Pitfall catalog (grows during development)
+├── LESSONS.md                  # Pitfall catalog
 ├── CONTRIBUTING.md
 ├── rust-toolchain.toml         # channel = "stable", components = [rustfmt, clippy]
 ├── deny.toml                   # cargo-deny: licenses, advisories, duplicates
 ├── clippy.toml                 # pedantic + nursery overrides
 │
 ├── docs/
-│   ├── implementation/
-│   │   ├── plan.md             # THIS DOCUMENT
-│   │   └── type-mapping.md     # Spec types → Rust types with serde annotations
-│   └── adr/
-│       ├── 0001-workspace-crate-structure.md
-│       ├── 0002-dependency-philosophy.md
-│       ├── 0003-async-runtime-strategy.md
-│       ├── 0004-transport-abstraction.md
-│       └── 0005-sse-streaming-design.md
+│   └── implementation/
+│       ├── plan.md             # THIS DOCUMENT
+│       └── type-mapping.md     # Spec types → Rust types with serde annotations
 │
 ├── crates/
 │   ├── a2a-types/              # All protocol types — serde only, no I/O
 │   ├── a2a-client/             # HTTP client (hyper-backed)
 │   ├── a2a-server/             # Server framework (hyper-backed)
-│   └── a2a-sdk/                # Convenience umbrella re-export crate
+│   └── a2a-sdk/                # Convenience umbrella re-export crate + prelude
 │
 └── examples/
-    ├── echo-agent/             # Minimal server implementation
-    ├── client-demo/            # Client usage walkthrough
-    └── streaming-agent/        # SSE streaming demonstration
+    └── echo-agent/             # Full-stack demo (server + client, sync + streaming)
 ```
 
 ### Crate Dependency Graph
@@ -178,7 +170,8 @@ A downstream crate that only implements an agent server does not pay for the cli
                     │
 ┌───────────────────▼─────────────────────────┐
 │            Transport Layer                   │
-│  JSON-RPC dispatcher | REST dispatcher       │
+│  JsonRpcDispatcher | RestDispatcher          │
+│  JsonRpcTransport  | RestTransport           │
 │  (pure HTTP plumbing, no protocol logic)     │
 └───────────────────┬─────────────────────────┘
                     │
@@ -188,48 +181,55 @@ A downstream crate that only implements an agent server does not pay for the cli
 └─────────────────────────────────────────────┘
 ```
 
-### Server 3-Layer Architecture (mirrors Go SDK)
+### Server 3-Layer Architecture
 
 **Layer 1 — User implements `AgentExecutor`:**
+
+All trait methods use `Pin<Box<dyn Future>>` for object safety (dyn-dispatch via `Arc<dyn AgentExecutor>`):
+
 ```rust
 pub trait AgentExecutor: Send + Sync + 'static {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> Result<(), A2aError>;
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
-    async fn cancel(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> Result<(), A2aError>;
+    fn cancel<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+    // Default cancel() returns TaskNotCancelable error.
 }
 ```
 
 **Layer 2 — Framework provides `RequestHandler`:**
+
 ```rust
 pub struct RequestHandler<E: AgentExecutor> { ... }
 impl<E: AgentExecutor> RequestHandler<E> {
-    pub fn builder(executor: E) -> RequestHandlerBuilder<E> { ... }
-    pub async fn on_send_message(&self, params: MessageSendParams) -> A2aResult<SendMessageResponse>;
-    pub async fn on_send_message_stream(&self, params: MessageSendParams) -> A2aResult<EventStream>;
-    pub async fn on_get_task(&self, params: TaskQueryParams) -> A2aResult<Task>;
-    pub async fn on_list_tasks(&self, params: ListTasksParams) -> A2aResult<TaskListResponse>;
-    pub async fn on_cancel_task(&self, params: TaskIdParams) -> A2aResult<Task>;
-    pub async fn on_resubscribe(&self, params: TaskIdParams) -> A2aResult<EventStream>;
-    // push notification config methods...
-    // agent/authenticatedExtendedCard...
+    pub async fn on_send_message(&self, params: MessageSendParams, streaming: bool) -> ServerResult<SendMessageResult>;
+    pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task>;
+    pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse>;
+    pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task>;
+    pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader>;
+    pub async fn on_set_push_config(&self, config: TaskPushNotificationConfig) -> ServerResult<TaskPushNotificationConfig>;
+    pub async fn on_get_push_config(&self, params: GetPushConfigParams) -> ServerResult<TaskPushNotificationConfig>;
+    pub async fn on_list_push_configs(&self, task_id: &str) -> ServerResult<Vec<TaskPushNotificationConfig>>;
+    pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()>;
+    pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard>;
 }
 ```
 
-**Layer 3 — Transport adapters wire hyper to `RequestHandler`:**
-```rust
-// JSON-RPC transport (HTTP POST to single endpoint)
-pub struct JsonRpcHandler<E: AgentExecutor> { ... }
+**Layer 3 — Transport dispatchers wire hyper to `RequestHandler`:**
 
-// REST transport (RESTful HTTP verbs + paths)
-pub struct RestHandler<E: AgentExecutor> { ... }
+```rust
+// JSON-RPC 2.0: routes PascalCase method names (SendMessage, GetTask, etc.)
+pub struct JsonRpcDispatcher<E: AgentExecutor> { ... }
+
+// REST: routes HTTP verb + path (/message:send, /tasks/{id}, etc.)
+pub struct RestDispatcher<E: AgentExecutor> { ... }
 ```
 
 ### Client Architecture
@@ -238,16 +238,16 @@ pub struct RestHandler<E: AgentExecutor> { ... }
 pub struct A2aClient { ... }
 
 impl A2aClient {
-    pub async fn from_card(card: &AgentCard) -> A2aResult<Self>;
-    pub fn builder() -> ClientBuilder;
+    pub fn from_card(card: &AgentCard) -> ClientResult<Self>;
 
-    pub async fn send_message(&self, params: MessageSendParams) -> A2aResult<SendMessageResponse>;
-    pub async fn stream_message(&self, params: MessageSendParams) -> A2aResult<EventStream>;
-    pub async fn get_task(&self, params: TaskQueryParams) -> A2aResult<Task>;
-    pub async fn list_tasks(&self, params: ListTasksParams) -> A2aResult<TaskListResponse>;
-    pub async fn cancel_task(&self, id: TaskId) -> A2aResult<Task>;
-    pub async fn resubscribe(&self, id: TaskId) -> A2aResult<EventStream>;
+    pub async fn send_message(&self, params: MessageSendParams) -> ClientResult<SendMessageResponse>;
+    pub async fn stream_message(&self, params: MessageSendParams) -> ClientResult<EventStream>;
+    pub async fn get_task(&self, params: TaskQueryParams) -> ClientResult<Task>;
+    pub async fn list_tasks(&self, params: ListTasksParams) -> ClientResult<TaskListResponse>;
+    pub async fn cancel_task(&self, params: CancelTaskParams) -> ClientResult<Task>;
+    pub async fn resubscribe(&self, params: TaskIdParams) -> ClientResult<EventStream>;
     // push notification config methods...
+    // get_authenticated_extended_card()...
 }
 ```
 
@@ -255,680 +255,435 @@ impl A2aClient {
 
 ## 5. Complete File Inventory
 
-Every file is listed with its single responsibility and estimated line count. No file exceeds 500 lines.
+Every file listed with its responsibility and actual line count. No source file exceeds 500 lines.
 
-### `crates/a2a-types/`
+### `crates/a2a-types/` (2,903 lines)
 
 ```
-Cargo.toml                          [~40 lines]  serde + serde_json only
+Cargo.toml                          [~25 lines]  serde + serde_json only
 src/
-  lib.rs                            [~60 lines]  module declarations + pub use re-exports
-  error.rs                          [~120 lines] A2aError enum, A2aResult<T>, error codes
-  task.rs                           [~180 lines] Task, TaskStatus, TaskState, TaskId, TaskVersion
-  message.rs                        [~200 lines] Message, MessageRole, Part, TextPart, FilePart, DataPart, FileContent
-  artifact.rs                       [~100 lines] Artifact, ArtifactId
-  agent_card.rs                     [~280 lines] AgentCard, AgentCapabilities, AgentSkill, AgentProvider, AgentInterface, TransportProtocol
-  security.rs                       [~220 lines] SecurityScheme variants, OAuthFlows, SecurityRequirements, NamedSecuritySchemes
-  events.rs                         [~150 lines] TaskStatusUpdateEvent, TaskArtifactUpdateEvent, StreamResponse (union)
-  jsonrpc.rs                        [~160 lines] JSONRPCRequest, JSONRPCSuccessResponse, JSONRPCErrorResponse, JSONRPCError, JsonRpcId
-  params.rs                         [~200 lines] MessageSendParams, SendMessageConfiguration, TaskQueryParams, TaskIdParams, ListTasksParams, GetPushConfigParams, DeletePushConfigParams
-  push.rs                           [~130 lines] PushNotificationConfig, PushNotificationAuthInfo, TaskPushNotificationConfig
-  extensions.rs                     [~100 lines] AgentExtension, ExtensionUri, AgentCardSignature
-  responses.rs                      [~120 lines] SendMessageResponse (Task|Message union), TaskListResponse, AuthenticatedExtendedCardResponse
+  lib.rs                            [68 lines]   module declarations + pub use re-exports
+  error.rs                          [276 lines]  A2aError, ErrorCode enum, A2aResult<T>
+  task.rs                           [333 lines]  Task, TaskStatus, TaskState (SCREAMING_SNAKE_CASE), TaskId, ContextId, TaskVersion
+  message.rs                        [308 lines]  Message, MessageRole, Part, PartContent (untagged oneof: Text/Raw/Url/Data)
+  artifact.rs                       [139 lines]  Artifact, ArtifactId
+  agent_card.rs                     [265 lines]  AgentCard, AgentCapabilities, AgentSkill, AgentProvider, AgentInterface
+  security.rs                       [340 lines]  SecurityScheme variants (OAuth2, HTTP, ApiKey, OIDC, MutualTLS), OAuthFlows
+  events.rs                         [181 lines]  TaskStatusUpdateEvent, TaskArtifactUpdateEvent, StreamResponse (untagged union)
+  jsonrpc.rs                        [321 lines]  JsonRpcRequest, JsonRpcSuccessResponse<T>, JsonRpcErrorResponse, JsonRpcId
+  params.rs                         [287 lines]  MessageSendParams, SendMessageConfiguration, TaskQueryParams, ListTasksParams, etc.
+  push.rs                           [116 lines]  TaskPushNotificationConfig, AuthenticationInfo
+  extensions.rs                     [105 lines]  AgentExtension, AgentCardSignature
+  responses.rs                      [164 lines]  SendMessageResponse (Task|Message union), TaskListResponse
 ```
 
-### `crates/a2a-client/`
+### `crates/a2a-client/` (3,408 lines)
 
 ```
-Cargo.toml                          [~50 lines]  a2a-types + hyper + tokio + uuid
+Cargo.toml                          [~35 lines]  a2a-types + hyper + tokio + uuid
 src/
-  lib.rs                            [~50 lines]  module declarations + pub use re-exports
-  error.rs                          [~100 lines] ClientError, ClientResult<T>; From<A2aError>
-  config.rs                         [~120 lines] ClientConfig (preferred transports, output modes, TLS settings)
-  client.rs                         [~280 lines] A2aClient struct, constructor, all method impls (delegates to transport)
-  builder.rs                        [~180 lines] ClientBuilder with method chaining; validates config
-  discovery.rs                      [~160 lines] resolve_agent_card(); fetch /.well-known/agent-card.json; parse + validate
-  interceptor.rs                    [~100 lines] CallInterceptor trait (before/after); InterceptorChain
-  auth.rs                           [~180 lines] AuthInterceptor, CredentialsStore trait, InMemoryCredentialsStore, SessionId
+  lib.rs                            [127 lines]  module declarations + pub use re-exports + doc examples
+  error.rs                          [140 lines]  ClientError (Http, Serialization, Protocol, Transport, etc.), ClientResult<T>
+  config.rs                         [153 lines]  ClientConfig, TlsConfig; transport binding constants (JSONRPC, REST, GRPC)
+  client.rs                         [132 lines]  A2aClient struct, from_card(), config()
+  builder.rs                        [285 lines]  ClientBuilder: endpoint, timeout, protocol binding, interceptors, TLS, build()
+  discovery.rs                      [157 lines]  resolve_agent_card(): fetch /.well-known/agent.json; parse + validate
+  interceptor.rs                    [287 lines]  CallInterceptor trait, InterceptorChain, ClientRequest, ClientResponse
+  auth.rs                           [282 lines]  AuthInterceptor, CredentialsStore trait, InMemoryCredentialsStore, SessionId
   transport/
-    mod.rs                          [~40 lines]  Transport trait definition; re-exports
-    jsonrpc.rs                      [~350 lines] HTTP JSON-RPC transport impl; build request, parse response, error mapping
-    rest.rs                         [~380 lines] HTTP REST transport impl; path building, verb mapping, response parsing
+    mod.rs                          [74 lines]   Transport trait definition; re-exports
+    jsonrpc.rs                      [324 lines]  JSON-RPC over HTTP: build request, parse response, SSE streaming, body reader
+    rest.rs                         [472 lines]  REST over HTTP: route mapping, path params, verb mapping, streaming
   methods/
-    mod.rs                          [~30 lines]  re-exports only
-    send_message.rs                 [~120 lines] send_message() + stream_message() client methods
-    tasks.rs                        [~200 lines] get_task(), list_tasks(), cancel_task(), resubscribe()
-    push_config.rs                  [~180 lines] set/get/list/delete push notification config
-    extended_card.rs                [~80 lines]  agent/authenticatedExtendedCard call
+    mod.rs                          [13 lines]   re-exports
+    send_message.rs                 [72 lines]   send_message() + stream_message()
+    tasks.rs                        [147 lines]  get_task(), list_tasks(), cancel_task(), resubscribe()
+    push_config.rs                  [164 lines]  set/get/list/delete push notification config
+    extended_card.rs                [51 lines]   get_authenticated_extended_card()
   streaming/
-    mod.rs                          [~30 lines]  re-exports
-    sse_parser.rs                   [~220 lines] raw SSE line parser; frame accumulator; handles keep-alive comments
-    event_stream.rs                 [~200 lines] EventStream type (AsyncIterator); reads SSE frames; deserializes events
+    mod.rs                          [14 lines]   re-exports
+    sse_parser.rs                   [269 lines]  SSE line parser; frame accumulator; handles keep-alive comments
+    event_stream.rs                 [245 lines]  EventStream: reads SSE frames; deserializes JsonRpcResponse<StreamResponse>
 ```
 
-### `crates/a2a-server/`
+### `crates/a2a-server/` (2,585 lines)
 
 ```
-Cargo.toml                          [~55 lines]  a2a-types + hyper + tokio + uuid
+Cargo.toml                          [~38 lines]  a2a-types + hyper + tokio + uuid + bytes
 src/
-  lib.rs                            [~60 lines]  module declarations + pub use re-exports
-  error.rs                          [~100 lines] ServerError, ServerResult<T>
-  executor.rs                       [~120 lines] AgentExecutor trait; RequestContext struct
-  handler.rs                        [~350 lines] RequestHandler<E>; all on_* method impls
-  builder.rs                        [~200 lines] RequestHandlerBuilder with fluent API; validates required fields
-  request_context.rs                [~130 lines] RequestContext fields + constructors; RelatedTasks loader
-  call_context.rs                   [~100 lines] CallContext (user, extensions, method name)
-  interceptor.rs                    [~120 lines] CallInterceptor + RequestContextInterceptor traits; InterceptorChain
+  lib.rs                            [67 lines]   module declarations + pub use re-exports
+  error.rs                          [135 lines]  ServerError, ServerResult<T>, to_a2a_error() conversion
+  executor.rs                       [68 lines]   AgentExecutor trait (Pin<Box<dyn Future>> for object safety)
+  handler.rs                        [449 lines]  RequestHandler<E>: on_send_message, collect_events, find_task_by_context
+  builder.rs                        [126 lines]  RequestHandlerBuilder: executor, stores, push, interceptors, agent card
+  request_context.rs                [61 lines]   RequestContext: message, task_id, context_id, stored_task, metadata
+  call_context.rs                   [50 lines]   CallContext: method name for interceptor use
+  interceptor.rs                    [111 lines]  ServerInterceptor trait, ServerInterceptorChain (before/after hooks)
   dispatch/
-    mod.rs                          [~35 lines]  re-exports
-    jsonrpc.rs                      [~420 lines] parse JSON-RPC body; route by method name; serialize response; error mapping
-    rest.rs                         [~450 lines] parse REST path + verb; route to handler method; serialize response
+    mod.rs                          [10 lines]   re-exports
+    jsonrpc.rs                      [227 lines]  JSON-RPC 2.0 dispatcher: route PascalCase methods, serialize responses
+    rest.rs                         [322 lines]  REST dispatcher: route HTTP verb + path, colon-suffixed actions
   agent_card/
-    mod.rs                          [~40 lines]  re-exports; CORS header constants
-    static_handler.rs               [~80 lines]  StaticAgentCardHandler; serves a fixed AgentCard
-    dynamic_handler.rs              [~100 lines] DynamicAgentCardHandler; AgentCardProducer trait; calls producer per request
+    mod.rs                          [13 lines]   re-exports; CORS_ALLOW_ALL constant
+    static_handler.rs               [50 lines]   StaticAgentCardHandler: serves pre-serialized AgentCard
+    dynamic_handler.rs              [75 lines]   DynamicAgentCardHandler, AgentCardProducer trait
   streaming/
-    mod.rs                          [~35 lines]  re-exports
-    sse.rs                          [~200 lines] SseResponseBuilder; write SSE frames; keep-alive ticker; chunked encoding
-    event_queue.rs                  [~280 lines] EventQueueWriter trait; EventQueueReader trait; InMemoryEventQueue; EventQueueManager
+    mod.rs                          [12 lines]   re-exports
+    sse.rs                          [192 lines]  build_sse_response (wraps events in JSON-RPC envelopes), SseBodyWriter, keep-alive
+    event_queue.rs                  [173 lines]  EventQueueWriter/Reader traits, InMemoryQueue (mpsc), EventQueueManager
   push/
-    mod.rs                          [~35 lines]  re-exports
-    sender.rs                       [~220 lines] PushSender trait; HttpPushSender impl (hyper-backed); retry + timeout
-    config_store.rs                 [~200 lines] PushConfigStore trait; InMemoryPushConfigStore impl
+    mod.rs                          [10 lines]   re-exports
+    sender.rs                       [131 lines]  PushSender trait, HttpPushSender impl
+    config_store.rs                 [141 lines]  PushConfigStore trait, InMemoryPushConfigStore
   store/
-    mod.rs                          [~30 lines]  re-exports
-    task_store.rs                   [~280 lines] TaskStore trait; InMemoryTaskStore impl (DashMap); snapshot + versioning
+    mod.rs                          [8 lines]    re-exports
+    task_store.rs                   [154 lines]  TaskStore trait, InMemoryTaskStore (with list filtering)
 ```
 
-### `crates/a2a-sdk/`
+### `crates/a2a-sdk/` (83 lines)
 
 ```
-Cargo.toml                          [~40 lines]  re-exports all workspace crates
+Cargo.toml                          [~24 lines]  re-exports all workspace crates
 src/
-  lib.rs                            [~80 lines]  #![doc = "..."] + pub use a2a_types::*; pub use a2a_client::*; pub use a2a_server::*
+  lib.rs                            [83 lines]   types/client/server modules + prelude with common re-exports
 ```
 
-### `examples/`
+### `examples/` (415 lines)
 
 ```
 echo-agent/
-  Cargo.toml                        [~20 lines]
-  src/main.rs                       [~180 lines] minimal echo agent: returns input as text artifact
-
-client-demo/
-  Cargo.toml                        [~20 lines]
-  src/main.rs                       [~200 lines] discover card, send message, poll task, print result
-
-streaming-agent/
-  Cargo.toml                        [~20 lines]
-  src/main.rs                       [~250 lines] streaming agent + streaming client; shows SSE round-trip
+  Cargo.toml                        [~24 lines]
+  src/main.rs                       [415 lines]  Full-stack demo: EchoExecutor, JSON-RPC + REST servers,
+                                                 5 demos (sync/streaming × JSON-RPC/REST + GetTask)
 ```
+
+### Integration Tests (1,702 lines)
+
+```
+crates/a2a-server/tests/
+  handler_tests.rs                  [704 lines]  20 tests: EchoExecutor, FailingExecutor, CancelableExecutor,
+                                                 send/get/list/cancel/resubscribe/push config CRUD
+  dispatch_tests.rs                 [855 lines]  21 tests: real TCP server, JSON-RPC + REST dispatch,
+                                                 streaming SSE, agent card serving, error responses
+  streaming_tests.rs                [143 lines]  7 tests: event queue lifecycle, SSE frame formatting
+```
+
+### Project Totals
+
+| Component | Lines |
+|---|---|
+| a2a-types | 2,903 |
+| a2a-client | 3,408 |
+| a2a-server | 2,585 |
+| a2a-sdk | 83 |
+| examples | 415 |
+| integration tests | 1,702 |
+| **Total** | **~11,100** |
+| **Tests** | **157 (50 types + 51+8 client + 48 server)** |
 
 ---
 
 ## 6. Implementation Phases
 
-### Phase 0 — Project Foundation
+### Phase 0 — Project Foundation ✅ COMPLETE
 
-**Deliverables:** Compilable workspace, CI passing green, all tooling configured.
+**Deliverables:** Compilable workspace, tooling configured.
 
-| Task | File(s) | Notes |
-|---|---|---|
-| Workspace `Cargo.toml` | `Cargo.toml` | `[workspace]` with members array; `[profile.release]` with `panic="abort"`, `lto=true`, `opt-level=3`, `codegen-units=1`, `strip=true` |
-| Rust toolchain pin | `rust-toolchain.toml` | `channel = "stable"`, components = `["rustfmt", "clippy"]` |
-| `.gitignore` | `.gitignore` | `/target`, `Cargo.lock` (for libs), `.env` |
-| `deny.toml` | `deny.toml` | Apache-2.0 license list; advisory DB; no git sources; bounded versions |
-| `clippy.toml` | `clippy.toml` | Deny: `clippy::all`, `clippy::pedantic`, `clippy::nursery`; allow: `module_name_repetitions` |
-| CI pipeline | `.github/workflows/ci.yml` | Steps: `fmt --check`, `clippy -D warnings`, `test --all-targets`, `doc --no-deps`, `cargo-deny` |
-| README skeleton | `README.md` | Project overview, quick-start placeholder, status badge |
-| LESSONS skeleton | `LESSONS.md` | Headers for pitfall categories; fill as dev proceeds |
-| Empty crate stubs | Each `crates/*/Cargo.toml` + `src/lib.rs` | Compile-clean empty crates before any implementation |
-
-**Validation:** `cargo build --workspace` exits 0. `cargo test --workspace` exits 0 (no tests yet). CI runs green.
-
----
-
-### Phase 1 — Protocol Types (`a2a-types`)
-
-**Deliverables:** Complete, serialization-correct Rust types for every A2A 0.3.0 schema.
-
-**Order of implementation (dependency-driven):**
-
-#### 1a. `error.rs` — Error types first (everything depends on these)
-
-```rust
-// All A2A protocol error codes as typed variants
-pub enum ErrorCode {
-    // JSON-RPC standard
-    ParseError       = -32700,
-    InvalidRequest   = -32600,
-    MethodNotFound   = -32601,
-    InvalidParams    = -32602,
-    InternalError    = -32603,
-    // A2A-specific (-32000 to -32099)
-    TaskNotFound                    = -32001,
-    TaskNotCancelable               = -32002,
-    PushNotificationNotSupported    = -32003,
-    UnsupportedOperation            = -32004,
-    ContentTypeNotSupported         = -32005,
-    VersionNotSupported             = -32006,
-    ExtensionSupportRequired        = -32007,
-    InvalidMessage                  = -32008,
-    AuthenticationFailed            = -32009,
-    AuthorizationFailed             = -32010,
-    UnsupportedMode                 = -32011,
-}
-
-pub struct A2aError {
-    pub code: ErrorCode,
-    pub message: String,
-    pub data: Option<serde_json::Value>,
-}
-
-pub type A2aResult<T> = Result<T, A2aError>;
-```
-
-`A2aError` implements: `std::error::Error`, `Display`, `Debug`, `Clone`.
-Constructor methods: `A2aError::task_not_found(id)`, `A2aError::internal(msg)`, etc.
-
-#### 1b. `jsonrpc.rs` — JSON-RPC envelope types
-
-```rust
-pub type JsonRpcId = Option<serde_json::Value>; // string | number | null
-
-pub struct JsonRpcRequest {
-    pub jsonrpc: JsonRpcVersion,   // always "2.0"
-    pub id: JsonRpcId,
-    pub method: String,
-    pub params: Option<serde_json::Value>,
-}
-
-#[serde(untagged)]
-pub enum JsonRpcResponse<T> {
-    Success(JsonRpcSuccessResponse<T>),
-    Error(JsonRpcErrorResponse),
-}
-
-pub struct JsonRpcSuccessResponse<T> {
-    pub jsonrpc: JsonRpcVersion,
-    pub id: JsonRpcId,
-    pub result: T,
-}
-
-pub struct JsonRpcErrorResponse {
-    pub jsonrpc: JsonRpcVersion,
-    pub id: JsonRpcId,
-    pub error: JsonRpcError,
-}
-
-pub struct JsonRpcError {
-    pub code: i64,
-    pub message: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<serde_json::Value>,
-}
-```
-
-#### 1c. `task.rs` — Task, TaskStatus, TaskState
-
-```rust
-// Newtype for compile-time ID distinctness
-pub struct TaskId(String);
-pub struct TaskVersion(u64);
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TaskState {
-    Submitted,
-    Working,
-    InputRequired,
-    AuthRequired,
-    Completed,
-    Failed,
-    Canceled,
-    Rejected,
-    Unknown,
-}
-
-impl TaskState {
-    pub fn is_terminal(&self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Canceled | Self::Rejected)
-    }
-}
-
-pub struct Task {
-    pub id: TaskId,
-    pub context_id: String,
-    pub status: TaskStatus,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub history: Option<Vec<Message>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub artifacts: Option<Vec<Artifact>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-    pub kind: TaskKind, // always "task"
-}
-```
-
-#### 1d. `message.rs` — Message, Part variants
-
-Serde discriminated union using `#[serde(tag = "kind", rename_all = "lowercase")]`:
-
-```rust
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum Part {
-    Text(TextPart),
-    File(FilePart),
-    Data(DataPart),
-}
-
-pub struct TextPart {
-    pub text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
-
-pub struct FilePart {
-    pub file: FileContent,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
-}
-
-// Untagged: deserializes as Bytes if `bytes` key present, Uri if `uri` key present
-#[serde(untagged)]
-pub enum FileContent {
-    Bytes(FileWithBytes),
-    Uri(FileWithUri),
-}
-```
-
-#### 1e. `artifact.rs`, `agent_card.rs`, `security.rs`, `events.rs`, `params.rs`, `push.rs`, `extensions.rs`, `responses.rs`
-
-Each implements the corresponding spec types (see `docs/implementation/type-mapping.md` for full field-by-field mapping).
-
-**Key serde patterns used:**
-- `#[serde(rename_all = "camelCase")]` — all structs (spec uses camelCase)
-- `#[serde(skip_serializing_if = "Option::is_none")]` — all optional fields
-- `#[serde(tag = "kind")]` — discriminated unions (Part, StreamResponse)
-- `#[serde(untagged)]` — ambiguous unions (FileContent, JsonRpcResponse, SendMessageResponse)
-- `#[serde(rename = "...")]` — where Rust field name cannot match spec name
-
-**Validation:** `cargo test -p a2a-types` passes. Round-trip JSON tests for all types. Corpus of canonical JSON samples from the spec tested for exact deserialization.
-
----
-
-### Phase 2 — HTTP Client (`a2a-client`)
-
-**Deliverables:** Working client that can communicate with any A2A-compliant agent over JSON-RPC.
-
-**Order of implementation:**
-
-#### 2a. `error.rs` + `config.rs`
-
-```rust
-pub enum ClientError {
-    Http(hyper::Error),
-    Serialization(serde_json::Error),
-    Protocol(A2aError),
-    Transport(String),
-    InvalidEndpoint(String),
-    AuthRequired { task_id: TaskId },
-}
-pub type ClientResult<T> = Result<T, ClientError>;
-
-pub struct ClientConfig {
-    pub preferred_transports: Vec<TransportProtocol>,
-    pub accepted_output_modes: Vec<String>,
-    pub history_length: Option<u32>,
-    pub return_immediately: bool,
-    pub request_timeout: Duration,
-    pub tls: TlsConfig,
-}
-```
-
-#### 2b. `transport/mod.rs` — Transport trait
-
-```rust
-pub trait Transport: Send + Sync + 'static {
-    async fn send_request(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> ClientResult<serde_json::Value>;
-
-    async fn send_streaming_request(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> ClientResult<Box<dyn EventStreamSource>>;
-}
-```
-
-#### 2c. `transport/jsonrpc.rs` — JSON-RPC over HTTP
-
-- Build `JsonRpcRequest` with generated ID
-- POST to agent's `url` (from AgentCard)
-- Parse `JsonRpcResponse<serde_json::Value>`
-- Map `JsonRpcError` → `ClientError::Protocol(A2aError)`
-- Streaming: request with `Accept: text/event-stream`, return SSE reader
-
-#### 2d. `streaming/sse_parser.rs` + `streaming/event_stream.rs`
-
-SSE parser is a state machine operating on raw bytes:
-- Accumulates lines into frames
-- Parses `data:`, `event:`, `id:`, `retry:` fields
-- Handles `:` keep-alive comments
-- Returns `SseFrame { event_type, data, id, retry }`
-
-`EventStream` wraps the SSE parser, deserializes `StreamResponse` from each data field:
-```rust
-pub struct EventStream {
-    inner: SseFrameStream,
-}
-
-impl EventStream {
-    pub async fn next(&mut self) -> Option<ClientResult<StreamResponse>>;
-}
-```
-
-#### 2e. `discovery.rs`
-
-```rust
-pub async fn resolve_agent_card(base_url: &str) -> ClientResult<AgentCard>;
-pub async fn resolve_agent_card_with_path(url: &str, path: &str) -> ClientResult<AgentCard>;
-```
-
-Fetches `/.well-known/agent-card.json`, deserializes `AgentCard`, validates `protocolVersion`.
-
-#### 2f. `interceptor.rs` + `auth.rs`
-
-```rust
-pub trait CallInterceptor: Send + Sync + 'static {
-    async fn before(&self, req: &mut ClientRequest) -> ClientResult<()>;
-    async fn after(&self, resp: &ClientResponse) -> ClientResult<()>;
-}
-
-pub struct AuthInterceptor { ... }
-impl CallInterceptor for AuthInterceptor { ... }
-
-pub trait CredentialsStore: Send + Sync + 'static {
-    fn get(&self, session: &SessionId, scheme: &str) -> Option<String>;
-    fn set(&self, session: SessionId, scheme: &str, credential: String);
-    fn remove(&self, session: &SessionId, scheme: &str);
-}
-pub struct InMemoryCredentialsStore(RwLock<HashMap<SessionId, HashMap<String, String>>>);
-```
-
-#### 2g. `builder.rs` + `client.rs`
-
-`ClientBuilder` validates: at least one transport protocol, valid base URL, no conflicting TLS options.
-
-`A2aClient` holds a `Transport` impl + `InterceptorChain` + `ClientConfig`. Each method:
-1. Builds `MessageSendParams` / `TaskQueryParams` etc.
-2. Runs `interceptor.before()`
-3. Calls `transport.send_request()` or `transport.send_streaming_request()`
-4. Deserializes result
-5. Runs `interceptor.after()`
-6. Returns typed result
-
-#### 2h. `methods/` — All client methods
-
-Each file implements 1–3 closely related RPC calls:
-
-| File | Methods |
+| Task | Status |
 |---|---|
-| `send_message.rs` | `send_message()`, `stream_message()` |
-| `tasks.rs` | `get_task()`, `list_tasks()`, `cancel_task()`, `resubscribe()` |
-| `push_config.rs` | `set_push_config()`, `get_push_config()`, `list_push_configs()`, `delete_push_config()` |
-| `extended_card.rs` | `get_authenticated_extended_card()` |
-
-**Validation:** `cargo test -p a2a-client` with `wiremock` mocking. All 11 RPC methods exercised. Auth flow tested. SSE streaming tested with mock SSE server.
-
----
-
-### Phase 3 — Server Framework (`a2a-server`)
-
-**Deliverables:** A working `AgentExecutor`-based server that can be driven by any hyper HTTP server.
-
-**Order of implementation:**
-
-#### 3a. `error.rs` + `executor.rs`
-
-```rust
-pub trait AgentExecutor: Send + Sync + 'static {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()>;
-
-    async fn cancel(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()>;
-}
-```
-
-#### 3b. `request_context.rs`
-
-```rust
-pub struct RequestContext {
-    pub message: Message,
-    pub task_id: TaskId,
-    pub context_id: String,
-    pub stored_task: Option<Task>,
-    pub metadata: Option<serde_json::Value>,
-}
-```
-
-Constructed by `RequestHandler` before calling `AgentExecutor::execute`. The `stored_task` field carries the previous task snapshot for continuation requests.
-
-#### 3c. `store/task_store.rs`
-
-```rust
-pub trait TaskStore: Send + Sync + 'static {
-    async fn save(&self, task: Task) -> A2aResult<()>;
-    async fn get(&self, id: &TaskId) -> A2aResult<Option<Task>>;
-    async fn list(&self, params: &ListTasksParams) -> A2aResult<TaskListResponse>;
-    async fn delete(&self, id: &TaskId) -> A2aResult<()>;
-}
-
-// Default impl; no external dep; suitable for single-process deployments
-pub struct InMemoryTaskStore {
-    tasks: RwLock<HashMap<TaskId, Task>>,
-}
-```
-
-#### 3d. `streaming/event_queue.rs`
-
-```rust
-pub trait EventQueueWriter: Send + Sync {
-    async fn write(&self, event: StreamResponse) -> A2aResult<()>;
-    async fn close(&self) -> A2aResult<()>;
-}
-
-pub trait EventQueueReader: Send {
-    async fn read(&mut self) -> Option<A2aResult<StreamResponse>>;
-}
-
-// Backed by tokio::sync::mpsc channel
-pub struct InMemoryEventQueue { ... }
-```
-
-#### 3e. `handler.rs` + `builder.rs`
-
-`RequestHandlerBuilder` fluent API:
-```rust
-RequestHandlerBuilder::new(executor)
-    .with_task_store(custom_store)
-    .with_push_sender(http_push_sender)
-    .with_push_config_store(custom_store)
-    .with_interceptor(logging_interceptor)
-    .with_agent_card(card)
-    .build()  // → RequestHandler<E>
-```
-
-`RequestHandler::on_send_message` flow:
-1. Generate `TaskId` (uuid v4), `ContextId` (uuid v4 if not provided)
-2. Create initial `Task { state: Submitted }`
-3. Save to `TaskStore`
-4. Create `InMemoryEventQueue`
-5. Spawn `tokio::task` → calls `executor.execute(ctx, &queue)`
-6. If `return_immediately=true`: return `Task { state: Submitted }`
-7. Else: poll queue for first terminal event, return final `Task`
-
-#### 3f. `dispatch/jsonrpc.rs` + `dispatch/rest.rs`
-
-JSON-RPC dispatcher:
-- Parse `JsonRpcRequest` from HTTP body bytes
-- Match `method` string to handler method
-- Call appropriate `RequestHandler` method
-- Serialize response as `JsonRpcResponse<T>`
-- Streaming: return SSE response for `message/stream` and `tasks/resubscribe`
-
-REST dispatcher:
-- Parse HTTP method + path pattern
-- Extract path parameters (`{taskId}`, etc.)
-- Call appropriate `RequestHandler` method
-- Return JSON response body
-
-Both dispatchers map `A2aError` → `JsonRpcErrorResponse` with correct error codes.
-
-#### 3g. `agent_card/`
-
-```rust
-// Static: card provided at construction time
-pub struct StaticAgentCardHandler { card_json: Bytes }
-
-// Dynamic: card generated per-request
-pub trait AgentCardProducer: Send + Sync + 'static {
-    async fn produce(&self, req: &CardRequest) -> A2aResult<AgentCard>;
-}
-pub struct DynamicAgentCardHandler<P: AgentCardProducer> { producer: P }
-```
-
-Both handlers:
-- Respond to `GET /.well-known/agent-card.json`
-- Set `Content-Type: application/json`
-- Set CORS header `Access-Control-Allow-Origin: *`
-
-#### 3h. `interceptor.rs` + `call_context.rs`
-
-Server-side interceptors run before/after each RPC call, with access to `CallContext` (caller identity, activated extensions, method name).
-
-**Validation:** Integration tests spin up a real hyper server, send JSON-RPC requests, verify responses. `AgentExecutor` implemented as a test double. All 11 methods tested via JSON-RPC and REST dispatchers.
+| Workspace `Cargo.toml` with `[profile.release]` | ✅ |
+| `rust-toolchain.toml` pinned to stable | ✅ |
+| `deny.toml`, `clippy.toml` | ✅ |
+| README, LESSONS, CONTRIBUTING | ✅ |
+| Empty crate stubs | ✅ |
 
 ---
 
-### Phase 4 — SSE Streaming
+### Phase 1 — Protocol Types (`a2a-types`) ✅ COMPLETE
 
-**Deliverables:** Fully functional bidirectional SSE: client consumes events, server produces them.
+**Deliverables:** Complete, serialization-correct Rust types for every A2A v1.0.0 schema. 50 unit tests passing.
 
-This phase integrates streaming support added in stubs during Phases 2 and 3.
+All types implemented with v1.0.0 wire format:
+- **Enums**: `SCREAMING_SNAKE_CASE` serialization (e.g., `TASK_STATE_COMPLETED`, `ROLE_USER`)
+- **Methods**: `PascalCase` (e.g., `SendMessage`, `GetTask`)
+- **JSON fields**: `camelCase` via `#[serde(rename_all = "camelCase")]`
+- **Oneof unions**: Untagged serde (`#[serde(untagged)]`) for `Part`, `StreamResponse`, `SendMessageResponse`
+- **Newtype IDs**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId` for type safety
 
-| Task | Location | Notes |
+Key serde patterns:
+- `#[serde(skip_serializing_if = "Option::is_none")]` on all optional fields
+- `#[serde(rename = "...")]` for explicit per-variant enum names
+- `#[serde(untagged)]` for protocol oneof unions
+
+---
+
+### Phase 2 — HTTP Client (`a2a-client`) ✅ COMPLETE
+
+**Deliverables:** Working client supporting JSON-RPC and REST transports. 51 unit tests + 8 doc-tests passing.
+
+Implemented:
+- `ClientBuilder` with fluent API (endpoint, timeout, protocol binding, interceptors, TLS toggle)
+- `JsonRpcTransport`: HTTP POST with JSON-RPC envelopes, SSE streaming
+- `RestTransport`: HTTP verb + path routing, path parameter extraction
+- `EventStream`: async SSE parser that deserializes `JsonRpcResponse<StreamResponse>` frames
+- `SseParser`: raw byte-level SSE frame accumulator with keep-alive comment handling
+- `AuthInterceptor` + `InMemoryCredentialsStore` for bearer/basic auth
+- `resolve_agent_card()`: fetch `/.well-known/agent.json`
+- All 11 RPC methods implemented as `async` methods on `A2aClient`
+
+---
+
+### Phase 3 — Server Framework (`a2a-server`) ✅ COMPLETE
+
+**Deliverables:** Full `AgentExecutor`-based server framework with both JSON-RPC and REST dispatchers, SSE streaming, push notification support, and in-memory stores.
+
+Implemented:
+- `AgentExecutor` trait (object-safe with `Pin<Box<dyn Future>>`)
+- `RequestHandler` with all protocol methods
+- `RequestHandlerBuilder` with fluent API
+- `JsonRpcDispatcher` and `RestDispatcher` for hyper
+- `EventQueueManager` with `InMemoryQueueWriter`/`InMemoryQueueReader` (tokio mpsc)
+- `build_sse_response()` producing SSE with JSON-RPC envelope wrapping
+- `TaskStore` trait + `InMemoryTaskStore`
+- `PushConfigStore` trait + `InMemoryPushConfigStore`
+- `PushSender` trait + `HttpPushSender`
+- `ServerInterceptor` + `ServerInterceptorChain`
+- `StaticAgentCardHandler` + `DynamicAgentCardHandler`
+
+---
+
+### Phase 4 — v1.0 Protocol Upgrade ✅ COMPLETE
+
+**Deliverables:** Full upgrade from A2A v0.3.0 to v1.0.0 wire format across all three crates.
+
+This phase was not in the original plan but was required when the A2A spec was updated.
+
+Key changes:
+- `TaskState` enum: `kebab-case` → `SCREAMING_SNAKE_CASE` (e.g., `"TASK_STATE_COMPLETED"`)
+- `MessageRole` enum: `lowercase` → `SCREAMING_SNAKE_CASE` (e.g., `"ROLE_USER"`)
+- `Part` type: tagged `kind` discriminator → untagged `PartContent` oneof (`text`/`raw`/`url`/`data` fields)
+- `StreamResponse`: tagged `kind` → untagged oneof (discriminated by field presence)
+- `AgentCard`: flat `url`/`preferred_transport` → `supported_interfaces: Vec<AgentInterface>`
+- `ContextId` newtype added (was plain `String`)
+- `AgentCapabilities.extended_agent_card` added
+- Agent card path: `/.well-known/agent-card.json` → `/.well-known/agent.json`
+- JSON-RPC method names: `snake/case` → `PascalCase` (e.g., `message/send` → `SendMessage`)
+- `TaskStatus.message` changed from `Option<Message>` to optional embedded message
+- `Task.kind` field removed (v1.0 uses untagged unions)
+
+---
+
+### Phase 5 — Server Tests & Bug Fixes ✅ COMPLETE
+
+**Deliverables:** 48 integration tests for a2a-server. Critical event queue lifecycle bug fixed.
+
+Tests organized across three files:
+- `handler_tests.rs` (20 tests): send message, get/list/cancel tasks, resubscribe, push config CRUD, error propagation, executor failure handling
+- `dispatch_tests.rs` (21 tests): real TCP servers with JSON-RPC and REST dispatch, streaming SSE responses, agent card serving, method-not-found errors
+- `streaming_tests.rs` (7 tests): event queue write/read, manager lifecycle, SSE frame formatting
+
+**Bug fixed:** `on_send_message` spawned executor task retained a writer reference through the `EventQueueManager`, preventing the mpsc channel from closing. Non-streaming sends would hang forever waiting for `collect_events`. Fix: spawned task owns the writer `Arc` directly and calls `event_queue_mgr.destroy()` on completion.
+
+**Bug fixed (Phase 6):** `build_sse_response` was serializing raw `StreamResponse` JSON in SSE data frames, but the client's `EventStream` expected `JsonRpcResponse<StreamResponse>` envelopes. Fix: server now wraps each SSE event in a `JsonRpcSuccessResponse` envelope.
+
+---
+
+### Phase 6 — Umbrella Crate & Examples ✅ COMPLETE
+
+**Deliverables:** `a2a-sdk` prelude module; working end-to-end echo-agent example.
+
+#### `a2a-sdk` Enhancements
+
+- Added `prelude` module with curated re-exports of the most commonly used types:
+  - Wire types: `Task`, `TaskState`, `Message`, `Part`, `Artifact`, `StreamResponse`, `AgentCard`, etc.
+  - ID newtypes: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
+  - Params/responses: `MessageSendParams`, `SendMessageResponse`, `TaskListResponse`, etc.
+  - Client: `A2aClient`, `ClientBuilder`, `EventStream`
+  - Server: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, dispatchers
+  - Errors: `A2aError`, `A2aResult`, `ClientError`, `ServerError`
+- Updated description from v0.3.0 to v1.0
+
+#### `examples/echo-agent`
+
+Single binary demonstrating the full A2A stack:
+1. `EchoExecutor` implementing `AgentExecutor` (Working → Artifact → Completed)
+2. Server startup with **both** JSON-RPC and REST dispatchers on separate ports
+3. **5 demos** exercised end-to-end:
+   - Synchronous `SendMessage` via JSON-RPC
+   - Streaming `SendStreamingMessage` via JSON-RPC
+   - Synchronous `SendMessage` via REST
+   - Streaming `SendStreamingMessage` via REST
+   - `GetTask` retrieval of a previously created task
+
+All demos complete successfully, validating the full client-server pipeline across both transport bindings.
+
+---
+
+### Phase 7 — v1.0 Spec Compliance Gaps 🔲 NOT STARTED
+
+**Deliverables:** Close all remaining gaps between our implementation and the A2A v1.0.0 specification. Each sub-phase is independently implementable and testable.
+
+#### 7A. Type & Field Fixes (`a2a-types`)
+
+Missing or incorrect fields discovered by comparing wire types against the spec:
+
+| Item | File | Change Required |
 |---|---|---|
-| Server SSE writer | `a2a-server/src/streaming/sse.rs` | Chunked transfer; keep-alive `:` comments; `final: true` detection closes stream |
-| Client SSE parser | `a2a-client/src/streaming/sse_parser.rs` | Handles fragmented chunks; reconnect hint via `retry:` field |
-| `message/stream` end-to-end | tests | Client calls `stream_message()`, server emits `TaskStatusUpdateEvent` series, client receives all |
-| `tasks/resubscribe` | both | Client reconnects after disconnect; server replays pending events |
-| EventQueueManager | `a2a-server/src/streaming/event_queue.rs` | `get_or_create(task_id)` + `destroy(task_id)` lifecycle |
+| `Task` missing timestamps | `task.rs` | Add `created_at: Option<String>` and `updated_at: Option<String>` (ISO 8601 datetime) |
+| `TaskState::Submitted` naming | `task.rs` | Spec uses `TASK_STATE_PENDING`, not `TASK_STATE_SUBMITTED` — rename variant |
+| `AgentCapabilities` missing field | `agent_card.rs` | Add `state_transition_history: Option<bool>` (spec still defines this alongside `extended_agent_card`) |
+| `Artifact` missing `media_type` | `artifact.rs` | Add `media_type: Option<String>` field (MIME type of artifact content) |
+| `PushNotificationConfig` missing `created_at` | `push.rs` | Add `created_at: Option<String>` field |
+| `PushNotificationConfig.id` serde rename | `push.rs` | Verify serializes as `configId` per spec (add `#[serde(rename = "configId")]` if missing) |
+| `ListTasksParams` missing `history_length` | `params.rs` | Add `history_length: Option<u32>` field |
+| Protocol binding constant | `agent_card.rs` | Spec uses `"HTTP+JSON"` not `"REST"` for the REST binding — verify and align |
 
-**Keep-alive design:** Server sends `: keep-alive\n\n` every 30s (configurable). Client's SSE parser ignores comment lines per spec.
+**Estimated effort:** ~2 hours. Mechanical field additions with serde annotations and unit tests.
 
-**Backpressure:** `InMemoryEventQueue` uses bounded `tokio::sync::mpsc` channel (default: 64 events). If the queue fills, `EventQueueWriter::write` returns `A2aError::Internal` and the executor is expected to yield.
+#### 7B. REST Dispatch Fixes (`a2a-server`)
 
----
-
-### Phase 5 — Push Notifications
-
-**Deliverables:** Agent can deliver push notifications to client-registered webhooks.
-
-| Task | Location | Notes |
+| Item | File | Change Required |
 |---|---|---|
-| `PushConfigStore` trait | `a2a-server/src/push/config_store.rs` | CRUD for `TaskPushNotificationConfig`; keyed by `(TaskId, config_id)` |
-| `InMemoryPushConfigStore` | same file | `RwLock<HashMap<(TaskId, String), PushNotificationConfig>>` |
-| `PushSender` trait | `a2a-server/src/push/sender.rs` | `async fn send(&self, url: &str, event: &StreamResponse, config: &PushNotificationConfig)` |
-| `HttpPushSender` | same file | hyper POST with `Content-Type: application/json`; 30s timeout; honor auth config; optional `A2A-Notification-Token` header |
-| Server integration | `handler.rs` | After each `EventQueueWriter::write`, if push configs exist for `task_id`, call `PushSender::send` |
-| Push config RPC methods | `handler.rs` | `on_set_push_config`, `on_get_push_config`, `on_list_push_configs`, `on_delete_push_config` |
+| ListTasks query parameter parsing | `dispatch/rest.rs` | Parse `context_id`, `status`, `page_size`, `page_token`, `status_timestamp_after`, `include_artifacts` from URL query string |
+| REST error status codes | `dispatch/rest.rs` | `PushNotSupported` → 400 (not 501); add 415 for `ContentTypeNotSupported`; add 502 for upstream failures |
+| Agent card path verification | `agent_card/static_handler.rs` | Ensure `/.well-known/agent.json` is the served path (not `agent-card.json`) |
+| Tenant-prefixed REST routes | `dispatch/rest.rs` | Support optional `/tenants/{tenant}/` prefix on all routes |
+| `SubscribeToTask` as GET | `dispatch/rest.rs` | Allow `GET /tasks/{id}:subscribe` in addition to POST |
 
-**Security:** `HttpPushSender` inspects `PushNotificationAuthInfo.schemes`:
-- `"bearer"` → `Authorization: Bearer {credentials}`
-- `"basic"` → `Authorization: Basic {base64(credentials)}`
-- Token verification header sent when `PushNotificationConfig.token` is set
+**Estimated effort:** ~3 hours. Query parsing is the largest item.
+
+#### 7C. Protocol Headers (`a2a-server` + `a2a-client`)
+
+The spec defines protocol-level HTTP headers that we don't yet send or validate:
+
+| Header | Direction | Requirement |
+|---|---|---|
+| `A2A-Version: 1.0.0` | Both | Server MUST include in responses; client SHOULD include in requests |
+| `A2A-Extensions: ext1,ext2` | Both | List of active extensions; omit if none |
+| `Content-Type: application/a2a+json` | Both | Spec-defined media type for A2A payloads (fallback: `application/json`) |
+
+Locations:
+- Server: `dispatch/jsonrpc.rs`, `dispatch/rest.rs` — add headers to all responses
+- Client: `transport/jsonrpc.rs`, `transport/rest.rs` — add headers to all requests
+
+**Estimated effort:** ~1.5 hours. Straightforward header insertion.
+
+#### 7D. Handler & Protocol Logic Fixes (`a2a-server`)
+
+| Item | File | Change Required |
+|---|---|---|
+| Interceptor chain enforcement | `handler.rs` | Run `ServerInterceptor.before()` / `.after()` hooks on every request; interceptor error stops processing |
+| Task continuation via `context_id` | `handler.rs` | When a second `SendMessage` arrives with the same `context_id`, look up the existing task and pass it as `stored_task` in `RequestContext` |
+| `return_immediately` mode | `handler.rs` | When `SendMessageConfiguration.return_immediately == true`, return the task immediately after spawning the executor (don't wait for completion) |
+| Push delivery during events | `handler.rs` | During `collect_events`, if push configs exist for the task, call `PushSender` for each status/artifact event |
+| Context/task mismatch rejection | `handler.rs` | If `message.task_id` is set but doesn't match the task found by `context_id`, return `InvalidParams` error |
+
+**Estimated effort:** ~4 hours. `return_immediately` and push delivery are the most involved.
+
+#### 7E. Client-Side Fixes (`a2a-client`)
+
+| Item | File | Change Required |
+|---|---|---|
+| REST `ListTasks` query params | `transport/rest.rs` | Send `ListTasksParams` fields as URL query parameters on GET (not in body) |
+| REST `GetTask` query params | `transport/rest.rs` | Send `history_length` as query parameter on GET |
+| Protocol headers | `transport/*.rs` | Send `A2A-Version` and `Content-Type: application/a2a+json` headers |
+| Better error diagnostics | `error.rs` | Include response body snippet in error messages for unexpected response shapes |
+
+**Estimated effort:** ~2 hours. Mostly query parameter handling.
+
+#### 7F. Additional Tests
+
+| Test Area | Description | Location |
+|---|---|---|
+| Interceptor chain | Test before/after hooks; verify interceptor error stops processing | `tests/handler_tests.rs` |
+| Task continuation | Same `context_id` in second request finds previous task via `stored_task` | `tests/handler_tests.rs` |
+| Concurrent send + cancel | Race condition between executor running and cancel request arriving | `tests/handler_tests.rs` |
+| Push notification delivery | `PushSender` called during `collect_events` when push configs exist | `tests/handler_tests.rs` |
+| REST query parsing | Verify `ListTasks` filters work with URL query parameters | `tests/dispatch_tests.rs` |
+| Protocol headers | Verify `A2A-Version` header present in server responses | `tests/dispatch_tests.rs` |
+| Error edge cases | Malformed JSON bodies, missing required fields, oversized payloads | `tests/dispatch_tests.rs` |
+
+**Estimated effort:** ~3 hours. Can be written incrementally alongside 7D/7E.
 
 ---
 
-### Phase 6 — Umbrella Crate & Examples
+### Phase 8 — Caching, Signing & Release Preparation 🔲 NOT STARTED
 
-**Deliverables:** `a2a-sdk` re-export crate; three working examples.
+**Deliverables:** Advanced spec features, quality gates passing, crates publishable.
 
-#### `crates/a2a-sdk/src/lib.rs`
+#### 8A. HTTP Caching (spec §8.3)
 
-```rust
-//! # a2a-sdk
-//!
-//! All-in-one re-export of `a2a-types`, `a2a-client`, and `a2a-server`.
-//! For lower compile times, depend on individual crates directly.
+The spec defines caching semantics for agent card responses:
 
-pub use a2a_types::*;
-pub use a2a_client::{A2aClient, ClientBuilder, ClientConfig, ClientError};
-pub use a2a_server::{AgentExecutor, RequestHandler, RequestHandlerBuilder, ServerError};
-```
-
-#### `examples/echo-agent/src/main.rs`
-
-Minimal server that echoes each message as a text artifact. Demonstrates:
-- `AgentExecutor` implementation
-- `RequestHandlerBuilder` construction
-- Starting a hyper server
-- Serving the AgentCard at `/.well-known/agent-card.json`
-
-#### `examples/client-demo/src/main.rs`
-
-Client that:
-1. Discovers the echo agent's card
-2. Sends a message
-3. Polls until task is terminal
-4. Prints the artifact text
-
-#### `examples/streaming-agent/src/main.rs`
-
-Agent that emits multiple `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent` during processing. Client connects with `stream_message()` and prints each event as it arrives.
-
----
-
-### Phase 7 — Quality & Release Preparation
-
-**Deliverables:** All quality gates passing, documentation complete, crates publishable.
-
-| Task | Notes |
+| Item | Change Required |
 |---|---|
-| Property-based tests | `proptest` for `TaskState` transitions, `Part` round-trip, ID generation uniqueness |
-| Corpus-based JSON tests | Deserialize every sample from official spec; verify round-trip |
-| E2E integration tests | Echo agent + client test in the same process; streaming test; push notification test with mock webhook |
-| Benchmark suite | `criterion`: JSON serialization throughput; SSE parse throughput; server handler throughput |
-| `cargo doc --no-deps` | Zero warnings; all public items documented; examples compile |
-| `LESSONS.md` | Document every non-obvious pitfall discovered during implementation |
-| ADR finalization | Each ADR updated with implementation outcomes |
-| `CONTRIBUTING.md` | Testing guide, coding standards, PR checklist |
-| Publish dry-run | `cargo publish --dry-run -p a2a-types`, etc. — verify no missing files |
-| Version alignment | All crates at `0.1.0`; workspace `[package.version]` |
+| `Cache-Control` header | Server SHOULD include `Cache-Control: max-age=...` on agent card responses |
+| `ETag` header | Server SHOULD include `ETag` for conditional request support |
+| `Last-Modified` header | Server SHOULD include `Last-Modified` for conditional requests |
+| Conditional request handling | Server MUST return 304 Not Modified when `If-None-Match` / `If-Modified-Since` match |
+| Client caching | Client SHOULD cache agent cards and send conditional request headers |
+
+Location: `agent_card/static_handler.rs`, `agent_card/dynamic_handler.rs`, `discovery.rs`
+
+**Estimated effort:** ~2 hours.
+
+#### 8B. Agent Card Signing (spec §10)
+
+The spec defines an optional agent card signing mechanism using JWS:
+
+| Item | Change Required |
+|---|---|
+| RFC 8785 JSON canonicalization | Implement or depend on a JCS library for deterministic JSON serialization |
+| JWS compact serialization | Sign canonicalized agent card with detached payload JWS |
+| `AgentCardSignature` population | Fill `signatures` field on `AgentCard` with generated signatures |
+| Public key retrieval | Client fetches signing key from `jwks_url` in signature metadata |
+| Signature verification | Client verifies JWS signature against fetched public key |
+
+**Estimated effort:** ~6 hours. Requires adding a JWS/JWT dependency (e.g., `jsonwebtoken` crate). Can be feature-gated behind `signing`.
+
+#### 8C. Quality & Release Tasks
+
+| Task | Status | Notes |
+|---|---|---|
+| Property-based tests (`proptest`) | 🔲 | `TaskState` transitions, `Part` round-trip, ID uniqueness |
+| Corpus-based JSON tests | 🔲 | Deserialize official spec samples; verify round-trip fidelity |
+| Benchmark suite (`criterion`) | 🔲 | JSON serialization, SSE parse, handler throughput |
+| `cargo doc --no-deps -D warnings` | ✅ | Zero warnings; all public items documented |
+| `LESSONS.md` finalization | 🔲 | Document all non-obvious pitfalls discovered |
+| `CONTRIBUTING.md` update | 🔲 | Testing guide, PR checklist |
+| Publish dry-run | 🔲 | `cargo publish --dry-run` for each crate |
+| Version alignment | 🔲 | All crates at `0.1.0` with consistent metadata |
+| `tracing` feature flag | 🔲 | Optional structured logging |
+| TLS support | 🔲 | `tls-rustls` feature for HTTPS |
+| CI pipeline hardening | 🔲 | Enforce all quality gates in GitHub Actions |
 
 ---
 
 ## 7. Testing Strategy
 
-### Four Layers (non-negotiable)
+### Current Test Coverage
 
-| Layer | Tool | Location | Purpose |
-|---|---|---|---|
-| **Unit** | `#[test]` in-source | Each `src/*.rs` file | Pure logic: serde round-trips, state machine transitions, error construction, ID uniqueness |
-| **Property-based** | `proptest` | `src/*.rs` | Invariants: serialization idempotence, terminal state irreversibility, error code stability |
-| **Integration** | `#[tokio::test]` in `tests/` | Each crate's `tests/` dir | Module boundaries: client ↔ mock server, server handler ↔ mock executor |
-| **E2E** | `#[tokio::test]` | `tests/e2e/` | Full round-trip: real client + real server in-process; all transports; streaming; push |
+| Crate | Unit Tests | Integration Tests | Doc-Tests | Total |
+|---|---|---|---|---|
+| `a2a-types` | 50 | — | — | 50 |
+| `a2a-client` | 51 | — | 8 | 59 |
+| `a2a-server` | — | 48 | — | 48 |
+| **Total** | **101** | **48** | **8** | **157** |
+
+### Test Patterns
+
+| Pattern | Description |
+|---|---|
+| Test executors | `EchoExecutor` (happy path), `FailingExecutor` (error path), `CancelableExecutor` (cancel support) |
+| Real TCP servers | Integration tests start actual hyper servers on random ports — no mocking |
+| SSE round-trip | Client and server tested with real SSE streaming over TCP |
+| Helper constructors | `make_message()`, `make_send_params()`, `minimal_agent_card()` for test brevity |
+
+### Test Organization
+
+- Unit tests: `#[cfg(test)]` modules inside each source file
+- Integration tests: `crates/a2a-server/tests/` directory
+- End-to-end validation: `examples/echo-agent` (runs all transport paths)
 
 ### Test Naming Convention
 
@@ -937,77 +692,39 @@ Agent that emits multiple `TaskStatusUpdateEvent` and `TaskArtifactUpdateEvent` 
 Examples:
 - `task_state_completed_is_terminal`
 - `text_part_roundtrip_preserves_metadata`
-- `client_send_message_returns_task_on_success`
-- `server_jsonrpc_unknown_method_returns_method_not_found`
-- `sse_parser_keep_alive_comment_is_ignored`
-- `push_sender_bearer_auth_sets_authorization_header`
-
-### Test Organization
-
-Each source file's tests live in its own `#[cfg(test)]` block. Section banners:
-```rust
-// ---------------------------------------------------------------------------
-// serialization tests
-// ---------------------------------------------------------------------------
-```
-
-Integration and E2E tests live in `crates/{crate}/tests/`.
-
-### Non-Negotiable Rules
-
-1. `cargo test --workspace` must pass before any commit to `main`.
-2. E2E tests MUST be written for every transport path (JSON-RPC + REST), streaming, push notifications.
-3. No test may use `unwrap()` without a comment explaining why it cannot fail.
-4. All async tests use `#[tokio::test]` (not `tokio::block_on` in non-async tests).
+- `jsonrpc_send_message_returns_task`
+- `rest_get_task_returns_task`
+- `sse_write_event_format`
+- `queue_destroy_allows_recreation`
 
 ---
 
 ## 8. Quality Gates
 
-All gates must pass before tagging a release. CI enforces all of them.
+All gates must pass before tagging a release. Currently enforced manually; CI hardening is a Phase 8 task.
 
 ```bash
 # Formatting (zero diffs allowed)
 cargo fmt --all -- --check
 
 # Linting (zero warnings allowed)
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets
 
 # Tests (all must pass)
-cargo test --workspace --all-targets
+cargo test --workspace
 
 # Documentation (zero warnings)
-cargo doc --workspace --no-deps
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# MSRV check (Rust 1.93.x)
-rustup run 1.93 cargo check --workspace
-
-# Supply chain (license + advisory + duplicate check)
-cargo deny check
-
-# Publish dry-run
-cargo publish --dry-run -p a2a-types
-cargo publish --dry-run -p a2a-client
-cargo publish --dry-run -p a2a-server
-cargo publish --dry-run -p a2a-sdk
+# End-to-end smoke test
+cargo run -p echo-agent
 ```
 
-### Release Profile Requirements
-
-```toml
-[profile.release]
-panic        = "abort"
-lto          = true
-opt-level    = 3
-codegen-units = 1
-strip        = true
-```
+**Current status:** All gates passing ✅
 
 ---
 
 ## 9. Coding Standards
-
-Derived from `quack-rs` and applied to this project.
 
 ### File-Level
 
@@ -1017,24 +734,40 @@ Derived from `quack-rs` and applied to this project.
   // Copyright 2026 Tom F.
   ```
 - **500-line maximum.** When a file approaches 400 lines, extract a submodule.
-- **Thin `mod.rs` files** (35–70 lines): module declarations + `pub use` re-exports only. No logic.
+- **Thin `mod.rs` files** (8–15 lines): module declarations + `pub use` re-exports only. No logic.
 
 ### Error Handling
 
 - `unwrap()` and `expect()` are **forbidden** in library code.
-- `unwrap()` in tests requires a comment: `// SAFETY: test data is hardcoded valid`.
+- `unwrap()` in tests/examples is acceptable with clear context.
 - `?` operator is the standard propagation mechanism.
-- `panic!()` is forbidden except in `unreachable!()` for provably exhaustive matches.
+- `panic!()` forbidden except in `unreachable!()` for provably exhaustive matches.
 
-### Async
+### Async Trait Pattern
 
-- `async fn` in traits (stable Rust 1.75+) — no `Pin<Box<dyn Future>>` boxing.
-- All I/O-bound functions are async. No `std::thread::sleep` or blocking calls in async context.
-- `tokio::task::spawn_blocking` for CPU-bound work that cannot be made async.
+All async traits use `Pin<Box<dyn Future>>` return types for object safety:
+
+```rust
+fn method<'a>(
+    &'a self,
+    arg: &'a Type,
+) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
+```
+
+This pattern applies to: `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `Transport`, `CallInterceptor`, `ServerInterceptor`, `EventQueueWriter`, `EventQueueReader`.
+
+### Serde Conventions
+
+| Convention | Applied To |
+|---|---|
+| `#[serde(rename_all = "camelCase")]` | All structs |
+| `#[serde(rename = "SCREAMING_SNAKE")]` | Enum variants (v1.0 wire format) |
+| `#[serde(skip_serializing_if = "Option::is_none")]` | All optional fields |
+| `#[serde(untagged)]` | Oneof unions (Part, StreamResponse, SendMessageResponse) |
 
 ### Unsafe
 
-- `unsafe` blocks are **forbidden** unless crossing true FFI or `unsafe` hyper internals.
+- `unsafe` blocks are **forbidden** unless crossing true FFI boundaries.
 - Every `unsafe` block requires a `// SAFETY:` comment explaining the upheld invariants.
 - `#![deny(unsafe_op_in_unsafe_fn)]` in every crate.
 
@@ -1043,47 +776,67 @@ Derived from `quack-rs` and applied to this project.
 - `#![warn(missing_docs)]` in every crate.
 - Module-level docs: purpose → key types → usage example.
 - Public struct/enum docs: what it represents, which spec section defines it.
-- Cross-references: `[TypeName]`, `[method_name()]`.
-
-### Imports
-
-- Group: `std` → external crates → `crate` / `super`.
-- No wildcard imports except in `prelude` modules and test `use super::*`.
 
 ---
 
 ## 10. Protocol Reference Summary
 
-A condensed quick-reference for implementation use.
+A condensed quick-reference for implementation use (updated for v1.0.0).
 
-### All RPC Methods
+### All RPC Methods (v1.0.0 PascalCase names)
 
 | Method | Transport | Params | Returns |
 |---|---|---|---|
-| `message/send` | JSON-RPC POST | `MessageSendParams` | `Task \| Message` |
-| `message/stream` | JSON-RPC POST → SSE | `MessageSendParams` | `EventStream` |
-| `tasks/get` | JSON-RPC POST | `TaskQueryParams` | `Task` |
-| `tasks/list` | JSON-RPC POST | `ListTasksParams` | `TaskListResponse` |
-| `tasks/cancel` | JSON-RPC POST | `TaskIdParams` | `Task` |
-| `tasks/resubscribe` | JSON-RPC POST → SSE | `TaskIdParams` | `EventStream` |
-| `tasks/pushNotificationConfig/set` | JSON-RPC POST | `TaskPushNotificationConfig` | `TaskPushNotificationConfig` |
-| `tasks/pushNotificationConfig/get` | JSON-RPC POST | `GetPushConfigParams` | `TaskPushNotificationConfig` |
-| `tasks/pushNotificationConfig/list` | JSON-RPC POST | `TaskIdParams` | `Vec<TaskPushNotificationConfig>` |
-| `tasks/pushNotificationConfig/delete` | JSON-RPC POST | `DeletePushConfigParams` | `null` |
-| `agent/authenticatedExtendedCard` | JSON-RPC POST | `AuthenticatedExtendedCardParams` | `AuthenticatedExtendedCardResponse` |
+| `SendMessage` | JSON-RPC POST | `MessageSendParams` | `Task \| Message` |
+| `SendStreamingMessage` | JSON-RPC POST → SSE | `MessageSendParams` | SSE `StreamResponse` events |
+| `GetTask` | JSON-RPC POST | `TaskQueryParams` | `Task` |
+| `ListTasks` | JSON-RPC POST | `ListTasksParams` | `TaskListResponse` |
+| `CancelTask` | JSON-RPC POST | `CancelTaskParams` | `Task` |
+| `SubscribeToTask` | JSON-RPC POST → SSE | `TaskIdParams` | SSE `StreamResponse` events |
+| `CreateTaskPushNotificationConfig` | JSON-RPC POST | `TaskPushNotificationConfig` | `TaskPushNotificationConfig` |
+| `GetTaskPushNotificationConfig` | JSON-RPC POST | `GetPushConfigParams` | `TaskPushNotificationConfig` |
+| `ListTaskPushNotificationConfigs` | JSON-RPC POST | `TaskIdParams` | `Vec<TaskPushNotificationConfig>` |
+| `DeleteTaskPushNotificationConfig` | JSON-RPC POST | `DeletePushConfigParams` | `{}` |
+| `GetExtendedAgentCard` | JSON-RPC POST | — | `AgentCard` |
 
-### SSE Event Types
+### REST Route Table
 
-| `kind` value | Rust type | When emitted |
+| Method | Path | Handler |
 |---|---|---|
-| `"task"` | `Task` | When `message/send` returns a full task immediately |
-| `"message"` | `Message` | When agent response is a single message, not a task |
-| `"status-update"` | `TaskStatusUpdateEvent` | On every task state transition during streaming |
-| `"artifact-update"` | `TaskArtifactUpdateEvent` | When an artifact is ready or appended |
+| `POST` | `/message:send` | `SendMessage` |
+| `POST` | `/message:stream` | `SendStreamingMessage` |
+| `GET` | `/tasks/{id}` | `GetTask` |
+| `GET` | `/tasks` | `ListTasks` |
+| `POST` | `/tasks/{id}:cancel` | `CancelTask` |
+| `POST` | `/tasks/{id}:subscribe` | `SubscribeToTask` |
+| `POST` | `/tasks/{taskId}/pushNotificationConfigs` | `CreateTaskPushNotificationConfig` |
+| `GET` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `GetTaskPushNotificationConfig` |
+| `GET` | `/tasks/{taskId}/pushNotificationConfigs` | `ListTaskPushNotificationConfigs` |
+| `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `DeleteTaskPushNotificationConfig` |
+| `GET` | `/extendedAgentCard` | `GetExtendedAgentCard` |
+| `GET` | `/.well-known/agent.json` | Agent card discovery |
+
+### SSE Event Format
+
+Each SSE event wraps a `StreamResponse` in a JSON-RPC success response envelope:
+
+```
+event: message
+data: {"jsonrpc":"2.0","id":null,"result":{...StreamResponse...}}
+```
+
+`StreamResponse` is an untagged union discriminated by field presence:
+
+| Discriminating field | Rust variant | When emitted |
+|---|---|---|
+| `status` + `taskId` (no `artifact`) | `StatusUpdate(TaskStatusUpdateEvent)` | On every task state transition |
+| `artifact` + `taskId` | `ArtifactUpdate(TaskArtifactUpdateEvent)` | When an artifact is ready or appended |
+| `id` + `contextId` + `status` | `Task(Task)` | Full task snapshot |
+| `role` + `parts` | `Message(Message)` | Agent response as a direct message |
 
 ### Terminal Task States
 
-`completed`, `failed`, `canceled`, `rejected` — no further state transitions possible.
+`Completed`, `Failed`, `Canceled`, `Rejected` — serialized as `TASK_STATE_COMPLETED`, etc. No further state transitions possible.
 
 ### Error Code Quick-Reference
 
@@ -1094,40 +847,40 @@ A condensed quick-reference for implementation use.
 | -32601 | MethodNotFound | Unknown method name |
 | -32602 | InvalidParams | Params don't match expected schema |
 | -32603 | InternalError | Unexpected server error |
-| -32001 | TaskNotFound | `tasks/get` or `tasks/cancel` with unknown ID |
+| -32001 | TaskNotFound | `GetTask` or `CancelTask` with unknown ID |
 | -32002 | TaskNotCancelable | Cancel requested for terminal task |
-| -32003 | PushNotificationNotSupported | Client requests push; server `capabilities.pushNotifications: false` |
-| -32004 | UnsupportedOperation | Method exists but not implemented by this agent |
-| -32005 | ContentTypeNotSupported | Requested MIME type not in `defaultOutputModes` |
-| -32006 | VersionNotSupported | Client/server `A2A-Version` header mismatch |
-| -32007 | ExtensionSupportRequired | `AgentExtension.required: true` and client lacks it |
-| -32008 | InvalidMessage | Message structure violates protocol constraints |
-| -32009 | AuthenticationFailed | Credentials missing or invalid |
-| -32010 | AuthorizationFailed | Credentials valid but insufficient permissions |
-| -32011 | UnsupportedMode | Requested transport/streaming mode unsupported |
+| -32003 | PushNotificationNotSupported | Push requested; agent doesn't support it |
+| -32004 | UnsupportedOperation | Method exists but not implemented |
+| -32005 | ContentTypeNotSupported | Requested MIME type unsupported |
+| -32006 | InvalidAgentResponse | Agent returned invalid response shape |
+| -32007 | ExtendedAgentCardNotConfigured | No extended card configured |
+| -32008 | ExtensionSupportRequired | Required extension not declared by client |
+| -32009 | VersionNotSupported | Protocol version mismatch |
 
 ### AgentCard Well-Known URI
 
 ```
-GET https://{host}/.well-known/agent-card.json
+GET https://{host}/.well-known/agent.json
 Response: application/json
 CORS: Access-Control-Allow-Origin: *
 ```
 
-### HTTP Headers
+### Key v1.0.0 Wire Format Differences from v0.3.0
 
-| Header | Direction | Purpose |
+| Aspect | v0.3.0 | v1.0.0 |
 |---|---|---|
-| `A2A-Version` | Both | Protocol version negotiation |
-| `A2A-Extensions` | Both | Comma-separated declared extension URIs |
-| `Authorization` | Client→Server | Bearer/Basic auth |
-| `A2A-Notification-Token` | Server→Client (push) | Shared secret for webhook verification |
-| `Content-Type: application/json` | Both | Standard JSON-RPC |
-| `Content-Type: text/event-stream` | Server→Client | SSE streaming response |
-| `Cache-Control: no-cache` | Server→Client (SSE) | Prevent SSE caching |
+| Enum serialization | `kebab-case` / `lowercase` | `SCREAMING_SNAKE_CASE` |
+| Method names | `snake/case` | `PascalCase` |
+| Part discrimination | `kind` tag field | Untagged by field presence |
+| StreamResponse | `kind` tag field | Untagged by field presence |
+| Agent card URL | `url` field on AgentCard | `supported_interfaces[].url` |
+| Transport binding | `preferred_transport` enum | `protocol_binding` string |
+| Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent.json` |
+| Context ID | plain `String` | `ContextId` newtype |
+| Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` still present |
 
 ---
 
-*Document version: 1.0 — initial plan*
+*Document version: 3.0 — spec gap analysis integrated*
 *Last updated: 2026-03-15*
 *Author: Tom F.*

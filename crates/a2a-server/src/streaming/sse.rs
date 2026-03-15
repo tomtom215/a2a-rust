@@ -15,6 +15,8 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use hyper::body::Frame;
 
+use a2a_types::jsonrpc::{JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion};
+
 use crate::streaming::event_queue::{EventQueueReader, InMemoryQueueReader};
 
 /// Default keep-alive interval for SSE streams.
@@ -104,6 +106,9 @@ impl hyper::body::Body for ChannelBody {
 
 /// Builds an SSE streaming response from an event queue reader.
 ///
+/// Each event is wrapped in a JSON-RPC 2.0 success response envelope so that
+/// clients can uniformly parse SSE frames regardless of transport binding.
+///
 /// Spawns a background task that:
 /// 1. Reads events from `reader` and serializes them as SSE `message` frames.
 /// 2. Sends periodic keep-alive comments at the specified interval.
@@ -136,7 +141,14 @@ pub fn build_sse_response(
                 event = reader.read() => {
                     match event {
                         Some(Ok(stream_response)) => {
-                            let Ok(data) = serde_json::to_string(&stream_response) else {
+                            // Wrap in a JSON-RPC success envelope so the client
+                            // can parse it uniformly.
+                            let envelope = JsonRpcSuccessResponse {
+                                jsonrpc: JsonRpcVersion,
+                                id: JsonRpcId::default(),
+                                result: stream_response,
+                            };
+                            let Ok(data) = serde_json::to_string(&envelope) else {
                                 break;
                             };
                             if body_writer.send_event("message", &data).await.is_err() {

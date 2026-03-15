@@ -7,41 +7,240 @@
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Rust](https://img.shields.io/badge/rust-1.93%2B-orange)
 
-Pure Rust SDK for the [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) v0.3.0.
+Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) v1.0.0.
 
-## Status
+Build, connect, and orchestrate AI agents using a type-safe, async-first SDK with both JSON-RPC 2.0 and REST transport bindings.
 
-> **Phase 0 — Project foundation.** Workspace scaffold, CI, and empty crate stubs are in place.
-> Protocol types and HTTP transport are implemented in subsequent phases.
+## Features
+
+- **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
+- **Dual transport** — JSON-RPC 2.0 and REST dispatchers, both client and server
+- **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with async event streams
+- **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
+- **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults
+- **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
+- **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
+- **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
 ## Crate Structure
 
-| Crate | Purpose | Use When |
+| Crate | Purpose | When to Use |
 |---|---|---|
-| [`a2a-types`](crates/a2a-types) | All A2A protocol types — serde only, no I/O | You need types without the HTTP stack |
-| [`a2a-client`](crates/a2a-client) | HTTP client for sending A2A requests | You are building an orchestrator or test harness |
-| [`a2a-server`](crates/a2a-server) | Server framework for implementing agents | You are building an A2A agent |
-| [`a2a-sdk`](crates/a2a-sdk) | Convenience re-export of all three | Quick-start / full-stack usage |
+| [`a2a-types`](crates/a2a-types) | All A2A wire types — `serde` only, no I/O | You need types without the HTTP stack |
+| [`a2a-client`](crates/a2a-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
+| [`a2a-server`](crates/a2a-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
+| [`a2a-sdk`](crates/a2a-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
+
+`a2a-client` and `a2a-server` are **siblings** — neither depends on the other. Use only what you need.
 
 ## Quick Start
 
+### Add the dependency
+
 ```toml
-# Cargo.toml
 [dependencies]
 a2a-sdk = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
+
+### Implement an agent
 
 ```rust
-// Coming in Phase 2 — HTTP client implementation
+use std::future::Future;
+use std::pin::Pin;
+use a2a_sdk::prelude::*;
+
+struct MyAgent;
+
+impl AgentExecutor for MyAgent {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Transition to Working
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            })).await?;
+
+            // Produce an artifact
+            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
+                append: None,
+                last_chunk: Some(true),
+                metadata: None,
+            })).await?;
+
+            // Mark completed
+            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Completed),
+                metadata: None,
+            })).await?;
+
+            Ok(())
+        })
+    }
+}
 ```
 
-## Design Goals
+### Start a server
 
-- **Full spec compliance** with A2A 0.3.0.
-- **Zero mandatory I/O deps** in `a2a-types` — only `serde` + `serde_json`.
-- **Minimal footprint** — `reqwest`, `axum`, `anyhow`, `thiserror`, `openssl-sys` are all excluded by policy.
-- **Modern Rust** — `async fn` in traits (stable since 1.75), Edition 2021, MSRV 1.93.
-- **No `unwrap()`** in library code. All errors are typed.
+```rust
+use std::sync::Arc;
+use a2a_sdk::prelude::*;
+
+let handler = Arc::new(
+    RequestHandlerBuilder::new(MyAgent)
+        .with_agent_card(agent_card)
+        .build()
+        .expect("build handler"),
+);
+
+// JSON-RPC transport
+let jsonrpc = Arc::new(JsonRpcDispatcher::new(handler.clone()));
+
+// REST transport
+let rest = Arc::new(RestDispatcher::new(handler));
+```
+
+### Use the client
+
+```rust
+use a2a_sdk::prelude::*;
+
+let client = ClientBuilder::new("http://localhost:8080")
+    .build()
+    .expect("build client");
+
+// Synchronous request
+let response = client
+    .send_message(params)
+    .await
+    .expect("send_message");
+
+// Streaming request
+let mut stream = client
+    .stream_message(params)
+    .await
+    .expect("stream_message");
+
+while let Some(event) = stream.next().await {
+    match event? {
+        StreamResponse::StatusUpdate(ev) => println!("Status: {:?}", ev.status.state),
+        StreamResponse::ArtifactUpdate(ev) => println!("Artifact: {}", ev.artifact.id),
+        StreamResponse::Task(task) => println!("Task: {}", task.id),
+        StreamResponse::Message(msg) => println!("Message: {:?}", msg),
+    }
+}
+```
+
+## Examples
+
+### Echo Agent
+
+A full-stack example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:
+
+```bash
+cargo run -p echo-agent
+```
+
+This starts servers on random ports and runs 5 demos:
+1. Synchronous `SendMessage` via JSON-RPC
+2. Streaming `SendStreamingMessage` via JSON-RPC
+3. Synchronous `SendMessage` via REST
+4. Streaming `SendStreamingMessage` via REST
+5. `GetTask` retrieval
+
+## Architecture
+
+```
+┌───────────────────────────────────────────────┐
+│                 User Code                     │
+│  (implements AgentExecutor or uses Client)    │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│           a2a-server / a2a-client             │
+│   RequestHandler · AgentExecutor · Client     │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│              Transport Layer                  │
+│   JsonRpcDispatcher · RestDispatcher          │
+│   JsonRpcTransport  · RestTransport           │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│                hyper 1.x                      │
+└───────────────────────────────────────────────┘
+```
+
+The server uses a 3-layer architecture:
+1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
+2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
+3. **Dispatchers handle HTTP** — `JsonRpcDispatcher` (JSON-RPC 2.0) and `RestDispatcher` (REST) wire hyper to the handler
+
+## Supported Methods
+
+| Method | JSON-RPC | REST |
+|---|---|---|
+| `SendMessage` | POST | `POST /message:send` |
+| `SendStreamingMessage` | POST → SSE | `POST /message:stream` |
+| `GetTask` | POST | `GET /tasks/{id}` |
+| `ListTasks` | POST | `GET /tasks` |
+| `CancelTask` | POST | `POST /tasks/{id}:cancel` |
+| `SubscribeToTask` | POST → SSE | `POST /tasks/{id}:subscribe` |
+| `CreateTaskPushNotificationConfig` | POST | `POST /tasks/{id}/pushNotificationConfigs` |
+| `GetTaskPushNotificationConfig` | POST | `GET /tasks/{id}/pushNotificationConfigs/{configId}` |
+| `ListTaskPushNotificationConfigs` | POST | `GET /tasks/{id}/pushNotificationConfigs` |
+| `DeleteTaskPushNotificationConfig` | POST | `DELETE /tasks/{id}/pushNotificationConfigs/{configId}` |
+| `GetExtendedAgentCard` | POST | `GET /extendedAgentCard` |
+
+## Testing
+
+```bash
+# Run all tests (157 tests across 3 crates)
+cargo test --workspace
+
+# Run the end-to-end example
+cargo run -p echo-agent
+
+# Lint and format checks
+cargo clippy --workspace --all-targets
+cargo fmt --all -- --check
+
+# Build documentation
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+```
+
+## Project Status
+
+Core implementation is complete with all 11 A2A methods working across both transports. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the detailed roadmap and remaining spec compliance items.
+
+| Phase | Status |
+|---|---|
+| 0. Project Foundation | ✅ Complete |
+| 1. Protocol Types (`a2a-types`) | ✅ Complete |
+| 2. HTTP Client (`a2a-client`) | ✅ Complete |
+| 3. Server Framework (`a2a-server`) | ✅ Complete |
+| 4. v1.0 Protocol Upgrade | ✅ Complete |
+| 5. Server Tests & Bug Fixes | ✅ Complete |
+| 6. Umbrella Crate & Examples | ✅ Complete |
+| 7. v1.0 Spec Compliance Gaps | 🔲 Not Started |
+| 8. Caching, Signing & Release | 🔲 Not Started |
+
+## Minimum Supported Rust Version
+
+Rust **1.93** or later (stable).
 
 ## License
 
