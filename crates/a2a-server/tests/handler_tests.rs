@@ -386,7 +386,7 @@ async fn cancel_task_on_working_task() {
     assert!(!list.tasks.is_empty());
     let task = &list.tasks[0];
 
-    // Cancel the task (it should be in Submitted or Working state).
+    // Cancel the task (it should be in Pending or Working state).
     let cancel_params = CancelTaskParams {
         tenant: None,
         id: task.id.0.clone(),
@@ -658,6 +658,206 @@ async fn resubscribe_nonexistent_task_fails() {
     };
     let err = handler.on_resubscribe(params).await.unwrap_err();
     assert!(matches!(err, a2a_server::ServerError::TaskNotFound(_)));
+}
+
+// ── Phase 7 tests ──────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn return_immediately_returns_pending_task() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .build()
+        .expect("build handler");
+
+    let params = MessageSendParams {
+        tenant: None,
+        message: make_message("hello"),
+        configuration: Some(a2a_types::params::SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        }),
+        metadata: None,
+    };
+
+    let result = handler
+        .on_send_message(params, false)
+        .await
+        .expect("send message");
+
+    match result {
+        SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+            assert_eq!(
+                task.status.state,
+                TaskState::Pending,
+                "return_immediately should return Pending task"
+            );
+        }
+        _ => panic!("expected Response(Task)"),
+    }
+}
+
+#[tokio::test]
+async fn task_continuation_same_context_finds_stored_task() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .build()
+        .expect("build handler");
+
+    // First message creates a task with a specific context_id.
+    let mut msg1 = make_message("first");
+    msg1.context_id = Some(a2a_types::task::ContextId::new("ctx-continuation"));
+
+    let result1 = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg1,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+        )
+        .await
+        .expect("first send");
+
+    let task_id_1 = match result1 {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.clone(),
+        _ => panic!("expected task"),
+    };
+
+    // Second message with same context_id should create a NEW task but have
+    // stored_task set. We verify indirectly by checking two tasks exist.
+    let mut msg2 = make_message("second");
+    msg2.context_id = Some(a2a_types::task::ContextId::new("ctx-continuation"));
+
+    let result2 = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg2,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+        )
+        .await
+        .expect("second send");
+
+    let task_id_2 = match result2 {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.clone(),
+        _ => panic!("expected task"),
+    };
+
+    // Two different tasks should be created.
+    assert_ne!(task_id_1, task_id_2, "second send should create a new task");
+
+    // Both tasks should be in the store.
+    let list = handler
+        .on_list_tasks(ListTasksParams {
+            tenant: None,
+            context_id: Some("ctx-continuation".into()),
+            status: None,
+            page_size: None,
+            page_token: None,
+            status_timestamp_after: None,
+            include_artifacts: None,
+        })
+        .await
+        .expect("list tasks");
+    assert!(
+        list.tasks.len() >= 2,
+        "should have at least 2 tasks for the context"
+    );
+}
+
+#[tokio::test]
+async fn context_task_mismatch_rejected() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .build()
+        .expect("build handler");
+
+    // Create a task with a specific context.
+    let mut msg1 = make_message("first");
+    msg1.context_id = Some(a2a_types::task::ContextId::new("ctx-mismatch"));
+
+    handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg1,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+        )
+        .await
+        .expect("first send");
+
+    // Second message with same context but WRONG task_id should be rejected.
+    let mut msg2 = make_message("second");
+    msg2.context_id = Some(a2a_types::task::ContextId::new("ctx-mismatch"));
+    msg2.task_id = Some(TaskId::new("wrong-task-id"));
+
+    let result = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg2,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+        )
+        .await;
+    let err = result.err().expect("expected error for task_id mismatch");
+
+    assert!(
+        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        "expected InvalidParams for task_id mismatch, got {err:?}"
+    );
+}
+
+/// Interceptor that rejects all requests.
+struct RejectInterceptor;
+
+impl a2a_server::interceptor::ServerInterceptor for RejectInterceptor {
+    fn before<'a>(
+        &'a self,
+        _ctx: &'a a2a_server::call_context::CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async {
+            Err(A2aError::new(
+                a2a_types::error::ErrorCode::UnsupportedOperation,
+                "rejected by interceptor",
+            ))
+        })
+    }
+
+    fn after<'a>(
+        &'a self,
+        _ctx: &'a a2a_server::call_context::CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[tokio::test]
+async fn interceptor_rejection_stops_processing() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .with_interceptor(RejectInterceptor)
+        .build()
+        .expect("build handler");
+
+    let result = handler
+        .on_send_message(make_send_params("hello"), false)
+        .await;
+    let err = result.err().expect("expected error from interceptor");
+
+    // The error should be a Protocol error from the interceptor.
+    assert!(
+        matches!(err, a2a_server::ServerError::Protocol(_)),
+        "expected Protocol error from interceptor, got {err:?}"
+    );
 }
 
 // ── Error conversion tests ──────────────────────────────────────────────────

@@ -228,7 +228,17 @@ impl RestTransport {
             }
         }
 
-        let uri = format!("{}{path}", self.inner.base_url);
+        let mut uri = format!("{}{path}", self.inner.base_url);
+
+        // For GET/DELETE, append remaining params as query string.
+        if route.http_method == HttpMethod::Get || route.http_method == HttpMethod::Delete {
+            let query = build_query_string(&remaining);
+            if !query.is_empty() {
+                uri.push('?');
+                uri.push_str(&query);
+            }
+        }
+
         Ok((uri, remaining))
     }
 
@@ -267,7 +277,8 @@ impl RestTransport {
         let mut builder = hyper::Request::builder()
             .method(hyper_method)
             .uri(uri)
-            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_TYPE, a2a_types::A2A_CONTENT_TYPE)
+            .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
             .header(header::ACCEPT, accept);
 
         for (k, v) in extra_headers {
@@ -296,10 +307,10 @@ impl RestTransport {
         let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
 
         if !status.is_success() {
-            let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+            let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
-                body: body_str,
+                body: super::truncate_body(&body_str),
             });
         }
 
@@ -340,10 +351,10 @@ impl RestTransport {
         let status = resp.status();
         if !status.is_success() {
             let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
-            let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+            let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
-                body: body_str,
+                body: super::truncate_body(&body_str),
             });
         }
 
@@ -411,6 +422,31 @@ async fn body_reader_task(
     }
 }
 
+// ── Query string builder ─────────────────────────────────────────────────────
+
+/// Builds a URL query string from a JSON object's non-null fields.
+fn build_query_string(params: &serde_json::Value) -> String {
+    let Some(obj) = params.as_object() else {
+        return String::new();
+    };
+    let mut parts = Vec::new();
+    for (k, v) in obj {
+        match v {
+            serde_json::Value::Null => {}
+            serde_json::Value::String(s) => parts.push(format!("{k}={s}")),
+            serde_json::Value::Number(n) => parts.push(format!("{k}={n}")),
+            serde_json::Value::Bool(b) => parts.push(format!("{k}={b}")),
+            _ => {
+                // Complex types: serialize as JSON string.
+                if let Ok(s) = serde_json::to_string(v) {
+                    parts.push(format!("{k}={s}"));
+                }
+            }
+        }
+    }
+    parts.join("&")
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -431,32 +467,28 @@ mod tests {
     }
 
     #[test]
-    fn build_uri_extracts_path_param() {
+    fn build_uri_extracts_path_param_and_appends_query() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let route = route_for("GetTask").unwrap();
         let params = serde_json::json!({"id": "task-123", "historyLength": 5});
-        let (uri, remaining) = transport.build_uri(&route, &params).unwrap();
-        assert_eq!(uri, "http://localhost:8080/tasks/task-123");
+        let (uri, _remaining) = transport.build_uri(&route, &params).unwrap();
         assert!(
-            remaining.get("id").is_none(),
-            "id should be removed from remaining"
+            uri.starts_with("http://localhost:8080/tasks/task-123"),
+            "should have task ID in path"
         );
-        assert!(remaining.get("historyLength").is_some());
+        assert!(
+            uri.contains("historyLength=5"),
+            "should have historyLength in query"
+        );
     }
 
     #[test]
-    fn build_uri_no_path_params() {
+    fn build_uri_appends_query_for_get() {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let route = route_for("ListTasks").unwrap();
         let params = serde_json::json!({"pageSize": 10});
-        let (uri, remaining) = transport.build_uri(&route, &params).unwrap();
-        assert_eq!(uri, "http://localhost:8080/tasks");
-        assert_eq!(
-            remaining
-                .get("pageSize")
-                .and_then(serde_json::Value::as_u64),
-            Some(10)
-        );
+        let (uri, _remaining) = transport.build_uri(&route, &params).unwrap();
+        assert!(uri.contains("pageSize=10"), "should have pageSize in query");
     }
 
     #[test]

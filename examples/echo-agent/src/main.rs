@@ -134,6 +134,7 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
             streaming: Some(true),
             push_notifications: Some(false),
             extended_agent_card: None,
+            state_transition_history: None,
             extensions: None,
         },
         provider: None,

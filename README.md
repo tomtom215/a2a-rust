@@ -11,6 +11,17 @@ Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.g
 
 Build, connect, and orchestrate AI agents using a type-safe, async-first SDK with both JSON-RPC 2.0 and REST transport bindings.
 
+## Motivation
+
+The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
+
+Community Rust efforts exist but target older protocol versions:
+
+- [a2a-rs](https://github.com/EmilLindfors/a2a-rs) — active, full v0.3.0 coverage, hexagonal architecture (not yet v1.0)
+- [A2A](https://github.com/robert-at-pretension-io/A2A) — testing framework and validator (GPL-3.0)
+
+This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
+
 ## Features
 
 - **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
@@ -198,7 +209,7 @@ The server uses a 3-layer architecture:
 | `GetTask` | POST | `GET /tasks/{id}` |
 | `ListTasks` | POST | `GET /tasks` |
 | `CancelTask` | POST | `POST /tasks/{id}:cancel` |
-| `SubscribeToTask` | POST → SSE | `POST /tasks/{id}:subscribe` |
+| `SubscribeToTask` | POST → SSE | `GET\|POST /tasks/{id}:subscribe` |
 | `CreateTaskPushNotificationConfig` | POST | `POST /tasks/{id}/pushNotificationConfigs` |
 | `GetTaskPushNotificationConfig` | POST | `GET /tasks/{id}/pushNotificationConfigs/{configId}` |
 | `ListTaskPushNotificationConfigs` | POST | `GET /tasks/{id}/pushNotificationConfigs` |
@@ -208,7 +219,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (157 tests across 3 crates)
+# Run all tests (167 tests across 3 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -224,7 +235,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Project Status
 
-Core implementation is complete with all 11 A2A methods working across both transports. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the detailed roadmap and remaining spec compliance items.
+Core implementation is complete with all 11 A2A methods working across both transports. A [spec compliance audit](docs/implementation/spec-compliance-gaps.md) identified 4 wire-format issues and 5 missing fields/types that must be fixed before public release (Phase 7.5). See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
 
 | Phase | Status |
 |---|---|
@@ -235,7 +246,8 @@ Core implementation is complete with all 11 A2A methods working across both tran
 | 4. v1.0 Protocol Upgrade | ✅ Complete |
 | 5. Server Tests & Bug Fixes | ✅ Complete |
 | 6. Umbrella Crate & Examples | ✅ Complete |
-| 7. v1.0 Spec Compliance Gaps | 🔲 Not Started |
+| 7. v1.0 Spec Compliance Gaps | ✅ Complete |
+| 7.5 Spec Compliance Fixes | 🔲 Not Started |
 | 8. Caching, Signing & Release | 🔲 Not Started |
 
 ## Minimum Supported Rust Version

@@ -142,8 +142,8 @@ pub enum TaskState {
     #[serde(rename = "TASK_STATE_UNSPECIFIED")]
     Unspecified,
     /// Task received, not yet started.
-    #[serde(rename = "TASK_STATE_SUBMITTED")]
-    Submitted,
+    #[serde(rename = "TASK_STATE_PENDING")]
+    Pending,
     /// Task is actively being processed.
     #[serde(rename = "TASK_STATE_WORKING")]
     Working,
@@ -282,8 +282,8 @@ mod tests {
             "\"TASK_STATE_AUTH_REQUIRED\""
         );
         assert_eq!(
-            serde_json::to_string(&TaskState::Submitted).expect("ser"),
-            "\"TASK_STATE_SUBMITTED\""
+            serde_json::to_string(&TaskState::Pending).expect("ser"),
+            "\"TASK_STATE_PENDING\""
         );
         assert_eq!(
             serde_json::to_string(&TaskState::Unspecified).expect("ser"),
@@ -298,7 +298,7 @@ mod tests {
         assert!(TaskState::Canceled.is_terminal());
         assert!(TaskState::Rejected.is_terminal());
         assert!(!TaskState::Working.is_terminal());
-        assert!(!TaskState::Submitted.is_terminal());
+        assert!(!TaskState::Pending.is_terminal());
     }
 
     #[test]
