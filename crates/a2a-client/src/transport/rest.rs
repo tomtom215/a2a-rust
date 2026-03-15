@@ -267,7 +267,8 @@ impl RestTransport {
         let mut builder = hyper::Request::builder()
             .method(hyper_method)
             .uri(uri)
-            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_TYPE, a2a_types::A2A_CONTENT_TYPE)
+            .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
             .header(header::ACCEPT, accept);
 
         for (k, v) in extra_headers {

@@ -304,7 +304,8 @@ fn json_ok_response<T: serde::Serialize>(value: &T) -> hyper::Response<BoxBody<B
     let body = serde_json::to_vec(value).unwrap_or_default();
     hyper::Response::builder()
         .status(200)
-        .header("content-type", "application/json")
+        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
+        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
         .expect("response builder should not fail with valid headers")
 }
@@ -314,7 +315,8 @@ fn error_json_response(status: u16, message: &str) -> hyper::Response<BoxBody<By
     let bytes = serde_json::to_vec(&body).unwrap_or_default();
     hyper::Response::builder()
         .status(status)
-        .header("content-type", "application/json")
+        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
+        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
         .body(Full::new(Bytes::from(bytes)).boxed())
         .expect("response builder should not fail with valid headers")
 }
@@ -336,7 +338,8 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
     let body = serde_json::to_vec(&a2a_err).unwrap_or_default();
     hyper::Response::builder()
         .status(status)
-        .header("content-type", "application/json")
+        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
+        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
         .expect("response builder should not fail with valid headers")
 }

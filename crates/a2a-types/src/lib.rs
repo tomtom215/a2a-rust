@@ -28,6 +28,17 @@
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 
+// ── Protocol constants ────────────────────────────────────────────────────────
+
+/// A2A protocol version string.
+pub const A2A_VERSION: &str = "1.0.0";
+
+/// A2A-specific content type for JSON payloads.
+pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
+
+/// HTTP header name for the A2A protocol version.
+pub const A2A_VERSION_HEADER: &str = "A2A-Version";
+
 pub mod agent_card;
 pub mod artifact;
 pub mod error;
