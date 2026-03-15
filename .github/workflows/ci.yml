@@ -4,7 +4,7 @@
 # Continuous integration — enforces all quality gates.
 #
 # Jobs: format, clippy, test (default + signing + tls-rustls + tracing + all-features),
-#       documentation, cargo-deny (license/advisory), publish dry-run, nightly.
+#       documentation, cargo-deny (license/advisory), package validation, nightly.
 #
 # Matrix: stable + MSRV (1.93), multi-platform.
 
@@ -153,9 +153,16 @@ jobs:
         with:
           command: check
 
-  # ── Publish dry-run ──────────────────────────────────────────────────────
-  publish-dry-run:
-    name: Publish dry-run
+  # ── Package validation ──────────────────────────────────────────────────
+  #
+  # Uses `cargo package` instead of `cargo publish --dry-run` because
+  # dry-run publish resolves inter-workspace dependencies from crates.io.
+  # When workspace crate versions haven't been published yet, this causes
+  # spurious resolution failures. `cargo package` validates that each
+  # crate packages correctly using the local workspace, which is the
+  # correct pre-publish check for CI.
+  package:
+    name: Package validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -166,14 +173,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-publish-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-package-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-publish-
-      - name: Dry-run publish (a2a-types)
-        run: cargo publish -p a2a-types --dry-run
-      - name: Dry-run publish (a2a-client)
-        run: cargo publish -p a2a-client --dry-run
-      - name: Dry-run publish (a2a-server)
-        run: cargo publish -p a2a-server --dry-run
-      - name: Dry-run publish (a2a-sdk)
-        run: cargo publish -p a2a-sdk --dry-run
+            ${{ runner.os }}-cargo-package-
+      - name: Package (a2a-types)
+        run: cargo package -p a2a-types
+      - name: Package (a2a-client)
+        run: cargo package -p a2a-client
+      - name: Package (a2a-server)
+        run: cargo package -p a2a-server
+      - name: Package (a2a-sdk)
+        run: cargo package -p a2a-sdk
