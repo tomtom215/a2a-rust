@@ -163,25 +163,25 @@ This starts servers on random ports and runs 5 demos:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│               User Code                      │
-│  (implements AgentExecutor or uses Client)   │
-└───────────────────┬─────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────┐
-│            a2a-server / a2a-client           │
-│  RequestHandler · AgentExecutor · Client     │
-└───────────────────┬─────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────┐
-│            Transport Layer                   │
-│  JsonRpcDispatcher · RestDispatcher          │
-│  JsonRpcTransport  · RestTransport           │
-└───────────────────┬─────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────┐
-│               hyper 1.x                      │
-└─────────────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│                 User Code                     │
+│  (implements AgentExecutor or uses Client)    │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│           a2a-server / a2a-client             │
+│   RequestHandler · AgentExecutor · Client     │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│              Transport Layer                  │
+│   JsonRpcDispatcher · RestDispatcher          │
+│   JsonRpcTransport  · RestTransport           │
+└──────────────────────┬────────────────────────┘
+                       │
+┌──────────────────────▼────────────────────────┐
+│                hyper 1.x                      │
+└───────────────────────────────────────────────┘
 ```
 
 The server uses a 3-layer architecture:
