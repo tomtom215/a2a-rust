@@ -450,13 +450,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
     /// Delivers a push notification for a streaming event if push configs exist.
     async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
-        let sender = match self.push_sender {
-            Some(ref s) => s,
-            None => return,
+        let Some(ref sender) = self.push_sender else {
+            return;
         };
-        let configs = match self.push_config_store.list(task_id.as_ref()).await {
-            Ok(c) => c,
-            Err(_) => return,
+        let Ok(configs) = self.push_config_store.list(task_id.as_ref()).await else {
+            return;
         };
         for config in &configs {
             // Best-effort delivery; log nothing on failure for now.

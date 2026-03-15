@@ -25,6 +25,18 @@ pub mod rest;
 pub use jsonrpc::JsonRpcTransport;
 pub use rest::RestTransport;
 
+/// Maximum length for response body snippets included in error messages.
+const MAX_ERROR_BODY_LEN: usize = 512;
+
+/// Truncates a response body for inclusion in error messages.
+pub(crate) fn truncate_body(body: &str) -> String {
+    if body.len() <= MAX_ERROR_BODY_LEN {
+        body.to_owned()
+    } else {
+        format!("{}...(truncated)", &body[..MAX_ERROR_BODY_LEN])
+    }
+}
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;

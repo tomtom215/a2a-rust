@@ -149,10 +149,10 @@ impl JsonRpcTransport {
         let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
 
         if !status.is_success() {
-            let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+            let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
-                body: body_str,
+                body: super::truncate_body(&body_str),
             });
         }
 
@@ -188,10 +188,10 @@ impl JsonRpcTransport {
         let status = resp.status();
         if !status.is_success() {
             let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
-            let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
+            let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
-                body: body_str,
+                body: super::truncate_body(&body_str),
             });
         }
 
