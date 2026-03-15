@@ -16,6 +16,7 @@ use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
 use crate::handler::RequestHandler;
 use crate::interceptor::{ServerInterceptor, ServerInterceptorChain};
+use crate::metrics::{Metrics, NoopMetrics};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
 use crate::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use crate::streaming::EventQueueManager;
@@ -44,6 +45,10 @@ pub struct RequestHandlerBuilder {
     interceptors: ServerInterceptorChain,
     agent_card: Option<AgentCard>,
     executor_timeout: Option<Duration>,
+    event_queue_capacity: Option<usize>,
+    max_event_size: Option<usize>,
+    max_concurrent_streams: Option<usize>,
+    metrics: Box<dyn Metrics>,
 }
 
 impl RequestHandlerBuilder {
@@ -61,6 +66,10 @@ impl RequestHandlerBuilder {
             interceptors: ServerInterceptorChain::new(),
             agent_card: None,
             executor_timeout: None,
+            event_queue_capacity: None,
+            max_event_size: None,
+            max_concurrent_streams: None,
+            metrics: Box::new(NoopMetrics),
         }
     }
 
@@ -118,12 +127,71 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets the event queue channel capacity for streaming.
+    ///
+    /// Defaults to 64 items. Higher values allow more events to be buffered
+    /// before backpressure is applied.
+    #[must_use]
+    pub const fn with_event_queue_capacity(mut self, capacity: usize) -> Self {
+        self.event_queue_capacity = Some(capacity);
+        self
+    }
+
+    /// Sets the maximum serialized event size in bytes.
+    ///
+    /// Events exceeding this size are rejected to prevent OOM conditions.
+    /// Defaults to 16 MiB.
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_event_size: usize) -> Self {
+        self.max_event_size = Some(max_event_size);
+        self
+    }
+
+    /// Sets the maximum number of concurrent streaming event queues.
+    ///
+    /// Limits memory usage from concurrent streams. When the limit is reached,
+    /// new streaming requests will fail.
+    #[must_use]
+    pub const fn with_max_concurrent_streams(mut self, max: usize) -> Self {
+        self.max_concurrent_streams = Some(max);
+        self
+    }
+
+    /// Sets a metrics observer for handler activity.
+    ///
+    /// Defaults to [`NoopMetrics`] which discards all events.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
+        self.metrics = Box::new(metrics);
+        self
+    }
+
     /// Builds the [`RequestHandler`].
     ///
     /// # Errors
     ///
-    /// Currently infallible but returns [`ServerResult`] for future extensibility.
+    /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams) if the configuration is invalid:
+    /// - Agent card with empty `supported_interfaces`
+    /// - Zero executor timeout (would cause immediate timeouts)
     pub fn build(self) -> ServerResult<RequestHandler> {
+        // Validate agent card if provided.
+        if let Some(ref card) = self.agent_card {
+            if card.supported_interfaces.is_empty() {
+                return Err(crate::error::ServerError::InvalidParams(
+                    "agent card must have at least one supported interface".into(),
+                ));
+            }
+        }
+
+        // Validate executor timeout is not zero.
+        if let Some(timeout) = self.executor_timeout {
+            if timeout.is_zero() {
+                return Err(crate::error::ServerError::InvalidParams(
+                    "executor timeout must be greater than zero".into(),
+                ));
+            }
+        }
+
         Ok(RequestHandler {
             executor: self.executor,
             task_store: self.task_store.unwrap_or_else(|| {
@@ -133,10 +201,22 @@ impl RequestHandlerBuilder {
                 .push_config_store
                 .unwrap_or_else(|| Box::new(InMemoryPushConfigStore::new())),
             push_sender: self.push_sender,
-            event_queue_manager: EventQueueManager::new(),
+            event_queue_manager: {
+                let mut mgr = self
+                    .event_queue_capacity
+                    .map_or_else(EventQueueManager::new, EventQueueManager::with_capacity);
+                if let Some(max_size) = self.max_event_size {
+                    mgr = mgr.with_max_event_size(max_size);
+                }
+                if let Some(max_streams) = self.max_concurrent_streams {
+                    mgr = mgr.with_max_concurrent_queues(max_streams);
+                }
+                mgr
+            },
             interceptors: self.interceptors,
             agent_card: self.agent_card,
             executor_timeout: self.executor_timeout,
+            metrics: self.metrics,
             cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
@@ -155,6 +235,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
             .field("executor_timeout", &self.executor_timeout)
+            .field("event_queue_capacity", &self.event_queue_capacity)
+            .field("max_event_size", &self.max_event_size)
+            .field("max_concurrent_streams", &self.max_concurrent_streams)
+            .field("metrics", &"<dyn Metrics>")
             .finish()
     }
 }

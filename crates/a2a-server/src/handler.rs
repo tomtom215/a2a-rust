@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use a2a_types::agent_card::AgentCard;
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -24,6 +24,7 @@ use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::executor::AgentExecutor;
 use crate::interceptor::ServerInterceptorChain;
+use crate::metrics::Metrics;
 use crate::push::{PushConfigStore, PushSender};
 use crate::request_context::RequestContext;
 use crate::store::TaskStore;
@@ -37,6 +38,10 @@ const MAX_ID_LENGTH: usize = 1024;
 /// Maximum number of entries in the cancellation token map before a cleanup
 /// sweep is triggered to remove cancelled/dropped tokens.
 const MAX_CANCELLATION_TOKENS: usize = 10_000;
+
+/// Maximum age for cancellation tokens. Tokens older than this are evicted
+/// during cleanup sweeps, even if they haven't been explicitly cancelled.
+const MAX_TOKEN_AGE: Duration = Duration::from_secs(3600);
 
 /// The core protocol logic handler.
 ///
@@ -55,9 +60,18 @@ pub struct RequestHandler {
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
+    pub(crate) metrics: Box<dyn Metrics>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
-    pub(crate) cancellation_tokens:
-        Arc<tokio::sync::RwLock<HashMap<TaskId, tokio_util::sync::CancellationToken>>>,
+    pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
+}
+
+/// Entry in the cancellation token map, tracking creation time for eviction.
+#[derive(Debug, Clone)]
+pub(crate) struct CancellationEntry {
+    /// The cancellation token.
+    pub(crate) token: tokio_util::sync::CancellationToken,
+    /// When this entry was created (for time-based eviction).
+    pub(crate) created_at: Instant,
 }
 
 impl RequestHandler {
@@ -78,23 +92,38 @@ impl RequestHandler {
             "SendMessage"
         };
         trace_info!(method = method_name, streaming, "handling send message");
+        self.metrics.on_request(method_name);
 
         let call_ctx = CallContext::new(method_name);
         self.interceptors.run_before(&call_ctx).await?;
 
-        // Validate incoming IDs aren't excessively long (prevent memory exhaustion).
+        // Validate incoming IDs: reject empty/whitespace-only and excessively long values.
         if let Some(ref ctx_id) = params.message.context_id {
-            if ctx_id.0.len() > MAX_ID_LENGTH {
+            let id_str = ctx_id.0.trim();
+            if id_str.is_empty() {
                 return Err(ServerError::InvalidParams(
-                    "context_id exceeds maximum length".into(),
+                    "context_id must not be empty or whitespace-only".into(),
                 ));
+            }
+            let len = ctx_id.0.len();
+            if len > MAX_ID_LENGTH {
+                return Err(ServerError::InvalidParams(format!(
+                    "context_id exceeds maximum length (got {len}, max {MAX_ID_LENGTH})"
+                )));
             }
         }
         if let Some(ref task_id) = params.message.task_id {
-            if task_id.0.len() > MAX_ID_LENGTH {
+            let id_str = task_id.0.trim();
+            if id_str.is_empty() {
                 return Err(ServerError::InvalidParams(
-                    "task_id exceeds maximum length".into(),
+                    "task_id must not be empty or whitespace-only".into(),
                 ));
+            }
+            let len = task_id.0.len();
+            if len > MAX_ID_LENGTH {
+                return Err(ServerError::InvalidParams(format!(
+                    "task_id exceeds maximum length (got {len}, max {MAX_ID_LENGTH})"
+                )));
             }
         }
 
@@ -117,6 +146,14 @@ impl RequestHandler {
                     return Err(ServerError::InvalidParams(format!(
                         "message task_id {} does not match task {} found for context {}",
                         msg_task_id, stored.id, context_id
+                    )));
+                }
+            } else {
+                // Check for duplicate task ID — reject if a task with this ID
+                // already exists to prevent silent data overwrites.
+                if self.task_store.get(msg_task_id).await?.is_some() {
+                    return Err(ServerError::InvalidParams(format!(
+                        "task_id {msg_task_id} already exists; cannot create duplicate"
                     )));
                 }
             }
@@ -160,9 +197,19 @@ impl RequestHandler {
             // Sweep stale tokens if the map is getting large (prevent unbounded growth
             // if executors panic and never clean up their tokens).
             if tokens.len() >= MAX_CANCELLATION_TOKENS {
-                tokens.retain(|_, token| !token.is_cancelled());
+                let now = Instant::now();
+                tokens.retain(|_, entry| {
+                    !entry.token.is_cancelled()
+                        && now.duration_since(entry.created_at) < MAX_TOKEN_AGE
+                });
             }
-            tokens.insert(task_id.clone(), ctx.cancellation_token.clone());
+            tokens.insert(
+                task_id.clone(),
+                CancellationEntry {
+                    token: ctx.cancellation_token.clone(),
+                    created_at: Instant::now(),
+                },
+            );
         }
 
         // Create event queue.
@@ -294,8 +341,8 @@ impl RequestHandler {
         // Signal the cancellation token so the executor can observe the cancellation.
         {
             let tokens = self.cancellation_tokens.read().await;
-            if let Some(token) = tokens.get(&task_id) {
-                token.cancel();
+            if let Some(entry) = tokens.get(&task_id) {
+                entry.token.cancel();
             }
         }
 
@@ -578,8 +625,8 @@ impl RequestHandler {
         // Cancel all in-flight tasks.
         {
             let tokens = self.cancellation_tokens.read().await;
-            for token in tokens.values() {
-                token.cancel();
+            for entry in tokens.values() {
+                entry.token.cancel();
             }
         }
 
@@ -591,6 +638,53 @@ impl RequestHandler {
             let mut tokens = self.cancellation_tokens.write().await;
             tokens.clear();
         }
+
+        // Give executor a chance to clean up resources.
+        self.executor.on_shutdown().await;
+    }
+
+    /// Initiates graceful shutdown with a timeout.
+    ///
+    /// Cancels all in-flight tasks and waits up to `timeout` for event queues
+    /// to drain before force-destroying them. This gives executors a chance
+    /// to finish writing final events before the queues are torn down.
+    pub async fn shutdown_with_timeout(&self, timeout: Duration) {
+        // Cancel all in-flight tasks.
+        {
+            let tokens = self.cancellation_tokens.read().await;
+            for entry in tokens.values() {
+                entry.token.cancel();
+            }
+        }
+
+        // Wait for event queues to drain (executors to finish), with timeout.
+        let drain_start = Instant::now();
+        loop {
+            let active = self.event_queue_manager.active_count().await;
+            if active == 0 {
+                break;
+            }
+            if drain_start.elapsed() >= timeout {
+                trace_warn!(
+                    active_queues = active,
+                    "shutdown timeout reached, force-destroying remaining queues"
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        // Destroy all remaining event queues.
+        self.event_queue_manager.destroy_all().await;
+
+        // Clear cancellation tokens.
+        {
+            let mut tokens = self.cancellation_tokens.write().await;
+            tokens.clear();
+        }
+
+        // Give executor a chance to clean up resources.
+        self.executor.on_shutdown().await;
     }
 }
 
@@ -601,6 +695,7 @@ impl std::fmt::Debug for RequestHandler {
             .field("event_queue_manager", &self.event_queue_manager)
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
+            .field("metrics", &"<dyn Metrics>")
             .finish_non_exhaustive()
     }
 }

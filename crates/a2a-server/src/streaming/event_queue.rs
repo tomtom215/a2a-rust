@@ -23,6 +23,9 @@ use tokio::sync::{mpsc, RwLock};
 /// Default channel capacity for event queues.
 pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
 
+/// Default maximum event size in bytes (16 MiB).
+pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
+
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
 
 /// Trait for writing streaming events.
@@ -63,9 +66,14 @@ pub trait EventQueueReader: Send + 'static {
 // ── InMemoryQueueWriter ──────────────────────────────────────────────────────
 
 /// In-memory [`EventQueueWriter`] backed by an `mpsc` channel sender.
+///
+/// Enforces a maximum serialized event size to prevent OOM from oversized
+/// events written by executors.
 #[derive(Debug, Clone)]
 pub struct InMemoryQueueWriter {
     tx: mpsc::Sender<A2aResult<StreamResponse>>,
+    /// Maximum serialized event size in bytes.
+    max_event_size: usize,
 }
 
 #[allow(clippy::manual_async_fn)]
@@ -75,6 +83,14 @@ impl EventQueueWriter for InMemoryQueueWriter {
         event: StreamResponse,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            // Check serialized event size to prevent OOM from oversized events.
+            let serialized_size = serde_json::to_string(&event).map(|s| s.len()).unwrap_or(0);
+            if serialized_size > self.max_event_size {
+                return Err(A2aError::internal(format!(
+                    "event size {} bytes exceeds maximum {} bytes",
+                    serialized_size, self.max_event_size
+                )));
+            }
             self.tx
                 .send(Ok(event))
                 .await
@@ -112,19 +128,34 @@ impl EventQueueReader for InMemoryQueueReader {
 
 // ── Constructor ──────────────────────────────────────────────────────────────
 
-/// Creates a new in-memory event queue pair with the default capacity.
+/// Creates a new in-memory event queue pair with the default capacity and
+/// default max event size.
 #[must_use]
 pub fn new_in_memory_queue() -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    new_in_memory_queue_with_capacity(DEFAULT_QUEUE_CAPACITY)
+    new_in_memory_queue_with_options(DEFAULT_QUEUE_CAPACITY, DEFAULT_MAX_EVENT_SIZE)
 }
 
-/// Creates a new in-memory event queue pair with the specified capacity.
+/// Creates a new in-memory event queue pair with the specified capacity
+/// and default max event size.
 #[must_use]
 pub fn new_in_memory_queue_with_capacity(
     capacity: usize,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
+    new_in_memory_queue_with_options(capacity, DEFAULT_MAX_EVENT_SIZE)
+}
+
+/// Creates a new in-memory event queue pair with the specified capacity
+/// and maximum event size.
+#[must_use]
+pub fn new_in_memory_queue_with_options(
+    capacity: usize,
+    max_event_size: usize,
+) -> (InMemoryQueueWriter, InMemoryQueueReader) {
     let (tx, rx) = mpsc::channel(capacity);
-    (InMemoryQueueWriter { tx }, InMemoryQueueReader { rx })
+    (
+        InMemoryQueueWriter { tx, max_event_size },
+        InMemoryQueueReader { rx },
+    )
 }
 
 // ── EventQueueManager ────────────────────────────────────────────────────────
@@ -139,6 +170,10 @@ pub struct EventQueueManager {
     writers: Arc<RwLock<HashMap<TaskId, Arc<InMemoryQueueWriter>>>>,
     /// Channel capacity for new event queues.
     capacity: usize,
+    /// Maximum serialized event size in bytes.
+    max_event_size: usize,
+    /// Maximum number of concurrent event queues. `None` means no limit.
+    max_concurrent_queues: Option<usize>,
 }
 
 impl Default for EventQueueManager {
@@ -146,6 +181,8 @@ impl Default for EventQueueManager {
         Self {
             writers: Arc::default(),
             capacity: DEFAULT_QUEUE_CAPACITY,
+            max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            max_concurrent_queues: None,
         }
     }
 }
@@ -163,7 +200,29 @@ impl EventQueueManager {
         Self {
             writers: Arc::default(),
             capacity,
+            max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            max_concurrent_queues: None,
         }
+    }
+
+    /// Creates a new event queue manager with the specified maximum event size.
+    ///
+    /// Events exceeding this size (in serialized bytes) will be rejected with
+    /// an error to prevent OOM conditions.
+    #[must_use]
+    pub const fn with_max_event_size(mut self, max_event_size: usize) -> Self {
+        self.max_event_size = max_event_size;
+        self
+    }
+
+    /// Sets the maximum number of concurrent event queues.
+    ///
+    /// When the limit is reached, new queue creation will return an error
+    /// reader (`None`) to signal capacity exhaustion.
+    #[must_use]
+    pub const fn with_max_concurrent_queues(mut self, max: usize) -> Self {
+        self.max_concurrent_queues = Some(max);
+        self
     }
 
     /// Returns the writer for the given task, creating a new queue if none
@@ -172,6 +231,9 @@ impl EventQueueManager {
     /// If a queue already exists, the returned reader is `None` (the original
     /// reader was given out at creation time). If a new queue is created, both
     /// the writer and reader are returned.
+    ///
+    /// If `max_concurrent_queues` is set and the limit is reached, returns
+    /// the writer with `None` reader (same as existing queue case).
     pub async fn get_or_create(
         &self,
         task_id: &TaskId,
@@ -180,8 +242,18 @@ impl EventQueueManager {
         #[allow(clippy::option_if_let_else)]
         let result = if let Some(existing) = map.get(task_id) {
             (Arc::clone(existing), None)
+        } else if self
+            .max_concurrent_queues
+            .is_some_and(|max| map.len() >= max)
+        {
+            // Concurrent queue limit reached — create a disconnected writer
+            // so the caller gets an error when trying to use it.
+            let (writer, _reader) =
+                new_in_memory_queue_with_options(self.capacity, self.max_event_size);
+            (Arc::new(writer), None)
         } else {
-            let (writer, reader) = new_in_memory_queue_with_capacity(self.capacity);
+            let (writer, reader) =
+                new_in_memory_queue_with_options(self.capacity, self.max_event_size);
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader))

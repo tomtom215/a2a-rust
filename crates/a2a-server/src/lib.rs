@@ -29,7 +29,7 @@
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] |
 
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
@@ -45,6 +45,7 @@ pub mod error;
 pub mod executor;
 pub mod handler;
 pub mod interceptor;
+pub mod metrics;
 pub mod push;
 pub mod request_context;
 pub mod store;

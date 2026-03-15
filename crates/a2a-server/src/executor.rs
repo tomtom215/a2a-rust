@@ -93,4 +93,12 @@ pub trait AgentExecutor: Send + Sync + 'static {
             ))
         })
     }
+
+    /// Called during handler shutdown to allow cleanup of external resources
+    /// (database connections, file handles, etc.).
+    ///
+    /// The default implementation is a no-op.
+    fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async {})
+    }
 }
