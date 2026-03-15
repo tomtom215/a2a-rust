@@ -1,6 +1,6 @@
 # A2A Protocol → Rust Type Mapping
 
-Complete field-by-field mapping from A2A 0.3.0 JSON schema to Rust types.
+Complete field-by-field mapping from A2A v1.0.0 JSON schema to Rust types.
 All structs use `#[serde(rename_all = "camelCase")]` unless noted.
 All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 

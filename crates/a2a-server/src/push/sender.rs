@@ -48,7 +48,7 @@ const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::f
 
 /// HTTP-based [`PushSender`] using hyper.
 ///
-/// Retries up to [`MAX_PUSH_ATTEMPTS`] times with exponential backoff on
+/// Retries up to 3 times with exponential backoff on
 /// transient HTTP errors.
 #[derive(Debug)]
 pub struct HttpPushSender {

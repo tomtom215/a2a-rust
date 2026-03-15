@@ -35,8 +35,10 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
 - **Optional tracing** — structured logging via `tracing` crate, zero cost when disabled
 - **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
+- **State transition validation** — `TaskState::can_transition_to()` enforces valid state machine transitions at the handler level
+- **Executor timeout** — configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors
 - **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection, health/readiness endpoints
-- **Task store management** — configurable TTL-based eviction and capacity limits via `TaskStoreConfig`
+- **Task store management** — configurable TTL-based eviction, capacity limits, and cursor-based pagination via `TaskStoreConfig`
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -221,7 +223,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (289 tests across 4 crates)
+# Run all tests (379 tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
