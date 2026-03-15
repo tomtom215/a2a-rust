@@ -1,6 +1,0 @@
-# SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Tom F.
-
-[toolchain]
-channel    = "stable"
-components = ["rustfmt", "clippy"]
