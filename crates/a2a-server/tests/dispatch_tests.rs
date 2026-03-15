@@ -853,3 +853,120 @@ async fn rest_send_then_get_task() {
     assert_eq!(fetched.id.0, task_id);
     assert_eq!(fetched.status.state, TaskState::Completed);
 }
+
+// ── Phase 7 dispatch tests ─────────────────────────────────────────────────
+
+#[tokio::test]
+async fn rest_response_has_a2a_version_header() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:send"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("A2A-Version")
+            .and_then(|v| v.to_str().ok()),
+        Some("1.0.0"),
+        "response should have A2A-Version: 1.0.0 header"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok()),
+        Some("application/a2a+json"),
+        "response should have application/a2a+json content type"
+    );
+}
+
+#[tokio::test]
+async fn jsonrpc_response_has_a2a_version_header() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    let rpc_req = a2a_types::JsonRpcRequest::with_params(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc_req).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("A2A-Version")
+            .and_then(|v| v.to_str().ok()),
+        Some("1.0.0"),
+    );
+}
+
+#[tokio::test]
+async fn rest_tenant_prefix_routing() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    // Send a message via tenant-prefixed path.
+    let body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/tenants/acme/message:send"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("send via tenant prefix");
+    assert_eq!(resp.status(), 200, "tenant-prefixed route should succeed");
+}
+
+#[tokio::test]
+async fn rest_get_subscribe_allowed() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    // First create a task.
+    let body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:send"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("send");
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let result: SendMessageResponse = serde_json::from_slice(&body).expect("parse");
+    let task_id = match result {
+        SendMessageResponse::Task(t) => t.id.0,
+        _ => panic!("expected Task"),
+    };
+
+    // GET /tasks/{id}:subscribe should be accepted (not 404).
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/{task_id}:subscribe"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("subscribe via GET");
+    // 200 for SSE or any non-404 status means the route matched.
+    assert_ne!(
+        resp.status(),
+        404,
+        "GET /tasks/:id:subscribe should be routed"
+    );
+}
