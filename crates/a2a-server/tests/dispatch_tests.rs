@@ -37,11 +37,7 @@ use a2a_server::streaming::EventQueueWriter;
 struct SimpleExecutor;
 
 impl AgentExecutor for SimpleExecutor {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
@@ -995,7 +991,10 @@ async fn jsonrpc_rejects_wrong_content_type() {
     assert_eq!(resp.status(), 200);
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let result: JsonRpcErrorResponse = serde_json::from_slice(&body).expect("parse error");
-    assert_eq!(result.error.code, -32700, "wrong content type should be ParseError");
+    assert_eq!(
+        result.error.code, -32700,
+        "wrong content type should be ParseError"
+    );
 }
 
 #[tokio::test]
@@ -1021,7 +1020,10 @@ async fn jsonrpc_accepts_a2a_content_type() {
     assert_eq!(resp.status(), 200);
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let result: serde_json::Value = serde_json::from_slice(&body).expect("parse");
-    assert!(result.get("result").is_some(), "a2a+json should be accepted");
+    assert!(
+        result.get("result").is_some(),
+        "a2a+json should be accepted"
+    );
 }
 
 #[tokio::test]

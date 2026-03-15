@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. -->
 
 # Project Governance
 
@@ -27,7 +28,7 @@ final decision-making authority.
 
 | Name   | GitHub        | Role               |
 | ------ | ------------- | ------------------ |
-| Tom F. | @tomf         | Initial Maintainer |
+| Tom F. | @tomtom215    | Initial Maintainer |
 
 ## Decision-Making Process
 

@@ -66,11 +66,7 @@ fn make_send_params(text: &str) -> MessageSendParams {
 struct QuickExecutor;
 
 impl AgentExecutor for QuickExecutor {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),

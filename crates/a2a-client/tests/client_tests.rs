@@ -19,18 +19,12 @@ use a2a_types::{AgentCapabilities, AgentCard, AgentInterface};
 struct NoopInterceptor;
 
 impl CallInterceptor for NoopInterceptor {
-    fn before<'a>(
-        &'a self,
-        _req: &'a mut ClientRequest,
-    ) -> impl std::future::Future<Output = a2a_client::ClientResult<()>> + Send + 'a {
-        async move { Ok(()) }
+    async fn before(&self, _req: &mut ClientRequest) -> a2a_client::ClientResult<()> {
+        Ok(())
     }
 
-    fn after<'a>(
-        &'a self,
-        _resp: &'a ClientResponse,
-    ) -> impl std::future::Future<Output = a2a_client::ClientResult<()>> + Send + 'a {
-        async move { Ok(()) }
+    async fn after(&self, _resp: &ClientResponse) -> a2a_client::ClientResult<()> {
+        Ok(())
     }
 }
 
@@ -123,7 +117,10 @@ fn builder_with_interceptor_adds_to_chain() {
         .build()
         .expect("build");
     let dbg = format!("{client:?}");
-    assert!(dbg.contains("A2aClient"), "debug should contain struct name");
+    assert!(
+        dbg.contains("A2aClient"),
+        "debug should contain struct name"
+    );
 }
 
 // ── 2. InMemoryCredentialsStore tests ────────────────────────────────────────
@@ -191,7 +188,10 @@ fn credentials_store_debug_hides_credentials() {
         dbg.contains("InMemoryCredentialsStore"),
         "Debug output should contain the struct name"
     );
-    assert!(dbg.contains("sessions"), "Debug output should show session count field");
+    assert!(
+        dbg.contains("sessions"),
+        "Debug output should show session count field"
+    );
 }
 
 // ── 3. AuthInterceptor tests ─────────────────────────────────────────────────

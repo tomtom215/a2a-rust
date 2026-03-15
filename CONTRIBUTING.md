@@ -71,7 +71,7 @@ Before adding a dependency:
 | Category | Location | Command |
 |---|---|---|
 | Unit tests | `#[cfg(test)]` modules in source files | `cargo test --workspace` |
-| Integration tests | `crates/a2a-server/tests/` | included in workspace test |
+| Integration tests | `crates/*/tests/` | included in workspace test |
 | Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-types --test corpus_json` |
 | End-to-end example | `examples/echo-agent` | `cargo run -p echo-agent` |

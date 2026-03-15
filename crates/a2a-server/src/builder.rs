@@ -68,7 +68,7 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
     ///
     /// This is ignored if a custom task store is set via [`with_task_store`](Self::with_task_store).
     #[must_use]
-    pub fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+    pub const fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
         self.task_store_config = config;
         self
     }
@@ -109,9 +109,9 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
     pub fn build(self) -> ServerResult<RequestHandler<E>> {
         Ok(RequestHandler {
             executor: Arc::new(self.executor),
-            task_store: self
-                .task_store
-                .unwrap_or_else(|| Box::new(InMemoryTaskStore::with_config(self.task_store_config))),
+            task_store: self.task_store.unwrap_or_else(|| {
+                Box::new(InMemoryTaskStore::with_config(self.task_store_config))
+            }),
             push_config_store: self
                 .push_config_store
                 .unwrap_or_else(|| Box::new(InMemoryPushConfigStore::new())),

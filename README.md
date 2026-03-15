@@ -35,6 +35,8 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
 - **Optional tracing** — structured logging via `tracing` crate, zero cost when disabled
 - **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
+- **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection, health/readiness endpoints
+- **Task store management** — configurable TTL-based eviction and capacity limits via `TaskStoreConfig`
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -219,7 +221,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (225 tests across 4 crates)
+# Run all tests (289 tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -235,7 +237,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Project Status
 
-All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
+All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
 
 | Phase | Status |
 |---|---|

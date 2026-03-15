@@ -40,11 +40,7 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
         // Transition to Working.
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {

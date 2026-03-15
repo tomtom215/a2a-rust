@@ -415,7 +415,7 @@ const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
 async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
-        if upper as usize > max_size {
+        if upper > max_size as u64 {
             return Err(format!(
                 "request body too large: {upper} bytes exceeds {max_size} byte limit"
             ));

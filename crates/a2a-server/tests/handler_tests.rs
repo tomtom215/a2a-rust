@@ -34,11 +34,7 @@ use a2a_server::streaming::{EventQueueReader, EventQueueWriter};
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
         // Write a working status update.
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -79,11 +75,7 @@ impl AgentExecutor for EchoExecutor {
 struct FailingExecutor;
 
 impl AgentExecutor for FailingExecutor {
-    async fn execute(
-        &self,
-        _ctx: &RequestContext,
-        _queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
         Err(A2aError::internal("executor exploded"))
     }
 }
@@ -92,11 +84,7 @@ impl AgentExecutor for FailingExecutor {
 struct CancelableExecutor;
 
 impl AgentExecutor for CancelableExecutor {
-    async fn execute(
-        &self,
-        ctx: &RequestContext,
-        queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
@@ -111,11 +99,7 @@ impl AgentExecutor for CancelableExecutor {
         Ok(())
     }
 
-    async fn cancel(
-        &self,
-        _ctx: &RequestContext,
-        _queue: &dyn EventQueueWriter,
-    ) -> A2aResult<()> {
+    async fn cancel(&self, _ctx: &RequestContext, _queue: &dyn EventQueueWriter) -> A2aResult<()> {
         Ok(())
     }
 }

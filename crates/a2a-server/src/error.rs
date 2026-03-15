@@ -105,7 +105,9 @@ impl ServerError {
             ),
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
-            Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg)
+            Self::HttpClient(msg)
+            | Self::Transport(msg)
+            | Self::Internal(msg)
             | Self::PayloadTooLarge(msg) => A2aError::internal(msg.clone()),
         }
     }

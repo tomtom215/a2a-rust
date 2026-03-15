@@ -1,4 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. -->
 
 # Security Policy
 
@@ -22,7 +23,7 @@ responsibly. **Do not open a public GitHub issue.**
 
 1. **Email:** Send a detailed report to **security@a2a-rust.dev**.
 2. **GitHub Security Advisories:** Open a draft advisory at
-   <https://github.com/a2a-rust/a2a-rust/security/advisories/new>.
+   <https://github.com/tomtom215/a2a-rust/security/advisories/new>.
 
 ### PGP Key
 
