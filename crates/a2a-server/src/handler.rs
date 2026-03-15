@@ -82,7 +82,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
-            status: TaskStatus::new(TaskState::Submitted),
+            status: TaskStatus::new(TaskState::Pending),
             history: None,
             artifacts: None,
             metadata: None,

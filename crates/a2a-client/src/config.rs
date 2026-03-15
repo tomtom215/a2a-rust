@@ -16,7 +16,10 @@ use std::time::Duration;
 /// `"GRPC"`) rather than a fixed enum.
 pub const BINDING_JSONRPC: &str = "JSONRPC";
 
-/// REST protocol binding.
+/// HTTP+JSON protocol binding (spec name for the REST transport).
+pub const BINDING_HTTP_JSON: &str = "HTTP+JSON";
+
+/// REST protocol binding (legacy alias for [`BINDING_HTTP_JSON`]).
 pub const BINDING_REST: &str = "REST";
 
 /// gRPC protocol binding.

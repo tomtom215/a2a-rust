@@ -386,7 +386,7 @@ async fn cancel_task_on_working_task() {
     assert!(!list.tasks.is_empty());
     let task = &list.tasks[0];
 
-    // Cancel the task (it should be in Submitted or Working state).
+    // Cancel the task (it should be in Pending or Working state).
     let cancel_params = CancelTaskParams {
         tenant: None,
         id: task.id.0.clone(),

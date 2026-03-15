@@ -13,7 +13,7 @@
 //! - `protocol_version` moved from `AgentCard` to `AgentInterface`
 //! - `AgentInterface.transport` renamed to `protocol_binding`
 //! - `supports_authenticated_extended_card` moved to `AgentCapabilities.extended_agent_card`
-//! - `state_transition_history` removed from `AgentCapabilities`
+//! - `state_transition_history` retained in `AgentCapabilities`
 
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +58,10 @@ pub struct AgentCapabilities {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_agent_card: Option<bool>,
 
+    /// Whether the agent maintains a history of task state transitions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state_transition_history: Option<bool>,
+
     /// Optional extensions supported by this agent.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Vec<AgentExtension>>,
@@ -71,6 +75,7 @@ impl AgentCapabilities {
             streaming: None,
             push_notifications: None,
             extended_agent_card: None,
+            state_transition_history: None,
             extensions: None,
         }
     }
@@ -261,5 +266,16 @@ mod tests {
         card.capabilities.extended_agent_card = Some(true);
         let json = serde_json::to_string(&card).expect("serialize");
         assert!(json.contains("\"extendedAgentCard\":true"));
+    }
+
+    #[test]
+    fn state_transition_history_in_capabilities() {
+        let mut card = minimal_card();
+        card.capabilities.state_transition_history = Some(false);
+        let json = serde_json::to_string(&card).expect("serialize");
+        assert!(json.contains("\"stateTransitionHistory\":false"));
+
+        let back: AgentCard = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.capabilities.state_transition_history, Some(false));
     }
 }
