@@ -198,7 +198,7 @@ The server uses a 3-layer architecture:
 | `GetTask` | POST | `GET /tasks/{id}` |
 | `ListTasks` | POST | `GET /tasks` |
 | `CancelTask` | POST | `POST /tasks/{id}:cancel` |
-| `SubscribeToTask` | POST → SSE | `POST /tasks/{id}:subscribe` |
+| `SubscribeToTask` | POST → SSE | `GET\|POST /tasks/{id}:subscribe` |
 | `CreateTaskPushNotificationConfig` | POST | `POST /tasks/{id}/pushNotificationConfigs` |
 | `GetTaskPushNotificationConfig` | POST | `GET /tasks/{id}/pushNotificationConfigs/{configId}` |
 | `ListTaskPushNotificationConfigs` | POST | `GET /tasks/{id}/pushNotificationConfigs` |
@@ -208,7 +208,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (157 tests across 3 crates)
+# Run all tests (167 tests across 3 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -235,7 +235,7 @@ Core implementation is complete with all 11 A2A methods working across both tran
 | 4. v1.0 Protocol Upgrade | ✅ Complete |
 | 5. Server Tests & Bug Fixes | ✅ Complete |
 | 6. Umbrella Crate & Examples | ✅ Complete |
-| 7. v1.0 Spec Compliance Gaps | 🔲 Not Started |
+| 7. v1.0 Spec Compliance Gaps | ✅ Complete |
 | 8. Caching, Signing & Release | 🔲 Not Started |
 
 ## Minimum Supported Rust Version
