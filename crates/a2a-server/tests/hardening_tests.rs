@@ -71,6 +71,14 @@ impl AgentExecutor for QuickExecutor {
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),
                 context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            }))
+            .await?;
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
                 status: TaskStatus::new(TaskState::Completed),
                 metadata: None,
             }))

@@ -199,21 +199,25 @@ fn success_response<T: serde::Serialize>(
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let resp = JsonRpcSuccessResponse {
         jsonrpc: JsonRpcVersion,
-        id,
+        id: id.clone(),
         result: serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
     };
-    let body = serde_json::to_vec(&resp).unwrap_or_default();
-    json_response(200, body)
+    match serde_json::to_vec(&resp) {
+        Ok(body) => json_response(200, body),
+        Err(e) => internal_serialization_error(id, &e),
+    }
 }
 
 fn error_response(id: JsonRpcId, err: &ServerError) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let a2a_err = err.to_a2a_error();
     let resp = JsonRpcErrorResponse::new(
-        id,
+        id.clone(),
         JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
     );
-    let body = serde_json::to_vec(&resp).unwrap_or_default();
-    json_response(200, body)
+    match serde_json::to_vec(&resp) {
+        Ok(body) => json_response(200, body),
+        Err(e) => internal_serialization_error(id, &e),
+    }
 }
 
 fn parse_error_response(
@@ -221,14 +225,27 @@ fn parse_error_response(
     message: &str,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let resp = JsonRpcErrorResponse::new(
-        id,
+        id.clone(),
         JsonRpcError::new(
             a2a_types::error::ErrorCode::ParseError.as_i32(),
             format!("Parse error: {message}"),
         ),
     );
-    let body = serde_json::to_vec(&resp).unwrap_or_default();
-    json_response(200, body)
+    match serde_json::to_vec(&resp) {
+        Ok(body) => json_response(200, body),
+        Err(e) => internal_serialization_error(id, &e),
+    }
+}
+
+/// Fallback response when JSON-RPC serialization itself fails.
+fn internal_serialization_error(
+    _id: JsonRpcId,
+    _err: &serde_json::Error,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    trace_error!(error = %_err, "JSON-RPC response serialization failed");
+    // Hand-craft a minimal JSON-RPC error to avoid further serialization failures.
+    let body = br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#;
+    json_response(500, body.to_vec())
 }
 
 /// Maximum request body size in bytes (4 MiB).

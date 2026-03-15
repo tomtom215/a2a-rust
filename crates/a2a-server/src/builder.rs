@@ -8,6 +8,7 @@
 //! and agent card.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use a2a_types::agent_card::AgentCard;
 
@@ -40,6 +41,7 @@ pub struct RequestHandlerBuilder<E: AgentExecutor> {
     push_sender: Option<Box<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
     agent_card: Option<AgentCard>,
+    executor_timeout: Option<Duration>,
 }
 
 impl<E: AgentExecutor> RequestHandlerBuilder<E> {
@@ -54,6 +56,7 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
             agent_card: None,
+            executor_timeout: None,
         }
     }
 
@@ -94,6 +97,16 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
         self
     }
 
+    /// Sets a timeout for executor execution.
+    ///
+    /// If the executor does not complete within this duration, the task is
+    /// marked as failed with a timeout error.
+    #[must_use]
+    pub const fn with_executor_timeout(mut self, timeout: Duration) -> Self {
+        self.executor_timeout = Some(timeout);
+        self
+    }
+
     /// Sets the agent card for discovery responses.
     #[must_use]
     pub fn with_agent_card(mut self, card: AgentCard) -> Self {
@@ -119,6 +132,7 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
             event_queue_manager: EventQueueManager::new(),
             interceptors: self.interceptors,
             agent_card: self.agent_card,
+            executor_timeout: self.executor_timeout,
         })
     }
 }
@@ -133,6 +147,7 @@ impl<E: AgentExecutor> std::fmt::Debug for RequestHandlerBuilder<E> {
             .field("push_sender", &self.push_sender.is_some())
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
+            .field("executor_timeout", &self.executor_timeout)
             .finish()
     }
 }

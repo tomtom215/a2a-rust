@@ -11,7 +11,8 @@
 macro_rules! trace_info {
     ($($arg:tt)*) => {
         #[cfg(feature = "tracing")]
-        ::tracing::info!($($arg)*);
+        #[allow(clippy::used_underscore_binding)]
+        { ::tracing::info!($($arg)*); }
     };
 }
 
@@ -19,7 +20,8 @@ macro_rules! trace_info {
 macro_rules! trace_debug {
     ($($arg:tt)*) => {
         #[cfg(feature = "tracing")]
-        ::tracing::debug!($($arg)*);
+        #[allow(clippy::used_underscore_binding)]
+        { ::tracing::debug!($($arg)*); }
     };
 }
 
@@ -27,7 +29,8 @@ macro_rules! trace_debug {
 macro_rules! trace_warn {
     ($($arg:tt)*) => {
         #[cfg(feature = "tracing")]
-        ::tracing::warn!($($arg)*);
+        #[allow(clippy::used_underscore_binding)]
+        { ::tracing::warn!($($arg)*); }
     };
 }
 
@@ -35,7 +38,8 @@ macro_rules! trace_warn {
 macro_rules! trace_error {
     ($($arg:tt)*) => {
         #[cfg(feature = "tracing")]
-        ::tracing::error!($($arg)*);
+        #[allow(clippy::used_underscore_binding)]
+        { ::tracing::error!($($arg)*); }
     };
 }
 

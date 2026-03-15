@@ -43,6 +43,15 @@ pub enum ServerError {
     Protocol(A2aError),
     /// The request body exceeds the configured size limit.
     PayloadTooLarge(String),
+    /// An invalid task state transition was attempted.
+    InvalidStateTransition {
+        /// The task ID.
+        task_id: TaskId,
+        /// The current state.
+        from: a2a_types::task::TaskState,
+        /// The attempted target state.
+        to: a2a_types::task::TaskState,
+    },
 }
 
 impl fmt::Display for ServerError {
@@ -60,6 +69,12 @@ impl fmt::Display for ServerError {
             Self::MethodNotFound(m) => write!(f, "method not found: {m}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
             Self::PayloadTooLarge(msg) => write!(f, "payload too large: {msg}"),
+            Self::InvalidStateTransition { task_id, from, to } => {
+                write!(
+                    f,
+                    "invalid state transition for task {task_id}: {from} → {to}"
+                )
+            }
         }
     }
 }
@@ -109,6 +124,9 @@ impl ServerError {
             | Self::Transport(msg)
             | Self::Internal(msg)
             | Self::PayloadTooLarge(msg) => A2aError::internal(msg.clone()),
+            Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
+                format!("invalid state transition for task {task_id}: {from} → {to}"),
+            ),
         }
     }
 }

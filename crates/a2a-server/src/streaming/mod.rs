@@ -7,6 +7,7 @@ pub mod event_queue;
 pub mod sse;
 
 pub use event_queue::{
-    EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
+    EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
+    InMemoryQueueWriter, DEFAULT_QUEUE_CAPACITY,
 };
 pub use sse::{build_sse_response, SseBodyWriter};

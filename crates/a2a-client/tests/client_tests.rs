@@ -66,8 +66,14 @@ fn builder_with_custom_transport_overrides_transport() {
         .with_custom_transport(custom)
         .build()
         .expect("build should succeed with custom transport");
-    // The client was built without error; the custom transport was accepted.
-    let _ = client;
+    // Verify the client was built successfully with the custom transport.
+    let dbg = format!("{client:?}");
+    assert!(
+        dbg.contains("A2aClient"),
+        "client should be an A2aClient instance"
+    );
+    // The config should reflect the builder's settings, not the transport URL.
+    assert_eq!(client.config().request_timeout, Duration::from_secs(30));
 }
 
 #[test]

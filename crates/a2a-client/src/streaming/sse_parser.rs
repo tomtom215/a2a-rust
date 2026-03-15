@@ -57,6 +57,8 @@ pub struct SseParser {
     retry: Option<u64>,
     /// Complete frames ready for consumption.
     ready: Vec<SseFrame>,
+    /// Whether the UTF-8 BOM has already been checked/stripped.
+    bom_checked: bool,
 }
 
 impl SseParser {
@@ -77,7 +79,19 @@ impl SseParser {
     /// After calling `feed`, call [`SseParser::next_frame`] repeatedly until
     /// it returns `None` to consume all complete frames.
     pub fn feed(&mut self, bytes: &[u8]) {
-        for &byte in bytes {
+        let mut input = bytes;
+        // Strip UTF-8 BOM (\xEF\xBB\xBF) if it appears at the very start.
+        if !self.bom_checked && self.line_buf.is_empty() {
+            if input.starts_with(b"\xEF\xBB\xBF") {
+                input = &input[3..];
+            }
+            // Only check once per stream; after the first feed, BOM position
+            // has passed regardless.
+            if !input.is_empty() || bytes.len() >= 3 {
+                self.bom_checked = true;
+            }
+        }
+        for &byte in input {
             if byte == b'\n' {
                 self.process_line();
                 self.line_buf.clear();
@@ -100,6 +114,13 @@ impl SseParser {
     // ── internals ─────────────────────────────────────────────────────────────
 
     fn process_line(&mut self) {
+        // Strip BOM if present at start of first line (handles fragmented BOM).
+        if !self.bom_checked {
+            if self.line_buf.starts_with(b"\xEF\xBB\xBF") {
+                self.line_buf.drain(..3);
+            }
+            self.bom_checked = true;
+        }
         let line = match std::str::from_utf8(&self.line_buf) {
             Ok(s) => s.to_owned(),
             Err(_) => return, // skip malformed UTF-8 lines

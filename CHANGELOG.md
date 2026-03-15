@@ -25,7 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TaskStoreConfig` with configurable TTL and capacity for `InMemoryTaskStore`.
 - `RequestHandlerBuilder::with_task_store_config()` for store configuration.
 - `ServerError::PayloadTooLarge` variant for body size limit violations.
-- Comprehensive hardening, dispatch, handler, and client test suites (289 tests).
+- Executor timeout support via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors.
+- Per-request HTTP timeout for `HttpPushSender` (default 30s) via `HttpPushSender::with_timeout()`.
+- `TaskState::can_transition_to()` for handler-level state machine validation.
+- Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
+- URL percent-decoding for REST dispatcher path parameters.
+- BOM (byte order mark) handling in JSON request bodies.
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (379 tests).
 
 ### Changed
 
@@ -37,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- (No fixes yet — this is the initial release.)
+- Invalid state transitions (e.g. Submitted → Completed) are now rejected with `InvalidStateTransition` error.
+- Push notification delivery now properly times out instead of hanging indefinitely.
 
 ### Removed
 

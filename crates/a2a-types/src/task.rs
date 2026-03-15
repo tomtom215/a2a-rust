@@ -178,6 +178,34 @@ impl TaskState {
             Self::Completed | Self::Failed | Self::Canceled | Self::Rejected
         )
     }
+
+    /// Returns `true` if transitioning from `self` to `next` is a valid
+    /// state transition per the A2A protocol.
+    ///
+    /// Terminal states cannot transition to any other state.
+    /// `Unspecified` can transition to any state.
+    #[must_use]
+    pub const fn can_transition_to(self, next: Self) -> bool {
+        // Terminal states are final — no transitions allowed.
+        if self.is_terminal() {
+            return false;
+        }
+        // Allow any transition from Unspecified (proto default).
+        if matches!(self, Self::Unspecified) {
+            return true;
+        }
+        matches!(
+            (self, next),
+            // Submitted → Working, Failed, Canceled, Rejected
+            (Self::Submitted, Self::Working | Self::Failed | Self::Canceled | Self::Rejected)
+            // Working → Completed, Failed, Canceled, InputRequired, AuthRequired
+            | (Self::Working,
+               Self::Completed | Self::Failed | Self::Canceled | Self::InputRequired | Self::AuthRequired)
+            // InputRequired / AuthRequired → Working, Failed, Canceled
+            | (Self::InputRequired | Self::AuthRequired,
+               Self::Working | Self::Failed | Self::Canceled)
+        )
+    }
 }
 
 impl std::fmt::Display for TaskState {
@@ -193,7 +221,7 @@ impl std::fmt::Display for TaskState {
 
 /// The current status of a [`Task`], combining state with an optional message
 /// and timestamp.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatus {
     /// Current lifecycle state.
@@ -229,7 +257,7 @@ impl TaskStatus {
 /// [`crate::responses::SendMessageResponse`]. Standalone `Task` values received
 /// over the wire may include `kind`; serde silently tolerates unknown fields, so
 /// no action is needed on the receiving side.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Task {
     /// Unique task identifier.

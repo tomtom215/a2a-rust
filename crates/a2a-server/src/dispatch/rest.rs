@@ -43,25 +43,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         }
     }
 
-    /// Dispatches an HTTP request and returns a response.
-    ///
-    /// # Route table
-    ///
-    /// | Method | Path | Handler |
-    /// |---|---|---|
-    /// | `POST` | `/message:send` | `on_send_message(streaming: false)` |
-    /// | `POST` | `/message:stream` | `on_send_message(streaming: true)` |
-    /// | `GET` | `/tasks/{id}` | `on_get_task` |
-    /// | `POST` | `/tasks/{id}:cancel` | `on_cancel_task` |
-    /// | `GET` | `/tasks` | `on_list_tasks` |
-    /// | `POST` | `/tasks/{id}:subscribe` | `on_resubscribe` |
-    /// | `POST` | `/tasks/{taskId}/pushNotificationConfigs` | `on_set_push_config` |
-    /// | `GET` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `on_get_push_config` |
-    /// | `GET` | `/tasks/{taskId}/pushNotificationConfigs` | `on_list_push_configs` |
-    /// | `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `on_delete_push_config` |
-    /// | `GET` | `/extendedAgentCard` | `on_get_extended_agent_card` |
-    /// | `GET` | `/.well-known/agent.json` | static agent card |
-    /// | `GET` | `/health` | health check |
+    /// Dispatches an HTTP request to the appropriate handler method.
     #[allow(clippy::too_many_lines)]
     pub async fn dispatch(
         &self,
@@ -328,24 +310,27 @@ impl<E: AgentExecutor> std::fmt::Debug for RestDispatcher<E> {
 // ── Response helpers ─────────────────────────────────────────────────────────
 
 fn json_ok_response<T: serde::Serialize>(value: &T) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = serde_json::to_vec(value).unwrap_or_default();
-    hyper::Response::builder()
-        .status(200)
-        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
-        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
-        .body(Full::new(Bytes::from(body)).boxed())
-        .expect("response builder should not fail with valid headers")
+    match serde_json::to_vec(value) {
+        Ok(body) => build_json_response(200, body),
+        Err(_err) => {
+            trace_error!(error = %_err, "REST response serialization failed");
+            internal_error_response()
+        }
+    }
 }
 
 fn error_json_response(status: u16, message: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let body = serde_json::json!({ "error": message });
-    let bytes = serde_json::to_vec(&body).unwrap_or_default();
-    hyper::Response::builder()
-        .status(status)
-        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
-        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
-        .body(Full::new(Bytes::from(bytes)).boxed())
-        .expect("response builder should not fail with valid headers")
+    serde_json::to_vec(&body).map_or_else(
+        |_| internal_error_response(),
+        |bytes| build_json_response(status, bytes),
+    )
+}
+
+/// Fallback when serialization itself fails.
+fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let body = br#"{"error":"internal serialization error"}"#;
+    build_json_response(500, body.to_vec())
 }
 
 fn not_found_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
@@ -362,13 +347,10 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
         _ => 500,
     };
     let a2a_err = err.to_a2a_error();
-    let body = serde_json::to_vec(&a2a_err).unwrap_or_default();
-    hyper::Response::builder()
-        .status(status)
-        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
-        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
-        .body(Full::new(Bytes::from(body)).boxed())
-        .expect("response builder should not fail with valid headers")
+    serde_json::to_vec(&a2a_err).map_or_else(
+        |_| internal_error_response(),
+        |body| build_json_response(status, body),
+    )
 }
 
 // ── Query parsing helpers ───────────────────────────────────────────────────
@@ -388,19 +370,56 @@ fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
 
 /// Parses a single query parameter value as `u32`.
 fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
-    parse_query_param(query, key).and_then(|v| v.parse().ok())
+    parse_query_param(query, key).and_then(|v| v.parse::<u32>().ok())
 }
 
-/// Parses a single query parameter value as a string.
-fn parse_query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+/// Parses a single query parameter value as a string, with percent-decoding.
+fn parse_query_param(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (k, v) = pair.split_once('=')?;
         if k == key {
-            Some(v)
+            Some(percent_decode(v))
         } else {
             None
         }
     })
+}
+
+/// Decodes percent-encoded characters in a query parameter value.
+///
+/// Handles `%XX` hex sequences and `+` as space (application/x-www-form-urlencoded).
+fn percent_decode(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut bytes = input.as_bytes().iter();
+    while let Some(&b) = bytes.next() {
+        match b {
+            b'%' => {
+                let hi = bytes.next().copied();
+                let lo = bytes.next().copied();
+                if let (Some(h), Some(l)) = (hi, lo) {
+                    if let (Some(h), Some(l)) = (hex_val(h), hex_val(l)) {
+                        output.push(char::from(h << 4 | l));
+                        continue;
+                    }
+                }
+                // Invalid percent sequence — pass through as-is.
+                output.push('%');
+            }
+            b'+' => output.push(' '),
+            _ => output.push(char::from(b)),
+        }
+    }
+    output
+}
+
+/// Returns the numeric value of a hex digit, or `None` if invalid.
+const fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 /// Parses a single query parameter value as `bool`.
@@ -434,26 +453,32 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
 
 /// Returns a health check response.
 fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = serde_json::json!({ "status": "ok" });
-    let bytes = serde_json::to_vec(&body).unwrap_or_default();
+    let body = br#"{"status":"ok"}"#;
+    build_json_response(200, body.to_vec())
+}
+
+/// Builds a JSON HTTP response with the given status and body.
+fn build_json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
-        .status(200)
-        .header("content-type", "application/json")
-        .body(Full::new(Bytes::from(bytes)).boxed())
+        .status(status)
+        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
+        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
+        .body(Full::new(Bytes::from(body)).boxed())
+        // SAFETY: Static header names and values; builder cannot fail.
         .expect("response builder should not fail with valid headers")
 }
 
 /// Parses `ListTasksParams` from URL query parameters.
 fn parse_list_tasks_query(query: &str, tenant: Option<&str>) -> a2a_types::params::ListTasksParams {
     let status = parse_query_param(query, "status")
-        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_owned())).ok());
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok());
     a2a_types::params::ListTasksParams {
         tenant: tenant.map(str::to_owned),
-        context_id: parse_query_param(query, "contextId").map(str::to_owned),
+        context_id: parse_query_param(query, "contextId"),
         status,
         page_size: parse_query_param_u32(query, "pageSize"),
-        page_token: parse_query_param(query, "pageToken").map(str::to_owned),
-        status_timestamp_after: parse_query_param(query, "statusTimestampAfter").map(str::to_owned),
+        page_token: parse_query_param(query, "pageToken"),
+        status_timestamp_after: parse_query_param(query, "statusTimestampAfter"),
         include_artifacts: parse_query_param_bool(query, "includeArtifacts"),
         history_length: parse_query_param_u32(query, "historyLength"),
     }

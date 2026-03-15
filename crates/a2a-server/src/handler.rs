@@ -7,6 +7,7 @@
 //! interceptors, and event queue manager to implement all A2A v1.0 methods.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use a2a_types::agent_card::AgentCard;
 use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
@@ -41,19 +42,15 @@ pub struct RequestHandler<E: AgentExecutor> {
     pub(crate) event_queue_manager: EventQueueManager,
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
+    pub(crate) executor_timeout: Option<Duration>,
 }
 
 impl<E: AgentExecutor> RequestHandler<E> {
-    /// Handles a `SendMessage` or `SendStreamingMessage` request.
-    ///
-    /// When `streaming` is `true`, the returned response wraps an SSE reader.
-    /// When `false`, the method blocks until the executor finishes and returns
-    /// the final task or message.
+    /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if task creation, execution spawning, or
-    /// store operations fail.
+    /// Returns [`ServerError`] if task creation or execution fails.
     #[allow(clippy::too_many_lines)]
     pub async fn on_send_message(
         &self,
@@ -137,9 +134,21 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let executor = Arc::clone(&self.executor);
         let task_id_for_cleanup = task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
+        let executor_timeout = self.executor_timeout;
         tokio::spawn(async move {
             trace_debug!(task_id = %ctx.task_id, "executor started");
-            let result = executor.execute(&ctx, writer.as_ref()).await;
+            let result = if let Some(timeout) = executor_timeout {
+                tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
+                    .await
+                    .unwrap_or_else(|_| {
+                        Err(a2a_types::error::A2aError::internal(format!(
+                            "executor timed out after {}s",
+                            timeout.as_secs()
+                        )))
+                    })
+            } else {
+                executor.execute(&ctx, writer.as_ref()).await
+            };
             if let Err(ref e) = result {
                 trace_error!(task_id = %ctx.task_id, error = %e, "executor failed");
                 // Write a failed status update on error.
@@ -177,7 +186,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         }
     }
 
-    /// Handles a `GetTask` request.
+    /// Handles `GetTask`. Returns [`ServerError::TaskNotFound`] if missing.
     ///
     /// # Errors
     ///
@@ -198,11 +207,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(task)
     }
 
-    /// Handles a `ListTasks` request.
+    /// Handles `ListTasks`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the store operation fails.
+    /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
         trace_info!(method = "ListTasks", "handling list tasks");
         let call_ctx = CallContext::new("ListTasks");
@@ -214,12 +223,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(result)
     }
 
-    /// Handles a `CancelTask` request.
+    /// Handles `CancelTask`.
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::TaskNotFound`] if the task does not exist, or
-    /// [`ServerError::TaskNotCancelable`] if the task is in a terminal state.
+    /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
     pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         let call_ctx = CallContext::new("CancelTask");
@@ -264,7 +272,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(updated)
     }
 
-    /// Handles a `SubscribeToTask` request.
+    /// Handles `SubscribeToTask`.
     ///
     /// # Errors
     ///
@@ -292,7 +300,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(reader)
     }
 
-    /// Handles a `CreateTaskPushNotificationConfig` request.
+    /// Handles `CreateTaskPushNotificationConfig`.
     ///
     /// # Errors
     ///
@@ -313,11 +321,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(result)
     }
 
-    /// Handles a `GetTaskPushNotificationConfig` request.
+    /// Handles `GetTaskPushNotificationConfig`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the config is not found.
+    /// Returns [`ServerError::InvalidParams`] if the config is not found.
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
@@ -340,11 +348,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(config)
     }
 
-    /// Handles a `ListTaskPushNotificationConfigs` request.
+    /// Handles `ListTaskPushNotificationConfigs`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the store operation fails.
+    /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
@@ -358,11 +366,11 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(configs)
     }
 
-    /// Handles a `DeleteTaskPushNotificationConfig` request.
+    /// Handles `DeleteTaskPushNotificationConfig`.
     ///
     /// # Errors
     ///
-    /// Returns a [`ServerError`] if the store operation fails.
+    /// Returns a [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
         let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
@@ -375,7 +383,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(())
     }
 
-    /// Handles a `GetExtendedAgentCard` request.
+    /// Handles `GetExtendedAgentCard`.
     ///
     /// # Errors
     ///
@@ -414,9 +422,8 @@ impl<E: AgentExecutor> RequestHandler<E> {
             .and_then(|resp| resp.tasks.into_iter().next())
     }
 
-    /// Collects all events from a reader until the stream closes, updating the
-    /// task in the store along the way. Delivers push notifications for each
-    /// event when push configs exist. Returns the final task snapshot.
+    /// Collects events until stream closes, updating the task store and
+    /// delivering push notifications. Returns the final task.
     async fn collect_events(
         &self,
         mut reader: InMemoryQueueReader,
@@ -431,8 +438,23 @@ impl<E: AgentExecutor> RequestHandler<E> {
         while let Some(event) = reader.read().await {
             match event {
                 Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
+                    let current = last_task.status.state;
+                    let next = update.status.state;
+                    if !current.can_transition_to(next) {
+                        trace_warn!(
+                            task_id = %task_id,
+                            from = %current,
+                            to = %next,
+                            "invalid state transition rejected"
+                        );
+                        return Err(ServerError::InvalidStateTransition {
+                            task_id: task_id.clone(),
+                            from: current,
+                            to: next,
+                        });
+                    }
                     last_task.status = TaskStatus {
-                        state: update.status.state,
+                        state: next,
                         message: update.status.message.clone(),
                         timestamp: update.status.timestamp.clone(),
                     };
@@ -463,7 +485,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         Ok(last_task)
     }
 
-    /// Delivers a push notification for a streaming event if push configs exist.
+    /// Delivers push notifications for a streaming event if configs exist.
     async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
         let Some(ref sender) = self.push_sender else {
             return;
@@ -472,8 +494,14 @@ impl<E: AgentExecutor> RequestHandler<E> {
             return;
         };
         for config in &configs {
-            // Best-effort delivery; log nothing on failure for now.
-            let _ = sender.send(&config.url, event, config).await;
+            if let Err(_err) = sender.send(&config.url, event, config).await {
+                trace_warn!(
+                    task_id = %task_id,
+                    url = %config.url,
+                    error = %_err,
+                    "push notification delivery failed"
+                );
+            }
         }
     }
 }
@@ -481,20 +509,15 @@ impl<E: AgentExecutor> RequestHandler<E> {
 impl<E: AgentExecutor> std::fmt::Debug for RequestHandler<E> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHandler")
-            .field("executor", &"...")
-            .field("task_store", &"...")
-            .field("push_config_store", &"...")
             .field("push_sender", &self.push_sender.is_some())
             .field("event_queue_manager", &self.event_queue_manager)
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 /// Result of [`RequestHandler::on_send_message`].
-///
-/// Either a synchronous response or a streaming reader.
 #[allow(clippy::large_enum_variant)]
 pub enum SendMessageResult {
     /// A synchronous JSON-RPC response.
