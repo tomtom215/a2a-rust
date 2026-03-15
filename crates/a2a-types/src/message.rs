@@ -83,7 +83,7 @@ pub enum MessageRole {
 /// [`crate::responses::SendMessageResponse`]. Standalone `Message` values
 /// received over the wire may include `kind`; serde silently tolerates unknown
 /// fields, so no action is needed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
     /// Unique message identifier.
@@ -124,7 +124,7 @@ pub struct Message {
 /// A flat struct with a [`PartContent`] oneof and common fields. In JSON,
 /// exactly one of `text`, `raw`, `url`, or `data` is present, which
 /// determines the content type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Part {
     /// The content of this part (one of text, raw, url, or data).
@@ -196,7 +196,7 @@ impl Part {
 ///
 /// In JSON, exactly one field is present: `"text"`, `"raw"`, `"url"`, or
 /// `"data"`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PartContent {
     /// Plain-text content.

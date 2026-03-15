@@ -38,6 +38,15 @@ struct SimpleExecutor;
 
 impl AgentExecutor for SimpleExecutor {
     async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
+        // Transition through Working before Completed (valid state machine).
+        queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ctx.context_id.clone(),
+                status: TaskStatus::new(TaskState::Working),
+                metadata: None,
+            }))
+            .await?;
         queue
             .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                 task_id: ctx.task_id.clone(),

@@ -34,12 +34,26 @@ pub trait PushSender: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
+/// Maximum number of delivery attempts before giving up.
+const MAX_PUSH_ATTEMPTS: usize = 3;
+
+/// Backoff durations between retry attempts.
+const PUSH_RETRY_BACKOFF: [std::time::Duration; 2] = [
+    std::time::Duration::from_secs(1),
+    std::time::Duration::from_secs(2),
+];
+
+/// Default per-request timeout for push notification delivery.
+const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// HTTP-based [`PushSender`] using hyper.
 ///
-/// Retries up to 3 times with 1s, 2s backoff on transient HTTP errors.
+/// Retries up to [`MAX_PUSH_ATTEMPTS`] times with exponential backoff on
+/// transient HTTP errors.
 #[derive(Debug)]
 pub struct HttpPushSender {
     client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>,
+    request_timeout: std::time::Duration,
 }
 
 impl Default for HttpPushSender {
@@ -49,11 +63,20 @@ impl Default for HttpPushSender {
 }
 
 impl HttpPushSender {
-    /// Creates a new [`HttpPushSender`].
+    /// Creates a new [`HttpPushSender`] with the default 30-second request timeout.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_timeout(DEFAULT_PUSH_REQUEST_TIMEOUT)
+    }
+
+    /// Creates a new [`HttpPushSender`] with a custom per-request timeout.
+    #[must_use]
+    pub fn with_timeout(request_timeout: std::time::Duration) -> Self {
         let client = Client::builder(TokioExecutor::new()).build_http();
-        Self { client }
+        Self {
+            client,
+            request_timeout,
+        }
     }
 }
 
@@ -70,15 +93,9 @@ impl PushSender for HttpPushSender {
             let body_bytes = serde_json::to_vec(event)
                 .map_err(|e| A2aError::internal(format!("push serialization: {e}")))?;
 
-            let backoff = [
-                std::time::Duration::from_secs(1),
-                std::time::Duration::from_secs(2),
-            ];
-
-            let max_attempts: usize = 3;
             let mut last_err = String::new();
 
-            for attempt in 0..max_attempts {
+            for attempt in 0..MAX_PUSH_ATTEMPTS {
                 let mut builder = hyper::Request::builder()
                     .method(hyper::Method::POST)
                     .uri(url)
@@ -108,24 +125,34 @@ impl PushSender for HttpPushSender {
                     .body(Full::new(Bytes::from(body_bytes.clone())))
                     .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
 
-                match self.client.request(req).await {
-                    Ok(resp) if resp.status().is_success() => {
+                let request_result =
+                    tokio::time::timeout(self.request_timeout, self.client.request(req)).await;
+
+                match request_result {
+                    Ok(Ok(resp)) if resp.status().is_success() => {
                         trace_debug!(url, "push notification delivered");
                         return Ok(());
                     }
-                    Ok(resp) => {
+                    Ok(Ok(resp)) => {
                         last_err = format!("push notification got HTTP {}", resp.status());
                         trace_warn!(url, attempt, status = %resp.status(), "push delivery failed");
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         last_err = format!("push notification failed: {e}");
                         trace_warn!(url, attempt, error = %e, "push delivery error");
+                    }
+                    Err(_) => {
+                        last_err = format!(
+                            "push notification timed out after {}s",
+                            self.request_timeout.as_secs()
+                        );
+                        trace_warn!(url, attempt, "push delivery timed out");
                     }
                 }
 
                 // Retry with backoff (except on last attempt).
-                if attempt < max_attempts - 1 {
-                    if let Some(delay) = backoff.get(attempt) {
+                if attempt < MAX_PUSH_ATTEMPTS - 1 {
+                    if let Some(delay) = PUSH_RETRY_BACKOFF.get(attempt) {
                         tokio::time::sleep(*delay).await;
                     }
                 }

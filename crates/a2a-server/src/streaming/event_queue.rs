@@ -21,7 +21,7 @@ use a2a_types::task::TaskId;
 use tokio::sync::{mpsc, RwLock};
 
 /// Default channel capacity for event queues.
-const QUEUE_CAPACITY: usize = 64;
+pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
 
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
 
@@ -112,12 +112,18 @@ impl EventQueueReader for InMemoryQueueReader {
 
 // ── Constructor ──────────────────────────────────────────────────────────────
 
-/// Creates a new in-memory event queue pair.
-///
-/// The channel has a bounded capacity of 64 events.
+/// Creates a new in-memory event queue pair with the default capacity.
 #[must_use]
 pub fn new_in_memory_queue() -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    let (tx, rx) = mpsc::channel(QUEUE_CAPACITY);
+    new_in_memory_queue_with_capacity(DEFAULT_QUEUE_CAPACITY)
+}
+
+/// Creates a new in-memory event queue pair with the specified capacity.
+#[must_use]
+pub fn new_in_memory_queue_with_capacity(
+    capacity: usize,
+) -> (InMemoryQueueWriter, InMemoryQueueReader) {
+    let (tx, rx) = mpsc::channel(capacity);
     (InMemoryQueueWriter { tx }, InMemoryQueueReader { rx })
 }
 
@@ -128,16 +134,36 @@ pub fn new_in_memory_queue() -> (InMemoryQueueWriter, InMemoryQueueReader) {
 /// Each task can have at most one active writer. When a client subscribes
 /// (or resubscribes), the manager returns the existing writer and a fresh
 /// reader, or creates both if none exists.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct EventQueueManager {
     writers: Arc<RwLock<HashMap<TaskId, Arc<InMemoryQueueWriter>>>>,
+    /// Channel capacity for new event queues.
+    capacity: usize,
+}
+
+impl Default for EventQueueManager {
+    fn default() -> Self {
+        Self {
+            writers: Arc::default(),
+            capacity: DEFAULT_QUEUE_CAPACITY,
+        }
+    }
 }
 
 impl EventQueueManager {
-    /// Creates a new, empty event queue manager.
+    /// Creates a new, empty event queue manager with default capacity.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new event queue manager with the specified channel capacity.
+    #[must_use]
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            writers: Arc::default(),
+            capacity,
+        }
     }
 
     /// Returns the writer for the given task, creating a new queue if none
@@ -155,7 +181,7 @@ impl EventQueueManager {
         let result = if let Some(existing) = map.get(task_id) {
             (Arc::clone(existing), None)
         } else {
-            let (writer, reader) = new_in_memory_queue();
+            let (writer, reader) = new_in_memory_queue_with_capacity(self.capacity);
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader))

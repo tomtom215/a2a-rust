@@ -236,10 +236,31 @@ impl TaskStore for InMemoryTaskStore {
             // Sort by task ID for deterministic output.
             tasks.sort_by(|a, b| a.id.0.cmp(&b.id.0));
 
+            // Apply cursor-based pagination via page_token.
+            // The page_token is the last task ID from the previous page.
+            if let Some(ref token) = params.page_token {
+                if let Some(pos) = tasks.iter().position(|t| t.id.0 == *token) {
+                    // Skip up to and including the cursor task.
+                    tasks = tasks.split_off(pos + 1);
+                } else {
+                    // Token refers to a non-existent task — return empty page.
+                    tasks.clear();
+                }
+            }
+
             let page_size = params.page_size.unwrap_or(50) as usize;
+            let next_page_token = if tasks.len() > page_size {
+                tasks
+                    .get(page_size.saturating_sub(1))
+                    .map(|t| t.id.0.clone())
+            } else {
+                None
+            };
             tasks.truncate(page_size);
 
-            Ok(TaskListResponse::new(tasks))
+            let mut response = TaskListResponse::new(tasks);
+            response.next_page_token = next_page_token;
+            Ok(response)
         })
     }
 
