@@ -11,6 +11,12 @@ Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.g
 
 Build, connect, and orchestrate AI agents using a type-safe, async-first SDK with both JSON-RPC 2.0 and REST transport bindings.
 
+## Motivation
+
+The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
+
+This project aims to fill that gap: a production-quality, type-safe Rust SDK for A2A that the community can build on. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
+
 ## Features
 
 - **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
