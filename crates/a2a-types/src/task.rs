@@ -237,13 +237,26 @@ pub struct TaskStatus {
 }
 
 impl TaskStatus {
-    /// Creates a [`TaskStatus`] with just a state.
+    /// Creates a [`TaskStatus`] with just a state and no timestamp.
+    ///
+    /// Prefer [`TaskStatus::with_timestamp`] in production code so that
+    /// status changes carry an ISO 8601 timestamp.
     #[must_use]
     pub const fn new(state: TaskState) -> Self {
         Self {
             state,
             message: None,
             timestamp: None,
+        }
+    }
+
+    /// Creates a [`TaskStatus`] with a state and the current UTC timestamp.
+    #[must_use]
+    pub fn with_timestamp(state: TaskState) -> Self {
+        Self {
+            state,
+            message: None,
+            timestamp: Some(crate::utc_now_iso8601()),
         }
     }
 }

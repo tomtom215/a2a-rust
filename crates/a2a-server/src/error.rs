@@ -18,6 +18,7 @@ use a2a_types::task::TaskId;
 ///
 /// Each variant maps to a specific A2A [`ErrorCode`] via [`to_a2a_error`](Self::to_a2a_error).
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ServerError {
     /// The requested task was not found.
     TaskNotFound(TaskId),

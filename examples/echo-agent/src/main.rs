@@ -14,7 +14,9 @@
 //!
 //! Run with: `cargo run -p echo-agent`
 
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
@@ -40,52 +42,58 @@ use a2a_server::streaming::EventQueueWriter;
 struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()> {
-        // Transition to Working.
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            }))
-            .await?;
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Transition to Working.
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
 
-        // Extract text from the incoming message.
-        let input_text = ctx
-            .message
-            .parts
-            .iter()
-            .find_map(|p| match &p.content {
-                a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
-                _ => None,
-            })
-            .unwrap_or("<no text>");
+            // Extract text from the incoming message.
+            let input_text = ctx
+                .message
+                .parts
+                .iter()
+                .find_map(|p| match &p.content {
+                    a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("<no text>");
 
-        // Echo back as an artifact.
-        let echo_text = format!("Echo: {input_text}");
-        queue
-            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            }))
-            .await?;
+            // Echo back as an artifact.
+            let echo_text = format!("Echo: {input_text}");
+            queue
+                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
+                    append: None,
+                    last_chunk: Some(true),
+                    metadata: None,
+                }))
+                .await?;
 
-        // Transition to Completed.
-        queue
-            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ctx.context_id.clone(),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            }))
-            .await?;
+            // Transition to Completed.
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ctx.context_id.clone(),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 
@@ -139,9 +147,7 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-async fn start_jsonrpc_server(
-    handler: Arc<a2a_server::handler::RequestHandler<EchoExecutor>>,
-) -> SocketAddr {
+async fn start_jsonrpc_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -174,9 +180,7 @@ async fn start_jsonrpc_server(
     addr
 }
 
-async fn start_rest_server(
-    handler: Arc<a2a_server::handler::RequestHandler<EchoExecutor>>,
-) -> SocketAddr {
+async fn start_rest_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

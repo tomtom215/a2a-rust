@@ -24,7 +24,9 @@ use crate::streaming::EventQueueManager;
 ///
 /// # Required
 ///
-/// - `executor`: The [`AgentExecutor`] implementation.
+/// - `executor`: Any [`AgentExecutor`] implementation (passed as a concrete
+///   type; the builder erases it to `Arc<dyn AgentExecutor>` during
+///   [`build`](Self::build)).
 ///
 /// # Optional (with defaults)
 ///
@@ -33,8 +35,8 @@ use crate::streaming::EventQueueManager;
 /// - `push_sender`: defaults to `None`.
 /// - `interceptors`: defaults to an empty chain.
 /// - `agent_card`: defaults to `None`.
-pub struct RequestHandlerBuilder<E: AgentExecutor> {
-    executor: E,
+pub struct RequestHandlerBuilder {
+    executor: Arc<dyn AgentExecutor>,
     task_store: Option<Box<dyn TaskStore>>,
     task_store_config: TaskStoreConfig,
     push_config_store: Option<Box<dyn PushConfigStore>>,
@@ -44,12 +46,14 @@ pub struct RequestHandlerBuilder<E: AgentExecutor> {
     executor_timeout: Option<Duration>,
 }
 
-impl<E: AgentExecutor> RequestHandlerBuilder<E> {
+impl RequestHandlerBuilder {
     /// Creates a new builder with the given executor.
+    ///
+    /// The executor is type-erased to `Arc<dyn AgentExecutor>`.
     #[must_use]
-    pub fn new(executor: E) -> Self {
+    pub fn new(executor: impl AgentExecutor) -> Self {
         Self {
-            executor,
+            executor: Arc::new(executor),
             task_store: None,
             task_store_config: TaskStoreConfig::default(),
             push_config_store: None,
@@ -119,9 +123,9 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
     /// # Errors
     ///
     /// Currently infallible but returns [`ServerResult`] for future extensibility.
-    pub fn build(self) -> ServerResult<RequestHandler<E>> {
+    pub fn build(self) -> ServerResult<RequestHandler> {
         Ok(RequestHandler {
-            executor: Arc::new(self.executor),
+            executor: self.executor,
             task_store: self.task_store.unwrap_or_else(|| {
                 Box::new(InMemoryTaskStore::with_config(self.task_store_config))
             }),
@@ -133,14 +137,17 @@ impl<E: AgentExecutor> RequestHandlerBuilder<E> {
             interceptors: self.interceptors,
             agent_card: self.agent_card,
             executor_timeout: self.executor_timeout,
+            cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         })
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for RequestHandlerBuilder<E> {
+impl std::fmt::Debug for RequestHandlerBuilder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHandlerBuilder")
-            .field("executor", &"...")
+            .field("executor", &"<dyn AgentExecutor>")
             .field("task_store", &self.task_store.is_some())
             .field("task_store_config", &self.task_store_config)
             .field("push_config_store", &self.push_config_store.is_some())

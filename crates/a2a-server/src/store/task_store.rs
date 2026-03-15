@@ -137,6 +137,15 @@ impl InMemoryTaskStore {
         }
     }
 
+    /// Runs background eviction of expired and over-capacity entries.
+    ///
+    /// Call this periodically (e.g. every 60 seconds) to clean up terminal
+    /// tasks that would otherwise persist until the next `save()` call.
+    pub async fn run_eviction(&self) {
+        let mut store = self.entries.write().await;
+        Self::evict(&mut store, &self.config);
+    }
+
     /// Evicts expired and over-capacity entries (must be called with write lock held).
     fn evict(store: &mut HashMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
         let now = Instant::now();
@@ -248,7 +257,11 @@ impl TaskStore for InMemoryTaskStore {
                 }
             }
 
-            let page_size = params.page_size.unwrap_or(50) as usize;
+            // Treat page_size of 0 as "use default" per defensive convention.
+            let page_size = match params.page_size {
+                Some(0) | None => 50_usize,
+                Some(n) => n as usize,
+            };
             let next_page_token = if tasks.len() > page_size {
                 tasks
                     .get(page_size.saturating_sub(1))

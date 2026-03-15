@@ -21,21 +21,20 @@ use a2a_types::jsonrpc::{
 };
 
 use crate::error::ServerError;
-use crate::executor::AgentExecutor;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
 /// JSON-RPC 2.0 request dispatcher.
 ///
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
-pub struct JsonRpcDispatcher<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct JsonRpcDispatcher {
+    handler: Arc<RequestHandler>,
 }
 
-impl<E: AgentExecutor> JsonRpcDispatcher<E> {
+impl JsonRpcDispatcher {
     /// Creates a new dispatcher wrapping the given handler.
     #[must_use]
-    pub const fn new(handler: Arc<RequestHandler<E>>) -> Self {
+    pub const fn new(handler: Arc<RequestHandler>) -> Self {
         Self { handler }
     }
 
@@ -174,7 +173,7 @@ impl<E: AgentExecutor> JsonRpcDispatcher<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for JsonRpcDispatcher<E> {
+impl std::fmt::Debug for JsonRpcDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JsonRpcDispatcher").finish()
     }
@@ -251,9 +250,12 @@ fn internal_serialization_error(
 /// Maximum request body size in bytes (4 MiB).
 const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
 
-/// Reads a request body with a size limit.
+/// Maximum duration to read a complete request body (slow loris protection).
+const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Reads a request body with a size limit and timeout.
 ///
-/// Returns an error message if the body exceeds the limit or cannot be read.
+/// Returns an error message if the body exceeds the limit, times out, or cannot be read.
 async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
     // Check Content-Length header upfront if present.
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
@@ -265,7 +267,10 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
         }
     }
 
-    let collected = body.collect().await.map_err(|e| e.to_string())?;
+    let collected = tokio::time::timeout(BODY_READ_TIMEOUT, body.collect())
+        .await
+        .map_err(|_| "request body read timed out".to_owned())?
+        .map_err(|e| e.to_string())?;
     let bytes = collected.to_bytes();
     if bytes.len() > max_size {
         return Err(format!(
@@ -283,5 +288,14 @@ fn json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, I
         .header("content-type", a2a_types::A2A_CONTENT_TYPE)
         .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
-        .expect("response builder should not fail with valid headers")
+        .unwrap_or_else(|_| {
+            // Fallback: plain 500 response if builder fails (should never happen
+            // with valid static header names).
+            hyper::Response::new(
+                Full::new(Bytes::from_static(
+                    br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"response build error"}}"#,
+                ))
+                .boxed(),
+            )
+        })
 }

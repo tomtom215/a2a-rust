@@ -196,4 +196,16 @@ impl EventQueueManager {
         map.remove(task_id);
         drop(map);
     }
+
+    /// Returns the number of active event queues.
+    pub async fn active_count(&self) -> usize {
+        let map = self.writers.read().await;
+        map.len()
+    }
+
+    /// Removes all event queues, causing all readers to see EOF.
+    pub async fn destroy_all(&self) {
+        let mut map = self.writers.write().await;
+        map.clear();
+    }
 }

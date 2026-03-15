@@ -17,22 +17,21 @@ use hyper::body::Incoming;
 
 use crate::agent_card::StaticAgentCardHandler;
 use crate::error::ServerError;
-use crate::executor::AgentExecutor;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::build_sse_response;
 
 /// REST HTTP request dispatcher.
 ///
 /// Routes requests by HTTP method and path to the underlying [`RequestHandler`].
-pub struct RestDispatcher<E: AgentExecutor> {
-    handler: Arc<RequestHandler<E>>,
+pub struct RestDispatcher {
+    handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
 }
 
-impl<E: AgentExecutor> RestDispatcher<E> {
+impl RestDispatcher {
     /// Creates a new REST dispatcher.
     #[must_use]
-    pub fn new(handler: Arc<RequestHandler<E>>) -> Self {
+    pub fn new(handler: Arc<RequestHandler>) -> Self {
         let card_handler = handler
             .agent_card
             .as_ref()
@@ -301,7 +300,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for RestDispatcher<E> {
+impl std::fmt::Debug for RestDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RestDispatcher").finish()
     }
@@ -430,7 +429,10 @@ fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
 /// Maximum request body size in bytes (4 MiB).
 const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
 
-/// Reads a request body with a size limit.
+/// Maximum duration to read a complete request body (slow loris protection).
+const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Reads a request body with a size limit and timeout.
 async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
@@ -440,7 +442,10 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
             ));
         }
     }
-    let collected = body.collect().await.map_err(|e| e.to_string())?;
+    let collected = tokio::time::timeout(BODY_READ_TIMEOUT, body.collect())
+        .await
+        .map_err(|_| "request body read timed out".to_owned())?
+        .map_err(|e| e.to_string())?;
     let bytes = collected.to_bytes();
     if bytes.len() > max_size {
         return Err(format!(
@@ -464,8 +469,13 @@ fn build_json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<By
         .header("content-type", a2a_types::A2A_CONTENT_TYPE)
         .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
-        // SAFETY: Static header names and values; builder cannot fail.
-        .expect("response builder should not fail with valid headers")
+        .unwrap_or_else(|_| {
+            // Fallback: plain 500 response if builder fails (should never happen
+            // with valid static header names).
+            hyper::Response::new(
+                Full::new(Bytes::from_static(br#"{"error":"response build error"}"#)).boxed(),
+            )
+        })
 }
 
 /// Parses `ListTasksParams` from URL query parameters.

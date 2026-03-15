@@ -31,13 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (379 tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (432 tests).
 
 ### Changed
 
-- **Breaking:** `AgentExecutor` trait now uses `impl Future` returns instead of
-  `Pin<Box<dyn Future>>`, enabling direct `async fn` syntax in implementations.
-  Requires Rust 1.75+.
+- **Breaking:** `AgentExecutor` trait is now object-safe — methods return
+  `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` instead of
+  `impl Future`. This eliminates the generic parameter `E: AgentExecutor` from
+  `RequestHandler`, `RequestHandlerBuilder`, `JsonRpcDispatcher`, and
+  `RestDispatcher`, enabling dynamic dispatch via `Arc<dyn AgentExecutor>`.
 - `InMemoryTaskStore` now performs TTL-based eviction of terminal tasks (default
   1 hour) and enforces a maximum capacity (default 10,000 tasks).
 

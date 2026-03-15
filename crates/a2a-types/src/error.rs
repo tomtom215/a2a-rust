@@ -126,6 +126,7 @@ impl fmt::Display for ErrorCode {
 /// Carries an [`ErrorCode`], a human-readable `message`, and an optional
 /// `data` payload (arbitrary JSON) for additional diagnostics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct A2aError {
     /// Machine-readable error code.
     pub code: ErrorCode,

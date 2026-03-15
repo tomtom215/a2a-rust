@@ -9,11 +9,15 @@
 
 use a2a_types::message::Message;
 use a2a_types::task::{Task, TaskId};
+use tokio_util::sync::CancellationToken;
 
 /// Context for a single agent execution request.
 ///
 /// Built by the [`RequestHandler`](crate::RequestHandler) and passed to
 /// [`AgentExecutor::execute`](crate::AgentExecutor::execute).
+///
+/// The [`cancellation_token`](Self::cancellation_token) allows executors to
+/// observe cancellation requests and abort work cooperatively.
 #[derive(Debug, Clone)]
 pub struct RequestContext {
     /// The incoming user message.
@@ -30,18 +34,25 @@ pub struct RequestContext {
 
     /// Arbitrary metadata from the request.
     pub metadata: Option<serde_json::Value>,
+
+    /// Cancellation token for cooperative task cancellation.
+    ///
+    /// Executors should check [`CancellationToken::is_cancelled`] or
+    /// `.cancelled().await` to stop work when the task is cancelled.
+    pub cancellation_token: CancellationToken,
 }
 
 impl RequestContext {
     /// Creates a new [`RequestContext`].
     #[must_use]
-    pub const fn new(message: Message, task_id: TaskId, context_id: String) -> Self {
+    pub fn new(message: Message, task_id: TaskId, context_id: String) -> Self {
         Self {
             message,
             task_id,
             context_id,
             stored_task: None,
             metadata: None,
+            cancellation_token: CancellationToken::new(),
         }
     }
 

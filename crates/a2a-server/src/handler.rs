@@ -6,6 +6,7 @@
 //! [`RequestHandler`] wires together the executor, stores, push sender,
 //! interceptors, and event queue manager to implement all A2A v1.0 methods.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,12 +31,19 @@ use crate::streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
 };
 
+/// Maximum allowed length for task/context IDs (prevents memory exhaustion).
+const MAX_ID_LENGTH: usize = 1024;
+
 /// The core protocol logic handler.
 ///
 /// Orchestrates task lifecycle, event streaming, push notifications, and
 /// interceptor chains for all A2A methods.
-pub struct RequestHandler<E: AgentExecutor> {
-    pub(crate) executor: Arc<E>,
+///
+/// `RequestHandler` is **not** generic — it stores the executor as
+/// `Arc<dyn AgentExecutor>`, enabling dynamic dispatch and simplifying
+/// the downstream API (dispatchers, builder, etc.).
+pub struct RequestHandler {
+    pub(crate) executor: Arc<dyn AgentExecutor>,
     pub(crate) task_store: Box<dyn TaskStore>,
     pub(crate) push_config_store: Box<dyn PushConfigStore>,
     pub(crate) push_sender: Option<Box<dyn PushSender>>,
@@ -43,9 +51,12 @@ pub struct RequestHandler<E: AgentExecutor> {
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
+    /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
+    pub(crate) cancellation_tokens:
+        Arc<tokio::sync::RwLock<HashMap<TaskId, tokio_util::sync::CancellationToken>>>,
 }
 
-impl<E: AgentExecutor> RequestHandler<E> {
+impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
     /// # Errors
@@ -66,6 +77,22 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
         let call_ctx = CallContext::new(method_name);
         self.interceptors.run_before(&call_ctx).await?;
+
+        // Validate incoming IDs aren't excessively long (prevent memory exhaustion).
+        if let Some(ref ctx_id) = params.message.context_id {
+            if ctx_id.0.len() > MAX_ID_LENGTH {
+                return Err(ServerError::InvalidParams(
+                    "context_id exceeds maximum length".into(),
+                ));
+            }
+        }
+        if let Some(ref task_id) = params.message.task_id {
+            if task_id.0.len() > MAX_ID_LENGTH {
+                return Err(ServerError::InvalidParams(
+                    "task_id exceeds maximum length".into(),
+                ));
+            }
+        }
 
         // Generate task and context IDs.
         let task_id = TaskId::new(uuid::Uuid::new_v4().to_string());
@@ -107,7 +134,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
-            status: TaskStatus::new(TaskState::Submitted),
+            status: TaskStatus::with_timestamp(TaskState::Submitted),
             history: None,
             artifacts: None,
             metadata: None,
@@ -123,6 +150,12 @@ impl<E: AgentExecutor> RequestHandler<E> {
             ctx = ctx.with_metadata(meta);
         }
 
+        // Store the cancellation token so CancelTask can signal it.
+        {
+            let mut tokens = self.cancellation_tokens.write().await;
+            tokens.insert(task_id.clone(), ctx.cancellation_token.clone());
+        }
+
         // Create event queue.
         let (writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
         let reader = reader
@@ -134,6 +167,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
         let executor = Arc::clone(&self.executor);
         let task_id_for_cleanup = task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
+        let cancel_tokens = Arc::clone(&self.cancellation_tokens);
         let executor_timeout = self.executor_timeout;
         tokio::spawn(async move {
             trace_debug!(task_id = %ctx.task_id, "executor started");
@@ -155,19 +189,23 @@ impl<E: AgentExecutor> RequestHandler<E> {
                 let fail_event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ctx.context_id.clone(),
-                    status: TaskStatus {
-                        state: TaskState::Failed,
-                        message: None,
-                        timestamp: None,
-                    },
+                    status: TaskStatus::with_timestamp(TaskState::Failed),
                     metadata: Some(serde_json::json!({ "error": e.to_string() })),
                 });
-                let _ = writer.write(fail_event).await;
+                if let Err(_write_err) = writer.write(fail_event).await {
+                    trace_error!(
+                        task_id = %ctx.task_id,
+                        error = %_write_err,
+                        "failed to write failure event to queue"
+                    );
+                }
             }
             // Drop the writer and remove the manager's reference so the
             // channel closes and readers see EOF.
             drop(writer);
             event_queue_mgr.destroy(&task_id_for_cleanup).await;
+            // Clean up the cancellation token.
+            cancel_tokens.write().await.remove(&task_id_for_cleanup);
         });
 
         self.interceptors.run_after(&call_ctx).await?;
@@ -244,6 +282,14 @@ impl<E: AgentExecutor> RequestHandler<E> {
             return Err(ServerError::TaskNotCancelable(task_id));
         }
 
+        // Signal the cancellation token so the executor can observe the cancellation.
+        {
+            let tokens = self.cancellation_tokens.read().await;
+            if let Some(token) = tokens.get(&task_id) {
+                token.cancel();
+            }
+        }
+
         // Build a request context for the cancel call.
         let ctx = RequestContext::new(
             a2a_types::message::Message {
@@ -265,7 +311,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
 
         // Update task state.
         let mut updated = task;
-        updated.status = TaskStatus::new(TaskState::Canceled);
+        updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
         self.task_store.save(updated.clone()).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
@@ -475,7 +521,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
                     // Messages are part of history; for now just continue.
                 }
                 Err(e) => {
-                    last_task.status = TaskStatus::new(TaskState::Failed);
+                    last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
                     self.task_store.save(last_task.clone()).await?;
                     return Err(ServerError::Protocol(e));
                 }
@@ -486,6 +532,9 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 
     /// Delivers push notifications for a streaming event if configs exist.
+    ///
+    /// Push deliveries are sequential per-config. For concurrent delivery,
+    /// wrap `PushSender` in `Arc` and spawn tasks (future enhancement).
     async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
         let Some(ref sender) = self.push_sender else {
             return;
@@ -506,7 +555,7 @@ impl<E: AgentExecutor> RequestHandler<E> {
     }
 }
 
-impl<E: AgentExecutor> std::fmt::Debug for RequestHandler<E> {
+impl std::fmt::Debug for RequestHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHandler")
             .field("push_sender", &self.push_sender.is_some())

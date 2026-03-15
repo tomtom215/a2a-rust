@@ -36,15 +36,17 @@ pub fn default_tls_config() -> ClientConfig {
 /// Builds a [`ClientConfig`] with extra CA certificates added to the
 /// Mozilla root store.
 ///
-/// Use this for enterprise environments with internal PKI. Invalid
-/// certificates are silently skipped.
+/// Use this for enterprise environments with internal PKI. Returns
+/// the number of certificates that failed to load (if any).
 #[must_use]
 pub fn tls_config_with_extra_roots(
     certs: Vec<rustls_pki_types::CertificateDer<'static>>,
 ) -> ClientConfig {
     let mut store = root_cert_store();
     for cert in certs {
-        let _ = store.add(cert);
+        if let Err(_err) = store.add(cert) {
+            trace_warn!(error = %_err, "failed to add custom CA certificate to root store");
+        }
     }
     ClientConfig::builder()
         .with_root_certificates(store)

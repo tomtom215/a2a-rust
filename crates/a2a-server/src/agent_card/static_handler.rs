@@ -58,10 +58,6 @@ impl StaticAgentCardHandler {
     ///
     /// Supports conditional requests via `If-None-Match` and `If-Modified-Since`
     /// headers, returning `304 Not Modified` when appropriate.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the response builder fails (should never happen).
     #[must_use]
     pub fn handle(
         &self,
@@ -89,7 +85,7 @@ impl StaticAgentCardHandler {
             .header("last-modified", &self.last_modified)
             .header("cache-control", self.cache_config.header_value())
             .body(Full::new(self.card_json.clone()))
-            .expect("response builder should not fail with valid headers")
+            .unwrap_or_else(|_| hyper::Response::new(Full::new(Bytes::new())))
     }
 
     fn not_modified_response(&self) -> hyper::Response<Full<Bytes>> {
@@ -99,7 +95,7 @@ impl StaticAgentCardHandler {
             .header("last-modified", &self.last_modified)
             .header("cache-control", self.cache_config.header_value())
             .body(Full::new(Bytes::new()))
-            .expect("response builder should not fail with valid headers")
+            .unwrap_or_else(|_| hyper::Response::new(Full::new(Bytes::new())))
     }
 }
 
