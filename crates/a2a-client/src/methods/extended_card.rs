@@ -40,12 +40,12 @@ impl A2aClient {
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
-            result: result.clone(),
+            result,
             status_code: 200,
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<AuthenticatedExtendedCardResponse>(result)
+        serde_json::from_value::<AuthenticatedExtendedCardResponse>(resp.result)
             .map_err(ClientError::Serialization)
     }
 }

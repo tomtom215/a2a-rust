@@ -46,8 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ClientError::Timeout` variant for distinct timeout errors.
 - Separate `stream_connect_timeout` configuration for SSE connections.
 - Server benchmarks for task store and event queue operations.
+- Cargo-fuzz target for JSON deserialization of all major protocol types.
+- `docs/ROADMAP.md` documenting planned beyond-spec extensions (request IDs,
+  metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
+- `LESSONS.md` pitfalls catalog with entries for serde, hyper, SSE, push
+  notifications, async/tokio, workspace, and testing gotchas.
 
 ### Changed
+
+- Eliminated unnecessary `serde_json::Value` clones in 8 client methods by
+  moving the value into `ClientResponse` and extracting it after interceptors run.
 
 - **Breaking:** `AgentExecutor` trait is now object-safe — methods return
   `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` instead of

@@ -39,12 +39,12 @@ impl A2aClient {
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
-            result: result.clone(),
+            result,
             status_code: 200,
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<Task>(result).map_err(ClientError::Serialization)
+        serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)
     }
 
     /// Lists tasks visible to the caller.
@@ -70,12 +70,12 @@ impl A2aClient {
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
-            result: result.clone(),
+            result,
             status_code: 200,
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<TaskListResponse>(result).map_err(ClientError::Serialization)
+        serde_json::from_value::<TaskListResponse>(resp.result).map_err(ClientError::Serialization)
     }
 
     /// Requests cancellation of a running task.
@@ -108,12 +108,12 @@ impl A2aClient {
 
         let resp = ClientResponse {
             method: METHOD.to_owned(),
-            result: result.clone(),
+            result,
             status_code: 200,
         };
         self.interceptors.run_after(&resp).await?;
 
-        serde_json::from_value::<Task>(result).map_err(ClientError::Serialization)
+        serde_json::from_value::<Task>(resp.result).map_err(ClientError::Serialization)
     }
 
     /// Subscribes to the SSE stream for an in-progress task.
