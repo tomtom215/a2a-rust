@@ -1,5 +1,8 @@
 /target
 
+# mdBook build output
+/book/book
+
 # Environment secrets
 .env
 .env.*
