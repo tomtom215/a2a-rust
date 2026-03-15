@@ -808,8 +808,8 @@ async fn rest_push_config_not_supported_error_status() {
         .unwrap();
 
     let resp = client.request(req).await.expect("request");
-    // PushNotSupported should map to 501.
-    assert_eq!(resp.status(), 501);
+    // PushNotSupported should map to 400 (bad request).
+    assert_eq!(resp.status(), 400);
 }
 
 // ── REST full send + get roundtrip ──────────────────────────────────────────

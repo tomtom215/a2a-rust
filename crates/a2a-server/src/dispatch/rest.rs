@@ -68,21 +68,51 @@ impl<E: AgentExecutor> RestDispatcher<E> {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let method = req.method().clone();
         let path = req.uri().path().to_owned();
+        let query = req.uri().query().unwrap_or("").to_owned();
 
-        // Handle colon-suffixed routes first (e.g. /message:send, /tasks/{id}:cancel).
-        match (method.as_str(), path.as_str()) {
+        // Agent card is always at the well-known path (no tenant prefix).
+        if method == "GET" && path == "/.well-known/agent.json" {
+            return self
+                .card_handler
+                .as_ref()
+                .map_or_else(not_found_response, |h| {
+                    h.handle().map(http_body_util::BodyExt::boxed)
+                });
+        }
+
+        // Strip optional /tenants/{tenant}/ prefix.
+        let (tenant, rest) = strip_tenant_prefix(&path);
+
+        self.dispatch_rest(req, method.as_str(), rest, &query, tenant)
+            .await
+    }
+
+    /// Dispatch on the tenant-stripped path.
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_rest(
+        &self,
+        req: hyper::Request<Incoming>,
+        method: &str,
+        path: &str,
+        query: &str,
+        tenant: Option<&str>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        // Colon-suffixed routes: /message:send, /message:stream.
+        match (method, path) {
             ("POST", "/message:send") => return self.handle_send(req, false).await,
             ("POST", "/message:stream") => return self.handle_send(req, true).await,
             _ => {}
         }
 
-        // Check for colon-action routes on tasks: /tasks/{id}:cancel, /tasks/{id}:subscribe
+        // Colon-action routes on tasks: /tasks/{id}:cancel, /tasks/{id}:subscribe.
         if let Some(rest) = path.strip_prefix("/tasks/") {
             if let Some((id, action)) = rest.split_once(':') {
                 if !id.is_empty() {
-                    match (method.as_str(), action) {
+                    match (method, action) {
                         ("POST", "cancel") => return self.handle_cancel_task(id).await,
-                        ("POST", "subscribe") => return self.handle_resubscribe(id).await,
+                        ("POST" | "GET", "subscribe") => {
+                            return self.handle_resubscribe(id).await;
+                        }
                         _ => {}
                     }
                 }
@@ -91,21 +121,10 @@ impl<E: AgentExecutor> RestDispatcher<E> {
 
         let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
-        match (method.as_str(), segments.as_slice()) {
-            // Agent card.
-            ("GET", [".well-known", "agent.json"]) => self
-                .card_handler
-                .as_ref()
-                .map_or_else(not_found_response, |h| {
-                    h.handle().map(http_body_util::BodyExt::boxed)
-                }),
-
+        match (method, segments.as_slice()) {
             // Tasks.
-            ("GET", ["tasks"]) => {
-                let query = req.uri().query().unwrap_or("");
-                self.handle_list_tasks(query).await
-            }
-            ("GET", ["tasks", id]) => self.handle_get_task(id).await,
+            ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant).await,
+            ("GET", ["tasks", id]) => self.handle_get_task(id, query).await,
 
             // Push notification configs.
             ("POST", ["tasks", task_id, "pushNotificationConfigs"]) => {
@@ -151,11 +170,16 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         }
     }
 
-    async fn handle_get_task(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    async fn handle_get_task(
+        &self,
+        id: &str,
+        query: &str,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let history_length = parse_query_param_u32(query, "historyLength");
         let params = a2a_types::params::TaskQueryParams {
             tenant: None,
             id: id.to_owned(),
-            history_length: None,
+            history_length,
         };
         match self.handler.on_get_task(params).await {
             Ok(task) => json_ok_response(&task),
@@ -163,17 +187,12 @@ impl<E: AgentExecutor> RestDispatcher<E> {
         }
     }
 
-    async fn handle_list_tasks(&self, _query: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        // For simplicity, list all tasks (query param parsing can be extended).
-        let params = a2a_types::params::ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-        };
+    async fn handle_list_tasks(
+        &self,
+        query: &str,
+        tenant: Option<&str>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let params = parse_list_tasks_query(query, tenant);
         match self.handler.on_list_tasks(params).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
@@ -308,8 +327,9 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
     let status = match err {
         ServerError::TaskNotFound(_) | ServerError::MethodNotFound(_) => 404,
         ServerError::TaskNotCancelable(_) => 409,
-        ServerError::InvalidParams(_) | ServerError::Serialization(_) => 400,
-        ServerError::PushNotSupported => 501,
+        ServerError::InvalidParams(_)
+        | ServerError::Serialization(_)
+        | ServerError::PushNotSupported => 400,
         _ => 500,
     };
     let a2a_err = err.to_a2a_error();
@@ -319,4 +339,56 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
         .header("content-type", "application/json")
         .body(Full::new(Bytes::from(body)).boxed())
         .expect("response builder should not fail with valid headers")
+}
+
+// ── Query parsing helpers ───────────────────────────────────────────────────
+
+/// Strips an optional `/tenants/{tenant}/` prefix, returning the tenant and
+/// remaining path.
+fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
+    if let Some(rest) = path.strip_prefix("/tenants/") {
+        if let Some(slash_pos) = rest.find('/') {
+            let tenant = &rest[..slash_pos];
+            let remaining = &rest[slash_pos..];
+            return (Some(tenant), remaining);
+        }
+    }
+    (None, path)
+}
+
+/// Parses a single query parameter value as `u32`.
+fn parse_query_param_u32(query: &str, key: &str) -> Option<u32> {
+    parse_query_param(query, key).and_then(|v| v.parse().ok())
+}
+
+/// Parses a single query parameter value as a string.
+fn parse_query_param<'a>(query: &'a str, key: &str) -> Option<&'a str> {
+    query.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        if k == key {
+            Some(v)
+        } else {
+            None
+        }
+    })
+}
+
+/// Parses a single query parameter value as `bool`.
+fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
+    parse_query_param(query, key).map(|v| v == "true" || v == "1")
+}
+
+/// Parses `ListTasksParams` from URL query parameters.
+fn parse_list_tasks_query(query: &str, tenant: Option<&str>) -> a2a_types::params::ListTasksParams {
+    let status = parse_query_param(query, "status")
+        .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_owned())).ok());
+    a2a_types::params::ListTasksParams {
+        tenant: tenant.map(str::to_owned),
+        context_id: parse_query_param(query, "contextId").map(str::to_owned),
+        status,
+        page_size: parse_query_param_u32(query, "pageSize"),
+        page_token: parse_query_param(query, "pageToken").map(str::to_owned),
+        status_timestamp_after: parse_query_param(query, "statusTimestampAfter").map(str::to_owned),
+        include_artifacts: parse_query_param_bool(query, "includeArtifacts"),
+    }
 }
