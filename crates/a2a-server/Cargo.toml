@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-server"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "A2A protocol v1.0 — server framework (hyper-backed)"
 readme      = "../../README.md"
 
@@ -24,7 +24,7 @@ signing = ["a2a-types/signing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-a2a-types      = { version = "0.1.0", path = "../a2a-types" }
+a2a-types      = { version = "0.2.0", path = "../a2a-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -47,7 +47,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-types = { version = "0.1.0", path = "../a2a-types" }
+a2a-types = { version = "0.2.0", path = "../a2a-types" }
 criterion = { workspace = true }
 
 [[bench]]

@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-client"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "A2A protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "../../README.md"
 
@@ -26,7 +26,7 @@ signing = ["a2a-types/signing"]
 tracing = ["dep:tracing"]
 
 [dependencies]
-a2a-types      = { version = "0.1.0", path = "../a2a-types" }
+a2a-types      = { version = "0.2.0", path = "../a2a-types" }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }

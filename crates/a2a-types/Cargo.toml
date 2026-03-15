@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-types"
-version     = "0.1.0"
+version     = "0.2.0"
 description = "A2A protocol v1.0 — pure data types, serde only, no I/O"
 readme      = "../../README.md"
 

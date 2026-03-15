@@ -62,7 +62,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-sdk = "0.1"
+a2a-sdk = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
