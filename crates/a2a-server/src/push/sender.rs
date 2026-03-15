@@ -66,6 +66,7 @@ impl PushSender for HttpPushSender {
         config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            trace_info!(url, "delivering push notification");
             let body_bytes = serde_json::to_vec(event)
                 .map_err(|e| A2aError::internal(format!("push serialization: {e}")))?;
 
@@ -108,12 +109,17 @@ impl PushSender for HttpPushSender {
                     .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
 
                 match self.client.request(req).await {
-                    Ok(resp) if resp.status().is_success() => return Ok(()),
+                    Ok(resp) if resp.status().is_success() => {
+                        trace_debug!(url, "push notification delivered");
+                        return Ok(());
+                    }
                     Ok(resp) => {
                         last_err = format!("push notification got HTTP {}", resp.status());
+                        trace_warn!(url, attempt, status = %resp.status(), "push delivery failed");
                     }
                     Err(e) => {
                         last_err = format!("push notification failed: {e}");
+                        trace_warn!(url, attempt, error = %e, "push delivery error");
                     }
                 }
 

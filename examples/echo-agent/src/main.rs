@@ -241,6 +241,18 @@ fn make_send_params(text: &str) -> MessageSendParams {
 
 #[tokio::main]
 async fn main() {
+    // When the `tracing` feature is enabled, initialize a subscriber that
+    // prints structured logs to stderr. Set RUST_LOG=debug for verbose output.
+    #[cfg(feature = "tracing")]
+    {
+        use tracing_subscriber::EnvFilter;
+        tracing_subscriber::fmt()
+            .with_env_filter(
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            )
+            .init();
+    }
+
     println!("=== A2A Echo Agent Example ===\n");
 
     // Build the shared request handler.

@@ -124,6 +124,7 @@ pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
     keep_alive_interval: Option<Duration>,
 ) -> hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>> {
+    trace_info!("building SSE response stream");
     let interval = keep_alive_interval.unwrap_or(DEFAULT_KEEP_ALIVE);
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(64);
 

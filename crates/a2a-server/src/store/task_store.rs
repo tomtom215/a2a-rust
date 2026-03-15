@@ -86,6 +86,7 @@ impl InMemoryTaskStore {
 impl TaskStore for InMemoryTaskStore {
     fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            trace_debug!(task_id = %task.id, state = ?task.status.state, "saving task");
             let mut store = self.tasks.write().await;
             store.insert(task.id.clone(), task);
             drop(store);
@@ -98,6 +99,7 @@ impl TaskStore for InMemoryTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
         Box::pin(async move {
+            trace_debug!(task_id = %id, "fetching task");
             let store = self.tasks.read().await;
             let result = store.get(id).cloned();
             drop(store);

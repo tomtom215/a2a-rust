@@ -18,8 +18,11 @@ use std::time::Duration;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
 use hyper::header;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::connect::HttpConnector;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::client::legacy::Client;
+#[cfg(not(feature = "tls-rustls"))]
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::RwLock;
 
@@ -45,6 +48,7 @@ pub const AGENT_CARD_PATH: &str = "/.well-known/agent.json";
 /// - [`ClientError::Serialization`] — response body is not a valid
 ///   [`AgentCard`].
 pub async fn resolve_agent_card(base_url: &str) -> ClientResult<AgentCard> {
+    trace_info!(base_url, "resolving agent card");
     let url = build_card_url(base_url, AGENT_CARD_PATH)?;
     fetch_card(&url, None).await
 }
@@ -126,6 +130,7 @@ impl CachingCardResolver {
     ///
     /// Same conditions as [`resolve_agent_card`].
     pub async fn resolve(&self) -> ClientResult<AgentCard> {
+        trace_info!(url = %self.url, "resolving agent card (cached)");
         let cached = self.cache.read().await.clone();
         let (card, etag, last_modified) =
             fetch_card_with_metadata(&self.url, cached.as_ref()).await?;
@@ -181,8 +186,12 @@ async fn fetch_card_with_metadata(
     url: &str,
     cached: Option<&CachedCard>,
 ) -> ClientResult<(AgentCard, Option<String>, Option<String>)> {
+    #[cfg(not(feature = "tls-rustls"))]
     let client: Client<HttpConnector, Full<Bytes>> =
         Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+
+    #[cfg(feature = "tls-rustls")]
+    let client = crate::tls::build_https_client();
 
     let mut builder = hyper::Request::builder()
         .method(hyper::Method::GET)

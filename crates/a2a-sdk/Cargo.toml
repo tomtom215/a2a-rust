@@ -20,6 +20,10 @@ categories             = ["network-programming", "web-programming", "api-binding
 [features]
 ## Enable agent card signing.
 signing = ["a2a-types/signing", "a2a-server/signing", "a2a-client/signing"]
+## Enable structured logging via the `tracing` crate.
+tracing = ["a2a-client/tracing", "a2a-server/tracing"]
+## Enable HTTPS support via rustls.
+tls-rustls = ["a2a-client/tls-rustls"]
 
 [dependencies]
 a2a-types  = { version = "0.1.0", path = "../a2a-types" }

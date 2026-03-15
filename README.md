@@ -31,6 +31,10 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
 - **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults
 - **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
+- **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
+- **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
+- **Optional tracing** — structured logging via `tracing` crate, zero cost when disabled
+- **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -219,7 +223,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (220 tests across 4 crates)
+# Run all tests (225 tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -235,7 +239,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 ## Project Status
 
-Core implementation is complete with all 11 A2A methods working across both transports. HTTP caching (ETag, Last-Modified, 304 Not Modified) and agent card signing (JWS/ES256 with RFC 8785 canonicalization) are implemented. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
+All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap.
 
 | Phase | Status |
 |---|---|
@@ -249,6 +253,7 @@ Core implementation is complete with all 11 A2A methods working across both tran
 | 7. v1.0 Spec Compliance Gaps | ✅ Complete |
 | 7.5 Spec Compliance Fixes | ✅ Complete |
 | 8. Caching, Signing & Release | ✅ Complete |
+| 9. Production Hardening | ✅ Complete |
 
 ## Minimum Supported Rust Version
 
