@@ -64,6 +64,83 @@ Before adding a dependency:
 
 ---
 
+## Testing Guide
+
+### Test Categories
+
+| Category | Location | Command |
+|---|---|---|
+| Unit tests | `#[cfg(test)]` modules in source files | `cargo test --workspace` |
+| Integration tests | `crates/a2a-server/tests/` | included in workspace test |
+| Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-types --test proptest_types` |
+| Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-types --test corpus_json` |
+| End-to-end example | `examples/echo-agent` | `cargo run -p echo-agent` |
+| Benchmarks | `crates/*/benches/` | `cargo bench` |
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test --workspace
+
+# Run tests for a specific crate
+cargo test -p a2a-types
+cargo test -p a2a-client
+cargo test -p a2a-server
+
+# Run tests with signing feature
+cargo test --workspace --features signing
+
+# Run a specific test
+cargo test -p a2a-types task_state_roundtrip
+
+# Run benchmarks
+cargo bench -p a2a-types
+cargo bench -p a2a-client
+```
+
+### Test Naming Convention
+
+Tests follow the pattern: `{component}_{scenario}_{expected_outcome}`
+
+Examples:
+- `task_state_completed_is_terminal`
+- `text_part_roundtrip_preserves_metadata`
+- `jsonrpc_send_message_returns_task`
+
+### Property-Based Tests (`proptest`)
+
+Located in `crates/a2a-types/tests/proptest_types.rs`. These verify invariants
+that must hold for all possible inputs:
+
+- **TaskState** — round-trip, terminal classification, wire format prefix
+- **Part** — serialization fidelity across text/raw/url variants
+- **ID types** — Display consistency, equality contracts
+
+### Corpus-Based JSON Tests
+
+Located in `crates/a2a-types/tests/corpus_json.rs`. Each test deserializes a
+representative JSON sample matching the A2A v1.0 wire format and verifies
+`deserialize → serialize → deserialize` round-trip fidelity. Covers:
+
+- Tasks (submitted, working, completed, failed)
+- Messages (user, agent, multi-part)
+- Parts (text, raw, url, data)
+- Agent cards (minimal, with security)
+- JSON-RPC requests and responses
+- Stream events (status update, artifact update)
+
+### Benchmarks (`criterion`)
+
+| Benchmark | Crate | What it measures |
+|---|---|---|
+| `json_serde` | `a2a-types` | Serialize/deserialize AgentCard, Task, Message |
+| `sse_parse` | `a2a-client` | SSE frame parsing (single, batch, fragmented) |
+
+Run with `cargo bench -p a2a-types` or `cargo bench -p a2a-client`.
+
+---
+
 ## Test Requirements
 
 | Layer | Tool | Minimum |
@@ -76,6 +153,30 @@ Before adding a dependency:
 
 ---
 
+## Quality Gates
+
+All gates must pass before merging:
+
+```bash
+# 1. Format check
+cargo fmt --all -- --check
+
+# 2. Lint (zero warnings required)
+cargo clippy --workspace --all-targets
+
+# 3. All tests pass
+cargo test --workspace
+
+# 4. Documentation builds without warnings
+RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
+# 5. With signing feature (if changes touch signing code)
+cargo clippy --workspace --all-targets --features signing
+cargo test --workspace --features signing
+```
+
+---
+
 ## PR Checklist
 
 - [ ] SPDX header on every new file
@@ -84,5 +185,13 @@ Before adding a dependency:
 - [ ] `cargo clippy --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
+- [ ] New public types/functions have doc comments
+- [ ] New code has tests
 - [ ] `LESSONS.md` updated if a non-obvious pitfall was encountered
 - [ ] ADR created or updated if an architectural decision was made or revised
+
+---
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the Apache-2.0 license.

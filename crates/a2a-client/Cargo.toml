@@ -4,7 +4,7 @@
 [package]
 name        = "a2a-client"
 version     = "0.1.0"
-description = "A2A protocol 0.3.0 — HTTP client (hyper-backed)"
+description = "A2A protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "../../README.md"
 
 edition.workspace      = true
@@ -20,9 +20,11 @@ categories             = ["network-programming", "web-programming"]
 [features]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency).
 tls-rustls = []
+## Enable agent card signing verification.
+signing = ["a2a-types/signing"]
 
 [dependencies]
-a2a-types      = { path = "../a2a-types" }
+a2a-types      = { version = "0.1.0", path = "../a2a-types" }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
@@ -32,3 +34,8 @@ uuid           = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "sse_parse"
+harness = false

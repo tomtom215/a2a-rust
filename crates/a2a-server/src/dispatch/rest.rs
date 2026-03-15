@@ -76,7 +76,7 @@ impl<E: AgentExecutor> RestDispatcher<E> {
                 .card_handler
                 .as_ref()
                 .map_or_else(not_found_response, |h| {
-                    h.handle().map(http_body_util::BodyExt::boxed)
+                    h.handle(&req).map(http_body_util::BodyExt::boxed)
                 });
         }
 

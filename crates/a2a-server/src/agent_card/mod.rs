@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Agent card HTTP handlers (static and dynamic).
+//! Agent card HTTP handlers (static, dynamic, and caching utilities).
 
+pub mod caching;
 pub mod dynamic_handler;
 pub mod static_handler;
 
