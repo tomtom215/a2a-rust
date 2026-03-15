@@ -104,90 +104,214 @@ impl JsonRpcDispatcher {
             Err(msg) => return parse_error_response(None, &msg),
         };
 
-        // Deserialize JSON-RPC request.
-        let rpc_req: JsonRpcRequest = match serde_json::from_slice(&body_bytes) {
-            Ok(r) => r,
+        // JSON-RPC 2.0 §6.3: detect batch (array) vs single (object) request.
+        let raw: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+            Ok(v) => v,
             Err(e) => return parse_error_response(None, &e.to_string()),
         };
 
+        if raw.is_array() {
+            // Batch request: dispatch each element, collect responses.
+            let items = raw.as_array().unwrap();
+            if items.is_empty() {
+                return parse_error_response(None, "empty batch request");
+            }
+            let mut responses: Vec<serde_json::Value> = Vec::with_capacity(items.len());
+            for item in items {
+                let rpc_req: JsonRpcRequest = match serde_json::from_value(item.clone()) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        // Invalid request within batch — return individual parse error.
+                        let err_resp = JsonRpcErrorResponse::new(
+                            None,
+                            JsonRpcError::new(
+                                a2a_types::error::ErrorCode::ParseError.as_i32(),
+                                format!("Parse error: {e}"),
+                            ),
+                        );
+                        if let Ok(v) = serde_json::to_value(&err_resp) {
+                            responses.push(v);
+                        }
+                        continue;
+                    }
+                };
+                let resp_body = self.dispatch_single_request(&rpc_req).await;
+                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&resp_body) {
+                    responses.push(v);
+                }
+            }
+            let body = serde_json::to_vec(&responses).unwrap_or_default();
+            json_response(200, body)
+        } else {
+            // Single request.
+            let rpc_req: JsonRpcRequest = match serde_json::from_value(raw) {
+                Ok(r) => r,
+                Err(e) => return parse_error_response(None, &e.to_string()),
+            };
+            self.dispatch_single_request_http(&rpc_req).await
+        }
+    }
+
+    /// Dispatches a single JSON-RPC request and returns an HTTP response.
+    ///
+    /// For streaming methods, the response is SSE. For non-streaming, JSON.
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_single_request_http(
+        &self,
+        rpc_req: &JsonRpcRequest,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let id = rpc_req.id.clone();
         trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
 
+        // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
-            "SendMessage" => self.dispatch_send_message(id, &rpc_req, false).await,
-            "SendStreamingMessage" => self.dispatch_send_message(id, &rpc_req, true).await,
-            "GetTask" => match parse_params::<a2a_types::params::TaskQueryParams>(&rpc_req) {
-                Ok(p) => match self.handler.on_get_task(p).await {
-                    Ok(r) => success_response(id, &r),
-                    Err(e) => error_response(id, &e),
-                },
-                Err(e) => error_response(id, &e),
-            },
-            "ListTasks" => match parse_params::<a2a_types::params::ListTasksParams>(&rpc_req) {
-                Ok(p) => match self.handler.on_list_tasks(p).await {
-                    Ok(r) => success_response(id, &r),
-                    Err(e) => error_response(id, &e),
-                },
-                Err(e) => error_response(id, &e),
-            },
-            "CancelTask" => match parse_params::<a2a_types::params::CancelTaskParams>(&rpc_req) {
-                Ok(p) => match self.handler.on_cancel_task(p).await {
-                    Ok(r) => success_response(id, &r),
-                    Err(e) => error_response(id, &e),
-                },
-                Err(e) => error_response(id, &e),
-            },
-            "SubscribeToTask" => match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
-                Ok(p) => match self.handler.on_resubscribe(p).await {
-                    Ok(reader) => build_sse_response(reader, None),
-                    Err(e) => error_response(id, &e),
-                },
-                Err(e) => error_response(id, &e),
-            },
-            "CreateTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::push::TaskPushNotificationConfig>(&rpc_req) {
-                    Ok(p) => match self.handler.on_set_push_config(p).await {
-                        Ok(r) => success_response(id, &r),
+            "SendStreamingMessage" => return self.dispatch_send_message(id, rpc_req, true).await,
+            "SubscribeToTask" => {
+                return match parse_params::<a2a_types::params::TaskIdParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_resubscribe(p).await {
+                        Ok(reader) => build_sse_response(reader, None),
                         Err(e) => error_response(id, &e),
                     },
                     Err(e) => error_response(id, &e),
+                };
+            }
+            _ => {}
+        }
+
+        let body = self.dispatch_single_request(rpc_req).await;
+        json_response(200, body)
+    }
+
+    /// Dispatches a single JSON-RPC request and returns the response body bytes.
+    ///
+    /// Used for both single and batch requests.
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_single_request(&self, rpc_req: &JsonRpcRequest) -> Vec<u8> {
+        let id = rpc_req.id.clone();
+
+        match rpc_req.method.as_str() {
+            "SendMessage" => {
+                match self
+                    .dispatch_send_message_inner(id.clone(), rpc_req, false)
+                    .await
+                {
+                    Ok(resp) => serde_json::to_vec(&resp).unwrap_or_default(),
+                    Err(body) => body,
+                }
+            }
+            "SendStreamingMessage" => {
+                // In batch context, streaming is not supported — return error.
+                let err = ServerError::InvalidParams(
+                    "SendStreamingMessage not supported in batch requests".into(),
+                );
+                let a2a_err = err.to_a2a_error();
+                let resp = JsonRpcErrorResponse::new(
+                    id,
+                    JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
+                );
+                serde_json::to_vec(&resp).unwrap_or_default()
+            }
+            "GetTask" => match parse_params::<a2a_types::params::TaskQueryParams>(rpc_req) {
+                Ok(p) => match self.handler.on_get_task(p).await {
+                    Ok(r) => success_response_bytes(id, &r),
+                    Err(e) => error_response_bytes(id, &e),
+                },
+                Err(e) => error_response_bytes(id, &e),
+            },
+            "ListTasks" => match parse_params::<a2a_types::params::ListTasksParams>(rpc_req) {
+                Ok(p) => match self.handler.on_list_tasks(p).await {
+                    Ok(r) => success_response_bytes(id, &r),
+                    Err(e) => error_response_bytes(id, &e),
+                },
+                Err(e) => error_response_bytes(id, &e),
+            },
+            "CancelTask" => match parse_params::<a2a_types::params::CancelTaskParams>(rpc_req) {
+                Ok(p) => match self.handler.on_cancel_task(p).await {
+                    Ok(r) => success_response_bytes(id, &r),
+                    Err(e) => error_response_bytes(id, &e),
+                },
+                Err(e) => error_response_bytes(id, &e),
+            },
+            "SubscribeToTask" => {
+                let err = ServerError::InvalidParams(
+                    "SubscribeToTask not supported in batch requests".into(),
+                );
+                error_response_bytes(id, &err)
+            }
+            "CreateTaskPushNotificationConfig" => {
+                match parse_params::<a2a_types::push::TaskPushNotificationConfig>(rpc_req) {
+                    Ok(p) => match self.handler.on_set_push_config(p).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
+                    Err(e) => error_response_bytes(id, &e),
                 }
             }
             "GetTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::params::GetPushConfigParams>(&rpc_req) {
+                match parse_params::<a2a_types::params::GetPushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_push_config(p).await {
-                        Ok(r) => success_response(id, &r),
-                        Err(e) => error_response(id, &e),
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
                     },
-                    Err(e) => error_response(id, &e),
+                    Err(e) => error_response_bytes(id, &e),
                 }
             }
             "ListTaskPushNotificationConfigs" => {
-                match parse_params::<a2a_types::params::TaskIdParams>(&rpc_req) {
+                match parse_params::<a2a_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_list_push_configs(&p.id).await {
-                        Ok(r) => success_response(id, &r),
-                        Err(e) => error_response(id, &e),
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
                     },
-                    Err(e) => error_response(id, &e),
+                    Err(e) => error_response_bytes(id, &e),
                 }
             }
             "DeleteTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::params::DeletePushConfigParams>(&rpc_req) {
+                match parse_params::<a2a_types::params::DeletePushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_delete_push_config(p).await {
-                        Ok(()) => success_response(id, &serde_json::json!({})),
-                        Err(e) => error_response(id, &e),
+                        Ok(()) => success_response_bytes(id, &serde_json::json!({})),
+                        Err(e) => error_response_bytes(id, &e),
                     },
-                    Err(e) => error_response(id, &e),
+                    Err(e) => error_response_bytes(id, &e),
                 }
             }
             "GetExtendedAgentCard" => match self.handler.on_get_extended_agent_card().await {
-                Ok(r) => success_response(id, &r),
-                Err(e) => error_response(id, &e),
+                Ok(r) => success_response_bytes(id, &r),
+                Err(e) => error_response_bytes(id, &e),
             },
             other => {
                 let err = ServerError::MethodNotFound(other.to_owned());
-                error_response(id, &err)
+                error_response_bytes(id, &err)
             }
+        }
+    }
+
+    /// Helper for dispatching `SendMessage` that returns either a success response
+    /// value (for batch) or the body bytes on error.
+    async fn dispatch_send_message_inner(
+        &self,
+        id: JsonRpcId,
+        rpc_req: &JsonRpcRequest,
+        streaming: bool,
+    ) -> Result<JsonRpcSuccessResponse<serde_json::Value>, Vec<u8>> {
+        let params = match parse_params::<a2a_types::params::MessageSendParams>(rpc_req) {
+            Ok(p) => p,
+            Err(e) => return Err(error_response_bytes(id, &e)),
+        };
+        match self.handler.on_send_message(params, streaming).await {
+            Ok(SendMessageResult::Response(resp)) => {
+                let result = serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null);
+                Ok(JsonRpcSuccessResponse {
+                    jsonrpc: JsonRpcVersion,
+                    id,
+                    result,
+                })
+            }
+            Ok(SendMessageResult::Stream(_)) => {
+                // Shouldn't happen in non-streaming mode.
+                let err = ServerError::Internal("unexpected stream response".into());
+                Err(error_response_bytes(id, &err))
+            }
+            Err(e) => Err(error_response_bytes(id, &e)),
         }
     }
 
@@ -207,6 +331,26 @@ impl JsonRpcDispatcher {
             Err(e) => error_response(id, &e),
         }
     }
+}
+
+/// Serializes a success response to bytes (for batch request support).
+fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result: &T) -> Vec<u8> {
+    let resp = JsonRpcSuccessResponse {
+        jsonrpc: JsonRpcVersion,
+        id,
+        result: serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
+    };
+    serde_json::to_vec(&resp).unwrap_or_default()
+}
+
+/// Serializes an error response to bytes (for batch request support).
+fn error_response_bytes(id: JsonRpcId, err: &ServerError) -> Vec<u8> {
+    let a2a_err = err.to_a2a_error();
+    let resp = JsonRpcErrorResponse::new(
+        id,
+        JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
+    );
+    serde_json::to_vec(&resp).unwrap_or_default()
 }
 
 impl std::fmt::Debug for JsonRpcDispatcher {

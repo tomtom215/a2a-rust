@@ -293,6 +293,88 @@ async fn jsonrpc_invalid_json() {
     assert!(resp_body.contains("Parse error"));
 }
 
+// ── CORS tests ───────────────────────────────────────────────────────────────
+
+use a2a_server::dispatch::cors::CorsConfig;
+
+#[test]
+fn cors_config_construction_with_allowed_origin() {
+    let cors = CorsConfig::new("https://example.com");
+    assert_eq!(cors.allow_origin, "https://example.com");
+    assert_eq!(cors.allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
+    assert_eq!(
+        cors.allow_headers,
+        "content-type, authorization, a2a-notification-token"
+    );
+    assert_eq!(cors.max_age_secs, 86400);
+}
+
+#[test]
+fn cors_default_permissive() {
+    let cors = CorsConfig::permissive();
+    assert_eq!(cors.allow_origin, "*");
+    assert_eq!(cors.allow_methods, "GET, POST, PUT, DELETE, OPTIONS");
+    assert_eq!(
+        cors.allow_headers,
+        "content-type, authorization, a2a-notification-token"
+    );
+    assert_eq!(cors.max_age_secs, 86400);
+}
+
+#[test]
+fn cors_preflight_response_status_and_headers() {
+    let cors = CorsConfig::new("https://my-app.example.com");
+    let resp = cors.preflight_response();
+
+    assert_eq!(resp.status().as_u16(), 204);
+
+    let headers = resp.headers();
+    assert_eq!(
+        headers.get("access-control-allow-origin").unwrap(),
+        "https://my-app.example.com"
+    );
+    assert_eq!(
+        headers.get("access-control-allow-methods").unwrap(),
+        "GET, POST, PUT, DELETE, OPTIONS"
+    );
+    assert_eq!(
+        headers.get("access-control-allow-headers").unwrap(),
+        "content-type, authorization, a2a-notification-token"
+    );
+    assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
+}
+
+#[test]
+fn cors_apply_headers_adds_to_existing_response() {
+    let cors = CorsConfig::new("https://example.com");
+
+    let mut resp = hyper::Response::builder()
+        .status(200)
+        .header("x-custom", "value")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+
+    cors.apply_headers(&mut resp);
+
+    let headers = resp.headers();
+    // Original header is preserved.
+    assert_eq!(headers.get("x-custom").unwrap(), "value");
+    // CORS headers are added.
+    assert_eq!(
+        headers.get("access-control-allow-origin").unwrap(),
+        "https://example.com"
+    );
+    assert_eq!(
+        headers.get("access-control-allow-methods").unwrap(),
+        "GET, POST, PUT, DELETE, OPTIONS"
+    );
+    assert_eq!(
+        headers.get("access-control-allow-headers").unwrap(),
+        "content-type, authorization, a2a-notification-token"
+    );
+    assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
+}
+
 #[tokio::test]
 async fn jsonrpc_unsupported_content_type() {
     let handler = make_handler();

@@ -104,6 +104,16 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the TCP connection timeout (DNS + handshake).
+    ///
+    /// Defaults to 10 seconds. Prevents hanging for the OS default (~2 min)
+    /// when the server is unreachable.
+    #[must_use]
+    pub const fn with_connection_timeout(mut self, timeout: Duration) -> Self {
+        self.config.connection_timeout = timeout;
+        self
+    }
+
     /// Sets the preferred protocol binding.
     ///
     /// Overrides any binding derived from the agent card.
@@ -170,6 +180,17 @@ impl ClientBuilder {
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized.
     pub fn build(self) -> ClientResult<A2aClient> {
+        if self.config.request_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "request_timeout must be non-zero".into(),
+            ));
+        }
+        if self.config.stream_connect_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "stream_connect_timeout must be non-zero".into(),
+            ));
+        }
+
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
         } else {

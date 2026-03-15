@@ -55,6 +55,19 @@ pub trait TaskStore: Send + Sync + 'static {
         params: &'a ListTasksParams,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>>;
 
+    /// Atomically inserts a task only if no task with the same ID exists.
+    ///
+    /// Returns `Ok(true)` if the task was inserted, `Ok(false)` if a task
+    /// with the same ID already exists (no modification made).
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
+
     /// Deletes a task by its ID.
     ///
     /// # Errors
@@ -308,6 +321,39 @@ impl TaskStore for InMemoryTaskStore {
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
             Ok(response)
+        })
+    }
+
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let mut store = self.entries.write().await;
+            if store.contains_key(&task.id) {
+                return Ok(false);
+            }
+            store.insert(
+                task.id.clone(),
+                TaskEntry {
+                    task,
+                    last_updated: Instant::now(),
+                },
+            );
+
+            // Amortized eviction.
+            let count = self
+                .write_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let over_capacity = self
+                .config
+                .max_capacity
+                .is_some_and(|max| store.len() > max);
+            if count.is_multiple_of(EVICTION_INTERVAL) || over_capacity {
+                Self::evict(&mut store, &self.config);
+            }
+            drop(store);
+            Ok(true)
         })
     }
 

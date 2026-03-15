@@ -95,6 +95,12 @@ pub struct ClientConfig {
     /// Defaults to 30 seconds.
     pub stream_connect_timeout: Duration,
 
+    /// TCP connection timeout (DNS + handshake).
+    ///
+    /// Prevents the client from hanging for the OS default (~2 minutes)
+    /// when the server is unreachable. Defaults to 10 seconds.
+    pub connection_timeout: Duration,
+
     /// TLS configuration.
     pub tls: TlsConfig,
 }
@@ -111,6 +117,7 @@ impl ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            connection_timeout: Duration::from_secs(10),
             tls: TlsConfig::Disabled,
         }
     }
@@ -125,6 +132,7 @@ impl Default for ClientConfig {
             return_immediately: false,
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
+            connection_timeout: Duration::from_secs(10),
             tls: TlsConfig::default(),
         }
     }

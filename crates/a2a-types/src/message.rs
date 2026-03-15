@@ -78,8 +78,12 @@ pub enum MessageRole {
 
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = serde_json::to_string(self).unwrap_or_else(|_| "ROLE_UNSPECIFIED".into());
-        f.write_str(s.trim_matches('"'))
+        let s = match self {
+            Self::Unspecified => "ROLE_UNSPECIFIED",
+            Self::User => "ROLE_USER",
+            Self::Agent => "ROLE_AGENT",
+        };
+        f.write_str(s)
     }
 }
 

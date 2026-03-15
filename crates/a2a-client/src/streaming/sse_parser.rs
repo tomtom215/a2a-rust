@@ -64,8 +64,8 @@ impl std::fmt::Display for SseParseError {
 
 impl std::error::Error for SseParseError {}
 
-/// Default maximum event size: 16 MiB.
-const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
+/// Default maximum event size: 4 MiB.
+const DEFAULT_MAX_EVENT_SIZE: usize = 4 * 1024 * 1024;
 
 // ── SseParser ─────────────────────────────────────────────────────────────────
 
@@ -79,7 +79,7 @@ const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
 ///
 /// # Memory limits
 ///
-/// The parser enforces a configurable maximum event size (default 16 MiB) to
+/// The parser enforces a configurable maximum event size (default 4 MiB) to
 /// prevent unbounded memory growth from malicious or malformed streams. When
 /// the limit is exceeded, the current event is discarded and an error is
 /// queued. Use [`SseParser::with_max_event_size`] to configure the limit.
@@ -122,7 +122,7 @@ impl Default for SseParser {
 }
 
 impl SseParser {
-    /// Creates a new, empty [`SseParser`] with default limits (16 MiB max event size).
+    /// Creates a new, empty [`SseParser`] with default limits (4 MiB max event size).
     #[must_use]
     pub fn new() -> Self {
         Self::default()

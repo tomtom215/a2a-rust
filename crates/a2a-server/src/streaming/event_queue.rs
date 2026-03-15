@@ -26,6 +26,11 @@ pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
 /// Default maximum event size in bytes (16 MiB).
 pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
 
+/// Default write timeout for event queue sends (5 seconds).
+///
+/// Prevents executor from blocking indefinitely on a slow/disconnected client.
+pub const DEFAULT_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
 
 /// Trait for writing streaming events.
@@ -68,12 +73,15 @@ pub trait EventQueueReader: Send + 'static {
 /// In-memory [`EventQueueWriter`] backed by an `mpsc` channel sender.
 ///
 /// Enforces a maximum serialized event size to prevent OOM from oversized
-/// events written by executors.
+/// events written by executors, and a write timeout to prevent blocking
+/// indefinitely on slow clients (PR-1).
 #[derive(Debug, Clone)]
 pub struct InMemoryQueueWriter {
     tx: mpsc::Sender<A2aResult<StreamResponse>>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
+    /// Write timeout — prevents executor from blocking if client is slow.
+    write_timeout: std::time::Duration,
 }
 
 #[allow(clippy::manual_async_fn)]
@@ -91,9 +99,10 @@ impl EventQueueWriter for InMemoryQueueWriter {
                     serialized_size, self.max_event_size
                 )));
             }
-            self.tx
-                .send(Ok(event))
+            // Apply write timeout to prevent blocking on slow clients (PR-1).
+            tokio::time::timeout(self.write_timeout, self.tx.send(Ok(event)))
                 .await
+                .map_err(|_| A2aError::internal("event queue write timed out"))?
                 .map_err(|_| A2aError::internal("event queue receiver dropped"))
         })
     }
@@ -153,7 +162,11 @@ pub fn new_in_memory_queue_with_options(
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
     let (tx, rx) = mpsc::channel(capacity);
     (
-        InMemoryQueueWriter { tx, max_event_size },
+        InMemoryQueueWriter {
+            tx,
+            max_event_size,
+            write_timeout: DEFAULT_WRITE_TIMEOUT,
+        },
         InMemoryQueueReader { rx },
     )
 }
