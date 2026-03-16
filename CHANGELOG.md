@@ -18,8 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (13 files, all under 500 lines) with 30 E2E
-  tests across 3 categories.
+  best-practice modular structure (17 files, all under 500 lines) with 40 E2E
+  tests across 4 categories (basic, lifecycle, edge cases, stress).
+- Client `send_message()` and `stream_message()` now merge client-level config
+  (`return_immediately`, `history_length`, `accepted_output_modes`) into
+  request parameters automatically. Per-request values take precedence.
+- Dogfooding documentation restructured into modular book sub-pages: bugs
+  found, test coverage matrix, and open issues roadmap.
 
 ### Changed
 
@@ -34,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SubscribeToTask` (resubscribe) now works when another SSE reader is already
   active for the same task. Previously, `mpsc` channels allowed only a single
   reader, so resubscription returned "no active event queue for task".
+- `ClientBuilder::with_return_immediately(true)` now actually propagates to
+  the server. Previously, the flag was stored in `ClientConfig` but never
+  injected into `MessageSendParams.configuration`, so the server always
+  waited for task completion.
 
 ## [0.2.0] - 2026-03-15
 
@@ -58,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (500+ tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (600+ tests).
 - `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.

@@ -38,6 +38,9 @@
 
 - [Testing Your Agent](./deployment/testing.md)
 - [Dogfooding: The Agent Team](./deployment/dogfooding.md)
+    - [Bugs Found & Fixed](./deployment/dogfooding-bugs.md)
+    - [Test Coverage Matrix](./deployment/dogfooding-tests.md)
+    - [Open Issues & Roadmap](./deployment/dogfooding-open-issues.md)
 - [Production Hardening](./deployment/production.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
 
