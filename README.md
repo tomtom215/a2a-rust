@@ -26,7 +26,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 - **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
 - **Dual transport** — JSON-RPC 2.0 and REST dispatchers, both client and server
-- **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with async event streams
+- **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
 - **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults
@@ -171,20 +171,21 @@ while let Some(event) = stream.next().await {
 
 ## Examples
 
+### Agent Team (Full Dogfood)
+
+A comprehensive 4-agent team that exercises every SDK feature — 30 E2E tests covering both transports, streaming, push notifications, agent-to-agent orchestration, cancellation, and metrics:
+
+```bash
+cargo run -p agent-team
+```
+
 ### Echo Agent
 
-A full-stack example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:
+A minimal example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:
 
 ```bash
 cargo run -p echo-agent
 ```
-
-This starts servers on random ports and runs 5 demos:
-1. Synchronous `SendMessage` via JSON-RPC
-2. Streaming `SendStreamingMessage` via JSON-RPC
-3. Synchronous `SendMessage` via REST
-4. Streaming `SendStreamingMessage` via REST
-5. `GetTask` retrieval
 
 ## Architecture
 

@@ -234,7 +234,11 @@ impl RestDispatcher {
             };
         match self.handler.on_send_message(params, streaming).await {
             Ok(SendMessageResult::Response(resp)) => json_ok_response(&resp),
-            Ok(SendMessageResult::Stream(reader)) => build_sse_response(reader, None),
+            Ok(SendMessageResult::Stream(reader)) => build_sse_response(
+                reader,
+                Some(self.config.sse_keep_alive_interval),
+                Some(self.config.sse_channel_capacity),
+            ),
             Err(e) => server_error_to_response(&e),
         }
     }
@@ -286,7 +290,11 @@ impl RestDispatcher {
             id: id.to_owned(),
         };
         match self.handler.on_resubscribe(params).await {
-            Ok(reader) => build_sse_response(reader, None),
+            Ok(reader) => build_sse_response(
+                reader,
+                Some(self.config.sse_keep_alive_interval),
+                Some(self.config.sse_channel_capacity),
+            ),
             Err(e) => server_error_to_response(&e),
         }
     }

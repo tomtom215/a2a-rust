@@ -876,7 +876,8 @@ async fn oversized_event_rejected() {
     use a2a_protocol_server::streaming::event_queue::new_in_memory_queue_with_options;
 
     // Create a queue with a very small max event size (128 bytes).
-    let (writer, _reader) = new_in_memory_queue_with_options(8, 128);
+    let (writer, _reader) =
+        new_in_memory_queue_with_options(8, 128, std::time::Duration::from_secs(5));
 
     // Create an event with a large payload that exceeds 128 bytes.
     let big_text = "x".repeat(500);

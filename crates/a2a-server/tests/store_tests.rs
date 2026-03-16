@@ -221,6 +221,7 @@ async fn capacity_eviction_removes_oldest_terminal_tasks() {
     let config = TaskStoreConfig {
         max_capacity: Some(3),
         task_ttl: None,
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 
@@ -304,6 +305,7 @@ async fn ttl_eviction_removes_terminal_tasks() {
     let config = TaskStoreConfig {
         max_capacity: None,
         task_ttl: Some(Duration::from_millis(1)),
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 

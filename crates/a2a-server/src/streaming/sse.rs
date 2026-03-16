@@ -20,7 +20,10 @@ use a2a_protocol_types::jsonrpc::{JsonRpcId, JsonRpcSuccessResponse, JsonRpcVers
 use crate::streaming::event_queue::{EventQueueReader, InMemoryQueueReader};
 
 /// Default keep-alive interval for SSE streams.
-const DEFAULT_KEEP_ALIVE: Duration = Duration::from_secs(30);
+pub(crate) const DEFAULT_KEEP_ALIVE: Duration = Duration::from_secs(30);
+
+/// Default SSE response body channel capacity.
+pub(crate) const DEFAULT_SSE_CHANNEL_CAPACITY: usize = 64;
 
 // ── SSE frame formatting ─────────────────────────────────────────────────────
 
@@ -119,10 +122,12 @@ impl hyper::body::Body for ChannelBody {
 pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
     keep_alive_interval: Option<Duration>,
+    channel_capacity: Option<usize>,
 ) -> hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>> {
     trace_info!("building SSE response stream");
     let interval = keep_alive_interval.unwrap_or(DEFAULT_KEEP_ALIVE);
-    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(64);
+    let cap = channel_capacity.unwrap_or(DEFAULT_SSE_CHANNEL_CAPACITY);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(cap);
 
     let body_writer = SseBodyWriter { tx };
 

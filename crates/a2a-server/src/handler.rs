@@ -56,6 +56,12 @@ pub struct HandlerLimits {
     pub max_cancellation_tokens: usize,
     /// Maximum age for cancellation tokens. Default: 1 hour.
     pub max_token_age: Duration,
+    /// Timeout for individual push webhook deliveries. Default: 5 seconds.
+    ///
+    /// Bounds how long the handler waits for a single push notification delivery
+    /// to complete, preventing one slow webhook from blocking all subsequent
+    /// deliveries.
+    pub push_delivery_timeout: Duration,
 }
 
 impl Default for HandlerLimits {
@@ -65,6 +71,7 @@ impl Default for HandlerLimits {
             max_metadata_size: 1_048_576,
             max_cancellation_tokens: 10_000,
             max_token_age: Duration::from_secs(3600),
+            push_delivery_timeout: Duration::from_secs(5),
         }
     }
 }
@@ -95,6 +102,13 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_max_token_age(mut self, age: Duration) -> Self {
         self.max_token_age = age;
+        self
+    }
+
+    /// Sets the timeout for individual push webhook deliveries.
+    #[must_use]
+    pub const fn with_push_delivery_timeout(mut self, timeout: Duration) -> Self {
+        self.push_delivery_timeout = timeout;
         self
     }
 }
@@ -542,10 +556,11 @@ impl RequestHandler {
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-            let (_writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
-            let reader = reader.ok_or_else(|| {
-                ServerError::Internal("no event queue available for resubscribe".into())
-            })?;
+            let reader = self
+                .event_queue_manager
+                .subscribe(&task_id)
+                .await
+                .ok_or_else(|| ServerError::Internal("no active event queue for task".into()))?;
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(reader)
@@ -884,7 +899,7 @@ impl RequestHandler {
         for config in &configs {
             // Bound each push delivery to prevent one slow webhook from blocking all others.
             let result = tokio::time::timeout(
-                Duration::from_secs(5),
+                self.limits.push_delivery_timeout,
                 sender.send(&config.url, event, config),
             )
             .await;

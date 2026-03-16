@@ -328,6 +328,7 @@ async fn task_store_eviction_on_write() {
     let config = TaskStoreConfig {
         max_capacity: Some(2),
         task_ttl: None,
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 
@@ -632,6 +633,7 @@ async fn task_store_background_eviction() {
     let store = InMemoryTaskStore::with_config(TaskStoreConfig {
         max_capacity: Some(100),
         task_ttl: Some(Duration::from_millis(1)),
+        ..Default::default()
     });
 
     // Insert a completed task

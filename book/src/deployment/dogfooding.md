@@ -23,7 +23,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (14 tests, ~800ms total)                       │
+│              (30 tests, ~1500ms total)                      │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -153,6 +153,22 @@ Push config was registered on Task A, but the test's second `send_message` creat
 
 **Fix:** Added `Arc<dyn Metrics>` to `EventQueueManager` (passed from the builder). Calls `on_queue_depth_change` in `get_or_create` and `destroy`.
 
+### Bug 8: `JsonRpcDispatcher` Does Not Serve Agent Cards (**Fixed**)
+
+**Severity:** Medium — agent card discovery only worked on REST endpoints.
+
+`RestDispatcher` serves `GET /.well-known/agent.json` but `JsonRpcDispatcher` did not, so `resolve_agent_card()` failed for JSON-RPC agents. The spec requires agent card discovery regardless of transport.
+
+**Fix:** Added `StaticAgentCardHandler` to `JsonRpcDispatcher`. GET requests to `/.well-known/agent.json` are now handled before falling through to JSON-RPC body parsing. Test 18 verifies agent card discovery on JSON-RPC endpoints.
+
+### Bug 9: `SubscribeToTask` Fails When Another SSE Stream Is Active (**Fixed**)
+
+**Severity:** High — resubscription was fundamentally broken.
+
+`EventQueueManager` used `mpsc` channels which allow only a single reader. Once `stream_message` took the reader, `subscribe_to_task` for the same task returned "no active event queue for task".
+
+**Fix:** Redesigned `EventQueueManager` from `mpsc` to `tokio::sync::broadcast` channels. `subscribe()` creates additional readers from the same sender. Slow readers get `Lagged` notifications instead of blocking the writer. Test 28 verifies concurrent resubscription.
+
 ### Configuration Hardening
 
 Extracted all hardcoded constants into configurable structs:
@@ -162,6 +178,29 @@ Extracted all hardcoded constants into configurable structs:
 - **`HandlerLimits`**: ID length, metadata size, cancellation token limits
 
 Aligned client `DEFAULT_MAX_EVENT_SIZE` from 4 MiB to 16 MiB to match the server default.
+
+### Modular Example Structure
+
+The agent-team example follows best-practice Rust module organization (all files under 500 lines):
+
+```
+examples/agent-team/src/
+├── main.rs                      # Thin orchestrator (~280 lines)
+├── executors/
+│   ├── mod.rs                   # Re-exports
+│   ├── code_analyzer.rs         # CodeAnalyzer executor
+│   ├── build_monitor.rs         # BuildMonitor executor
+│   ├── health_monitor.rs        # HealthMonitor executor
+│   └── coordinator.rs           # Coordinator executor (A2A client calls)
+├── cards.rs                     # Agent card builders
+├── helpers.rs                   # Shared helpers (make_send_params)
+├── infrastructure.rs            # Metrics, interceptors, webhook, server setup
+└── tests/
+    ├── mod.rs                   # TestResult, TestContext
+    ├── basic.rs                 # Tests 1-10: core send/stream paths
+    ├── lifecycle.rs             # Tests 11-20: orchestration, cancel, agent cards
+    └── edge_cases.rs            # Tests 21-30: errors, concurrency, metrics
+```
 
 ## Running the Agent Team
 
@@ -185,9 +224,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...14 tests...
+...30 tests...
 
-║ Total: 14 | Passed: 14 | Failed: 0 | Time: ~800ms
+║ Total: 30 | Passed: 30 | Failed: 0 | Time: ~1500ms
 ```
 
 ## Lessons for Your Own Agents

@@ -58,22 +58,40 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
-/// Maximum number of push notification configs allowed per task.
-///
-/// Prevents a malicious client from creating unbounded push configs.
-const MAX_PUSH_CONFIGS_PER_TASK: usize = 100;
+/// Default maximum number of push notification configs allowed per task.
+const DEFAULT_MAX_PUSH_CONFIGS_PER_TASK: usize = 100;
 
 /// In-memory [`PushConfigStore`] backed by a `HashMap`.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InMemoryPushConfigStore {
     configs: RwLock<HashMap<(String, String), TaskPushNotificationConfig>>,
+    /// Maximum number of push configs allowed per task.
+    max_configs_per_task: usize,
+}
+
+impl Default for InMemoryPushConfigStore {
+    fn default() -> Self {
+        Self {
+            configs: RwLock::new(HashMap::new()),
+            max_configs_per_task: DEFAULT_MAX_PUSH_CONFIGS_PER_TASK,
+        }
+    }
 }
 
 impl InMemoryPushConfigStore {
-    /// Creates a new empty in-memory push config store.
+    /// Creates a new empty in-memory push config store with default limits.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new push config store with a custom per-task config limit.
+    #[must_use]
+    pub fn with_max_configs_per_task(max: usize) -> Self {
+        Self {
+            configs: RwLock::new(HashMap::new()),
+            max_configs_per_task: max,
+        }
     }
 }
 
@@ -98,10 +116,11 @@ impl PushConfigStore for InMemoryPushConfigStore {
             if !store.contains_key(&key) {
                 let task_id = &config.task_id;
                 let count = store.keys().filter(|(tid, _)| tid == task_id).count();
-                if count >= MAX_PUSH_CONFIGS_PER_TASK {
+                let max = self.max_configs_per_task;
+                if count >= max {
                     drop(store);
                     return Err(a2a_protocol_types::error::A2aError::invalid_params(format!(
-                        "push config limit exceeded: task {task_id} already has {count} configs (max {MAX_PUSH_CONFIGS_PER_TASK})"
+                        "push config limit exceeded: task {task_id} already has {count} configs (max {max})"
                     )));
                 }
             }

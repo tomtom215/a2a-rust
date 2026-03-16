@@ -34,6 +34,16 @@ pub struct DispatchConfig {
     pub body_read_timeout: std::time::Duration,
     /// Maximum query string length (REST only). Default: 4096.
     pub max_query_string_length: usize,
+    /// SSE keep-alive interval. Default: 30 seconds.
+    ///
+    /// Periodic `: keep-alive` comments are sent at this interval to prevent
+    /// proxies and load balancers from closing idle SSE connections.
+    pub sse_keep_alive_interval: std::time::Duration,
+    /// SSE response body channel capacity. Default: 64.
+    ///
+    /// Controls backpressure between the event reader task and the HTTP
+    /// response body. Higher values buffer more SSE frames in memory.
+    pub sse_channel_capacity: usize,
 }
 
 impl Default for DispatchConfig {
@@ -42,6 +52,8 @@ impl Default for DispatchConfig {
             max_request_body_size: 4 * 1024 * 1024,
             body_read_timeout: std::time::Duration::from_secs(30),
             max_query_string_length: 4096,
+            sse_keep_alive_interval: std::time::Duration::from_secs(30),
+            sse_channel_capacity: 64,
         }
     }
 }
@@ -65,6 +77,20 @@ impl DispatchConfig {
     #[must_use]
     pub const fn with_max_query_string_length(mut self, length: usize) -> Self {
         self.max_query_string_length = length;
+        self
+    }
+
+    /// Sets the SSE keep-alive interval.
+    #[must_use]
+    pub const fn with_sse_keep_alive_interval(mut self, interval: std::time::Duration) -> Self {
+        self.sse_keep_alive_interval = interval;
+        self
+    }
+
+    /// Sets the SSE response body channel capacity.
+    #[must_use]
+    pub const fn with_sse_channel_capacity(mut self, capacity: usize) -> Self {
+        self.sse_channel_capacity = capacity;
         self
     }
 }

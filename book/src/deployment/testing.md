@@ -8,15 +8,14 @@ Test your executor logic directly by creating a `RequestContext` and mock `Event
 
 ```rust
 use a2a_protocol_sdk::prelude::*;
-use a2a_protocol_sdk::server::{RequestContext, EventQueueManager};
+use a2a_protocol_server::streaming::{EventQueueManager, new_in_memory_queue};
 
 #[tokio::test]
 async fn test_calculator_executor() {
     let executor = CalcExecutor;
 
-    // Create a queue manager and get a writer
-    let manager = EventQueueManager::new(64, 16 * 1024 * 1024);
-    let (writer, mut reader) = manager.create_queue("test-task");
+    // Create a writer/reader pair directly for unit testing
+    let (writer, mut reader) = new_in_memory_queue();
 
     // Build the request context
     let ctx = RequestContext {

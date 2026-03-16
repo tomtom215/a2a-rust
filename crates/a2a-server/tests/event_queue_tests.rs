@@ -137,40 +137,75 @@ async fn cloned_writer_still_works_after_original_dropped() {
     assert!(reader.read().await.is_none());
 }
 
-// ── 3. Backpressure when queue is full (bounded channel) ─────────────────────
+// ── 3. Broadcast behavior — writes never block, slow readers lag ─────────────
 
 #[tokio::test]
-async fn backpressure_bounded_channel() {
-    // Capacity of 1: second write should block until first is read.
-    let (writer, mut reader) = new_in_memory_queue_with_capacity(1);
+async fn broadcast_writes_never_block() {
+    // Capacity of 2: writing 2 events should succeed without blocking,
+    // even if nothing has been read yet. (Broadcast sends are non-blocking.)
+    let (writer, mut reader) = new_in_memory_queue_with_capacity(2);
 
     writer
         .write(status_event("t1", TaskState::Working))
         .await
         .unwrap();
+    writer
+        .write(status_event("t1", TaskState::Completed))
+        .await
+        .unwrap();
 
-    // Spawn a writer that tries to send a second event (will block).
-    let w2 = writer.clone();
-    let handle = tokio::spawn(async move {
-        w2.write(status_event("t1", TaskState::Completed))
-            .await
-            .unwrap();
-    });
-
-    // Give the spawned task a moment to start blocking.
-    tokio::task::yield_now().await;
+    // Read both events in order.
+    let e1 = reader.read().await.unwrap().unwrap();
     assert!(
-        !handle.is_finished(),
-        "second write should be blocked (queue full)"
+        matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
     );
-
-    // Reading frees a slot, unblocking the writer.
-    let _ = reader.read().await;
-    handle.await.unwrap();
-
-    let event = reader.read().await.unwrap().unwrap();
+    let e2 = reader.read().await.unwrap().unwrap();
     assert!(
-        matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+        matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+    );
+}
+
+#[tokio::test]
+async fn slow_reader_skips_lagged_events() {
+    // Capacity of 2: write 3 events so the reader lags behind.
+    // The broadcast channel holds the 2 most recent events and the reader
+    // receives a Lagged notification (silently skipped by our reader impl),
+    // then reads the remaining buffered events.
+    let (writer, mut reader) = new_in_memory_queue_with_capacity(2);
+
+    writer
+        .write(status_event("t1", TaskState::Submitted))
+        .await
+        .unwrap();
+    writer
+        .write(status_event("t1", TaskState::Working))
+        .await
+        .unwrap();
+    writer
+        .write(status_event("t1", TaskState::Completed))
+        .await
+        .unwrap();
+    drop(writer);
+
+    // Reader was lagged — it silently skips the missed event(s) and reads
+    // the remaining buffered events. Collect everything the reader returns.
+    let mut events = Vec::new();
+    while let Some(Ok(event)) = reader.read().await {
+        events.push(event);
+    }
+
+    // We should get at least 1 event (the most recent ones that weren't
+    // overwritten). The exact count depends on broadcast internals, but
+    // the important property is: the reader does NOT hang or error out.
+    assert!(
+        !events.is_empty(),
+        "slow reader should still receive buffered events after lag"
+    );
+    // The last event received should be Completed.
+    let last = events.last().unwrap();
+    assert!(
+        matches!(last, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed),
+        "last event should be Completed"
     );
 }
 
@@ -271,7 +306,8 @@ async fn destroy_nonexistent_task_is_noop() {
 #[tokio::test]
 async fn oversized_event_rejected() {
     // Create a queue with a tiny max event size (32 bytes).
-    let (writer, _reader) = new_in_memory_queue_with_options(8, 32);
+    let (writer, _reader) =
+        new_in_memory_queue_with_options(8, 32, std::time::Duration::from_secs(5));
 
     // A normal status event serializes to well over 32 bytes.
     let result = writer
@@ -289,7 +325,11 @@ async fn oversized_event_rejected() {
 #[tokio::test]
 async fn event_within_size_limit_accepted() {
     // Use a generous limit.
-    let (writer, mut reader) = new_in_memory_queue_with_options(8, DEFAULT_MAX_EVENT_SIZE);
+    let (writer, mut reader) = new_in_memory_queue_with_options(
+        8,
+        DEFAULT_MAX_EVENT_SIZE,
+        std::time::Duration::from_secs(5),
+    );
 
     writer
         .write(status_event("t1", TaskState::Working))
@@ -474,6 +514,83 @@ async fn active_count_not_affected_by_duplicate_get_or_create() {
     // Calling again for the same task should NOT increment count.
     let _ = mgr.get_or_create(&task_id).await;
     assert_eq!(mgr.active_count().await, 1);
+}
+
+// ── 10. subscribe() fan-out — multiple readers on the same queue ──────────────
+
+#[tokio::test]
+async fn subscribe_creates_additional_reader() {
+    let mgr = EventQueueManager::new();
+    let task_id = TaskId::new("task-1");
+
+    let (writer, reader1) = mgr.get_or_create(&task_id).await;
+    let mut reader1 = reader1.unwrap();
+
+    // Subscribe creates a second reader for the same queue.
+    let mut reader2 = mgr.subscribe(&task_id).await.unwrap();
+
+    // Write an event — both readers should receive it.
+    writer
+        .write(status_event("task-1", TaskState::Working))
+        .await
+        .unwrap();
+
+    let e1 = reader1.read().await.unwrap().unwrap();
+    let e2 = reader2.read().await.unwrap().unwrap();
+    assert!(
+        matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+    );
+    assert!(
+        matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+    );
+}
+
+#[tokio::test]
+async fn subscribe_nonexistent_task_returns_none() {
+    let mgr = EventQueueManager::new();
+    let result = mgr.subscribe(&TaskId::new("nonexistent")).await;
+    assert!(result.is_none());
+}
+
+#[tokio::test]
+async fn subscribe_after_destroy_returns_none() {
+    let mgr = EventQueueManager::new();
+    let task_id = TaskId::new("task-1");
+
+    let (_w, _r) = mgr.get_or_create(&task_id).await;
+    mgr.destroy(&task_id).await;
+
+    let result = mgr.subscribe(&task_id).await;
+    assert!(
+        result.is_none(),
+        "subscribe after destroy should return None"
+    );
+}
+
+#[tokio::test]
+async fn multiple_subscribers_all_receive_events() {
+    let (writer, mut reader1) = new_in_memory_queue();
+    let mut reader2 = writer.subscribe();
+    let mut reader3 = writer.subscribe();
+
+    writer
+        .write(status_event("t1", TaskState::Completed))
+        .await
+        .unwrap();
+    drop(writer);
+
+    // All three readers should get the event.
+    for reader in [&mut reader1, &mut reader2, &mut reader3] {
+        let event = reader.read().await.unwrap().unwrap();
+        assert!(
+            matches!(event, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed)
+        );
+    }
+
+    // All readers should see None after writer is dropped.
+    for reader in [&mut reader1, &mut reader2, &mut reader3] {
+        assert!(reader.read().await.is_none());
+    }
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────

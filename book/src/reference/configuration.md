@@ -63,7 +63,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | Limit | Value | Description |
 |-------|-------|-------------|
 | Eviction interval | Every 64 writes | Amortized cleanup |
-| Write timeout | 5 seconds | Per-event queue write |
+| Event queue type | `broadcast` | Fan-out to multiple subscribers; slow readers skip missed events |
 
 ## Client Configuration
 
