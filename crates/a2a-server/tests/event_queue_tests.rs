@@ -271,7 +271,8 @@ async fn destroy_nonexistent_task_is_noop() {
 #[tokio::test]
 async fn oversized_event_rejected() {
     // Create a queue with a tiny max event size (32 bytes).
-    let (writer, _reader) = new_in_memory_queue_with_options(8, 32);
+    let (writer, _reader) =
+        new_in_memory_queue_with_options(8, 32, std::time::Duration::from_secs(5));
 
     // A normal status event serializes to well over 32 bytes.
     let result = writer
@@ -289,7 +290,11 @@ async fn oversized_event_rejected() {
 #[tokio::test]
 async fn event_within_size_limit_accepted() {
     // Use a generous limit.
-    let (writer, mut reader) = new_in_memory_queue_with_options(8, DEFAULT_MAX_EVENT_SIZE);
+    let (writer, mut reader) = new_in_memory_queue_with_options(
+        8,
+        DEFAULT_MAX_EVENT_SIZE,
+        std::time::Duration::from_secs(5),
+    );
 
     writer
         .write(status_event("t1", TaskState::Working))

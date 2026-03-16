@@ -262,6 +262,7 @@ async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
     let config = TaskStoreConfig {
         max_capacity: None,
         task_ttl: Some(Duration::from_millis(50)),
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 
@@ -301,6 +302,7 @@ async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
     let config = TaskStoreConfig {
         max_capacity: None,
         task_ttl: Some(Duration::from_millis(50)),
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 
@@ -334,6 +336,7 @@ async fn task_store_capacity_eviction_removes_oldest_terminal_tasks() {
     let config = TaskStoreConfig {
         max_capacity: Some(3),
         task_ttl: None,
+        ..Default::default()
     };
     let store = InMemoryTaskStore::with_config(config);
 
@@ -727,6 +730,7 @@ async fn builder_with_task_store_uses_custom_store() {
     let custom_store = InMemoryTaskStore::with_config(TaskStoreConfig {
         max_capacity: Some(5),
         task_ttl: None,
+        ..Default::default()
     });
 
     let handler = RequestHandlerBuilder::new(QuickExecutor)

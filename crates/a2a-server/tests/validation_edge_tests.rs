@@ -518,6 +518,7 @@ async fn task_store_config_both_ttl_and_capacity() {
     let config = TaskStoreConfig {
         max_capacity: Some(5),
         task_ttl: Some(Duration::from_secs(3600)),
+        ..Default::default()
     };
 
     let handler = RequestHandlerBuilder::new(CompletingExecutor)

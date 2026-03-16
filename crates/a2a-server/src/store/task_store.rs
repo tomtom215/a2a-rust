@@ -99,6 +99,16 @@ pub struct TaskStoreConfig {
     /// older than this duration are evicted on the next write operation.
     /// `None` means no TTL-based eviction.
     pub task_ttl: Option<Duration>,
+
+    /// Number of writes between automatic eviction sweeps. Default: 64.
+    ///
+    /// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
+    pub eviction_interval: u64,
+
+    /// Maximum allowed page size for list queries. Default: 1000.
+    ///
+    /// Larger requested page sizes are clamped to this limit.
+    pub max_page_size: u32,
 }
 
 impl Default for TaskStoreConfig {
@@ -106,18 +116,11 @@ impl Default for TaskStoreConfig {
         Self {
             max_capacity: Some(10_000),
             task_ttl: Some(Duration::from_secs(3600)), // 1 hour
+            eviction_interval: 64,
+            max_page_size: 1000,
         }
     }
 }
-
-/// Number of writes between automatic eviction sweeps.
-///
-/// Amortizes the O(n) eviction cost so it doesn't run on every single `save()`.
-const EVICTION_INTERVAL: u64 = 64;
-
-/// Maximum allowed page size for list queries. Larger values are clamped to
-/// this limit to prevent a single request from requesting billions of tasks.
-const MAX_PAGE_SIZE: u32 = 1000;
 
 /// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
 ///
@@ -129,8 +132,9 @@ const MAX_PAGE_SIZE: u32 = 1000;
 ///
 /// # Eviction behavior
 ///
-/// Eviction runs automatically every 64 writes (`EVICTION_INTERVAL`) and
-/// whenever the store exceeds `max_capacity`. However, if the system goes
+/// Eviction runs automatically every N writes (configurable via
+/// [`TaskStoreConfig::eviction_interval`]) and whenever the store exceeds
+/// `max_capacity`. However, if the system goes
 /// idle (no `save()` calls), completed tasks may persist in memory longer
 /// than their TTL.
 ///
@@ -242,7 +246,7 @@ impl TaskStore for InMemoryTaskStore {
                 .config
                 .max_capacity
                 .is_some_and(|max| store.len() > max);
-            if count.is_multiple_of(EVICTION_INTERVAL) || over_capacity {
+            if count.is_multiple_of(self.config.eviction_interval) || over_capacity {
                 Self::evict(&mut store, &self.config);
             }
 
@@ -307,7 +311,7 @@ impl TaskStore for InMemoryTaskStore {
             // Treat page_size of 0 as "use default"; clamp to MAX_PAGE_SIZE.
             let page_size = match params.page_size {
                 Some(0) | None => 50_usize,
-                Some(n) => (n.min(MAX_PAGE_SIZE)) as usize,
+                Some(n) => (n.min(self.config.max_page_size)) as usize,
             };
             let next_page_token = if tasks.len() > page_size {
                 tasks
@@ -349,7 +353,7 @@ impl TaskStore for InMemoryTaskStore {
                 .config
                 .max_capacity
                 .is_some_and(|max| store.len() > max);
-            if count.is_multiple_of(EVICTION_INTERVAL) || over_capacity {
+            if count.is_multiple_of(self.config.eviction_interval) || over_capacity {
                 Self::evict(&mut store, &self.config);
             }
             drop(store);

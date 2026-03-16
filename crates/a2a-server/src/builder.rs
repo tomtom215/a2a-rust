@@ -48,6 +48,7 @@ pub struct RequestHandlerBuilder {
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
     max_concurrent_streams: Option<usize>,
+    event_queue_write_timeout: Option<Duration>,
     metrics: Arc<dyn Metrics>,
     handler_limits: HandlerLimits,
 }
@@ -70,6 +71,7 @@ impl RequestHandlerBuilder {
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
+            event_queue_write_timeout: None,
             metrics: Arc::new(NoopMetrics),
             handler_limits: HandlerLimits::default(),
         }
@@ -159,6 +161,16 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets the write timeout for event queue sends.
+    ///
+    /// Prevents executors from blocking indefinitely when a client is slow or
+    /// disconnected. Default: 5 seconds.
+    #[must_use]
+    pub const fn with_event_queue_write_timeout(mut self, timeout: Duration) -> Self {
+        self.event_queue_write_timeout = Some(timeout);
+        self
+    }
+
     /// Sets configurable limits for the handler (ID lengths, metadata size, etc.).
     ///
     /// Defaults to [`HandlerLimits::default()`].
@@ -219,6 +231,9 @@ impl RequestHandlerBuilder {
                 if let Some(max_size) = self.max_event_size {
                     mgr = mgr.with_max_event_size(max_size);
                 }
+                if let Some(timeout) = self.event_queue_write_timeout {
+                    mgr = mgr.with_write_timeout(timeout);
+                }
                 if let Some(max_streams) = self.max_concurrent_streams {
                     mgr = mgr.with_max_concurrent_queues(max_streams);
                 }
@@ -251,6 +266,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
             .field("max_concurrent_streams", &self.max_concurrent_streams)
+            .field("event_queue_write_timeout", &self.event_queue_write_timeout)
             .field("metrics", &"<dyn Metrics>")
             .field("handler_limits", &self.handler_limits)
             .finish()

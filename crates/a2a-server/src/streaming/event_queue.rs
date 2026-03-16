@@ -139,35 +139,40 @@ impl EventQueueReader for InMemoryQueueReader {
 
 // ── Constructor ──────────────────────────────────────────────────────────────
 
-/// Creates a new in-memory event queue pair with the default capacity and
-/// default max event size.
+/// Creates a new in-memory event queue pair with the default capacity,
+/// default max event size, and default write timeout.
 #[must_use]
 pub fn new_in_memory_queue() -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    new_in_memory_queue_with_options(DEFAULT_QUEUE_CAPACITY, DEFAULT_MAX_EVENT_SIZE)
+    new_in_memory_queue_with_options(
+        DEFAULT_QUEUE_CAPACITY,
+        DEFAULT_MAX_EVENT_SIZE,
+        DEFAULT_WRITE_TIMEOUT,
+    )
 }
 
 /// Creates a new in-memory event queue pair with the specified capacity
-/// and default max event size.
+/// and default max event size / write timeout.
 #[must_use]
 pub fn new_in_memory_queue_with_capacity(
     capacity: usize,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
-    new_in_memory_queue_with_options(capacity, DEFAULT_MAX_EVENT_SIZE)
+    new_in_memory_queue_with_options(capacity, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT)
 }
 
-/// Creates a new in-memory event queue pair with the specified capacity
-/// and maximum event size.
+/// Creates a new in-memory event queue pair with the specified capacity,
+/// maximum event size, and write timeout.
 #[must_use]
 pub fn new_in_memory_queue_with_options(
     capacity: usize,
     max_event_size: usize,
+    write_timeout: std::time::Duration,
 ) -> (InMemoryQueueWriter, InMemoryQueueReader) {
     let (tx, rx) = mpsc::channel(capacity);
     (
         InMemoryQueueWriter {
             tx,
             max_event_size,
-            write_timeout: DEFAULT_WRITE_TIMEOUT,
+            write_timeout,
         },
         InMemoryQueueReader { rx },
     )
@@ -187,6 +192,8 @@ pub struct EventQueueManager {
     capacity: usize,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
+    /// Write timeout for event queue sends.
+    write_timeout: std::time::Duration,
     /// Maximum number of concurrent event queues. `None` means no limit.
     max_concurrent_queues: Option<usize>,
     /// Optional metrics hook for reporting queue depth changes.
@@ -199,6 +206,7 @@ impl std::fmt::Debug for EventQueueManager {
             .field("writers", &"<RwLock<HashMap<...>>>")
             .field("capacity", &self.capacity)
             .field("max_event_size", &self.max_event_size)
+            .field("write_timeout", &self.write_timeout)
             .field("max_concurrent_queues", &self.max_concurrent_queues)
             .field("metrics", &self.metrics.is_some())
             .finish()
@@ -211,6 +219,7 @@ impl Default for EventQueueManager {
             writers: Arc::default(),
             capacity: DEFAULT_QUEUE_CAPACITY,
             max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            write_timeout: DEFAULT_WRITE_TIMEOUT,
             max_concurrent_queues: None,
             metrics: None,
         }
@@ -239,9 +248,20 @@ impl EventQueueManager {
             writers: Arc::default(),
             capacity,
             max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            write_timeout: DEFAULT_WRITE_TIMEOUT,
             max_concurrent_queues: None,
             metrics: None,
         }
+    }
+
+    /// Sets the write timeout for event queue sends.
+    ///
+    /// Prevents executors from blocking indefinitely on slow or disconnected
+    /// clients. Default: 5 seconds.
+    #[must_use]
+    pub const fn with_write_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.write_timeout = timeout;
+        self
     }
 
     /// Creates a new event queue manager with the specified maximum event size.
@@ -294,12 +314,18 @@ impl EventQueueManager {
         {
             // Concurrent queue limit reached — create a disconnected writer
             // so the caller gets an error when trying to use it.
-            let (writer, _reader) =
-                new_in_memory_queue_with_options(self.capacity, self.max_event_size);
+            let (writer, _reader) = new_in_memory_queue_with_options(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
             (Arc::new(writer), None)
         } else {
-            let (writer, reader) =
-                new_in_memory_queue_with_options(self.capacity, self.max_event_size);
+            let (writer, reader) = new_in_memory_queue_with_options(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader))

@@ -183,7 +183,11 @@ impl JsonRpcDispatcher {
             "SubscribeToTask" => {
                 return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_resubscribe(p).await {
-                        Ok(reader) => build_sse_response(reader, None),
+                        Ok(reader) => build_sse_response(
+                            reader,
+                            Some(self.config.sse_keep_alive_interval),
+                            Some(self.config.sse_channel_capacity),
+                        ),
                         Err(e) => error_response(id, &e),
                     },
                     Err(e) => error_response(id, &e),
@@ -353,7 +357,11 @@ impl JsonRpcDispatcher {
         };
         match self.handler.on_send_message(params, streaming).await {
             Ok(SendMessageResult::Response(resp)) => success_response(id, &resp),
-            Ok(SendMessageResult::Stream(reader)) => build_sse_response(reader, None),
+            Ok(SendMessageResult::Stream(reader)) => build_sse_response(
+                reader,
+                Some(self.config.sse_keep_alive_interval),
+                Some(self.config.sse_channel_capacity),
+            ),
             Err(e) => error_response(id, &e),
         }
     }
