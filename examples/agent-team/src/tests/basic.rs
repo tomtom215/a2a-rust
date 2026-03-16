@@ -18,20 +18,14 @@ use a2a_protocol_types::task::TaskState;
 use super::{TestContext, TestResult};
 use crate::helpers::make_send_params;
 
-/// Test 1: Sync SendMessage via JSON-RPC (CodeAnalyzer)
 pub async fn test_sync_jsonrpc_send(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("Test 1: Sync SendMessage via JSON-RPC (CodeAnalyzer)");
-    let client = ClientBuilder::new(&ctx.analyzer_url)
-        .build()
-        .expect("build client");
-
+    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
     let code = "fn hello() {\n    println!(\"world\");\n}\n";
     match client.send_message(make_send_params(code)).await {
         Ok(SendMessageResponse::Task(task)) => {
             let has_artifacts = task.artifacts.as_ref().map_or(0, |a| a.len());
             let state = format!("{:?}", task.status.state);
-            println!("  Task {}: {state}, {has_artifacts} artifacts", task.id);
             TestResult::pass(
                 "sync-jsonrpc-send",
                 start.elapsed().as_millis(),
@@ -51,14 +45,9 @@ pub async fn test_sync_jsonrpc_send(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 2: Streaming SendMessage via JSON-RPC (CodeAnalyzer)
 pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 2: Streaming SendMessage via JSON-RPC (CodeAnalyzer)");
-    let client = ClientBuilder::new(&ctx.analyzer_url)
-        .build()
-        .expect("build client");
-
+    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
     let code = "use std::io;\nfn main() -> io::Result<()> {\n    Ok(())\n}\n";
     match client.stream_message(make_send_params(code)).await {
         Ok(mut stream) => {
@@ -70,18 +59,10 @@ pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
                 event_count += 1;
                 match event {
                     Ok(StreamResponse::StatusUpdate(ev)) => {
-                        println!("  Status: {:?}", ev.status.state);
                         status_events.push(format!("{:?}", ev.status.state));
                     }
-                    Ok(StreamResponse::ArtifactUpdate(ev)) => {
+                    Ok(StreamResponse::ArtifactUpdate(_)) => {
                         artifact_events += 1;
-                        println!(
-                            "  Artifact: {} (append={:?}, last={:?})",
-                            ev.artifact.id, ev.append, ev.last_chunk
-                        );
-                    }
-                    Ok(StreamResponse::Task(task)) => {
-                        println!("  Task snapshot: {:?}", task.status.state);
                     }
                     Ok(_) => {}
                     Err(e) => {
@@ -95,8 +76,6 @@ pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
                 "events={event_count}, statuses=[{}], artifacts={artifact_events}",
                 status_events.join(",")
             );
-            println!("  {detail}");
-
             if event_count >= 4 {
                 TestResult::pass("streaming-jsonrpc", start.elapsed().as_millis(), &detail)
             } else {
@@ -115,19 +94,15 @@ pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 3: Sync SendMessage via REST (BuildMonitor)
 pub async fn test_sync_rest_send(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 3: Sync SendMessage via REST (BuildMonitor)");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
-
     match client.send_message(make_send_params("check")).await {
         Ok(SendMessageResponse::Task(task)) => {
             let state = format!("{:?}", task.status.state);
-            println!("  Build task {}: {state}", task.id);
             TestResult::pass(
                 "sync-rest-send",
                 start.elapsed().as_millis(),
@@ -147,36 +122,22 @@ pub async fn test_sync_rest_send(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 4: Streaming via REST (BuildMonitor)
 pub async fn test_streaming_rest(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 4: Streaming SendMessage via REST (BuildMonitor)");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
-
     match client.stream_message(make_send_params("check")).await {
         Ok(mut stream) => {
             let mut events = 0;
             while let Some(event) = stream.next().await {
                 events += 1;
                 match event {
-                    Ok(StreamResponse::StatusUpdate(ev)) => {
-                        println!("  Status: {:?}", ev.status.state);
-                    }
-                    Ok(StreamResponse::ArtifactUpdate(ev)) => {
-                        for part in &ev.artifact.parts {
-                            if let PartContent::Text { text } = &part.content {
-                                println!("  Build: {text}");
-                            }
-                        }
-                    }
+                    Ok(StreamResponse::StatusUpdate(_)) => {}
+                    Ok(StreamResponse::ArtifactUpdate(_)) => {}
                     Ok(_) => {}
-                    Err(e) => {
-                        println!("  Error: {e}");
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
             TestResult::pass(
@@ -193,19 +154,15 @@ pub async fn test_streaming_rest(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 5: Build failure path (BuildMonitor)
 pub async fn test_build_failure_path(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 5: Build failure path (BuildMonitor)");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
-
     match client.send_message(make_send_params("fail")).await {
         Ok(SendMessageResponse::Task(task)) => {
             let state = format!("{:?}", task.status.state);
-            println!("  Failed build task: {state}");
             let passed = task.status.state == TaskState::Failed;
             if passed {
                 TestResult::pass(
@@ -234,15 +191,9 @@ pub async fn test_build_failure_path(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 6: GetTask retrieval
 pub async fn test_get_task(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 6: GetTask retrieval");
-    let client = ClientBuilder::new(&ctx.analyzer_url)
-        .build()
-        .expect("build client");
-
-    // First send a message to create a task.
+    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
     let resp = client
         .send_message(make_send_params("let x = 1;"))
         .await
@@ -258,8 +209,7 @@ pub async fn test_get_task(ctx: &TestContext) -> TestResult {
             })
             .await
         {
-            Ok(fetched) => {
-                println!("  Fetched: {} ({:?})", fetched.id, fetched.status.state);
+            Ok(_fetched) => {
                 TestResult::pass(
                     "get-task",
                     start.elapsed().as_millis(),
@@ -281,14 +231,9 @@ pub async fn test_get_task(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 7: ListTasks with pagination
 pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 7: ListTasks with pagination");
-    let client = ClientBuilder::new(&ctx.analyzer_url)
-        .build()
-        .expect("build client");
-
+    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
     match client
         .list_tasks(ListTasksParams {
             tenant: None,
@@ -303,11 +248,6 @@ pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
         .await
     {
         Ok(resp) => {
-            println!(
-                "  Listed {} tasks, next_page={:?}",
-                resp.tasks.len(),
-                resp.next_page_token
-            );
             TestResult::pass(
                 "list-tasks",
                 start.elapsed().as_millis(),
@@ -322,21 +262,14 @@ pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 8: Push notification config CRUD via REST
 pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 8: Push notification config CRUD (REST)");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
-        .expect("build REST client for BuildMonitor");
-
-    // Create a task so we have a valid task_id.
+        .expect("build REST client");
     let task_id = match client.send_message(make_send_params("ping")).await {
-        Ok(SendMessageResponse::Task(task)) => {
-            println!("  Created task for push test: {}", task.id);
-            task.id.to_string()
-        }
+        Ok(SendMessageResponse::Task(task)) => task.id.to_string(),
         _ => {
             return TestResult::fail(
                 "push-config-crud",
@@ -358,7 +291,6 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
         }),
     };
 
-    // 1. Create push config.
     let stored = match client.set_push_config(push_config).await {
         Ok(s) => s,
         Err(e) => {
@@ -370,17 +302,7 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
         }
     };
     let config_id = stored.id.clone().unwrap_or_default();
-    println!("  CREATE: id={config_id}");
-
-    // 2. Get push config by id.
-    match client
-        .get_push_config(task_id.clone(), config_id.clone())
-        .await
-    {
-        Ok(got) => println!("  GET:    id={:?} url={}", got.id, got.url),
-        Err(e) => println!("  GET:    error: {e}"),
-    }
-    // 3. List push configs.
+    let _ = client.get_push_config(task_id.clone(), config_id.clone()).await;
     let list_params = || ListPushConfigsParams {
         tenant: None,
         task_id: task_id.clone(),

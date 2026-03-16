@@ -7,20 +7,19 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::TaskState;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::executor_helpers::boxed_future;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 
-use crate::helpers::make_send_params;
+use crate::helpers::{make_send_params, EventEmitter};
 
 /// Orchestrates the team: delegates tasks to other agents via A2A client calls,
 /// aggregates results, and reports a unified summary.
@@ -41,16 +40,10 @@ impl AgentExecutor for CoordinatorExecutor {
         ctx: &'a RequestContext,
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Working
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
+        boxed_future(async move {
+            let emit = EventEmitter::new(ctx, queue);
+
+            emit.status(TaskState::Working).await?;
 
             let command = ctx
                 .message
@@ -81,26 +74,15 @@ impl AgentExecutor for CoordinatorExecutor {
 
             // Emit unified report.
             let full_report = report_lines.join("\n");
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("coordinator-report", vec![Part::text(&full_report)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
-                .await?;
+            emit.artifact(
+                "coordinator-report",
+                vec![Part::text(&full_report)],
+                None,
+                Some(true),
+            )
+            .await?;
 
-            // Completed
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
+            emit.status(TaskState::Completed).await?;
 
             Ok(())
         })

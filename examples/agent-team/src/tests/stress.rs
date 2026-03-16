@@ -16,10 +16,8 @@ use a2a_protocol_types::task::{ContextId, TaskState};
 use super::{TestContext, TestResult};
 use crate::helpers::make_send_params;
 
-/// Test 31: High-concurrency stress test (20 parallel requests)
 pub async fn test_high_concurrency(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 31: High-concurrency stress (20 parallel)");
     let mut handles = Vec::new();
     for i in 0..20 {
         let url = ctx.analyzer_url.clone();
@@ -29,8 +27,7 @@ pub async fn test_high_concurrency(ctx: &TestContext) -> TestResult {
             client.send_message(make_send_params(&code)).await
         }));
     }
-    let mut successes = 0;
-    let mut failures = 0;
+    let (mut successes, mut failures) = (0, 0);
     for h in handles {
         match h.await {
             Ok(Ok(SendMessageResponse::Task(t))) => {
@@ -43,7 +40,6 @@ pub async fn test_high_concurrency(ctx: &TestContext) -> TestResult {
             _ => failures += 1,
         }
     }
-    println!("  {successes}/20 completed, {failures} failed");
     if successes == 20 {
         TestResult::pass(
             "high-concurrency",
@@ -59,10 +55,8 @@ pub async fn test_high_concurrency(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 32: Mixed transport concurrent (REST + JSON-RPC simultaneously)
 pub async fn test_mixed_transport_concurrent(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 32: Mixed transport concurrent (REST + JSON-RPC)");
     let jsonrpc_url = ctx.analyzer_url.clone();
     let rest_url = ctx.build_url.clone();
 
@@ -99,15 +93,11 @@ pub async fn test_mixed_transport_concurrent(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 33: Context ID continuation (send two messages with same context_id)
 pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 33: Context ID continuation");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
 
     let context_id = ContextId::new(uuid::Uuid::new_v4().to_string());
-
-    // First message with context_id
     let params1 = MessageSendParams {
         tenant: None,
         message: Message {
@@ -125,8 +115,6 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     };
     let resp1 = client.send_message(params1).await;
     let task1_ok = matches!(&resp1, Ok(SendMessageResponse::Task(t)) if t.status.state == TaskState::Completed);
-
-    // Second message with same context_id
     let params2 = MessageSendParams {
         tenant: None,
         message: Message {
@@ -160,23 +148,16 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 34: Large message payload (100KB text part)
 pub async fn test_large_payload(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 34: Large message payload (100KB)");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-
-    // Generate a 100KB code string
     let large_code: String = (0..2000)
         .map(|i| format!("fn func_{i}() {{ let x = {i}; }}\n"))
         .collect();
     let size = large_code.len();
-    println!("  Payload size: {} bytes", size);
-
     match client.send_message(make_send_params(&large_code)).await {
         Ok(SendMessageResponse::Task(task)) => {
             if task.status.state == TaskState::Completed {
-                // Verify the analyzer actually counted the lines
                 let has_artifacts = task.artifacts.as_ref().map_or(0, |a| a.len());
                 TestResult::pass(
                     "large-payload",
@@ -204,10 +185,8 @@ pub async fn test_large_payload(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 35: Streaming with concurrent GetTask (read-while-streaming)
 pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 35: Streaming with concurrent GetTask");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
@@ -221,27 +200,20 @@ pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
                 match &event {
                     Ok(StreamResponse::StatusUpdate(ev)) => {
                         let tid = &ev.task_id.0;
-                        // Try a concurrent GetTask while streaming
+                        match client
+                            .get_task(TaskQueryParams {
+                                tenant: None,
+                                id: tid.clone(),
+                                history_length: None,
+                            })
+                            .await
                         {
-                            match client
-                                .get_task(TaskQueryParams {
-                                    tenant: None,
-                                    id: tid.clone(),
-                                    history_length: None,
-                                })
-                                .await
-                            {
-                                Ok(_) => get_task_successes += 1,
-                                Err(e) => println!("  GetTask during stream: {e}"),
-                            }
+                            Ok(_) => get_task_successes += 1,
+                            Err(_) => {}
                         }
                     }
-                    Ok(StreamResponse::ArtifactUpdate(_)) => {}
                     Ok(_) => {}
-                    Err(e) => {
-                        println!("  Stream error: {e}");
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
             if get_task_successes > 0 {
@@ -266,30 +238,18 @@ pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 36: Push notification delivery actually works end-to-end
 pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 36: Push notification delivery E2E");
     let client = ClientBuilder::new(&ctx.build_url)
         .with_protocol_binding("REST")
         .build()
         .unwrap();
-
-    // First, set up the push config BEFORE sending the message by using
-    // a task created specifically for this purpose
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
-
-    // Create a task using stream, grab its ID, set push config, then let it run
     match client.stream_message(make_send_params("slow")).await {
         Ok(mut stream) => {
             let mut task_id = None;
-
-            // Get task_id from first event
             if let Some(Ok(StreamResponse::StatusUpdate(ev))) = stream.next().await {
                 task_id = Some(ev.task_id.0.clone());
-                println!("  Task ID: {}", ev.task_id);
-
-                // Set up push config while task is still running
                 let push_config = TaskPushNotificationConfig {
                     tenant: None,
                     id: None,
@@ -301,27 +261,12 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
                         credentials: "push-secret".into(),
                     }),
                 };
-                match client.set_push_config(push_config).await {
-                    Ok(stored) => println!("  Push config set: {:?}", stored.id),
-                    Err(e) => println!("  Push config error: {e}"),
-                }
+                let _ = client.set_push_config(push_config).await;
             }
-
-            // Drain remaining events
             while stream.next().await.is_some() {}
-
-            // Wait a moment for push deliveries to arrive
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
             let push_events = ctx.webhook_receiver.drain().await;
-            println!("  Push events received: {}", push_events.len());
-            for (kind, _) in &push_events {
-                println!("    - {kind}");
-            }
-
             if task_id.is_some() {
-                // Even if push events are 0, the test passes if we set up the config
-                // without error - push delivery is async and best-effort
                 TestResult::pass(
                     "push-delivery-e2e",
                     start.elapsed().as_millis(),
@@ -343,13 +288,9 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 37: ListTasks with status filter
 pub async fn test_list_tasks_status_filter(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 37: ListTasks with status filter");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-
-    // List only completed tasks
     match client
         .list_tasks(ListTasksParams {
             tenant: None,
@@ -364,14 +305,8 @@ pub async fn test_list_tasks_status_filter(ctx: &TestContext) -> TestResult {
         .await
     {
         Ok(resp) => {
-            let all_completed = resp
-                .tasks
-                .iter()
+            let all_completed = resp.tasks.iter()
                 .all(|t| t.status.state == TaskState::Completed);
-            println!(
-                "  {} completed tasks, all_completed={all_completed}",
-                resp.tasks.len()
-            );
             if all_completed && !resp.tasks.is_empty() {
                 TestResult::pass(
                     "list-status-filter",
@@ -400,16 +335,9 @@ pub async fn test_list_tasks_status_filter(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 38: Graceful shutdown test (verify handler.shutdown() works)
 pub async fn test_graceful_shutdown_semantics(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 38: Verify task store durability across requests");
-
-    // This test verifies that tasks persist in the store and can be retrieved
-    // after multiple requests, exercising the store's eviction logic
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
-
-    // Create 5 tasks
     let mut task_ids = Vec::new();
     for i in 0..5 {
         let code = format!("fn durability_{i}() {{}}");
@@ -419,8 +347,6 @@ pub async fn test_graceful_shutdown_semantics(ctx: &TestContext) -> TestResult {
             task_ids.push(task.id.to_string());
         }
     }
-
-    // Verify all 5 are still retrievable
     let mut found = 0;
     for tid in &task_ids {
         if client
@@ -435,8 +361,6 @@ pub async fn test_graceful_shutdown_semantics(ctx: &TestContext) -> TestResult {
             found += 1;
         }
     }
-
-    println!("  Created {}, found {}", task_ids.len(), found);
     if found == task_ids.len() {
         TestResult::pass(
             "store-durability",
@@ -452,19 +376,11 @@ pub async fn test_graceful_shutdown_semantics(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 39: Queue depth metrics change on streaming
 pub async fn test_queue_depth_metrics(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 39: Queue depth metrics tracking");
-
-    // Metrics are tracked by the SDK — just verify they've been incrementing
-    // This exercises the on_queue_depth_change callback
     let ar = ctx.analyzer_metrics.request_count();
     let br = ctx.build_metrics.request_count();
-
-    // The test suite has already run 30+ tests, so request counts should be significant
     let total = ar + br;
-    println!("  Total requests tracked: {total} (analyzer={ar}, build={br})");
 
     if total > 20 {
         TestResult::pass(
@@ -481,10 +397,8 @@ pub async fn test_queue_depth_metrics(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 40: Streaming event ordering is correct
 pub async fn test_event_ordering(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    println!("\nTest 40: Streaming event ordering");
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
 
     match client
@@ -508,19 +422,9 @@ pub async fn test_event_ordering(ctx: &TestContext) -> TestResult {
                         }
                     }
                     Ok(_) => {}
-                    Err(e) => {
-                        println!("  Error: {e}");
-                        break;
-                    }
+                    Err(_) => break,
                 }
             }
-
-            println!(
-                "  States: [{}], artifacts: {artifact_count}",
-                states.join(" -> ")
-            );
-
-            // Verify ordering: Working must come before Completed, artifacts between
             let working_idx = states.iter().position(|s| s == "Working");
             let completed_idx = states.iter().position(|s| s == "Completed");
             let order_correct = match (working_idx, completed_idx) {
