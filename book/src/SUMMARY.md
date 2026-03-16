@@ -37,6 +37,7 @@
 # Testing & Deployment
 
 - [Testing Your Agent](./deployment/testing.md)
+- [Dogfooding: The Agent Team](./deployment/dogfooding.md)
 - [Production Hardening](./deployment/production.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
 
