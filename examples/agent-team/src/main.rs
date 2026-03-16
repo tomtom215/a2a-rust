@@ -1978,6 +1978,120 @@ async fn main() {
         }
     }
 
+    // Test 14: CancelTask mid-stream (BuildMonitor)
+    {
+        let start = Instant::now();
+        println!("\nTest 14: CancelTask mid-stream (BuildMonitor)");
+        let client = ClientBuilder::new(&build_url)
+            .with_protocol_binding("REST")
+            .build()
+            .expect("build REST client");
+
+        // Start a slow build that takes 5 phases.
+        match client.stream_message(make_send_params("slow")).await {
+            Ok(mut stream) => {
+                // Read events until we get the task_id from a status or artifact update.
+                let mut task_id = None;
+                let mut events_before_cancel = 0;
+                while let Some(event) = stream.next().await {
+                    events_before_cancel += 1;
+                    match &event {
+                        Ok(StreamResponse::StatusUpdate(ev)) => {
+                            task_id = Some(ev.task_id.0.clone());
+                            println!("  Status: {:?}", ev.status.state);
+                        }
+                        Ok(StreamResponse::ArtifactUpdate(ev)) => {
+                            task_id = Some(ev.task_id.0.clone());
+                            for part in &ev.artifact.parts {
+                                if let PartContent::Text { text } = &part.content {
+                                    println!("  Build: {text}");
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("  Error: {e}");
+                            break;
+                        }
+                    }
+                    // After 2 events, cancel the task.
+                    if events_before_cancel >= 2 {
+                        if let Some(ref tid) = task_id {
+                            println!("  Canceling task {tid}...");
+                            match client.cancel_task(tid.clone()).await {
+                                Ok(task) => {
+                                    println!("  Cancel result: {:?}", task.status.state);
+                                }
+                                Err(e) => {
+                                    println!("  Cancel error: {e}");
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                // Drain remaining events.
+                let mut events_after_cancel = 0;
+                while let Some(event) = stream.next().await {
+                    events_after_cancel += 1;
+                    if let Ok(StreamResponse::StatusUpdate(ev)) = &event {
+                        println!("  Post-cancel status: {:?}", ev.status.state);
+                    }
+                }
+
+                // Verify via GetTask that the task is canceled.
+                if let Some(tid) = task_id {
+                    let query = a2a_protocol_types::params::TaskQueryParams {
+                        tenant: None,
+                        id: tid.clone(),
+                        history_length: None,
+                    };
+                    match client.get_task(query).await {
+                        Ok(task) => {
+                            let is_canceled = task.status.state == TaskState::Canceled;
+                            if is_canceled {
+                                results.push(TestResult::pass(
+                                    "cancel-task",
+                                    start.elapsed().as_millis(),
+                                    &format!(
+                                        "events_before={events_before_cancel} events_after={events_after_cancel}"
+                                    ),
+                                ));
+                            } else {
+                                results.push(TestResult::fail(
+                                    "cancel-task",
+                                    start.elapsed().as_millis(),
+                                    &format!("expected Canceled, got {:?}", task.status.state),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(TestResult::fail(
+                                "cancel-task",
+                                start.elapsed().as_millis(),
+                                &format!("GetTask error: {e}"),
+                            ));
+                        }
+                    }
+                } else {
+                    results.push(TestResult::fail(
+                        "cancel-task",
+                        start.elapsed().as_millis(),
+                        "no task_id received from stream",
+                    ));
+                }
+            }
+            Err(e) => {
+                results.push(TestResult::fail(
+                    "cancel-task",
+                    start.elapsed().as_millis(),
+                    &format!("stream error: {e}"),
+                ));
+            }
+        }
+    }
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
