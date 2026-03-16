@@ -195,7 +195,7 @@ This starts servers on random ports and runs 5 demos:
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
-│  a2a-protocol-server / a2a-protocol-client  │
+│  a2a-protocol-server / a2a-protocol-client │
 │  RequestHandler · AgentExecutor · Client   │
 └─────────────────────┬──────────────────────┘
                       │
