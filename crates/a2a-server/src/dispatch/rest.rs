@@ -280,14 +280,22 @@ impl RestDispatcher {
     async fn handle_set_push_config(
         &self,
         req: hyper::Request<Incoming>,
-        _task_id: &str,
+        task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
+        // The REST client may strip `taskId` from the body (it's already in the
+        // URL path).  Inject it before deserializing so the required field is
+        // always present.
+        let body_value: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+            Ok(v) => v,
+            Err(e) => return error_json_response(400, &e.to_string()),
+        };
+        let body_value = inject_field_if_missing(body_value, "taskId", task_id);
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-            match serde_json::from_slice(&body_bytes) {
+            match serde_json::from_value(body_value) {
                 Ok(c) => c,
                 Err(e) => return error_json_response(400, &e.to_string()),
             };
@@ -400,6 +408,23 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
 }
 
 // ── Query parsing helpers ───────────────────────────────────────────────────
+
+/// Injects a field into a JSON object if it is missing.
+///
+/// REST routes extract path parameters from the URL, so the client may omit
+/// them from the body.  This helper re-injects the value so that the
+/// downstream deserializer always sees the full object.
+fn inject_field_if_missing(
+    mut value: serde_json::Value,
+    field: &str,
+    path_value: &str,
+) -> serde_json::Value {
+    if let Some(obj) = value.as_object_mut() {
+        obj.entry(field.to_owned())
+            .or_insert_with(|| serde_json::Value::String(path_value.to_owned()));
+    }
+    value
+}
 
 /// Strips an optional `/tenants/{tenant}/` prefix, returning the tenant and
 /// remaining path.

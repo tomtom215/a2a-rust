@@ -52,7 +52,7 @@ use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
@@ -596,27 +596,64 @@ impl AgentExecutor for HealthMonitorExecutor {
             let mut results = Vec::new();
 
             for url in &agent_urls {
-                // Try to connect and list tasks.
-                let status = match ClientBuilder::new(url).build() {
-                    Ok(client) => {
-                        match client
-                            .list_tasks(ListTasksParams {
-                                tenant: None,
-                                context_id: None,
-                                status: None,
-                                page_size: Some(1),
-                                page_token: None,
-                                status_timestamp_after: None,
-                                include_artifacts: None,
-                                history_length: None,
-                            })
-                            .await
+                // Fetch the agent card to discover the correct protocol binding,
+                // avoiding protocol mismatch errors (e.g. JSON-RPC client → REST server).
+                let status = match resolve_agent_card(url).await {
+                    Ok(card) => {
+                        let binding = card
+                            .supported_interfaces
+                            .first()
+                            .map(|i| i.protocol_binding.as_str())
+                            .unwrap_or("JSONRPC");
+                        match ClientBuilder::new(url)
+                            .with_protocol_binding(binding)
+                            .build()
                         {
-                            Ok(_) => "HEALTHY",
-                            Err(_) => "DEGRADED",
+                            Ok(client) => {
+                                match client
+                                    .list_tasks(ListTasksParams {
+                                        tenant: None,
+                                        context_id: None,
+                                        status: None,
+                                        page_size: Some(1),
+                                        page_token: None,
+                                        status_timestamp_after: None,
+                                        include_artifacts: None,
+                                        history_length: None,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => "HEALTHY",
+                                    Err(_) => "DEGRADED",
+                                }
+                            }
+                            Err(_) => "UNREACHABLE",
                         }
                     }
-                    Err(_) => "UNREACHABLE",
+                    Err(_) => {
+                        // Fall back to default JSON-RPC if agent card is unavailable.
+                        match ClientBuilder::new(url).build() {
+                            Ok(client) => {
+                                match client
+                                    .list_tasks(ListTasksParams {
+                                        tenant: None,
+                                        context_id: None,
+                                        status: None,
+                                        page_size: Some(1),
+                                        page_token: None,
+                                        status_timestamp_after: None,
+                                        include_artifacts: None,
+                                        history_length: None,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => "HEALTHY",
+                                    Err(_) => "DEGRADED",
+                                }
+                            }
+                            Err(_) => "UNREACHABLE",
+                        }
+                    }
                 };
                 results.push(format!("{url}: {status}"));
             }
@@ -1569,17 +1606,16 @@ async fn main() {
         }
     }
 
-    // Test 8: Push notification registration and delivery
-    // NOTE: Uses JSON-RPC transport for HealthMonitor (which has push support).
-    // REST transport has a known bug where taskId is stripped from body by
-    // path-param extraction but the server still requires it in the body.
-    // This is a real dogfooding discovery — tracked for fix.
+    // Test 8: Push notification registration and delivery (via REST)
+    // Previously used JSON-RPC workaround because REST stripped taskId from
+    // the body. Fixed: server now injects path params into the body.
     {
         let start = Instant::now();
-        println!("\nTest 8: Push notification lifecycle");
-        let client = ClientBuilder::new(&health_url)
+        println!("\nTest 8: Push notification lifecycle (REST)");
+        let client = ClientBuilder::new(&build_url)
+            .with_protocol_binding("REST")
             .build()
-            .expect("build JSON-RPC client");
+            .expect("build REST client for BuildMonitor");
 
         // First, create a task so we have a valid task_id.
         let init_resp = client.send_message(make_send_params("ping")).await;

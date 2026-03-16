@@ -50,6 +50,13 @@ pub enum ClientError {
 
     /// A request or stream connection timed out.
     Timeout(String),
+
+    /// The server appears to use a different protocol binding than the client.
+    ///
+    /// For example, a JSON-RPC client connected to a REST-only server (or
+    /// vice-versa).  Check the agent card's `supported_interfaces` to select
+    /// the correct protocol binding.
+    ProtocolBindingMismatch(String),
 }
 
 impl fmt::Display for ClientError {
@@ -68,6 +75,9 @@ impl fmt::Display for ClientError {
                 write!(f, "authentication required for task: {task_id}")
             }
             Self::Timeout(msg) => write!(f, "timeout: {msg}"),
+            Self::ProtocolBindingMismatch(msg) => {
+                write!(f, "protocol binding mismatch: {msg}; check the agent card's supported_interfaces")
+            }
         }
     }
 }

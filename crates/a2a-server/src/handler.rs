@@ -304,9 +304,11 @@ impl RequestHandler {
         self.interceptors.run_after(&call_ctx).await?;
 
         if streaming {
+            self.metrics.on_response(method_name);
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.
+            self.metrics.on_response(method_name);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
         } else {
             // Poll reader until final event. Pass the executor handle so
@@ -314,6 +316,7 @@ impl RequestHandler {
             let final_task = self
                 .collect_events(reader, task_id.clone(), executor_handle)
                 .await?;
+            self.metrics.on_response(method_name);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(
                 final_task,
             )))
@@ -327,6 +330,7 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
         trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
+        self.metrics.on_request("GetTask");
         let call_ctx = CallContext::new("GetTask");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -338,6 +342,7 @@ impl RequestHandler {
             .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("GetTask");
         Ok(task)
     }
 
@@ -348,12 +353,14 @@ impl RequestHandler {
     /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
         trace_info!(method = "ListTasks", "handling list tasks");
+        self.metrics.on_request("ListTasks");
         let call_ctx = CallContext::new("ListTasks");
         self.interceptors.run_before(&call_ctx).await?;
 
         let result = self.task_store.list(&params).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("ListTasks");
         Ok(result)
     }
 
@@ -364,6 +371,7 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
     pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
+        self.metrics.on_request("CancelTask");
         let call_ctx = CallContext::new("CancelTask");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -411,6 +419,7 @@ impl RequestHandler {
         self.task_store.save(updated.clone()).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("CancelTask");
         Ok(updated)
     }
 
@@ -421,6 +430,7 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
+        self.metrics.on_request("SubscribeToTask");
         let call_ctx = CallContext::new("SubscribeToTask");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -439,6 +449,7 @@ impl RequestHandler {
         })?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("SubscribeToTask");
         Ok(reader)
     }
 
@@ -451,6 +462,7 @@ impl RequestHandler {
         &self,
         config: TaskPushNotificationConfig,
     ) -> ServerResult<TaskPushNotificationConfig> {
+        self.metrics.on_request("CreateTaskPushNotificationConfig");
         if self.push_sender.is_none() {
             return Err(ServerError::PushNotSupported);
         }
@@ -460,6 +472,8 @@ impl RequestHandler {
         let result = self.push_config_store.set(config).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics
+            .on_response("CreateTaskPushNotificationConfig");
         Ok(result)
     }
 
@@ -472,6 +486,7 @@ impl RequestHandler {
         &self,
         params: GetPushConfigParams,
     ) -> ServerResult<TaskPushNotificationConfig> {
+        self.metrics.on_request("GetTaskPushNotificationConfig");
         let call_ctx = CallContext::new("GetTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -487,6 +502,7 @@ impl RequestHandler {
             })?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("GetTaskPushNotificationConfig");
         Ok(config)
     }
 
@@ -499,12 +515,14 @@ impl RequestHandler {
         &self,
         task_id: &str,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
+        self.metrics.on_request("ListTaskPushNotificationConfigs");
         let call_ctx = CallContext::new("ListTaskPushNotificationConfigs");
         self.interceptors.run_before(&call_ctx).await?;
 
         let configs = self.push_config_store.list(task_id).await?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("ListTaskPushNotificationConfigs");
         Ok(configs)
     }
 
@@ -514,6 +532,7 @@ impl RequestHandler {
     ///
     /// Returns a [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
+        self.metrics.on_request("DeleteTaskPushNotificationConfig");
         let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -522,6 +541,8 @@ impl RequestHandler {
             .await?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics
+            .on_response("DeleteTaskPushNotificationConfig");
         Ok(())
     }
 
@@ -531,6 +552,7 @@ impl RequestHandler {
     ///
     /// Returns [`ServerError::Internal`] if no agent card is configured.
     pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard> {
+        self.metrics.on_request("GetExtendedAgentCard");
         let call_ctx = CallContext::new("GetExtendedAgentCard");
         self.interceptors.run_before(&call_ctx).await?;
 
@@ -540,6 +562,7 @@ impl RequestHandler {
             .ok_or_else(|| ServerError::Internal("no agent card configured".into()))?;
 
         self.interceptors.run_after(&call_ctx).await?;
+        self.metrics.on_response("GetExtendedAgentCard");
         Ok(card)
     }
 

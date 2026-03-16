@@ -77,15 +77,15 @@ The agent team exercises **27 distinct SDK features** in a single run:
 - `CancellationToken` cooperative checking
 - Request metadata passthrough
 
-## What Dogfooding Found
+## What Dogfooding Found (and Fixed)
 
-The agent team uncovered **three real issues** that 500+ unit tests, integration tests, property tests, and fuzz tests did not catch:
+The agent team uncovered **three real issues** that 500+ unit tests, integration tests, property tests, and fuzz tests did not catch. All three have been fixed.
 
-### Bug 1: REST Transport Strips Required Fields from Push Config Body
+### Bug 1: REST Transport Strips Required Fields from Push Config Body (**Fixed**)
 
-**Severity:** Medium — breaks push notification config via REST transport.
+**Severity:** Medium — broke push notification config via REST transport.
 
-The client's REST transport extracts path parameters from the serialized JSON body to interpolate URL templates. For `CreateTaskPushNotificationConfig`, the route is `/tasks/{taskId}/pushNotificationConfigs`, so the transport extracts `taskId` from the body and *removes it*. But the server-side handler deserializes the body as a full `TaskPushNotificationConfig` — which requires `taskId`. The request fails with HTTP 400:
+The client's REST transport extracts path parameters from the serialized JSON body to interpolate URL templates. For `CreateTaskPushNotificationConfig`, the route is `/tasks/{taskId}/pushNotificationConfigs`, so the transport extracts `taskId` from the body and *removes it*. But the server-side handler deserializes the body as a full `TaskPushNotificationConfig` — which requires `taskId`. The request failed with HTTP 400:
 
 ```
 missing field `taskId` at line 1 column 135
@@ -93,26 +93,27 @@ missing field `taskId` at line 1 column 135
 
 **Why unit tests missed it:** Unit tests test the client transport and server dispatch in isolation. The client correctly builds the URL. The server correctly parses valid bodies. The bug only appears when they interact — the client sends a body the server can't parse.
 
-**Fix options:**
-1. Server-side: Inject `taskId` from the URL path into the parsed body before deserialization
-2. Client-side: Stop removing path params from the body for POST requests
-3. Both: Accept that path params and body params can overlap
+**Fix:** Server-side `handle_set_push_config` now injects `taskId` from the URL path parameter into the deserialized JSON body before parsing `TaskPushNotificationConfig`. The `inject_field_if_missing` helper is reusable for any REST endpoint where path params overlap with body fields. Test 8 now uses REST transport directly.
 
-### Bug 2: `on_response` Metrics Hook Never Called
+### Bug 2: `on_response` Metrics Hook Never Called (**Fixed**)
 
-**Severity:** Low — metrics observers never see successful response events.
+**Severity:** Low — metrics observers never saw successful response events.
 
-The `Metrics::on_response` callback registered via `RequestHandlerBuilder::with_metrics()` shows 0 responses even after 17 successful requests across all agents. The `on_request` hook fires correctly, but the response hook is either not wired in the handler or is only called on a code path that the agent team doesn't exercise.
+The `Metrics::on_response` callback registered via `RequestHandlerBuilder::with_metrics()` showed 0 responses even after 17 successful requests across all agents. The `on_request` hook only fired for `SendMessage`/`SendStreamingMessage`, and `on_response` was never called in any handler method.
 
-**Why unit tests missed it:** Metrics tests likely verify that the trait compiles and that `NoopMetrics` doesn't panic — but don't verify that the handler actually calls `on_response` at the right point in the request lifecycle.
+**Why unit tests missed it:** Metrics tests verify that the trait compiles and that `NoopMetrics` doesn't panic — but don't verify that the handler actually calls `on_response` at the right point in the request lifecycle.
 
-### Finding 3: Protocol Binding Mismatch Produces Confusing Errors
+**Fix:** Added `self.metrics.on_request()` and `self.metrics.on_response()` calls to all handler methods (`on_get_task`, `on_list_tasks`, `on_cancel_task`, `on_resubscribe`, `on_set_push_config`, `on_get_push_config`, `on_list_push_configs`, `on_delete_push_config`, `on_get_extended_agent_card`). The metrics summary now shows non-zero response counts.
+
+### Finding 3: Protocol Binding Mismatch Produces Confusing Errors (**Fixed**)
 
 **Severity:** Low — developer experience issue.
 
-When the HealthMonitor (using a default JSON-RPC client) calls `list_tasks` on the BuildMonitor (a REST-only server), the request fails with an opaque connection/parsing error rather than a clear "protocol binding mismatch" message. The health check reports "DEGRADED" instead of explaining that the client is speaking the wrong protocol.
+When the HealthMonitor (using a default JSON-RPC client) called `list_tasks` on the BuildMonitor (a REST-only server), the request failed with an opaque connection/parsing error rather than a clear "protocol binding mismatch" message. The health check reported "DEGRADED" instead of explaining that the client was speaking the wrong protocol.
 
 **Why tests missed it:** Tests use matched client/server pairs. In a real multi-agent deployment, agents discover each other dynamically and may not know which transport to use without consulting the agent card first.
+
+**Fix:** Three changes: (1) The HealthMonitor now fetches the agent card via `resolve_agent_card()` before health-checking, and uses the card's `protocol_binding` to build the correct client. All agents now report HEALTHY. (2) A new `ClientError::ProtocolBindingMismatch` variant provides a clear diagnostic when a JSON-RPC client receives a non-JSON-RPC response. (3) The JSON-RPC transport detects non-JSON-RPC responses and returns the new error variant with a hint to check the agent card.
 
 ## Running the Agent Team
 
