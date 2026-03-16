@@ -44,14 +44,19 @@ fn prelude_includes_server_types() {
 
 #[test]
 fn types_module_reexports_core_types() {
-    let _: a2a_protocol_sdk::types::task::TaskState = a2a_protocol_sdk::types::task::TaskState::Submitted;
-    let _: a2a_protocol_sdk::types::error::ErrorCode = a2a_protocol_sdk::types::error::ErrorCode::InternalError;
+    let _: a2a_protocol_sdk::types::task::TaskState =
+        a2a_protocol_sdk::types::task::TaskState::Submitted;
+    let _: a2a_protocol_sdk::types::error::ErrorCode =
+        a2a_protocol_sdk::types::error::ErrorCode::InternalError;
 }
 
 #[test]
 fn types_module_reexports_protocol_constants() {
     assert_eq!(a2a_protocol_sdk::types::A2A_VERSION, "1.0.0");
-    assert_eq!(a2a_protocol_sdk::types::A2A_CONTENT_TYPE, "application/a2a+json");
+    assert_eq!(
+        a2a_protocol_sdk::types::A2A_CONTENT_TYPE,
+        "application/a2a+json"
+    );
     assert_eq!(a2a_protocol_sdk::types::A2A_VERSION_HEADER, "A2A-Version");
 }
 

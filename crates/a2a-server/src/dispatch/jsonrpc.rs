@@ -210,27 +210,32 @@ impl JsonRpcDispatcher {
                 );
                 serde_json::to_vec(&resp).unwrap_or_default()
             }
-            "GetTask" => match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req) {
+            "GetTask" => match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req)
+            {
                 Ok(p) => match self.handler.on_get_task(p).await {
                     Ok(r) => success_response_bytes(id, &r),
                     Err(e) => error_response_bytes(id, &e),
                 },
                 Err(e) => error_response_bytes(id, &e),
             },
-            "ListTasks" => match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
-                Ok(p) => match self.handler.on_list_tasks(p).await {
-                    Ok(r) => success_response_bytes(id, &r),
+            "ListTasks" => {
+                match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_list_tasks(p).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
                     Err(e) => error_response_bytes(id, &e),
-                },
-                Err(e) => error_response_bytes(id, &e),
-            },
-            "CancelTask" => match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
-                Ok(p) => match self.handler.on_cancel_task(p).await {
-                    Ok(r) => success_response_bytes(id, &r),
+                }
+            }
+            "CancelTask" => {
+                match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_cancel_task(p).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
                     Err(e) => error_response_bytes(id, &e),
-                },
-                Err(e) => error_response_bytes(id, &e),
-            },
+                }
+            }
             "SubscribeToTask" => {
                 let err = ServerError::InvalidParams(
                     "SubscribeToTask not supported in batch requests".into(),
@@ -238,7 +243,8 @@ impl JsonRpcDispatcher {
                 error_response_bytes(id, &err)
             }
             "CreateTaskPushNotificationConfig" => {
-                match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req) {
+                match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
+                {
                     Ok(p) => match self.handler.on_set_push_config(p).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),

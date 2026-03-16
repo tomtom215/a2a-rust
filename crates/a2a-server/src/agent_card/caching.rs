@@ -192,7 +192,9 @@ impl Default for CacheConfig {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+    use a2a_protocol_types::agent_card::{
+        AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
+    };
     use bytes::Bytes;
     use http_body_util::Full;
 

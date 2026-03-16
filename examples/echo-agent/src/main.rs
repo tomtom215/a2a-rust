@@ -144,7 +144,9 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-async fn start_jsonrpc_server(handler: Arc<a2a_protocol_server::handler::RequestHandler>) -> SocketAddr {
+async fn start_jsonrpc_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) -> SocketAddr {
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -177,7 +179,9 @@ async fn start_jsonrpc_server(handler: Arc<a2a_protocol_server::handler::Request
     addr
 }
 
-async fn start_rest_server(handler: Arc<a2a_protocol_server::handler::RequestHandler>) -> SocketAddr {
+async fn start_rest_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) -> SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -286,7 +290,9 @@ async fn main() {
                 for art in artifacts {
                     println!("  Artifact:   {}", art.id);
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                            &part.content
+                        {
                             println!("  Content:    {text}");
                         }
                     }
@@ -358,7 +364,9 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                            &part.content
+                        {
                             println!("  Content:    {text}");
                         }
                     }

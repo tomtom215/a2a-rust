@@ -1017,7 +1017,10 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
         .await
         .unwrap_err();
     assert!(
-        matches!(cancel_err, a2a_protocol_server::ServerError::TaskNotCancelable(_)),
+        matches!(
+            cancel_err,
+            a2a_protocol_server::ServerError::TaskNotCancelable(_)
+        ),
         "canceling a completed task should fail with TaskNotCancelable, got {cancel_err:?}"
     );
 }

@@ -73,7 +73,9 @@ pub mod prelude {
     pub use a2a_protocol_types::{A2aError, A2aResult};
 
     // ── Client ───────────────────────────────────────────────────────────
-    pub use a2a_protocol_client::{A2aClient, ClientBuilder, ClientError, ClientResult, EventStream};
+    pub use a2a_protocol_client::{
+        A2aClient, ClientBuilder, ClientError, ClientResult, EventStream,
+    };
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{

@@ -444,7 +444,10 @@ async fn cancel_nonexistent_task_fails() {
         metadata: None,
     };
     let err = handler.on_cancel_task(cancel_params).await.unwrap_err();
-    assert!(matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::TaskNotFound(_)
+    ));
 }
 
 // ── Push notification config tests ──────────────────────────────────────────
@@ -530,7 +533,10 @@ async fn get_push_config_not_found() {
         id: "nonexistent".into(),
     };
     let err = handler.on_get_push_config(params).await.unwrap_err();
-    assert!(matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::InvalidParams(_)
+    ));
 }
 
 // ── Extended agent card tests ───────────────────────────────────────────────
@@ -660,7 +666,10 @@ async fn resubscribe_nonexistent_task_fails() {
         id: "nonexistent".into(),
     };
     let err = handler.on_resubscribe(params).await.unwrap_err();
-    assert!(matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::TaskNotFound(_)
+    ));
 }
 
 // ── Phase 7 tests ──────────────────────────────────────────────────────────

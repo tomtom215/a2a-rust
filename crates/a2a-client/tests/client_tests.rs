@@ -312,7 +312,8 @@ fn client_error_display_serialization() {
 
 #[test]
 fn client_error_display_protocol() {
-    let a2a = a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::InternalError, "boom");
+    let a2a =
+        a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::InternalError, "boom");
     let e = ClientError::Protocol(a2a);
     let msg = e.to_string();
     assert!(
@@ -354,7 +355,8 @@ fn client_error_source_returns_inner_for_serialization() {
 #[test]
 fn client_error_source_returns_inner_for_protocol() {
     use std::error::Error;
-    let a2a = a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::InternalError, "err");
+    let a2a =
+        a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::InternalError, "err");
     let e = ClientError::Protocol(a2a);
     assert!(e.source().is_some(), "Protocol should have a source");
 }
@@ -398,7 +400,8 @@ fn client_error_from_serde_json_error() {
 
 #[test]
 fn client_error_from_a2a_error() {
-    let a2a = a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::TaskNotFound, "not found");
+    let a2a =
+        a2a_protocol_types::A2aError::new(a2a_protocol_types::ErrorCode::TaskNotFound, "not found");
     let e: ClientError = a2a.into();
     assert!(matches!(e, ClientError::Protocol(_)));
 }

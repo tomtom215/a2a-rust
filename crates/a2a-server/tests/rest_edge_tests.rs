@@ -47,7 +47,9 @@ fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
     Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap())
 }
 
-async fn start_rest_server(handler: Arc<a2a_protocol_server::RequestHandler>) -> std::net::SocketAddr {
+async fn start_rest_server(
+    handler: Arc<a2a_protocol_server::RequestHandler>,
+) -> std::net::SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

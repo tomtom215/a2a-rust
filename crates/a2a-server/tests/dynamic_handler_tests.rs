@@ -13,7 +13,9 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use a2a_protocol_server::agent_card::dynamic_handler::{AgentCardProducer, DynamicAgentCardHandler};
+use a2a_protocol_server::agent_card::dynamic_handler::{
+    AgentCardProducer, DynamicAgentCardHandler,
+};
 
 /// Minimal agent card for tests.
 fn test_card() -> AgentCard {

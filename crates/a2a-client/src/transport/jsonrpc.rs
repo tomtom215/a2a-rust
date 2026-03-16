@@ -146,7 +146,10 @@ impl JsonRpcTransport {
             .method(hyper::Method::POST)
             .uri(&self.inner.endpoint)
             .header(header::CONTENT_TYPE, a2a_protocol_types::A2A_CONTENT_TYPE)
-            .header(a2a_protocol_types::A2A_VERSION_HEADER, a2a_protocol_types::A2A_VERSION)
+            .header(
+                a2a_protocol_types::A2A_VERSION_HEADER,
+                a2a_protocol_types::A2A_VERSION,
+            )
             .header(header::ACCEPT, accept);
 
         for (k, v) in extra_headers {

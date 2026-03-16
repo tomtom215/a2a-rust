@@ -245,7 +245,9 @@ async fn cancel_completed_task_returns_not_cancelable() {
         .await
         .unwrap();
     let task_id = match result {
-        a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => task.id,
+        a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+            task.id
+        }
         _ => panic!("expected task"),
     };
 
@@ -297,8 +299,10 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
 async fn push_config_not_supported_without_sender() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
 
-    let config =
-        a2a_protocol_types::push::TaskPushNotificationConfig::new("task-1", "http://example.com/webhook");
+    let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
+        "task-1",
+        "http://example.com/webhook",
+    );
     let result = handler.on_set_push_config(config).await;
     assert!(matches!(result, Err(ServerError::PushNotSupported)));
 }
@@ -341,7 +345,9 @@ async fn task_store_eviction_on_write() {
             artifacts: None,
             metadata: None,
         };
-        a2a_protocol_server::TaskStore::save(&store, task).await.unwrap();
+        a2a_protocol_server::TaskStore::save(&store, task)
+            .await
+            .unwrap();
     }
 
     // The oldest completed task should have been evicted
@@ -597,7 +603,8 @@ async fn event_queue_write_and_read() {
     writer.write(event).await.unwrap();
     drop(writer); // Close the channel
 
-    let received: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> = reader.read().await;
+    let received: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> =
+        reader.read().await;
     assert!(received.is_some());
     let received = received.unwrap().unwrap();
     assert!(matches!(received, StreamResponse::StatusUpdate(_)));
@@ -636,7 +643,9 @@ async fn task_store_background_eviction() {
         artifacts: None,
         metadata: None,
     };
-    a2a_protocol_server::TaskStore::save(&store, task).await.unwrap();
+    a2a_protocol_server::TaskStore::save(&store, task)
+        .await
+        .unwrap();
 
     // Wait for TTL to expire
     tokio::time::sleep(Duration::from_millis(10)).await;

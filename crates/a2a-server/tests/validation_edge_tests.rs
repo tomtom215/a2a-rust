@@ -315,7 +315,10 @@ async fn artifact_produced_in_task() {
             assert_eq!(task.status.state, TaskState::Completed);
             let artifacts = task.artifacts.expect("should have artifacts");
             assert_eq!(artifacts.len(), 1);
-            assert_eq!(artifacts[0].id, a2a_protocol_types::ArtifactId::new("art-1"));
+            assert_eq!(
+                artifacts[0].id,
+                a2a_protocol_types::ArtifactId::new("art-1")
+            );
             assert_eq!(artifacts[0].name.as_deref(), Some("output.txt"));
         }
         _ => panic!("expected Task response"),
