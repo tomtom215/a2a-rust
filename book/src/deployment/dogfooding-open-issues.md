@@ -92,29 +92,17 @@ These use sensible defaults but are not yet user-configurable via builder method
 
 ## Design Issues (Pass 4)
 
-### No Server Startup Helper
+### ~~No Server Startup Helper~~ ✅ Done
 
-**Severity:** Medium | **Effort:** Small
+Added `serve()` and `serve_with_addr()` in `a2a_protocol_server::serve`. Both `JsonRpcDispatcher` and `RestDispatcher` implement the `Dispatcher` trait.
 
-Users must manually wire `TcpListener` → `hyper::service_fn` → `hyper_util::server::conn::auto::Builder` for every agent. This is ~25 lines of identical boilerplate per server.
+### ~~No Request ID / Trace Context Propagation~~ ✅ Done
 
-**Recommendation:** Provide `a2a_protocol_server::serve(listener, handler)` or a builder pattern like `ServerBuilder::new(handler).bind("127.0.0.1:0").serve()`.
+Added `CallContext::request_id: Option<String>` — automatically populated from the `X-Request-ID` HTTP header. Also settable via `with_request_id()`.
 
-### No Request ID / Trace Context Propagation
+### ~~Client Has No Retry Logic~~ ✅ Done
 
-**Severity:** Medium | **Effort:** Medium
-
-`CallContext` has `http_headers` but no structured trace ID field. Interceptors can extract `X-Request-ID` manually, but there's no first-class support for distributed tracing across agent-to-agent calls.
-
-**Recommendation:** Add `request_id: Option<String>` to `CallContext` and propagate it through `RequestContext` so executors can include it in outbound A2A calls.
-
-### Client Has No Retry Logic
-
-**Severity:** Medium | **Effort:** Small
-
-`a2a-protocol-client` is single-attempt. Any transient network error causes immediate failure.
-
-**Recommendation:** Add `ClientBuilder::with_retry_policy(RetryPolicy)` with configurable max attempts and backoff strategy.
+Added `RetryPolicy` and `ClientBuilder::with_retry_policy()` with configurable exponential backoff. `ClientError::is_retryable()` classifies transient vs permanent errors.
 
 ### No Connection Pooling in Coordinator Pattern
 
@@ -124,13 +112,9 @@ Each `delegate_*` call in orchestrator agents creates a new `ClientBuilder::new(
 
 **Recommendation:** Document the pattern of creating clients once and reusing them. Consider adding `A2aClient::clone()` support.
 
-### Executor Event Emission Boilerplate
+### ~~Executor Event Emission Boilerplate~~ ✅ Done
 
-**Severity:** Low | **Effort:** Small
-
-Every executor must repeat `task_id.clone()`, `ContextId::new(ctx.context_id.clone())`, `metadata: None` for every event. A 4-line status update becomes a 9-line struct literal.
-
-**Recommendation:** Upstream the `EventEmitter` pattern from the agent-team example into `a2a_protocol_server::executor_helpers`.
+Upstreamed `EventEmitter` from the agent-team example to `a2a_protocol_server::executor_helpers`. Reduces 9-line struct literals to one-liners.
 
 ## Testing Gaps for Future Passes
 

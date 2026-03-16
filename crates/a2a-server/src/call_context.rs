@@ -42,6 +42,16 @@ pub struct CallContext {
     /// Extension URIs active for this request.
     pub extensions: Vec<String>,
 
+    /// First-class request/trace identifier for observability.
+    ///
+    /// Automatically populated from the `x-request-id` HTTP header when
+    /// present. Interceptors and handlers can use this for distributed
+    /// tracing without manually fishing through `http_headers`.
+    ///
+    /// If no header is present the field is `None`; callers can set it
+    /// explicitly via [`with_request_id`](Self::with_request_id).
+    pub request_id: Option<String>,
+
     /// HTTP request headers from the incoming request.
     ///
     /// Keys are lowercased for case-insensitive matching. For headers with
@@ -59,6 +69,7 @@ impl CallContext {
             method: method.into(),
             caller_identity: None,
             extensions: Vec::new(),
+            request_id: None,
             http_headers: HashMap::new(),
         }
     }
@@ -77,18 +88,37 @@ impl CallContext {
         self
     }
 
+    /// Sets the request/trace ID explicitly.
+    #[must_use]
+    pub fn with_request_id(mut self, id: impl Into<String>) -> Self {
+        self.request_id = Some(id.into());
+        self
+    }
+
     /// Sets the HTTP headers map (replacing any existing headers).
+    ///
+    /// Automatically extracts `x-request-id` into [`request_id`](Self::request_id)
+    /// if present.
     #[must_use]
     pub fn with_http_headers(mut self, headers: HashMap<String, String>) -> Self {
+        if let Some(rid) = headers.get("x-request-id") {
+            self.request_id = Some(rid.clone());
+        }
         self.http_headers = headers;
         self
     }
 
     /// Adds a single HTTP header (key is lowercased for case-insensitive matching).
+    ///
+    /// If the key is `x-request-id`, also populates [`request_id`](Self::request_id).
     #[must_use]
     pub fn with_http_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.http_headers
-            .insert(key.into().to_ascii_lowercase(), value.into());
+        let key = key.into().to_ascii_lowercase();
+        let value = value.into();
+        if key == "x-request-id" {
+            self.request_id = Some(value.clone());
+        }
+        self.http_headers.insert(key, value);
         self
     }
 }

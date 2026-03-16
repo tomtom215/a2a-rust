@@ -83,6 +83,31 @@ let client = ClientBuilder::new(url)
     .unwrap();
 ```
 
+### Retry Policy
+
+Enable automatic retries on transient failures (connection errors, timeouts, HTTP 429/502/503/504):
+
+```rust
+use a2a_protocol_client::RetryPolicy;
+
+let client = ClientBuilder::new(url)
+    .with_retry_policy(RetryPolicy::default())  // 3 retries, 500ms initial backoff
+    .build()
+    .unwrap();
+
+// Custom retry configuration
+let client = ClientBuilder::new(url)
+    .with_retry_policy(
+        RetryPolicy::default()
+            .with_max_retries(5)
+            .with_initial_backoff(Duration::from_secs(1))
+            .with_max_backoff(Duration::from_secs(60))
+            .with_backoff_multiplier(3.0),
+    )
+    .build()
+    .unwrap();
+```
+
 ### Return Immediately
 
 For push notification workflows, return the task immediately without waiting for completion:
@@ -103,6 +128,7 @@ let client = ClientBuilder::new(url)
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout(Duration)` | 30s | SSE stream connect timeout |
+| `with_retry_policy(RetryPolicy)` | None | Retry on transient errors |
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |
 | `with_return_immediately(bool)` | false | Don't wait for task completion |

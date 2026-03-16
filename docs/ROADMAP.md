@@ -11,7 +11,7 @@ implementation approach.
 
 ## 7.1 Request ID Propagation
 
-**Status:** Planned
+**Status:** Implemented
 
 **Motivation:** Correlating logs across client and server for distributed
 tracing. Without request IDs, debugging production issues requires manual

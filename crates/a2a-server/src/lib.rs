@@ -25,6 +25,7 @@
 //! | [`streaming`] | Event queues, SSE response builder |
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
+//! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`request_context`] | [`RequestContext`] |
@@ -63,6 +64,7 @@ pub mod interceptor;
 pub mod metrics;
 pub mod push;
 pub mod request_context;
+pub mod serve;
 pub mod store;
 pub mod streaming;
 
@@ -76,7 +78,7 @@ pub use call_context::CallContext;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use executor_helpers::boxed_future;
+pub use executor_helpers::{boxed_future, EventEmitter};
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use metrics::Metrics;
@@ -84,6 +86,7 @@ pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
 };
 pub use request_context::RequestContext;
+pub use serve::{serve, serve_with_addr, Dispatcher};
 pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 #[cfg(feature = "sqlite")]

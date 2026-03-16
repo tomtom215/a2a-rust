@@ -30,7 +30,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
 - **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults and SQLite reference implementations (`sqlite` feature flag)
-- **Executor ergonomics** — `boxed_future` helper and `agent_executor!` macro eliminate `Pin<Box<dyn Future>>` boilerplate
+- **Executor ergonomics** — `boxed_future` helper, `agent_executor!` macro, and `EventEmitter` eliminate `Pin<Box<dyn Future>>` and event-emission boilerplate
 - **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
 - **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
 - **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
@@ -43,6 +43,9 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection (including percent-encoded bypass), query string length limits, health/readiness endpoints
 - **Task store management** — configurable TTL-based eviction, capacity limits, amortized eviction (every 64 writes), and cursor-based pagination via `TaskStoreConfig`
 - **Security** — SSRF protection for push webhooks, header injection prevention, SSE memory limits, cancellation token map bounds with stale cleanup
+- **Server startup helper** — `serve()` and `serve_with_addr()` reduce the ~25-line hyper boilerplate to a single call
+- **Client retry** — configurable `RetryPolicy` with exponential backoff for transient failures (connection errors, timeouts, 429/502/503/504)
+- **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header for distributed tracing
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -70,49 +73,20 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ### Implement an agent
 
 ```rust
-use std::future::Future;
-use std::pin::Pin;
 use a2a_protocol_sdk::prelude::*;
 
 struct MyAgent;
 
-impl AgentExecutor for MyAgent {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Transition to Working
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            })).await?;
+// The agent_executor! macro eliminates Pin<Box<dyn Future>> boilerplate
+agent_executor!(MyAgent, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
 
-            // Produce an artifact
-            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                artifact: Artifact::new("result", vec![Part::text("Hello from my agent!")]),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            })).await?;
+    emit.status(TaskState::Working).await?;
+    emit.artifact("result", vec![Part::text("Hello from my agent!")], None, Some(true)).await?;
+    emit.status(TaskState::Completed).await?;
 
-            // Mark completed
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            })).await?;
-
-            Ok(())
-        })
-    }
-}
+    Ok(())
+});
 ```
 
 > **Note:** `AgentExecutor` is object-safe — methods return `Pin<Box<dyn Future>>`.
@@ -132,11 +106,8 @@ let handler = Arc::new(
         .expect("build handler"),
 );
 
-// JSON-RPC transport
-let jsonrpc = Arc::new(JsonRpcDispatcher::new(handler.clone()));
-
-// REST transport
-let rest = Arc::new(RestDispatcher::new(handler));
+// One-liner server startup (replaces ~25 lines of hyper boilerplate)
+serve("0.0.0.0:3000", JsonRpcDispatcher::new(handler)).await?;
 ```
 
 ### Use the client
@@ -145,6 +116,7 @@ let rest = Arc::new(RestDispatcher::new(handler));
 use a2a_protocol_sdk::prelude::*;
 
 let client = ClientBuilder::new("http://localhost:8080")
+    .with_retry_policy(RetryPolicy::default())  // automatic retry on transient errors
     .build()
     .expect("build client");
 

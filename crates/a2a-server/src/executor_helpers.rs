@@ -56,6 +56,15 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::Part;
+use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+use crate::request_context::RequestContext;
+use crate::streaming::EventQueueWriter;
+
 /// Wraps an async expression into `Pin<Box<dyn Future<Output = T> + Send + 'a>>`.
 ///
 /// This is the minimal helper for reducing [`AgentExecutor`](crate::AgentExecutor)
@@ -167,4 +176,84 @@ macro_rules! agent_executor {
             }
         }
     };
+}
+
+// ── EventEmitter ─────────────────────────────────────────────────────────────
+
+/// Ergonomic helper for emitting status and artifact events from an executor.
+///
+/// Caches `task_id` and `context_id` from the [`RequestContext`] so that every
+/// event emission is a one-liner instead of a 7-line struct literal.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use a2a_protocol_server::executor_helpers::EventEmitter;
+/// use a2a_protocol_types::task::TaskState;
+/// use a2a_protocol_types::message::Part;
+///
+/// let emit = EventEmitter::new(ctx, queue);
+/// emit.status(TaskState::Working).await?;
+/// emit.artifact("result", vec![Part::text("hello")], None, Some(true)).await?;
+/// emit.status(TaskState::Completed).await?;
+/// ```
+pub struct EventEmitter<'a> {
+    /// The request context for this execution.
+    pub ctx: &'a RequestContext,
+    /// The event queue writer for this execution.
+    pub queue: &'a dyn EventQueueWriter,
+}
+
+impl<'a> EventEmitter<'a> {
+    /// Creates a new [`EventEmitter`] from the given context and queue.
+    #[must_use]
+    pub fn new(ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter) -> Self {
+        Self { ctx, queue }
+    }
+
+    /// Emits a status update event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn status(&self, state: TaskState) -> A2aResult<()> {
+        self.queue
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: self.ctx.task_id.clone(),
+                context_id: ContextId::new(self.ctx.context_id.clone()),
+                status: TaskStatus::new(state),
+                metadata: None,
+            }))
+            .await
+    }
+
+    /// Emits an artifact update event.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event queue write fails.
+    pub async fn artifact(
+        &self,
+        id: &str,
+        parts: Vec<Part>,
+        append: Option<bool>,
+        last_chunk: Option<bool>,
+    ) -> A2aResult<()> {
+        self.queue
+            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: self.ctx.task_id.clone(),
+                context_id: ContextId::new(self.ctx.context_id.clone()),
+                artifact: Artifact::new(id, parts),
+                append,
+                last_chunk,
+                metadata: None,
+            }))
+            .await
+    }
+
+    /// Returns `true` if the task has been cancelled.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.ctx.cancellation_token.is_cancelled()
+    }
 }

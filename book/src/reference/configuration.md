@@ -76,10 +76,20 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | SSE connect timeout |
+| `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors |
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
+
+### RetryPolicy
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_retries` | `u32` | 3 | Maximum retry attempts |
+| `initial_backoff` | `Duration` | 500ms | Backoff before first retry |
+| `max_backoff` | `Duration` | 30s | Caps exponential growth |
+| `backoff_multiplier` | `f64` | 2.0 | Multiplier per retry |
 
 ### SSE Parser Limits
 

@@ -114,6 +114,7 @@ pub mod discovery;
 pub mod error;
 pub mod interceptor;
 pub mod methods;
+pub mod retry;
 pub mod streaming;
 #[cfg(feature = "tls-rustls")]
 pub mod tls;
@@ -128,5 +129,6 @@ pub use config::ClientConfig;
 pub use discovery::resolve_agent_card;
 pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
+pub use retry::RetryPolicy;
 pub use streaming::EventStream;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};

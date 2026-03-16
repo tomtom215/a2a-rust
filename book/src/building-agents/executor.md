@@ -90,6 +90,35 @@ agent_executor!(CancelableAgent,
 );
 ```
 
+### `EventEmitter` helper
+
+Eliminates the repetitive `task_id.clone()` / `context_id.clone()` in every event:
+
+```rust
+use a2a_protocol_server::executor_helpers::EventEmitter;
+
+agent_executor!(MyAgent, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+
+    emit.status(TaskState::Working).await?;
+    emit.artifact("result", vec![Part::text("done")], None, Some(true)).await?;
+
+    if emit.is_cancelled() {
+        emit.status(TaskState::Canceled).await?;
+        return Ok(());
+    }
+
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
+```
+
+| Method | Description |
+|--------|-------------|
+| `status(TaskState)` | Emit a status update event |
+| `artifact(id, parts, append, last_chunk)` | Emit an artifact update event |
+| `is_cancelled()` | Check if the task was cancelled |
+
 ## RequestContext
 
 The `RequestContext` provides information about the incoming request:

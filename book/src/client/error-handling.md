@@ -73,6 +73,30 @@ let client = ClientBuilder::new(url)
     .build()?;
 ```
 
+### Automatic Retries
+
+Use `RetryPolicy` to automatically retry transient errors:
+
+```rust
+use a2a_protocol_client::RetryPolicy;
+
+let client = ClientBuilder::new(url)
+    .with_retry_policy(RetryPolicy::default())
+    .build()?;
+```
+
+You can check if an error is retryable programmatically:
+
+```rust
+match client.send_message(params).await {
+    Err(e) if e.is_retryable() => println!("Transient error: {e}"),
+    Err(e) => println!("Permanent error: {e}"),
+    Ok(resp) => { /* ... */ }
+}
+```
+
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, and `UnexpectedStatus` with codes 429, 502, 503, or 504.
+
 ## Server Errors
 
 When building an agent, the `ServerError` type covers handler-level failures:
