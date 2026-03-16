@@ -326,7 +326,16 @@ impl RestDispatcher {
         task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self.handler.on_list_push_configs(task_id).await {
-            Ok(configs) => json_ok_response(&configs),
+            Ok(configs) => {
+                // Wrap in the response envelope so the client can deserialize
+                // as ListPushConfigsResponse (object with `configs` field)
+                // rather than a bare JSON array.
+                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                    configs,
+                    next_page_token: None,
+                };
+                json_ok_response(&resp)
+            }
             Err(e) => server_error_to_response(&e),
         }
     }

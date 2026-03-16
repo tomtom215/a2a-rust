@@ -76,7 +76,10 @@ impl fmt::Display for ClientError {
             }
             Self::Timeout(msg) => write!(f, "timeout: {msg}"),
             Self::ProtocolBindingMismatch(msg) => {
-                write!(f, "protocol binding mismatch: {msg}; check the agent card's supported_interfaces")
+                write!(
+                    f,
+                    "protocol binding mismatch: {msg}; check the agent card's supported_interfaces"
+                )
             }
         }
     }

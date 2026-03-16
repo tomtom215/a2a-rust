@@ -196,13 +196,11 @@ impl JsonRpcTransport {
             });
         }
 
-        let envelope: JsonRpcResponse<serde_json::Value> =
-            serde_json::from_slice(&body_bytes).map_err(|e| {
+        let envelope: JsonRpcResponse<serde_json::Value> = serde_json::from_slice(&body_bytes)
+            .map_err(|e| {
                 // If the response isn't valid JSON-RPC, the server may use a
                 // different protocol binding (e.g. REST).
-                let preview = String::from_utf8_lossy(
-                    &body_bytes[..body_bytes.len().min(200)],
-                );
+                let preview = String::from_utf8_lossy(&body_bytes[..body_bytes.len().min(200)]);
                 if preview.contains("jsonrpc") {
                     ClientError::Serialization(e)
                 } else {

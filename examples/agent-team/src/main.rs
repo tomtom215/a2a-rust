@@ -222,10 +222,6 @@ impl WebhookReceiver {
         }
     }
 
-    async fn count(&self) -> usize {
-        self.received.lock().await.len()
-    }
-
     async fn drain(&self) -> Vec<(String, serde_json::Value)> {
         std::mem::take(&mut *self.received.lock().await)
     }
@@ -1606,18 +1602,18 @@ async fn main() {
         }
     }
 
-    // Test 8: Push notification registration and delivery (via REST)
-    // Previously used JSON-RPC workaround because REST stripped taskId from
-    // the body. Fixed: server now injects path params into the body.
+    // Test 8: Push notification config CRUD via REST
+    // Exercises the full lifecycle: create → get → list → delete.
+    // Uses REST transport for BuildMonitor (which has push support).
     {
         let start = Instant::now();
-        println!("\nTest 8: Push notification lifecycle (REST)");
+        println!("\nTest 8: Push notification config CRUD (REST)");
         let client = ClientBuilder::new(&build_url)
             .with_protocol_binding("REST")
             .build()
             .expect("build REST client for BuildMonitor");
 
-        // First, create a task so we have a valid task_id.
+        // Create a task so we have a valid task_id.
         let init_resp = client.send_message(make_send_params("ping")).await;
         let task_id = match &init_resp {
             Ok(SendMessageResponse::Task(task)) => {
@@ -1625,78 +1621,109 @@ async fn main() {
                 task.id.to_string()
             }
             _ => {
-                println!("  Could not create initial task");
-                "fallback-task".to_owned()
-            }
-        };
-
-        let webhook_url = format!("http://{webhook_addr}/webhook");
-        let push_config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: task_id.clone(),
-            url: webhook_url.clone(),
-            token: Some("test-token-123".into()),
-            authentication: Some(AuthenticationInfo {
-                scheme: "bearer".into(),
-                credentials: "my-secret-bearer".into(),
-            }),
-        };
-
-        // Register push config.
-        match client.set_push_config(push_config).await {
-            Ok(stored) => {
-                println!("  Push config registered: id={:?}", stored.id);
-
-                // List push configs.
-                match client
-                    .list_push_configs(ListPushConfigsParams {
-                        tenant: None,
-                        task_id: task_id.clone(),
-                        page_size: Some(10),
-                        page_token: None,
-                    })
-                    .await
-                {
-                    Ok(list) => {
-                        println!("  Push configs listed: {}", list.configs.len());
-                    }
-                    Err(e) => {
-                        println!("  List push configs error: {e}");
-                    }
-                }
-
-                // Now send another message that will trigger push delivery.
-                let msg_result = client.send_message(make_send_params("ping again")).await;
-                // Give push sender time to deliver.
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-                let push_count = webhook_receiver.count().await;
-                println!("  Webhook received {push_count} push notifications");
-
-                match msg_result {
-                    Ok(_) => {
-                        results.push(TestResult::pass(
-                            "push-notifications",
-                            start.elapsed().as_millis(),
-                            &format!("registered=true, webhooks_received={push_count}"),
-                        ));
-                    }
-                    Err(e) => {
-                        results.push(TestResult::fail(
-                            "push-notifications",
-                            start.elapsed().as_millis(),
-                            &format!("msg error: {e}"),
-                        ));
-                    }
-                }
-            }
-            Err(e) => {
                 results.push(TestResult::fail(
-                    "push-notifications",
+                    "push-config-crud",
                     start.elapsed().as_millis(),
-                    &format!("push config error: {e:?}"),
+                    "could not create initial task",
                 ));
+                "".to_owned()
+            }
+        };
+
+        if !task_id.is_empty() {
+            let webhook_url = format!("http://{webhook_addr}/webhook");
+            let push_config = TaskPushNotificationConfig {
+                tenant: None,
+                id: None,
+                task_id: task_id.clone(),
+                url: webhook_url.clone(),
+                token: Some("test-token-123".into()),
+                authentication: Some(AuthenticationInfo {
+                    scheme: "bearer".into(),
+                    credentials: "my-secret-bearer".into(),
+                }),
+            };
+
+            // 1. Create push config.
+            match client.set_push_config(push_config).await {
+                Ok(stored) => {
+                    let config_id = stored.id.clone().unwrap_or_default();
+                    println!("  CREATE: id={config_id}");
+
+                    // 2. Get push config by id.
+                    match client
+                        .get_push_config(task_id.clone(), config_id.clone())
+                        .await
+                    {
+                        Ok(got) => println!("  GET:    id={:?} url={}", got.id, got.url),
+                        Err(e) => println!("  GET:    error: {e}"),
+                    }
+
+                    // 3. List push configs.
+                    match client
+                        .list_push_configs(ListPushConfigsParams {
+                            tenant: None,
+                            task_id: task_id.clone(),
+                            page_size: Some(10),
+                            page_token: None,
+                        })
+                        .await
+                    {
+                        Ok(list) => println!("  LIST:   {} configs", list.configs.len()),
+                        Err(e) => println!("  LIST:   error: {e}"),
+                    }
+
+                    // 4. Delete push config.
+                    match client
+                        .delete_push_config(task_id.clone(), config_id.clone())
+                        .await
+                    {
+                        Ok(()) => println!("  DELETE: ok"),
+                        Err(e) => println!("  DELETE: error: {e}"),
+                    }
+
+                    // 5. Verify deletion — list should be empty.
+                    match client
+                        .list_push_configs(ListPushConfigsParams {
+                            tenant: None,
+                            task_id: task_id.clone(),
+                            page_size: Some(10),
+                            page_token: None,
+                        })
+                        .await
+                    {
+                        Ok(list) => {
+                            println!("  VERIFY: {} configs after delete", list.configs.len());
+                            if list.configs.is_empty() {
+                                results.push(TestResult::pass(
+                                    "push-config-crud",
+                                    start.elapsed().as_millis(),
+                                    "create+get+list+delete+verify",
+                                ));
+                            } else {
+                                results.push(TestResult::fail(
+                                    "push-config-crud",
+                                    start.elapsed().as_millis(),
+                                    "delete did not remove config",
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(TestResult::fail(
+                                "push-config-crud",
+                                start.elapsed().as_millis(),
+                                &format!("verify list error: {e}"),
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    results.push(TestResult::fail(
+                        "push-config-crud",
+                        start.elapsed().as_millis(),
+                        &format!("create error: {e:?}"),
+                    ));
+                }
             }
         }
     }
