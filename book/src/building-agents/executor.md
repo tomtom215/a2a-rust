@@ -48,6 +48,48 @@ impl AgentExecutor for MyAgent {
 }
 ```
 
+## Ergonomic Helpers
+
+The `executor_helpers` module provides shortcuts to reduce boilerplate.
+
+### `boxed_future` helper
+
+Wraps an async block into the required `Pin<Box<dyn Future>>`:
+
+```rust
+use a2a_protocol_server::executor_helpers::boxed_future;
+
+fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter)
+    -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>
+{
+    boxed_future(async move {
+        // Your logic here — no Box::pin wrapper needed!
+        Ok(())
+    })
+}
+```
+
+### `agent_executor!` macro
+
+Generates the full `AgentExecutor` impl from a closure-like syntax:
+
+```rust
+use a2a_protocol_server::agent_executor;
+
+struct EchoAgent;
+
+// Simple form (execute only)
+agent_executor!(EchoAgent, |ctx, queue| async {
+    Ok(())
+});
+
+// With cancel handler
+agent_executor!(CancelableAgent,
+    execute: |ctx, queue| async { Ok(()) },
+    cancel: |ctx, queue| async { Ok(()) }
+);
+```
+
 ## RequestContext
 
 The `RequestContext` provides information about the incoming request:

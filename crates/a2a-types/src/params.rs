@@ -138,7 +138,7 @@ pub struct CancelTaskParams {
 ///
 /// All fields are optional filters; omitting them returns all tasks visible to
 /// the caller (subject to the server's default page size).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListTasksParams {
     /// Optional tenant for multi-tenancy.

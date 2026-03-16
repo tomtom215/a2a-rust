@@ -36,21 +36,22 @@ timestamp correlation.
 
 ## 7.2 Metrics Hooks
 
-**Status:** Planned
+**Status:** ✅ Implemented
 
-**Motivation:** Production deployments need request counts, latency histograms,
-error rates, and queue depths. The framework should expose integration points
-without mandating a specific metrics library.
+The `Metrics` trait provides callbacks for request counts, error rates, queue
+depths, and latency:
 
-**Approach:**
+- `on_request(method)` — called at the start of every handler method
+- `on_response(method)` — called on successful completion
+- `on_error(method, error)` — called on failure
+- `on_latency(method, duration)` — called with elapsed time for every request
+- `on_queue_depth_change(active_queues)` — called when event queues are created/destroyed
 
-- Define a `Metrics` trait with methods like `on_request`, `on_response`,
-  `on_error`, `on_queue_depth_change`.
-- `RequestHandlerBuilder::with_metrics(impl Metrics)` registers the hook.
-- The default implementation is a no-op.
-- Users can implement the trait for Prometheus, StatsD, OpenTelemetry, etc.
-- The client-side `CallInterceptor` already provides `before`/`after` hooks
-  suitable for latency and count metrics.
+`RequestHandlerBuilder::with_metrics(impl Metrics)` registers the hook.
+The default implementation is a no-op. A blanket `impl Metrics for Arc<T>`
+allows sharing a single metrics instance across multiple handlers without
+wrapper types. Users can implement the trait for Prometheus, StatsD,
+OpenTelemetry, etc.
 
 ---
 
@@ -141,7 +142,7 @@ pub trait TaskStore: Send + Sync + 'static {
 **Implementation guide for custom stores:**
 
 1. Implement `TaskStore` for your storage backend (SQLite, PostgreSQL, Redis, etc.).
-2. Use `RequestHandlerBuilder::with_task_store(Box::new(MyStore::new()))` to
+2. Use `RequestHandlerBuilder::with_task_store(Arc::new(MyStore::new()))` to
    register it.
 3. The `list()` method must handle filtering by `context_id` and `status`,
    cursor-based pagination via `page_token`, and `page_size` limits.

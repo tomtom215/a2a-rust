@@ -86,11 +86,9 @@ proptest! {
             (PartContent::Text { text: a }, PartContent::Text { text: b }) => {
                 prop_assert_eq!(a, b);
             }
-            (PartContent::Raw { raw: a }, PartContent::Raw { raw: b }) => {
-                prop_assert_eq!(a, b);
-            }
-            (PartContent::Url { url: a }, PartContent::Url { url: b }) => {
-                prop_assert_eq!(a, b);
+            (PartContent::File { file: a }, PartContent::File { file: b }) => {
+                prop_assert_eq!(&a.bytes, &b.bytes);
+                prop_assert_eq!(&a.uri, &b.uri);
             }
             _ => prop_assert!(false, "content type mismatch"),
         }

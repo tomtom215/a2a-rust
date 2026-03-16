@@ -719,7 +719,7 @@ async fn builder_build_with_all_defaults_succeeds() {
 
     // Verify it's functional by sending a message.
     let result = handler
-        .on_send_message(make_send_params("test"), false)
+        .on_send_message(make_send_params("test"), false, None)
         .await
         .expect("send message");
     assert!(matches!(result, SendMessageResult::Response(_)));
@@ -740,7 +740,7 @@ async fn builder_with_task_store_uses_custom_store() {
 
     // The handler should work normally.
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await
         .expect("send message");
     match result {
@@ -761,7 +761,7 @@ async fn builder_with_push_sender_enables_push() {
     // Push config operations should succeed (not return PushNotSupported).
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
     let saved = handler
-        .on_set_push_config(config)
+        .on_set_push_config(config, None)
         .await
         .expect("set push config should succeed when push is enabled");
     assert!(saved.id.is_some());
@@ -774,7 +774,7 @@ async fn builder_without_push_sender_rejects_push_config() {
         .expect("build without push sender");
 
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
-    let err = handler.on_set_push_config(config).await.unwrap_err();
+    let err = handler.on_set_push_config(config, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "should reject push config when no push sender is configured"
@@ -797,7 +797,7 @@ async fn concurrency_multiple_send_message_calls_on_same_handler() {
     for i in 0..10 {
         let h = Arc::clone(&handler);
         handles.push(tokio::spawn(async move {
-            h.on_send_message(make_send_params(&format!("msg-{i}")), false)
+            h.on_send_message(make_send_params(&format!("msg-{i}")), false, None)
                 .await
         }));
     }

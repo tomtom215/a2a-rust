@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Metrics::on_latency(method, duration)` callback — the #1 production metric.
+  All handler methods now measure and report request latency.
+- Blanket `impl Metrics for Arc<T>` — eliminates the `MetricsForward` wrapper
+  pattern when sharing metrics across handlers.
+- `CallContext::http_headers` field — interceptors can now inspect
+  `Authorization`, `X-Request-Id`, and other HTTP headers for auth decisions.
+- `HandlerLimits::push_delivery_timeout` — configurable per-webhook timeout
+  (default 5s) prevents one slow webhook from blocking all subsequent deliveries.
+- Background event processor for streaming mode — push notifications and task
+  store updates now fire for every event regardless of consumer mode.
+- `SqliteTaskStore` and `SqlitePushConfigStore` — persistent store reference
+  implementations behind the `sqlite` feature flag, using `sqlx` for async
+  SQLite access. Includes schema auto-creation, cursor-based pagination,
+  and upsert support.
+- `boxed_future` helper function and `agent_executor!` macro in
+  `executor_helpers` module — reduces `AgentExecutor` boilerplate from
+  5 lines to 1 line per method.
+- Doc examples for `TaskStore` and `AgentExecutor` traits — `# Example`
+  sections in rustdoc for crates.io users.
+- Explicit `sqlite` feature gate in CI — clippy and test steps for the
+  `sqlite` feature flag alongside existing feature-specific gates.
 - `JsonRpcDispatcher` now serves agent cards at `GET /.well-known/agent.json`,
   matching the existing `RestDispatcher` behavior.
 - `EventQueueManager::subscribe()` creates additional readers for an active
@@ -28,6 +49,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PartContent` now uses `#[serde(tag = "type")]` with variant
+  renames (`"text"`, `"file"`, `"data"`) per A2A spec. The old `Raw` and `Url`
+  variants were merged into `File` with a new `FileContent` struct. Wire format
+  now requires `{"type": "text", "text": "..."}` instead of `{"text": "..."}`.
+  Backward-compatible `Part::raw()` and `Part::url()` constructors are provided.
+- **Breaking:** `RequestHandler` stores changed from `Box<dyn TaskStore>` /
+  `Box<dyn PushConfigStore>` / `Box<dyn PushSender>` to `Arc<dyn ...>` for
+  cloneability into background tasks. `RequestHandlerBuilder` methods updated
+  accordingly; `with_task_store_arc()` added for sharing store instances.
+- **Breaking:** All `RequestHandler::on_*` methods now accept an additional
+  `headers: Option<&HashMap<String, String>>` parameter for HTTP header
+  forwarding to interceptors. Pass `None` if headers are not available.
+- `handler.rs` (1,357 lines) split into 8 single-responsibility modules under
+  `handler/`: `mod.rs`, `limits.rs`, `helpers.rs`, `messaging.rs`,
+  `lifecycle.rs`, `push_config.rs`, `event_processing.rs`, `shutdown.rs`.
+  No public API changes.
 - **Breaking:** `EventQueueManager` internals redesigned from `mpsc` to
   `tokio::sync::broadcast` channels. This enables multiple concurrent
   subscribers per task. Slow readers receive `Lagged` notifications instead

@@ -7,11 +7,12 @@
 //! agent. Each message has a [`MessageRole`] (`ROLE_USER` or `ROLE_AGENT`) and
 //! carries one or more [`Part`] values.
 //!
-//! # Part oneof
+//! # Part type discriminator
 //!
-//! [`Part`] is a flat struct with a [`PartContent`] oneof discriminated by
-//! field presence: `{"text": "hi"}`, `{"raw": "base64..."}`, `{"url": "..."}`,
-//! or `{"data": {...}}`.
+//! [`Part`] uses a `type` field discriminator per the A2A spec:
+//! - `{"type": "text", "text": "hi"}`
+//! - `{"type": "file", "file": {"name": "f.png", "mimeType": "image/png", "bytes": "..."}}`
+//! - `{"type": "data", "data": {...}}`
 
 use serde::{Deserialize, Serialize};
 
@@ -137,27 +138,20 @@ pub struct Message {
 
 /// A content part within a [`Message`] or [`crate::artifact::Artifact`].
 ///
-/// A flat struct with a [`PartContent`] oneof and common fields. In JSON,
-/// exactly one of `text`, `raw`, `url`, or `data` is present, which
-/// determines the content type.
+/// Uses a `type` field discriminator per the A2A spec. In JSON:
+/// - `{"type": "text", "text": "hello"}`
+/// - `{"type": "file", "file": {"name": "f.png", "mimeType": "image/png", "bytes": "..."}}`
+/// - `{"type": "data", "data": {...}}`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Part {
-    /// The content of this part (one of text, raw, url, or data).
+    /// The content of this part (text, file, or data).
     #[serde(flatten)]
     pub content: PartContent,
 
     /// Arbitrary metadata for this part.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
-
-    /// Optional filename associated with this part.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filename: Option<String>,
-
-    /// MIME type of the content (e.g. `"image/png"`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub media_type: Option<String>,
 }
 
 impl Part {
@@ -167,30 +161,47 @@ impl Part {
         Self {
             content: PartContent::Text { text: text.into() },
             metadata: None,
-            filename: None,
-            media_type: None,
         }
     }
 
-    /// Creates a raw (bytes) [`Part`] with base64-encoded data.
+    /// Creates a file [`Part`] from raw bytes (base64-encoded).
     #[must_use]
-    pub fn raw(raw: impl Into<String>) -> Self {
+    pub fn file_bytes(bytes: impl Into<String>) -> Self {
         Self {
-            content: PartContent::Raw { raw: raw.into() },
+            content: PartContent::File {
+                file: FileContent {
+                    name: None,
+                    mime_type: None,
+                    bytes: Some(bytes.into()),
+                    uri: None,
+                },
+            },
             metadata: None,
-            filename: None,
-            media_type: None,
         }
     }
 
-    /// Creates a URL [`Part`].
+    /// Creates a file [`Part`] from a URI.
     #[must_use]
-    pub fn url(url: impl Into<String>) -> Self {
+    pub fn file_uri(uri: impl Into<String>) -> Self {
         Self {
-            content: PartContent::Url { url: url.into() },
+            content: PartContent::File {
+                file: FileContent {
+                    name: None,
+                    mime_type: None,
+                    bytes: None,
+                    uri: Some(uri.into()),
+                },
+            },
             metadata: None,
-            filename: None,
-            media_type: None,
+        }
+    }
+
+    /// Creates a file [`Part`] with full metadata.
+    #[must_use]
+    pub const fn file(file: FileContent) -> Self {
+        Self {
+            content: PartContent::File { file },
+            metadata: None,
         }
     }
 
@@ -200,38 +211,120 @@ impl Part {
         Self {
             content: PartContent::Data { data },
             metadata: None,
-            filename: None,
-            media_type: None,
         }
+    }
+
+    // ── Backward-compatible constructors ─────────────────────────────────
+
+    /// Creates a raw (bytes) [`Part`] with base64-encoded data.
+    ///
+    /// **Deprecated:** Use [`Part::file_bytes`] instead. This constructor
+    /// exists for backward compatibility during the v0.2→v0.3 migration.
+    #[must_use]
+    pub fn raw(raw: impl Into<String>) -> Self {
+        Self::file_bytes(raw)
+    }
+
+    /// Creates a URL [`Part`].
+    ///
+    /// **Deprecated:** Use [`Part::file_uri`] instead. This constructor
+    /// exists for backward compatibility during the v0.2→v0.3 migration.
+    #[must_use]
+    pub fn url(url: impl Into<String>) -> Self {
+        Self::file_uri(url)
+    }
+}
+
+// ── FileContent ──────────────────────────────────────────────────────────────
+
+/// Content of a file part.
+///
+/// At least one of `bytes` or `uri` should be set. Both may be set if the
+/// file is available via both inline data and a URL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileContent {
+    /// Filename (e.g. `"report.pdf"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+
+    /// MIME type (e.g. `"image/png"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+
+    /// Base64-encoded file content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<String>,
+
+    /// URL to the file content.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+}
+
+impl FileContent {
+    /// Creates a [`FileContent`] from inline base64 bytes.
+    #[must_use]
+    pub fn from_bytes(bytes: impl Into<String>) -> Self {
+        Self {
+            name: None,
+            mime_type: None,
+            bytes: Some(bytes.into()),
+            uri: None,
+        }
+    }
+
+    /// Creates a [`FileContent`] from a URI.
+    #[must_use]
+    pub fn from_uri(uri: impl Into<String>) -> Self {
+        Self {
+            name: None,
+            mime_type: None,
+            bytes: None,
+            uri: Some(uri.into()),
+        }
+    }
+
+    /// Sets the filename.
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets the MIME type.
+    #[must_use]
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Self {
+        self.mime_type = Some(mime_type.into());
+        self
     }
 }
 
 // ── PartContent ──────────────────────────────────────────────────────────────
 
-/// The content of a [`Part`], discriminated by field presence (proto oneof).
+/// The content of a [`Part`], discriminated by a `type` field per the A2A spec.
 ///
-/// In JSON, exactly one field is present: `"text"`, `"raw"`, `"url"`, or
-/// `"data"`.
+/// In JSON, the `type` field determines the variant:
+/// - `"text"` → [`PartContent::Text`]
+/// - `"file"` → [`PartContent::File`]
+/// - `"data"` → [`PartContent::Data`]
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum PartContent {
     /// Plain-text content.
+    #[serde(rename = "text")]
     Text {
         /// The text content.
         text: String,
     },
-    /// Raw binary content (base64-encoded in JSON).
-    Raw {
-        /// Base64-encoded bytes.
-        raw: String,
-    },
-    /// URL reference to content.
-    Url {
-        /// Absolute URL.
-        url: String,
+    /// File content (inline bytes and/or URI reference).
+    #[serde(rename = "file")]
+    File {
+        /// The file content.
+        file: FileContent,
     },
     /// Structured JSON data.
+    #[serde(rename = "data")]
     Data {
         /// Structured JSON payload.
         data: serde_json::Value,
@@ -270,43 +363,67 @@ mod tests {
     }
 
     #[test]
-    fn text_part_roundtrip() {
+    fn text_part_has_type_discriminator() {
         let part = Part::text("hello world");
         let json = serde_json::to_string(&part).expect("serialize");
-        assert!(!json.contains("\"kind\""), "v1.0 should not have kind tag");
+        assert!(
+            json.contains("\"type\":\"text\""),
+            "should have type discriminator: {json}"
+        );
         assert!(json.contains("\"text\":\"hello world\""));
         let back: Part = serde_json::from_str(&json).expect("deserialize");
         assert!(matches!(back.content, PartContent::Text { .. }));
     }
 
     #[test]
-    fn raw_part_roundtrip() {
-        let mut part = Part::raw("aGVsbG8=");
-        part.filename = Some("test.png".into());
-        part.media_type = Some("image/png".into());
+    fn file_bytes_part_roundtrip() {
+        let part = Part::file(
+            FileContent::from_bytes("aGVsbG8=")
+                .with_name("test.png")
+                .with_mime_type("image/png"),
+        );
         let json = serde_json::to_string(&part).expect("serialize");
-        assert!(json.contains("\"raw\""));
-        assert!(json.contains("\"filename\""));
-        assert!(json.contains("\"mediaType\""));
+        assert!(
+            json.contains("\"type\":\"file\""),
+            "should have type discriminator: {json}"
+        );
+        assert!(json.contains("\"file\""));
+        assert!(json.contains("\"name\":\"test.png\""));
+        assert!(json.contains("\"mimeType\":\"image/png\""));
         let back: Part = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.content, PartContent::Raw { .. }));
-        assert_eq!(back.filename.as_deref(), Some("test.png"));
+        match back.content {
+            PartContent::File { file } => {
+                assert_eq!(file.name.as_deref(), Some("test.png"));
+                assert_eq!(file.mime_type.as_deref(), Some("image/png"));
+                assert_eq!(file.bytes.as_deref(), Some("aGVsbG8="));
+            }
+            _ => panic!("expected File variant"),
+        }
     }
 
     #[test]
-    fn url_part_roundtrip() {
-        let part = Part::url("https://example.com/file.pdf");
+    fn file_uri_part_roundtrip() {
+        let part = Part::file_uri("https://example.com/file.pdf");
         let json = serde_json::to_string(&part).expect("serialize");
-        assert!(json.contains("\"url\""));
+        assert!(json.contains("\"type\":\"file\""));
+        assert!(json.contains("\"uri\":\"https://example.com/file.pdf\""));
         let back: Part = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.content, PartContent::Url { .. }));
+        match back.content {
+            PartContent::File { file } => {
+                assert_eq!(file.uri.as_deref(), Some("https://example.com/file.pdf"));
+            }
+            _ => panic!("expected File variant"),
+        }
     }
 
     #[test]
-    fn data_part_roundtrip() {
+    fn data_part_has_type_discriminator() {
         let part = Part::data(serde_json::json!({"key": "value"}));
         let json = serde_json::to_string(&part).expect("serialize");
-        assert!(!json.contains("\"kind\""), "v1.0 should not have kind tag");
+        assert!(
+            json.contains("\"type\":\"data\""),
+            "should have type discriminator: {json}"
+        );
         assert!(json.contains("\"data\""));
         let back: Part = serde_json::from_str(&json).expect("deserialize");
         assert!(matches!(back.content, PartContent::Data { .. }));
@@ -349,8 +466,8 @@ mod tests {
             role: MessageRole::Agent,
             parts: vec![
                 Part::text("Here is the result"),
-                Part::raw("aGVsbG8="),
-                Part::url("https://example.com/output.pdf"),
+                Part::file_bytes("aGVsbG8="),
+                Part::file_uri("https://example.com/output.pdf"),
             ],
             task_id: None,
             context_id: None,
@@ -361,18 +478,15 @@ mod tests {
 
         let json = serde_json::to_string(&msg).expect("serialize mixed-part message");
         assert!(json.contains("\"text\":\"Here is the result\""));
-        assert!(json.contains("\"raw\":\"aGVsbG8=\""));
-        assert!(json.contains("\"url\":\"https://example.com/output.pdf\""));
+        assert!(json.contains("\"type\":\"file\""));
 
         let back: Message = serde_json::from_str(&json).expect("deserialize mixed-part message");
         assert_eq!(back.parts.len(), 3);
         assert!(
             matches!(&back.parts[0].content, PartContent::Text { text } if text == "Here is the result")
         );
-        assert!(matches!(&back.parts[1].content, PartContent::Raw { raw } if raw == "aGVsbG8="));
-        assert!(
-            matches!(&back.parts[2].content, PartContent::Url { url } if url == "https://example.com/output.pdf")
-        );
+        assert!(matches!(&back.parts[1].content, PartContent::File { .. }));
+        assert!(matches!(&back.parts[2].content, PartContent::File { .. }));
     }
 
     #[test]
@@ -405,5 +519,21 @@ mod tests {
         assert_eq!(refs.len(), 2);
         assert_eq!(refs[0], TaskId::new("task-100"));
         assert_eq!(refs[1], TaskId::new("task-200"));
+    }
+
+    #[test]
+    fn backward_compat_raw_constructor() {
+        let part = Part::raw("aGVsbG8=");
+        let json = serde_json::to_string(&part).expect("serialize");
+        assert!(json.contains("\"type\":\"file\""));
+        assert!(json.contains("\"bytes\":\"aGVsbG8=\""));
+    }
+
+    #[test]
+    fn backward_compat_url_constructor() {
+        let part = Part::url("https://example.com/file.pdf");
+        let json = serde_json::to_string(&part).expect("serialize");
+        assert!(json.contains("\"type\":\"file\""));
+        assert!(json.contains("\"uri\":\"https://example.com/file.pdf\""));
     }
 }

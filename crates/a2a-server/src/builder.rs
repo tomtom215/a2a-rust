@@ -38,10 +38,10 @@ use crate::streaming::EventQueueManager;
 /// - `agent_card`: defaults to `None`.
 pub struct RequestHandlerBuilder {
     executor: Arc<dyn AgentExecutor>,
-    task_store: Option<Box<dyn TaskStore>>,
+    task_store: Option<Arc<dyn TaskStore>>,
     task_store_config: TaskStoreConfig,
-    push_config_store: Option<Box<dyn PushConfigStore>>,
-    push_sender: Option<Box<dyn PushSender>>,
+    push_config_store: Option<Arc<dyn PushConfigStore>>,
+    push_sender: Option<Arc<dyn PushSender>>,
     interceptors: ServerInterceptorChain,
     agent_card: Option<AgentCard>,
     executor_timeout: Option<Duration>,
@@ -80,7 +80,17 @@ impl RequestHandlerBuilder {
     /// Sets a custom task store.
     #[must_use]
     pub fn with_task_store(mut self, store: impl TaskStore + 'static) -> Self {
-        self.task_store = Some(Box::new(store));
+        self.task_store = Some(Arc::new(store));
+        self
+    }
+
+    /// Sets a custom task store from an existing `Arc`.
+    ///
+    /// Use this when you want to share a store instance across multiple
+    /// handlers or access it from background tasks.
+    #[must_use]
+    pub fn with_task_store_arc(mut self, store: Arc<dyn TaskStore>) -> Self {
+        self.task_store = Some(store);
         self
     }
 
@@ -96,14 +106,14 @@ impl RequestHandlerBuilder {
     /// Sets a custom push configuration store.
     #[must_use]
     pub fn with_push_config_store(mut self, store: impl PushConfigStore + 'static) -> Self {
-        self.push_config_store = Some(Box::new(store));
+        self.push_config_store = Some(Arc::new(store));
         self
     }
 
     /// Sets a push notification sender.
     #[must_use]
     pub fn with_push_sender(mut self, sender: impl PushSender + 'static) -> Self {
-        self.push_sender = Some(Box::new(sender));
+        self.push_sender = Some(Arc::new(sender));
         self
     }
 
@@ -218,11 +228,11 @@ impl RequestHandlerBuilder {
         Ok(RequestHandler {
             executor: self.executor,
             task_store: self.task_store.unwrap_or_else(|| {
-                Box::new(InMemoryTaskStore::with_config(self.task_store_config))
+                Arc::new(InMemoryTaskStore::with_config(self.task_store_config))
             }),
             push_config_store: self
                 .push_config_store
-                .unwrap_or_else(|| Box::new(InMemoryPushConfigStore::new())),
+                .unwrap_or_else(|| Arc::new(InMemoryPushConfigStore::new())),
             push_sender: self.push_sender,
             event_queue_manager: {
                 let mut mgr = self

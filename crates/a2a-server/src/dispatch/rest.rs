@@ -7,6 +7,7 @@
 //! appropriate [`RequestHandler`] method, following the REST transport
 //! convention defined in the A2A protocol.
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -141,8 +142,11 @@ impl RestDispatcher {
         // Strip optional /tenants/{tenant}/ prefix.
         let (tenant, rest_path) = strip_tenant_prefix(&path);
 
+        // Extract HTTP headers BEFORE consuming the request body.
+        let headers = extract_headers(req.headers());
+
         let mut resp = self
-            .dispatch_rest(req, method.as_str(), rest_path, &query, tenant)
+            .dispatch_rest(req, method.as_str(), rest_path, &query, tenant, &headers)
             .await;
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
@@ -159,11 +163,12 @@ impl RestDispatcher {
         path: &str,
         query: &str,
         tenant: Option<&str>,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         // Colon-suffixed routes: /message:send, /message:stream.
         match (method, path) {
-            ("POST", "/message:send") => return self.handle_send(req, false).await,
-            ("POST", "/message:stream") => return self.handle_send(req, true).await,
+            ("POST", "/message:send") => return self.handle_send(req, false, headers).await,
+            ("POST", "/message:stream") => return self.handle_send(req, true, headers).await,
             _ => {}
         }
 
@@ -172,9 +177,11 @@ impl RestDispatcher {
             if let Some((id, action)) = rest.split_once(':') {
                 if !id.is_empty() {
                     match (method, action) {
-                        ("POST", "cancel") => return self.handle_cancel_task(id).await,
+                        ("POST", "cancel") => {
+                            return self.handle_cancel_task(id, headers).await;
+                        }
                         ("POST" | "GET", "subscribe") => {
-                            return self.handle_resubscribe(id).await;
+                            return self.handle_resubscribe(id, headers).await;
                         }
                         _ => {}
                     }
@@ -186,25 +193,27 @@ impl RestDispatcher {
 
         match (method, segments.as_slice()) {
             // Tasks.
-            ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant).await,
-            ("GET", ["tasks", id]) => self.handle_get_task(id, query).await,
+            ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant, headers).await,
+            ("GET", ["tasks", id]) => self.handle_get_task(id, query, headers).await,
 
             // Push notification configs.
             ("POST", ["tasks", task_id, "pushNotificationConfigs"]) => {
-                self.handle_set_push_config(req, task_id).await
+                self.handle_set_push_config(req, task_id, headers).await
             }
             ("GET", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
-                self.handle_get_push_config(task_id, config_id).await
+                self.handle_get_push_config(task_id, config_id, headers)
+                    .await
             }
             ("GET", ["tasks", task_id, "pushNotificationConfigs"]) => {
-                self.handle_list_push_configs(task_id).await
+                self.handle_list_push_configs(task_id, headers).await
             }
             ("DELETE", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
-                self.handle_delete_push_config(task_id, config_id).await
+                self.handle_delete_push_config(task_id, config_id, headers)
+                    .await
             }
 
             // Extended card.
-            ("GET", ["extendedAgentCard"]) => self.handle_extended_card().await,
+            ("GET", ["extendedAgentCard"]) => self.handle_extended_card(headers).await,
 
             _ => not_found_response(),
         }
@@ -216,6 +225,7 @@ impl RestDispatcher {
         &self,
         req: hyper::Request<Incoming>,
         streaming: bool,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let body_bytes = match read_body_limited(
             req.into_body(),
@@ -232,7 +242,11 @@ impl RestDispatcher {
                 Ok(p) => p,
                 Err(e) => return error_json_response(400, &e.to_string()),
             };
-        match self.handler.on_send_message(params, streaming).await {
+        match self
+            .handler
+            .on_send_message(params, streaming, Some(headers))
+            .await
+        {
             Ok(SendMessageResult::Response(resp)) => json_ok_response(&resp),
             Ok(SendMessageResult::Stream(reader)) => build_sse_response(
                 reader,
@@ -247,6 +261,7 @@ impl RestDispatcher {
         &self,
         id: &str,
         query: &str,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let history_length = parse_query_param_u32(query, "historyLength");
         let params = a2a_protocol_types::params::TaskQueryParams {
@@ -254,7 +269,7 @@ impl RestDispatcher {
             id: id.to_owned(),
             history_length,
         };
-        match self.handler.on_get_task(params).await {
+        match self.handler.on_get_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
             Err(e) => server_error_to_response(&e),
         }
@@ -264,32 +279,41 @@ impl RestDispatcher {
         &self,
         query: &str,
         tenant: Option<&str>,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = parse_list_tasks_query(query, tenant);
-        match self.handler.on_list_tasks(params).await {
+        match self.handler.on_list_tasks(params, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
         }
     }
 
-    async fn handle_cancel_task(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    async fn handle_cancel_task(
+        &self,
+        id: &str,
+        headers: &HashMap<String, String>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::CancelTaskParams {
             tenant: None,
             id: id.to_owned(),
             metadata: None,
         };
-        match self.handler.on_cancel_task(params).await {
+        match self.handler.on_cancel_task(params, Some(headers)).await {
             Ok(task) => json_ok_response(&task),
             Err(e) => server_error_to_response(&e),
         }
     }
 
-    async fn handle_resubscribe(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    async fn handle_resubscribe(
+        &self,
+        id: &str,
+        headers: &HashMap<String, String>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::TaskIdParams {
             tenant: None,
             id: id.to_owned(),
         };
-        match self.handler.on_resubscribe(params).await {
+        match self.handler.on_resubscribe(params, Some(headers)).await {
             Ok(reader) => build_sse_response(
                 reader,
                 Some(self.config.sse_keep_alive_interval),
@@ -303,6 +327,7 @@ impl RestDispatcher {
         &self,
         req: hyper::Request<Incoming>,
         task_id: &str,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let body_bytes = match read_body_limited(
             req.into_body(),
@@ -327,7 +352,7 @@ impl RestDispatcher {
                 Ok(c) => c,
                 Err(e) => return error_json_response(400, &e.to_string()),
             };
-        match self.handler.on_set_push_config(config).await {
+        match self.handler.on_set_push_config(config, Some(headers)).await {
             Ok(result) => json_ok_response(&result),
             Err(e) => server_error_to_response(&e),
         }
@@ -337,13 +362,14 @@ impl RestDispatcher {
         &self,
         task_id: &str,
         config_id: &str,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::GetPushConfigParams {
             tenant: None,
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };
-        match self.handler.on_get_push_config(params).await {
+        match self.handler.on_get_push_config(params, Some(headers)).await {
             Ok(config) => json_ok_response(&config),
             Err(e) => server_error_to_response(&e),
         }
@@ -352,8 +378,13 @@ impl RestDispatcher {
     async fn handle_list_push_configs(
         &self,
         task_id: &str,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self.handler.on_list_push_configs(task_id).await {
+        match self
+            .handler
+            .on_list_push_configs(task_id, Some(headers))
+            .await
+        {
             Ok(configs) => {
                 // Wrap in the response envelope so the client can deserialize
                 // as ListPushConfigsResponse (object with `configs` field)
@@ -372,20 +403,28 @@ impl RestDispatcher {
         &self,
         task_id: &str,
         config_id: &str,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::DeletePushConfigParams {
             tenant: None,
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };
-        match self.handler.on_delete_push_config(params).await {
+        match self
+            .handler
+            .on_delete_push_config(params, Some(headers))
+            .await
+        {
             Ok(()) => json_ok_response(&serde_json::json!({})),
             Err(e) => server_error_to_response(&e),
         }
     }
 
-    async fn handle_extended_card(&self) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self.handler.on_get_extended_agent_card().await {
+    async fn handle_extended_card(
+        &self,
+        headers: &HashMap<String, String>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        match self.handler.on_get_extended_agent_card(Some(headers)).await {
             Ok(card) => json_ok_response(&card),
             Err(e) => server_error_to_response(&e),
         }
@@ -399,6 +438,17 @@ impl std::fmt::Debug for RestDispatcher {
 }
 
 // ── Response helpers ─────────────────────────────────────────────────────────
+
+/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
+fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
+    let mut map = HashMap::with_capacity(headers.len());
+    for (key, value) in headers {
+        if let Ok(v) = value.to_str() {
+            map.insert(key.as_str().to_owned(), v.to_owned());
+        }
+    }
+    map
+}
 
 fn json_ok_response<T: serde::Serialize>(value: &T) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     match serde_json::to_vec(value) {

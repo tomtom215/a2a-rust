@@ -18,16 +18,18 @@
 //! |---|---|
 //! | [`error`] | [`ServerError`], [`ServerResult`] |
 //! | [`executor`] | [`AgentExecutor`] trait |
-//! | [`handler`] | [`RequestHandler`], [`SendMessageResult`] |
+//! | [`executor_helpers`] | [`boxed_future`], [`agent_executor!`] macro |
+//! | [`handler`] | [`RequestHandler`], [`SendMessageResult`], [`HandlerLimits`] |
 //! | [`builder`] | [`RequestHandlerBuilder`] |
-//! | [`store`] | [`TaskStore`], [`InMemoryTaskStore`] |
+//! | [`store`] | [`TaskStore`], [`InMemoryTaskStore`], `SqliteTaskStore` (sqlite feature) |
 //! | [`streaming`] | Event queues, SSE response builder |
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`request_context`] | [`RequestContext`] |
-//! | [`call_context`] | [`CallContext`] |
+//! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
+//! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //!
 //! # Transport limitations
 //!
@@ -55,6 +57,7 @@ pub mod call_context;
 pub mod dispatch;
 pub mod error;
 pub mod executor;
+pub mod executor_helpers;
 pub mod handler;
 pub mod interceptor;
 pub mod metrics;
@@ -73,13 +76,20 @@ pub use call_context::CallContext;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
+pub use executor_helpers::boxed_future;
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
+pub use metrics::Metrics;
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
 };
 pub use request_context::RequestContext;
 pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+
+#[cfg(feature = "sqlite")]
+pub use push::SqlitePushConfigStore;
+#[cfg(feature = "sqlite")]
+pub use store::SqliteTaskStore;
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };

@@ -27,6 +27,53 @@ use tokio::sync::RwLock;
 /// # Object safety
 ///
 /// Do not add `async fn` methods; use the explicit `Pin<Box<...>>` form.
+///
+/// # Example
+///
+/// ```rust
+/// use std::future::Future;
+/// use std::pin::Pin;
+/// use a2a_protocol_types::error::A2aResult;
+/// use a2a_protocol_types::params::ListTasksParams;
+/// use a2a_protocol_types::responses::TaskListResponse;
+/// use a2a_protocol_types::task::{Task, TaskId};
+/// use a2a_protocol_server::store::TaskStore;
+///
+/// /// A no-op store that rejects all operations (for illustration).
+/// struct NullStore;
+///
+/// impl TaskStore for NullStore {
+///     fn save<'a>(&'a self, _task: Task)
+///         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>
+///     {
+///         Box::pin(async { Ok(()) })
+///     }
+///
+///     fn get<'a>(&'a self, _id: &'a TaskId)
+///         -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>
+///     {
+///         Box::pin(async { Ok(None) })
+///     }
+///
+///     fn list<'a>(&'a self, _params: &'a ListTasksParams)
+///         -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>>
+///     {
+///         Box::pin(async { Ok(TaskListResponse::new(vec![])) })
+///     }
+///
+///     fn insert_if_absent<'a>(&'a self, _task: Task)
+///         -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>
+///     {
+///         Box::pin(async { Ok(true) })
+///     }
+///
+///     fn delete<'a>(&'a self, _id: &'a TaskId)
+///         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>
+///     {
+///         Box::pin(async { Ok(()) })
+///     }
+/// }
+/// ```
 pub trait TaskStore: Send + Sync + 'static {
     /// Saves (creates or updates) a task.
     ///

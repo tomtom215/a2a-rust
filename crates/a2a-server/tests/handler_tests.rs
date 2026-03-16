@@ -204,7 +204,7 @@ async fn send_message_returns_completed_task() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await
         .expect("send message");
 
@@ -226,7 +226,7 @@ async fn send_message_streaming_returns_reader() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("hello"), true)
+        .on_send_message(make_send_params("hello"), true, None)
         .await
         .expect("send streaming message");
 
@@ -265,7 +265,7 @@ async fn send_message_executor_failure_results_in_failed_task() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("boom"), false)
+        .on_send_message(make_send_params("boom"), false, None)
         .await;
 
     // The handler catches the executor error and writes a Failed status.
@@ -289,7 +289,7 @@ async fn get_task_returns_stored_task() {
 
     // First send a message to create a task.
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await
         .expect("send message");
 
@@ -304,7 +304,7 @@ async fn get_task_returns_stored_task() {
         id: task_id.0.clone(),
         history_length: None,
     };
-    let task = handler.on_get_task(params).await.expect("get task");
+    let task = handler.on_get_task(params, None).await.expect("get task");
     assert_eq!(task.id, task_id);
     assert_eq!(task.status.state, TaskState::Completed);
 }
@@ -320,7 +320,7 @@ async fn get_task_not_found() {
         id: "nonexistent".into(),
         history_length: None,
     };
-    let err = handler.on_get_task(params).await.unwrap_err();
+    let err = handler.on_get_task(params, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)),
         "expected TaskNotFound, got {err:?}"
@@ -335,11 +335,11 @@ async fn list_tasks_returns_created_tasks() {
 
     // Create two tasks.
     handler
-        .on_send_message(make_send_params("one"), false)
+        .on_send_message(make_send_params("one"), false, None)
         .await
         .expect("send first");
     handler
-        .on_send_message(make_send_params("two"), false)
+        .on_send_message(make_send_params("two"), false, None)
         .await
         .expect("send second");
 
@@ -353,7 +353,10 @@ async fn list_tasks_returns_created_tasks() {
         include_artifacts: None,
         history_length: None,
     };
-    let result = handler.on_list_tasks(params).await.expect("list tasks");
+    let result = handler
+        .on_list_tasks(params, None)
+        .await
+        .expect("list tasks");
     assert_eq!(result.tasks.len(), 2);
 }
 
@@ -367,22 +370,25 @@ async fn cancel_task_on_working_task() {
 
     // Send a streaming message to get a task in-progress.
     let result = handler
-        .on_send_message(make_send_params("work"), true)
+        .on_send_message(make_send_params("work"), true, None)
         .await
         .expect("send message");
 
     // Get the task ID from the store (list all tasks).
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
 
@@ -395,7 +401,10 @@ async fn cancel_task_on_working_task() {
         id: task.id.0.clone(),
         metadata: None,
     };
-    let canceled = handler.on_cancel_task(cancel_params).await.expect("cancel");
+    let canceled = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .expect("cancel");
     assert_eq!(canceled.status.state, TaskState::Canceled);
 
     // Drop the stream reader to clean up.
@@ -410,7 +419,7 @@ async fn cancel_terminal_task_fails() {
 
     // Create and complete a task.
     let result = handler
-        .on_send_message(make_send_params("done"), false)
+        .on_send_message(make_send_params("done"), false, None)
         .await
         .expect("send message");
 
@@ -425,7 +434,10 @@ async fn cancel_terminal_task_fails() {
         id: task_id,
         metadata: None,
     };
-    let err = handler.on_cancel_task(cancel_params).await.unwrap_err();
+    let err = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotCancelable(_)),
         "expected TaskNotCancelable, got {err:?}"
@@ -443,7 +455,10 @@ async fn cancel_nonexistent_task_fails() {
         id: "does-not-exist".into(),
         metadata: None,
     };
-    let err = handler.on_cancel_task(cancel_params).await.unwrap_err();
+    let err = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .unwrap_err();
     assert!(matches!(
         err,
         a2a_protocol_server::ServerError::TaskNotFound(_)
@@ -462,7 +477,7 @@ async fn push_config_crud_lifecycle() {
     // Create push config.
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
     let created = handler
-        .on_set_push_config(config)
+        .on_set_push_config(config, None)
         .await
         .expect("set push config");
     assert!(created.id.is_some());
@@ -475,14 +490,14 @@ async fn push_config_crud_lifecycle() {
         id: config_id.clone(),
     };
     let fetched = handler
-        .on_get_push_config(get_params)
+        .on_get_push_config(get_params, None)
         .await
         .expect("get push config");
     assert_eq!(fetched.url, "https://example.com/webhook");
 
     // List push configs.
     let configs = handler
-        .on_list_push_configs("task-1")
+        .on_list_push_configs("task-1", None)
         .await
         .expect("list push configs");
     assert_eq!(configs.len(), 1);
@@ -494,13 +509,13 @@ async fn push_config_crud_lifecycle() {
         id: config_id,
     };
     handler
-        .on_delete_push_config(delete_params)
+        .on_delete_push_config(delete_params, None)
         .await
         .expect("delete push config");
 
     // Verify deleted.
     let configs = handler
-        .on_list_push_configs("task-1")
+        .on_list_push_configs("task-1", None)
         .await
         .expect("list push configs after delete");
     assert!(configs.is_empty());
@@ -513,7 +528,7 @@ async fn push_config_not_supported_without_sender() {
         .expect("build handler");
 
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
-    let err = handler.on_set_push_config(config).await.unwrap_err();
+    let err = handler.on_set_push_config(config, None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "expected PushNotSupported, got {err:?}"
@@ -532,7 +547,7 @@ async fn get_push_config_not_found() {
         task_id: "task-1".into(),
         id: "nonexistent".into(),
     };
-    let err = handler.on_get_push_config(params).await.unwrap_err();
+    let err = handler.on_get_push_config(params, None).await.unwrap_err();
     assert!(matches!(
         err,
         a2a_protocol_server::ServerError::InvalidParams(_)
@@ -549,7 +564,7 @@ async fn get_extended_agent_card_returns_card() {
         .expect("build handler");
 
     let card = handler
-        .on_get_extended_agent_card()
+        .on_get_extended_agent_card(None)
         .await
         .expect("get agent card");
     assert_eq!(card.name, "Test Agent");
@@ -562,7 +577,7 @@ async fn get_extended_agent_card_not_configured() {
         .build()
         .expect("build handler");
 
-    let err = handler.on_get_extended_agent_card().await.unwrap_err();
+    let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
     assert!(matches!(err, a2a_protocol_server::ServerError::Internal(_)));
 }
 
@@ -575,7 +590,7 @@ async fn streaming_events_arrive_in_order() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("test"), true)
+        .on_send_message(make_send_params("test"), true, None)
         .await
         .expect("send streaming");
 
@@ -601,7 +616,7 @@ async fn streaming_failure_produces_failed_event() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("boom"), true)
+        .on_send_message(make_send_params("boom"), true, None)
         .await
         .expect("send streaming");
 
@@ -632,7 +647,7 @@ async fn builder_defaults_work() {
 
     // Verify handler works with default in-memory stores.
     let result = handler
-        .on_send_message(make_send_params("test"), false)
+        .on_send_message(make_send_params("test"), false, None)
         .await
         .expect("send message");
     assert!(matches!(result, SendMessageResult::Response(_)));
@@ -647,7 +662,7 @@ async fn builder_with_agent_card() {
         .expect("build with card + push");
 
     let card = handler
-        .on_get_extended_agent_card()
+        .on_get_extended_agent_card(None)
         .await
         .expect("get card");
     assert_eq!(card.name, "Test Agent");
@@ -665,7 +680,7 @@ async fn resubscribe_nonexistent_task_fails() {
         tenant: None,
         id: "nonexistent".into(),
     };
-    let err = handler.on_resubscribe(params).await.unwrap_err();
+    let err = handler.on_resubscribe(params, None).await.unwrap_err();
     assert!(matches!(
         err,
         a2a_protocol_server::ServerError::TaskNotFound(_)
@@ -693,7 +708,7 @@ async fn return_immediately_returns_pending_task() {
     };
 
     let result = handler
-        .on_send_message(params, false)
+        .on_send_message(params, false, None)
         .await
         .expect("send message");
 
@@ -728,6 +743,7 @@ async fn task_continuation_same_context_finds_stored_task() {
                 metadata: None,
             },
             false,
+            None,
         )
         .await
         .expect("first send");
@@ -751,6 +767,7 @@ async fn task_continuation_same_context_finds_stored_task() {
                 metadata: None,
             },
             false,
+            None,
         )
         .await
         .expect("second send");
@@ -765,16 +782,19 @@ async fn task_continuation_same_context_finds_stored_task() {
 
     // Both tasks should be in the store.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: Some("ctx-continuation".into()),
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: Some("ctx-continuation".into()),
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(
@@ -802,6 +822,7 @@ async fn context_task_mismatch_rejected() {
                 metadata: None,
             },
             false,
+            None,
         )
         .await
         .expect("first send");
@@ -820,6 +841,7 @@ async fn context_task_mismatch_rejected() {
                 metadata: None,
             },
             false,
+            None,
         )
         .await;
     let err = result.err().expect("expected error for task_id mismatch");
@@ -862,7 +884,7 @@ async fn interceptor_rejection_stops_processing() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await;
     let err = result.err().expect("expected error from interceptor");
 

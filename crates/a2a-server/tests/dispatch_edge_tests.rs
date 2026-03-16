@@ -209,7 +209,7 @@ async fn rest_send_message_success() {
         "message": {
             "messageId": "msg-1",
             "role": "ROLE_USER",
-            "parts": [{"text": "hello"}]
+            "parts": [{"type": "text", "text": "hello"}]
         }
     });
     let (status, resp_body) = http_request(

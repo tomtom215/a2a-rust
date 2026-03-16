@@ -120,7 +120,7 @@ fn make_send_params(text: &str) -> MessageSendParams {
 async fn send_message_basic_flow() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await;
     match result.unwrap() {
         a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
@@ -134,7 +134,7 @@ async fn send_message_basic_flow() {
 async fn send_message_executor_failure_marks_task_failed() {
     let handler = RequestHandlerBuilder::new(FailingExecutor).build().unwrap();
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await;
     // The executor fails, which should result in a Failed task
     match result {
@@ -154,7 +154,7 @@ async fn cancel_task_signals_cancellation_token() {
 
     // Start a streaming task (which won't block waiting for completion)
     let params = make_send_params("slow task");
-    let result = handler.on_send_message(params, true).await.unwrap();
+    let result = handler.on_send_message(params, true, None).await.unwrap();
 
     // Get the task ID from the response
     match result {
@@ -164,16 +164,19 @@ async fn cancel_task_signals_cancellation_token() {
 
             // List tasks to find our task
             let list_result = handler
-                .on_list_tasks(ListTasksParams {
-                    tenant: None,
-                    context_id: None,
-                    status: None,
-                    page_size: Some(10),
-                    page_token: None,
-                    status_timestamp_after: None,
-                    include_artifacts: None,
-                    history_length: None,
-                })
+                .on_list_tasks(
+                    ListTasksParams {
+                        tenant: None,
+                        context_id: None,
+                        status: None,
+                        page_size: Some(10),
+                        page_token: None,
+                        status_timestamp_after: None,
+                        include_artifacts: None,
+                        history_length: None,
+                    },
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -189,11 +192,14 @@ async fn cancel_task_signals_cancellation_token() {
                 .find(|t| !t.status.state.is_terminal())
             {
                 let cancel_result = handler
-                    .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-                        tenant: None,
-                        id: task.id.to_string(),
-                        metadata: None,
-                    })
+                    .on_cancel_task(
+                        a2a_protocol_types::params::CancelTaskParams {
+                            tenant: None,
+                            id: task.id.to_string(),
+                            metadata: None,
+                        },
+                        None,
+                    )
                     .await;
                 match cancel_result {
                     Ok(cancelled) => {
@@ -213,11 +219,14 @@ async fn cancel_task_signals_cancellation_token() {
 async fn get_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_get_task(TaskQueryParams {
-            tenant: None,
-            id: "nonexistent-task".into(),
-            history_length: None,
-        })
+        .on_get_task(
+            TaskQueryParams {
+                tenant: None,
+                id: "nonexistent-task".into(),
+                history_length: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(result, Err(ServerError::TaskNotFound(_))));
 }
@@ -226,11 +235,14 @@ async fn get_task_not_found() {
 async fn cancel_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: "nonexistent".into(),
-            metadata: None,
-        })
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: "nonexistent".into(),
+                metadata: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(result, Err(ServerError::TaskNotFound(_))));
 }
@@ -241,7 +253,7 @@ async fn cancel_completed_task_returns_not_cancelable() {
 
     // First, complete a task
     let result = handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await
         .unwrap();
     let task_id = match result {
@@ -253,11 +265,14 @@ async fn cancel_completed_task_returns_not_cancelable() {
 
     // Now try to cancel it
     let cancel_result = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: task_id.to_string(),
-            metadata: None,
-        })
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: task_id.to_string(),
+                metadata: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(
         cancel_result,
@@ -271,22 +286,25 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
 
     // Create a task
     handler
-        .on_send_message(make_send_params("hello"), false)
+        .on_send_message(make_send_params("hello"), false, None)
         .await
         .unwrap();
 
     // List with page_size = 0 (should default to 50, not return empty)
     let result = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(0),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: Some(0),
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .unwrap();
     assert!(
@@ -303,14 +321,14 @@ async fn push_config_not_supported_without_sender() {
         "task-1",
         "http://example.com/webhook",
     );
-    let result = handler.on_set_push_config(config).await;
+    let result = handler.on_set_push_config(config, None).await;
     assert!(matches!(result, Err(ServerError::PushNotSupported)));
 }
 
 #[tokio::test]
 async fn extended_agent_card_not_configured() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
-    let result = handler.on_get_extended_agent_card().await;
+    let result = handler.on_get_extended_agent_card(None).await;
     assert!(matches!(result, Err(ServerError::Internal(_))));
 }
 
@@ -476,10 +494,10 @@ async fn part_constructors() {
     assert!(matches!(text.content, PartContent::Text { .. }));
 
     let raw = Part::raw("base64data");
-    assert!(matches!(raw.content, PartContent::Raw { .. }));
+    assert!(matches!(raw.content, PartContent::File { .. }));
 
     let url = Part::url("https://example.com");
-    assert!(matches!(url.content, PartContent::Url { .. }));
+    assert!(matches!(url.content, PartContent::File { .. }));
 
     let data = Part::data(serde_json::json!({"key": "value"}));
     assert!(matches!(data.content, PartContent::Data { .. }));
@@ -670,7 +688,7 @@ async fn executor_timeout() {
         .unwrap();
 
     let result = handler
-        .on_send_message(make_send_params("timeout test"), false)
+        .on_send_message(make_send_params("timeout test"), false, None)
         .await;
     match result {
         Ok(a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
@@ -759,7 +777,7 @@ async fn concurrent_send_message() {
         let handler = Arc::clone(&handler);
         handles.push(tokio::spawn(async move {
             handler
-                .on_send_message(make_send_params(&format!("msg-{i}")), false)
+                .on_send_message(make_send_params(&format!("msg-{i}")), false, None)
                 .await
         }));
     }

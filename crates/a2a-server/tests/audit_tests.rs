@@ -310,7 +310,7 @@ async fn executor_timeout_causes_failure() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("slow"), false)
+        .on_send_message(make_send_params("slow"), false, None)
         .await;
 
     match result {
@@ -340,7 +340,7 @@ async fn shutdown_cancels_in_flight_tasks() {
 
     // Send a streaming message to create an in-flight task.
     let result = handler
-        .on_send_message(make_send_params("slow-work"), true)
+        .on_send_message(make_send_params("slow-work"), true, None)
         .await
         .expect("send streaming message");
 
@@ -378,7 +378,7 @@ async fn get_extended_agent_card_configured() {
         .expect("build handler");
 
     let card = handler
-        .on_get_extended_agent_card()
+        .on_get_extended_agent_card(None)
         .await
         .expect("get agent card");
     assert_eq!(card.name, "Test Agent");
@@ -392,7 +392,7 @@ async fn get_extended_agent_card_unconfigured() {
         .build()
         .expect("build handler");
 
-    let err = handler.on_get_extended_agent_card().await.unwrap_err();
+    let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::Internal(_)),
         "expected Internal error, got {err:?}"
@@ -542,7 +542,7 @@ async fn context_id_exactly_max_length_passes() {
         metadata: None,
     };
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_ok(),
         "context_id of exactly 1024 chars should be accepted"
@@ -566,7 +566,7 @@ async fn context_id_over_max_length_fails() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "context_id of 1025 chars should be rejected, got {err:?}"
@@ -592,7 +592,7 @@ async fn task_id_exactly_max_length_passes() {
 
     // This will either succeed (if no existing task with that ID) or fail
     // for a reason other than length validation.
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     // Should NOT fail with "exceeds maximum length"
     if let Err(ref e) = result {
         let msg = format!("{e}");
@@ -620,7 +620,7 @@ async fn task_id_over_max_length_fails() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "task_id of 1025 chars should be rejected, got {err:?}"
@@ -645,7 +645,7 @@ async fn empty_context_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "empty context_id should be rejected, got {err:?}"
@@ -668,7 +668,7 @@ async fn empty_task_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "empty task_id should be rejected, got {err:?}"
@@ -693,7 +693,7 @@ async fn whitespace_only_context_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "whitespace-only context_id should be rejected, got {err:?}"
@@ -716,7 +716,7 @@ async fn whitespace_only_task_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "whitespace-only task_id should be rejected, got {err:?}"
@@ -734,7 +734,11 @@ async fn unicode_emoji_in_messages() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("Hello \u{1F600} world \u{1F310}"), false)
+        .on_send_message(
+            make_send_params("Hello \u{1F600} world \u{1F310}"),
+            false,
+            None,
+        )
         .await
         .expect("send unicode message");
 
@@ -762,7 +766,7 @@ async fn unicode_in_context_id() {
         metadata: None,
     };
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_ok(), "unicode in context_id should be accepted");
 }
 
@@ -776,11 +780,11 @@ async fn large_page_size_clamped() {
 
     // Create a couple of tasks so we can list them.
     handler
-        .on_send_message(make_send_params("one"), false)
+        .on_send_message(make_send_params("one"), false, None)
         .await
         .expect("send first");
     handler
-        .on_send_message(make_send_params("two"), false)
+        .on_send_message(make_send_params("two"), false, None)
         .await
         .expect("send second");
 
@@ -796,7 +800,10 @@ async fn large_page_size_clamped() {
         history_length: None,
     };
 
-    let result = handler.on_list_tasks(params).await.expect("list tasks");
+    let result = handler
+        .on_list_tasks(params, None)
+        .await
+        .expect("list tasks");
     // We only created 2 tasks, so we should get 2 back.
     // The important thing is that it does not crash or allocate huge memory.
     assert_eq!(result.tasks.len(), 2);
@@ -812,7 +819,7 @@ async fn duplicate_task_id_rejected() {
 
     // Create a task first.
     let result = handler
-        .on_send_message(make_send_params("first"), false)
+        .on_send_message(make_send_params("first"), false, None)
         .await
         .expect("send first");
 
@@ -832,7 +839,7 @@ async fn duplicate_task_id_rejected() {
         metadata: None,
     };
 
-    let err = unwrap_send_err(handler.on_send_message(params, false).await);
+    let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "duplicate task_id should be rejected, got {err:?}"
@@ -966,7 +973,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 1: Send a message and get a completed task.
     let send_result = handler
-        .on_send_message(make_send_params("lifecycle test"), false)
+        .on_send_message(make_send_params("lifecycle test"), false, None)
         .await
         .expect("send message");
 
@@ -979,11 +986,14 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 2: Get the task by ID.
     let fetched = handler
-        .on_get_task(a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
-            id: task_id.0.clone(),
-            history_length: None,
-        })
+        .on_get_task(
+            a2a_protocol_types::params::TaskQueryParams {
+                tenant: None,
+                id: task_id.0.clone(),
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("get task");
     assert_eq!(fetched.id, task_id);
@@ -991,16 +1001,19 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 3: List tasks — should include our task.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(
@@ -1010,11 +1023,14 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 4: Cancel a completed task — should fail with TaskNotCancelable.
     let cancel_err = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: task_id.0.clone(),
-            metadata: None,
-        })
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: task_id.0.clone(),
+                metadata: None,
+            },
+            None,
+        )
         .await
         .unwrap_err();
     assert!(
@@ -1034,7 +1050,7 @@ async fn full_handler_lifecycle_with_streaming() {
 
     // Send streaming message.
     let result = handler
-        .on_send_message(make_send_params("stream lifecycle"), true)
+        .on_send_message(make_send_params("stream lifecycle"), true, None)
         .await
         .expect("send streaming");
 
@@ -1064,16 +1080,19 @@ async fn full_handler_lifecycle_with_streaming() {
 
     // After the stream is exhausted, list tasks to verify the task was stored.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        })
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(
@@ -1090,7 +1109,7 @@ async fn full_handler_lifecycle_failing_executor() {
 
     // Non-streaming: should produce a failed task.
     let result = handler
-        .on_send_message(make_send_params("fail"), false)
+        .on_send_message(make_send_params("fail"), false, None)
         .await;
 
     match result {
@@ -1105,7 +1124,7 @@ async fn full_handler_lifecycle_failing_executor() {
 
     // Streaming: should produce a Failed status event.
     let result = handler
-        .on_send_message(make_send_params("fail-stream"), true)
+        .on_send_message(make_send_params("fail-stream"), true, None)
         .await
         .expect("send streaming");
 

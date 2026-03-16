@@ -65,7 +65,7 @@ pub use jsonrpc::{
     JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
     JsonRpcSuccessResponse, JsonRpcVersion,
 };
-pub use message::{Message, MessageId, MessageRole, Part, PartContent};
+pub use message::{FileContent, Message, MessageId, MessageRole, Part, PartContent};
 pub use params::{
     CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams, GetPushConfigParams,
     ListPushConfigsParams, ListTasksParams, MessageSendParams, SendMessageConfiguration,
