@@ -20,6 +20,7 @@ use a2a_protocol_types::jsonrpc::{
     JsonRpcVersion,
 };
 
+use crate::agent_card::StaticAgentCardHandler;
 use crate::dispatch::cors::CorsConfig;
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
@@ -29,8 +30,12 @@ use crate::streaming::build_sse_response;
 ///
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
 /// Optionally applies CORS headers to all responses.
+///
+/// Also serves the agent card at `GET /.well-known/agent.json` so that
+/// JSON-RPC servers can participate in agent card discovery (spec §8.3).
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
+    card_handler: Option<StaticAgentCardHandler>,
     cors: Option<CorsConfig>,
     config: super::DispatchConfig,
 }
@@ -45,9 +50,14 @@ impl JsonRpcDispatcher {
 
     /// Creates a new dispatcher with the given configuration.
     #[must_use]
-    pub const fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
+    pub fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
+        let card_handler = handler
+            .agent_card
+            .as_ref()
+            .and_then(|card| StaticAgentCardHandler::new(card).ok());
         Self {
             handler,
+            card_handler,
             cors: None,
             config,
         }
@@ -79,6 +89,22 @@ impl JsonRpcDispatcher {
                 return cors.preflight_response();
             }
             return json_response(204, Vec::new());
+        }
+
+        // Serve the agent card at the well-known discovery path (spec §8.3).
+        // This must be handled before JSON-RPC body parsing since it's a GET.
+        if req.method() == "GET" && req.uri().path() == "/.well-known/agent.json" {
+            let mut resp = self
+                .card_handler
+                .as_ref()
+                .map_or_else(
+                    || json_response(404, br#"{"error":"agent card not configured"}"#.to_vec()),
+                    |h| h.handle(&req).map(http_body_util::BodyExt::boxed),
+                );
+            if let Some(ref cors) = self.cors {
+                cors.apply_headers(&mut resp);
+            }
+            return resp;
         }
 
         let mut resp = self.dispatch_inner(req).await;

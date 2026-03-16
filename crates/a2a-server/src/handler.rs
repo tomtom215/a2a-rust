@@ -556,10 +556,13 @@ impl RequestHandler {
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-            let (_writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
-            let reader = reader.ok_or_else(|| {
-                ServerError::Internal("no event queue available for resubscribe".into())
-            })?;
+            let reader = self
+                .event_queue_manager
+                .subscribe(&task_id)
+                .await
+                .ok_or_else(|| {
+                    ServerError::Internal("no active event queue for task".into())
+                })?;
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(reader)
