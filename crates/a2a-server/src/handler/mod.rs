@@ -10,12 +10,12 @@
 //!
 //! | Module | Contents |
 //! |---|---|
-//! | [`limits`] | [`HandlerLimits`] — configurable per-handler bounds |
-//! | [`messaging`] | [`RequestHandler::on_send_message`] — send/stream entry point |
-//! | [`lifecycle`] | Get, list, cancel, resubscribe, extended agent card |
-//! | [`push_config`] | Push notification config CRUD |
-//! | [`event_processing`] | Event collection, state transitions, push delivery |
-//! | [`shutdown`] | Graceful shutdown with optional timeout |
+//! | `limits` | [`HandlerLimits`] — configurable per-handler bounds |
+//! | `messaging` | `RequestHandler::on_send_message` — send/stream entry point |
+//! | `lifecycle` | Get, list, cancel, resubscribe, extended agent card |
+//! | `push_config` | Push notification config CRUD |
+//! | `event_processing` | Event collection, state transitions, push delivery |
+//! | `shutdown` | Graceful shutdown with optional timeout |
 
 mod event_processing;
 mod helpers;

@@ -24,22 +24,13 @@ Fixed by adding `http_headers: HashMap<String, String>` to `CallContext`. Both `
 
 ## Ergonomics Issues
 
-### `AgentExecutor` Boilerplate
+### ~~`AgentExecutor` Boilerplate~~ ✅ RESOLVED
 
-**Severity:** Medium | **Effort:** Small
+~~**Severity:** Medium | **Effort:** Small~~
 
-Every executor requires:
-```rust
-fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter)
-    -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-    Box::pin(async move { ... })
-}
-```
-
-This is the single most repeated pattern in any a2a-rust application. Options:
-- Provide a proc macro `#[a2a_executor]` that generates the `Pin<Box>` wrapping
-- Use RPITIT (Rust 1.75+) for `async fn` in traits — but this may sacrifice object safety
-- Provide a helper function: `fn boxed_future<F: Future>(f: F) -> Pin<Box<dyn Future>>`
+Fixed by adding two ergonomic helpers in `executor_helpers`:
+- `boxed_future(async move { ... })` — wraps an async block into `Pin<Box<dyn Future>>`, eliminating the `Box::pin()` wrapper.
+- `agent_executor!(MyAgent, |ctx, queue| async { ... })` — macro that generates the full `AgentExecutor` impl from a closure-like syntax. Supports both execute-only and execute+cancel forms.
 
 ### ~~`Arc<T: Metrics>` Doesn't Impl `Metrics`~~ ✅ RESOLVED
 
@@ -81,11 +72,11 @@ Fixed by adding `on_latency(&self, method: &str, duration: Duration)` to the `Me
 
 ## Durability Gaps
 
-### No Persistent Store Implementations
+### ~~No Persistent Store Implementations~~ ✅ RESOLVED
 
-**Severity:** Medium | **Effort:** Large
+~~**Severity:** Medium | **Effort:** Large~~
 
-Only `InMemoryTaskStore` and `InMemoryPushConfigStore` exist. All state is lost on restart. The traits are well-designed for custom backends, but no reference implementation exists for SQLite, Redis, or Postgres.
+Fixed by adding `SqliteTaskStore` and `SqlitePushConfigStore` behind the `sqlite` feature flag. Uses `sqlx` for async SQLite access with schema auto-creation, cursor-based pagination, upsert support, and 12 integration tests using in-memory SQLite.
 
 ## Remaining Hardcoded Constants
 
@@ -118,8 +109,8 @@ These use sensible defaults but are not yet user-configurable via builder method
 1. ~~**Push delivery architecture**~~ ✅ Done
 2. ~~**`CallContext` + HTTP headers**~~ ✅ Done
 3. ~~**`Metrics::on_latency`**~~ ✅ Done
-4. **Persistent store reference impl** — Medium severity, blocks production deployments
-5. **`AgentExecutor` ergonomics** — Medium severity, affects every SDK user
+4. ~~**Persistent store reference impl**~~ ✅ Done
+5. ~~**`AgentExecutor` ergonomics**~~ ✅ Done
 6. **Remaining hardcoded constants** — Low severity, sensible defaults exist
 7. ~~**`PartContent` tagged enum**~~ ✅ Done
 8. ~~**Blanket `impl Metrics for Arc<T>`**~~ ✅ Done

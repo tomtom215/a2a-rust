@@ -47,6 +47,30 @@ Features:
 - Pagination support with cursor tokens
 - Filtering by `context_id`, `status`, and `timestamp`
 
+### SqliteTaskStore (feature-gated)
+
+Enable the `sqlite` feature for a production-ready persistent store:
+
+```toml
+[dependencies]
+a2a-protocol-server = { version = "0.2", features = ["sqlite"] }
+```
+
+```rust
+use a2a_protocol_server::store::SqliteTaskStore;
+
+let store = SqliteTaskStore::new("sqlite:tasks.db").await?;
+// Or use an in-memory database for testing:
+let store = SqliteTaskStore::new("sqlite::memory:").await?;
+```
+
+Features:
+- Auto-creates schema on first use
+- Stores tasks as JSON blobs with indexed `context_id` and `state` columns
+- Cursor-based pagination via `id > ?` ordering
+- Atomic `insert_if_absent` via `INSERT OR IGNORE`
+- Upsert via `ON CONFLICT DO UPDATE`
+
 ### Custom Implementation
 
 ```rust

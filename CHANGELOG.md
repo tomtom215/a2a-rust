@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (default 5s) prevents one slow webhook from blocking all subsequent deliveries.
 - Background event processor for streaming mode — push notifications and task
   store updates now fire for every event regardless of consumer mode.
+- `SqliteTaskStore` and `SqlitePushConfigStore` — persistent store reference
+  implementations behind the `sqlite` feature flag, using `sqlx` for async
+  SQLite access. Includes schema auto-creation, cursor-based pagination,
+  and upsert support.
+- `boxed_future` helper function and `agent_executor!` macro in
+  `executor_helpers` module — reduces `AgentExecutor` boilerplate from
+  5 lines to 1 line per method.
+- Doc examples for `TaskStore` and `AgentExecutor` traits — `# Example`
+  sections in rustdoc for crates.io users.
+- Explicit `sqlite` feature gate in CI — clippy and test steps for the
+  `sqlite` feature flag alongside existing feature-specific gates.
 - `JsonRpcDispatcher` now serves agent cards at `GET /.well-known/agent.json`,
   matching the existing `RestDispatcher` behavior.
 - `EventQueueManager::subscribe()` creates additional readers for an active

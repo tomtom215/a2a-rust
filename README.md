@@ -29,7 +29,8 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults and SQLite reference implementations (`sqlite` feature flag)
+- **Executor ergonomics** — `boxed_future` helper and `agent_executor!` macro eliminate `Pin<Box<dyn Future>>` boilerplate
 - **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
 - **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
 - **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)

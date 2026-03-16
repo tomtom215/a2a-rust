@@ -57,6 +57,22 @@ use crate::streaming::EventQueueWriter;
 ///     }
 /// }
 /// ```
+///
+/// # Ergonomic helpers
+///
+/// Use [`boxed_future`](crate::executor_helpers::boxed_future) to reduce
+/// boilerplate, or the [`agent_executor!`](crate::agent_executor) macro
+/// for a fully declarative approach:
+///
+/// ```rust
+/// use a2a_protocol_server::agent_executor;
+///
+/// struct EchoAgent;
+///
+/// agent_executor!(EchoAgent, |_ctx, _queue| async {
+///     Ok(())
+/// });
+/// ```
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Executes agent logic for the given request.
     ///
