@@ -205,7 +205,7 @@ impl Default for TaskStoreConfig {
 ///
 /// # Concurrency
 ///
-/// For high-concurrency production deployments, consider [`SqliteTaskStore`]
+/// For high-concurrency production deployments, consider `SqliteTaskStore`
 /// which uses a connection pool and row-level locking. The in-memory store
 /// uses a single `RwLock` and is optimized for testing and moderate load.
 #[derive(Debug)]

@@ -28,7 +28,7 @@
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
-//! | [`rate_limit`] | [`RateLimitInterceptor`](rate_limit::RateLimitInterceptor), [`RateLimitConfig`](rate_limit::RateLimitConfig) |
+//! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
@@ -41,7 +41,7 @@
 //!
 //! # Rate limiting
 //!
-//! Built-in rate limiting is available via [`RateLimitInterceptor`](rate_limit::RateLimitInterceptor),
+//! Built-in rate limiting is available via [`RateLimitInterceptor`],
 //! a fixed-window per-caller interceptor. For advanced use cases (sliding windows,
 //! distributed counters), use a reverse proxy (nginx, Envoy) or a custom
 //! [`ServerInterceptor`].
