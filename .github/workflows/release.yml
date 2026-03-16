@@ -191,11 +191,11 @@ jobs:
         shell: bash
         run: |
           echo "::group::Package contents"
-          cargo package --workspace --exclude echo-agent --list --no-verify
+          cargo package --workspace --exclude echo-agent --exclude agent-team --list --no-verify
           echo "::endgroup::"
 
           echo "::group::Build .crate archives"
-          cargo package --workspace --exclude echo-agent --no-verify
+          cargo package --workspace --exclude echo-agent --exclude agent-team --no-verify
           echo "::endgroup::"
 
           echo "::group::Archive sizes"
@@ -243,7 +243,7 @@ jobs:
           # which fails for workspace crates whose new versions aren't published yet.
           # `cargo package` resolves workspace dependencies locally.
           echo "::group::cargo package (all publishable crates)"
-          cargo package --workspace --exclude echo-agent
+          cargo package --workspace --exclude echo-agent --exclude agent-team
           echo "::endgroup::"
           echo "::notice::Package verification succeeded — all crates pass validation"
 

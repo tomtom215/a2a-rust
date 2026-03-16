@@ -88,16 +88,6 @@ macro_rules! trace_warn {
     ($($arg:tt)*) => {};
 }
 
-#[cfg(feature = "tracing")]
-macro_rules! trace_info {
-    ($($arg:tt)*) => { tracing::info!($($arg)*) };
-}
-#[cfg(not(feature = "tracing"))]
-#[allow(unused_macros)]
-macro_rules! trace_info {
-    ($($arg:tt)*) => {};
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // CUSTOM METRICS OBSERVER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -257,35 +247,39 @@ async fn start_webhook_server(receiver: WebhookReceiver) -> SocketAddr {
             let io = hyper_util::rt::TokioIo::new(stream);
             let receiver = receiver.clone();
             tokio::spawn(async move {
-                let svc = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
-                    let receiver = receiver.clone();
-                    async move {
-                        // Collect body.
-                        let body_bytes = http_body_util::BodyExt::collect(req.into_body())
-                            .await
-                            .map(|b| b.to_bytes())
-                            .unwrap_or_default();
-
-                        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-                            let kind = if value.get("status").is_some() {
-                                "StatusUpdate"
-                            } else if value.get("artifact").is_some() {
-                                "ArtifactUpdate"
-                            } else {
-                                "Unknown"
-                            };
-                            receiver
-                                .received
-                                .lock()
+                let svc = hyper::service::service_fn(
+                    move |req: hyper::Request<hyper::body::Incoming>| {
+                        let receiver = receiver.clone();
+                        async move {
+                            // Collect body.
+                            let body_bytes = http_body_util::BodyExt::collect(req.into_body())
                                 .await
-                                .push((kind.to_owned(), value));
-                        }
+                                .map(|b| b.to_bytes())
+                                .unwrap_or_default();
 
-                        Ok::<_, std::convert::Infallible>(hyper::Response::new(
-                            http_body_util::Full::new(bytes::Bytes::from("ok")),
-                        ))
-                    }
-                });
+                            if let Ok(value) =
+                                serde_json::from_slice::<serde_json::Value>(&body_bytes)
+                            {
+                                let kind = if value.get("status").is_some() {
+                                    "StatusUpdate"
+                                } else if value.get("artifact").is_some() {
+                                    "ArtifactUpdate"
+                                } else {
+                                    "Unknown"
+                                };
+                                receiver
+                                    .received
+                                    .lock()
+                                    .await
+                                    .push((kind.to_owned(), value));
+                            }
+
+                            Ok::<_, std::convert::Infallible>(hyper::Response::new(
+                                http_body_util::Full::new(bytes::Bytes::from("ok")),
+                            ))
+                        }
+                    },
+                );
                 let _ = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new(),
                 )
@@ -359,7 +353,7 @@ impl AgentExecutor for CodeAnalyzerExecutor {
                     context_id: ContextId::new(ctx.context_id.clone()),
                     artifact: Artifact::new(
                         "analysis-metrics",
-                        vec![Part::text(&format!("Lines: {lines}"))],
+                        vec![Part::text(format!("Lines: {lines}"))],
                     ),
                     append: Some(false),
                     last_chunk: Some(false),
@@ -377,9 +371,7 @@ impl AgentExecutor for CodeAnalyzerExecutor {
                     context_id: ContextId::new(ctx.context_id.clone()),
                     artifact: Artifact::new(
                         "analysis-metrics",
-                        vec![Part::text(&format!(
-                            "\nWords: {words}\nChars: {chars}"
-                        ))],
+                        vec![Part::text(format!("\nWords: {words}\nChars: {chars}"))],
                     ),
                     append: Some(true),
                     last_chunk: Some(true),
@@ -512,10 +504,7 @@ impl AgentExecutor for BuildMonitorExecutor {
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
                         context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new(
-                            "build-output",
-                            vec![Part::text(*phase_msg)],
-                        ),
+                        artifact: Artifact::new("build-output", vec![Part::text(*phase_msg)]),
                         append: Some(i > 0),
                         last_chunk: Some(*is_last),
                         metadata: None,
@@ -749,16 +738,13 @@ impl AgentExecutor for CoordinatorExecutor {
                                                     if let PartContent::Text { text } =
                                                         &part.content
                                                     {
-                                                        report_lines
-                                                            .push(format!("  {}", text));
+                                                        report_lines.push(format!("  {}", text));
                                                     }
                                                     if let PartContent::Data { data } =
                                                         &part.content
                                                     {
-                                                        report_lines.push(format!(
-                                                            "  JSON: {}",
-                                                            data
-                                                        ));
+                                                        report_lines
+                                                            .push(format!("  JSON: {}", data));
                                                     }
                                                 }
                                             }
@@ -768,14 +754,12 @@ impl AgentExecutor for CoordinatorExecutor {
                                         report_lines.push("  Got non-task response".to_owned());
                                     }
                                     Err(e) => {
-                                        report_lines
-                                            .push(format!("  Analysis failed: {e}"));
+                                        report_lines.push(format!("  Analysis failed: {e}"));
                                     }
                                 }
                             }
                             Err(e) => {
-                                report_lines
-                                    .push(format!("  Cannot connect to analyzer: {e}"));
+                                report_lines.push(format!("  Cannot connect to analyzer: {e}"));
                             }
                         }
                     }
@@ -800,8 +784,7 @@ impl AgentExecutor for CoordinatorExecutor {
                                     }
                                     Ok(_) => {}
                                     Err(e) => {
-                                        report_lines
-                                            .push(format!("  Build check failed: {e}"));
+                                        report_lines.push(format!("  Build check failed: {e}"));
                                     }
                                 }
                             }
@@ -816,8 +799,7 @@ impl AgentExecutor for CoordinatorExecutor {
                         report_lines.push("--- Health Check ---".to_owned());
 
                         if let Ok(client) = ClientBuilder::new(health_url).build() {
-                            let urls: Vec<String> =
-                                self.agent_urls.values().cloned().collect();
+                            let urls: Vec<String> = self.agent_urls.values().cloned().collect();
                             let parts = vec![
                                 Part::text("coordinator-initiated health check"),
                                 Part::data(serde_json::json!(urls)),
@@ -842,11 +824,8 @@ impl AgentExecutor for CoordinatorExecutor {
                                     if let Some(artifacts) = &task.artifacts {
                                         for art in artifacts {
                                             for part in &art.parts {
-                                                if let PartContent::Text { text } =
-                                                    &part.content
-                                                {
-                                                    report_lines
-                                                        .push(format!("  {text}"));
+                                                if let PartContent::Text { text } = &part.content {
+                                                    report_lines.push(format!("  {text}"));
                                                 }
                                             }
                                         }
@@ -854,8 +833,7 @@ impl AgentExecutor for CoordinatorExecutor {
                                 }
                                 Ok(_) => {}
                                 Err(e) => {
-                                    report_lines
-                                        .push(format!("  Health check failed: {e}"));
+                                    report_lines.push(format!("  Health check failed: {e}"));
                                 }
                             }
                         }
@@ -912,18 +890,16 @@ fn code_analyzer_card(url: &str) -> AgentCard {
         }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into(), "application/json".into()],
-        skills: vec![
-            AgentSkill {
-                id: "analyze".into(),
-                name: "Code Analysis".into(),
-                description: "Counts lines, words, chars and assesses complexity".into(),
-                tags: vec!["code".into(), "analysis".into(), "metrics".into()],
-                examples: None,
-                input_modes: None,
-                output_modes: None,
-                security_requirements: None,
-            },
-        ],
+        skills: vec![AgentSkill {
+            id: "analyze".into(),
+            name: "Code Analysis".into(),
+            description: "Counts lines, words, chars and assesses complexity".into(),
+            tags: vec!["code".into(), "analysis".into(), "metrics".into()],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: None,
+        }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(false),
@@ -949,18 +925,16 @@ fn build_monitor_card(url: &str) -> AgentCard {
         }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            AgentSkill {
-                id: "build".into(),
-                name: "Build Runner".into(),
-                description: "Runs cargo check/build/test".into(),
-                tags: vec!["build".into(), "cargo".into(), "ci".into()],
-                examples: None,
-                input_modes: None,
-                output_modes: None,
-                security_requirements: None,
-            },
-        ],
+        skills: vec![AgentSkill {
+            id: "build".into(),
+            name: "Build Runner".into(),
+            description: "Runs cargo check/build/test".into(),
+            tags: vec!["build".into(), "cargo".into(), "ci".into()],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: None,
+        }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true),
@@ -1021,18 +995,16 @@ fn coordinator_card(url: &str) -> AgentCard {
         }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
-        skills: vec![
-            AgentSkill {
-                id: "orchestrate".into(),
-                name: "Team Orchestration".into(),
-                description: "Delegates tasks to specialized agents and aggregates results".into(),
-                tags: vec!["orchestration".into(), "delegation".into()],
-                examples: None,
-                input_modes: None,
-                output_modes: None,
-                security_requirements: None,
-            },
-        ],
+        skills: vec![AgentSkill {
+            id: "orchestrate".into(),
+            name: "Team Orchestration".into(),
+            description: "Delegates tasks to specialized agents and aggregates results".into(),
+            tags: vec!["orchestration".into(), "delegation".into()],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: None,
+        }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(false),
@@ -1666,18 +1638,21 @@ async fn main() {
                 let push_count = webhook_receiver.count().await;
                 println!("  Webhook received {push_count} push notifications");
 
-                if msg_result.is_ok() {
-                    results.push(TestResult::pass(
-                        "push-notifications",
-                        start.elapsed().as_millis(),
-                        &format!("registered=true, webhooks_received={push_count}"),
-                    ));
-                } else {
-                    results.push(TestResult::fail(
-                        "push-notifications",
-                        start.elapsed().as_millis(),
-                        &format!("msg error: {}", msg_result.unwrap_err()),
-                    ));
+                match msg_result {
+                    Ok(_) => {
+                        results.push(TestResult::pass(
+                            "push-notifications",
+                            start.elapsed().as_millis(),
+                            &format!("registered=true, webhooks_received={push_count}"),
+                        ));
+                    }
+                    Err(e) => {
+                        results.push(TestResult::fail(
+                            "push-notifications",
+                            start.elapsed().as_millis(),
+                            &format!("msg error: {e}"),
+                        ));
+                    }
                 }
             }
             Err(e) => {
@@ -1965,7 +1940,10 @@ async fn main() {
     }
 
     println!("╠══════════════════════════════════════════════════════════════╣");
-    println!("║ Total: {total} | Passed: {passed} | Failed: {failed} | Time: {}ms", total_duration.as_millis());
+    println!(
+        "║ Total: {total} | Passed: {passed} | Failed: {failed} | Time: {}ms",
+        total_duration.as_millis()
+    );
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║                    AGENT METRICS                           ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
@@ -2024,10 +2002,13 @@ async fn main() {
         std::process::exit(1);
     }
 
-    println!("\nAll {passed} tests passed in {}ms. SDK fully verified.", total_duration.as_millis());
+    println!(
+        "\nAll {passed} tests passed in {}ms. SDK fully verified.",
+        total_duration.as_millis()
+    );
 }
 
-/// Wrapper to forward Arc<TeamMetrics> into the handler's Box<dyn Metrics>.
+/// Wrapper to forward `Arc<TeamMetrics>` into the handler's `Box<dyn Metrics>`.
 struct MetricsForward(Arc<TeamMetrics>);
 
 impl Metrics for MetricsForward {
