@@ -65,6 +65,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctness, push config listing via JSON-RPC, event classification,
   resubscribe, multiple artifacts, concurrent streams, context filtering,
   file parts, and history length.
+- `RateLimitInterceptor` and `RateLimitConfig` — built-in fixed-window
+  per-caller rate limiting as a `ServerInterceptor`. Caller keys are derived
+  from `CallContext::caller_identity`, `X-Forwarded-For`, or `"anonymous"`.
+- `TaskStore::count()` method — returns the total number of stored tasks.
+  Useful for metrics and capacity monitoring. Has a default implementation
+  returning `0` for backward compatibility. Implemented for both
+  `InMemoryTaskStore` and `SqliteTaskStore`.
+
+### Improved
+
+- `InMemoryQueueWriter::write()` no longer allocates a full `String` to
+  measure serialized event size. Uses a zero-allocation `CountingWriter`
+  that counts bytes via `serde_json::to_writer()` instead of `to_string()`.
+- `InMemoryTaskStore::save()` no longer holds the write lock during O(n)
+  eviction sweeps. Eviction is decoupled from the insert and runs in a
+  separate lock acquisition, reducing write lock contention under high
+  concurrency.
 
 ### Changed
 

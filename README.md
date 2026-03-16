@@ -46,6 +46,8 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Server startup helper** — `serve()` and `serve_with_addr()` reduce the ~25-line hyper boilerplate to a single call
 - **Client retry** — configurable `RetryPolicy` with exponential backoff for transient failures (connection errors, timeouts, 429/502/503/504)
 - **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header for distributed tracing
+- **Rate limiting** — built-in `RateLimitInterceptor` with fixed-window per-caller limiting; plug in via `ServerInterceptor` chain
+- **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 

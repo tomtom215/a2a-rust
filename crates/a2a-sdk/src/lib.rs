@@ -80,7 +80,7 @@ pub mod prelude {
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{
         serve, serve_with_addr, AgentExecutor, Dispatcher, EventEmitter, EventQueueWriter,
-        JsonRpcDispatcher, RequestContext, RequestHandler, RequestHandlerBuilder, RestDispatcher,
-        ServerError, ServerResult,
+        JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext, RequestHandler,
+        RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
     };
 }

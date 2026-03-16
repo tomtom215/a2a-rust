@@ -8,17 +8,24 @@ The `TaskStore` trait defines how tasks are persisted:
 
 ```rust
 pub trait TaskStore: Send + Sync + 'static {
-    fn get(&self, tenant: Option<&str>, id: &str)
+    fn save(&self, task: Task)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+
+    fn get(&self, id: &TaskId)
         -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + '_>>;
 
-    fn put(&self, tenant: Option<&str>, task: Task)
-        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
-
-    fn list(&self, tenant: Option<&str>, params: &ListTasksParams)
+    fn list(&self, params: &ListTasksParams)
         -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + '_>>;
 
-    fn delete(&self, tenant: Option<&str>, id: &str)
+    fn insert_if_absent(&self, task: Task)
+        -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + '_>>;
+
+    fn delete(&self, id: &TaskId)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+
+    /// Returns the total number of tasks. Default returns 0.
+    fn count(&self)
+        -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>>;
 }
 ```
 
