@@ -109,6 +109,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
+    #[allow(clippy::too_many_lines)]
     pub async fn on_cancel_task(
         &self,
         params: CancelTaskParams,

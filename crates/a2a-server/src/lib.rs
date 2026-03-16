@@ -78,9 +78,9 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
-pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
+pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{boxed_future, EventEmitter};

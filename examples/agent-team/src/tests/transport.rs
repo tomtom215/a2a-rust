@@ -9,13 +9,13 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
 use crate::cards::code_analyzer_card;
 use crate::executors::CodeAnalyzerExecutor;
 use crate::helpers::make_send_params;
 use crate::infrastructure::{bind_listener, serve_jsonrpc};
 use crate::tests::{TestContext, TestResult};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
 
 // ── WebSocket tests (require `websocket` feature) ───────────────────────────
 
@@ -55,7 +55,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
         serde_json::to_value(&params).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json.into())).await.unwrap();
+    ws.send(WsMessage::Text(json)).await.unwrap();
 
     // Read response.
     let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
@@ -117,7 +117,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
         "SendStreamingMessage",
         serde_json::to_value(&params).unwrap(),
     );
-    ws.send(WsMessage::Text(serde_json::to_string(&rpc_req).unwrap().into()))
+    ws.send(WsMessage::Text(serde_json::to_string(&rpc_req).unwrap()))
         .await
         .unwrap();
 
@@ -145,11 +145,7 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
             start.elapsed().as_millis(),
             &format!("too few frames: {frame_count}"),
         ),
-        Err(_) => TestResult::fail(
-            "52-ws-streaming",
-            start.elapsed().as_millis(),
-            "timeout",
-        ),
+        Err(_) => TestResult::fail("52-ws-streaming", start.elapsed().as_millis(), "timeout"),
     }
 }
 
@@ -258,25 +254,13 @@ pub async fn test_tenant_id_independence(_ctx: &TestContext) -> TestResult {
     // Verify they have different context_ids (confirming independence).
     let alpha_task = TenantContext::scope("alpha".to_string(), {
         let store = store.clone();
-        async move {
-            store
-                .get(&TaskId::new("shared-id"))
-                .await
-                .unwrap()
-                .unwrap()
-        }
+        async move { store.get(&TaskId::new("shared-id")).await.unwrap().unwrap() }
     })
     .await;
 
     let beta_task = TenantContext::scope("beta".to_string(), {
         let store = store.clone();
-        async move {
-            store
-                .get(&TaskId::new("shared-id"))
-                .await
-                .unwrap()
-                .unwrap()
-        }
+        async move { store.get(&TaskId::new("shared-id")).await.unwrap().unwrap() }
     })
     .await;
 

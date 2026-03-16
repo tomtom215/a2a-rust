@@ -61,7 +61,7 @@ pub struct TenantAwareSqliteTaskStore {
 }
 
 impl TenantAwareSqliteTaskStore {
-    /// Opens (or creates) a SQLite database and initializes the schema.
+    /// Opens (or creates) a `SQLite` database and initializes the schema.
     ///
     /// # Errors
     ///
@@ -110,7 +110,7 @@ impl TenantAwareSqliteTaskStore {
     }
 }
 
-fn to_a2a_error(e: sqlx::Error) -> A2aError {
+fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     A2aError::internal(format!("sqlite error: {e}"))
 }
 
@@ -141,7 +141,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             .bind(&data)
             .execute(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
 
             Ok(())
         })
@@ -159,7 +159,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                     .bind(id.0.as_str())
                     .fetch_optional(&self.pool)
                     .await
-                    .map_err(to_a2a_error)?;
+                    .map_err(|e| to_a2a_error(&e))?;
 
             match row {
                 Some((data,)) => {
@@ -211,7 +211,10 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 query = query.bind(val);
             }
 
-            let rows: Vec<(String,)> = query.fetch_all(&self.pool).await.map_err(to_a2a_error)?;
+            let rows: Vec<(String,)> = query
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| to_a2a_error(&e))?;
 
             let mut tasks: Vec<Task> = rows
                 .into_iter()
@@ -257,7 +260,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
             .bind(&data)
             .execute(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
 
             Ok(result.rows_affected() > 0)
         })
@@ -274,7 +277,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 .bind(id.0.as_str())
                 .execute(&self.pool)
                 .await
-                .map_err(to_a2a_error)?;
+                .map_err(|e| to_a2a_error(&e))?;
             Ok(())
         })
     }
@@ -287,7 +290,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                     .bind(&tenant)
                     .fetch_one(&self.pool)
                     .await
-                    .map_err(to_a2a_error)?;
+                    .map_err(|e| to_a2a_error(&e))?;
             #[allow(clippy::cast_sign_loss)]
             Ok(row.0 as u64)
         })

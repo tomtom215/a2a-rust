@@ -91,10 +91,9 @@ impl WebSocketTransport {
         let endpoint = endpoint.into();
         validate_ws_url(&endpoint)?;
 
-        let (ws_stream, _resp) =
-            tokio_tungstenite::connect_async(&endpoint)
-                .await
-                .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
+        let (ws_stream, _resp) = tokio_tungstenite::connect_async(&endpoint)
+            .await
+            .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
 
         let (writer, reader) = ws_stream.split();
 
@@ -126,19 +125,21 @@ impl WebSocketTransport {
         let rpc_req = build_rpc_request(method, params);
         let body = serde_json::to_string(&rpc_req).map_err(ClientError::Serialization)?;
 
-        // Lock both writer and reader for the duration of a request/response pair.
+        // Lock writer, send, then release before locking reader.
         let mut writer = self.inner.writer.lock().await;
-        let mut reader = self.inner.reader.lock().await;
-
         writer
-            .send(WsMessage::Text(body.into()))
+            .send(WsMessage::Text(body))
             .await
             .map_err(|e| ClientError::Transport(format!("WebSocket send failed: {e}")))?;
+        drop(writer);
 
-        let response_text = tokio::time::timeout(self.inner.request_timeout, read_text(&mut reader))
-            .await
-            .map_err(|_| ClientError::Timeout("WebSocket response timed out".into()))?
-            .map_err(|e| ClientError::Transport(format!("WebSocket read failed: {e}")))?;
+        let mut reader = self.inner.reader.lock().await;
+        let response_text =
+            tokio::time::timeout(self.inner.request_timeout, read_text(&mut reader))
+                .await
+                .map_err(|_| ClientError::Timeout("WebSocket response timed out".into()))?
+                .map_err(|e| ClientError::Transport(format!("WebSocket read failed: {e}")))?;
+        drop(reader);
 
         let envelope: JsonRpcResponse<serde_json::Value> =
             serde_json::from_str(&response_text).map_err(ClientError::Serialization)?;
@@ -149,7 +150,11 @@ impl WebSocketTransport {
                 Ok(ok.result)
             }
             JsonRpcResponse::Error(err) => {
-                trace_warn!(method, code = err.error.code, "JSON-RPC error over WebSocket");
+                trace_warn!(
+                    method,
+                    code = err.error.code,
+                    "JSON-RPC error over WebSocket"
+                );
                 let a2a = a2a_protocol_types::A2aError::new(
                     a2a_protocol_types::ErrorCode::try_from(err.error.code)
                         .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
@@ -174,7 +179,7 @@ impl WebSocketTransport {
 
         let mut writer = self.inner.writer.lock().await;
         writer
-            .send(WsMessage::Text(body.into()))
+            .send(WsMessage::Text(body))
             .await
             .map_err(|e| ClientError::Transport(format!("WebSocket send failed: {e}")))?;
         drop(writer);
@@ -234,8 +239,8 @@ impl std::fmt::Debug for WebSocketTransport {
 
 // ── Background stream reader ─────────────────────────────────────────────────
 
-/// Reads WebSocket text frames and feeds them to the EventStream channel as
-/// SSE-formatted data lines (reusing the existing SSE parser in EventStream).
+/// Reads WebSocket text frames and feeds them to the `EventStream` channel as
+/// SSE-formatted data lines (reusing the existing SSE parser in `EventStream`).
 async fn ws_stream_reader_task(
     inner: Arc<Inner>,
     tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
@@ -262,10 +267,7 @@ async fn ws_stream_reader_task(
                 }
             }
             Some(Ok(WsMessage::Close(_))) | None => break,
-            Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_) | WsMessage::Binary(_))) => {
-                continue;
-            }
-            Some(Ok(_)) => continue,
+            Some(Ok(_)) => {}
             Some(Err(e)) => {
                 let _ = tx
                     .send(Err(ClientError::Transport(format!(
@@ -286,17 +288,14 @@ fn build_rpc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest 
 }
 
 /// Reads the next text frame from the WebSocket.
-async fn read_text(
-    reader: &mut WsReader,
-) -> Result<String, tokio_tungstenite::tungstenite::Error> {
+async fn read_text(reader: &mut WsReader) -> Result<String, tokio_tungstenite::tungstenite::Error> {
     loop {
         match reader.next().await {
-            Some(Ok(WsMessage::Text(text))) => return Ok(text.to_string()),
-            Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => continue,
+            Some(Ok(WsMessage::Text(text))) => return Ok(text),
             Some(Ok(WsMessage::Close(_))) | None => {
                 return Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed);
             }
-            Some(Ok(_)) => continue,
+            Some(Ok(_)) => {} // Ping, Pong, Binary — skip
             Some(Err(e)) => return Err(e),
         }
     }

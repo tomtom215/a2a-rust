@@ -53,7 +53,6 @@ criterion = { workspace = true }
 bytes = "1"
 rcgen = "0.13"
 tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
-rustls-pemfile = "2"
 rustls = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2" }
 hyper = { workspace = true }

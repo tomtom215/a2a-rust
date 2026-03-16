@@ -54,7 +54,7 @@ pub struct WebSocketDispatcher {
 impl WebSocketDispatcher {
     /// Creates a new WebSocket dispatcher.
     #[must_use]
-    pub fn new(handler: Arc<RequestHandler>) -> Self {
+    pub const fn new(handler: Arc<RequestHandler>) -> Self {
         Self { handler }
     }
 
@@ -63,7 +63,10 @@ impl WebSocketDispatcher {
     /// # Errors
     ///
     /// Returns [`std::io::Error`] if the TCP listener fails to bind.
-    pub async fn serve(self: Arc<Self>, addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<()> {
+    pub async fn serve(
+        self: Arc<Self>,
+        addr: impl tokio::net::ToSocketAddrs,
+    ) -> std::io::Result<()> {
         let listener = TcpListener::bind(addr).await?;
 
         trace_info!(
@@ -128,19 +131,17 @@ impl WebSocketDispatcher {
                 Ok(WsMessage::Text(text)) => {
                     let writer = Arc::clone(&writer);
                     let handler = Arc::clone(&self.handler);
-                    // Process each message in a separate task so the reader
-                    // isn't blocked by slow handlers.
                     tokio::spawn(async move {
                         process_ws_message(&handler, &text, writer).await;
                     });
                 }
-                Ok(WsMessage::Close(_)) => break,
                 Ok(WsMessage::Ping(data)) => {
                     let mut w = writer.lock().await;
                     let _ = w.send(WsMessage::Pong(data)).await;
+                    drop(w);
                 }
+                Ok(WsMessage::Close(_)) | Err(_) => break,
                 Ok(_) => {} // Binary frames, pongs — ignore
-                Err(_) => break,
             }
         }
 
@@ -165,6 +166,7 @@ impl std::fmt::Display for WsError {
 type WsSink = Arc<tokio::sync::Mutex<SplitSink<WebSocketStream<TcpStream>, WsMessage>>>;
 
 /// Processes a single JSON-RPC message received over WebSocket.
+#[allow(clippy::too_many_lines)]
 async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink) {
     let rpc_req: JsonRpcRequest = match serde_json::from_str(text) {
         Ok(req) => req,
@@ -192,8 +194,9 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::TaskQueryParams =
-                        serde_json::from_value(p)
-                            .map_err(|e| a2a_protocol_types::error::A2aError::invalid_params(e.to_string()))?;
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
                     h.on_get_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -206,8 +209,9 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListTasksParams =
-                        serde_json::from_value(p)
-                            .map_err(|e| a2a_protocol_types::error::A2aError::invalid_params(e.to_string()))?;
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
                     h.on_list_tasks(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -220,8 +224,9 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::CancelTaskParams =
-                        serde_json::from_value(p)
-                            .map_err(|e| a2a_protocol_types::error::A2aError::invalid_params(e.to_string()))?;
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
                     h.on_cancel_task(params, Some(hdr))
                         .await
                         .map(|r| serde_json::to_value(&r).unwrap_or_default())
@@ -231,14 +236,15 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             .await;
         }
         "SubscribeToTask" => {
-            let params =
-                match parse_params::<a2a_protocol_types::params::TaskIdParams>(&rpc_req.params) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        send_error(&writer, id, &e).await;
-                        return;
-                    }
-                };
+            let params = match parse_params::<a2a_protocol_types::params::TaskIdParams>(
+                rpc_req.params.as_ref(),
+            ) {
+                Ok(p) => p,
+                Err(e) => {
+                    send_error(&writer, id, &e).await;
+                    return;
+                }
+            };
             match handler.on_resubscribe(params, Some(&headers)).await {
                 Ok(reader) => {
                     stream_events(&writer, reader, id).await;
@@ -255,7 +261,7 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
     }
 }
 
-/// Dispatches a SendMessage or SendStreamingMessage.
+/// Dispatches a `SendMessage` or `SendStreamingMessage`.
 async fn dispatch_send_message(
     handler: &RequestHandler,
     rpc_req: &JsonRpcRequest,
@@ -264,14 +270,15 @@ async fn dispatch_send_message(
     id: JsonRpcId,
     writer: &WsSink,
 ) {
-    let params =
-        match parse_params::<a2a_protocol_types::params::MessageSendParams>(&rpc_req.params) {
-            Ok(p) => p,
-            Err(e) => {
-                send_error(writer, id, &e).await;
-                return;
-            }
-        };
+    let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(
+        rpc_req.params.as_ref(),
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            send_error(writer, id, &e).await;
+            return;
+        }
+    };
 
     match handler
         .on_send_message(params, streaming, Some(headers))
@@ -306,15 +313,14 @@ async fn stream_events(
             Ok(stream_resp) => {
                 let json = serde_json::to_string(&stream_resp).unwrap_or_default();
                 let mut w = writer.lock().await;
-                if w.send(WsMessage::Text(json.into())).await.is_err() {
+                if w.send(WsMessage::Text(json)).await.is_err() {
                     return; // Client disconnected
                 }
+                drop(w);
             }
             Err(e) => {
-                let err_resp = JsonRpcErrorResponse::new(
-                    id.clone(),
-                    JsonRpcError::new(-32000, e.to_string()),
-                );
+                let err_resp =
+                    JsonRpcErrorResponse::new(id.clone(), JsonRpcError::new(-32000, e.to_string()));
                 send_json(writer, &err_resp).await;
                 return;
             }
@@ -363,34 +369,36 @@ async fn dispatch_simple<'a, F>(
             send_json(writer, &success).await;
         }
         Err(e) => {
-            let err_resp = JsonRpcErrorResponse::new(
-                id,
-                JsonRpcError::new(e.code.as_i32(), e.message),
-            );
+            let err_resp =
+                JsonRpcErrorResponse::new(id, JsonRpcError::new(e.code.as_i32(), e.message));
             send_json(writer, &err_resp).await;
         }
     }
 }
 
 /// Sends a JSON-serializable value as a WebSocket text frame.
-async fn send_json<T: serde::Serialize>(writer: &WsSink, value: &T) {
+async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
     let json = serde_json::to_string(value).unwrap_or_default();
     let mut w = writer.lock().await;
-    let _ = w.send(WsMessage::Text(json.into())).await;
+    let _ = w.send(WsMessage::Text(json)).await;
+    drop(w);
 }
 
 /// Sends a server error as a JSON-RPC error response.
 async fn send_error(writer: &WsSink, id: JsonRpcId, err: &ServerError) {
     let a2a_err = err.to_a2a_error();
-    let resp = JsonRpcErrorResponse::new(id, JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message));
+    let resp = JsonRpcErrorResponse::new(
+        id,
+        JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
+    );
     send_json(writer, &resp).await;
 }
 
-/// Parses params from a JSON value.
+/// Parses params from an optional JSON value.
 fn parse_params<T: serde::de::DeserializeOwned>(
-    params: &Option<serde_json::Value>,
+    params: Option<&serde_json::Value>,
 ) -> Result<T, ServerError> {
-    let value = params.clone().unwrap_or(serde_json::Value::Null);
+    let value = params.cloned().unwrap_or(serde_json::Value::Null);
     serde_json::from_value(value)
         .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))
 }

@@ -100,6 +100,7 @@ impl TenantAwareInMemoryPushConfigStore {
             self.max_configs_per_task,
         ));
         stores.insert(tenant, Arc::clone(&store));
+        drop(stores);
         Ok(store)
     }
 

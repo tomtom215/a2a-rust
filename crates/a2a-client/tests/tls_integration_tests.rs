@@ -16,12 +16,12 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytes::Bytes;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
-use http_body_util::{BodyExt, Full};
-use bytes::Bytes;
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
 
@@ -50,13 +50,14 @@ fn generate_test_certs(san: &str) -> TestCerts {
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
 
     // Generate server cert signed by CA
-    let mut server_params =
-        rcgen::CertificateParams::new(vec![san.into()]).unwrap();
+    let mut server_params = rcgen::CertificateParams::new(vec![san.into()]).unwrap();
     server_params
         .distinguished_name
         .push(rcgen::DnType::CommonName, san);
     let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params.signed_by(&server_key, &ca_cert, &ca_key).unwrap();
+    let server_cert = server_params
+        .signed_by(&server_key, &ca_cert, &ca_key)
+        .unwrap();
 
     TestCerts {
         ca_cert_der: ca_cert.der().clone(),
@@ -69,9 +70,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
 
 // ── TLS server helper ───────────────────────────────────────────────────────
 
-async fn start_tls_server(
-    certs: &TestCerts,
-) -> SocketAddr {
+async fn start_tls_server(certs: &TestCerts) -> SocketAddr {
     let server_config = rustls::ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(
@@ -164,7 +163,10 @@ async fn tls_client_connects_to_tls_server_with_custom_ca() {
         .body(Full::new(Bytes::from(body_bytes)))
         .unwrap();
 
-    let resp = client.request(req).await.expect("TLS request should succeed");
+    let resp = client
+        .request(req)
+        .await
+        .expect("TLS request should succeed");
     assert!(resp.status().is_success());
 
     let body = resp.collect().await.unwrap().to_bytes();
@@ -270,8 +272,7 @@ fn generate_mtls_certs() -> MtlsCerts {
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
 
     // Server cert
-    let mut server_params =
-        rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
+    let mut server_params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
     server_params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "localhost");
@@ -376,7 +377,10 @@ async fn mtls_client_with_valid_cert_succeeds() {
         .body(Full::new(Bytes::from(body_bytes)))
         .unwrap();
 
-    let resp = client.request(req).await.expect("mTLS request should succeed");
+    let resp = client
+        .request(req)
+        .await
+        .expect("mTLS request should succeed");
     assert!(resp.status().is_success());
 }
 
@@ -435,9 +439,9 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
         .with_root_certificates(root_store)
         .with_client_auth_cert(
             vec![rogue_client_cert.der().clone()],
-            rustls_pki_types::PrivateKeyDer::Pkcs8(
-                rustls_pki_types::PrivatePkcs8KeyDer::from(rogue_client_key.serialize_der()),
-            ),
+            rustls_pki_types::PrivateKeyDer::Pkcs8(rustls_pki_types::PrivatePkcs8KeyDer::from(
+                rogue_client_key.serialize_der(),
+            )),
         )
         .expect("build rogue client config");
 

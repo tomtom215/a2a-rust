@@ -138,9 +138,7 @@ fn make_send_params(id: usize) -> MessageSendParams {
     }
 }
 
-async fn start_stress_server(
-    completed_count: Arc<AtomicUsize>,
-) -> SocketAddr {
+async fn start_stress_server(completed_count: Arc<AtomicUsize>) -> SocketAddr {
     let handler = Arc::new(
         RequestHandlerBuilder::new(StressExecutor { completed_count })
             .with_agent_card(minimal_agent_card())
@@ -183,11 +181,7 @@ fn build_http_client() -> HttpClient {
     Client::builder(TokioExecutor::new()).build_http()
 }
 
-async fn send_request(
-    client: &HttpClient,
-    addr: SocketAddr,
-    id: usize,
-) -> Result<(), String> {
+async fn send_request(client: &HttpClient, addr: SocketAddr, id: usize) -> Result<(), String> {
     let params = make_send_params(id);
     let rpc_req = JsonRpcRequest::with_params(
         serde_json::json!(format!("stress-{id}")),
@@ -209,10 +203,17 @@ async fn send_request(
         .map_err(|e| format!("request failed: {e}"))?;
 
     let status = resp.status();
-    let body_bytes = resp.collect().await.map_err(|e| format!("read body: {e}"))?.to_bytes();
+    let body_bytes = resp
+        .collect()
+        .await
+        .map_err(|e| format!("read body: {e}"))?
+        .to_bytes();
 
     if !status.is_success() {
-        return Err(format!("unexpected status {status}: {}", String::from_utf8_lossy(&body_bytes)));
+        return Err(format!(
+            "unexpected status {status}: {}",
+            String::from_utf8_lossy(&body_bytes)
+        ));
     }
 
     // Verify it's a valid JSON-RPC response.
@@ -234,9 +235,9 @@ async fn concurrent_200_requests_all_succeed() {
     let mut handles = Vec::new();
     for i in 0..200 {
         let client = client.clone();
-        handles.push(tokio::spawn(async move {
-            send_request(&client, addr, i).await
-        }));
+        handles.push(tokio::spawn(
+            async move { send_request(&client, addr, i).await },
+        ));
     }
 
     let mut success_count = 0;
@@ -255,7 +256,11 @@ async fn concurrent_200_requests_all_succeed() {
     assert_eq!(success_count, 200);
     // Wait a bit for background event processors to complete.
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(completed.load(Ordering::Relaxed), 200, "all executors should have completed");
+    assert_eq!(
+        completed.load(Ordering::Relaxed),
+        200,
+        "all executors should have completed"
+    );
 }
 
 /// Sends requests in waves over 10 seconds to test sustained load.
@@ -315,8 +320,10 @@ async fn task_store_eviction_under_load() {
     use a2a_protocol_types::params::ListTasksParams;
     use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
-    let mut config = TaskStoreConfig::default();
-    config.max_capacity = Some(50);
+    let config = TaskStoreConfig {
+        max_capacity: Some(50),
+        ..Default::default()
+    };
     let store = InMemoryTaskStore::with_config(config);
 
     // Insert 200 tasks — should trigger eviction.
@@ -349,8 +356,8 @@ async fn task_store_eviction_under_load() {
 /// tenants should not interfere.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_multi_tenant_isolation() {
-    use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
     use a2a_protocol_server::store::TaskStore;
+    use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
     use a2a_protocol_types::params::ListTasksParams;
     use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
@@ -362,17 +369,20 @@ async fn concurrent_multi_tenant_isolation() {
         for task_idx in 0..50 {
             let store = Arc::clone(&store);
             let tenant = format!("tenant-{tenant_idx}");
-            handles.push(tokio::spawn(TenantContext::scope(tenant.clone(), async move {
-                let task = Task {
-                    id: TaskId::new(format!("task-{tenant_idx}-{task_idx}")),
-                    context_id: ContextId::new(format!("ctx-{tenant_idx}")),
-                    status: TaskStatus::new(TaskState::Completed),
-                    history: None,
-                    artifacts: None,
-                    metadata: None,
-                };
-                store.save(task).await.unwrap();
-            })));
+            handles.push(tokio::spawn(TenantContext::scope(
+                tenant.clone(),
+                async move {
+                    let task = Task {
+                        id: TaskId::new(format!("task-{tenant_idx}-{task_idx}")),
+                        context_id: ContextId::new(format!("ctx-{tenant_idx}")),
+                        status: TaskStatus::new(TaskState::Completed),
+                        history: None,
+                        artifacts: None,
+                        metadata: None,
+                    };
+                    store.save(task).await.unwrap();
+                },
+            )));
         }
     }
 
@@ -388,8 +398,12 @@ async fn concurrent_multi_tenant_isolation() {
         let tenant = format!("tenant-{tenant_idx}");
         let count = TenantContext::scope(tenant, async move {
             store.list(&params).await.unwrap().tasks.len()
-        }).await;
-        assert_eq!(count, 50, "tenant-{tenant_idx} should have exactly 50 tasks, got {count}");
+        })
+        .await;
+        assert_eq!(
+            count, 50,
+            "tenant-{tenant_idx} should have exactly 50 tasks, got {count}"
+        );
     }
 }
 

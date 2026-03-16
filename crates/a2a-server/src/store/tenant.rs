@@ -73,9 +73,10 @@ impl TenantContext {
     }
 
     /// Returns the current tenant ID, or `""` if no tenant context is set.
+    #[must_use]
     pub fn current() -> String {
         CURRENT_TENANT
-            .try_with(|t| t.clone())
+            .try_with(std::clone::Clone::clone)
             .unwrap_or_default()
     }
 }
@@ -199,6 +200,7 @@ impl TenantAwareInMemoryTaskStore {
             self.config.per_tenant.clone(),
         ));
         stores.insert(tenant, Arc::clone(&store));
+        drop(stores);
         Ok(store)
     }
 

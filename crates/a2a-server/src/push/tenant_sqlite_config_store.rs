@@ -38,12 +38,12 @@ pub struct TenantAwareSqlitePushConfigStore {
     pool: SqlitePool,
 }
 
-fn to_a2a_error(e: sqlx::Error) -> A2aError {
+fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     A2aError::internal(format!("sqlite error: {e}"))
 }
 
 impl TenantAwareSqlitePushConfigStore {
-    /// Opens (or creates) a SQLite database and initializes the schema.
+    /// Opens (or creates) a `SQLite` database and initializes the schema.
     ///
     /// # Errors
     ///
@@ -106,7 +106,7 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .bind(&data)
             .execute(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
 
             Ok(config)
         })
@@ -128,7 +128,7 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .bind(id)
             .fetch_optional(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
 
             match row {
                 Some((data,)) => {
@@ -154,7 +154,7 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .bind(task_id)
             .fetch_all(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
 
             rows.into_iter()
                 .map(|(data,)| {
@@ -180,7 +180,7 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             .bind(id)
             .execute(&self.pool)
             .await
-            .map_err(to_a2a_error)?;
+            .map_err(|e| to_a2a_error(&e))?;
             Ok(())
         })
     }

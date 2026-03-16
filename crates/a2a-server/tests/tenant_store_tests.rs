@@ -88,18 +88,12 @@ async fn tenant_task_store_list_isolation() {
     .await;
 
     let t1_list = TenantContext::scope("t1", async {
-        store
-            .list(&ListTasksParams::default())
-            .await
-            .unwrap()
+        store.list(&ListTasksParams::default()).await.unwrap()
     })
     .await;
 
     let t2_list = TenantContext::scope("t2", async {
-        store
-            .list(&ListTasksParams::default())
-            .await
-            .unwrap()
+        store.list(&ListTasksParams::default()).await.unwrap()
     })
     .await;
 
@@ -123,9 +117,10 @@ async fn tenant_task_store_delete_isolation() {
     .await;
 
     // Tenant X's task is still there
-    let result =
-        TenantContext::scope("x", async { store.get(&TaskId::new("task-del")).await.unwrap() })
-            .await;
+    let result = TenantContext::scope("x", async {
+        store.get(&TaskId::new("task-del")).await.unwrap()
+    })
+    .await;
     assert!(result.is_some());
 }
 
@@ -269,10 +264,8 @@ async fn tenant_push_config_list_isolation() {
     })
     .await;
 
-    let p1_list =
-        TenantContext::scope("p1", async { store.list("task-x").await.unwrap() }).await;
-    let p2_list =
-        TenantContext::scope("p2", async { store.list("task-x").await.unwrap() }).await;
+    let p1_list = TenantContext::scope("p1", async { store.list("task-x").await.unwrap() }).await;
+    let p2_list = TenantContext::scope("p2", async { store.list("task-x").await.unwrap() }).await;
 
     assert_eq!(p1_list.len(), 2);
     assert_eq!(p2_list.len(), 1);
@@ -304,10 +297,15 @@ async fn tenant_push_config_delete_isolation() {
 async fn tenant_push_config_max_tenants() {
     let store = TenantAwareInMemoryPushConfigStore::with_limits(2, 100);
 
-    TenantContext::scope("a", async { store.set(make_push_config("t")).await.unwrap() }).await;
-    TenantContext::scope("b", async { store.set(make_push_config("t")).await.unwrap() }).await;
+    TenantContext::scope("a", async {
+        store.set(make_push_config("t")).await.unwrap()
+    })
+    .await;
+    TenantContext::scope("b", async {
+        store.set(make_push_config("t")).await.unwrap()
+    })
+    .await;
 
-    let result =
-        TenantContext::scope("c", async { store.set(make_push_config("t")).await }).await;
+    let result = TenantContext::scope("c", async { store.set(make_push_config("t")).await }).await;
     assert!(result.is_err());
 }

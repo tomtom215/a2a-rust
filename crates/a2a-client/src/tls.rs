@@ -66,6 +66,7 @@ pub(crate) fn build_https_client() -> HttpsClient {
 }
 
 /// Builds an HTTPS-capable hyper client using a custom TLS configuration.
+#[must_use]
 pub fn build_https_client_with_config(tls_config: ClientConfig) -> HttpsClient {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls_config)

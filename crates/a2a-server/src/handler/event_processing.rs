@@ -216,80 +216,83 @@ impl RequestHandler {
         // across tokio::spawn).
         let tenant = crate::store::tenant::TenantContext::current();
 
-        tokio::spawn(crate::store::tenant::TenantContext::scope(tenant, async move {
-            // Small yield to let the event queue be registered before subscribing.
-            tokio::task::yield_now().await;
+        tokio::spawn(crate::store::tenant::TenantContext::scope(
+            tenant,
+            async move {
+                // Small yield to let the event queue be registered before subscribing.
+                tokio::task::yield_now().await;
 
-            let Some(mut bg_reader) = event_queue_mgr.subscribe(&task_id).await else {
-                trace_warn!(
-                    task_id = %task_id,
-                    "background event processor: no queue to subscribe to"
-                );
-                return;
-            };
+                let Some(mut bg_reader) = event_queue_mgr.subscribe(&task_id).await else {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "background event processor: no queue to subscribe to"
+                    );
+                    return;
+                };
 
-            // Get the current task from the store.
-            let Ok(Some(mut last_task)) = task_store.get(&task_id).await else {
-                return;
-            };
+                // Get the current task from the store.
+                let Ok(Some(mut last_task)) = task_store.get(&task_id).await else {
+                    return;
+                };
 
-            let mut executor_done = false;
-            let mut handle_fuse = executor_handle;
+                let mut executor_done = false;
+                let mut handle_fuse = executor_handle;
 
-            loop {
-                if executor_done {
-                    match bg_reader.read().await {
-                        Some(event) => {
-                            process_event_bg(
-                                event,
-                                &task_id,
-                                &mut last_task,
-                                &*task_store,
-                                &*push_config_store,
-                                push_sender.as_deref(),
-                                &limits,
-                            )
-                            .await;
-                        }
-                        None => break,
-                    }
-                } else {
-                    tokio::select! {
-                        biased;
-                        event = bg_reader.read() => {
-                            match event {
-                                Some(event) => {
-                                    process_event_bg(
-                                        event,
-                                        &task_id,
-                                        &mut last_task,
-                                        &*task_store,
-                                        &*push_config_store,
-                                        push_sender.as_deref(),
-                                        &limits,
-                                    )
-                                    .await;
-                                }
-                                None => break,
+                loop {
+                    if executor_done {
+                        match bg_reader.read().await {
+                            Some(event) => {
+                                process_event_bg(
+                                    event,
+                                    &task_id,
+                                    &mut last_task,
+                                    &*task_store,
+                                    &*push_config_store,
+                                    push_sender.as_deref(),
+                                    &limits,
+                                )
+                                .await;
                             }
+                            None => break,
                         }
-                        result = &mut handle_fuse => {
-                            executor_done = true;
-                            if result.is_err() {
-                                trace_error!(
-                                    task_id = %task_id,
-                                    "executor task panicked (background processor)"
-                                );
-                                if !last_task.status.state.is_terminal() {
-                                    last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                    let _ = task_store.save(last_task.clone()).await;
+                    } else {
+                        tokio::select! {
+                            biased;
+                            event = bg_reader.read() => {
+                                match event {
+                                    Some(event) => {
+                                        process_event_bg(
+                                            event,
+                                            &task_id,
+                                            &mut last_task,
+                                            &*task_store,
+                                            &*push_config_store,
+                                            push_sender.as_deref(),
+                                            &limits,
+                                        )
+                                        .await;
+                                    }
+                                    None => break,
+                                }
+                            }
+                            result = &mut handle_fuse => {
+                                executor_done = true;
+                                if result.is_err() {
+                                    trace_error!(
+                                        task_id = %task_id,
+                                        "executor task panicked (background processor)"
+                                    );
+                                    if !last_task.status.state.is_terminal() {
+                                        last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                                        let _ = task_store.save(last_task.clone()).await;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        }));
+            },
+        ));
     }
 }
 

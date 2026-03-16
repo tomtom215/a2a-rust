@@ -19,9 +19,7 @@ use std::pin::Pin;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::jsonrpc::{
-    JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse,
-};
+use a2a_protocol_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
@@ -147,7 +145,9 @@ async fn start_ws_server() -> std::net::SocketAddr {
         .expect("start WS server")
 }
 
-async fn connect(addr: std::net::SocketAddr) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+async fn connect(
+    addr: std::net::SocketAddr,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     let url = format!("ws://{addr}");
     let (ws, _) = tokio_tungstenite::connect_async(&url)
         .await
@@ -168,17 +168,19 @@ async fn ws_send_message_returns_task() {
         serde_json::to_value(make_send_params()).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json.into())).await.unwrap();
+    ws.send(WsMessage::Text(json)).await.unwrap();
 
     let msg = ws.next().await.unwrap().unwrap();
     let text = msg.into_text().unwrap();
-    let resp: JsonRpcSuccessResponse<serde_json::Value> =
-        serde_json::from_str(&text).expect(&format!("should be success response, got: {text}"));
+    let resp: JsonRpcSuccessResponse<serde_json::Value> = serde_json::from_str(&text)
+        .unwrap_or_else(|_| panic!("should be success response, got: {text}"));
     assert_eq!(resp.id, Some(serde_json::json!("req-1")));
     // The result should be a Task or a Message response with a valid structure.
     let result_str = serde_json::to_string(&resp.result).unwrap();
     assert!(
-        result_str.contains("completed") || result_str.contains("working") || result_str.contains("id"),
+        result_str.contains("completed")
+            || result_str.contains("working")
+            || result_str.contains("id"),
         "unexpected result: {result_str}"
     );
 }
@@ -194,7 +196,7 @@ async fn ws_streaming_sends_multiple_frames() {
         serde_json::to_value(make_send_params()).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json.into())).await.unwrap();
+    ws.send(WsMessage::Text(json)).await.unwrap();
 
     // Collect frames until we get the final stream_complete response.
     let mut frames = Vec::new();
@@ -230,7 +232,7 @@ async fn ws_unknown_method_returns_error() {
         serde_json::Value::Null,
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json.into())).await.unwrap();
+    ws.send(WsMessage::Text(json)).await.unwrap();
 
     let msg = ws.next().await.unwrap().unwrap();
     let text = msg.into_text().unwrap();
@@ -260,9 +262,7 @@ async fn ws_ping_pong() {
         .await
         .unwrap();
 
-    ws.send(WsMessage::Ping(vec![1, 2, 3].into()))
-        .await
-        .unwrap();
+    ws.send(WsMessage::Ping(vec![1, 2, 3])).await.unwrap();
 
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
@@ -288,7 +288,7 @@ async fn ws_multiple_requests_on_same_connection() {
             serde_json::to_value(make_send_params()).unwrap(),
         );
         let json = serde_json::to_string(&rpc_req).unwrap();
-        ws.send(WsMessage::Text(json.into())).await.unwrap();
+        ws.send(WsMessage::Text(json)).await.unwrap();
     }
 
     // Collect 3 responses (may arrive in any order).
@@ -300,7 +300,9 @@ async fn ws_multiple_requests_on_same_connection() {
             responses.push(text);
         }
     });
-    timeout.await.expect("should receive all 3 responses within 5s");
+    timeout
+        .await
+        .expect("should receive all 3 responses within 5s");
     assert_eq!(responses.len(), 3);
 }
 
