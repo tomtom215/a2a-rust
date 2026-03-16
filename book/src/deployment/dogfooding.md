@@ -28,8 +28,8 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
       │           │           │           │
       ▼           ▼           ▼           ▼
 ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│  Code    │ │  Build   │ │  Health  │ │Coordinator│
-│ Analyzer │ │ Monitor  │ │ Monitor  │ │          │
+│  Code    │ │  Build   │ │  Health  │ │ Coordin- │
+│ Analyzer │ │ Monitor  │ │ Monitor  │ │   ator   │
 │ JSON-RPC │ │  REST    │ │ JSON-RPC │ │  REST    │
 └──────────┘ └──────────┘ └──────────┘ └─────┬────┘
                                              │ A2A
@@ -177,7 +177,7 @@ Expected output:
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite     ║
+║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite       ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Agent [CodeAnalyzer]  JSON-RPC on http://127.0.0.1:XXXXX
