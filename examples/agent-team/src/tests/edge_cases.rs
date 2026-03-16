@@ -52,13 +52,16 @@ pub async fn test_return_immediately(ctx: &TestContext) -> TestResult {
         .with_return_immediately(true)
         .build()
         .unwrap();
-    match client.send_message(make_send_params("slow")).await {
+    // Use "very-slow" to ensure the executor is still running when we get the response.
+    match client.send_message(make_send_params("very-slow")).await {
         Ok(SendMessageResponse::Task(task)) => {
             let state = format!("{:?}", task.status.state);
             println!("  Immediate task: {state}");
+            // return_immediately should give us the task in Submitted state
+            // before the executor finishes.
             let ok = task.status.state == TaskState::Submitted;
             // Give executor time to finish so we don't leak.
-            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
             if ok {
                 TestResult::pass(
                     "return-immediately",

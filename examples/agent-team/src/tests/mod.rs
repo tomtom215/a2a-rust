@@ -7,10 +7,12 @@
 //! - [`basic`]: Tests 1-10 — core send/stream/REST/JSON-RPC paths
 //! - [`lifecycle`]: Tests 11-20 — orchestration, metadata, cancel, agent cards
 //! - [`edge_cases`]: Tests 21-30 — error paths, concurrency, metrics, CRUD
+//! - [`stress`]: Tests 31-40 — stress, durability, observability, event ordering
 
 pub mod basic;
 pub mod edge_cases;
 pub mod lifecycle;
+pub mod stress;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

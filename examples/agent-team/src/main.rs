@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (30 tests) that exercises every major SDK feature.
+//! suite (40 tests) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -39,7 +39,7 @@ use infrastructure::{
     start_jsonrpc_server, start_rest_server, start_webhook_server, AuditInterceptor,
     MetricsForward, TeamMetrics, WebhookReceiver,
 };
-use tests::{basic, edge_cases, lifecycle, TestContext, TestResult};
+use tests::{basic, edge_cases, lifecycle, stress, TestContext, TestResult};
 
 #[tokio::main]
 async fn main() {
@@ -185,6 +185,18 @@ async fn main() {
     results.push(edge_cases::test_resubscribe_rest(&ctx).await);
     results.push(edge_cases::test_metrics_nonzero(&ctx).await);
     results.push(edge_cases::test_error_metrics_tracked(&ctx).await);
+
+    // Tests 31-40: Stress, durability, observability, event ordering
+    results.push(stress::test_high_concurrency(&ctx).await);
+    results.push(stress::test_mixed_transport_concurrent(&ctx).await);
+    results.push(stress::test_context_continuation(&ctx).await);
+    results.push(stress::test_large_payload(&ctx).await);
+    results.push(stress::test_stream_with_get_task(&ctx).await);
+    results.push(stress::test_push_delivery_e2e(&ctx).await);
+    results.push(stress::test_list_tasks_status_filter(&ctx).await);
+    results.push(stress::test_graceful_shutdown_semantics(&ctx).await);
+    results.push(stress::test_queue_depth_metrics(&ctx).await);
+    results.push(stress::test_event_ordering(&ctx).await);
 
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
