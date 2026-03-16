@@ -7,4 +7,4 @@ pub mod config_store;
 pub mod sender;
 
 pub use config_store::{InMemoryPushConfigStore, PushConfigStore};
-pub use sender::{HttpPushSender, PushSender};
+pub use sender::{HttpPushSender, PushRetryPolicy, PushSender};

@@ -32,31 +32,84 @@ use crate::streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
 };
 
-/// Maximum allowed length for task/context IDs (prevents memory exhaustion).
-const MAX_ID_LENGTH: usize = 1024;
+/// Configurable limits for the request handler.
+///
+/// All fields have sensible defaults. Create with [`HandlerLimits::default()`]
+/// and override individual values as needed.
+///
+/// # Example
+///
+/// ```rust
+/// use a2a_protocol_server::handler::HandlerLimits;
+///
+/// let limits = HandlerLimits::default()
+///     .with_max_id_length(2048)
+///     .with_max_metadata_size(2 * 1024 * 1024);
+/// ```
+#[derive(Debug, Clone)]
+pub struct HandlerLimits {
+    /// Maximum allowed length for task/context IDs. Default: 1024.
+    pub max_id_length: usize,
+    /// Maximum allowed serialized size for metadata fields in bytes. Default: 1 MiB.
+    pub max_metadata_size: usize,
+    /// Maximum cancellation token map entries before cleanup sweep. Default: 10,000.
+    pub max_cancellation_tokens: usize,
+    /// Maximum age for cancellation tokens. Default: 1 hour.
+    pub max_token_age: Duration,
+}
 
-/// Maximum allowed serialized size for metadata fields (1 MiB).
-const MAX_METADATA_SIZE: usize = 1_048_576;
+impl Default for HandlerLimits {
+    fn default() -> Self {
+        Self {
+            max_id_length: 1024,
+            max_metadata_size: 1_048_576,
+            max_cancellation_tokens: 10_000,
+            max_token_age: Duration::from_secs(3600),
+        }
+    }
+}
 
-/// Maximum number of entries in the cancellation token map before a cleanup
-/// sweep is triggered to remove cancelled/dropped tokens.
-const MAX_CANCELLATION_TOKENS: usize = 10_000;
+impl HandlerLimits {
+    /// Sets the maximum allowed length for task/context IDs.
+    #[must_use]
+    pub const fn with_max_id_length(mut self, length: usize) -> Self {
+        self.max_id_length = length;
+        self
+    }
 
-/// Maximum age for cancellation tokens. Tokens older than this are evicted
-/// during cleanup sweeps, even if they haven't been explicitly cancelled.
-const MAX_TOKEN_AGE: Duration = Duration::from_secs(3600);
+    /// Sets the maximum serialized size for metadata fields in bytes.
+    #[must_use]
+    pub const fn with_max_metadata_size(mut self, size: usize) -> Self {
+        self.max_metadata_size = size;
+        self
+    }
+
+    /// Sets the maximum cancellation token map entries before cleanup.
+    #[must_use]
+    pub const fn with_max_cancellation_tokens(mut self, max: usize) -> Self {
+        self.max_cancellation_tokens = max;
+        self
+    }
+
+    /// Sets the maximum age for cancellation tokens.
+    #[must_use]
+    pub const fn with_max_token_age(mut self, age: Duration) -> Self {
+        self.max_token_age = age;
+        self
+    }
+}
 
 /// Validates an ID string: rejects empty/whitespace-only and excessively long values.
-fn validate_id(raw: &str, name: &str) -> ServerResult<()> {
+fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(ServerError::InvalidParams(format!(
             "{name} must not be empty or whitespace-only"
         )));
     }
-    if trimmed.len() > MAX_ID_LENGTH {
+    if trimmed.len() > max_length {
         return Err(ServerError::InvalidParams(format!(
-            "{name} exceeds maximum length (got {}, max {MAX_ID_LENGTH})",
+            "{name} exceeds maximum length (got {}, max {max_length})",
             trimmed.len()
         )));
     }
@@ -80,7 +133,8 @@ pub struct RequestHandler {
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
-    pub(crate) metrics: Box<dyn Metrics>,
+    pub(crate) metrics: Arc<dyn Metrics>,
+    pub(crate) limits: HandlerLimits,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
 }
@@ -100,7 +154,6 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError`] if task creation or execution fails.
-    #[allow(clippy::too_many_lines)]
     pub async fn on_send_message(
         &self,
         params: MessageSendParams,
@@ -114,15 +167,34 @@ impl RequestHandler {
         trace_info!(method = method_name, streaming, "handling send message");
         self.metrics.on_request(method_name);
 
+        let result = self
+            .send_message_inner(params, streaming, method_name)
+            .await;
+        match &result {
+            Ok(_) => self.metrics.on_response(method_name),
+            Err(e) => self.metrics.on_error(method_name, &e.to_string()),
+        }
+        result
+    }
+
+    /// Inner implementation of `on_send_message`, extracted so that the outer
+    /// method can uniformly track success/error metrics.
+    #[allow(clippy::too_many_lines)]
+    async fn send_message_inner(
+        &self,
+        params: MessageSendParams,
+        streaming: bool,
+        method_name: &str,
+    ) -> ServerResult<SendMessageResult> {
         let call_ctx = CallContext::new(method_name);
         self.interceptors.run_before(&call_ctx).await?;
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
-            validate_id(&ctx_id.0, "context_id")?;
+            validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
         }
         if let Some(ref task_id) = params.message.task_id {
-            validate_id(&task_id.0, "task_id")?;
+            validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
         }
 
         // SC-4: Reject messages with no parts.
@@ -133,19 +205,20 @@ impl RequestHandler {
         }
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
+        let max_meta = self.limits.max_metadata_size;
         if let Some(ref meta) = params.message.metadata {
             let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
-            if meta_size > MAX_METADATA_SIZE {
+            if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
-                    "message metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
+                    "message metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
                 )));
             }
         }
         if let Some(ref meta) = params.metadata {
             let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
-            if meta_size > MAX_METADATA_SIZE {
+            if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
-                    "request metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
+                    "request metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
                 )));
             }
         }
@@ -227,11 +300,11 @@ impl RequestHandler {
             let mut tokens = self.cancellation_tokens.write().await;
             // Sweep stale tokens if the map is getting large (prevent unbounded growth
             // if executors panic and never clean up their tokens).
-            if tokens.len() >= MAX_CANCELLATION_TOKENS {
+            if tokens.len() >= self.limits.max_cancellation_tokens {
                 let now = Instant::now();
                 tokens.retain(|_, entry| {
                     !entry.token.is_cancelled()
-                        && now.duration_since(entry.created_at) < MAX_TOKEN_AGE
+                        && now.duration_since(entry.created_at) < self.limits.max_token_age
                 });
             }
             tokens.insert(
@@ -327,18 +400,29 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
         trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
-        let call_ctx = CallContext::new("GetTask");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("GetTask");
 
-        let task_id = TaskId::new(&params.id);
-        let task = self
-            .task_store
-            .get(&task_id)
-            .await?
-            .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("GetTask");
+            self.interceptors.run_before(&call_ctx).await?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(task)
+            let task_id = TaskId::new(&params.id);
+            let task = self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id))?;
+
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(task)
+        }
+        .await;
+
+        match &result {
+            Ok(_) => self.metrics.on_response("GetTask"),
+            Err(e) => self.metrics.on_error("GetTask", &e.to_string()),
+        }
+        result
     }
 
     /// Handles `ListTasks`.
@@ -348,13 +432,22 @@ impl RequestHandler {
     /// Returns a [`ServerError`] if the store query fails.
     pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
         trace_info!(method = "ListTasks", "handling list tasks");
-        let call_ctx = CallContext::new("ListTasks");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("ListTasks");
 
-        let result = self.task_store.list(&params).await?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("ListTasks");
+            self.interceptors.run_before(&call_ctx).await?;
+            let result = self.task_store.list(&params).await?;
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(result)
+        }
+        .await;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(result)
+        match &result {
+            Ok(_) => self.metrics.on_response("ListTasks"),
+            Err(e) => self.metrics.on_error("ListTasks", &e.to_string()),
+        }
+        result
     }
 
     /// Handles `CancelTask`.
@@ -364,54 +457,67 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
     pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
-        let call_ctx = CallContext::new("CancelTask");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("CancelTask");
 
-        let task_id = TaskId::new(&params.id);
-        let task = self
-            .task_store
-            .get(&task_id)
-            .await?
-            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("CancelTask");
+            self.interceptors.run_before(&call_ctx).await?;
 
-        if task.status.state.is_terminal() {
-            return Err(ServerError::TaskNotCancelable(task_id));
-        }
+            let task_id = TaskId::new(&params.id);
+            let task = self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-        // Signal the cancellation token so the executor can observe the cancellation.
-        {
-            let tokens = self.cancellation_tokens.read().await;
-            if let Some(entry) = tokens.get(&task_id) {
-                entry.token.cancel();
+            if task.status.state.is_terminal() {
+                return Err(ServerError::TaskNotCancelable(task_id));
             }
+
+            // Signal the cancellation token so the executor can observe the cancellation.
+            {
+                let tokens = self.cancellation_tokens.read().await;
+                if let Some(entry) = tokens.get(&task_id) {
+                    entry.token.cancel();
+                }
+            }
+
+            // Build a request context for the cancel call.
+            let ctx = RequestContext::new(
+                a2a_protocol_types::message::Message {
+                    id: a2a_protocol_types::message::MessageId::new(
+                        uuid::Uuid::new_v4().to_string(),
+                    ),
+                    role: a2a_protocol_types::message::MessageRole::User,
+                    parts: vec![],
+                    task_id: Some(task_id.clone()),
+                    context_id: Some(task.context_id.clone()),
+                    reference_task_ids: None,
+                    extensions: None,
+                    metadata: None,
+                },
+                task_id.clone(),
+                task.context_id.0.clone(),
+            );
+
+            let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
+            self.executor.cancel(&ctx, writer.as_ref()).await?;
+
+            // Update task state.
+            let mut updated = task;
+            updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
+            self.task_store.save(updated.clone()).await?;
+
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(updated)
         }
+        .await;
 
-        // Build a request context for the cancel call.
-        let ctx = RequestContext::new(
-            a2a_protocol_types::message::Message {
-                id: a2a_protocol_types::message::MessageId::new(uuid::Uuid::new_v4().to_string()),
-                role: a2a_protocol_types::message::MessageRole::User,
-                parts: vec![],
-                task_id: Some(task_id.clone()),
-                context_id: Some(task.context_id.clone()),
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
-            task_id.clone(),
-            task.context_id.0.clone(),
-        );
-
-        let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
-        self.executor.cancel(&ctx, writer.as_ref()).await?;
-
-        // Update task state.
-        let mut updated = task;
-        updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
-        self.task_store.save(updated.clone()).await?;
-
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(updated)
+        match &result {
+            Ok(_) => self.metrics.on_response("CancelTask"),
+            Err(e) => self.metrics.on_error("CancelTask", &e.to_string()),
+        }
+        result
     }
 
     /// Handles `SubscribeToTask`.
@@ -421,25 +527,36 @@ impl RequestHandler {
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
     pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
-        let call_ctx = CallContext::new("SubscribeToTask");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("SubscribeToTask");
 
-        let task_id = TaskId::new(&params.id);
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("SubscribeToTask");
+            self.interceptors.run_before(&call_ctx).await?;
 
-        // Verify the task exists.
-        let _task = self
-            .task_store
-            .get(&task_id)
-            .await?
-            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+            let task_id = TaskId::new(&params.id);
 
-        let (_writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
-        let reader = reader.ok_or_else(|| {
-            ServerError::Internal("no event queue available for resubscribe".into())
-        })?;
+            // Verify the task exists.
+            let _task = self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(reader)
+            let (_writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
+            let reader = reader.ok_or_else(|| {
+                ServerError::Internal("no event queue available for resubscribe".into())
+            })?;
+
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(reader)
+        }
+        .await;
+
+        match &result {
+            Ok(_) => self.metrics.on_response("SubscribeToTask"),
+            Err(e) => self.metrics.on_error("SubscribeToTask", &e.to_string()),
+        }
+        result
     }
 
     /// Handles `CreateTaskPushNotificationConfig`.
@@ -451,16 +568,28 @@ impl RequestHandler {
         &self,
         config: TaskPushNotificationConfig,
     ) -> ServerResult<TaskPushNotificationConfig> {
-        if self.push_sender.is_none() {
-            return Err(ServerError::PushNotSupported);
+        self.metrics.on_request("CreateTaskPushNotificationConfig");
+
+        let result: ServerResult<_> = async {
+            if self.push_sender.is_none() {
+                return Err(ServerError::PushNotSupported);
+            }
+            let call_ctx = CallContext::new("CreateTaskPushNotificationConfig");
+            self.interceptors.run_before(&call_ctx).await?;
+            let result = self.push_config_store.set(config).await?;
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(result)
         }
-        let call_ctx = CallContext::new("CreateTaskPushNotificationConfig");
-        self.interceptors.run_before(&call_ctx).await?;
+        .await;
 
-        let result = self.push_config_store.set(config).await?;
-
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(result)
+        match &result {
+            Ok(_) => self.metrics.on_response("CreateTaskPushNotificationConfig"),
+            Err(e) => {
+                self.metrics
+                    .on_error("CreateTaskPushNotificationConfig", &e.to_string());
+            }
+        }
+        result
     }
 
     /// Handles `GetTaskPushNotificationConfig`.
@@ -472,22 +601,36 @@ impl RequestHandler {
         &self,
         params: GetPushConfigParams,
     ) -> ServerResult<TaskPushNotificationConfig> {
-        let call_ctx = CallContext::new("GetTaskPushNotificationConfig");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("GetTaskPushNotificationConfig");
 
-        let config = self
-            .push_config_store
-            .get(&params.task_id, &params.id)
-            .await?
-            .ok_or_else(|| {
-                ServerError::InvalidParams(format!(
-                    "push config not found: task={}, id={}",
-                    params.task_id, params.id
-                ))
-            })?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("GetTaskPushNotificationConfig");
+            self.interceptors.run_before(&call_ctx).await?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(config)
+            let config = self
+                .push_config_store
+                .get(&params.task_id, &params.id)
+                .await?
+                .ok_or_else(|| {
+                    ServerError::InvalidParams(format!(
+                        "push config not found: task={}, id={}",
+                        params.task_id, params.id
+                    ))
+                })?;
+
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(config)
+        }
+        .await;
+
+        match &result {
+            Ok(_) => self.metrics.on_response("GetTaskPushNotificationConfig"),
+            Err(e) => {
+                self.metrics
+                    .on_error("GetTaskPushNotificationConfig", &e.to_string());
+            }
+        }
+        result
     }
 
     /// Handles `ListTaskPushNotificationConfigs`.
@@ -499,13 +642,25 @@ impl RequestHandler {
         &self,
         task_id: &str,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
-        let call_ctx = CallContext::new("ListTaskPushNotificationConfigs");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("ListTaskPushNotificationConfigs");
 
-        let configs = self.push_config_store.list(task_id).await?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("ListTaskPushNotificationConfigs");
+            self.interceptors.run_before(&call_ctx).await?;
+            let configs = self.push_config_store.list(task_id).await?;
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(configs)
+        }
+        .await;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(configs)
+        match &result {
+            Ok(_) => self.metrics.on_response("ListTaskPushNotificationConfigs"),
+            Err(e) => {
+                self.metrics
+                    .on_error("ListTaskPushNotificationConfigs", &e.to_string());
+            }
+        }
+        result
     }
 
     /// Handles `DeleteTaskPushNotificationConfig`.
@@ -514,15 +669,27 @@ impl RequestHandler {
     ///
     /// Returns a [`ServerError`] if the delete operation fails.
     pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
-        let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
-        self.push_config_store
-            .delete(&params.task_id, &params.id)
-            .await?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
+            self.interceptors.run_before(&call_ctx).await?;
+            self.push_config_store
+                .delete(&params.task_id, &params.id)
+                .await?;
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(())
+        }
+        .await;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(())
+        match &result {
+            Ok(()) => self.metrics.on_response("DeleteTaskPushNotificationConfig"),
+            Err(e) => {
+                self.metrics
+                    .on_error("DeleteTaskPushNotificationConfig", &e.to_string());
+            }
+        }
+        result
     }
 
     /// Handles `GetExtendedAgentCard`.
@@ -531,23 +698,36 @@ impl RequestHandler {
     ///
     /// Returns [`ServerError::Internal`] if no agent card is configured.
     pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard> {
-        let call_ctx = CallContext::new("GetExtendedAgentCard");
-        self.interceptors.run_before(&call_ctx).await?;
+        self.metrics.on_request("GetExtendedAgentCard");
 
-        let card = self
-            .agent_card
-            .clone()
-            .ok_or_else(|| ServerError::Internal("no agent card configured".into()))?;
+        let result: ServerResult<_> = async {
+            let call_ctx = CallContext::new("GetExtendedAgentCard");
+            self.interceptors.run_before(&call_ctx).await?;
 
-        self.interceptors.run_after(&call_ctx).await?;
-        Ok(card)
+            let card = self
+                .agent_card
+                .clone()
+                .ok_or_else(|| ServerError::Internal("no agent card configured".into()))?;
+
+            self.interceptors.run_after(&call_ctx).await?;
+            Ok(card)
+        }
+        .await;
+
+        match &result {
+            Ok(_) => self.metrics.on_response("GetExtendedAgentCard"),
+            Err(e) => self
+                .metrics
+                .on_error("GetExtendedAgentCard", &e.to_string()),
+        }
+        result
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
 
     /// Finds a task by context ID (linear scan for in-memory store).
     async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
-        if context_id.len() > MAX_ID_LENGTH {
+        if context_id.len() > self.limits.max_id_length {
             return None;
         }
         let params = ListTasksParams {

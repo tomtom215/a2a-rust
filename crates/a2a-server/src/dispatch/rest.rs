@@ -29,12 +29,19 @@ pub struct RestDispatcher {
     handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
     cors: Option<CorsConfig>,
+    config: super::DispatchConfig,
 }
 
 impl RestDispatcher {
-    /// Creates a new REST dispatcher.
+    /// Creates a new REST dispatcher with default configuration.
     #[must_use]
     pub fn new(handler: Arc<RequestHandler>) -> Self {
+        Self::with_config(handler, super::DispatchConfig::default())
+    }
+
+    /// Creates a new REST dispatcher with the given configuration.
+    #[must_use]
+    pub fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
         let card_handler = handler
             .agent_card
             .as_ref()
@@ -43,6 +50,7 @@ impl RestDispatcher {
             handler,
             card_handler,
             cors: None,
+            config,
         }
     }
 
@@ -76,13 +84,13 @@ impl RestDispatcher {
         }
 
         // Reject oversized query strings (DoS protection).
-        if query.len() > MAX_QUERY_STRING_LENGTH {
+        if query.len() > self.config.max_query_string_length {
             let mut resp = error_json_response(
                 414,
                 &format!(
                     "query string too long: {} bytes exceeds {} byte limit",
                     query.len(),
-                    MAX_QUERY_STRING_LENGTH
+                    self.config.max_query_string_length
                 ),
             );
             if let Some(ref cors) = self.cors {
@@ -209,7 +217,13 @@ impl RestDispatcher {
         req: hyper::Request<Incoming>,
         streaming: bool,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+        let body_bytes = match read_body_limited(
+            req.into_body(),
+            self.config.max_request_body_size,
+            self.config.body_read_timeout,
+        )
+        .await
+        {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
@@ -280,14 +294,28 @@ impl RestDispatcher {
     async fn handle_set_push_config(
         &self,
         req: hyper::Request<Incoming>,
-        _task_id: &str,
+        task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+        let body_bytes = match read_body_limited(
+            req.into_body(),
+            self.config.max_request_body_size,
+            self.config.body_read_timeout,
+        )
+        .await
+        {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
+        // The REST client may strip `taskId` from the body (it's already in the
+        // URL path).  Inject it before deserializing so the required field is
+        // always present.
+        let body_value: serde_json::Value = match serde_json::from_slice(&body_bytes) {
+            Ok(v) => v,
+            Err(e) => return error_json_response(400, &e.to_string()),
+        };
+        let body_value = inject_field_if_missing(body_value, "taskId", task_id);
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
-            match serde_json::from_slice(&body_bytes) {
+            match serde_json::from_value(body_value) {
                 Ok(c) => c,
                 Err(e) => return error_json_response(400, &e.to_string()),
             };
@@ -318,7 +346,16 @@ impl RestDispatcher {
         task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self.handler.on_list_push_configs(task_id).await {
-            Ok(configs) => json_ok_response(&configs),
+            Ok(configs) => {
+                // Wrap in the response envelope so the client can deserialize
+                // as ListPushConfigsResponse (object with `configs` field)
+                // rather than a bare JSON array.
+                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                    configs,
+                    next_page_token: None,
+                };
+                json_ok_response(&resp)
+            }
             Err(e) => server_error_to_response(&e),
         }
     }
@@ -400,6 +437,23 @@ fn server_error_to_response(err: &ServerError) -> hyper::Response<BoxBody<Bytes,
 }
 
 // ── Query parsing helpers ───────────────────────────────────────────────────
+
+/// Injects a field into a JSON object if it is missing.
+///
+/// REST routes extract path parameters from the URL, so the client may omit
+/// them from the body.  This helper re-injects the value so that the
+/// downstream deserializer always sees the full object.
+fn inject_field_if_missing(
+    mut value: serde_json::Value,
+    field: &str,
+    path_value: &str,
+) -> serde_json::Value {
+    if let Some(obj) = value.as_object_mut() {
+        obj.entry(field.to_owned())
+            .or_insert_with(|| serde_json::Value::String(path_value.to_owned()));
+    }
+    value
+}
 
 /// Strips an optional `/tenants/{tenant}/` prefix, returning the tenant and
 /// remaining path.
@@ -484,17 +538,12 @@ fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
     parse_query_param(query, key).map(|v| v == "true" || v == "1")
 }
 
-/// Maximum query string length in bytes (prevents denial-of-service via oversized query params).
-const MAX_QUERY_STRING_LENGTH: usize = 4096;
-
-/// Maximum request body size in bytes (4 MiB).
-const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
-
-/// Maximum duration to read a complete request body (slow loris protection).
-const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Reads a request body with a size limit and timeout.
-async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
+async fn read_body_limited(
+    body: Incoming,
+    max_size: usize,
+    read_timeout: std::time::Duration,
+) -> Result<Bytes, String> {
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
         if upper > max_size as u64 {
@@ -503,7 +552,7 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
             ));
         }
     }
-    let collected = tokio::time::timeout(BODY_READ_TIMEOUT, body.collect())
+    let collected = tokio::time::timeout(read_timeout, body.collect())
         .await
         .map_err(|_| "request body read timed out".to_owned())?
         .map_err(|e| e.to_string())?;

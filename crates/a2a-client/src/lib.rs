@@ -87,11 +87,11 @@
 //!
 //! ```rust,no_run
 //! use a2a_protocol_client::discovery::resolve_agent_card;
-//! use a2a_protocol_client::A2aClient;
+//! use a2a_protocol_client::ClientBuilder;
 //!
 //! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let card = resolve_agent_card("http://localhost:8080").await?;
-//! let client = A2aClient::from_card(&card)?;
+//! let client = ClientBuilder::from_card(&card).build()?;
 //! # Ok(())
 //! # }
 //! ```

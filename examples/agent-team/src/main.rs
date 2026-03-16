@@ -52,7 +52,7 @@ use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::call_context::CallContext;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
@@ -220,10 +220,6 @@ impl WebhookReceiver {
         Self {
             received: Arc::new(Mutex::new(Vec::new())),
         }
-    }
-
-    async fn count(&self) -> usize {
-        self.received.lock().await.len()
     }
 
     async fn drain(&self) -> Vec<(String, serde_json::Value)> {
@@ -596,27 +592,64 @@ impl AgentExecutor for HealthMonitorExecutor {
             let mut results = Vec::new();
 
             for url in &agent_urls {
-                // Try to connect and list tasks.
-                let status = match ClientBuilder::new(url).build() {
-                    Ok(client) => {
-                        match client
-                            .list_tasks(ListTasksParams {
-                                tenant: None,
-                                context_id: None,
-                                status: None,
-                                page_size: Some(1),
-                                page_token: None,
-                                status_timestamp_after: None,
-                                include_artifacts: None,
-                                history_length: None,
-                            })
-                            .await
+                // Fetch the agent card to discover the correct protocol binding,
+                // avoiding protocol mismatch errors (e.g. JSON-RPC client → REST server).
+                let status = match resolve_agent_card(url).await {
+                    Ok(card) => {
+                        let binding = card
+                            .supported_interfaces
+                            .first()
+                            .map(|i| i.protocol_binding.as_str())
+                            .unwrap_or("JSONRPC");
+                        match ClientBuilder::new(url)
+                            .with_protocol_binding(binding)
+                            .build()
                         {
-                            Ok(_) => "HEALTHY",
-                            Err(_) => "DEGRADED",
+                            Ok(client) => {
+                                match client
+                                    .list_tasks(ListTasksParams {
+                                        tenant: None,
+                                        context_id: None,
+                                        status: None,
+                                        page_size: Some(1),
+                                        page_token: None,
+                                        status_timestamp_after: None,
+                                        include_artifacts: None,
+                                        history_length: None,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => "HEALTHY",
+                                    Err(_) => "DEGRADED",
+                                }
+                            }
+                            Err(_) => "UNREACHABLE",
                         }
                     }
-                    Err(_) => "UNREACHABLE",
+                    Err(_) => {
+                        // Fall back to default JSON-RPC if agent card is unavailable.
+                        match ClientBuilder::new(url).build() {
+                            Ok(client) => {
+                                match client
+                                    .list_tasks(ListTasksParams {
+                                        tenant: None,
+                                        context_id: None,
+                                        status: None,
+                                        page_size: Some(1),
+                                        page_token: None,
+                                        status_timestamp_after: None,
+                                        include_artifacts: None,
+                                        history_length: None,
+                                    })
+                                    .await
+                                {
+                                    Ok(_) => "HEALTHY",
+                                    Err(_) => "DEGRADED",
+                                }
+                            }
+                            Err(_) => "UNREACHABLE",
+                        }
+                    }
                 };
                 results.push(format!("{url}: {status}"));
             }
@@ -1569,19 +1602,18 @@ async fn main() {
         }
     }
 
-    // Test 8: Push notification registration and delivery
-    // NOTE: Uses JSON-RPC transport for HealthMonitor (which has push support).
-    // REST transport has a known bug where taskId is stripped from body by
-    // path-param extraction but the server still requires it in the body.
-    // This is a real dogfooding discovery — tracked for fix.
+    // Test 8: Push notification config CRUD via REST
+    // Exercises the full lifecycle: create → get → list → delete.
+    // Uses REST transport for BuildMonitor (which has push support).
     {
         let start = Instant::now();
-        println!("\nTest 8: Push notification lifecycle");
-        let client = ClientBuilder::new(&health_url)
+        println!("\nTest 8: Push notification config CRUD (REST)");
+        let client = ClientBuilder::new(&build_url)
+            .with_protocol_binding("REST")
             .build()
-            .expect("build JSON-RPC client");
+            .expect("build REST client for BuildMonitor");
 
-        // First, create a task so we have a valid task_id.
+        // Create a task so we have a valid task_id.
         let init_resp = client.send_message(make_send_params("ping")).await;
         let task_id = match &init_resp {
             Ok(SendMessageResponse::Task(task)) => {
@@ -1589,78 +1621,109 @@ async fn main() {
                 task.id.to_string()
             }
             _ => {
-                println!("  Could not create initial task");
-                "fallback-task".to_owned()
-            }
-        };
-
-        let webhook_url = format!("http://{webhook_addr}/webhook");
-        let push_config = TaskPushNotificationConfig {
-            tenant: None,
-            id: None,
-            task_id: task_id.clone(),
-            url: webhook_url.clone(),
-            token: Some("test-token-123".into()),
-            authentication: Some(AuthenticationInfo {
-                scheme: "bearer".into(),
-                credentials: "my-secret-bearer".into(),
-            }),
-        };
-
-        // Register push config.
-        match client.set_push_config(push_config).await {
-            Ok(stored) => {
-                println!("  Push config registered: id={:?}", stored.id);
-
-                // List push configs.
-                match client
-                    .list_push_configs(ListPushConfigsParams {
-                        tenant: None,
-                        task_id: task_id.clone(),
-                        page_size: Some(10),
-                        page_token: None,
-                    })
-                    .await
-                {
-                    Ok(list) => {
-                        println!("  Push configs listed: {}", list.configs.len());
-                    }
-                    Err(e) => {
-                        println!("  List push configs error: {e}");
-                    }
-                }
-
-                // Now send another message that will trigger push delivery.
-                let msg_result = client.send_message(make_send_params("ping again")).await;
-                // Give push sender time to deliver.
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-
-                let push_count = webhook_receiver.count().await;
-                println!("  Webhook received {push_count} push notifications");
-
-                match msg_result {
-                    Ok(_) => {
-                        results.push(TestResult::pass(
-                            "push-notifications",
-                            start.elapsed().as_millis(),
-                            &format!("registered=true, webhooks_received={push_count}"),
-                        ));
-                    }
-                    Err(e) => {
-                        results.push(TestResult::fail(
-                            "push-notifications",
-                            start.elapsed().as_millis(),
-                            &format!("msg error: {e}"),
-                        ));
-                    }
-                }
-            }
-            Err(e) => {
                 results.push(TestResult::fail(
-                    "push-notifications",
+                    "push-config-crud",
                     start.elapsed().as_millis(),
-                    &format!("push config error: {e:?}"),
+                    "could not create initial task",
                 ));
+                "".to_owned()
+            }
+        };
+
+        if !task_id.is_empty() {
+            let webhook_url = format!("http://{webhook_addr}/webhook");
+            let push_config = TaskPushNotificationConfig {
+                tenant: None,
+                id: None,
+                task_id: task_id.clone(),
+                url: webhook_url.clone(),
+                token: Some("test-token-123".into()),
+                authentication: Some(AuthenticationInfo {
+                    scheme: "bearer".into(),
+                    credentials: "my-secret-bearer".into(),
+                }),
+            };
+
+            // 1. Create push config.
+            match client.set_push_config(push_config).await {
+                Ok(stored) => {
+                    let config_id = stored.id.clone().unwrap_or_default();
+                    println!("  CREATE: id={config_id}");
+
+                    // 2. Get push config by id.
+                    match client
+                        .get_push_config(task_id.clone(), config_id.clone())
+                        .await
+                    {
+                        Ok(got) => println!("  GET:    id={:?} url={}", got.id, got.url),
+                        Err(e) => println!("  GET:    error: {e}"),
+                    }
+
+                    // 3. List push configs.
+                    match client
+                        .list_push_configs(ListPushConfigsParams {
+                            tenant: None,
+                            task_id: task_id.clone(),
+                            page_size: Some(10),
+                            page_token: None,
+                        })
+                        .await
+                    {
+                        Ok(list) => println!("  LIST:   {} configs", list.configs.len()),
+                        Err(e) => println!("  LIST:   error: {e}"),
+                    }
+
+                    // 4. Delete push config.
+                    match client
+                        .delete_push_config(task_id.clone(), config_id.clone())
+                        .await
+                    {
+                        Ok(()) => println!("  DELETE: ok"),
+                        Err(e) => println!("  DELETE: error: {e}"),
+                    }
+
+                    // 5. Verify deletion — list should be empty.
+                    match client
+                        .list_push_configs(ListPushConfigsParams {
+                            tenant: None,
+                            task_id: task_id.clone(),
+                            page_size: Some(10),
+                            page_token: None,
+                        })
+                        .await
+                    {
+                        Ok(list) => {
+                            println!("  VERIFY: {} configs after delete", list.configs.len());
+                            if list.configs.is_empty() {
+                                results.push(TestResult::pass(
+                                    "push-config-crud",
+                                    start.elapsed().as_millis(),
+                                    "create+get+list+delete+verify",
+                                ));
+                            } else {
+                                results.push(TestResult::fail(
+                                    "push-config-crud",
+                                    start.elapsed().as_millis(),
+                                    "delete did not remove config",
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(TestResult::fail(
+                                "push-config-crud",
+                                start.elapsed().as_millis(),
+                                &format!("verify list error: {e}"),
+                            ));
+                        }
+                    }
+                }
+                Err(e) => {
+                    results.push(TestResult::fail(
+                        "push-config-crud",
+                        start.elapsed().as_millis(),
+                        &format!("create error: {e:?}"),
+                    ));
+                }
             }
         }
     }
@@ -1910,6 +1973,120 @@ async fn main() {
                     "message-metadata",
                     start.elapsed().as_millis(),
                     &format!("error: {e}"),
+                ));
+            }
+        }
+    }
+
+    // Test 14: CancelTask mid-stream (BuildMonitor)
+    {
+        let start = Instant::now();
+        println!("\nTest 14: CancelTask mid-stream (BuildMonitor)");
+        let client = ClientBuilder::new(&build_url)
+            .with_protocol_binding("REST")
+            .build()
+            .expect("build REST client");
+
+        // Start a slow build that takes 5 phases.
+        match client.stream_message(make_send_params("slow")).await {
+            Ok(mut stream) => {
+                // Read events until we get the task_id from a status or artifact update.
+                let mut task_id = None;
+                let mut events_before_cancel = 0;
+                while let Some(event) = stream.next().await {
+                    events_before_cancel += 1;
+                    match &event {
+                        Ok(StreamResponse::StatusUpdate(ev)) => {
+                            task_id = Some(ev.task_id.0.clone());
+                            println!("  Status: {:?}", ev.status.state);
+                        }
+                        Ok(StreamResponse::ArtifactUpdate(ev)) => {
+                            task_id = Some(ev.task_id.0.clone());
+                            for part in &ev.artifact.parts {
+                                if let PartContent::Text { text } = &part.content {
+                                    println!("  Build: {text}");
+                                }
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("  Error: {e}");
+                            break;
+                        }
+                    }
+                    // After 2 events, cancel the task.
+                    if events_before_cancel >= 2 {
+                        if let Some(ref tid) = task_id {
+                            println!("  Canceling task {tid}...");
+                            match client.cancel_task(tid.clone()).await {
+                                Ok(task) => {
+                                    println!("  Cancel result: {:?}", task.status.state);
+                                }
+                                Err(e) => {
+                                    println!("  Cancel error: {e}");
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+
+                // Drain remaining events.
+                let mut events_after_cancel = 0;
+                while let Some(event) = stream.next().await {
+                    events_after_cancel += 1;
+                    if let Ok(StreamResponse::StatusUpdate(ev)) = &event {
+                        println!("  Post-cancel status: {:?}", ev.status.state);
+                    }
+                }
+
+                // Verify via GetTask that the task is canceled.
+                if let Some(tid) = task_id {
+                    let query = a2a_protocol_types::params::TaskQueryParams {
+                        tenant: None,
+                        id: tid.clone(),
+                        history_length: None,
+                    };
+                    match client.get_task(query).await {
+                        Ok(task) => {
+                            let is_canceled = task.status.state == TaskState::Canceled;
+                            if is_canceled {
+                                results.push(TestResult::pass(
+                                    "cancel-task",
+                                    start.elapsed().as_millis(),
+                                    &format!(
+                                        "events_before={events_before_cancel} events_after={events_after_cancel}"
+                                    ),
+                                ));
+                            } else {
+                                results.push(TestResult::fail(
+                                    "cancel-task",
+                                    start.elapsed().as_millis(),
+                                    &format!("expected Canceled, got {:?}", task.status.state),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            results.push(TestResult::fail(
+                                "cancel-task",
+                                start.elapsed().as_millis(),
+                                &format!("GetTask error: {e}"),
+                            ));
+                        }
+                    }
+                } else {
+                    results.push(TestResult::fail(
+                        "cancel-task",
+                        start.elapsed().as_millis(),
+                        "no task_id received from stream",
+                    ));
+                }
+            }
+            Err(e) => {
+                results.push(TestResult::fail(
+                    "cancel-task",
+                    start.elapsed().as_millis(),
+                    &format!("stream error: {e}"),
                 ));
             }
         }

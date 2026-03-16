@@ -32,15 +32,24 @@ use crate::streaming::build_sse_response;
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
     cors: Option<CorsConfig>,
+    config: super::DispatchConfig,
 }
 
 impl JsonRpcDispatcher {
-    /// Creates a new dispatcher wrapping the given handler.
+    /// Creates a new dispatcher wrapping the given handler with default
+    /// configuration.
     #[must_use]
-    pub const fn new(handler: Arc<RequestHandler>) -> Self {
+    pub fn new(handler: Arc<RequestHandler>) -> Self {
+        Self::with_config(handler, super::DispatchConfig::default())
+    }
+
+    /// Creates a new dispatcher with the given configuration.
+    #[must_use]
+    pub const fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
         Self {
             handler,
             cors: None,
+            config,
         }
     }
 
@@ -99,7 +108,13 @@ impl JsonRpcDispatcher {
         }
 
         // Read body with size limit (default 4 MiB).
-        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+        let body_bytes = match read_body_limited(
+            req.into_body(),
+            self.config.max_request_body_size,
+            self.config.body_read_timeout,
+        )
+        .await
+        {
             Ok(bytes) => bytes,
             Err(msg) => return parse_error_response(None, &msg),
         };
@@ -264,7 +279,13 @@ impl JsonRpcDispatcher {
             "ListTaskPushNotificationConfigs" => {
                 match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_list_push_configs(&p.id).await {
-                        Ok(r) => success_response_bytes(id, &r),
+                        Ok(configs) => {
+                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                                configs,
+                                next_page_token: None,
+                            };
+                            success_response_bytes(id, &resp)
+                        }
                         Err(e) => error_response_bytes(id, &e),
                     },
                     Err(e) => error_response_bytes(id, &e),
@@ -432,16 +453,14 @@ fn internal_serialization_error(
     json_response(500, body.to_vec())
 }
 
-/// Maximum request body size in bytes (4 MiB).
-const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
-
-/// Maximum duration to read a complete request body (slow loris protection).
-const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Reads a request body with a size limit and timeout.
 ///
 /// Returns an error message if the body exceeds the limit, times out, or cannot be read.
-async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
+async fn read_body_limited(
+    body: Incoming,
+    max_size: usize,
+    read_timeout: std::time::Duration,
+) -> Result<Bytes, String> {
     // Check Content-Length header upfront if present.
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
@@ -452,7 +471,7 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
         }
     }
 
-    let collected = tokio::time::timeout(BODY_READ_TIMEOUT, body.collect())
+    let collected = tokio::time::timeout(read_timeout, body.collect())
         .await
         .map_err(|_| "request body read timed out".to_owned())?
         .map_err(|e| e.to_string())?;

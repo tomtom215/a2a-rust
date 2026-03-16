@@ -22,7 +22,7 @@ use a2a_protocol_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcS
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::responses::{ListPushConfigsResponse, SendMessageResponse};
 use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -479,9 +479,9 @@ async fn jsonrpc_push_config_crud() {
     assert_eq!(resp.status(), 200);
 
     let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let result: JsonRpcSuccessResponse<Vec<TaskPushNotificationConfig>> =
+    let result: JsonRpcSuccessResponse<ListPushConfigsResponse> =
         serde_json::from_slice(&body).expect("parse list response");
-    assert_eq!(result.result.len(), 1);
+    assert_eq!(result.result.configs.len(), 1);
 
     // Delete push config.
     let rpc = JsonRpcRequest::with_params(
@@ -758,9 +758,8 @@ async fn rest_push_config_crud() {
     assert_eq!(resp.status(), 200);
 
     let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let configs: Vec<TaskPushNotificationConfig> =
-        serde_json::from_slice(&body).expect("parse list");
-    assert_eq!(configs.len(), 1);
+    let list_resp: ListPushConfigsResponse = serde_json::from_slice(&body).expect("parse list");
+    assert_eq!(list_resp.configs.len(), 1);
 
     // Delete push config.
     let req = hyper::Request::builder()
