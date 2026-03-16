@@ -464,7 +464,7 @@ async fn jsonrpc_push_config_crud() {
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(12),
         "ListTaskPushNotificationConfigs",
-        serde_json::json!({"id": "task-1"}),
+        serde_json::json!({"taskId": "task-1"}),
     );
     let body = serde_json::to_vec(&rpc).unwrap();
 
