@@ -147,7 +147,7 @@ async fn reject_empty_context_id() {
     let mut params = make_params("hello");
     params.message.context_id = Some(ContextId::new(""));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_err(), "empty context_id should be rejected");
     if let Err(e) = result {
         assert!(
@@ -166,7 +166,7 @@ async fn reject_whitespace_only_context_id() {
     let mut params = make_params("hello");
     params.message.context_id = Some(ContextId::new("   \t\n  "));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_err(),
         "whitespace-only context_id should be rejected"
@@ -183,7 +183,7 @@ async fn reject_oversized_context_id() {
     let mut params = make_params("hello");
     params.message.context_id = Some(ContextId::new(long_id));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_err(), "oversized context_id should be rejected");
 }
 
@@ -197,7 +197,7 @@ async fn accept_max_length_context_id() {
     let mut params = make_params("hello");
     params.message.context_id = Some(ContextId::new(max_id));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_ok(),
         "1024-char context_id should be accepted: {:?}",
@@ -214,7 +214,7 @@ async fn accept_unicode_context_id() {
     let mut params = make_params("hello");
     params.message.context_id = Some(ContextId::new("ctx-日本語-🎉-αβγ"));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_ok(),
         "unicode context_id should be accepted: {:?}",
@@ -246,7 +246,7 @@ async fn reject_empty_parts() {
         metadata: None,
     };
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_err(), "empty parts should be rejected");
 }
 
@@ -261,7 +261,7 @@ async fn reject_oversized_metadata() {
     let mut params = make_params("hello");
     params.message.metadata = Some(serde_json::json!({ "big": big_value }));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(result.is_err(), "oversized metadata should be rejected");
 }
 
@@ -275,7 +275,7 @@ async fn reject_oversized_request_metadata() {
     let mut params = make_params("hello");
     params.metadata = Some(serde_json::json!({ "big": big_value }));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_err(),
         "oversized request metadata should be rejected"
@@ -291,7 +291,7 @@ async fn accept_small_metadata() {
     let mut params = make_params("hello");
     params.message.metadata = Some(serde_json::json!({ "key": "value" }));
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     assert!(
         result.is_ok(),
         "small metadata should be accepted: {:?}",
@@ -307,7 +307,7 @@ async fn artifact_produced_in_task() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("hello"), false).await;
+    let result = handler.on_send_message(make_params("hello"), false, None).await;
     match result.unwrap() {
         a2a_protocol_server::SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -341,7 +341,7 @@ async fn return_immediately_returns_submitted_task() {
         return_immediately: Some(true),
     });
 
-    let result = handler.on_send_message(params, false).await;
+    let result = handler.on_send_message(params, false, None).await;
     match result.unwrap() {
         a2a_protocol_server::SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -433,7 +433,7 @@ async fn shutdown_cancels_in_flight_tasks() {
     // Start a streaming task
     let h = Arc::clone(&handler);
     let task_handle = tokio::spawn(async move {
-        let _ = h.on_send_message(make_params("never"), true).await;
+        let _ = h.on_send_message(make_params("never"), true, None).await;
     });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -459,7 +459,7 @@ async fn shutdown_with_timeout() {
 
     // After shutdown, handler can still accept new requests
     let result = handler
-        .on_send_message(make_params("after shutdown"), false)
+        .on_send_message(make_params("after shutdown"), false, None)
         .await;
     // This should succeed (shutdown cancels in-flight, but doesn't prevent new ones)
     assert!(result.is_ok());
@@ -481,7 +481,7 @@ async fn concurrent_list_and_send() {
     for i in 0..5 {
         let h = Arc::clone(&handler);
         handles.push(tokio::spawn(async move {
-            h.on_send_message(make_params(&format!("msg-{i}")), false)
+            h.on_send_message(make_params(&format!("msg-{i}")), false, None)
                 .await
                 .ok();
         }));
@@ -500,7 +500,7 @@ async fn concurrent_list_and_send() {
                 status_timestamp_after: None,
                 include_artifacts: None,
                 history_length: None,
-            })
+            }, None)
             .await
             .ok();
         }));
@@ -529,7 +529,7 @@ async fn task_store_config_both_ttl_and_capacity() {
     // Create tasks to fill capacity
     for i in 0..7 {
         handler
-            .on_send_message(make_params(&format!("msg-{i}")), false)
+            .on_send_message(make_params(&format!("msg-{i}")), false, None)
             .await
             .ok();
     }
@@ -545,7 +545,7 @@ async fn task_store_config_both_ttl_and_capacity() {
             status_timestamp_after: None,
             include_artifacts: None,
             history_length: None,
-        })
+        }, None)
         .await
         .unwrap();
     assert!(
@@ -567,13 +567,13 @@ async fn multi_turn_same_context_id() {
 
     // First message
     let result1 = handler
-        .on_send_message(make_params_with_context("hello", ctx_id), false)
+        .on_send_message(make_params_with_context("hello", ctx_id), false, None)
         .await;
     assert!(result1.is_ok());
 
     // Second message in same context
     let result2 = handler
-        .on_send_message(make_params_with_context("follow up", ctx_id), false)
+        .on_send_message(make_params_with_context("follow up", ctx_id), false, None)
         .await;
     assert!(result2.is_ok());
 }
@@ -587,7 +587,7 @@ async fn custom_event_queue_capacity() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("test"), false).await;
+    let result = handler.on_send_message(make_params("test"), false, None).await;
     assert!(result.is_ok(), "should work with small queue capacity");
 }
 
@@ -598,7 +598,7 @@ async fn custom_max_event_size() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("test"), false).await;
+    let result = handler.on_send_message(make_params("test"), false, None).await;
     assert!(result.is_ok());
 }
 
@@ -630,7 +630,7 @@ async fn metrics_receives_callbacks() {
         .unwrap();
 
     handler
-        .on_send_message(make_params("test"), false)
+        .on_send_message(make_params("test"), false, None)
         .await
         .unwrap();
 

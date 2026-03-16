@@ -109,7 +109,7 @@ fn message_with_explicit_null_optional_fields() {
     let json = r#"{
         "messageId": "msg-null",
         "role": "ROLE_USER",
-        "parts": [{"text": "hi"}],
+        "parts": [{"type": "text", "text": "hi"}],
         "taskId": null,
         "contextId": null,
         "referenceTaskIds": null,

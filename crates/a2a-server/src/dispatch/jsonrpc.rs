@@ -7,6 +7,7 @@
 //! them to the appropriate [`RequestHandler`] method, and serializes the
 //! response (or streams SSE for streaming methods).
 
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 
@@ -130,6 +131,9 @@ impl JsonRpcDispatcher {
             }
         }
 
+        // Extract HTTP headers BEFORE consuming the body.
+        let headers = extract_headers(req.headers());
+
         // Read body with size limit (default 4 MiB).
         let body_bytes = match read_body_limited(
             req.into_body(),
@@ -172,7 +176,7 @@ impl JsonRpcDispatcher {
                         continue;
                     }
                 };
-                let resp_body = self.dispatch_single_request(&rpc_req).await;
+                let resp_body = self.dispatch_single_request(&rpc_req, &headers).await;
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&resp_body) {
                     responses.push(v);
                 }
@@ -185,7 +189,7 @@ impl JsonRpcDispatcher {
                 Ok(r) => r,
                 Err(e) => return parse_error_response(None, &e.to_string()),
             };
-            self.dispatch_single_request_http(&rpc_req).await
+            self.dispatch_single_request_http(&rpc_req, &headers).await
         }
     }
 
@@ -196,16 +200,19 @@ impl JsonRpcDispatcher {
     async fn dispatch_single_request_http(
         &self,
         rpc_req: &JsonRpcRequest,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let id = rpc_req.id.clone();
         trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
 
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
-            "SendStreamingMessage" => return self.dispatch_send_message(id, rpc_req, true).await,
+            "SendStreamingMessage" => {
+                return self.dispatch_send_message(id, rpc_req, true, headers).await;
+            }
             "SubscribeToTask" => {
                 return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_resubscribe(p).await {
+                    Ok(p) => match self.handler.on_resubscribe(p, Some(headers)).await {
                         Ok(reader) => build_sse_response(
                             reader,
                             Some(self.config.sse_keep_alive_interval),
@@ -219,7 +226,7 @@ impl JsonRpcDispatcher {
             _ => {}
         }
 
-        let body = self.dispatch_single_request(rpc_req).await;
+        let body = self.dispatch_single_request(rpc_req, headers).await;
         json_response(200, body)
     }
 
@@ -227,13 +234,17 @@ impl JsonRpcDispatcher {
     ///
     /// Used for both single and batch requests.
     #[allow(clippy::too_many_lines)]
-    async fn dispatch_single_request(&self, rpc_req: &JsonRpcRequest) -> Vec<u8> {
+    async fn dispatch_single_request(
+        &self,
+        rpc_req: &JsonRpcRequest,
+        headers: &HashMap<String, String>,
+    ) -> Vec<u8> {
         let id = rpc_req.id.clone();
 
         match rpc_req.method.as_str() {
             "SendMessage" => {
                 match self
-                    .dispatch_send_message_inner(id.clone(), rpc_req, false)
+                    .dispatch_send_message_inner(id.clone(), rpc_req, false, headers)
                     .await
                 {
                     Ok(resp) => serde_json::to_vec(&resp).unwrap_or_default(),
@@ -252,17 +263,18 @@ impl JsonRpcDispatcher {
                 );
                 serde_json::to_vec(&resp).unwrap_or_default()
             }
-            "GetTask" => match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req)
-            {
-                Ok(p) => match self.handler.on_get_task(p).await {
-                    Ok(r) => success_response_bytes(id, &r),
+            "GetTask" => {
+                match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_get_task(p, Some(headers)).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
                     Err(e) => error_response_bytes(id, &e),
-                },
-                Err(e) => error_response_bytes(id, &e),
-            },
+                }
+            }
             "ListTasks" => {
                 match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_list_tasks(p).await {
+                    Ok(p) => match self.handler.on_list_tasks(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
                     },
@@ -271,7 +283,7 @@ impl JsonRpcDispatcher {
             }
             "CancelTask" => {
                 match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_cancel_task(p).await {
+                    Ok(p) => match self.handler.on_cancel_task(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
                     },
@@ -287,7 +299,7 @@ impl JsonRpcDispatcher {
             "CreateTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
                 {
-                    Ok(p) => match self.handler.on_set_push_config(p).await {
+                    Ok(p) => match self.handler.on_set_push_config(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
                     },
@@ -296,7 +308,7 @@ impl JsonRpcDispatcher {
             }
             "GetTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_get_push_config(p).await {
+                    Ok(p) => match self.handler.on_get_push_config(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
                     },
@@ -305,7 +317,7 @@ impl JsonRpcDispatcher {
             }
             "ListTaskPushNotificationConfigs" => {
                 match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_list_push_configs(&p.id).await {
+                    Ok(p) => match self.handler.on_list_push_configs(&p.id, Some(headers)).await {
                         Ok(configs) => {
                             let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
                                 configs,
@@ -320,17 +332,19 @@ impl JsonRpcDispatcher {
             }
             "DeleteTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_delete_push_config(p).await {
+                    Ok(p) => match self.handler.on_delete_push_config(p, Some(headers)).await {
                         Ok(()) => success_response_bytes(id, &serde_json::json!({})),
                         Err(e) => error_response_bytes(id, &e),
                     },
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "GetExtendedAgentCard" => match self.handler.on_get_extended_agent_card().await {
-                Ok(r) => success_response_bytes(id, &r),
-                Err(e) => error_response_bytes(id, &e),
-            },
+            "GetExtendedAgentCard" => {
+                match self.handler.on_get_extended_agent_card(Some(headers)).await {
+                    Ok(r) => success_response_bytes(id, &r),
+                    Err(e) => error_response_bytes(id, &e),
+                }
+            }
             other => {
                 let err = ServerError::MethodNotFound(other.to_owned());
                 error_response_bytes(id, &err)
@@ -345,12 +359,17 @@ impl JsonRpcDispatcher {
         id: JsonRpcId,
         rpc_req: &JsonRpcRequest,
         streaming: bool,
+        headers: &HashMap<String, String>,
     ) -> Result<JsonRpcSuccessResponse<serde_json::Value>, Vec<u8>> {
         let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
             Ok(p) => p,
             Err(e) => return Err(error_response_bytes(id, &e)),
         };
-        match self.handler.on_send_message(params, streaming).await {
+        match self
+            .handler
+            .on_send_message(params, streaming, Some(headers))
+            .await
+        {
             Ok(SendMessageResult::Response(resp)) => {
                 let result = serde_json::to_value(&resp).unwrap_or(serde_json::Value::Null);
                 Ok(JsonRpcSuccessResponse {
@@ -373,12 +392,17 @@ impl JsonRpcDispatcher {
         id: JsonRpcId,
         rpc_req: &JsonRpcRequest,
         streaming: bool,
+        headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
             Ok(p) => p,
             Err(e) => return error_response(id, &e),
         };
-        match self.handler.on_send_message(params, streaming).await {
+        match self
+            .handler
+            .on_send_message(params, streaming, Some(headers))
+            .await
+        {
             Ok(SendMessageResult::Response(resp)) => success_response(id, &resp),
             Ok(SendMessageResult::Stream(reader)) => build_sse_response(
                 reader,
@@ -388,6 +412,17 @@ impl JsonRpcDispatcher {
             Err(e) => error_response(id, &e),
         }
     }
+}
+
+/// Extracts HTTP headers into a `HashMap<String, String>` with lowercased keys.
+fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, String> {
+    let mut map = HashMap::with_capacity(headers.len());
+    for (key, value) in headers {
+        if let Ok(v) = value.to_str() {
+            map.insert(key.as_str().to_owned(), v.to_owned());
+        }
+    }
+    map
 }
 
 /// Serializes a success response to bytes (for batch request support).

@@ -130,6 +130,19 @@ fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     Ok(())
 }
 
+/// Extracts HTTP headers from a `HashMap<String, String>` into a format
+/// suitable for `CallContext`.
+fn build_call_context(
+    method: &str,
+    headers: Option<&HashMap<String, String>>,
+) -> CallContext {
+    let mut ctx = CallContext::new(method);
+    if let Some(h) = headers {
+        ctx.http_headers = h.clone();
+    }
+    ctx
+}
+
 /// The core protocol logic handler.
 ///
 /// Orchestrates task lifecycle, event streaming, push notifications, and
@@ -138,11 +151,17 @@ fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
 /// `RequestHandler` is **not** generic — it stores the executor as
 /// `Arc<dyn AgentExecutor>`, enabling dynamic dispatch and simplifying
 /// the downstream API (dispatchers, builder, etc.).
+///
+/// # Store ownership
+///
+/// Stores are held as `Arc<dyn TaskStore>` / `Arc<dyn PushConfigStore>`
+/// rather than `Box<dyn ...>` so that they can be cheaply cloned into
+/// background tasks (e.g. the streaming push-delivery processor).
 pub struct RequestHandler {
     pub(crate) executor: Arc<dyn AgentExecutor>,
-    pub(crate) task_store: Box<dyn TaskStore>,
-    pub(crate) push_config_store: Box<dyn PushConfigStore>,
-    pub(crate) push_sender: Option<Box<dyn PushSender>>,
+    pub(crate) task_store: Arc<dyn TaskStore>,
+    pub(crate) push_config_store: Arc<dyn PushConfigStore>,
+    pub(crate) push_sender: Option<Arc<dyn PushSender>>,
     pub(crate) event_queue_manager: EventQueueManager,
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
@@ -165,6 +184,9 @@ pub(crate) struct CancellationEntry {
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
+    /// The optional `headers` map carries HTTP request headers for
+    /// interceptor access-control decisions (e.g. `Authorization`).
+    ///
     /// # Errors
     ///
     /// Returns [`ServerError`] if task creation or execution fails.
@@ -172,21 +194,30 @@ impl RequestHandler {
         &self,
         params: MessageSendParams,
         streaming: bool,
+        headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
         let method_name = if streaming {
             "SendStreamingMessage"
         } else {
             "SendMessage"
         };
+        let start = Instant::now();
         trace_info!(method = method_name, streaming, "handling send message");
         self.metrics.on_request(method_name);
 
         let result = self
-            .send_message_inner(params, streaming, method_name)
+            .send_message_inner(params, streaming, method_name, headers)
             .await;
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response(method_name),
-            Err(e) => self.metrics.on_error(method_name, &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response(method_name);
+                self.metrics.on_latency(method_name, elapsed);
+            }
+            Err(e) => {
+                self.metrics.on_error(method_name, &e.to_string());
+                self.metrics.on_latency(method_name, elapsed);
+            }
         }
         result
     }
@@ -199,8 +230,9 @@ impl RequestHandler {
         params: MessageSendParams,
         streaming: bool,
         method_name: &str,
+        headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<SendMessageResult> {
-        let call_ctx = CallContext::new(method_name);
+        let call_ctx = build_call_context(method_name, headers);
         self.interceptors.run_before(&call_ctx).await?;
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
@@ -391,6 +423,15 @@ impl RequestHandler {
         self.interceptors.run_after(&call_ctx).await?;
 
         if streaming {
+            // ARCHITECTURAL FIX: Spawn a background event processor that
+            // runs independently of the SSE consumer. This ensures that:
+            // 1. Task store is updated with state transitions even in streaming mode
+            // 2. Push notifications fire for every event regardless of consumer mode
+            // 3. State transition validation occurs for streaming events
+            //
+            // The background processor subscribes to the same broadcast channel
+            // as the SSE reader, so both consumers see every event.
+            self.spawn_background_event_processor(task_id.clone(), executor_handle);
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.
@@ -412,12 +453,17 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
-    pub async fn on_get_task(&self, params: TaskQueryParams) -> ServerResult<Task> {
+    pub async fn on_get_task(
+        &self,
+        params: TaskQueryParams,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<Task> {
+        let start = Instant::now();
         trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
         self.metrics.on_request("GetTask");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("GetTask");
+            let call_ctx = build_call_context("GetTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
             let task_id = TaskId::new(&params.id);
@@ -432,9 +478,16 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("GetTask"),
-            Err(e) => self.metrics.on_error("GetTask", &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response("GetTask");
+                self.metrics.on_latency("GetTask", elapsed);
+            }
+            Err(e) => {
+                self.metrics.on_error("GetTask", &e.to_string());
+                self.metrics.on_latency("GetTask", elapsed);
+            }
         }
         result
     }
@@ -444,12 +497,17 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns a [`ServerError`] if the store query fails.
-    pub async fn on_list_tasks(&self, params: ListTasksParams) -> ServerResult<TaskListResponse> {
+    pub async fn on_list_tasks(
+        &self,
+        params: ListTasksParams,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<TaskListResponse> {
+        let start = Instant::now();
         trace_info!(method = "ListTasks", "handling list tasks");
         self.metrics.on_request("ListTasks");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("ListTasks");
+            let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;
             let result = self.task_store.list(&params).await?;
             self.interceptors.run_after(&call_ctx).await?;
@@ -457,9 +515,16 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("ListTasks"),
-            Err(e) => self.metrics.on_error("ListTasks", &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response("ListTasks");
+                self.metrics.on_latency("ListTasks", elapsed);
+            }
+            Err(e) => {
+                self.metrics.on_error("ListTasks", &e.to_string());
+                self.metrics.on_latency("ListTasks", elapsed);
+            }
         }
         result
     }
@@ -469,12 +534,17 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
-    pub async fn on_cancel_task(&self, params: CancelTaskParams) -> ServerResult<Task> {
+    pub async fn on_cancel_task(
+        &self,
+        params: CancelTaskParams,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<Task> {
+        let start = Instant::now();
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("CancelTask");
+            let call_ctx = build_call_context("CancelTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
             let task_id = TaskId::new(&params.id);
@@ -527,9 +597,16 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("CancelTask"),
-            Err(e) => self.metrics.on_error("CancelTask", &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response("CancelTask");
+                self.metrics.on_latency("CancelTask", elapsed);
+            }
+            Err(e) => {
+                self.metrics.on_error("CancelTask", &e.to_string());
+                self.metrics.on_latency("CancelTask", elapsed);
+            }
         }
         result
     }
@@ -539,12 +616,17 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] if the task does not exist.
-    pub async fn on_resubscribe(&self, params: TaskIdParams) -> ServerResult<InMemoryQueueReader> {
+    pub async fn on_resubscribe(
+        &self,
+        params: TaskIdParams,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<InMemoryQueueReader> {
+        let start = Instant::now();
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
         self.metrics.on_request("SubscribeToTask");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("SubscribeToTask");
+            let call_ctx = build_call_context("SubscribeToTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
             let task_id = TaskId::new(&params.id);
@@ -567,9 +649,16 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("SubscribeToTask"),
-            Err(e) => self.metrics.on_error("SubscribeToTask", &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response("SubscribeToTask");
+                self.metrics.on_latency("SubscribeToTask", elapsed);
+            }
+            Err(e) => {
+                self.metrics.on_error("SubscribeToTask", &e.to_string());
+                self.metrics.on_latency("SubscribeToTask", elapsed);
+            }
         }
         result
     }
@@ -582,14 +671,16 @@ impl RequestHandler {
     pub async fn on_set_push_config(
         &self,
         config: TaskPushNotificationConfig,
+        headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
+        let start = Instant::now();
         self.metrics.on_request("CreateTaskPushNotificationConfig");
 
         let result: ServerResult<_> = async {
             if self.push_sender.is_none() {
                 return Err(ServerError::PushNotSupported);
             }
-            let call_ctx = CallContext::new("CreateTaskPushNotificationConfig");
+            let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
             let result = self.push_config_store.set(config).await?;
             self.interceptors.run_after(&call_ctx).await?;
@@ -597,11 +688,19 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("CreateTaskPushNotificationConfig"),
+            Ok(_) => {
+                self.metrics
+                    .on_response("CreateTaskPushNotificationConfig");
+                self.metrics
+                    .on_latency("CreateTaskPushNotificationConfig", elapsed);
+            }
             Err(e) => {
                 self.metrics
                     .on_error("CreateTaskPushNotificationConfig", &e.to_string());
+                self.metrics
+                    .on_latency("CreateTaskPushNotificationConfig", elapsed);
             }
         }
         result
@@ -615,11 +714,13 @@ impl RequestHandler {
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
+        headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<TaskPushNotificationConfig> {
+        let start = Instant::now();
         self.metrics.on_request("GetTaskPushNotificationConfig");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("GetTaskPushNotificationConfig");
+            let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
             let config = self
@@ -638,11 +739,18 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("GetTaskPushNotificationConfig"),
+            Ok(_) => {
+                self.metrics.on_response("GetTaskPushNotificationConfig");
+                self.metrics
+                    .on_latency("GetTaskPushNotificationConfig", elapsed);
+            }
             Err(e) => {
                 self.metrics
                     .on_error("GetTaskPushNotificationConfig", &e.to_string());
+                self.metrics
+                    .on_latency("GetTaskPushNotificationConfig", elapsed);
             }
         }
         result
@@ -656,11 +764,13 @@ impl RequestHandler {
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
+        headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
+        let start = Instant::now();
         self.metrics.on_request("ListTaskPushNotificationConfigs");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("ListTaskPushNotificationConfigs");
+            let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
             self.interceptors.run_before(&call_ctx).await?;
             let configs = self.push_config_store.list(task_id).await?;
             self.interceptors.run_after(&call_ctx).await?;
@@ -668,11 +778,19 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("ListTaskPushNotificationConfigs"),
+            Ok(_) => {
+                self.metrics
+                    .on_response("ListTaskPushNotificationConfigs");
+                self.metrics
+                    .on_latency("ListTaskPushNotificationConfigs", elapsed);
+            }
             Err(e) => {
                 self.metrics
                     .on_error("ListTaskPushNotificationConfigs", &e.to_string());
+                self.metrics
+                    .on_latency("ListTaskPushNotificationConfigs", elapsed);
             }
         }
         result
@@ -683,11 +801,16 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns a [`ServerError`] if the delete operation fails.
-    pub async fn on_delete_push_config(&self, params: DeletePushConfigParams) -> ServerResult<()> {
+    pub async fn on_delete_push_config(
+        &self,
+        params: DeletePushConfigParams,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<()> {
+        let start = Instant::now();
         self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("DeleteTaskPushNotificationConfig");
+            let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
             self.push_config_store
                 .delete(&params.task_id, &params.id)
@@ -697,11 +820,19 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(()) => self.metrics.on_response("DeleteTaskPushNotificationConfig"),
+            Ok(()) => {
+                self.metrics
+                    .on_response("DeleteTaskPushNotificationConfig");
+                self.metrics
+                    .on_latency("DeleteTaskPushNotificationConfig", elapsed);
+            }
             Err(e) => {
                 self.metrics
                     .on_error("DeleteTaskPushNotificationConfig", &e.to_string());
+                self.metrics
+                    .on_latency("DeleteTaskPushNotificationConfig", elapsed);
             }
         }
         result
@@ -712,11 +843,15 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::Internal`] if no agent card is configured.
-    pub async fn on_get_extended_agent_card(&self) -> ServerResult<AgentCard> {
+    pub async fn on_get_extended_agent_card(
+        &self,
+        headers: Option<&HashMap<String, String>>,
+    ) -> ServerResult<AgentCard> {
+        let start = Instant::now();
         self.metrics.on_request("GetExtendedAgentCard");
 
         let result: ServerResult<_> = async {
-            let call_ctx = CallContext::new("GetExtendedAgentCard");
+            let call_ctx = build_call_context("GetExtendedAgentCard", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
             let card = self
@@ -729,11 +864,17 @@ impl RequestHandler {
         }
         .await;
 
+        let elapsed = start.elapsed();
         match &result {
-            Ok(_) => self.metrics.on_response("GetExtendedAgentCard"),
-            Err(e) => self
-                .metrics
-                .on_error("GetExtendedAgentCard", &e.to_string()),
+            Ok(_) => {
+                self.metrics.on_response("GetExtendedAgentCard");
+                self.metrics.on_latency("GetExtendedAgentCard", elapsed);
+            }
+            Err(e) => {
+                self.metrics
+                    .on_error("GetExtendedAgentCard", &e.to_string());
+                self.metrics.on_latency("GetExtendedAgentCard", elapsed);
+            }
         }
         result
     }
@@ -760,6 +901,105 @@ impl RequestHandler {
             .await
             .ok()
             .and_then(|resp| resp.tasks.into_iter().next())
+    }
+
+    /// Spawns a background task that subscribes to the event queue and
+    /// processes events (state transitions, task store updates, push delivery).
+    ///
+    /// This is the architectural fix for push delivery in streaming mode:
+    /// previously, `deliver_push()` was only called from `collect_events()`
+    /// which only runs for sync (non-streaming) mode. This background
+    /// processor ensures push notifications fire for every event regardless
+    /// of whether the consumer is streaming or synchronous.
+    fn spawn_background_event_processor(
+        &self,
+        task_id: TaskId,
+        executor_handle: tokio::task::JoinHandle<()>,
+    ) {
+        let task_store = Arc::clone(&self.task_store);
+        let push_config_store = Arc::clone(&self.push_config_store);
+        let push_sender = self.push_sender.clone();
+        let limits = self.limits.clone();
+
+        // Subscribe a second reader from the broadcast channel.
+        // The SSE reader and this background reader both see every event.
+        let event_queue_mgr = self.event_queue_manager.clone();
+
+        tokio::spawn(async move {
+            // Small yield to let the event queue be registered before subscribing.
+            tokio::task::yield_now().await;
+
+            let Some(mut bg_reader) = event_queue_mgr.subscribe(&task_id).await else {
+                trace_warn!(
+                    task_id = %task_id,
+                    "background event processor: no queue to subscribe to"
+                );
+                return;
+            };
+
+            // Get the current task from the store.
+            let mut last_task = match task_store.get(&task_id).await {
+                Ok(Some(t)) => t,
+                _ => return,
+            };
+
+            let mut executor_done = false;
+            let mut handle_fuse = executor_handle;
+
+            loop {
+                if executor_done {
+                    match bg_reader.read().await {
+                        Some(event) => {
+                            process_event_bg(
+                                event,
+                                &task_id,
+                                &mut last_task,
+                                &*task_store,
+                                &*push_config_store,
+                                push_sender.as_deref(),
+                                &limits,
+                            )
+                            .await;
+                        }
+                        None => break,
+                    }
+                } else {
+                    tokio::select! {
+                        biased;
+                        event = bg_reader.read() => {
+                            match event {
+                                Some(event) => {
+                                    process_event_bg(
+                                        event,
+                                        &task_id,
+                                        &mut last_task,
+                                        &*task_store,
+                                        &*push_config_store,
+                                        push_sender.as_deref(),
+                                        &limits,
+                                    )
+                                    .await;
+                                }
+                                None => break,
+                            }
+                        }
+                        result = &mut handle_fuse => {
+                            executor_done = true;
+                            if result.is_err() {
+                                trace_error!(
+                                    task_id = %task_id,
+                                    "executor task panicked (background processor)"
+                                );
+                                if !last_task.status.state.is_terminal() {
+                                    last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                                    let _ = task_store.save(last_task.clone()).await;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /// Collects events until stream closes, updating the task store and
@@ -921,6 +1161,99 @@ impl RequestHandler {
                 }
                 Ok(Ok(())) => {}
             }
+        }
+    }
+}
+
+/// Standalone event processor for background tasks (avoids borrowing `&self`).
+///
+/// Used by [`RequestHandler::spawn_background_event_processor`] which runs
+/// in a spawned task that can't hold a reference to the handler.
+async fn process_event_bg(
+    event: a2a_protocol_types::error::A2aResult<StreamResponse>,
+    task_id: &TaskId,
+    last_task: &mut Task,
+    task_store: &dyn TaskStore,
+    push_config_store: &dyn PushConfigStore,
+    push_sender: Option<&dyn PushSender>,
+    limits: &HandlerLimits,
+) {
+    match event {
+        Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
+            let current = last_task.status.state;
+            let next = update.status.state;
+            if !current.can_transition_to(next) {
+                trace_warn!(
+                    task_id = %task_id,
+                    from = %current,
+                    to = %next,
+                    "invalid state transition rejected (background)"
+                );
+                return;
+            }
+            last_task.status = TaskStatus {
+                state: next,
+                message: update.status.message.clone(),
+                timestamp: update.status.timestamp.clone(),
+            };
+            let _ = task_store.save(last_task.clone()).await;
+            deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
+        }
+        Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
+            let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
+            artifacts.push(update.artifact.clone());
+            let _ = task_store.save(last_task.clone()).await;
+            deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
+        }
+        Ok(StreamResponse::Task(task)) => {
+            *last_task = task;
+            let _ = task_store.save(last_task.clone()).await;
+        }
+        Ok(StreamResponse::Message(_) | _) => {}
+        Err(_e) => {
+            last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
+            let _ = task_store.save(last_task.clone()).await;
+        }
+    }
+}
+
+/// Standalone push delivery for background tasks.
+async fn deliver_push_bg(
+    task_id: &TaskId,
+    event: &StreamResponse,
+    push_config_store: &dyn PushConfigStore,
+    push_sender: Option<&dyn PushSender>,
+    limits: &HandlerLimits,
+) {
+    let Some(sender) = push_sender else {
+        return;
+    };
+    let Ok(configs) = push_config_store.list(task_id.as_ref()).await else {
+        return;
+    };
+    for config in &configs {
+        let result = tokio::time::timeout(
+            limits.push_delivery_timeout,
+            sender.send(&config.url, event, config),
+        )
+        .await;
+        match result {
+            Ok(Err(_err)) => {
+                trace_warn!(
+                    task_id = %task_id,
+                    url = %config.url,
+                    error = %_err,
+                    "push notification delivery failed (background)"
+                );
+            }
+            Err(_) => {
+                trace_warn!(
+                    task_id = %task_id,
+                    url = %config.url,
+                    "push notification delivery timed out (background)"
+                );
+            }
+            Ok(Ok(())) => {}
         }
     }
 }

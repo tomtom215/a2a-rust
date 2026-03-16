@@ -74,6 +74,7 @@ pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
+pub use metrics::Metrics;
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
