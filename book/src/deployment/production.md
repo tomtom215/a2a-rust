@@ -17,7 +17,7 @@ Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
 Configure CORS for browser-based clients:
 
 ```rust
-use a2a_sdk::server::CorsConfig;
+use a2a_protocol_sdk::server::CorsConfig;
 
 // The dispatchers include CORS handling.
 // Configure allowed origins for production.
@@ -75,7 +75,7 @@ RequestHandlerBuilder::new(executor)
 Prevent unbounded memory growth:
 
 ```rust
-use a2a_sdk::server::TaskStoreConfig;
+use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
     .with_task_store_config(TaskStoreConfig {
@@ -106,7 +106,7 @@ Enable the `tracing` feature for structured logs:
 
 ```toml
 [dependencies]
-a2a-server = { version = "0.2", features = ["tracing"] }
+a2a-protocol-server = { version = "0.2", features = ["tracing"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
@@ -122,7 +122,7 @@ tracing_subscriber::fmt()
     .init();
 ```
 
-Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_server=debug` for server-specific logs.
+Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` for server-specific logs.
 
 ### Health Checks
 

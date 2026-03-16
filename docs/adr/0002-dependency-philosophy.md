@@ -87,7 +87,7 @@ unknown-registry = "deny"
 
 ### Positive
 
-- Compile time for `a2a-types` is dominated by serde proc-macros only (~8s cold).
+- Compile time for `a2a-protocol-types` is dominated by serde proc-macros only (~8s cold).
 - No system library requirements; cross-compilation to `musl` and `wasm32` is possible.
 - License audit is simple: everything is MIT/Apache-2.0.
 - Downstream crates with strict dep policies can audit a short list.

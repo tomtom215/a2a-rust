@@ -15,7 +15,7 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use hyper::body::Frame;
 
-use a2a_types::jsonrpc::{JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion};
+use a2a_protocol_types::jsonrpc::{JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion};
 
 use crate::streaming::event_queue::{EventQueueReader, InMemoryQueueReader};
 

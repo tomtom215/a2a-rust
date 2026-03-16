@@ -6,13 +6,13 @@
 
 use std::sync::Arc;
 
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::task::{TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 
-use a2a_server::streaming::event_queue::{
+use a2a_protocol_server::streaming::event_queue::{
     new_in_memory_queue, new_in_memory_queue_with_capacity, new_in_memory_queue_with_options,
 };
-use a2a_server::streaming::{
+use a2a_protocol_server::streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, DEFAULT_MAX_EVENT_SIZE,
     DEFAULT_QUEUE_CAPACITY,
 };

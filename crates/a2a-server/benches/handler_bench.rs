@@ -5,12 +5,12 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use a2a_server::store::{InMemoryTaskStore, TaskStore};
-use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::ListTasksParams;
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
+use a2a_protocol_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::ListTasksParams;
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn sample_task(i: usize) -> Task {
     Task {

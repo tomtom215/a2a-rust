@@ -6,9 +6,9 @@
 //! Covers unknown enum variants, null vs missing optional fields,
 //! `JsonRpcError::with_data()`, and `SendMessageConfiguration::default()`.
 
-use a2a_types::jsonrpc::JsonRpcError;
-use a2a_types::params::SendMessageConfiguration;
-use a2a_types::task::{Task, TaskState};
+use a2a_protocol_types::jsonrpc::JsonRpcError;
+use a2a_protocol_types::params::SendMessageConfiguration;
+use a2a_protocol_types::task::{Task, TaskState};
 
 // ── Unknown enum variants ────────────────────────────────────────────────────
 
@@ -23,7 +23,7 @@ fn unknown_task_state_variant_fails_gracefully() {
 
 #[test]
 fn unknown_message_role_variant_fails_gracefully() {
-    use a2a_types::message::MessageRole;
+    use a2a_protocol_types::message::MessageRole;
 
     let result = serde_json::from_str::<MessageRole>("\"ROLE_FUTURE_VALUE\"");
     assert!(
@@ -104,7 +104,7 @@ fn null_and_omitted_tasks_are_equivalent() {
 
 #[test]
 fn message_with_explicit_null_optional_fields() {
-    use a2a_types::message::Message;
+    use a2a_protocol_types::message::Message;
 
     let json = r#"{
         "messageId": "msg-null",

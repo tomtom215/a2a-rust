@@ -9,17 +9,17 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::error::A2aResult;
-use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::{ListTasksParams, MessageSendParams, SendMessageConfiguration};
-use a2a_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams, SendMessageConfiguration};
+use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::EventQueueWriter;
-use a2a_server::{ServerError, TaskStoreConfig};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::EventQueueWriter;
+use a2a_protocol_server::{ServerError, TaskStoreConfig};
 
 // ── Test executors ───────────────────────────────────────────────────────────
 
@@ -74,8 +74,8 @@ impl AgentExecutor for ArtifactExecutor {
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: a2a_types::Artifact {
-                        id: a2a_types::ArtifactId::new("art-1"),
+                    artifact: a2a_protocol_types::Artifact {
+                        id: a2a_protocol_types::ArtifactId::new("art-1"),
                         name: Some("output.txt".into()),
                         description: None,
                         parts: vec![Part::text("artifact content")],
@@ -309,13 +309,16 @@ async fn artifact_produced_in_task() {
 
     let result = handler.on_send_message(make_params("hello"), false).await;
     match result.unwrap() {
-        a2a_server::SendMessageResult::Response(
-            a2a_types::responses::SendMessageResponse::Task(task),
+        a2a_protocol_server::SendMessageResult::Response(
+            a2a_protocol_types::responses::SendMessageResponse::Task(task),
         ) => {
             assert_eq!(task.status.state, TaskState::Completed);
             let artifacts = task.artifacts.expect("should have artifacts");
             assert_eq!(artifacts.len(), 1);
-            assert_eq!(artifacts[0].id, a2a_types::ArtifactId::new("art-1"));
+            assert_eq!(
+                artifacts[0].id,
+                a2a_protocol_types::ArtifactId::new("art-1")
+            );
             assert_eq!(artifacts[0].name.as_deref(), Some("output.txt"));
         }
         _ => panic!("expected Task response"),
@@ -340,8 +343,8 @@ async fn return_immediately_returns_submitted_task() {
 
     let result = handler.on_send_message(params, false).await;
     match result.unwrap() {
-        a2a_server::SendMessageResult::Response(
-            a2a_types::responses::SendMessageResponse::Task(task),
+        a2a_protocol_server::SendMessageResult::Response(
+            a2a_protocol_types::responses::SendMessageResponse::Task(task),
         ) => {
             assert_eq!(
                 task.status.state,
@@ -365,14 +368,14 @@ async fn builder_rejects_zero_timeout() {
 
 #[tokio::test]
 async fn builder_rejects_empty_interfaces_in_card() {
-    let card = a2a_types::AgentCard {
+    let card = a2a_protocol_types::AgentCard {
         name: "test".into(),
         description: "test agent".into(),
         version: "1.0.0".into(),
         supported_interfaces: vec![], // empty
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
-        skills: vec![a2a_types::AgentSkill {
+        skills: vec![a2a_protocol_types::AgentSkill {
             id: "skill-1".into(),
             name: "test-skill".into(),
             description: "A skill".into(),
@@ -382,7 +385,7 @@ async fn builder_rejects_empty_interfaces_in_card() {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: a2a_types::AgentCapabilities::none(),
+        capabilities: a2a_protocol_types::AgentCapabilities::none(),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -608,7 +611,7 @@ async fn metrics_receives_callbacks() {
         requests: AtomicUsize,
     }
 
-    impl a2a_server::metrics::Metrics for CountingMetrics {
+    impl a2a_protocol_server::metrics::Metrics for CountingMetrics {
         fn on_request(&self, _method: &str) {
             self.requests.fetch_add(1, Ordering::Relaxed);
         }

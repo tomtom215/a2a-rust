@@ -13,8 +13,8 @@
 //! # Example
 //!
 //! ```rust
-//! use a2a_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
-//! use a2a_client::error::ClientResult;
+//! use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
+//! use a2a_protocol_client::error::ClientResult;
 //!
 //! struct LoggingInterceptor;
 //!

@@ -5,9 +5,9 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn minimal_card() -> AgentCard {
     AgentCard {

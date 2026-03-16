@@ -73,7 +73,7 @@ if let Some(upper) = body.size_hint().upper() {
 
 ### SSE parser must handle partial lines
 
-SSE events may arrive split across TCP frames. The parser must buffer partial lines and only process complete `\n`-terminated lines. The `EventBuffer` in `a2a-client` handles this correctly, but naive `lines()` iterators will break on partial frames.
+SSE events may arrive split across TCP frames. The parser must buffer partial lines and only process complete `\n`-terminated lines. The `EventBuffer` in `a2a-protocol-client` handles this correctly, but naive `lines()` iterators will break on partial frames.
 
 ### Memory limit on buffered SSE data
 
@@ -124,11 +124,11 @@ Running O(n) eviction on every `save()` call is expensive. The task store amorti
 
 ### `cargo-fuzz` needs its own workspace
 
-The `fuzz/` directory contains its own `Cargo.toml` with `[workspace]` to prevent cargo-fuzz from conflicting with the main workspace. The fuzz crate references `a2a-types` via a relative path dependency.
+The `fuzz/` directory contains its own `Cargo.toml` with `[workspace]` to prevent cargo-fuzz from conflicting with the main workspace. The fuzz crate references `a2a-protocol-types` via a relative path dependency.
 
 ### Feature unification across workspace
 
-Enabling a feature in one crate (e.g., `signing` in `a2a-types`) enables it for all crates in the workspace during `cargo test --workspace`. Use `--no-default-features` or per-crate test commands when testing feature gates.
+Enabling a feature in one crate (e.g., `signing` in `a2a-protocol-types`) enables it for all crates in the workspace during `cargo test --workspace`. Use `--no-default-features` or per-crate test commands when testing feature gates.
 
 ## Testing Pitfalls
 

@@ -19,21 +19,21 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::artifact::Artifact;
-use a2a_types::error::A2aResult;
-use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::MessageSendParams;
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_client::ClientBuilder;
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_server::executor::AgentExecutor;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::EventQueueWriter;
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::EventQueueWriter;
 
 // ── Echo executor ────────────────────────────────────────────────────────────
 
@@ -64,7 +64,7 @@ impl AgentExecutor for EchoExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
+                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.as_str()),
                     _ => None,
                 })
                 .unwrap_or("<no text>");
@@ -144,7 +144,9 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-async fn start_jsonrpc_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
+async fn start_jsonrpc_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) -> SocketAddr {
     let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -177,7 +179,9 @@ async fn start_jsonrpc_server(handler: Arc<a2a_server::handler::RequestHandler>)
     addr
 }
 
-async fn start_rest_server(handler: Arc<a2a_server::handler::RequestHandler>) -> SocketAddr {
+async fn start_rest_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) -> SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -286,7 +290,9 @@ async fn main() {
                 for art in artifacts {
                     println!("  Artifact:   {}", art.id);
                     for part in &art.parts {
-                        if let a2a_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                            &part.content
+                        {
                             println!("  Content:    {text}");
                         }
                     }
@@ -316,7 +322,7 @@ async fn main() {
             Ok(StreamResponse::ArtifactUpdate(ev)) => {
                 println!("  Artifact update: {}", ev.artifact.id);
                 for part in &ev.artifact.parts {
-                    if let a2a_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
                         println!("  Content:    {text}");
                     }
                 }
@@ -358,7 +364,9 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                            &part.content
+                        {
                             println!("  Content:    {text}");
                         }
                     }
@@ -387,7 +395,7 @@ async fn main() {
             }
             Ok(StreamResponse::ArtifactUpdate(ev)) => {
                 for part in &ev.artifact.parts {
-                    if let a2a_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
                         println!("  Content:    {text}");
                     }
                 }
@@ -407,7 +415,7 @@ async fn main() {
     // Use the task ID from Demo 1.
     if let SendMessageResponse::Task(task) = &response {
         let fetched = client
-            .get_task(a2a_types::params::TaskQueryParams {
+            .get_task(a2a_protocol_types::params::TaskQueryParams {
                 tenant: None,
                 id: task.id.to_string(),
                 history_length: None,

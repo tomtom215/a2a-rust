@@ -3,10 +3,10 @@
 
 //! Integration tests for agent card discovery module.
 
-use a2a_client::discovery::{
+use a2a_protocol_client::discovery::{
     fetch_card_from_url, resolve_agent_card, resolve_agent_card_with_path, CachingCardResolver,
 };
-use a2a_client::error::ClientError;
+use a2a_protocol_client::error::ClientError;
 
 // ── URL validation tests ─────────────────────────────────────────────────────
 

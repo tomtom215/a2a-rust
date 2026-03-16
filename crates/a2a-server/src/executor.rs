@@ -11,7 +11,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_types::error::A2aResult;
+use a2a_protocol_types::error::A2aResult;
 
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
@@ -37,10 +37,10 @@ use crate::streaming::EventQueueWriter;
 /// ```rust,no_run
 /// use std::pin::Pin;
 /// use std::future::Future;
-/// use a2a_server::executor::AgentExecutor;
-/// use a2a_server::request_context::RequestContext;
-/// use a2a_server::streaming::EventQueueWriter;
-/// use a2a_types::error::A2aResult;
+/// use a2a_protocol_server::executor::AgentExecutor;
+/// use a2a_protocol_server::request_context::RequestContext;
+/// use a2a_protocol_server::streaming::EventQueueWriter;
+/// use a2a_protocol_types::error::A2aResult;
 ///
 /// struct MyAgent;
 ///
@@ -60,13 +60,13 @@ use crate::streaming::EventQueueWriter;
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Executes agent logic for the given request.
     ///
-    /// Write [`StreamResponse`](a2a_types::events::StreamResponse) events to
+    /// Write [`StreamResponse`](a2a_protocol_types::events::StreamResponse) events to
     /// `queue` as the agent progresses. The method should return `Ok(())`
     /// after writing the final event, or `Err(...)` on failure.
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if execution fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if execution fails.
     fn execute<'a>(
         &'a self,
         ctx: &'a RequestContext,
@@ -80,7 +80,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if cancellation fails
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if cancellation fails
     /// or is not supported.
     fn cancel<'a>(
         &'a self,
@@ -88,7 +88,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
         _queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(a2a_types::error::A2aError::task_not_cancelable(
+            Err(a2a_protocol_types::error::A2aError::task_not_cancelable(
                 &ctx.task_id,
             ))
         })

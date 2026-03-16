@@ -2,7 +2,7 @@
 # Copyright 2026 Tom F.
 
 [package]
-name        = "a2a-client"
+name        = "a2a-protocol-client"
 version     = "0.2.0"
 description = "A2A protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "../../README.md"
@@ -13,7 +13,7 @@ license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
-documentation          = "https://docs.rs/a2a-client"
+documentation          = "https://docs.rs/a2a-protocol-client"
 keywords               = ["a2a", "agent", "client", "http"]
 categories             = ["network-programming", "web-programming"]
 
@@ -21,12 +21,12 @@ categories             = ["network-programming", "web-programming"]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency).
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ## Enable agent card signing verification.
-signing = ["a2a-types/signing"]
+signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]
 
 [dependencies]
-a2a-types      = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }

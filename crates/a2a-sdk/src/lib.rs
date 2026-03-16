@@ -11,7 +11,7 @@
 //! Use the [`prelude`] module to pull in the most common types:
 //!
 //! ```rust
-//! use a2a_sdk::prelude::*;
+//! use a2a_protocol_sdk::prelude::*;
 //! ```
 //!
 //! # Module overview
@@ -31,24 +31,24 @@
 /// All A2A protocol wire types.
 pub mod types {
     #[allow(unused_imports)]
-    pub use a2a_types::*;
+    pub use a2a_protocol_types::*;
 }
 
 /// HTTP client for sending A2A requests.
 pub mod client {
     #[allow(unused_imports)]
-    pub use a2a_client::*;
+    pub use a2a_protocol_client::*;
 }
 
 /// Server framework for implementing A2A agents.
 pub mod server {
     #[allow(unused_imports)]
-    pub use a2a_server::*;
+    pub use a2a_protocol_server::*;
 }
 
 /// Convenience re-exports for common A2A usage patterns.
 ///
-/// Import with `use a2a_sdk::prelude::*` to get the most frequently used
+/// Import with `use a2a_protocol_sdk::prelude::*` to get the most frequently used
 /// types for building agents and clients:
 ///
 /// - **Wire types**: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`,
@@ -62,7 +62,7 @@ pub mod server {
 /// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ServerError`
 pub mod prelude {
     // ── Wire types ───────────────────────────────────────────────────────
-    pub use a2a_types::{
+    pub use a2a_protocol_types::{
         AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Artifact, ArtifactId, ContextId,
         Message, MessageId, MessageRole, MessageSendParams, Part, SendMessageResponse,
         StreamResponse, Task, TaskArtifactUpdateEvent, TaskId, TaskListResponse, TaskQueryParams,
@@ -70,13 +70,15 @@ pub mod prelude {
     };
 
     // ── Errors ───────────────────────────────────────────────────────────
-    pub use a2a_types::{A2aError, A2aResult};
+    pub use a2a_protocol_types::{A2aError, A2aResult};
 
     // ── Client ───────────────────────────────────────────────────────────
-    pub use a2a_client::{A2aClient, ClientBuilder, ClientError, ClientResult, EventStream};
+    pub use a2a_protocol_client::{
+        A2aClient, ClientBuilder, ClientError, ClientResult, EventStream,
+    };
 
     // ── Server ───────────────────────────────────────────────────────────
-    pub use a2a_server::{
+    pub use a2a_protocol_server::{
         AgentExecutor, EventQueueWriter, JsonRpcDispatcher, RequestContext, RequestHandler,
         RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
     };

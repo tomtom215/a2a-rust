@@ -31,7 +31,7 @@ The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/w
 ### Publish Order
 
 ```
-a2a-types → a2a-client + a2a-server → a2a-sdk
+a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protocol-sdk
 ```
 
 This ensures each crate's dependencies are available before it publishes.

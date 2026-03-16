@@ -23,29 +23,29 @@ A2A also has a known future extension (gRPC transport, Phase 8+) that requires `
 The workspace is divided into four crates:
 
 ```
-a2a-types   (serde only)
-a2a-client  (a2a-types + hyper + tokio)
-a2a-server  (a2a-types + hyper + tokio)
-a2a-sdk     (re-exports all three)
+a2a-protocol-types   (serde only)
+a2a-protocol-client  (a2a-protocol-types + hyper + tokio)
+a2a-protocol-server  (a2a-protocol-types + hyper + tokio)
+a2a-protocol-sdk     (re-exports all three)
 ```
 
-`a2a-client` and `a2a-server` are siblings; neither depends on the other. This mirrors the Go SDK's package separation between `a2aclient` and `a2asrv`.
+`a2a-protocol-client` and `a2a-protocol-server` are siblings; neither depends on the other. This mirrors the Go SDK's package separation between `a2aclient` and `a2asrv`.
 
 ## Consequences
 
 ### Positive
 
-- An agent implementor adds `a2a-server` only; they do not compile client code.
-- An orchestrator adds `a2a-client` only; they do not compile server code.
-- Type-only users (downstream SDKs, protocol validators) add `a2a-types` only.
-- Future `a2a-grpc` crate can depend on `a2a-types` without disturbing existing users.
-- `a2a-sdk` gives quick-start users a single dep.
+- An agent implementor adds `a2a-protocol-server` only; they do not compile client code.
+- An orchestrator adds `a2a-protocol-client` only; they do not compile server code.
+- Type-only users (downstream SDKs, protocol validators) add `a2a-protocol-types` only.
+- Future `a2a-grpc` crate can depend on `a2a-protocol-types` without disturbing existing users.
+- `a2a-protocol-sdk` gives quick-start users a single dep.
 
 ### Negative
 
 - Four `Cargo.toml` files to maintain.
 - Cross-crate refactors require coordinated version bumps.
-- The umbrella crate `a2a-sdk` must be re-published when any constituent crate changes.
+- The umbrella crate `a2a-protocol-sdk` must be re-published when any constituent crate changes.
 
 ## Alternatives Considered
 
@@ -58,7 +58,7 @@ a2a-sdk     (re-exports all three)
 
 ### Two Crates (types + sdk)
 
-Merge client and server into one `a2a-sdk`. Rejected because:
+Merge client and server into one `a2a-protocol-sdk`. Rejected because:
 - Forces agent implementors to compile client code they will never use.
 - Forces orchestrators to compile server code they will never use.
 - Asymmetric dep trees (server needs `uuid` for ID gen; client does not in the same way).

@@ -91,7 +91,7 @@ client-to-server messages mid-stream.
 
 **Approach:**
 
-- The `Transport` trait in `a2a-client` already abstracts the transport layer.
+- The `Transport` trait in `a2a-protocol-client` already abstracts the transport layer.
   A `WebSocketTransport` would implement the same trait.
 - Server-side: add a WebSocket upgrade handler alongside the existing HTTP
   handler. The `RequestHandler` methods are transport-agnostic.

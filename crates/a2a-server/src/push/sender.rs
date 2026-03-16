@@ -16,9 +16,9 @@ use std::future::Future;
 use std::net::IpAddr;
 use std::pin::Pin;
 
-use a2a_types::error::{A2aError, A2aResult};
-use a2a_types::events::StreamResponse;
-use a2a_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::push::TaskPushNotificationConfig;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper_util::client::legacy::Client;

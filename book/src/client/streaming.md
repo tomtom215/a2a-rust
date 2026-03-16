@@ -17,7 +17,7 @@ while let Some(event) = stream.next().await {
         }
         Ok(StreamResponse::ArtifactUpdate(ev)) => {
             for part in &ev.artifact.parts {
-                if let a2a_types::message::PartContent::Text { text } = &part.content {
+                if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
                     print!("{text}");
                 }
             }
@@ -79,7 +79,7 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
 If a stream disconnects, re-subscribe to get the latest state:
 
 ```rust
-use a2a_sdk::types::params::TaskIdParams;
+use a2a_protocol_sdk::types::params::TaskIdParams;
 
 let mut stream = client
     .resubscribe(TaskIdParams {

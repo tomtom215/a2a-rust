@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Integration tests for `a2a_types::signing` — JSON canonicalization,
+//! Integration tests for `a2a_protocol_types::signing` — JSON canonicalization,
 //! agent card signing, and signature verification.
 
 #![cfg(feature = "signing")]
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::extensions::AgentCardSignature;
-use a2a_types::signing::{canonicalize, canonicalize_card, sign_agent_card, verify_agent_card};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::extensions::AgentCardSignature;
+use a2a_protocol_types::signing::{
+    canonicalize, canonicalize_card, sign_agent_card, verify_agent_card,
+};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;

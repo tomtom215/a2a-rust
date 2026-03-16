@@ -18,7 +18,7 @@ license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"
 homepage     = "https://github.com/tomtom215/a2a-rust"
-documentation = "https://docs.rs/a2a-sdk"
+documentation = "https://docs.rs/a2a-protocol-sdk"
 keywords     = ["a2a", "agent", "protocol", "sdk", "ai"]
 categories   = ["network-programming", "web-programming", "api-bindings"]
 

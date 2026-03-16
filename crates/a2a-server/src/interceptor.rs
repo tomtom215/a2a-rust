@@ -11,7 +11,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use a2a_types::error::A2aResult;
+use a2a_protocol_types::error::A2aResult;
 
 use crate::call_context::CallContext;
 
@@ -30,7 +30,7 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) to reject the request.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) to reject the request.
     fn before<'a>(
         &'a self,
         ctx: &'a CallContext,
@@ -43,7 +43,7 @@ pub trait ServerInterceptor: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if post-processing fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if post-processing fails.
     fn after<'a>(
         &'a self,
         ctx: &'a CallContext,
@@ -77,7 +77,7 @@ impl ServerInterceptorChain {
     ///
     /// # Errors
     ///
-    /// Returns the first [`A2aError`](a2a_types::error::A2aError) from any interceptor.
+    /// Returns the first [`A2aError`](a2a_protocol_types::error::A2aError) from any interceptor.
     pub async fn run_before(&self, ctx: &CallContext) -> A2aResult<()> {
         for interceptor in &self.interceptors {
             interceptor.before(ctx).await?;
@@ -91,7 +91,7 @@ impl ServerInterceptorChain {
     ///
     /// # Errors
     ///
-    /// Returns the first [`A2aError`](a2a_types::error::A2aError) from any interceptor.
+    /// Returns the first [`A2aError`](a2a_protocol_types::error::A2aError) from any interceptor.
     pub async fn run_after(&self, ctx: &CallContext) -> A2aResult<()> {
         for interceptor in self.interceptors.iter().rev() {
             interceptor.after(ctx).await?;

@@ -120,7 +120,7 @@ Both transports use SSE for streaming. The choice is mostly about ecosystem fit 
 The server can serve both transports simultaneously on different ports:
 
 ```rust
-use a2a_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandlerBuilder};
+use a2a_protocol_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 
 let handler = Arc::new(

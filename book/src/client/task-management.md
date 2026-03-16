@@ -7,7 +7,7 @@ Beyond sending messages, the client provides methods for querying, listing, and 
 Retrieve a task by ID:
 
 ```rust
-use a2a_sdk::types::params::TaskQueryParams;
+use a2a_protocol_sdk::types::params::TaskQueryParams;
 
 let task = client.get_task(TaskQueryParams {
     tenant: None,
@@ -31,7 +31,7 @@ if let Some(history) = &task.history {
 Query tasks with filtering and pagination:
 
 ```rust
-use a2a_sdk::types::params::ListTasksParams;
+use a2a_protocol_sdk::types::params::ListTasksParams;
 
 let response = client.list_tasks(ListTasksParams {
     tenant: None,
@@ -74,7 +74,7 @@ if let Some(token) = &response.next_page_token {
 Request cancellation of a running task:
 
 ```rust
-use a2a_sdk::types::params::CancelTaskParams;
+use a2a_protocol_sdk::types::params::CancelTaskParams;
 
 let task = client.cancel_task(CancelTaskParams {
     tenant: None,

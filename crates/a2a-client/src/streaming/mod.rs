@@ -5,7 +5,7 @@
 //!
 //! [`SseParser`] transforms raw bytes into [`SseFrame`]s.
 //! [`EventStream`] wraps the parser and deserializes each frame as a
-//! [`a2a_types::StreamResponse`].
+//! [`a2a_protocol_types::StreamResponse`].
 
 pub mod event_stream;
 pub mod sse_parser;

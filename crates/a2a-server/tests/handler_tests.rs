@@ -8,25 +8,25 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::artifact::Artifact;
-use a2a_types::error::{A2aError, A2aResult};
-use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::{
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::{
     CancelTaskParams, DeletePushConfigParams, GetPushConfigParams, ListTasksParams,
     MessageSendParams, TaskIdParams, TaskQueryParams,
 };
-use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::handler::SendMessageResult;
-use a2a_server::push::PushSender;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::{EventQueueReader, EventQueueWriter};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::handler::SendMessageResult;
+use a2a_protocol_server::push::PushSender;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
 
 // ── Test executor implementations ────────────────────────────────────────────
 
@@ -322,7 +322,7 @@ async fn get_task_not_found() {
     };
     let err = handler.on_get_task(params).await.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::TaskNotFound(_)),
+        matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)),
         "expected TaskNotFound, got {err:?}"
     );
 }
@@ -427,7 +427,7 @@ async fn cancel_terminal_task_fails() {
     };
     let err = handler.on_cancel_task(cancel_params).await.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::TaskNotCancelable(_)),
+        matches!(err, a2a_protocol_server::ServerError::TaskNotCancelable(_)),
         "expected TaskNotCancelable, got {err:?}"
     );
 }
@@ -444,7 +444,10 @@ async fn cancel_nonexistent_task_fails() {
         metadata: None,
     };
     let err = handler.on_cancel_task(cancel_params).await.unwrap_err();
-    assert!(matches!(err, a2a_server::ServerError::TaskNotFound(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::TaskNotFound(_)
+    ));
 }
 
 // ── Push notification config tests ──────────────────────────────────────────
@@ -512,7 +515,7 @@ async fn push_config_not_supported_without_sender() {
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
     let err = handler.on_set_push_config(config).await.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::PushNotSupported),
+        matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "expected PushNotSupported, got {err:?}"
     );
 }
@@ -530,7 +533,10 @@ async fn get_push_config_not_found() {
         id: "nonexistent".into(),
     };
     let err = handler.on_get_push_config(params).await.unwrap_err();
-    assert!(matches!(err, a2a_server::ServerError::InvalidParams(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::InvalidParams(_)
+    ));
 }
 
 // ── Extended agent card tests ───────────────────────────────────────────────
@@ -557,7 +563,7 @@ async fn get_extended_agent_card_not_configured() {
         .expect("build handler");
 
     let err = handler.on_get_extended_agent_card().await.unwrap_err();
-    assert!(matches!(err, a2a_server::ServerError::Internal(_)));
+    assert!(matches!(err, a2a_protocol_server::ServerError::Internal(_)));
 }
 
 // ── Event queue streaming tests ─────────────────────────────────────────────
@@ -660,7 +666,10 @@ async fn resubscribe_nonexistent_task_fails() {
         id: "nonexistent".into(),
     };
     let err = handler.on_resubscribe(params).await.unwrap_err();
-    assert!(matches!(err, a2a_server::ServerError::TaskNotFound(_)));
+    assert!(matches!(
+        err,
+        a2a_protocol_server::ServerError::TaskNotFound(_)
+    ));
 }
 
 // ── Phase 7 tests ──────────────────────────────────────────────────────────
@@ -674,7 +683,7 @@ async fn return_immediately_returns_pending_task() {
     let params = MessageSendParams {
         tenant: None,
         message: make_message("hello"),
-        configuration: Some(a2a_types::params::SendMessageConfiguration {
+        configuration: Some(a2a_protocol_types::params::SendMessageConfiguration {
             accepted_output_modes: vec!["text/plain".into()],
             task_push_notification_config: None,
             history_length: None,
@@ -708,7 +717,7 @@ async fn task_continuation_same_context_finds_stored_task() {
 
     // First message creates a task with a specific context_id.
     let mut msg1 = make_message("first");
-    msg1.context_id = Some(a2a_types::task::ContextId::new("ctx-continuation"));
+    msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-continuation"));
 
     let result1 = handler
         .on_send_message(
@@ -731,7 +740,7 @@ async fn task_continuation_same_context_finds_stored_task() {
     // Second message with same context_id should create a NEW task but have
     // stored_task set. We verify indirectly by checking two tasks exist.
     let mut msg2 = make_message("second");
-    msg2.context_id = Some(a2a_types::task::ContextId::new("ctx-continuation"));
+    msg2.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-continuation"));
 
     let result2 = handler
         .on_send_message(
@@ -782,7 +791,7 @@ async fn context_task_mismatch_rejected() {
 
     // Create a task with a specific context.
     let mut msg1 = make_message("first");
-    msg1.context_id = Some(a2a_types::task::ContextId::new("ctx-mismatch"));
+    msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-mismatch"));
 
     handler
         .on_send_message(
@@ -799,7 +808,7 @@ async fn context_task_mismatch_rejected() {
 
     // Second message with same context but WRONG task_id should be rejected.
     let mut msg2 = make_message("second");
-    msg2.context_id = Some(a2a_types::task::ContextId::new("ctx-mismatch"));
+    msg2.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-mismatch"));
     msg2.task_id = Some(TaskId::new("wrong-task-id"));
 
     let result = handler
@@ -816,7 +825,7 @@ async fn context_task_mismatch_rejected() {
     let err = result.err().expect("expected error for task_id mismatch");
 
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "expected InvalidParams for task_id mismatch, got {err:?}"
     );
 }
@@ -824,14 +833,14 @@ async fn context_task_mismatch_rejected() {
 /// Interceptor that rejects all requests.
 struct RejectInterceptor;
 
-impl a2a_server::interceptor::ServerInterceptor for RejectInterceptor {
+impl a2a_protocol_server::interceptor::ServerInterceptor for RejectInterceptor {
     fn before<'a>(
         &'a self,
-        _ctx: &'a a2a_server::call_context::CallContext,
+        _ctx: &'a a2a_protocol_server::call_context::CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async {
             Err(A2aError::new(
-                a2a_types::error::ErrorCode::UnsupportedOperation,
+                a2a_protocol_types::error::ErrorCode::UnsupportedOperation,
                 "rejected by interceptor",
             ))
         })
@@ -839,7 +848,7 @@ impl a2a_server::interceptor::ServerInterceptor for RejectInterceptor {
 
     fn after<'a>(
         &'a self,
-        _ctx: &'a a2a_server::call_context::CallContext,
+        _ctx: &'a a2a_protocol_server::call_context::CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async { Ok(()) })
     }
@@ -859,7 +868,7 @@ async fn interceptor_rejection_stops_processing() {
 
     // The error should be a Protocol error from the interceptor.
     assert!(
-        matches!(err, a2a_server::ServerError::Protocol(_)),
+        matches!(err, a2a_protocol_server::ServerError::Protocol(_)),
         "expected Protocol error from interceptor, got {err:?}"
     );
 }
@@ -868,8 +877,8 @@ async fn interceptor_rejection_stops_processing() {
 
 #[test]
 fn server_error_to_a2a_error_mapping() {
-    use a2a_server::ServerError;
-    use a2a_types::error::ErrorCode;
+    use a2a_protocol_server::ServerError;
+    use a2a_protocol_types::error::ErrorCode;
 
     let cases = vec![
         (

@@ -29,9 +29,9 @@ v0.2.0 tag → validate → ci + security → package → publish → github-rel
 ```
 
 Crates are published in dependency order:
-1. `a2a-types` (no internal deps)
-2. `a2a-client` + `a2a-server` (depend on types)
-3. `a2a-sdk` (depends on all three)
+1. `a2a-protocol-types` (no internal deps)
+2. `a2a-protocol-client` + `a2a-protocol-server` (depend on types)
+3. `a2a-protocol-sdk` (depends on all three)
 
 ## Documentation Deployment
 

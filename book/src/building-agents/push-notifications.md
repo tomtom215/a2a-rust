@@ -37,7 +37,7 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 Enable push by providing a `PushSender`:
 
 ```rust
-use a2a_sdk::server::{RequestHandlerBuilder, HttpPushSender};
+use a2a_protocol_sdk::server::{RequestHandlerBuilder, HttpPushSender};
 
 let handler = RequestHandlerBuilder::new(my_executor)
     .with_push_sender(HttpPushSender::new())
@@ -56,7 +56,7 @@ The built-in `HttpPushSender` includes:
 Register a push notification configuration:
 
 ```rust
-use a2a_sdk::types::push::TaskPushNotificationConfig;
+use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 
 let config = TaskPushNotificationConfig::new(
     "task-abc",                          // Task to watch
@@ -98,7 +98,7 @@ client.delete_push_config(DeletePushConfigParams {
 Push configs support authentication for the webhook endpoint:
 
 ```rust
-use a2a_sdk::types::push::{TaskPushNotificationConfig, AuthenticationInfo};
+use a2a_protocol_sdk::types::push::{TaskPushNotificationConfig, AuthenticationInfo};
 
 let mut config = TaskPushNotificationConfig::new("task-abc", "https://webhook.example.com");
 config.authentication = Some(AuthenticationInfo {
@@ -114,7 +114,7 @@ The server includes these credentials in the `Authorization` header when POSTing
 Implement the `PushSender` trait for custom delivery:
 
 ```rust
-use a2a_sdk::server::PushSender;
+use a2a_protocol_sdk::server::PushSender;
 
 struct SqsPushSender {
     client: aws_sdk_sqs::Client,
@@ -139,7 +139,7 @@ impl PushSender for SqsPushSender {
 The default `InMemoryPushConfigStore` stores configs in memory with per-task limits. For production, implement `PushConfigStore`:
 
 ```rust
-use a2a_sdk::server::PushConfigStore;
+use a2a_protocol_sdk::server::PushConfigStore;
 
 struct PostgresPushConfigStore { /* ... */ }
 

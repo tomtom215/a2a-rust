@@ -19,7 +19,7 @@ use http_body_util::{BodyExt, Full};
 /// # Examples
 ///
 /// ```
-/// use a2a_server::dispatch::cors::CorsConfig;
+/// use a2a_protocol_server::dispatch::cors::CorsConfig;
 ///
 /// // Allow all origins (development/testing).
 /// let cors = CorsConfig::permissive();

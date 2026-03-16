@@ -9,23 +9,23 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::error::{A2aError, A2aResult};
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::{ListTasksParams, MessageSendParams};
-use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
+use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::call_context::CallContext;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::handler::SendMessageResult;
-use a2a_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
-use a2a_server::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
-use a2a_server::request_context::RequestContext;
-use a2a_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
-use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::call_context::CallContext;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::handler::SendMessageResult;
+use a2a_protocol_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
+use a2a_protocol_server::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+use a2a_protocol_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -772,7 +772,7 @@ async fn builder_without_push_sender_rejects_push_config() {
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
     let err = handler.on_set_push_config(config).await.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::PushNotSupported),
+        matches!(err, a2a_protocol_server::ServerError::PushNotSupported),
         "should reject push config when no push sender is configured"
     );
 }

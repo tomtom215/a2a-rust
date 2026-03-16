@@ -15,7 +15,7 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 
-use a2a_types::jsonrpc::{
+use a2a_protocol_types::jsonrpc::{
     JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcSuccessResponse,
     JsonRpcVersion,
 };
@@ -89,7 +89,7 @@ impl JsonRpcDispatcher {
         if let Some(ct) = req.headers().get("content-type") {
             let ct_str = ct.to_str().unwrap_or("");
             if !ct_str.starts_with("application/json")
-                && !ct_str.starts_with(a2a_types::A2A_CONTENT_TYPE)
+                && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
             {
                 return parse_error_response(
                     None,
@@ -124,7 +124,7 @@ impl JsonRpcDispatcher {
                         let err_resp = JsonRpcErrorResponse::new(
                             None,
                             JsonRpcError::new(
-                                a2a_types::error::ErrorCode::ParseError.as_i32(),
+                                a2a_protocol_types::error::ErrorCode::ParseError.as_i32(),
                                 format!("Parse error: {e}"),
                             ),
                         );
@@ -166,7 +166,7 @@ impl JsonRpcDispatcher {
         match rpc_req.method.as_str() {
             "SendStreamingMessage" => return self.dispatch_send_message(id, rpc_req, true).await,
             "SubscribeToTask" => {
-                return match parse_params::<a2a_types::params::TaskIdParams>(rpc_req) {
+                return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_resubscribe(p).await {
                         Ok(reader) => build_sse_response(reader, None),
                         Err(e) => error_response(id, &e),
@@ -210,27 +210,32 @@ impl JsonRpcDispatcher {
                 );
                 serde_json::to_vec(&resp).unwrap_or_default()
             }
-            "GetTask" => match parse_params::<a2a_types::params::TaskQueryParams>(rpc_req) {
+            "GetTask" => match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req)
+            {
                 Ok(p) => match self.handler.on_get_task(p).await {
                     Ok(r) => success_response_bytes(id, &r),
                     Err(e) => error_response_bytes(id, &e),
                 },
                 Err(e) => error_response_bytes(id, &e),
             },
-            "ListTasks" => match parse_params::<a2a_types::params::ListTasksParams>(rpc_req) {
-                Ok(p) => match self.handler.on_list_tasks(p).await {
-                    Ok(r) => success_response_bytes(id, &r),
+            "ListTasks" => {
+                match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_list_tasks(p).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
                     Err(e) => error_response_bytes(id, &e),
-                },
-                Err(e) => error_response_bytes(id, &e),
-            },
-            "CancelTask" => match parse_params::<a2a_types::params::CancelTaskParams>(rpc_req) {
-                Ok(p) => match self.handler.on_cancel_task(p).await {
-                    Ok(r) => success_response_bytes(id, &r),
+                }
+            }
+            "CancelTask" => {
+                match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
+                    Ok(p) => match self.handler.on_cancel_task(p).await {
+                        Ok(r) => success_response_bytes(id, &r),
+                        Err(e) => error_response_bytes(id, &e),
+                    },
                     Err(e) => error_response_bytes(id, &e),
-                },
-                Err(e) => error_response_bytes(id, &e),
-            },
+                }
+            }
             "SubscribeToTask" => {
                 let err = ServerError::InvalidParams(
                     "SubscribeToTask not supported in batch requests".into(),
@@ -238,7 +243,8 @@ impl JsonRpcDispatcher {
                 error_response_bytes(id, &err)
             }
             "CreateTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::push::TaskPushNotificationConfig>(rpc_req) {
+                match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
+                {
                     Ok(p) => match self.handler.on_set_push_config(p).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
@@ -247,7 +253,7 @@ impl JsonRpcDispatcher {
                 }
             }
             "GetTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::params::GetPushConfigParams>(rpc_req) {
+                match parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_push_config(p).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
@@ -256,7 +262,7 @@ impl JsonRpcDispatcher {
                 }
             }
             "ListTaskPushNotificationConfigs" => {
-                match parse_params::<a2a_types::params::TaskIdParams>(rpc_req) {
+                match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_list_push_configs(&p.id).await {
                         Ok(r) => success_response_bytes(id, &r),
                         Err(e) => error_response_bytes(id, &e),
@@ -265,7 +271,7 @@ impl JsonRpcDispatcher {
                 }
             }
             "DeleteTaskPushNotificationConfig" => {
-                match parse_params::<a2a_types::params::DeletePushConfigParams>(rpc_req) {
+                match parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_delete_push_config(p).await {
                         Ok(()) => success_response_bytes(id, &serde_json::json!({})),
                         Err(e) => error_response_bytes(id, &e),
@@ -292,7 +298,7 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         streaming: bool,
     ) -> Result<JsonRpcSuccessResponse<serde_json::Value>, Vec<u8>> {
-        let params = match parse_params::<a2a_types::params::MessageSendParams>(rpc_req) {
+        let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
             Ok(p) => p,
             Err(e) => return Err(error_response_bytes(id, &e)),
         };
@@ -320,7 +326,7 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         streaming: bool,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = match parse_params::<a2a_types::params::MessageSendParams>(rpc_req) {
+        let params = match parse_params::<a2a_protocol_types::params::MessageSendParams>(rpc_req) {
             Ok(p) => p,
             Err(e) => return error_response(id, &e),
         };
@@ -405,7 +411,7 @@ fn parse_error_response(
     let resp = JsonRpcErrorResponse::new(
         id.clone(),
         JsonRpcError::new(
-            a2a_types::error::ErrorCode::ParseError.as_i32(),
+            a2a_protocol_types::error::ErrorCode::ParseError.as_i32(),
             format!("Parse error: {message}"),
         ),
     );
@@ -464,8 +470,8 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
 fn json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
-        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
+        .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE)
+        .header(a2a_protocol_types::A2A_VERSION_HEADER, a2a_protocol_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
         .unwrap_or_else(|_| {
             // Fallback: plain 500 response if builder fails (should never happen

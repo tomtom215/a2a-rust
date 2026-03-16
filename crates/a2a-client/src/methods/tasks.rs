@@ -6,7 +6,7 @@
 //! Provides `get_task`, `list_tasks`, `cancel_task`, and `subscribe_to_task`
 //! on [`A2aClient`].
 
-use a2a_types::{
+use a2a_protocol_types::{
     CancelTaskParams, ListTasksParams, Task, TaskIdParams, TaskListResponse, TaskQueryParams,
 };
 
@@ -22,7 +22,7 @@ impl A2aClient {
     ///
     /// # Errors
     ///
-    /// Returns [`ClientError::Protocol`] with [`a2a_types::ErrorCode::TaskNotFound`]
+    /// Returns [`ClientError::Protocol`] with [`a2a_protocol_types::ErrorCode::TaskNotFound`]
     /// if no task with the given ID exists.
     pub async fn get_task(&self, params: TaskQueryParams) -> ClientResult<Task> {
         const METHOD: &str = "GetTask";
@@ -86,7 +86,7 @@ impl A2aClient {
     /// # Errors
     ///
     /// Returns [`ClientError::Protocol`] with
-    /// [`a2a_types::ErrorCode::TaskNotCancelable`] if the task cannot be
+    /// [`a2a_protocol_types::ErrorCode::TaskNotCancelable`] if the task cannot be
     /// canceled in its current state.
     pub async fn cancel_task(&self, id: impl Into<String>) -> ClientResult<Task> {
         const METHOD: &str = "CancelTask";
@@ -126,7 +126,7 @@ impl A2aClient {
     /// # Errors
     ///
     /// Returns [`ClientError::Protocol`] with
-    /// [`a2a_types::ErrorCode::TaskNotFound`] if the task is not in a
+    /// [`a2a_protocol_types::ErrorCode::TaskNotFound`] if the task is not in a
     /// streaming-eligible state.
     pub async fn subscribe_to_task(&self, id: impl Into<String>) -> ClientResult<EventStream> {
         const METHOD: &str = "SubscribeToTask";

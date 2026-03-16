@@ -15,7 +15,7 @@ Add dependencies to `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-sdk = "0.2"
+a2a-protocol-sdk = "0.2"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 ```
@@ -25,8 +25,8 @@ uuid = { version = "1", features = ["v4"] }
 The `AgentExecutor` trait is the entry point for all agent logic. Implement it to define what your agent does when it receives a message:
 
 ```rust
-use a2a_sdk::prelude::*;
-use a2a_sdk::server::RequestContext;
+use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::server::RequestContext;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -50,7 +50,7 @@ impl AgentExecutor for CalcExecutor {
             // Extract the expression from the message
             let expr = ctx.message.parts.iter()
                 .find_map(|p| match &p.content {
-                    a2a_types::message::PartContent::Text { text } => Some(text.clone()),
+                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_default();
@@ -114,7 +114,7 @@ fn evaluate(expr: &str) -> String {
 The agent card tells clients what your agent can do:
 
 ```rust
-use a2a_sdk::types::agent_card::*;
+use a2a_protocol_sdk::types::agent_card::*;
 
 fn make_agent_card(url: &str) -> AgentCard {
     AgentCard {
@@ -161,7 +161,7 @@ fn make_agent_card(url: &str) -> AgentCard {
 Build the request handler and start an HTTP server:
 
 ```rust
-use a2a_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
+use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -207,8 +207,8 @@ async fn main() {
 In a separate terminal (or in the same binary), create a client:
 
 ```rust
-use a2a_sdk::prelude::*;
-use a2a_sdk::client::ClientBuilder;
+use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::client::ClientBuilder;
 
 #[tokio::main]
 async fn main() {
@@ -238,7 +238,7 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
                             println!("Answer: {text}");
                         }
                     }

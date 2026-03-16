@@ -11,15 +11,15 @@ use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use a2a_types::error::A2aResult;
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::dispatch::JsonRpcDispatcher;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::EventQueueWriter;
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::EventQueueWriter;
 
 struct EchoExecutor;
 

@@ -8,12 +8,14 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::error::{A2aError, A2aResult};
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use a2a_server::agent_card::dynamic_handler::{AgentCardProducer, DynamicAgentCardHandler};
+use a2a_protocol_server::agent_card::dynamic_handler::{
+    AgentCardProducer, DynamicAgentCardHandler,
+};
 
 /// Minimal agent card for tests.
 fn test_card() -> AgentCard {

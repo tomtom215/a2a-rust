@@ -5,7 +5,7 @@ The `ClientBuilder` creates an `A2aClient` configured for your target agent. It 
 ## Basic Client
 
 ```rust
-use a2a_sdk::client::ClientBuilder;
+use a2a_protocol_sdk::client::ClientBuilder;
 
 let client = ClientBuilder::new("http://agent.example.com".to_string())
     .build()

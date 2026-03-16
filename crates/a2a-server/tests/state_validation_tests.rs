@@ -7,7 +7,7 @@
 //! variants. Terminal states (Completed, Failed, Canceled, Rejected) are
 //! verified to have no valid outgoing transitions.
 
-use a2a_types::task::TaskState;
+use a2a_protocol_types::task::TaskState;
 
 /// All 9 TaskState variants, used to enumerate the full transition matrix.
 const ALL_STATES: [TaskState; 9] = [

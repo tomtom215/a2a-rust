@@ -10,7 +10,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::agent_card::AgentCard;
+use a2a_protocol_types::agent_card::AgentCard;
 
 use crate::error::ServerResult;
 use crate::executor::AgentExecutor;

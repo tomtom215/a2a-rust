@@ -8,19 +8,19 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::error::{A2aError, A2aResult, ErrorCode};
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part, PartContent};
-use a2a_types::params::{ListTasksParams, MessageSendParams, TaskQueryParams};
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus, TaskVersion};
+use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams, TaskQueryParams};
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus, TaskVersion};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::request_context::RequestContext;
-use a2a_server::store::InMemoryTaskStore;
-use a2a_server::streaming::{EventQueueReader, EventQueueWriter};
-use a2a_server::{ServerError, TaskStoreConfig};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::store::InMemoryTaskStore;
+use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
+use a2a_protocol_server::{ServerError, TaskStoreConfig};
 
 // ── Test executor ─────────────────────────────────────────────────────────────
 
@@ -123,7 +123,7 @@ async fn send_message_basic_flow() {
         .on_send_message(make_send_params("hello"), false)
         .await;
     match result.unwrap() {
-        a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+        a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
             assert_eq!(task.status.state, TaskState::Completed);
         }
         _ => panic!("expected Response(Task)"),
@@ -138,7 +138,7 @@ async fn send_message_executor_failure_marks_task_failed() {
         .await;
     // The executor fails, which should result in a Failed task
     match result {
-        Ok(a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
+        Ok(a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
             assert_eq!(task.status.state, TaskState::Failed);
         }
         Err(_e) => {
@@ -158,7 +158,7 @@ async fn cancel_task_signals_cancellation_token() {
 
     // Get the task ID from the response
     match result {
-        a2a_server::SendMessageResult::Stream(_reader) => {
+        a2a_protocol_server::SendMessageResult::Stream(_reader) => {
             // Give the executor a moment to start
             tokio::time::sleep(Duration::from_millis(50)).await;
 
@@ -189,7 +189,7 @@ async fn cancel_task_signals_cancellation_token() {
                 .find(|t| !t.status.state.is_terminal())
             {
                 let cancel_result = handler
-                    .on_cancel_task(a2a_types::params::CancelTaskParams {
+                    .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
                         tenant: None,
                         id: task.id.to_string(),
                         metadata: None,
@@ -226,7 +226,7 @@ async fn get_task_not_found() {
 async fn cancel_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_cancel_task(a2a_types::params::CancelTaskParams {
+        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
             tenant: None,
             id: "nonexistent".into(),
             metadata: None,
@@ -245,13 +245,15 @@ async fn cancel_completed_task_returns_not_cancelable() {
         .await
         .unwrap();
     let task_id = match result {
-        a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => task.id,
+        a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task)) => {
+            task.id
+        }
         _ => panic!("expected task"),
     };
 
     // Now try to cancel it
     let cancel_result = handler
-        .on_cancel_task(a2a_types::params::CancelTaskParams {
+        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
             tenant: None,
             id: task_id.to_string(),
             metadata: None,
@@ -297,8 +299,10 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
 async fn push_config_not_supported_without_sender() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
 
-    let config =
-        a2a_types::push::TaskPushNotificationConfig::new("task-1", "http://example.com/webhook");
+    let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
+        "task-1",
+        "http://example.com/webhook",
+    );
     let result = handler.on_set_push_config(config).await;
     assert!(matches!(result, Err(ServerError::PushNotSupported)));
 }
@@ -341,11 +345,13 @@ async fn task_store_eviction_on_write() {
             artifacts: None,
             metadata: None,
         };
-        a2a_server::TaskStore::save(&store, task).await.unwrap();
+        a2a_protocol_server::TaskStore::save(&store, task)
+            .await
+            .unwrap();
     }
 
     // The oldest completed task should have been evicted
-    let list = a2a_server::TaskStore::list(
+    let list = a2a_protocol_server::TaskStore::list(
         &store,
         &ListTasksParams {
             tenant: None,
@@ -374,10 +380,10 @@ async fn id_newtypes_from_impls() {
     let ctx_id: ContextId = "ctx-1".into();
     assert_eq!(ctx_id.as_ref(), "ctx-1");
 
-    let msg_id: a2a_types::MessageId = "msg-1".into();
+    let msg_id: a2a_protocol_types::MessageId = "msg-1".into();
     assert_eq!(msg_id.as_ref(), "msg-1");
 
-    let art_id: a2a_types::ArtifactId = "art-1".into();
+    let art_id: a2a_protocol_types::ArtifactId = "art-1".into();
     assert_eq!(art_id.as_ref(), "art-1");
 }
 
@@ -550,7 +556,7 @@ async fn server_error_display_all_variants() {
 
 #[tokio::test]
 async fn event_queue_manager_lifecycle() {
-    let mgr = a2a_server::EventQueueManager::new();
+    let mgr = a2a_protocol_server::EventQueueManager::new();
 
     let task_id = TaskId::new("task-1");
     assert_eq!(mgr.active_count().await, 0);
@@ -572,7 +578,7 @@ async fn event_queue_manager_lifecycle() {
 
 #[tokio::test]
 async fn event_queue_manager_destroy_all() {
-    let mgr = a2a_server::EventQueueManager::new();
+    let mgr = a2a_protocol_server::EventQueueManager::new();
 
     mgr.get_or_create(&TaskId::new("t1")).await;
     mgr.get_or_create(&TaskId::new("t2")).await;
@@ -584,7 +590,7 @@ async fn event_queue_manager_destroy_all() {
 
 #[tokio::test]
 async fn event_queue_write_and_read() {
-    let (writer, reader) = a2a_server::streaming::event_queue::new_in_memory_queue();
+    let (writer, reader) = a2a_protocol_server::streaming::event_queue::new_in_memory_queue();
     let mut reader = reader;
 
     let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -597,19 +603,20 @@ async fn event_queue_write_and_read() {
     writer.write(event).await.unwrap();
     drop(writer); // Close the channel
 
-    let received: Option<a2a_types::error::A2aResult<StreamResponse>> = reader.read().await;
+    let received: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> =
+        reader.read().await;
     assert!(received.is_some());
     let received = received.unwrap().unwrap();
     assert!(matches!(received, StreamResponse::StatusUpdate(_)));
 
     // After writer is dropped, reader should get None
-    let eof: Option<a2a_types::error::A2aResult<StreamResponse>> = reader.read().await;
+    let eof: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> = reader.read().await;
     assert!(eof.is_none());
 }
 
 #[tokio::test]
 async fn utc_now_iso8601_format() {
-    let ts = a2a_types::utc_now_iso8601();
+    let ts = a2a_protocol_types::utc_now_iso8601();
     // Should be in format "YYYY-MM-DDTHH:MM:SSZ"
     assert_eq!(ts.len(), 20, "timestamp should be 20 chars: {ts}");
     assert!(ts.ends_with('Z'));
@@ -636,7 +643,9 @@ async fn task_store_background_eviction() {
         artifacts: None,
         metadata: None,
     };
-    a2a_server::TaskStore::save(&store, task).await.unwrap();
+    a2a_protocol_server::TaskStore::save(&store, task)
+        .await
+        .unwrap();
 
     // Wait for TTL to expire
     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -645,7 +654,7 @@ async fn task_store_background_eviction() {
     store.run_eviction().await;
 
     // Task should be evicted
-    let result = a2a_server::TaskStore::get(&store, &TaskId::new("evict-me"))
+    let result = a2a_protocol_server::TaskStore::get(&store, &TaskId::new("evict-me"))
         .await
         .unwrap();
     assert!(result.is_none(), "expired task should have been evicted");
@@ -662,7 +671,7 @@ async fn executor_timeout() {
         .on_send_message(make_send_params("timeout test"), false)
         .await;
     match result {
-        Ok(a2a_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
+        Ok(a2a_protocol_server::SendMessageResult::Response(SendMessageResponse::Task(task))) => {
             assert_eq!(
                 task.status.state,
                 TaskState::Failed,
@@ -694,7 +703,7 @@ async fn concurrent_save_to_same_task_id() {
                 artifacts: None,
                 metadata: None,
             };
-            a2a_server::TaskStore::save(store.as_ref(), task)
+            a2a_protocol_server::TaskStore::save(store.as_ref(), task)
                 .await
                 .unwrap();
         }));
@@ -705,7 +714,7 @@ async fn concurrent_save_to_same_task_id() {
     }
 
     // Should have exactly one task (last write wins)
-    let result = a2a_server::TaskStore::get(store.as_ref(), &TaskId::new("shared-task"))
+    let result = a2a_protocol_server::TaskStore::get(store.as_ref(), &TaskId::new("shared-task"))
         .await
         .unwrap();
     assert!(result.is_some());
@@ -713,7 +722,7 @@ async fn concurrent_save_to_same_task_id() {
 
 #[tokio::test]
 async fn concurrent_get_or_create_event_queue() {
-    let mgr = Arc::new(a2a_server::EventQueueManager::new());
+    let mgr = Arc::new(a2a_protocol_server::EventQueueManager::new());
     let task_id = TaskId::new("concurrent-queue");
     let mut handles = vec![];
 
@@ -779,7 +788,7 @@ async fn insert_if_absent_atomicity() {
                 artifacts: None,
                 metadata: None,
             };
-            a2a_server::TaskStore::insert_if_absent(store.as_ref(), task)
+            a2a_protocol_server::TaskStore::insert_if_absent(store.as_ref(), task)
                 .await
                 .unwrap()
         }));

@@ -41,7 +41,7 @@ pub trait Transport: Send + Sync + 'static {
 
 `A2aClient` holds a `Box<dyn Transport>` (or concrete generic `A2aClient<T: Transport>`). The client API methods (`send_message`, `get_task`, etc.) are transport-agnostic — they build typed params, call `transport.send_request()`, and deserialize the result.
 
-Two concrete implementations ship in `a2a-client`:
+Two concrete implementations ship in `a2a-protocol-client`:
 - `JsonRpcTransport` — HTTP POST to agent's `url` field.
 - `RestTransport` — HTTP verbs to REST paths.
 

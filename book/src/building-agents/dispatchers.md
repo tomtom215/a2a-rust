@@ -7,7 +7,7 @@ Dispatchers translate HTTP requests into handler calls. a2a-rust provides two bu
 Routes JSON-RPC 2.0 requests to the handler:
 
 ```rust
-use a2a_sdk::server::JsonRpcDispatcher;
+use a2a_protocol_sdk::server::JsonRpcDispatcher;
 use std::sync::Arc;
 
 let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
@@ -35,7 +35,7 @@ An empty batch `[]` returns a parse error.
 Routes RESTful HTTP requests to the handler:
 
 ```rust
-use a2a_sdk::server::RestDispatcher;
+use a2a_protocol_sdk::server::RestDispatcher;
 use std::sync::Arc;
 
 let dispatcher = Arc::new(RestDispatcher::new(handler));
@@ -144,7 +144,7 @@ tokio::spawn(start_server(rest, "127.0.0.1:3001"));
 Both dispatchers support CORS for browser-based clients:
 
 ```rust
-use a2a_sdk::server::CorsConfig;
+use a2a_protocol_sdk::server::CorsConfig;
 
 // The dispatchers handle OPTIONS preflight automatically.
 // CORS headers are included on all responses.

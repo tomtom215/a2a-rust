@@ -198,7 +198,7 @@ The SSE parser includes safety limits:
 If a stream disconnects, re-subscribe to an existing task:
 
 ```rust
-use a2a_sdk::types::params::TaskIdParams;
+use a2a_protocol_sdk::types::params::TaskIdParams;
 
 let mut stream = client
     .resubscribe(TaskIdParams {

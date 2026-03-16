@@ -12,10 +12,10 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 | Crate | Purpose | Key Dependencies |
 |-------|---------|-----------------|
-| `a2a-types` | Wire types only | `serde`, `serde_json` |
-| `a2a-client` | HTTP client | `hyper`, `tokio` |
-| `a2a-server` | Server framework | `hyper`, `tokio` |
-| `a2a-sdk` | Umbrella re-exports | All above |
+| `a2a-protocol-types` | Wire types only | `serde`, `serde_json` |
+| `a2a-protocol-client` | HTTP client | `hyper`, `tokio` |
+| `a2a-protocol-server` | Server framework | `hyper`, `tokio` |
+| `a2a-protocol-sdk` | Umbrella re-exports | All above |
 
 **Rationale:** An agent server implementor doesn't pay for the client dependency tree and vice versa. The types crate is usable without any async runtime — useful for codegen, validation, or non-HTTP transports.
 
@@ -40,7 +40,7 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 **Context:** Rust async code is runtime-agnostic at the language level, but `hyper` 1.x uses tokio internally. Making the SDK runtime-agnostic would require wrapping every I/O call behind an abstraction layer.
 
-**Decision:** Tokio is the mandatory async runtime. It is a required dependency (not optional, not feature-gated) for the I/O crates. `a2a-types` has no async runtime dependency.
+**Decision:** Tokio is the mandatory async runtime. It is a required dependency (not optional, not feature-gated) for the I/O crates. `a2a-protocol-types` has no async runtime dependency.
 
 **Rationale:** >95% of Rust async production code runs on tokio. The complexity cost of runtime abstraction is not justified by the ~5% of users on other runtimes.
 

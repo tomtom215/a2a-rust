@@ -148,7 +148,7 @@ pub enum FileContent {
 | `mimeType` | `mime_type` | `Option<String>` | No |
 | `bytes` | `bytes` | `String` | Yes (base64-encoded) |
 
-Note: base64 encode/decode implemented in-tree in `a2a-types/src/base64.rs` (~40 lines). No `base64` crate dep.
+Note: base64 encode/decode implemented in-tree in `a2a-protocol-types/src/base64.rs` (~40 lines). No `base64` crate dep.
 
 ### `FileWithUri`
 

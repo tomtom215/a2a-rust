@@ -9,11 +9,11 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use a2a_client::{ClientBuilder, CredentialsStore};
-//! use a2a_client::auth::{AuthInterceptor, InMemoryCredentialsStore, SessionId};
+//! use a2a_protocol_client::{ClientBuilder, CredentialsStore};
+//! use a2a_protocol_client::auth::{AuthInterceptor, InMemoryCredentialsStore, SessionId};
 //! use std::sync::Arc;
 //!
-//! # fn example() -> Result<(), a2a_client::error::ClientError> {
+//! # fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let store = Arc::new(InMemoryCredentialsStore::new());
 //! let session = SessionId::new("my-session");
 //! store.set(session.clone(), "bearer", "token".into());
@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use a2a_types::AgentCard;
+use a2a_protocol_types::AgentCard;
 
 use crate::client::A2aClient;
 use crate::config::{ClientConfig, TlsConfig, BINDING_GRPC, BINDING_JSONRPC, BINDING_REST};
@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn builder_from_card_uses_card_url() {
-        use a2a_types::{AgentCapabilities, AgentCard, AgentInterface};
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
             name: "test".into(),

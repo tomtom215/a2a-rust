@@ -2,7 +2,7 @@
 # Copyright 2026 Tom F.
 
 [package]
-name        = "a2a-sdk"
+name        = "a2a-protocol-sdk"
 version     = "0.2.0"
 description = "A2A protocol v1.0 — convenience umbrella re-export crate"
 readme      = "../../README.md"
@@ -13,23 +13,23 @@ license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
-documentation          = "https://docs.rs/a2a-sdk"
+documentation          = "https://docs.rs/a2a-protocol-sdk"
 keywords               = ["a2a", "agent", "sdk"]
 categories             = ["network-programming", "web-programming", "api-bindings"]
 
 [features]
 ## Enable agent card signing.
-signing = ["a2a-types/signing", "a2a-server/signing", "a2a-client/signing"]
+signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-protocol-client/signing"]
 ## Enable structured logging via the `tracing` crate.
-tracing = ["a2a-client/tracing", "a2a-server/tracing"]
+tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 ## Enable HTTPS support via rustls.
-tls-rustls = ["a2a-client/tls-rustls"]
+tls-rustls = ["a2a-protocol-client/tls-rustls"]
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-a2a-types  = { version = "0.2.0", path = "../a2a-types" }
-a2a-client = { version = "0.2.0", path = "../a2a-client" }
-a2a-server = { version = "0.2.0", path = "../a2a-server" }
+a2a-protocol-types  = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-client = { version = "0.2.0", path = "../a2a-client" }
+a2a-protocol-server = { version = "0.2.0", path = "../a2a-server" }

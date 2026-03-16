@@ -7,11 +7,11 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
-use a2a_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::push::{AuthenticationInfo, TaskPushNotificationConfig};
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-use a2a_server::push::{HttpPushSender, PushSender};
+use a2a_protocol_server::push::{HttpPushSender, PushSender};
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

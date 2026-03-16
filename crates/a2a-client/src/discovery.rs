@@ -26,7 +26,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::RwLock;
 
-use a2a_types::AgentCard;
+use a2a_protocol_types::AgentCard;
 
 use crate::error::{ClientError, ClientResult};
 

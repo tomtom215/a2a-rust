@@ -7,7 +7,7 @@ Interceptors let you hook into the request/response pipeline on both the client 
 Server interceptors run before and after the handler processes a request:
 
 ```rust
-use a2a_sdk::server::ServerInterceptor;
+use a2a_protocol_sdk::server::ServerInterceptor;
 
 struct LoggingInterceptor;
 
@@ -50,7 +50,7 @@ impl ServerInterceptor for BearerAuthInterceptor {
 Client interceptors modify outgoing requests and incoming responses:
 
 ```rust
-use a2a_sdk::client::CallInterceptor;
+use a2a_protocol_sdk::client::CallInterceptor;
 
 struct RequestIdInterceptor;
 
@@ -63,7 +63,7 @@ impl CallInterceptor for RequestIdInterceptor {
 ### Adding Client Interceptors
 
 ```rust
-use a2a_sdk::client::ClientBuilder;
+use a2a_protocol_sdk::client::ClientBuilder;
 
 let client = ClientBuilder::new("http://agent.example.com".into())
     .with_interceptor(RequestIdInterceptor)

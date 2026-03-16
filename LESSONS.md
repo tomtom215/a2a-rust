@@ -55,7 +55,7 @@ absent. Always check for `None` before comparing against the body size limit.
 
 SSE events may arrive split across TCP frames. The parser must buffer partial
 lines and only process complete `\n`-terminated lines. The `EventBuffer` in
-`a2a-client` handles this, but naive `lines()` iterators will break.
+`a2a-protocol-client` handles this, but naive `lines()` iterators will break.
 
 ### Memory limit on buffered SSE data
 
@@ -104,11 +104,11 @@ call `run_eviction()` explicitly or account for the amortization interval.
 
 The `fuzz/` directory contains its own `Cargo.toml` with `[workspace]` to
 prevent cargo-fuzz from conflicting with the main workspace. The fuzz crate
-references `a2a-types` via a relative path dependency.
+references `a2a-protocol-types` via a relative path dependency.
 
 ### Feature unification across workspace
 
-Enabling a feature in one crate (e.g. `signing` in `a2a-types`) enables it
+Enabling a feature in one crate (e.g. `signing` in `a2a-protocol-types`) enables it
 for all crates in the workspace during `cargo test --workspace`. Use
 `--no-default-features` or per-crate test commands when testing feature gates.
 

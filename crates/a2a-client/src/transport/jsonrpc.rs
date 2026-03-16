@@ -31,7 +31,7 @@ use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use a2a_types::{JsonRpcRequest, JsonRpcResponse};
+use a2a_protocol_types::{JsonRpcRequest, JsonRpcResponse};
 
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
@@ -67,7 +67,7 @@ struct Inner {
 impl JsonRpcTransport {
     /// Creates a new transport targeting the given endpoint URL.
     ///
-    /// The endpoint is typically the `url` field from an [`a2a_types::AgentCard`].
+    /// The endpoint is typically the `url` field from an [`a2a_protocol_types::AgentCard`].
     ///
     /// # Errors
     ///
@@ -145,8 +145,11 @@ impl JsonRpcTransport {
         let mut builder = hyper::Request::builder()
             .method(hyper::Method::POST)
             .uri(&self.inner.endpoint)
-            .header(header::CONTENT_TYPE, a2a_types::A2A_CONTENT_TYPE)
-            .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
+            .header(header::CONTENT_TYPE, a2a_protocol_types::A2A_CONTENT_TYPE)
+            .header(
+                a2a_protocol_types::A2A_VERSION_HEADER,
+                a2a_protocol_types::A2A_VERSION,
+            )
             .header(header::ACCEPT, accept);
 
         for (k, v) in extra_headers {
@@ -203,9 +206,9 @@ impl JsonRpcTransport {
             }
             JsonRpcResponse::Error(err) => {
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
-                let a2a = a2a_types::A2aError::new(
-                    a2a_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_types::ErrorCode::InternalError),
+                let a2a = a2a_protocol_types::A2aError::new(
+                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
                     err.error.message,
                 );
                 Err(ClientError::Protocol(a2a))

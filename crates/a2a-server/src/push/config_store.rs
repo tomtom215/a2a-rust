@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_types::error::A2aResult;
-use a2a_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::push::TaskPushNotificationConfig;
 use tokio::sync::RwLock;
 
 /// Trait for storing push notification configurations.
@@ -19,7 +19,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the operation fails.
     fn set<'a>(
         &'a self,
         config: TaskPushNotificationConfig,
@@ -29,7 +29,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the operation fails.
     fn get<'a>(
         &'a self,
         task_id: &'a str,
@@ -40,7 +40,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the operation fails.
     fn list<'a>(
         &'a self,
         task_id: &'a str,
@@ -50,7 +50,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the operation fails.
     fn delete<'a>(
         &'a self,
         task_id: &'a str,
@@ -100,7 +100,7 @@ impl PushConfigStore for InMemoryPushConfigStore {
                 let count = store.keys().filter(|(tid, _)| tid == task_id).count();
                 if count >= MAX_PUSH_CONFIGS_PER_TASK {
                     drop(store);
-                    return Err(a2a_types::error::A2aError::invalid_params(format!(
+                    return Err(a2a_protocol_types::error::A2aError::invalid_params(format!(
                         "push config limit exceeded: task {task_id} already has {count} configs (max {MAX_PUSH_CONFIGS_PER_TASK})"
                     )));
                 }

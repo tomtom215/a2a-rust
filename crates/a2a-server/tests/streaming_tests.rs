@@ -3,13 +3,13 @@
 
 //! Tests for the event queue and SSE streaming infrastructure.
 
-use a2a_types::artifact::Artifact;
-use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_types::message::Part;
-use a2a_types::task::{TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::Part;
+use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
 
-use a2a_server::streaming::sse::{write_event, write_keep_alive};
-use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
+use a2a_protocol_server::streaming::sse::{write_event, write_keep_alive};
+use a2a_protocol_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
 
 // ── Event queue tests ───────────────────────────────────────────────────────
 
