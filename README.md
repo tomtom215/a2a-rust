@@ -174,7 +174,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 40 E2E tests covering both transports, streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, large payloads, and metrics:
+A comprehensive 4-agent team that exercises every SDK feature — 50 E2E tests covering both transports, streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, large payloads, metrics, and SDK regression testing:
 
 ```bash
 cargo run -p agent-team

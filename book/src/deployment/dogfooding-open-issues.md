@@ -90,6 +90,48 @@ These use sensible defaults but are not yet user-configurable via builder method
 | `DEFAULT_WRITE_TIMEOUT` | 5 seconds | SSE `SseBodyWriter` |
 | `DEFAULT_KEEP_ALIVE` | 30 seconds | SSE keep-alive interval |
 
+## Design Issues (Pass 4)
+
+### No Server Startup Helper
+
+**Severity:** Medium | **Effort:** Small
+
+Users must manually wire `TcpListener` → `hyper::service_fn` → `hyper_util::server::conn::auto::Builder` for every agent. This is ~25 lines of identical boilerplate per server.
+
+**Recommendation:** Provide `a2a_protocol_server::serve(listener, handler)` or a builder pattern like `ServerBuilder::new(handler).bind("127.0.0.1:0").serve()`.
+
+### No Request ID / Trace Context Propagation
+
+**Severity:** Medium | **Effort:** Medium
+
+`CallContext` has `http_headers` but no structured trace ID field. Interceptors can extract `X-Request-ID` manually, but there's no first-class support for distributed tracing across agent-to-agent calls.
+
+**Recommendation:** Add `request_id: Option<String>` to `CallContext` and propagate it through `RequestContext` so executors can include it in outbound A2A calls.
+
+### Client Has No Retry Logic
+
+**Severity:** Medium | **Effort:** Small
+
+`a2a-protocol-client` is single-attempt. Any transient network error causes immediate failure.
+
+**Recommendation:** Add `ClientBuilder::with_retry_policy(RetryPolicy)` with configurable max attempts and backoff strategy.
+
+### No Connection Pooling in Coordinator Pattern
+
+**Severity:** Low | **Effort:** Small
+
+Each `delegate_*` call in orchestrator agents creates a new `ClientBuilder::new(url).build()`. The hyper client inside does pool connections, but the client/builder overhead is repeated unnecessarily.
+
+**Recommendation:** Document the pattern of creating clients once and reusing them. Consider adding `A2aClient::clone()` support.
+
+### Executor Event Emission Boilerplate
+
+**Severity:** Low | **Effort:** Small
+
+Every executor must repeat `task_id.clone()`, `ContextId::new(ctx.context_id.clone())`, `metadata: None` for every event. A 4-line status update becomes a 9-line struct literal.
+
+**Recommendation:** Upstream the `EventEmitter` pattern from the agent-team example into `a2a_protocol_server::executor_helpers`.
+
 ## Testing Gaps for Future Passes
 
 | Area | What to test | Why it matters |

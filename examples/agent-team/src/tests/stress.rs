@@ -200,20 +200,20 @@ pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
                 match &event {
                     Ok(StreamResponse::StatusUpdate(ev)) => {
                         let tid = &ev.task_id.0;
-                        match client
+                        if client
                             .get_task(TaskQueryParams {
                                 tenant: None,
                                 id: tid.clone(),
                                 history_length: None,
                             })
                             .await
+                            .is_ok()
                         {
-                            Ok(_) => get_task_successes += 1,
-                            Err(_) => {}
+                            get_task_successes += 1;
                         }
                     }
-                    Ok(_) => {}
                     Err(_) => break,
+                    _ => {}
                 }
             }
             if get_task_successes > 0 {
@@ -305,7 +305,9 @@ pub async fn test_list_tasks_status_filter(ctx: &TestContext) -> TestResult {
         .await
     {
         Ok(resp) => {
-            let all_completed = resp.tasks.iter()
+            let all_completed = resp
+                .tasks
+                .iter()
                 .all(|t| t.status.state == TaskState::Completed);
             if all_completed && !resp.tasks.is_empty() {
                 TestResult::pass(

@@ -20,7 +20,9 @@ use crate::helpers::make_send_params;
 
 pub async fn test_sync_jsonrpc_send(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
+    let client = ClientBuilder::new(&ctx.analyzer_url)
+        .build()
+        .expect("build client");
     let code = "fn hello() {\n    println!(\"world\");\n}\n";
     match client.send_message(make_send_params(code)).await {
         Ok(SendMessageResponse::Task(task)) => {
@@ -47,7 +49,9 @@ pub async fn test_sync_jsonrpc_send(ctx: &TestContext) -> TestResult {
 
 pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
+    let client = ClientBuilder::new(&ctx.analyzer_url)
+        .build()
+        .expect("build client");
     let code = "use std::io;\nfn main() -> io::Result<()> {\n    Ok(())\n}\n";
     match client.stream_message(make_send_params(code)).await {
         Ok(mut stream) => {
@@ -193,7 +197,9 @@ pub async fn test_build_failure_path(ctx: &TestContext) -> TestResult {
 
 pub async fn test_get_task(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
+    let client = ClientBuilder::new(&ctx.analyzer_url)
+        .build()
+        .expect("build client");
     let resp = client
         .send_message(make_send_params("let x = 1;"))
         .await
@@ -209,13 +215,11 @@ pub async fn test_get_task(ctx: &TestContext) -> TestResult {
             })
             .await
         {
-            Ok(_fetched) => {
-                TestResult::pass(
-                    "get-task",
-                    start.elapsed().as_millis(),
-                    &format!("id={task_id}"),
-                )
-            }
+            Ok(_fetched) => TestResult::pass(
+                "get-task",
+                start.elapsed().as_millis(),
+                &format!("id={task_id}"),
+            ),
             Err(e) => TestResult::fail(
                 "get-task",
                 start.elapsed().as_millis(),
@@ -233,7 +237,9 @@ pub async fn test_get_task(ctx: &TestContext) -> TestResult {
 
 pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    let client = ClientBuilder::new(&ctx.analyzer_url).build().expect("build client");
+    let client = ClientBuilder::new(&ctx.analyzer_url)
+        .build()
+        .expect("build client");
     match client
         .list_tasks(ListTasksParams {
             tenant: None,
@@ -247,13 +253,11 @@ pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
         })
         .await
     {
-        Ok(resp) => {
-            TestResult::pass(
-                "list-tasks",
-                start.elapsed().as_millis(),
-                &format!("count={}", resp.tasks.len()),
-            )
-        }
+        Ok(resp) => TestResult::pass(
+            "list-tasks",
+            start.elapsed().as_millis(),
+            &format!("count={}", resp.tasks.len()),
+        ),
         Err(e) => TestResult::fail(
             "list-tasks",
             start.elapsed().as_millis(),
@@ -302,7 +306,9 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
         }
     };
     let config_id = stored.id.clone().unwrap_or_default();
-    let _ = client.get_push_config(task_id.clone(), config_id.clone()).await;
+    let _ = client
+        .get_push_config(task_id.clone(), config_id.clone())
+        .await;
     let list_params = || ListPushConfigsParams {
         tenant: None,
         task_id: task_id.clone(),

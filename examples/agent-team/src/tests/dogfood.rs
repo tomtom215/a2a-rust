@@ -222,7 +222,9 @@ pub async fn test_resubscribe_jsonrpc(ctx: &TestContext) -> TestResult {
                         let mut events = 0;
                         while let Some(_ev) = sub_stream.next().await {
                             events += 1;
-                            if events > 10 { break; }
+                            if events > 10 {
+                                break;
+                            }
                         }
                         while stream.next().await.is_some() {}
                         TestResult::pass(
@@ -313,10 +315,9 @@ pub async fn test_concurrent_streams(ctx: &TestContext) -> TestResult {
     }
 
     let mut successes = 0;
-    for (_i, h) in handles.into_iter().enumerate() {
-        match h.await {
-            Ok(Ok(_events)) => successes += 1,
-            _ => {}
+    for h in handles {
+        if let Ok(Ok(_events)) = h.await {
+            successes += 1;
         }
     }
     if successes == 5 {
@@ -455,7 +456,9 @@ pub async fn test_history_length(ctx: &TestContext) -> TestResult {
         .await
     {
         Ok(resp) => {
-            let has_history = resp.tasks.first()
+            let has_history = resp
+                .tasks
+                .first()
                 .map(|t| t.history.as_ref().map_or(0, |h| h.len()))
                 .unwrap_or(0);
             TestResult::pass(

@@ -39,13 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (17 files, all under 500 lines) with 40 E2E
-  tests across 4 categories (basic, lifecycle, edge cases, stress).
+  best-practice modular structure (18 files, all under 500 lines) with 50 E2E
+  tests across 5 categories (basic, lifecycle, edge cases, stress, dogfood).
 - Client `send_message()` and `stream_message()` now merge client-level config
   (`return_immediately`, `history_length`, `accepted_output_modes`) into
   request parameters automatically. Per-request values take precedence.
 - Dogfooding documentation restructured into modular book sub-pages: bugs
   found, test coverage matrix, and open issues roadmap.
+- `EventEmitter` helper in agent-team example — caches `task_id` +
+  `context_id` from `RequestContext`, reducing 9-line event struct literals
+  to 1-line calls. Proof-of-concept for upstream `executor_helpers` addition.
+- 10 new dogfood regression tests (tests 41-50) covering agent card URL
+  correctness, push config listing via JSON-RPC, event classification,
+  resubscribe, multiple artifacts, concurrent streams, context filtering,
+  file parts, and history length.
 
 ### Changed
 
@@ -80,6 +87,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the server. Previously, the flag was stored in `ClientConfig` but never
   injected into `MessageSendParams.configuration`, so the server always
   waited for task completion.
+- JSON-RPC `ListTaskPushNotificationConfigs` now correctly parses
+  `ListPushConfigsParams` instead of `TaskIdParams`. The field name mismatch
+  (`id` vs `task_id`) caused silent deserialization failure — push config
+  listing via JSON-RPC was completely broken while REST worked.
+- Agent-team example agent cards now contain correct URLs via pre-bind
+  listener pattern. Previously, cards were built with `"http://placeholder"`
+  before the server bound to a port.
+- Agent-team webhook event classifier now checks correct field names
+  (`statusUpdate`/`artifactUpdate` instead of `status`/`artifact`).
 
 ## [0.2.0] - 2026-03-15
 

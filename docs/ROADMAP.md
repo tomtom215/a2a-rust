@@ -121,50 +121,18 @@ through to the store layer. The REST dispatcher strips a `/tenant/{id}` prefix.
 
 ## 7.6 Persistent Task Store
 
-**Status:** Planned
+**Status:** ✅ Implemented
 
-**Motivation:** `InMemoryTaskStore` loses all data on process restart. Production
-deployments need durable storage.
+Reference implementations of `SqliteTaskStore` and `SqlitePushConfigStore` are
+provided behind the `sqlite` feature flag. They use `sqlx` for async SQLite
+access with schema auto-creation, cursor-based pagination, upsert support,
+and integration tests using in-memory SQLite.
 
-**Approach:**
-
-The `TaskStore` trait is already designed for this:
-
-```rust
-pub trait TaskStore: Send + Sync + 'static {
-    fn save(&self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send>>;
-    fn get(&self, id: &TaskId) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send>>;
-    fn list(&self, params: &ListTasksParams) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send>>;
-    fn delete(&self, id: &TaskId) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send>>;
-}
+```toml
+[dependencies]
+a2a-protocol-server = { version = "0.2", features = ["sqlite"] }
 ```
 
-**Implementation guide for custom stores:**
-
-1. Implement `TaskStore` for your storage backend (SQLite, PostgreSQL, Redis, etc.).
-2. Use `RequestHandlerBuilder::with_task_store(Arc::new(MyStore::new()))` to
-   register it.
-3. The `list()` method must handle filtering by `context_id` and `status`,
-   cursor-based pagination via `page_token`, and `page_size` limits.
-4. Terminal state eviction (TTL, capacity) should be handled by the store
-   implementation or an external cleanup job.
-5. Ensure your implementation is `Send + Sync` — it will be called from
-   multiple tokio tasks concurrently.
-
-**Example skeleton:**
-
-```rust
-struct PostgresTaskStore { pool: sqlx::PgPool }
-
-impl TaskStore for PostgresTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            sqlx::query("INSERT INTO tasks ...")
-                .execute(&self.pool).await
-                .map_err(|e| /* convert to A2aError */)?;
-            Ok(())
-        })
-    }
-    // ... other methods
-}
-```
+The `TaskStore` and `PushConfigStore` traits remain the extension points for
+custom backends (PostgreSQL, Redis, etc.). See the SQLite implementations as
+reference.

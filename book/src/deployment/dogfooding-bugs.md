@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Three dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **10 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 10 have been fixed.
+Four dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **13 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 13 have been fixed.
 
 ## Pass 1: Initial Dogfood (3 bugs)
 
@@ -91,6 +91,36 @@ All handler error paths used `?` to propagate without invoking `on_error`.
 **Why tests missed it:** The server-side `return_immediately` logic was correct. The bug was in client-to-server config propagation — a seam that only E2E testing exercises.
 
 **Fix:** Added `apply_client_config()` that merges client-level `return_immediately`, `history_length`, and `accepted_output_modes` into params before sending. Per-request values take precedence over client defaults.
+
+## Pass 4: SDK Regression Testing (3 bugs)
+
+### Bug 11: JSON-RPC `ListTaskPushNotificationConfigs` Param Type Mismatch
+
+**Severity:** Critical | **Component:** `JsonRpcDispatcher`
+
+The JSON-RPC dispatcher parsed `ListTaskPushNotificationConfigs` params as `TaskIdParams` (field `id`), but the client sends `ListPushConfigsParams` (field `task_id`). This caused silent deserialization failure — push config listing via JSON-RPC was completely broken. REST worked because it uses path-based routing.
+
+**Why tests missed it:** Previous push config tests used REST transport or tested create/get/delete but not list. The JSON-RPC list path was never exercised end-to-end.
+
+**Fix:** Changed `parse_params::<TaskIdParams>` to `parse_params::<ListPushConfigsParams>` and `p.id` to `p.task_id` in `jsonrpc.rs`.
+
+### Bug 12: Agent Card URLs Set to "http://placeholder"
+
+**Severity:** Critical | **Component:** Agent-team example
+
+Agent cards were constructed with `code_analyzer_card("http://placeholder")` *before* the server bound to a port. The actual address was only known after `TcpListener::bind()`. This meant `/.well-known/agent.json` served a card with a URL that didn't match the actual server address.
+
+**Why tests missed it:** Tests used URLs from `TestContext` (the real bound addresses), not from the agent card. Only `resolve_agent_card()` tests would have caught this, and those didn't exist.
+
+**Fix:** Introduced `bind_listener()` that pre-binds TCP listeners to get addresses *before* handler construction. Cards are now built with correct URLs.
+
+### Bug 13: Push Notification Event Classification Broken
+
+**Severity:** Medium | **Component:** Agent-team webhook receiver
+
+The webhook receiver classified events by checking `value.get("status")` and `value.get("artifact")`, but `StreamResponse` serializes as `{"statusUpdate": {...}}` / `{"artifactUpdate": {...}}` (camelCase variant names). All push events were classified as "Unknown".
+
+**Fix:** Check `statusUpdate`/`artifactUpdate`/`task` instead.
 
 ## Configuration Hardening (Pass 2)
 
