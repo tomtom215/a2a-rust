@@ -20,6 +20,8 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskId;
 use tokio::sync::{mpsc, RwLock};
 
+use crate::metrics::Metrics;
+
 /// Default channel capacity for event queues.
 pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
 
@@ -178,7 +180,7 @@ pub fn new_in_memory_queue_with_options(
 /// Each task can have at most one active writer. When a client subscribes
 /// (or resubscribes), the manager returns the existing writer and a fresh
 /// reader, or creates both if none exists.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EventQueueManager {
     writers: Arc<RwLock<HashMap<TaskId, Arc<InMemoryQueueWriter>>>>,
     /// Channel capacity for new event queues.
@@ -187,6 +189,20 @@ pub struct EventQueueManager {
     max_event_size: usize,
     /// Maximum number of concurrent event queues. `None` means no limit.
     max_concurrent_queues: Option<usize>,
+    /// Optional metrics hook for reporting queue depth changes.
+    metrics: Option<Arc<dyn Metrics>>,
+}
+
+impl std::fmt::Debug for EventQueueManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EventQueueManager")
+            .field("writers", &"<RwLock<HashMap<...>>>")
+            .field("capacity", &self.capacity)
+            .field("max_event_size", &self.max_event_size)
+            .field("max_concurrent_queues", &self.max_concurrent_queues)
+            .field("metrics", &self.metrics.is_some())
+            .finish()
+    }
 }
 
 impl Default for EventQueueManager {
@@ -196,6 +212,7 @@ impl Default for EventQueueManager {
             capacity: DEFAULT_QUEUE_CAPACITY,
             max_event_size: DEFAULT_MAX_EVENT_SIZE,
             max_concurrent_queues: None,
+            metrics: None,
         }
     }
 }
@@ -223,6 +240,7 @@ impl EventQueueManager {
             capacity,
             max_event_size: DEFAULT_MAX_EVENT_SIZE,
             max_concurrent_queues: None,
+            metrics: None,
         }
     }
 
@@ -233,6 +251,13 @@ impl EventQueueManager {
     #[must_use]
     pub const fn with_max_event_size(mut self, max_event_size: usize) -> Self {
         self.max_event_size = max_event_size;
+        self
+    }
+
+    /// Sets the metrics hook for reporting queue depth changes.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn Metrics>) -> Self {
+        self.metrics = Some(metrics);
         self
     }
 
@@ -279,7 +304,11 @@ impl EventQueueManager {
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader))
         };
+        let queue_count = map.len();
         drop(map);
+        if let Some(ref metrics) = self.metrics {
+            metrics.on_queue_depth_change(queue_count);
+        }
         result
     }
 
@@ -287,7 +316,11 @@ impl EventQueueManager {
     pub async fn destroy(&self, task_id: &TaskId) {
         let mut map = self.writers.write().await;
         map.remove(task_id);
+        let queue_count = map.len();
         drop(map);
+        if let Some(ref metrics) = self.metrics {
+            metrics.on_queue_depth_change(queue_count);
+        }
     }
 
     /// Returns the number of active event queues.

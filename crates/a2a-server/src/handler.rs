@@ -80,7 +80,7 @@ pub struct RequestHandler {
     pub(crate) interceptors: ServerInterceptorChain,
     pub(crate) agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
-    pub(crate) metrics: Box<dyn Metrics>,
+    pub(crate) metrics: Arc<dyn Metrics>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
 }

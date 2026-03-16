@@ -48,7 +48,7 @@ pub struct RequestHandlerBuilder {
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
     max_concurrent_streams: Option<usize>,
-    metrics: Box<dyn Metrics>,
+    metrics: Arc<dyn Metrics>,
 }
 
 impl RequestHandlerBuilder {
@@ -69,7 +69,7 @@ impl RequestHandlerBuilder {
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
-            metrics: Box::new(NoopMetrics),
+            metrics: Arc::new(NoopMetrics),
         }
     }
 
@@ -162,7 +162,7 @@ impl RequestHandlerBuilder {
     /// Defaults to [`NoopMetrics`] which discards all events.
     #[must_use]
     pub fn with_metrics(mut self, metrics: impl Metrics + 'static) -> Self {
-        self.metrics = Box::new(metrics);
+        self.metrics = Arc::new(metrics);
         self
     }
 
@@ -211,6 +211,7 @@ impl RequestHandlerBuilder {
                 if let Some(max_streams) = self.max_concurrent_streams {
                     mgr = mgr.with_max_concurrent_queues(max_streams);
                 }
+                mgr = mgr.with_metrics(Arc::clone(&self.metrics));
                 mgr
             },
             interceptors: self.interceptors,
