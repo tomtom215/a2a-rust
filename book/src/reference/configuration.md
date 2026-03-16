@@ -18,6 +18,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_event_queue_capacity` | `usize` | 64 | Bounded channel size per stream |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | Unbounded | Limit concurrent SSE connections |
+| `with_event_queue_write_timeout` | `Duration` | 5s | Write timeout for event queue sends |
 | `with_metrics` | `impl Metrics` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
 
@@ -35,8 +36,17 @@ Complete reference of all configuration options across a2a-rust crates.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `ttl` | `Option<Duration>` | None | Task expiry time |
-| `max_capacity` | `Option<usize>` | None | Maximum number of stored tasks |
+| `max_capacity` | `Option<usize>` | 10,000 | Maximum stored tasks; oldest terminal tasks evicted on overflow |
+| `task_ttl` | `Option<Duration>` | 1 hour | TTL for completed/failed tasks |
+| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps |
+| `max_page_size` | `u32` | 1,000 | Maximum tasks per page in list queries |
+
+### InMemoryPushConfigStore
+
+| Constructor | Default | Description |
+|-------------|---------|-------------|
+| `::new()` | 100 | Default max push configs per task |
+| `::with_max_configs_per_task(N)` | — | Custom per-task push config limit |
 
 ### DispatchConfig
 
@@ -48,6 +58,8 @@ Shared configuration for both JSON-RPC and REST dispatchers. Pass to
 | `max_request_body_size` | `usize` | 4 MiB | Larger bodies return 413 |
 | `body_read_timeout` | `Duration` | 30s | Slow loris protection |
 | `max_query_string_length` | `usize` | 4,096 | REST only; longer queries return 414 |
+| `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
+| `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 
 ### PushRetryPolicy
 
@@ -59,11 +71,17 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `max_attempts` | `usize` | 3 | Maximum delivery attempts |
 | `backoff` | `Vec<Duration>` | `[1s, 2s]` | Backoff durations between retries |
 
+### RateLimitConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `requests_per_window` | `u64` | 100 | Max requests per caller per window |
+| `window_secs` | `u64` | 60 | Window duration in seconds |
+
 ### Internal Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Eviction interval | Every 64 writes | Amortized cleanup |
 | Event queue type | `broadcast` | Fan-out to multiple subscribers; slow readers skip missed events |
 
 ## Client Configuration

@@ -74,17 +74,17 @@ Fixed by decoupling the O(n) eviction sweep from the `save()` write lock. The in
 
 Fixed by adding `SqliteTaskStore` and `SqlitePushConfigStore` behind the `sqlite` feature flag. Uses `sqlx` for async SQLite access with schema auto-creation, cursor-based pagination, upsert support, and 12 integration tests using in-memory SQLite.
 
-## Remaining Hardcoded Constants
+## ~~Remaining Hardcoded Constants~~ ✅ RESOLVED
 
-These use sensible defaults but are not yet user-configurable via builder methods:
+All 5 constants are now configurable via builder methods:
 
-| Constant | Value | Location |
+| Constant | Default | How to configure |
 |---|---|---|
-| `EVICTION_INTERVAL` | 64 writes between eviction sweeps | `InMemoryTaskStore` |
-| `MAX_PAGE_SIZE` | 1000 tasks per page | `InMemoryTaskStore` |
-| `MAX_PUSH_CONFIGS_PER_TASK` | 100 configs per task | `InMemoryPushConfigStore` |
-| `DEFAULT_WRITE_TIMEOUT` | 5 seconds | SSE `SseBodyWriter` |
-| `DEFAULT_KEEP_ALIVE` | 30 seconds | SSE keep-alive interval |
+| `EVICTION_INTERVAL` | 64 writes | `TaskStoreConfig { eviction_interval: N, .. }` → `builder.with_task_store_config(config)` |
+| `MAX_PAGE_SIZE` | 1000 tasks | `TaskStoreConfig { max_page_size: N, .. }` → `builder.with_task_store_config(config)` |
+| `MAX_PUSH_CONFIGS_PER_TASK` | 100 configs | `InMemoryPushConfigStore::with_max_configs_per_task(N)` → `builder.with_push_config_store(store)` |
+| `DEFAULT_WRITE_TIMEOUT` | 5 seconds | `builder.with_event_queue_write_timeout(Duration::from_secs(N))` |
+| `DEFAULT_KEEP_ALIVE` | 30 seconds | `DispatchConfig::default().with_sse_keep_alive_interval(Duration::from_secs(N))` |
 
 ## Design Issues (Pass 4)
 
