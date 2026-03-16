@@ -196,6 +196,17 @@ impl WebhookReceiver {
     pub async fn drain(&self) -> Vec<(String, serde_json::Value)> {
         std::mem::take(&mut *self.received.lock().await)
     }
+
+    /// Returns the total count of received events (non-destructive).
+    #[allow(dead_code)]
+    pub async fn count(&self) -> usize {
+        self.received.lock().await.len()
+    }
+
+    /// Returns a snapshot of all received events (non-destructive).
+    pub async fn snapshot(&self) -> Vec<(String, serde_json::Value)> {
+        self.received.lock().await.clone()
+    }
 }
 
 /// Start a minimal HTTP server that accepts POST /webhook and records payloads.
@@ -227,10 +238,14 @@ pub async fn start_webhook_server(receiver: WebhookReceiver) -> SocketAddr {
                             if let Ok(value) =
                                 serde_json::from_slice::<serde_json::Value>(&body_bytes)
                             {
-                                let kind = if value.get("status").is_some() {
+                                // StreamResponse serializes as {"statusUpdate":{...}}
+                                // or {"artifactUpdate":{...}} (camelCase enum variant).
+                                let kind = if value.get("statusUpdate").is_some() {
                                     "StatusUpdate"
-                                } else if value.get("artifact").is_some() {
+                                } else if value.get("artifactUpdate").is_some() {
                                     "ArtifactUpdate"
+                                } else if value.get("task").is_some() {
+                                    "Task"
                                 } else {
                                     "Unknown"
                                 };
@@ -261,48 +276,22 @@ pub async fn start_webhook_server(receiver: WebhookReceiver) -> SocketAddr {
 
 // ── Server startup helpers ───────────────────────────────────────────────────
 
-pub async fn start_jsonrpc_server(
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) -> SocketAddr {
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
+/// Pre-bind a TCP listener to an ephemeral port. Returns the listener and
+/// the address it bound to, so you can construct agent cards with the correct
+/// URL *before* building the handler.
+pub async fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .expect("bind JSON-RPC listener");
+        .expect("bind listener");
     let addr = listener.local_addr().expect("local addr");
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => break,
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
-    });
-
-    addr
+    (listener, addr)
 }
 
-pub async fn start_rest_server(
+pub fn serve_jsonrpc(
+    listener: tokio::net::TcpListener,
     handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) -> SocketAddr {
-    let dispatcher = Arc::new(RestDispatcher::new(handler));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind REST listener");
-    let addr = listener.local_addr().expect("local addr");
+) {
+    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     tokio::spawn(async move {
         loop {
@@ -325,6 +314,33 @@ pub async fn start_rest_server(
             });
         }
     });
+}
 
-    addr
+pub fn serve_rest(
+    listener: tokio::net::TcpListener,
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) {
+    let dispatcher = Arc::new(RestDispatcher::new(handler));
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let dispatcher = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&dispatcher);
+                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
 }

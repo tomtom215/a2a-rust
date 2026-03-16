@@ -276,7 +276,8 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
                 println!("  Created push config: {cid}");
                 // Get.
                 let _ = client.get_push_config(tid.clone(), cid.clone()).await;
-                // List.
+                // List — this previously returned 0 due to a param type mismatch
+                // in the JSON-RPC dispatcher (TaskIdParams vs ListPushConfigsParams).
                 let list = client
                     .list_push_configs(ListPushConfigsParams {
                         tenant: None,
@@ -287,12 +288,21 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
                     .await;
                 let count = list.as_ref().map(|l| l.configs.len()).unwrap_or(0);
                 println!("  Listed {count} configs");
+                if count == 0 {
+                    // Delete for cleanup.
+                    let _ = client.delete_push_config(tid.clone(), cid).await;
+                    return TestResult::fail(
+                        "push-crud-jsonrpc",
+                        start.elapsed().as_millis(),
+                        "list returned 0 after create",
+                    );
+                }
                 // Delete.
                 let _ = client.delete_push_config(tid.clone(), cid).await;
                 TestResult::pass(
                     "push-crud-jsonrpc",
                     start.elapsed().as_millis(),
-                    "full CRUD via JSON-RPC",
+                    &format!("full CRUD via JSON-RPC ({count} listed)"),
                 )
             }
             Err(e) => TestResult::fail(

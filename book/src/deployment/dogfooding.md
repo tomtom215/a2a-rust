@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **40 E2E tests** runs in ~1.7 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **50 E2E tests** runs in ~2 seconds.
 
 ## Why Dogfood?
 
@@ -23,7 +23,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (40 tests, ~1700ms total)                      │
+│              (50 tests, ~2000ms total)                      │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -56,7 +56,7 @@ Each agent exercises different SDK capabilities:
 
 ## SDK Features Exercised
 
-The agent team exercises **27 distinct SDK features** in a single run:
+The agent team exercises **32 distinct SDK features** in a single run:
 
 - `AgentExecutor` trait (4 implementations)
 - `RequestHandlerBuilder` (all options: timeout, queue capacity, max streams, metrics, interceptors)
@@ -79,6 +79,11 @@ The agent team exercises **27 distinct SDK features** in a single run:
 - Request metadata passthrough
 - Context ID continuation across messages
 - Concurrent GetTask during active streams
+- `SubscribeToTask` resubscribe (both REST and JSON-RPC)
+- `boxed_future` and `EventEmitter` helpers
+- Concurrent streams on same agent
+- `history_length` configuration
+- `Part::file_bytes` (binary file content)
 
 ## Modular Example Structure
 
@@ -92,14 +97,15 @@ examples/agent-team/src/
 │   ├── health_monitor.rs        # HealthMonitor executor
 │   └── coordinator.rs           # Coordinator executor (A2A client calls)
 ├── cards.rs                     # Agent card builders
-├── helpers.rs                   # Shared helpers (make_send_params)
+├── helpers.rs                   # Shared helpers (make_send_params, EventEmitter)
 ├── infrastructure.rs            # Metrics, interceptors, webhook, server setup
 └── tests/
     ├── mod.rs                   # TestResult, TestContext
     ├── basic.rs                 # Tests 1-10: core send/stream paths
     ├── lifecycle.rs             # Tests 11-20: orchestration, cancel, agent cards
     ├── edge_cases.rs            # Tests 21-30: errors, concurrency, metrics
-    └── stress.rs                # Tests 31-40: stress, durability, event ordering
+    ├── stress.rs                # Tests 31-40: stress, durability, event ordering
+    └── dogfood.rs               # Tests 41-50: SDK gaps, regressions, edge cases
 ```
 
 ## Running the Agent Team
@@ -124,9 +130,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...40 tests...
+...50 tests...
 
-║ Total: 40 | Passed: 40 | Failed: 0 | Time: ~1700ms
+║ Total: 50 | Passed: 50 | Failed: 0 | Time: ~2000ms
 ```
 
 ## Lessons for Your Own Agents
@@ -140,8 +146,8 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Sub-pages
 
-- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 10 bugs discovered across three dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 40-test E2E coverage map
+- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 13 bugs discovered across four dogfooding passes
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 50-test E2E coverage map
 - **[Open Issues & Roadmap](./dogfooding-open-issues.md)** — Known gaps, design debt, and future work
 
 ## See Also

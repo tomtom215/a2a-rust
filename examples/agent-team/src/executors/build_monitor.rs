@@ -6,15 +6,16 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Part, PartContent};
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::TaskState;
 
 use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::executor_helpers::boxed_future;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
+
+use crate::helpers::EventEmitter;
 
 /// Simulates running cargo commands and streaming build output. Supports
 /// cancellation to test the cancel flow.
@@ -26,16 +27,10 @@ impl AgentExecutor for BuildMonitorExecutor {
         ctx: &'a RequestContext,
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Working
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
+        boxed_future(async move {
+            let emit = EventEmitter::new(ctx, queue);
+
+            emit.status(TaskState::Working).await?;
 
             // Parse command from message.
             let command = ctx
@@ -87,44 +82,26 @@ impl AgentExecutor for BuildMonitorExecutor {
 
             for (i, (phase_msg, is_last)) in phases.iter().enumerate() {
                 // Check cancellation before each phase.
-                if ctx.cancellation_token.is_cancelled() {
-                    queue
-                        .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
-                            artifact: Artifact::new(
-                                "build-output",
-                                vec![Part::text("Build CANCELED by user")],
-                            ),
-                            append: Some(i > 0),
-                            last_chunk: Some(true),
-                            metadata: None,
-                        }))
-                        .await?;
-
-                    queue
-                        .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                            task_id: ctx.task_id.clone(),
-                            context_id: ContextId::new(ctx.context_id.clone()),
-                            status: TaskStatus::new(TaskState::Canceled),
-                            metadata: None,
-                        }))
-                        .await?;
+                if emit.is_cancelled() {
+                    emit.artifact(
+                        "build-output",
+                        vec![Part::text("Build CANCELED by user")],
+                        Some(i > 0),
+                        Some(true),
+                    )
+                    .await?;
+                    emit.status(TaskState::Canceled).await?;
                     return Ok(());
                 }
 
-                queue
-                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        artifact: Artifact::new("build-output", vec![Part::text(*phase_msg)]),
-                        append: Some(i > 0),
-                        last_chunk: Some(*is_last),
-                        metadata: None,
-                    }))
-                    .await?;
+                emit.artifact(
+                    "build-output",
+                    vec![Part::text(*phase_msg)],
+                    Some(i > 0),
+                    Some(*is_last),
+                )
+                .await?;
 
-                // Simulate work.
                 tokio::time::sleep(std::time::Duration::from_millis(15)).await;
             }
 
@@ -134,15 +111,7 @@ impl AgentExecutor for BuildMonitorExecutor {
             } else {
                 TaskState::Completed
             };
-
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(final_state),
-                    metadata: None,
-                }))
-                .await?;
+            emit.status(final_state).await?;
 
             Ok(())
         })
@@ -153,15 +122,9 @@ impl AgentExecutor for BuildMonitorExecutor {
         ctx: &'a RequestContext,
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // BuildMonitor supports cancellation — write a Canceled status.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Canceled),
-                    metadata: None,
-                }))
+        boxed_future(async move {
+            EventEmitter::new(ctx, queue)
+                .status(TaskState::Canceled)
                 .await?;
             Ok(())
         })

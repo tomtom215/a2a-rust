@@ -8,8 +8,10 @@
 //! - [`lifecycle`]: Tests 11-20 — orchestration, metadata, cancel, agent cards
 //! - [`edge_cases`]: Tests 21-30 — error paths, concurrency, metrics, CRUD
 //! - [`stress`]: Tests 31-40 — stress, durability, observability, event ordering
+//! - [`dogfood`]: Tests 41-50 — SDK gaps and regressions found during review
 
 pub mod basic;
+pub mod dogfood;
 pub mod edge_cases;
 pub mod lifecycle;
 pub mod stress;

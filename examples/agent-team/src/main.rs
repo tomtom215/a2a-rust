@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (40 tests) that exercises every major SDK feature.
+//! suite (50 tests) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -36,10 +36,10 @@ use executors::{
     BuildMonitorExecutor, CodeAnalyzerExecutor, CoordinatorExecutor, HealthMonitorExecutor,
 };
 use infrastructure::{
-    start_jsonrpc_server, start_rest_server, start_webhook_server, AuditInterceptor,
+    bind_listener, serve_jsonrpc, serve_rest, start_webhook_server, AuditInterceptor,
     MetricsForward, TeamMetrics, WebhookReceiver,
 };
-use tests::{basic, edge_cases, lifecycle, stress, TestContext, TestResult};
+use tests::{basic, dogfood, edge_cases, lifecycle, stress, TestContext, TestResult};
 
 #[tokio::main]
 async fn main() {
@@ -69,10 +69,23 @@ async fn main() {
     let health_metrics = Arc::new(TeamMetrics::new("HealthMonitor"));
     let coordinator_metrics = Arc::new(TeamMetrics::new("Coordinator"));
 
+    // ── Pre-bind all listeners to get addresses for agent cards ─────────
+    // This solves the "placeholder URL" problem: we know the real addresses
+    // before building handlers, so agent cards contain correct URLs.
+    let (analyzer_listener, analyzer_addr) = bind_listener().await;
+    let (build_listener, build_addr) = bind_listener().await;
+    let (health_listener, health_addr) = bind_listener().await;
+    let (coord_listener, coord_addr) = bind_listener().await;
+
+    let analyzer_url = format!("http://{analyzer_addr}");
+    let build_url = format!("http://{build_addr}");
+    let health_url = format!("http://{health_addr}");
+    let coordinator_url = format!("http://{coord_addr}");
+
     // ── Agent 1: Code Analyzer (JSON-RPC) ────────────────────────────────
     let analyzer_handler = Arc::new(
         RequestHandlerBuilder::new(CodeAnalyzerExecutor)
-            .with_agent_card(code_analyzer_card("http://placeholder"))
+            .with_agent_card(code_analyzer_card(&analyzer_url))
             .with_interceptor(AuditInterceptor::new("CodeAnalyzer"))
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))
@@ -80,14 +93,13 @@ async fn main() {
             .build()
             .expect("build code analyzer handler"),
     );
-    let analyzer_addr = start_jsonrpc_server(Arc::clone(&analyzer_handler)).await;
-    let analyzer_url = format!("http://{analyzer_addr}");
+    serve_jsonrpc(analyzer_listener, Arc::clone(&analyzer_handler));
     println!("Agent [CodeAnalyzer]  JSON-RPC on {analyzer_url}");
 
     // ── Agent 2: Build Monitor (REST) ────────────────────────────────────
     let build_handler = Arc::new(
         RequestHandlerBuilder::new(BuildMonitorExecutor)
-            .with_agent_card(build_monitor_card("http://placeholder"))
+            .with_agent_card(build_monitor_card(&build_url))
             .with_interceptor(AuditInterceptor::new("BuildMonitor").with_token("build-secret"))
             .with_push_sender(HttpPushSender::new().allow_private_urls())
             .with_metrics(MetricsForward(Arc::clone(&build_metrics)))
@@ -95,22 +107,20 @@ async fn main() {
             .build()
             .expect("build build monitor handler"),
     );
-    let build_addr = start_rest_server(Arc::clone(&build_handler)).await;
-    let build_url = format!("http://{build_addr}");
+    serve_rest(build_listener, Arc::clone(&build_handler));
     println!("Agent [BuildMonitor]  REST     on {build_url}");
 
     // ── Agent 3: Health Monitor (JSON-RPC) ───────────────────────────────
     let health_handler = Arc::new(
         RequestHandlerBuilder::new(HealthMonitorExecutor)
-            .with_agent_card(health_monitor_card("http://placeholder"))
+            .with_agent_card(health_monitor_card(&health_url))
             .with_interceptor(AuditInterceptor::new("HealthMonitor"))
             .with_push_sender(HttpPushSender::new().allow_private_urls())
             .with_metrics(MetricsForward(Arc::clone(&health_metrics)))
             .build()
             .expect("build health monitor handler"),
     );
-    let health_addr = start_jsonrpc_server(Arc::clone(&health_handler)).await;
-    let health_url = format!("http://{health_addr}");
+    serve_jsonrpc(health_listener, Arc::clone(&health_handler));
     println!("Agent [HealthMonitor] JSON-RPC on {health_url}");
 
     // ── Agent 4: Coordinator (REST) ──────────────────────────────────────
@@ -121,15 +131,14 @@ async fn main() {
 
     let coord_handler = Arc::new(
         RequestHandlerBuilder::new(CoordinatorExecutor::new(agent_urls))
-            .with_agent_card(coordinator_card("http://placeholder"))
+            .with_agent_card(coordinator_card(&coordinator_url))
             .with_interceptor(AuditInterceptor::new("Coordinator"))
             .with_metrics(MetricsForward(Arc::clone(&coordinator_metrics)))
             .with_max_concurrent_streams(50)
             .build()
             .expect("build coordinator handler"),
     );
-    let coord_addr = start_rest_server(Arc::clone(&coord_handler)).await;
-    let coordinator_url = format!("http://{coord_addr}");
+    serve_rest(coord_listener, Arc::clone(&coord_handler));
     println!("Agent [Coordinator]   REST     on {coordinator_url}");
     println!();
 
@@ -198,6 +207,18 @@ async fn main() {
     results.push(stress::test_queue_depth_metrics(&ctx).await);
     results.push(stress::test_event_ordering(&ctx).await);
 
+    // Tests 41-50: Dogfood findings — SDK gaps, regressions, edge cases
+    results.push(dogfood::test_agent_card_url_correct(&ctx).await);
+    results.push(dogfood::test_agent_card_skills(&ctx).await);
+    results.push(dogfood::test_push_list_jsonrpc_regression(&ctx).await);
+    results.push(dogfood::test_push_event_classification(&ctx).await);
+    results.push(dogfood::test_resubscribe_jsonrpc(&ctx).await);
+    results.push(dogfood::test_multiple_artifacts(&ctx).await);
+    results.push(dogfood::test_concurrent_streams(&ctx).await);
+    results.push(dogfood::test_list_tasks_context_filter(&ctx).await);
+    results.push(dogfood::test_file_parts(&ctx).await);
+    results.push(dogfood::test_history_length(&ctx).await);
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -235,8 +256,8 @@ async fn main() {
     println!("║ {}", health_metrics.summary());
     println!("║ {}", coordinator_metrics.summary());
 
-    // Push notification summary.
-    let push_events = webhook_receiver.drain().await;
+    // Push notification summary (snapshot — test 36 drains separately).
+    let push_events = webhook_receiver.snapshot().await;
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║ Push notifications received: {}", push_events.len());
     for (kind, _value) in &push_events {
@@ -256,16 +277,16 @@ async fn main() {
         "Streaming SendStreamingMessage",
         "EventStream consumer",
         "GetTask",
-        "ListTasks with pagination",
+        "ListTasks (pagination + context + status filters)",
         "CancelTask executor override",
-        "Push notification config CRUD",
-        "HttpPushSender delivery",
-        "Webhook receiver",
+        "Push notification config CRUD (JSON-RPC + REST)",
+        "HttpPushSender delivery + event classification",
+        "Webhook receiver (with snapshot/drain)",
         "ServerInterceptor (audit + auth)",
         "Custom Metrics observer",
-        "AgentCard discovery",
-        "Multi-part messages (text + data)",
-        "Artifact append mode",
+        "AgentCard discovery (correct URLs via pre-bind)",
+        "Multi-part messages (text + data + file)",
+        "Artifact append mode + multiple artifacts",
         "TaskState lifecycle (all states)",
         "CancellationToken checking",
         "Executor timeout config",
@@ -274,6 +295,11 @@ async fn main() {
         "Agent-to-agent A2A communication",
         "Multi-level orchestration",
         "Request metadata",
+        "SubscribeToTask resubscribe (REST + JSON-RPC)",
+        "boxed_future + EventEmitter helpers",
+        "Concurrent streams on same agent",
+        "return_immediately mode",
+        "history_length config",
     ];
     for f in &features {
         println!("║   [x] {f}");
@@ -286,7 +312,7 @@ async fn main() {
     }
 
     println!(
-        "\nAll {passed} tests passed in {}ms. SDK fully verified.",
+        "\nAll {passed} tests passed in {}ms. SDK dogfood complete.",
         total_duration.as_millis()
     );
 }
