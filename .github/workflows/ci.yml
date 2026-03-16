@@ -129,7 +129,7 @@ jobs:
   # dependencies resolve against sibling crates rather than crates.io.
   # Individual `cargo package -p <crate>` (and `cargo publish --dry-run`)
   # resolve deps from the registry, failing when versions aren't published yet.
-  # Excludes echo-agent since it is `publish = false` and omits dep versions.
+  # Excludes examples since they are `publish = false` and omit dep versions.
   package:
     name: Package validation
     runs-on: ubuntu-latest
@@ -138,4 +138,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent
+        run: cargo package --workspace --exclude echo-agent --exclude agent-team
