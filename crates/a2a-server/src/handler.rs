@@ -560,9 +560,7 @@ impl RequestHandler {
                 .event_queue_manager
                 .subscribe(&task_id)
                 .await
-                .ok_or_else(|| {
-                    ServerError::Internal("no active event queue for task".into())
-                })?;
+                .ok_or_else(|| ServerError::Internal("no active event queue for task".into()))?;
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(reader)

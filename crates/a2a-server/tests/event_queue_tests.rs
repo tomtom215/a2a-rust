@@ -537,8 +537,12 @@ async fn subscribe_creates_additional_reader() {
 
     let e1 = reader1.read().await.unwrap().unwrap();
     let e2 = reader2.read().await.unwrap().unwrap();
-    assert!(matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working));
-    assert!(matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working));
+    assert!(
+        matches!(e1, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+    );
+    assert!(
+        matches!(e2, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Working)
+    );
 }
 
 #[tokio::test]
@@ -557,7 +561,10 @@ async fn subscribe_after_destroy_returns_none() {
     mgr.destroy(&task_id).await;
 
     let result = mgr.subscribe(&task_id).await;
-    assert!(result.is_none(), "subscribe after destroy should return None");
+    assert!(
+        result.is_none(),
+        "subscribe after destroy should return None"
+    );
 }
 
 #[tokio::test]

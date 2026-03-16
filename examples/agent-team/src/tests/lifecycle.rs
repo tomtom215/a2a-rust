@@ -388,7 +388,7 @@ pub async fn test_agent_card_jsonrpc(ctx: &TestContext) -> TestResult {
             TestResult::pass(
                 "agent-card-jsonrpc",
                 start.elapsed().as_millis(),
-                &format!("{}", card.name),
+                &card.name.to_string(),
             )
         }
         Err(e) => TestResult::fail(

@@ -33,6 +33,16 @@
 - **Status:** [x] Done
 - **Fix:** Added `Arc<dyn Metrics>` to `EventQueueManager`, wired in builder.
 
+### Bug 8: `JsonRpcDispatcher` does not serve agent cards
+- **Severity:** Medium
+- **Status:** [x] Done
+- **Fix:** Added `StaticAgentCardHandler` to `JsonRpcDispatcher`, serving `GET /.well-known/agent.json` before falling through to JSON-RPC body parsing.
+
+### Bug 9: `SubscribeToTask` fails when another SSE stream is active
+- **Severity:** High
+- **Status:** [x] Done
+- **Fix:** Redesigned `EventQueueManager` from `mpsc` to `tokio::sync::broadcast` channels. Added `subscribe()` method that creates additional readers for the same task's event stream.
+
 ---
 
 ## Gaps
@@ -80,7 +90,8 @@
 - [x] Update `book/src/reference/configuration.md` with new configurable options
 - [x] Update `book/src/deployment/dogfooding.md` with Bug 4-7 findings
 - [x] Fix client lib.rs doc example
-- [ ] Update `README.md` agent-team section (if needed)
+- [x] Update `README.md` agent-team section (if needed)
+- [x] Update book pages for broadcast channels, agent card on JSON-RPC, modular agent-team
 
 ---
 
@@ -94,3 +105,4 @@
 | `7c0a174` | feat: add CancelTask E2E test (Test 14) to agent-team |
 | `7d462af` | refactor: extract hardcoded constants into configurable structs |
 | `fed52df` | fix: correct client doc example, align max event size defaults |
+| `69bfd1c` | fix: agent card on JSON-RPC, broadcast event queues, modular agent-team |

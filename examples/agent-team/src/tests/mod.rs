@@ -68,6 +68,7 @@ pub struct TestContext {
     /// Socket address of the webhook receiver (for push notification tests).
     pub webhook_addr: SocketAddr,
     /// Webhook receiver instance (for draining received payloads).
+    #[allow(dead_code)]
     pub webhook_receiver: WebhookReceiver,
 
     /// Metrics for CodeAnalyzer.

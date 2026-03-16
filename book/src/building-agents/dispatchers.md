@@ -16,6 +16,7 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 ### Features
 
 - **Single endpoint** — All methods go to `/` as POST requests
+- **Agent card** — `GET /.well-known/agent.json` returns the agent card (same as REST)
 - **Batch support** — Handles JSON-RPC batch arrays
 - **ID preservation** — Echoes back the exact request ID (string, number, float, null)
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams

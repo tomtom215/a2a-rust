@@ -337,42 +337,65 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
             println!("  Created task for push test: {}", task.id);
             task.id.to_string()
         }
-        _ => return TestResult::fail("push-config-crud", start.elapsed().as_millis(),
-            "could not create initial task"),
+        _ => {
+            return TestResult::fail(
+                "push-config-crud",
+                start.elapsed().as_millis(),
+                "could not create initial task",
+            )
+        }
     };
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
     let push_config = TaskPushNotificationConfig {
-        tenant: None, id: None, task_id: task_id.clone(), url: webhook_url.clone(),
+        tenant: None,
+        id: None,
+        task_id: task_id.clone(),
+        url: webhook_url.clone(),
         token: Some("test-token-123".into()),
         authentication: Some(AuthenticationInfo {
-            scheme: "bearer".into(), credentials: "my-secret-bearer".into(),
+            scheme: "bearer".into(),
+            credentials: "my-secret-bearer".into(),
         }),
     };
 
     // 1. Create push config.
     let stored = match client.set_push_config(push_config).await {
         Ok(s) => s,
-        Err(e) => return TestResult::fail("push-config-crud", start.elapsed().as_millis(),
-            &format!("create error: {e:?}")),
+        Err(e) => {
+            return TestResult::fail(
+                "push-config-crud",
+                start.elapsed().as_millis(),
+                &format!("create error: {e:?}"),
+            )
+        }
     };
     let config_id = stored.id.clone().unwrap_or_default();
     println!("  CREATE: id={config_id}");
 
     // 2. Get push config by id.
-    match client.get_push_config(task_id.clone(), config_id.clone()).await {
+    match client
+        .get_push_config(task_id.clone(), config_id.clone())
+        .await
+    {
         Ok(got) => println!("  GET:    id={:?} url={}", got.id, got.url),
         Err(e) => println!("  GET:    error: {e}"),
     }
     // 3. List push configs.
     let list_params = || ListPushConfigsParams {
-        tenant: None, task_id: task_id.clone(), page_size: Some(10), page_token: None,
+        tenant: None,
+        task_id: task_id.clone(),
+        page_size: Some(10),
+        page_token: None,
     };
     match client.list_push_configs(list_params()).await {
         Ok(list) => println!("  LIST:   {} configs", list.configs.len()),
         Err(e) => println!("  LIST:   error: {e}"),
     }
     // 4. Delete push config.
-    match client.delete_push_config(task_id.clone(), config_id.clone()).await {
+    match client
+        .delete_push_config(task_id.clone(), config_id.clone())
+        .await
+    {
         Ok(()) => println!("  DELETE: ok"),
         Err(e) => println!("  DELETE: error: {e}"),
     }
@@ -381,15 +404,24 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
         Ok(list) => {
             println!("  VERIFY: {} configs after delete", list.configs.len());
             if list.configs.is_empty() {
-                TestResult::pass("push-config-crud", start.elapsed().as_millis(),
-                    "create+get+list+delete+verify")
+                TestResult::pass(
+                    "push-config-crud",
+                    start.elapsed().as_millis(),
+                    "create+get+list+delete+verify",
+                )
             } else {
-                TestResult::fail("push-config-crud", start.elapsed().as_millis(),
-                    "delete did not remove config")
+                TestResult::fail(
+                    "push-config-crud",
+                    start.elapsed().as_millis(),
+                    "delete did not remove config",
+                )
             }
         }
-        Err(e) => TestResult::fail("push-config-crud", start.elapsed().as_millis(),
-            &format!("verify list error: {e}")),
+        Err(e) => TestResult::fail(
+            "push-config-crud",
+            start.elapsed().as_millis(),
+            &format!("verify list error: {e}"),
+        ),
     }
 }
 

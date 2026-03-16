@@ -159,8 +159,10 @@ impl EventQueueReader for InMemoryQueueReader {
                 match self.rx.recv().await {
                     Ok(event) => return Some(event),
                     Err(broadcast::error::RecvError::Lagged(_n)) => {
-                        trace_warn!(lagged = _n, "event queue reader lagged, skipping missed events");
-                        continue;
+                        trace_warn!(
+                            lagged = _n,
+                            "event queue reader lagged, skipping missed events"
+                        );
                     }
                     Err(broadcast::error::RecvError::Closed) => return None,
                 }

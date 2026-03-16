@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `JsonRpcDispatcher` now serves agent cards at `GET /.well-known/agent.json`,
+  matching the existing `RestDispatcher` behavior.
+- `EventQueueManager::subscribe()` creates additional readers for an active
+  task's event stream, enabling `SubscribeToTask` (resubscribe) when another
+  SSE stream is already active.
+- Agent-team example refactored from monolithic 2800-line `main.rs` into
+  best-practice modular structure (13 files, all under 500 lines) with 30 E2E
+  tests across 3 categories.
+
+### Changed
+
+- **Breaking:** `EventQueueManager` internals redesigned from `mpsc` to
+  `tokio::sync::broadcast` channels. This enables multiple concurrent
+  subscribers per task. Slow readers receive `Lagged` notifications instead
+  of blocking the writer. The public `EventQueueWriter` / `EventQueueReader`
+  traits are unchanged.
+
+### Fixed
+
+- `SubscribeToTask` (resubscribe) now works when another SSE reader is already
+  active for the same task. Previously, `mpsc` channels allowed only a single
+  reader, so resubscription returned "no active event queue for task".
+
 ## [0.2.0] - 2026-03-15
 
 ### Added

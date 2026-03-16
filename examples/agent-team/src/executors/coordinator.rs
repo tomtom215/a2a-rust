@@ -85,10 +85,7 @@ impl AgentExecutor for CoordinatorExecutor {
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new(
-                        "coordinator-report",
-                        vec![Part::text(&full_report)],
-                    ),
+                    artifact: Artifact::new("coordinator-report", vec![Part::text(&full_report)]),
                     append: None,
                     last_chunk: Some(true),
                     metadata: None,
@@ -119,7 +116,7 @@ impl CoordinatorExecutor {
         report_lines.push("--- Code Analysis ---".to_owned());
 
         let Ok(client) = ClientBuilder::new(analyzer_url).build() else {
-            report_lines.push(format!("  Cannot connect to analyzer"));
+            report_lines.push("  Cannot connect to analyzer".to_string());
             return;
         };
 

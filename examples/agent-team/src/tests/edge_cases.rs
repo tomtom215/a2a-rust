@@ -256,10 +256,7 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
     println!("\nTest 27: Push config CRUD via JSON-RPC");
     let client = ClientBuilder::new(&ctx.health_url).build().unwrap();
 
-    let resp = client
-        .send_message(make_send_params("ping"))
-        .await
-        .unwrap();
+    let resp = client.send_message(make_send_params("ping")).await.unwrap();
     if let SendMessageResponse::Task(task) = resp {
         let tid = task.id.to_string();
         let config = TaskPushNotificationConfig {

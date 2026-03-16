@@ -133,13 +133,14 @@ impl AgentExecutor for MyExecutor {
 
 ### Queue Limits
 
-The event queue has built-in protections:
+The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple subscribers:
 
 | Limit | Default | Purpose |
 |-------|---------|---------|
-| Queue capacity | 64 events | Bounded channel prevents unbounded memory growth |
+| Queue capacity | 64 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
-| Write timeout | 5 seconds | Prevents blocking on slow consumers |
+
+With broadcast channels, writes never block — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification.
 
 Configure these via the builder:
 
@@ -198,18 +199,13 @@ The SSE parser includes safety limits:
 If a stream disconnects, re-subscribe to an existing task:
 
 ```rust
-use a2a_protocol_sdk::types::params::TaskIdParams;
-
 let mut stream = client
-    .resubscribe(TaskIdParams {
-        tenant: None,
-        id: "task-abc".into(),
-    })
+    .subscribe_to_task("task-abc")
     .await
     .expect("resubscribe");
 ```
 
-The server will replay the latest task state and continue streaming new events.
+The server creates a new broadcast subscriber for the task's event queue. Multiple SSE connections can be active simultaneously for the same task — each receives all events published after it subscribes. If a reader falls behind, it receives a `Lagged` notification and skips missed events rather than blocking other readers or the writer.
 
 ## Streaming vs Synchronous
 

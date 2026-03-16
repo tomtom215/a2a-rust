@@ -3,7 +3,7 @@
 
 //! Agent executor implementations.
 //!
-//! Each module defines an [`AgentExecutor`] implementation for one of the
+//! Each module defines an `AgentExecutor` implementation for one of the
 //! four agents in the team demo.
 
 mod build_monitor;
