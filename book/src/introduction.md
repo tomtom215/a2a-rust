@@ -32,13 +32,13 @@ a2a-rust is organized as a Cargo workspace with four crates:
 
 ```
 ┌─────────────────────────────────────────────┐
-│  a2a-protocol-sdk                                    │
+│  a2a-protocol-sdk                           │
 │  umbrella re-exports + prelude              │
 ├──────────────────────┬──────────────────────┤
-│  a2a-protocol-client          │  a2a-protocol-server          │
+│  a2a-protocol-client │  a2a-protocol-server │
 │  HTTP client         │  agent framework     │
 ├──────────────────────┴──────────────────────┤
-│  a2a-protocol-types                                  │
+│  a2a-protocol-types                         │
 │  wire types, serde, no I/O                  │
 └─────────────────────────────────────────────┘
 ```
