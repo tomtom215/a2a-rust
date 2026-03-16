@@ -29,12 +29,19 @@ pub struct RestDispatcher {
     handler: Arc<RequestHandler>,
     card_handler: Option<StaticAgentCardHandler>,
     cors: Option<CorsConfig>,
+    config: super::DispatchConfig,
 }
 
 impl RestDispatcher {
-    /// Creates a new REST dispatcher.
+    /// Creates a new REST dispatcher with default configuration.
     #[must_use]
     pub fn new(handler: Arc<RequestHandler>) -> Self {
+        Self::with_config(handler, super::DispatchConfig::default())
+    }
+
+    /// Creates a new REST dispatcher with the given configuration.
+    #[must_use]
+    pub fn with_config(handler: Arc<RequestHandler>, config: super::DispatchConfig) -> Self {
         let card_handler = handler
             .agent_card
             .as_ref()
@@ -43,6 +50,7 @@ impl RestDispatcher {
             handler,
             card_handler,
             cors: None,
+            config,
         }
     }
 
@@ -76,13 +84,13 @@ impl RestDispatcher {
         }
 
         // Reject oversized query strings (DoS protection).
-        if query.len() > MAX_QUERY_STRING_LENGTH {
+        if query.len() > self.config.max_query_string_length {
             let mut resp = error_json_response(
                 414,
                 &format!(
                     "query string too long: {} bytes exceeds {} byte limit",
                     query.len(),
-                    MAX_QUERY_STRING_LENGTH
+                    self.config.max_query_string_length
                 ),
             );
             if let Some(ref cors) = self.cors {
@@ -209,7 +217,13 @@ impl RestDispatcher {
         req: hyper::Request<Incoming>,
         streaming: bool,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+        let body_bytes = match read_body_limited(
+            req.into_body(),
+            self.config.max_request_body_size,
+            self.config.body_read_timeout,
+        )
+        .await
+        {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
@@ -282,7 +296,13 @@ impl RestDispatcher {
         req: hyper::Request<Incoming>,
         task_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let body_bytes = match read_body_limited(req.into_body(), MAX_REQUEST_BODY_SIZE).await {
+        let body_bytes = match read_body_limited(
+            req.into_body(),
+            self.config.max_request_body_size,
+            self.config.body_read_timeout,
+        )
+        .await
+        {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
@@ -518,17 +538,12 @@ fn parse_query_param_bool(query: &str, key: &str) -> Option<bool> {
     parse_query_param(query, key).map(|v| v == "true" || v == "1")
 }
 
-/// Maximum query string length in bytes (prevents denial-of-service via oversized query params).
-const MAX_QUERY_STRING_LENGTH: usize = 4096;
-
-/// Maximum request body size in bytes (4 MiB).
-const MAX_REQUEST_BODY_SIZE: usize = 4 * 1024 * 1024;
-
-/// Maximum duration to read a complete request body (slow loris protection).
-const BODY_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-
 /// Reads a request body with a size limit and timeout.
-async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, String> {
+async fn read_body_limited(
+    body: Incoming,
+    max_size: usize,
+    read_timeout: std::time::Duration,
+) -> Result<Bytes, String> {
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
         if upper > max_size as u64 {
@@ -537,7 +552,7 @@ async fn read_body_limited(body: Incoming, max_size: usize) -> Result<Bytes, Str
             ));
         }
     }
-    let collected = tokio::time::timeout(BODY_READ_TIMEOUT, body.collect())
+    let collected = tokio::time::timeout(read_timeout, body.collect())
         .await
         .map_err(|_| "request body read timed out".to_owned())?
         .map_err(|e| e.to_string())?;

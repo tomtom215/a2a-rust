@@ -41,22 +41,67 @@ pub trait PushSender: Send + Sync + 'static {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 
-/// Maximum number of delivery attempts before giving up.
-const MAX_PUSH_ATTEMPTS: usize = 3;
-
-/// Backoff durations between retry attempts.
-const PUSH_RETRY_BACKOFF: [std::time::Duration; 2] = [
-    std::time::Duration::from_secs(1),
-    std::time::Duration::from_secs(2),
-];
-
 /// Default per-request timeout for push notification delivery.
 const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
+/// Retry policy for push notification delivery.
+///
+/// # Example
+///
+/// ```rust
+/// use a2a_protocol_server::push::PushRetryPolicy;
+///
+/// let policy = PushRetryPolicy::default()
+///     .with_max_attempts(5)
+///     .with_backoff(vec![
+///         std::time::Duration::from_millis(500),
+///         std::time::Duration::from_secs(1),
+///         std::time::Duration::from_secs(2),
+///         std::time::Duration::from_secs(4),
+///     ]);
+/// ```
+#[derive(Debug, Clone)]
+pub struct PushRetryPolicy {
+    /// Maximum number of delivery attempts before giving up. Default: 3.
+    pub max_attempts: usize,
+    /// Backoff durations between retry attempts. Default: `[1s, 2s]`.
+    ///
+    /// If there are fewer entries than `max_attempts - 1`, the last duration
+    /// is repeated for remaining retries.
+    pub backoff: Vec<std::time::Duration>,
+}
+
+impl Default for PushRetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_attempts: 3,
+            backoff: vec![
+                std::time::Duration::from_secs(1),
+                std::time::Duration::from_secs(2),
+            ],
+        }
+    }
+}
+
+impl PushRetryPolicy {
+    /// Sets the maximum number of delivery attempts.
+    #[must_use]
+    pub const fn with_max_attempts(mut self, max: usize) -> Self {
+        self.max_attempts = max;
+        self
+    }
+
+    /// Sets the backoff schedule between retry attempts.
+    #[must_use]
+    pub fn with_backoff(mut self, backoff: Vec<std::time::Duration>) -> Self {
+        self.backoff = backoff;
+        self
+    }
+}
+
 /// HTTP-based [`PushSender`] using hyper.
 ///
-/// Retries up to 3 times with exponential backoff on
-/// transient HTTP errors.
+/// Retries failed deliveries according to a configurable [`PushRetryPolicy`].
 ///
 /// # Security
 ///
@@ -68,6 +113,7 @@ const DEFAULT_PUSH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::f
 pub struct HttpPushSender {
     client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>,
     request_timeout: std::time::Duration,
+    retry_policy: PushRetryPolicy,
     /// Whether to skip SSRF URL validation (for testing only).
     allow_private_urls: bool,
 }
@@ -79,7 +125,8 @@ impl Default for HttpPushSender {
 }
 
 impl HttpPushSender {
-    /// Creates a new [`HttpPushSender`] with the default 30-second request timeout.
+    /// Creates a new [`HttpPushSender`] with the default 30-second request timeout
+    /// and default retry policy.
     #[must_use]
     pub fn new() -> Self {
         Self::with_timeout(DEFAULT_PUSH_REQUEST_TIMEOUT)
@@ -92,8 +139,16 @@ impl HttpPushSender {
         Self {
             client,
             request_timeout,
+            retry_policy: PushRetryPolicy::default(),
             allow_private_urls: false,
         }
+    }
+
+    /// Sets a custom retry policy for push notification delivery.
+    #[must_use]
+    pub fn with_retry_policy(mut self, policy: PushRetryPolicy) -> Self {
+        self.retry_policy = policy;
+        self
     }
 
     /// Creates an [`HttpPushSender`] that allows private/loopback URLs.
@@ -209,7 +264,7 @@ impl PushSender for HttpPushSender {
 
             let mut last_err = String::new();
 
-            for attempt in 0..MAX_PUSH_ATTEMPTS {
+            for attempt in 0..self.retry_policy.max_attempts {
                 let mut builder = hyper::Request::builder()
                     .method(hyper::Method::POST)
                     .uri(url)
@@ -270,8 +325,13 @@ impl PushSender for HttpPushSender {
                 }
 
                 // Retry with backoff (except on last attempt).
-                if attempt < MAX_PUSH_ATTEMPTS - 1 {
-                    if let Some(delay) = PUSH_RETRY_BACKOFF.get(attempt) {
+                if attempt < self.retry_policy.max_attempts - 1 {
+                    let delay = self
+                        .retry_policy
+                        .backoff
+                        .get(attempt)
+                        .or_else(|| self.retry_policy.backoff.last());
+                    if let Some(delay) = delay {
                         tokio::time::sleep(*delay).await;
                     }
                 }

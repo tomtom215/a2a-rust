@@ -70,12 +70,14 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
-pub use dispatch::{CorsConfig, JsonRpcDispatcher, RestDispatcher};
+pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use handler::{RequestHandler, SendMessageResult};
+pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
-pub use push::{HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushSender};
+pub use push::{
+    HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
+};
 pub use request_context::RequestContext;
 pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 pub use streaming::{

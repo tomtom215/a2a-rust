@@ -32,31 +32,84 @@ use crate::streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
 };
 
-/// Maximum allowed length for task/context IDs (prevents memory exhaustion).
-const MAX_ID_LENGTH: usize = 1024;
+/// Configurable limits for the request handler.
+///
+/// All fields have sensible defaults. Create with [`HandlerLimits::default()`]
+/// and override individual values as needed.
+///
+/// # Example
+///
+/// ```rust
+/// use a2a_protocol_server::handler::HandlerLimits;
+///
+/// let limits = HandlerLimits::default()
+///     .with_max_id_length(2048)
+///     .with_max_metadata_size(2 * 1024 * 1024);
+/// ```
+#[derive(Debug, Clone)]
+pub struct HandlerLimits {
+    /// Maximum allowed length for task/context IDs. Default: 1024.
+    pub max_id_length: usize,
+    /// Maximum allowed serialized size for metadata fields in bytes. Default: 1 MiB.
+    pub max_metadata_size: usize,
+    /// Maximum cancellation token map entries before cleanup sweep. Default: 10,000.
+    pub max_cancellation_tokens: usize,
+    /// Maximum age for cancellation tokens. Default: 1 hour.
+    pub max_token_age: Duration,
+}
 
-/// Maximum allowed serialized size for metadata fields (1 MiB).
-const MAX_METADATA_SIZE: usize = 1_048_576;
+impl Default for HandlerLimits {
+    fn default() -> Self {
+        Self {
+            max_id_length: 1024,
+            max_metadata_size: 1_048_576,
+            max_cancellation_tokens: 10_000,
+            max_token_age: Duration::from_secs(3600),
+        }
+    }
+}
 
-/// Maximum number of entries in the cancellation token map before a cleanup
-/// sweep is triggered to remove cancelled/dropped tokens.
-const MAX_CANCELLATION_TOKENS: usize = 10_000;
+impl HandlerLimits {
+    /// Sets the maximum allowed length for task/context IDs.
+    #[must_use]
+    pub const fn with_max_id_length(mut self, length: usize) -> Self {
+        self.max_id_length = length;
+        self
+    }
 
-/// Maximum age for cancellation tokens. Tokens older than this are evicted
-/// during cleanup sweeps, even if they haven't been explicitly cancelled.
-const MAX_TOKEN_AGE: Duration = Duration::from_secs(3600);
+    /// Sets the maximum serialized size for metadata fields in bytes.
+    #[must_use]
+    pub const fn with_max_metadata_size(mut self, size: usize) -> Self {
+        self.max_metadata_size = size;
+        self
+    }
+
+    /// Sets the maximum cancellation token map entries before cleanup.
+    #[must_use]
+    pub const fn with_max_cancellation_tokens(mut self, max: usize) -> Self {
+        self.max_cancellation_tokens = max;
+        self
+    }
+
+    /// Sets the maximum age for cancellation tokens.
+    #[must_use]
+    pub const fn with_max_token_age(mut self, age: Duration) -> Self {
+        self.max_token_age = age;
+        self
+    }
+}
 
 /// Validates an ID string: rejects empty/whitespace-only and excessively long values.
-fn validate_id(raw: &str, name: &str) -> ServerResult<()> {
+fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(ServerError::InvalidParams(format!(
             "{name} must not be empty or whitespace-only"
         )));
     }
-    if trimmed.len() > MAX_ID_LENGTH {
+    if trimmed.len() > max_length {
         return Err(ServerError::InvalidParams(format!(
-            "{name} exceeds maximum length (got {}, max {MAX_ID_LENGTH})",
+            "{name} exceeds maximum length (got {}, max {max_length})",
             trimmed.len()
         )));
     }
@@ -81,6 +134,7 @@ pub struct RequestHandler {
     pub(crate) agent_card: Option<AgentCard>,
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
+    pub(crate) limits: HandlerLimits,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
 }
@@ -137,10 +191,10 @@ impl RequestHandler {
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
-            validate_id(&ctx_id.0, "context_id")?;
+            validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
         }
         if let Some(ref task_id) = params.message.task_id {
-            validate_id(&task_id.0, "task_id")?;
+            validate_id(&task_id.0, "task_id", self.limits.max_id_length)?;
         }
 
         // SC-4: Reject messages with no parts.
@@ -151,19 +205,20 @@ impl RequestHandler {
         }
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
+        let max_meta = self.limits.max_metadata_size;
         if let Some(ref meta) = params.message.metadata {
             let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
-            if meta_size > MAX_METADATA_SIZE {
+            if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
-                    "message metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
+                    "message metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
                 )));
             }
         }
         if let Some(ref meta) = params.metadata {
             let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
-            if meta_size > MAX_METADATA_SIZE {
+            if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
-                    "request metadata exceeds maximum size ({meta_size} bytes, max {MAX_METADATA_SIZE})"
+                    "request metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
                 )));
             }
         }
@@ -245,11 +300,11 @@ impl RequestHandler {
             let mut tokens = self.cancellation_tokens.write().await;
             // Sweep stale tokens if the map is getting large (prevent unbounded growth
             // if executors panic and never clean up their tokens).
-            if tokens.len() >= MAX_CANCELLATION_TOKENS {
+            if tokens.len() >= self.limits.max_cancellation_tokens {
                 let now = Instant::now();
                 tokens.retain(|_, entry| {
                     !entry.token.is_cancelled()
-                        && now.duration_since(entry.created_at) < MAX_TOKEN_AGE
+                        && now.duration_since(entry.created_at) < self.limits.max_token_age
                 });
             }
             tokens.insert(
@@ -672,7 +727,7 @@ impl RequestHandler {
 
     /// Finds a task by context ID (linear scan for in-memory store).
     async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
-        if context_id.len() > MAX_ID_LENGTH {
+        if context_id.len() > self.limits.max_id_length {
             return None;
         }
         let params = ListTasksParams {

@@ -14,7 +14,7 @@ use a2a_protocol_types::agent_card::AgentCard;
 
 use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
-use crate::handler::RequestHandler;
+use crate::handler::{HandlerLimits, RequestHandler};
 use crate::interceptor::{ServerInterceptor, ServerInterceptorChain};
 use crate::metrics::{Metrics, NoopMetrics};
 use crate::push::{InMemoryPushConfigStore, PushConfigStore, PushSender};
@@ -49,6 +49,7 @@ pub struct RequestHandlerBuilder {
     max_event_size: Option<usize>,
     max_concurrent_streams: Option<usize>,
     metrics: Arc<dyn Metrics>,
+    handler_limits: HandlerLimits,
 }
 
 impl RequestHandlerBuilder {
@@ -70,6 +71,7 @@ impl RequestHandlerBuilder {
             max_event_size: None,
             max_concurrent_streams: None,
             metrics: Arc::new(NoopMetrics),
+            handler_limits: HandlerLimits::default(),
         }
     }
 
@@ -157,6 +159,15 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Sets configurable limits for the handler (ID lengths, metadata size, etc.).
+    ///
+    /// Defaults to [`HandlerLimits::default()`].
+    #[must_use]
+    pub const fn with_handler_limits(mut self, limits: HandlerLimits) -> Self {
+        self.handler_limits = limits;
+        self
+    }
+
     /// Sets a metrics observer for handler activity.
     ///
     /// Defaults to [`NoopMetrics`] which discards all events.
@@ -218,6 +229,7 @@ impl RequestHandlerBuilder {
             agent_card: self.agent_card,
             executor_timeout: self.executor_timeout,
             metrics: self.metrics,
+            limits: self.handler_limits,
             cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
@@ -240,6 +252,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("max_event_size", &self.max_event_size)
             .field("max_concurrent_streams", &self.max_concurrent_streams)
             .field("metrics", &"<dyn Metrics>")
+            .field("handler_limits", &self.handler_limits)
             .finish()
     }
 }
