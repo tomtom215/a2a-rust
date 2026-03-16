@@ -23,7 +23,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (13 tests, ~800ms total)                       │
+│              (14 tests, ~800ms total)                       │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -79,7 +79,9 @@ The agent team exercises **27 distinct SDK features** in a single run:
 
 ## What Dogfooding Found (and Fixed)
 
-The agent team uncovered **three real issues** that 500+ unit tests, integration tests, property tests, and fuzz tests did not catch. All three have been fixed.
+### First Dogfooding Pass
+
+The first dogfooding pass uncovered **three real issues** that 500+ unit tests, integration tests, property tests, and fuzz tests did not catch. All three were fixed.
 
 ### Bug 1: REST Transport Strips Required Fields from Push Config Body (**Fixed**)
 
@@ -115,6 +117,52 @@ When the HealthMonitor (using a default JSON-RPC client) called `list_tasks` on 
 
 **Fix:** Three changes: (1) The HealthMonitor now fetches the agent card via `resolve_agent_card()` before health-checking, and uses the card's `protocol_binding` to build the correct client. All agents now report HEALTHY. (2) A new `ClientError::ProtocolBindingMismatch` variant provides a clear diagnostic when a JSON-RPC client receives a non-JSON-RPC response. (3) The JSON-RPC transport detects non-JSON-RPC responses and returns the new error variant with a hint to check the agent card.
 
+### Second Dogfooding Pass
+
+A comprehensive second audit uncovered **four more bugs** and several configuration gaps. All were fixed.
+
+### Bug 4: `list_push_configs` REST Response Format Mismatch (**Fixed**)
+
+**Severity:** Medium — broke client deserialization of push config lists.
+
+Both REST and JSON-RPC dispatchers serialized `on_list_push_configs` results as a raw `Vec<TaskPushNotificationConfig>` (JSON array), but the client expected `ListPushConfigsResponse { configs, next_page_token }` (JSON object). Error: `invalid type: map, expected a sequence`.
+
+**Fix:** Both dispatchers now wrap the result in `ListPushConfigsResponse`.
+
+### Bug 5: Push Notification Test Task ID Mismatch (**Fixed**)
+
+**Severity:** Medium — Test 8 always reported "Push notifications received: 0".
+
+Push config was registered on Task A, but the test's second `send_message` created Task B with a new UUID. `deliver_push` looks up configs by task_id — no config existed for Task B.
+
+**Fix:** Restructured Test 8 as a push config CRUD lifecycle test (create→get→list→delete→verify) via REST transport.
+
+### Bug 6: `on_error` Metrics Hook Never Fired (**Fixed**)
+
+**Severity:** Low — error metrics were always zero.
+
+`on_error` was defined on the `Metrics` trait but never called. All handler error paths used `?` to propagate without invoking the metrics hook.
+
+**Fix:** Restructured all 10 handler methods to wrap the body in an async block, then call `on_response` or `on_error` based on the outcome.
+
+### Bug 7: `on_queue_depth_change` Metrics Hook Never Fired (**Fixed**)
+
+**Severity:** Low — queue depth metrics were always zero.
+
+`EventQueueManager` had no access to the `Metrics` object.
+
+**Fix:** Added `Arc<dyn Metrics>` to `EventQueueManager` (passed from the builder). Calls `on_queue_depth_change` in `get_or_create` and `destroy`.
+
+### Configuration Hardening
+
+Extracted all hardcoded constants into configurable structs:
+
+- **`DispatchConfig`**: request body size, read timeout, query string length
+- **`PushRetryPolicy`**: max attempts, backoff schedule
+- **`HandlerLimits`**: ID length, metadata size, cancellation token limits
+
+Aligned client `DEFAULT_MAX_EVENT_SIZE` from 4 MiB to 16 MiB to match the server default.
+
 ## Running the Agent Team
 
 ```bash
@@ -137,9 +185,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...13 tests...
+...14 tests...
 
-║ Total: 13 | Passed: 13 | Failed: 0 | Time: ~800ms
+║ Total: 14 | Passed: 14 | Failed: 0 | Time: ~800ms
 ```
 
 ## Lessons for Your Own Agents

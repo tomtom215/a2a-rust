@@ -18,6 +18,17 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_event_queue_capacity` | `usize` | 64 | Bounded channel size per stream |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | Unbounded | Limit concurrent SSE connections |
+| `with_metrics` | `impl Metrics` | `NoopMetrics` | Metrics observer for handler activity |
+| `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
+
+### HandlerLimits
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_id_length` | `usize` | 1,024 | Maximum task/context ID length |
+| `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size |
+| `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
+| `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 
 ### TaskStoreConfig
 
@@ -26,14 +37,31 @@ Complete reference of all configuration options across a2a-rust crates.
 | `ttl` | `Option<Duration>` | None | Task expiry time |
 | `max_capacity` | `Option<usize>` | None | Maximum number of stored tasks |
 
+### DispatchConfig
+
+Shared configuration for both JSON-RPC and REST dispatchers. Pass to
+`JsonRpcDispatcher::with_config()` or `RestDispatcher::with_config()`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_request_body_size` | `usize` | 4 MiB | Larger bodies return 413 |
+| `body_read_timeout` | `Duration` | 30s | Slow loris protection |
+| `max_query_string_length` | `usize` | 4,096 | REST only; longer queries return 414 |
+
+### PushRetryPolicy
+
+Configurable retry policy for `HttpPushSender`. Pass via
+`HttpPushSender::with_retry_policy()`.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_attempts` | `usize` | 3 | Maximum delivery attempts |
+| `backoff` | `Vec<Duration>` | `[1s, 2s]` | Backoff durations between retries |
+
 ### Internal Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Max task/context ID length | 1,024 chars | Prevents oversized IDs |
-| Max metadata size | 1 MiB | Prevents oversized metadata |
-| Max cancellation tokens | 10,000 | Hard cap, cleaned on overflow |
-| Max token age | 1 hour | Stale tokens evicted |
 | Eviction interval | Every 64 writes | Amortized cleanup |
 | Write timeout | 5 seconds | Per-event queue write |
 
@@ -56,16 +84,8 @@ Complete reference of all configuration options across a2a-rust crates.
 
 | Limit | Value | Description |
 |-------|-------|-------------|
-| Buffer cap | 16 MiB | Max buffered SSE data |
+| Buffer cap | 16 MiB | Max buffered SSE data (aligned with server) |
 | Connect timeout | 30s (default) | Initial connection timeout |
-
-## REST Dispatcher Limits
-
-| Limit | Value | Description |
-|-------|-------|-------------|
-| Max request body | 4 MiB | Larger bodies return 413 |
-| Max query string | 4 KiB | Longer queries return 414 |
-| Content types | `application/json`, `application/a2a+json` | Accepted content types |
 
 ## HTTP Caching (Agent Card)
 
