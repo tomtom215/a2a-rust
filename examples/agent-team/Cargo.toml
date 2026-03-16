@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "agent-team"
+version     = "0.0.0"
+description = "Full-stack A2A agent team: dogfood every SDK capability"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[features]
+## Enable structured logging output.
+tracing = [
+    "a2a-protocol-client/tracing",
+    "a2a-protocol-server/tracing",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+]
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-types" }
+a2a-protocol-client = { path = "../../crates/a2a-client" }
+a2a-protocol-server = { path = "../../crates/a2a-server" }
+
+tracing            = { workspace = true, optional = true }
+tracing-subscriber = { version = ">=0.3.18, <0.4", features = ["env-filter"], optional = true }
+
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+hyper      = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }
+bytes      = "1"
+uuid       = { workspace = true }

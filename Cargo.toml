@@ -9,6 +9,7 @@ members = [
     "crates/a2a-server",
     "crates/a2a-sdk",
     "examples/echo-agent",
+    "examples/agent-team",
 ]
 
 [workspace.package]
