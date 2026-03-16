@@ -14,8 +14,8 @@
 
 .content main {
     max-width: 56rem;
-    font-size: 1.125rem;
-    line-height: 1.75;
+    font-size: 1.1875rem;
+    line-height: 1.8;
 }
 
 .content main h1 {
@@ -87,12 +87,12 @@
 
 .sidebar .sidebar-scrollbox {
     padding-top: 1em;
-    font-size: 1rem;
+    font-size: 1.0625rem;
 }
 
 .sidebar .chapter li.chapter-item {
-    margin-top: 0.3em;
-    line-height: 1.5;
+    margin-top: 0.35em;
+    line-height: 1.6;
 }
 
 /* ── Blockquotes (tips/notes) ─────────────────────────────────────────────── */
@@ -109,19 +109,7 @@
     margin: 0;
 }
 
-/* ── Mermaid diagrams ─────────────────────────────────────────────────────── */
-
-.mermaid {
-    text-align: center;
-    margin: 1.5em 0;
-}
-
-.mermaid svg {
-    max-width: 100%;
-    height: auto;
-}
-
-/* ── ASCII diagrams (fallback) ────────────────────────────────────────────── */
+/* ── ASCII diagrams ──────────────────────────────────────────────────────── */
 
 .content main pre code:not([class*="language-"]) {
     color: var(--fg);

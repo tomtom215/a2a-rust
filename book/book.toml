@@ -15,7 +15,6 @@ preferred-dark-theme = "ayu"
 git-repository-url = "https://github.com/tomtom215/a2a-rust"
 edit-url-template = "https://github.com/tomtom215/a2a-rust/edit/main/book/{path}"
 additional-css = ["theme/custom.css"]
-additional-js = ["theme/mermaid-loader.js"]
 no-section-label = false
 
 [output.html.fold]

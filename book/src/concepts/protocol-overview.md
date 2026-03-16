@@ -6,19 +6,24 @@ The A2A (Agent-to-Agent) protocol defines how AI agents discover each other, exc
 
 An A2A interaction follows this flow:
 
-```mermaid
-sequenceDiagram
-    participant C as Client Agent
-    participant S as Agent (Server)
-
-    C->>S: 1. Discover agent card
-    S-->>C: AgentCard
-
-    C->>S: 2. Send message
-    S-->>C: Task (or SSE stream)
-
-    C->>S: 3. Check status
-    S-->>C: Task
+```
+  Client Agent                Agent (Server)
+       │                           │
+       │  1. GET /agent.json       │
+       │ ─────────────────────────►│
+       │          AgentCard        │
+       │ ◄─────────────────────────│
+       │                           │
+       │  2. SendMessage           │
+       │ ─────────────────────────►│
+       │     Task (or SSE stream)  │
+       │ ◄─────────────────────────│
+       │                           │
+       │  3. GetTask               │
+       │ ─────────────────────────►│
+       │          Task             │
+       │ ◄─────────────────────────│
+       │                           │
 ```
 
 1. **Discovery** — The client fetches the agent's card from `/.well-known/agent.json`
@@ -31,32 +36,29 @@ sequenceDiagram
 
 A **Task** is the central unit of work. When a client sends a message, the server creates a task that progresses through well-defined states:
 
-```mermaid
-stateDiagram-v2
-    [*] --> Submitted
-    Submitted --> Working
-    Submitted --> Failed
-    Submitted --> Canceled
-    Submitted --> Rejected
+```
+                     ┌───────────┐
+              ┌──────│ Submitted │──────┐
+              │      └─────┬─────┘      │
+              │            │            │
+              ▼            ▼            ▼
+         ┌────────┐   ┌────────┐   ┌──────────┐
+    ┌───►│Working │   │Failed *│   │Rejected *│
+    │    └───┬────┘   └────────┘   └──────────┘
+    │        │
+    │   ┌────┼──────────┬───────────┐
+    │   │    │          │           │
+    │   ▼    ▼          ▼           ▼
+    │ ┌───────────┐ ┌─────────┐ ┌──────────┐
+    │ │Completed *│ │ Input   │ │  Auth    │
+    │ └───────────┘ │Required │ │ Required │
+    │               └────┬────┘ └────┬─────┘
+    │                    │           │
+    └────────────────────┴───────────┘
+      (InputRequired and AuthRequired
+       also transition to Failed/Canceled)
 
-    Working --> InputRequired
-    Working --> AuthRequired
-    Working --> Completed
-    Working --> Failed
-    Working --> Canceled
-
-    InputRequired --> Working
-    InputRequired --> Failed
-    InputRequired --> Canceled
-
-    AuthRequired --> Working
-    AuthRequired --> Failed
-    AuthRequired --> Canceled
-
-    Completed --> [*]
-    Failed --> [*]
-    Canceled --> [*]
-    Rejected --> [*]
+    * = terminal state (no further transitions)
 ```
 
 Terminal states (Completed, Failed, Canceled, Rejected) are final — no further transitions are allowed.
@@ -96,31 +98,36 @@ A2A supports two communication styles:
 
 The client sends a message and blocks until the task is complete:
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-
-    C->>S: SendMessage
-    Note right of S: Executor runs
-    Note right of S: Collects events
-    S-->>C: Task
+```
+  Client                        Server
+     │                             │
+     │  SendMessage                │
+     │ ───────────────────────────►│
+     │                    Executor runs,
+     │                    collects events
+     │            Task             │
+     │ ◄───────────────────────────│
+     │                             │
 ```
 
 ### Streaming (SendStreamingMessage)
 
 The client sends a message and receives events in real time via SSE:
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-
-    C->>S: SendStreamingMessage
-    S-->>C: StatusUpdate: Working
-    S-->>C: ArtifactUpdate
-    S-->>C: ArtifactUpdate
-    S-->>C: StatusUpdate: Completed
+```
+  Client                        Server
+     │                             │
+     │  SendStreamingMessage       │
+     │ ───────────────────────────►│
+     │    StatusUpdate: Working    │
+     │ ◄───────────────────────────│
+     │    ArtifactUpdate           │
+     │ ◄───────────────────────────│
+     │    ArtifactUpdate           │
+     │ ◄───────────────────────────│
+     │    StatusUpdate: Completed  │
+     │ ◄───────────────────────────│
+     │                             │
 ```
 
 Streaming is ideal for long-running tasks where the client wants progress updates.
