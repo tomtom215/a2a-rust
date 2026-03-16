@@ -68,7 +68,9 @@ pub async fn test_mixed_transport_concurrent(ctx: &TestContext) -> TestResult {
 
     let jsonrpc_handle = tokio::spawn(async move {
         let client = ClientBuilder::new(&jsonrpc_url).build().unwrap();
-        client.send_message(make_send_params("fn mixed_1() {}")).await
+        client
+            .send_message(make_send_params("fn mixed_1() {}"))
+            .await
     });
     let rest_handle = tokio::spawn(async move {
         let client = ClientBuilder::new(&rest_url)
@@ -300,10 +302,7 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
                     }),
                 };
                 match client.set_push_config(push_config).await {
-                    Ok(stored) => println!(
-                        "  Push config set: {:?}",
-                        stored.id
-                    ),
+                    Ok(stored) => println!("  Push config set: {:?}", stored.id),
                     Err(e) => println!("  Push config error: {e}"),
                 }
             }
@@ -533,9 +532,7 @@ pub async fn test_event_ordering(ctx: &TestContext) -> TestResult {
                 TestResult::pass(
                     "event-ordering",
                     start.elapsed().as_millis(),
-                    &format!(
-                        "Working->artifacts({artifact_count})->Completed"
-                    ),
+                    &format!("Working->artifacts({artifact_count})->Completed"),
                 )
             } else {
                 TestResult::fail(

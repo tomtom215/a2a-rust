@@ -31,7 +31,8 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
         }
     }
     if cfg.accepted_output_modes.is_empty() && !config.accepted_output_modes.is_empty() {
-        cfg.accepted_output_modes.clone_from(&config.accepted_output_modes);
+        cfg.accepted_output_modes
+            .clone_from(&config.accepted_output_modes);
     }
 }
 
@@ -89,10 +90,7 @@ impl A2aClient {
     /// # Errors
     ///
     /// Returns [`ClientError`] on transport or protocol errors.
-    pub async fn stream_message(
-        &self,
-        mut params: MessageSendParams,
-    ) -> ClientResult<EventStream> {
+    pub async fn stream_message(&self, mut params: MessageSendParams) -> ClientResult<EventStream> {
         const METHOD: &str = "SendStreamingMessage";
 
         apply_client_config(&mut params, &self.config);
