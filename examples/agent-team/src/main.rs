@@ -39,7 +39,7 @@ use infrastructure::{
     bind_listener, serve_jsonrpc, serve_rest, start_webhook_server, AuditInterceptor,
     MetricsForward, TeamMetrics, WebhookReceiver,
 };
-use tests::{basic, dogfood, edge_cases, lifecycle, stress, TestContext, TestResult};
+use tests::{basic, dogfood, edge_cases, lifecycle, stress, transport, TestContext, TestResult};
 
 #[tokio::main]
 async fn main() {
@@ -219,6 +219,16 @@ async fn main() {
     results.push(dogfood::test_file_parts(&ctx).await);
     results.push(dogfood::test_history_length(&ctx).await);
 
+    // Tests 51-55: WebSocket transport + multi-tenancy
+    #[cfg(feature = "websocket")]
+    {
+        results.push(transport::test_ws_send_message(&ctx).await);
+        results.push(transport::test_ws_streaming(&ctx).await);
+    }
+    results.push(transport::test_tenant_isolation(&ctx).await);
+    results.push(transport::test_tenant_id_independence(&ctx).await);
+    results.push(transport::test_tenant_count(&ctx).await);
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -300,6 +310,10 @@ async fn main() {
         "Concurrent streams on same agent",
         "return_immediately mode",
         "history_length config",
+        "TenantAwareInMemoryTaskStore isolation",
+        "TenantContext::scope task_local threading",
+        #[cfg(feature = "websocket")]
+        "WebSocket transport (SendMessage + streaming)",
     ];
     for f in &features {
         println!("║   [x] {f}");

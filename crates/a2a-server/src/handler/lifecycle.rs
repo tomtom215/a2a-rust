@@ -35,7 +35,8 @@ impl RequestHandler {
         trace_info!(method = "GetTask", task_id = %params.id, "handling get task");
         self.metrics.on_request("GetTask");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("GetTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
@@ -48,7 +49,7 @@ impl RequestHandler {
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(task)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();
@@ -79,13 +80,14 @@ impl RequestHandler {
         trace_info!(method = "ListTasks", "handling list tasks");
         self.metrics.on_request("ListTasks");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;
             let result = self.task_store.list(&params).await?;
             self.interceptors.run_after(&call_ctx).await?;
             Ok(result)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();
@@ -107,6 +109,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::TaskNotFound`] or [`ServerError::TaskNotCancelable`].
+    #[allow(clippy::too_many_lines)]
     pub async fn on_cancel_task(
         &self,
         params: CancelTaskParams,
@@ -116,7 +119,8 @@ impl RequestHandler {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("CancelTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
@@ -167,7 +171,7 @@ impl RequestHandler {
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(updated)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();
@@ -198,7 +202,8 @@ impl RequestHandler {
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
         self.metrics.on_request("SubscribeToTask");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("SubscribeToTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
@@ -219,7 +224,7 @@ impl RequestHandler {
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(reader)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();

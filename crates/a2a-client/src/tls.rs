@@ -21,7 +21,7 @@ use hyper_util::rt::TokioExecutor;
 use rustls::ClientConfig;
 
 /// Type alias for the HTTPS-capable hyper client.
-pub(crate) type HttpsClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+pub type HttpsClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
 
 /// Builds a default [`ClientConfig`] with Mozilla root certificates.
 ///
@@ -66,7 +66,8 @@ pub(crate) fn build_https_client() -> HttpsClient {
 }
 
 /// Builds an HTTPS-capable hyper client using a custom TLS configuration.
-pub(crate) fn build_https_client_with_config(tls_config: ClientConfig) -> HttpsClient {
+#[must_use]
+pub fn build_https_client_with_config(tls_config: ClientConfig) -> HttpsClient {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls_config)
         .https_or_http()

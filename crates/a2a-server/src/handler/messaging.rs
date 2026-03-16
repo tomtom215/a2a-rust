@@ -43,9 +43,12 @@ impl RequestHandler {
         trace_info!(method = method_name, streaming, "handling send message");
         self.metrics.on_request(method_name);
 
-        let result = self
-            .send_message_inner(params, streaming, method_name, headers)
-            .await;
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result = crate::store::tenant::TenantContext::scope(tenant, async {
+            self.send_message_inner(params, streaming, method_name, headers)
+                .await
+        })
+        .await;
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {

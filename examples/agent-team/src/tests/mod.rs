@@ -15,6 +15,7 @@ pub mod dogfood;
 pub mod edge_cases;
 pub mod lifecycle;
 pub mod stress;
+pub mod transport;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

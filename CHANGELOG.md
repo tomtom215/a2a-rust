@@ -12,6 +12,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **WebSocket transport** (`websocket` feature flag) — `WebSocketDispatcher` for
+  server-side WebSocket support via `tokio-tungstenite`. JSON-RPC 2.0 messages
+  are exchanged as WebSocket text frames. Streaming methods send multiple frames
+  followed by a `stream_complete` response. Client-side `WebSocketTransport`
+  provides persistent connection reuse.
+- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and
+  `TenantAwareInMemoryPushConfigStore` provide full tenant isolation using
+  `tokio::task_local!` via `TenantContext::scope()`. Each tenant gets an
+  independent store instance. SQLite variants (`TenantAwareSqliteTaskStore`,
+  `TenantAwareSqlitePushConfigStore`) partition by `tenant_id` column.
+- **TLS/mTLS integration tests** — 7 tests covering client certificate
+  validation, SNI hostname verification, unknown CA rejection, and mutual TLS
+  with valid/invalid/rogue client certificates. Uses `rcgen` for test-time
+  certificate generation and `tokio-rustls` for TLS server.
+- **Memory and load stress tests** — 5 tests for sustained concurrent load
+  (200 concurrent requests, 500 requests over 10 waves), task store eviction
+  under load, concurrent multi-tenant isolation (10 tenants × 50 tasks), and
+  rapid connect/disconnect cycles.
+- **Agent-team dogfood tests 51-55** — WebSocket send message, WebSocket
+  streaming, tenant isolation, tenant ID independence, and tenant count tracking.
+  Total agent-team E2E tests: 55.
+- `tls::build_https_client_with_config()` made public for custom TLS scenarios.
 - `serve()` and `serve_with_addr()` server startup helpers — reduces the ~25 lines
   of hyper boilerplate per agent to a single function call. Both `JsonRpcDispatcher`
   and `RestDispatcher` implement the new `Dispatcher` trait.

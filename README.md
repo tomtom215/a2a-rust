@@ -25,11 +25,12 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 ## Features
 
 - **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
-- **Dual transport** — JSON-RPC 2.0 and REST dispatchers, both client and server
+- **Triple transport** — JSON-RPC 2.0, REST, and WebSocket dispatchers, both client and server
 - **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults and SQLite reference implementations (`sqlite` feature flag)
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults, SQLite reference implementations (`sqlite` feature flag), and tenant-aware variants for multi-tenancy
+- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` provide full tenant isolation via `tokio::task_local!` or `tenant_id` column partitioning
 - **Executor ergonomics** — `boxed_future` helper, `agent_executor!` macro, and `EventEmitter` eliminate `Pin<Box<dyn Future>>` and event-emission boilerplate
 - **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
 - **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
@@ -48,6 +49,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header for distributed tracing
 - **Rate limiting** — built-in `RateLimitInterceptor` with fixed-window per-caller limiting; plug in via `ServerInterceptor` chain
 - **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
+- **WebSocket transport** — persistent bidirectional communication via `tokio-tungstenite` (`websocket` feature flag), JSON-RPC 2.0 over WebSocket text frames with native streaming
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -148,7 +150,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 50 E2E tests covering both transports, streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, large payloads, metrics, and SDK regression testing:
+A comprehensive 4-agent team that exercises every SDK feature — 55 E2E tests covering all three transports (JSON-RPC, REST, WebSocket), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, and SDK regression testing:
 
 ```bash
 cargo run -p agent-team
@@ -178,7 +180,9 @@ cargo run -p echo-agent
 ┌─────────────────────▼──────────────────────┐
 │  Transport Layer                           │
 │  JsonRpcDispatcher · RestDispatcher        │
+│  WebSocketDispatcher (feature-gated)       │
 │  JsonRpcTransport · RestTransport          │
+│  WebSocketTransport (feature-gated)        │
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
@@ -189,7 +193,7 @@ cargo run -p echo-agent
 The server uses a 3-layer architecture:
 1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
 2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
-3. **Dispatchers handle HTTP** — `JsonRpcDispatcher` (JSON-RPC 2.0) and `RestDispatcher` (REST) wire hyper to the handler
+3. **Dispatchers handle HTTP** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), and `WebSocketDispatcher` (WebSocket) wire hyper to the handler
 
 ## Supported Methods
 

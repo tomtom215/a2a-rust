@@ -78,6 +78,54 @@ Features:
 - Atomic `insert_if_absent` via `INSERT OR IGNORE`
 - Upsert via `ON CONFLICT DO UPDATE`
 
+### TenantAwareInMemoryTaskStore
+
+For multi-tenant deployments, use `TenantAwareInMemoryTaskStore` which provides full tenant isolation using `tokio::task_local!`:
+
+```rust
+use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
+use std::sync::Arc;
+
+let store = Arc::new(TenantAwareInMemoryTaskStore::new());
+
+// Each tenant gets an independent store instance.
+// Use TenantContext::scope() to set the active tenant:
+TenantContext::scope("tenant-alpha".to_string(), {
+    let store = store.clone();
+    async move {
+        store.save(task).await.unwrap();
+    }
+}).await;
+
+// Tasks saved under one tenant are invisible to others:
+TenantContext::scope("tenant-beta".to_string(), {
+    let store = store.clone();
+    async move {
+        let result = store.get(&task_id).await.unwrap();
+        assert!(result.is_none()); // tenant-beta can't see tenant-alpha's task
+    }
+}).await;
+
+// Track tenant count for capacity monitoring:
+let count = store.tenant_count().await;
+```
+
+The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the tenant ID through the async call stack without passing it as a parameter. The `RequestHandler` automatically sets the tenant scope when `params.tenant` is populated.
+
+### TenantAwareSqliteTaskStore (feature-gated)
+
+For persistent multi-tenant storage, enable the `sqlite` feature:
+
+```rust
+use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
+
+let store = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
+```
+
+This variant partitions data by a `tenant_id` column instead of using task-local storage, making it suitable for production deployments where tenants may span multiple server instances.
+
+> **Note:** Corresponding `TenantAwareInMemoryPushConfigStore` and `TenantAwareSqlitePushConfigStore` variants exist for push notification config storage.
+
 ### Custom Implementation
 
 ```rust

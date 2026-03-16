@@ -497,7 +497,7 @@ async fn push_config_crud_lifecycle() {
 
     // List push configs.
     let configs = handler
-        .on_list_push_configs("task-1", None)
+        .on_list_push_configs("task-1", None, None)
         .await
         .expect("list push configs");
     assert_eq!(configs.len(), 1);
@@ -515,7 +515,7 @@ async fn push_config_crud_lifecycle() {
 
     // Verify deleted.
     let configs = handler
-        .on_list_push_configs("task-1", None)
+        .on_list_push_configs("task-1", None, None)
         .await
         .expect("list push configs after delete");
     assert!(configs.is_empty());

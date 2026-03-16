@@ -87,38 +87,57 @@ let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
 
 ## 7.4 WebSocket Transport
 
-**Status:** Planned (blocked on spec evolution)
+**Status:** ✅ Implemented
 
-**Motivation:** SSE is unidirectional (server-to-client). WebSocket enables
-bidirectional streaming, which is useful for interactive agents that need
-client-to-server messages mid-stream.
+The `websocket` feature flag enables persistent bidirectional communication via
+`tokio-tungstenite`. JSON-RPC 2.0 messages are exchanged as WebSocket text frames.
 
-**Approach:**
+**Server:** `WebSocketDispatcher` accepts WebSocket connections and routes JSON-RPC
+requests through the same `RequestHandler` used by HTTP transports. Streaming methods
+send multiple frames followed by a `stream_complete` response.
 
-- The `Transport` trait in `a2a-protocol-client` already abstracts the transport layer.
-  A `WebSocketTransport` would implement the same trait.
-- Server-side: add a WebSocket upgrade handler alongside the existing HTTP
-  handler. The `RequestHandler` methods are transport-agnostic.
-- Wait for the A2A spec to formalize WebSocket semantics before implementing.
+**Client:** `WebSocketTransport` provides persistent connection reuse. Implements
+the `Transport` trait so it works with the existing `ClientBuilder`.
+
+```toml
+# Server
+a2a-protocol-server = { version = "0.2", features = ["websocket"] }
+
+# Client
+a2a-protocol-client = { version = "0.2", features = ["websocket"] }
+```
 
 ---
 
 ## 7.5 Multi-Tenancy
 
-**Status:** Partially implemented (tenant field in params)
+**Status:** ✅ Implemented
 
-**Motivation:** Hosting multiple logical agents on a single server instance,
-each with isolated task stores and configurations.
+Full tenant isolation is provided via two approaches:
 
-**Current state:** The `tenant` field exists on request params and is passed
-through to the store layer. The REST dispatcher strips a `/tenant/{id}` prefix.
+**In-memory (task-local):** `TenantAwareInMemoryTaskStore` and
+`TenantAwareInMemoryPushConfigStore` use `tokio::task_local!` via
+`TenantContext::scope()`. Each tenant gets an independent store instance.
 
-**Remaining work:**
+**SQLite (column-partitioned):** `TenantAwareSqliteTaskStore` and
+`TenantAwareSqlitePushConfigStore` partition by a `tenant_id` column,
+suitable for production deployments.
 
-- Tenant-aware task store partitioning (currently all tenants share one store).
+```rust
+use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
+
+let store = Arc::new(TenantAwareInMemoryTaskStore::new());
+
+// Scope operations to a tenant
+TenantContext::scope("tenant-alpha".to_string(), async move {
+    store.save(task).await.unwrap();
+}).await;
+```
+
+**Remaining potential work:**
+
 - Per-tenant configuration (timeouts, capacity limits, executor selection).
-- Tenant authentication and authorization hooks.
-- Consider a `TenantResolver` trait that maps incoming requests to tenant IDs.
+- `TenantResolver` trait for custom tenant ID extraction from requests.
 
 ---
 

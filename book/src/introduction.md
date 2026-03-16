@@ -53,11 +53,12 @@ a2a-rust is organized as a Cargo workspace with four crates:
 ## Key Features
 
 - **Full v1.0 wire types** — Every A2A type with correct JSON serialization
-- **Dual transport** — JSON-RPC 2.0 and REST, both client and server
+- **Triple transport** — JSON-RPC 2.0, REST, and WebSocket (`websocket` feature flag), both client and server
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
 - **Agent card discovery** — Static and dynamic card handlers with HTTP caching (ETag, Last-Modified, 304)
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory and SQLite backends
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory, SQLite, and tenant-aware backends
+- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` with full tenant isolation
 - **Interceptor chains** — Client and server middleware for auth, logging, metrics, rate limiting
 - **Rate limiting** — Built-in `RateLimitInterceptor` with per-caller fixed-window limiting
 - **Client retry** — Configurable `RetryPolicy` with exponential backoff for transient failures

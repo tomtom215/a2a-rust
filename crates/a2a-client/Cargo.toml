@@ -24,6 +24,8 @@ tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:web
 signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]
+## Enable WebSocket transport via `tokio-tungstenite`.
+websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 
 [dependencies]
 a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
@@ -34,6 +36,8 @@ hyper-util     = { workspace = true }
 tokio          = { workspace = true }
 uuid           = { workspace = true }
 tracing        = { workspace = true, optional = true }
+tokio-tungstenite = { version = ">=0.24, <0.25", optional = true }
+futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
 rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
@@ -46,6 +50,16 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 criterion = { workspace = true }
+bytes = "1"
+rcgen = "0.13"
+tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
+rustls = { version = ">=0.23, <0.24", default-features = false, features = ["std", "tls12", "ring"] }
+rustls-pki-types = { version = ">=1.7, <2" }
+hyper = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util = { workspace = true, features = ["server", "server-auto"] }
+a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-server = { version = "0.2.0", path = "../a2a-server" }
 
 [[bench]]
 name = "sse_parse"
