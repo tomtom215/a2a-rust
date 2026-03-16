@@ -734,7 +734,11 @@ async fn unicode_emoji_in_messages() {
         .expect("build handler");
 
     let result = handler
-        .on_send_message(make_send_params("Hello \u{1F600} world \u{1F310}"), false, None)
+        .on_send_message(
+            make_send_params("Hello \u{1F600} world \u{1F310}"),
+            false,
+            None,
+        )
         .await
         .expect("send unicode message");
 
@@ -796,7 +800,10 @@ async fn large_page_size_clamped() {
         history_length: None,
     };
 
-    let result = handler.on_list_tasks(params, None).await.expect("list tasks");
+    let result = handler
+        .on_list_tasks(params, None)
+        .await
+        .expect("list tasks");
     // We only created 2 tasks, so we should get 2 back.
     // The important thing is that it does not crash or allocate huge memory.
     assert_eq!(result.tasks.len(), 2);
@@ -979,11 +986,14 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 2: Get the task by ID.
     let fetched = handler
-        .on_get_task(a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
-            id: task_id.0.clone(),
-            history_length: None,
-        }, None)
+        .on_get_task(
+            a2a_protocol_types::params::TaskQueryParams {
+                tenant: None,
+                id: task_id.0.clone(),
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("get task");
     assert_eq!(fetched.id, task_id);
@@ -991,16 +1001,19 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 3: List tasks — should include our task.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(
@@ -1010,11 +1023,14 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 4: Cancel a completed task — should fail with TaskNotCancelable.
     let cancel_err = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: task_id.0.clone(),
-            metadata: None,
-        }, None)
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: task_id.0.clone(),
+                metadata: None,
+            },
+            None,
+        )
         .await
         .unwrap_err();
     assert!(
@@ -1064,16 +1080,19 @@ async fn full_handler_lifecycle_with_streaming() {
 
     // After the stream is exhausted, list tasks to verify the task was stored.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(

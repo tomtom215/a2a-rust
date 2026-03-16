@@ -317,7 +317,11 @@ impl JsonRpcDispatcher {
             }
             "ListTaskPushNotificationConfigs" => {
                 match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
-                    Ok(p) => match self.handler.on_list_push_configs(&p.id, Some(headers)).await {
+                    Ok(p) => match self
+                        .handler
+                        .on_list_push_configs(&p.id, Some(headers))
+                        .await
+                    {
                         Ok(configs) => {
                             let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
                                 configs,

@@ -353,7 +353,10 @@ async fn list_tasks_returns_created_tasks() {
         include_artifacts: None,
         history_length: None,
     };
-    let result = handler.on_list_tasks(params, None).await.expect("list tasks");
+    let result = handler
+        .on_list_tasks(params, None)
+        .await
+        .expect("list tasks");
     assert_eq!(result.tasks.len(), 2);
 }
 
@@ -373,16 +376,19 @@ async fn cancel_task_on_working_task() {
 
     // Get the task ID from the store (list all tasks).
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
 
@@ -395,7 +401,10 @@ async fn cancel_task_on_working_task() {
         id: task.id.0.clone(),
         metadata: None,
     };
-    let canceled = handler.on_cancel_task(cancel_params, None).await.expect("cancel");
+    let canceled = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .expect("cancel");
     assert_eq!(canceled.status.state, TaskState::Canceled);
 
     // Drop the stream reader to clean up.
@@ -425,7 +434,10 @@ async fn cancel_terminal_task_fails() {
         id: task_id,
         metadata: None,
     };
-    let err = handler.on_cancel_task(cancel_params, None).await.unwrap_err();
+    let err = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(err, a2a_protocol_server::ServerError::TaskNotCancelable(_)),
         "expected TaskNotCancelable, got {err:?}"
@@ -443,7 +455,10 @@ async fn cancel_nonexistent_task_fails() {
         id: "does-not-exist".into(),
         metadata: None,
     };
-    let err = handler.on_cancel_task(cancel_params, None).await.unwrap_err();
+    let err = handler
+        .on_cancel_task(cancel_params, None)
+        .await
+        .unwrap_err();
     assert!(matches!(
         err,
         a2a_protocol_server::ServerError::TaskNotFound(_)
@@ -767,16 +782,19 @@ async fn task_continuation_same_context_finds_stored_task() {
 
     // Both tasks should be in the store.
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: Some("ctx-continuation".into()),
-            status: None,
-            page_size: None,
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: Some("ctx-continuation".into()),
+                status: None,
+                page_size: None,
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .expect("list tasks");
     assert!(

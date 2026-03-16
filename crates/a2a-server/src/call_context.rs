@@ -86,11 +86,7 @@ impl CallContext {
 
     /// Adds a single HTTP header (key is lowercased for case-insensitive matching).
     #[must_use]
-    pub fn with_http_header(
-        mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> Self {
+    pub fn with_http_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.http_headers
             .insert(key.into().to_ascii_lowercase(), value.into());
         self

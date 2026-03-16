@@ -424,11 +424,7 @@ impl RestDispatcher {
         &self,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        match self
-            .handler
-            .on_get_extended_agent_card(Some(headers))
-            .await
-        {
+        match self.handler.on_get_extended_agent_card(Some(headers)).await {
             Ok(card) => json_ok_response(&card),
             Err(e) => server_error_to_response(&e),
         }

@@ -164,16 +164,19 @@ async fn cancel_task_signals_cancellation_token() {
 
             // List tasks to find our task
             let list_result = handler
-                .on_list_tasks(ListTasksParams {
-                    tenant: None,
-                    context_id: None,
-                    status: None,
-                    page_size: Some(10),
-                    page_token: None,
-                    status_timestamp_after: None,
-                    include_artifacts: None,
-                    history_length: None,
-                }, None)
+                .on_list_tasks(
+                    ListTasksParams {
+                        tenant: None,
+                        context_id: None,
+                        status: None,
+                        page_size: Some(10),
+                        page_token: None,
+                        status_timestamp_after: None,
+                        include_artifacts: None,
+                        history_length: None,
+                    },
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -189,11 +192,14 @@ async fn cancel_task_signals_cancellation_token() {
                 .find(|t| !t.status.state.is_terminal())
             {
                 let cancel_result = handler
-                    .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-                        tenant: None,
-                        id: task.id.to_string(),
-                        metadata: None,
-                    }, None)
+                    .on_cancel_task(
+                        a2a_protocol_types::params::CancelTaskParams {
+                            tenant: None,
+                            id: task.id.to_string(),
+                            metadata: None,
+                        },
+                        None,
+                    )
                     .await;
                 match cancel_result {
                     Ok(cancelled) => {
@@ -213,11 +219,14 @@ async fn cancel_task_signals_cancellation_token() {
 async fn get_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_get_task(TaskQueryParams {
-            tenant: None,
-            id: "nonexistent-task".into(),
-            history_length: None,
-        }, None)
+        .on_get_task(
+            TaskQueryParams {
+                tenant: None,
+                id: "nonexistent-task".into(),
+                history_length: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(result, Err(ServerError::TaskNotFound(_))));
 }
@@ -226,11 +235,14 @@ async fn get_task_not_found() {
 async fn cancel_task_not_found() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: "nonexistent".into(),
-            metadata: None,
-        }, None)
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: "nonexistent".into(),
+                metadata: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(result, Err(ServerError::TaskNotFound(_))));
 }
@@ -253,11 +265,14 @@ async fn cancel_completed_task_returns_not_cancelable() {
 
     // Now try to cancel it
     let cancel_result = handler
-        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
-            id: task_id.to_string(),
-            metadata: None,
-        }, None)
+        .on_cancel_task(
+            a2a_protocol_types::params::CancelTaskParams {
+                tenant: None,
+                id: task_id.to_string(),
+                metadata: None,
+            },
+            None,
+        )
         .await;
     assert!(matches!(
         cancel_result,
@@ -277,16 +292,19 @@ async fn list_tasks_pagination_page_size_zero_defaults() {
 
     // List with page_size = 0 (should default to 50, not return empty)
     let result = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(0),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: Some(0),
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .unwrap();
     assert!(

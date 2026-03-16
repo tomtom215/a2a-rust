@@ -307,7 +307,9 @@ async fn artifact_produced_in_task() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("hello"), false, None).await;
+    let result = handler
+        .on_send_message(make_params("hello"), false, None)
+        .await;
     match result.unwrap() {
         a2a_protocol_server::SendMessageResult::Response(
             a2a_protocol_types::responses::SendMessageResponse::Task(task),
@@ -491,16 +493,19 @@ async fn concurrent_list_and_send() {
     for _ in 0..5 {
         let h = Arc::clone(&handler);
         handles.push(tokio::spawn(async move {
-            h.on_list_tasks(ListTasksParams {
-                tenant: None,
-                context_id: None,
-                status: None,
-                page_size: Some(50),
-                page_token: None,
-                status_timestamp_after: None,
-                include_artifacts: None,
-                history_length: None,
-            }, None)
+            h.on_list_tasks(
+                ListTasksParams {
+                    tenant: None,
+                    context_id: None,
+                    status: None,
+                    page_size: Some(50),
+                    page_token: None,
+                    status_timestamp_after: None,
+                    include_artifacts: None,
+                    history_length: None,
+                },
+                None,
+            )
             .await
             .ok();
         }));
@@ -536,16 +541,19 @@ async fn task_store_config_both_ttl_and_capacity() {
 
     // List tasks - should be capped at capacity
     let list = handler
-        .on_list_tasks(ListTasksParams {
-            tenant: None,
-            context_id: None,
-            status: None,
-            page_size: Some(50),
-            page_token: None,
-            status_timestamp_after: None,
-            include_artifacts: None,
-            history_length: None,
-        }, None)
+        .on_list_tasks(
+            ListTasksParams {
+                tenant: None,
+                context_id: None,
+                status: None,
+                page_size: Some(50),
+                page_token: None,
+                status_timestamp_after: None,
+                include_artifacts: None,
+                history_length: None,
+            },
+            None,
+        )
         .await
         .unwrap();
     assert!(
@@ -587,7 +595,9 @@ async fn custom_event_queue_capacity() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("test"), false, None).await;
+    let result = handler
+        .on_send_message(make_params("test"), false, None)
+        .await;
     assert!(result.is_ok(), "should work with small queue capacity");
 }
 
@@ -598,7 +608,9 @@ async fn custom_max_event_size() {
         .build()
         .unwrap();
 
-    let result = handler.on_send_message(make_params("test"), false, None).await;
+    let result = handler
+        .on_send_message(make_params("test"), false, None)
+        .await;
     assert!(result.is_ok());
 }
 
