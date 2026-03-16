@@ -328,10 +328,10 @@ src/
   trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
   error.rs                          [135 lines]  ServerError, ServerResult<T>, to_a2a_error() conversion
   executor.rs                       [68 lines]   AgentExecutor trait (Pin<Box<dyn Future>> for object safety)
-  handler.rs                        [504 lines]  RequestHandler: on_send_message, collect_events, find_task_by_context, deliver_push, return_immediately
+  handler/                                       RequestHandler (split into 8 submodules: messaging, lifecycle, push_config, event_processing, shutdown, limits, helpers)
   builder.rs                        [126 lines]  RequestHandlerBuilder: executor, stores, push, interceptors, agent card
   request_context.rs                [61 lines]   RequestContext: message, task_id, context_id, stored_task, metadata
-  call_context.rs                   [50 lines]   CallContext: method name for interceptor use
+  call_context.rs                   [93 lines]   CallContext: method name, HTTP headers for interceptor auth
   interceptor.rs                    [111 lines]  ServerInterceptor trait, ServerInterceptorChain (before/after hooks)
   dispatch/
     mod.rs                          [10 lines]   re-exports

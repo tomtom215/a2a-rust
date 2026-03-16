@@ -36,7 +36,15 @@ a2a-rust/
 │   ├── a2a-protocol-server/         # Server framework
 │   │   └── src/
 │   │       ├── lib.rs          # Public re-exports
-│   │       ├── handler.rs      # RequestHandler (core orchestration)
+│   │       ├── handler/        # RequestHandler (core orchestration)
+│   │       │   ├── mod.rs          # Struct definition, SendMessageResult
+│   │       │   ├── limits.rs       # HandlerLimits config
+│   │       │   ├── messaging.rs    # SendMessage / SendStreamingMessage
+│   │       │   ├── lifecycle.rs    # GetTask, ListTasks, CancelTask, etc.
+│   │       │   ├── push_config.rs  # Push notification config CRUD
+│   │       │   ├── event_processing.rs  # Event collection, push delivery
+│   │       │   ├── shutdown.rs     # Graceful shutdown
+│   │       │   └── helpers.rs      # Validation, context builders
 │   │       ├── builder.rs      # RequestHandlerBuilder
 │   │       ├── executor.rs     # AgentExecutor trait
 │   │       ├── dispatch/       # JsonRpcDispatcher, RestDispatcher
@@ -44,7 +52,8 @@ a2a-rust/
 │   │       ├── push/           # PushConfigStore, PushSender
 │   │       ├── streaming/      # EventQueueWriter, EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
-│   │       ├── metrics.rs      # Metrics trait, NoopMetrics
+│   │       ├── call_context.rs # CallContext with HTTP headers
+│   │       ├── metrics.rs      # Metrics trait (incl. on_latency)
 │   │       └── request_context.rs  # RequestContext
 │   │
 │   └── a2a-protocol-sdk/            # Umbrella crate

@@ -18,7 +18,7 @@
 //! |---|---|
 //! | [`error`] | [`ServerError`], [`ServerResult`] |
 //! | [`executor`] | [`AgentExecutor`] trait |
-//! | [`handler`] | [`RequestHandler`], [`SendMessageResult`] |
+//! | [`handler`] | [`RequestHandler`], [`SendMessageResult`], [`HandlerLimits`] |
 //! | [`builder`] | [`RequestHandlerBuilder`] |
 //! | [`store`] | [`TaskStore`], [`InMemoryTaskStore`] |
 //! | [`streaming`] | Event queues, SSE response builder |
@@ -27,7 +27,8 @@
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`request_context`] | [`RequestContext`] |
-//! | [`call_context`] | [`CallContext`] |
+//! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
+//! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //!
 //! # Transport limitations
 //!
@@ -74,8 +75,8 @@ pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
-pub use metrics::Metrics;
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
+pub use metrics::Metrics;
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
 };

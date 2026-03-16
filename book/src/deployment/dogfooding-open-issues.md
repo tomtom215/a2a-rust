@@ -4,35 +4,23 @@ Issues identified during dogfooding that have not yet been fixed. Organized by s
 
 ## Architecture Issues
 
-### Push Delivery Broken for Streaming Mode
+### ~~Push Delivery Broken for Streaming Mode~~ ✅ RESOLVED
 
-**Severity:** High | **Effort:** Large
+~~**Severity:** High | **Effort:** Large~~
 
-`deliver_push()` only runs inside `collect_events()`, which only executes for synchronous, non-`return_immediately` requests. For streaming requests, events flow through `build_sse_response` which never calls `deliver_push`. This means:
+Fixed by spawning a background event processor (`spawn_background_event_processor`) that subscribes independently to the broadcast channel. Push notifications now fire for every event regardless of consumer mode (streaming, sync, or `return_immediately`). Stores were also changed from `Box<dyn T>` to `Arc<dyn T>` to enable cloning into the spawned task.
 
-- Push configs set **before** a streaming task starts: no delivery
-- Push configs set **during** a streaming task: no delivery
-- Push configs set inline via `SendMessageConfiguration.task_push_notification_config`: delivery only for sync mode
+### ~~`CallContext` Lacks HTTP Headers~~ ✅ RESOLVED
 
-The agent-team test suite consistently shows "Push notifications received: 0" despite correct CRUD operations.
+~~**Severity:** Medium | **Effort:** Medium~~
 
-**Recommended fix:** Decouple push delivery from the response consumer. When an event is written to the queue, check for push configs asynchronously and deliver regardless of whether the consumer is SSE, sync polling, or `return_immediately`.
+Fixed by adding `http_headers: HashMap<String, String>` to `CallContext`. Both `JsonRpcDispatcher` and `RestDispatcher` now extract headers from the incoming `hyper::HeaderMap` before consuming the request body and pass them through all handler methods. Interceptors can now inspect `Authorization`, `X-Request-Id`, and other headers.
 
-### `CallContext` Lacks HTTP Headers
+### ~~`PartContent` Untagged Enum May Misparse~~ ✅ RESOLVED
 
-**Severity:** Medium | **Effort:** Medium
+~~**Severity:** Low | **Effort:** Medium (breaking change)~~
 
-`CallContext` is constructed without HTTP request headers. `ServerInterceptor::before()` always receives `caller: None`. This blocks any real authentication story — interceptors can't extract bearer tokens, API keys, or request IDs from headers.
-
-**Recommended fix:** Add `headers: http::HeaderMap` field to `CallContext`. Populate it in both `JsonRpcDispatcher` and `RestDispatcher` before calling interceptors.
-
-### `PartContent` Untagged Enum May Misparse
-
-**Severity:** Low | **Effort:** Medium (breaking change)
-
-`PartContent` uses `#[serde(untagged)]` which tries variants in order. A JSON object with both `text` and `url` fields matches `Text` first, silently dropping `url`. The A2A v1.0 spec uses a `type` discriminator field.
-
-**Recommended fix:** Add `#[serde(tag = "type")]` with `kind` field matching the spec. This is a breaking change to the wire format.
+**Breaking change:** `PartContent` now uses `#[serde(tag = "type")]` with variant renames (`"text"`, `"file"`, `"data"`) per A2A spec. The old `Raw` and `Url` variants were merged into `File` with a new `FileContent` struct containing `name`, `mime_type`, `bytes`, and `uri` fields. Backward-compatible `Part::raw()` and `Part::url()` constructors delegate to the new `Part::file_bytes()` and `Part::file_uri()` methods.
 
 ## Ergonomics Issues
 
@@ -53,21 +41,19 @@ This is the single most repeated pattern in any a2a-rust application. Options:
 - Use RPITIT (Rust 1.75+) for `async fn` in traits — but this may sacrifice object safety
 - Provide a helper function: `fn boxed_future<F: Future>(f: F) -> Pin<Box<dyn Future>>`
 
-### `Arc<T: Metrics>` Doesn't Impl `Metrics`
+### ~~`Arc<T: Metrics>` Doesn't Impl `Metrics`~~ ✅ RESOLVED
 
-**Severity:** Low | **Effort:** Trivial
+~~**Severity:** Low | **Effort:** Trivial~~
 
-Using shared metrics requires a `MetricsForward(Arc<TeamMetrics>)` wrapper because `RequestHandlerBuilder::with_metrics` takes `impl Metrics + Send + Sync + 'static`.
-
-**Recommended fix:** Add blanket impl: `impl<T: Metrics> Metrics for Arc<T>`.
+Fixed by adding blanket impl: `impl<T: Metrics + ?Sized> Metrics for Arc<T>`. The `MetricsForward` wrapper is no longer needed.
 
 ## Observability Gaps
 
-### No `Metrics::on_latency`
+### ~~No `Metrics::on_latency`~~ ✅ RESOLVED
 
-**Severity:** Medium | **Effort:** Small
+~~**Severity:** Medium | **Effort:** Small~~
 
-The `Metrics` trait has `on_request`, `on_response`, `on_error`, `on_queue_depth_change` but no `on_latency(method: &str, duration: Duration)`. Request latency is the most important metric for production monitoring.
+Fixed by adding `on_latency(&self, method: &str, duration: Duration)` to the `Metrics` trait with a default no-op implementation. All handler methods now measure elapsed time via `Instant::now()` and report it through this callback.
 
 ### No `TaskStore::count()`
 
@@ -129,11 +115,11 @@ These use sensible defaults but are not yet user-configurable via builder method
 
 ## Priority Order for Future Sessions
 
-1. **Push delivery architecture** — High severity, blocks a core protocol feature
-2. **`CallContext` + HTTP headers** — Medium severity, blocks production auth
-3. **`Metrics::on_latency`** — Medium severity, blocks production monitoring
+1. ~~**Push delivery architecture**~~ ✅ Done
+2. ~~**`CallContext` + HTTP headers**~~ ✅ Done
+3. ~~**`Metrics::on_latency`**~~ ✅ Done
 4. **Persistent store reference impl** — Medium severity, blocks production deployments
 5. **`AgentExecutor` ergonomics** — Medium severity, affects every SDK user
 6. **Remaining hardcoded constants** — Low severity, sensible defaults exist
-7. **`PartContent` tagged enum** — Low severity but breaking change, better to fix before 1.0
-8. **Blanket `impl Metrics for Arc<T>`** — Trivial, do anytime
+7. ~~**`PartContent` tagged enum**~~ ✅ Done
+8. ~~**Blanket `impl Metrics for Arc<T>`**~~ ✅ Done

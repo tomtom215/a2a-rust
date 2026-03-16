@@ -43,8 +43,7 @@ impl RequestHandler {
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {
-                self.metrics
-                    .on_response("CreateTaskPushNotificationConfig");
+                self.metrics.on_response("CreateTaskPushNotificationConfig");
                 self.metrics
                     .on_latency("CreateTaskPushNotificationConfig", elapsed);
             }
@@ -133,8 +132,7 @@ impl RequestHandler {
         let elapsed = start.elapsed();
         match &result {
             Ok(_) => {
-                self.metrics
-                    .on_response("ListTaskPushNotificationConfigs");
+                self.metrics.on_response("ListTaskPushNotificationConfigs");
                 self.metrics
                     .on_latency("ListTaskPushNotificationConfigs", elapsed);
             }
@@ -175,8 +173,7 @@ impl RequestHandler {
         let elapsed = start.elapsed();
         match &result {
             Ok(()) => {
-                self.metrics
-                    .on_response("DeleteTaskPushNotificationConfig");
+                self.metrics.on_response("DeleteTaskPushNotificationConfig");
                 self.metrics
                     .on_latency("DeleteTaskPushNotificationConfig", elapsed);
             }

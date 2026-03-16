@@ -198,7 +198,7 @@ impl Part {
 
     /// Creates a file [`Part`] with full metadata.
     #[must_use]
-    pub fn file(file: FileContent) -> Self {
+    pub const fn file(file: FileContent) -> Self {
         Self {
             content: PartContent::File { file },
             metadata: None,

@@ -7,7 +7,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::agent_card::AgentCard;
-use a2a_protocol_types::params::{CancelTaskParams, ListTasksParams, TaskIdParams, TaskQueryParams};
+use a2a_protocol_types::params::{
+    CancelTaskParams, ListTasksParams, TaskIdParams, TaskQueryParams,
+};
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 

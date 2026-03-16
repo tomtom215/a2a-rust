@@ -196,6 +196,7 @@ impl RequestHandler {
     /// which only runs for sync (non-streaming) mode. This background
     /// processor ensures push notifications fire for every event regardless
     /// of whether the consumer is streaming or synchronous.
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn spawn_background_event_processor(
         &self,
         task_id: TaskId,
@@ -223,9 +224,8 @@ impl RequestHandler {
             };
 
             // Get the current task from the store.
-            let mut last_task = match task_store.get(&task_id).await {
-                Ok(Some(t)) => t,
-                _ => return,
+            let Ok(Some(mut last_task)) = task_store.get(&task_id).await else {
+                return;
             };
 
             let mut executor_done = false;

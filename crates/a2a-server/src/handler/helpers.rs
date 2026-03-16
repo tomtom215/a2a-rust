@@ -14,7 +14,7 @@ use crate::error::{ServerError, ServerResult};
 use super::RequestHandler;
 
 /// Validates an ID string: rejects empty/whitespace-only and excessively long values.
-pub(crate) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
+pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerResult<()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return Err(ServerError::InvalidParams(format!(
@@ -31,13 +31,13 @@ pub(crate) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerRes
 }
 
 /// Builds a [`CallContext`] from a method name and optional HTTP headers.
-pub(crate) fn build_call_context(
+pub(super) fn build_call_context(
     method: &str,
     headers: Option<&HashMap<String, String>>,
 ) -> CallContext {
     let mut ctx = CallContext::new(method);
     if let Some(h) = headers {
-        ctx.http_headers = h.clone();
+        ctx.http_headers.clone_from(h);
     }
     ctx
 }

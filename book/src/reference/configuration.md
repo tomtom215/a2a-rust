@@ -29,6 +29,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size |
 | `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
+| `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
 
 ### TaskStoreConfig
 
