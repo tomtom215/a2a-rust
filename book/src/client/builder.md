@@ -134,9 +134,50 @@ let client = ClientBuilder::new(url)
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
 
+## Client Reuse (Best Practice)
+
+**Create clients once and reuse them across requests.** Each `A2aClient` holds
+a connection pool internally (via hyper), so reuse avoids repeated DNS
+resolution, TCP handshakes, and TLS negotiation on every call.
+
+```rust
+// ✅ Good: build once, reuse across requests
+struct MyOrchestrator {
+    analyzer: A2aClient,
+    builder: A2aClient,
+}
+
+impl MyOrchestrator {
+    fn new(analyzer_url: &str, builder_url: &str) -> Self {
+        Self {
+            analyzer: ClientBuilder::new(analyzer_url).build().unwrap(),
+            builder: ClientBuilder::new(builder_url)
+                .with_protocol_binding("REST")
+                .build()
+                .unwrap(),
+        }
+    }
+
+    async fn run(&self) {
+        // Reuse the same client for every request
+        let _ = self.analyzer.send_message(params).await;
+        let _ = self.builder.send_message(params).await;
+    }
+}
+```
+
+```rust
+// ❌ Avoid: rebuilding the client on every call
+async fn bad_pattern(url: &str) {
+    // This works but wastes resources — connection pool is discarded each time
+    let client = ClientBuilder::new(url).build().unwrap();
+    let _ = client.send_message(params).await;
+}
+```
+
 ## Thread Safety
 
-`A2aClient` is `Send + Sync` and can be shared across tasks:
+`A2aClient` is `Send + Sync` and can be shared across tasks via `Arc`:
 
 ```rust
 use std::sync::Arc;

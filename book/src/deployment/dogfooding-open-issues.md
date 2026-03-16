@@ -100,13 +100,11 @@ Added `CallContext::request_id: Option<String>` — automatically populated from
 
 Added `RetryPolicy` and `ClientBuilder::with_retry_policy()` with configurable exponential backoff. `ClientError::is_retryable()` classifies transient vs permanent errors.
 
-### No Connection Pooling in Coordinator Pattern
+### ~~No Connection Pooling in Coordinator Pattern~~ ✅ RESOLVED
 
-**Severity:** Low | **Effort:** Small
+~~**Severity:** Low | **Effort:** Small~~
 
-Each `delegate_*` call in orchestrator agents creates a new `ClientBuilder::new(url).build()`. The hyper client inside does pool connections, but the client/builder overhead is repeated unnecessarily.
-
-**Recommendation:** Document the pattern of creating clients once and reusing them. Consider adding `A2aClient::clone()` support.
+Fixed by refactoring `CoordinatorExecutor` to build clients once at construction time and reuse them across delegate calls. Added "Client Reuse (Best Practice)" section to the book's client builder page documenting the pattern.
 
 ### ~~Executor Event Emission Boilerplate~~ ✅ Done
 

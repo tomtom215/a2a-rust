@@ -13,7 +13,7 @@ use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::TaskState;
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::executor_helpers::boxed_future;
 use a2a_protocol_server::request_context::RequestContext;
@@ -23,14 +23,39 @@ use crate::helpers::{make_send_params, EventEmitter};
 
 /// Orchestrates the team: delegates tasks to other agents via A2A client calls,
 /// aggregates results, and reports a unified summary.
+///
+/// # Client reuse
+///
+/// Clients are built once at construction time and reused across requests.
+/// Each `A2aClient` holds a connection pool internally (via hyper), so reuse
+/// avoids repeated DNS resolution, TCP handshakes, and TLS negotiation.
 pub struct CoordinatorExecutor {
     /// URLs of the other agents, keyed by name.
     pub agent_urls: HashMap<String, String>,
+    /// Pre-built clients for each agent, created once and reused.
+    clients: HashMap<String, A2aClient>,
 }
 
 impl CoordinatorExecutor {
     pub fn new(agent_urls: HashMap<String, String>) -> Self {
-        Self { agent_urls }
+        // Build clients eagerly — if a URL is invalid the client won't be
+        // in the map and the delegate method will report the error.
+        let mut clients = HashMap::new();
+        for (name, url) in &agent_urls {
+            // Use REST for build_monitor, JSON-RPC for others.
+            let builder = if name == "build_monitor" {
+                ClientBuilder::new(url).with_protocol_binding("REST")
+            } else {
+                ClientBuilder::new(url)
+            };
+            if let Ok(client) = builder.build() {
+                clients.insert(name.clone(), client);
+            }
+        }
+        Self {
+            agent_urls,
+            clients,
+        }
     }
 }
 
@@ -91,13 +116,13 @@ impl AgentExecutor for CoordinatorExecutor {
 
 impl CoordinatorExecutor {
     async fn delegate_analysis(&self, report_lines: &mut Vec<String>) {
-        let Some(analyzer_url) = self.agent_urls.get("code_analyzer") else {
+        if !self.agent_urls.contains_key("code_analyzer") {
             return;
-        };
+        }
         report_lines.push(String::new());
         report_lines.push("--- Code Analysis ---".to_owned());
 
-        let Ok(client) = ClientBuilder::new(analyzer_url).build() else {
+        let Some(client) = self.clients.get("code_analyzer") else {
             report_lines.push("  Cannot connect to analyzer".to_string());
             return;
         };
@@ -125,16 +150,13 @@ impl CoordinatorExecutor {
     }
 
     async fn delegate_build(&self, report_lines: &mut Vec<String>) {
-        let Some(build_url) = self.agent_urls.get("build_monitor") else {
+        if !self.agent_urls.contains_key("build_monitor") {
             return;
-        };
+        }
         report_lines.push(String::new());
         report_lines.push("--- Build Check ---".to_owned());
 
-        let Ok(client) = ClientBuilder::new(build_url)
-            .with_protocol_binding("REST")
-            .build()
-        else {
+        let Some(client) = self.clients.get("build_monitor") else {
             return;
         };
 
@@ -148,13 +170,13 @@ impl CoordinatorExecutor {
     }
 
     async fn delegate_health(&self, report_lines: &mut Vec<String>) {
-        let Some(health_url) = self.agent_urls.get("health_monitor") else {
+        if !self.agent_urls.contains_key("health_monitor") {
             return;
-        };
+        }
         report_lines.push(String::new());
         report_lines.push("--- Health Check ---".to_owned());
 
-        let Ok(client) = ClientBuilder::new(health_url).build() else {
+        let Some(client) = self.clients.get("health_monitor") else {
             return;
         };
 
