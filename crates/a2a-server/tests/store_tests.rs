@@ -329,3 +329,135 @@ async fn ttl_eviction_removes_terminal_tasks() {
     let old = store.get(&TaskId::new("task-old")).await.unwrap();
     assert!(old.is_none(), "expired terminal task should be evicted");
 }
+
+// ── count() tests ───────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn count_returns_zero_for_empty_store() {
+    let store = InMemoryTaskStore::new();
+    assert_eq!(store.count().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn count_tracks_inserts_and_deletes() {
+    let store = InMemoryTaskStore::new();
+
+    store
+        .save(make_task("task-1", "ctx", TaskState::Working))
+        .await
+        .unwrap();
+    store
+        .save(make_task("task-2", "ctx", TaskState::Working))
+        .await
+        .unwrap();
+    assert_eq!(store.count().await.unwrap(), 2);
+
+    store.delete(&TaskId::new("task-1")).await.unwrap();
+    assert_eq!(store.count().await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn count_not_affected_by_update() {
+    let store = InMemoryTaskStore::new();
+
+    store
+        .save(make_task("task-1", "ctx", TaskState::Working))
+        .await
+        .unwrap();
+    assert_eq!(store.count().await.unwrap(), 1);
+
+    // Update same task — count should stay at 1.
+    store
+        .save(make_task("task-1", "ctx", TaskState::Completed))
+        .await
+        .unwrap();
+    assert_eq!(store.count().await.unwrap(), 1);
+}
+
+// ── Multi-tenancy isolation tests ───────────────────────────────────────────
+
+#[tokio::test]
+async fn multi_tenant_context_isolation() {
+    let store = InMemoryTaskStore::new();
+
+    // Tenant A tasks (context "tenant-a").
+    store
+        .save(make_task("a-task-1", "tenant-a", TaskState::Working))
+        .await
+        .unwrap();
+    store
+        .save(make_task("a-task-2", "tenant-a", TaskState::Completed))
+        .await
+        .unwrap();
+
+    // Tenant B tasks (context "tenant-b").
+    store
+        .save(make_task("b-task-1", "tenant-b", TaskState::Working))
+        .await
+        .unwrap();
+
+    // Listing with tenant-a context should only return tenant-a tasks.
+    let params_a = ListTasksParams {
+        context_id: Some("tenant-a".into()),
+        ..default_list_params()
+    };
+    let result_a = store.list(&params_a).await.unwrap();
+    assert_eq!(result_a.tasks.len(), 2);
+    assert!(result_a.tasks.iter().all(|t| t.context_id.0 == "tenant-a"));
+
+    // Listing with tenant-b context should only return tenant-b tasks.
+    let params_b = ListTasksParams {
+        context_id: Some("tenant-b".into()),
+        ..default_list_params()
+    };
+    let result_b = store.list(&params_b).await.unwrap();
+    assert_eq!(result_b.tasks.len(), 1);
+    assert_eq!(result_b.tasks[0].id.0, "b-task-1");
+
+    // Total count should include all tenants.
+    assert_eq!(store.count().await.unwrap(), 3);
+}
+
+#[tokio::test]
+async fn multi_tenant_delete_does_not_affect_other_tenants() {
+    let store = InMemoryTaskStore::new();
+
+    store
+        .save(make_task("a-1", "tenant-a", TaskState::Working))
+        .await
+        .unwrap();
+    store
+        .save(make_task("b-1", "tenant-b", TaskState::Working))
+        .await
+        .unwrap();
+
+    // Delete tenant-a's task.
+    store.delete(&TaskId::new("a-1")).await.unwrap();
+
+    // Tenant-b's task should be unaffected.
+    let task_b = store.get(&TaskId::new("b-1")).await.unwrap();
+    assert!(task_b.is_some());
+    assert_eq!(task_b.unwrap().context_id.0, "tenant-b");
+
+    assert_eq!(store.count().await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn insert_if_absent_returns_correct_count() {
+    let store = InMemoryTaskStore::new();
+
+    let inserted = store
+        .insert_if_absent(make_task("task-1", "ctx", TaskState::Submitted))
+        .await
+        .unwrap();
+    assert!(inserted);
+    assert_eq!(store.count().await.unwrap(), 1);
+
+    // Try inserting same ID again.
+    let inserted = store
+        .insert_if_absent(make_task("task-1", "ctx", TaskState::Working))
+        .await
+        .unwrap();
+    assert!(!inserted);
+    assert_eq!(store.count().await.unwrap(), 1);
+}

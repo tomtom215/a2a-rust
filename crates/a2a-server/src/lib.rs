@@ -25,8 +25,10 @@
 //! | [`streaming`] | Event queues, SSE response builder |
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
+//! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
 //! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
+//! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
@@ -39,9 +41,10 @@
 //!
 //! # Rate limiting
 //!
-//! This library does **not** perform request rate limiting. Deployments that
-//! require rate limiting should handle it in a reverse proxy (e.g. nginx,
-//! Envoy) or a middleware layer in front of the A2A handler.
+//! Built-in rate limiting is available via [`RateLimitInterceptor`],
+//! a fixed-window per-caller interceptor. For advanced use cases (sliding windows,
+//! distributed counters), use a reverse proxy (nginx, Envoy) or a custom
+//! [`ServerInterceptor`].
 
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -62,7 +65,9 @@ pub mod handler;
 pub mod interceptor;
 pub mod metrics;
 pub mod push;
+pub mod rate_limit;
 pub mod request_context;
+pub mod serve;
 pub mod store;
 pub mod streaming;
 
@@ -76,14 +81,16 @@ pub use call_context::CallContext;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
-pub use executor_helpers::boxed_future;
+pub use executor_helpers::{boxed_future, EventEmitter};
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use metrics::Metrics;
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
 };
+pub use rate_limit::{RateLimitConfig, RateLimitInterceptor};
 pub use request_context::RequestContext;
+pub use serve::{serve, serve_with_addr, Dispatcher};
 pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 #[cfg(feature = "sqlite")]

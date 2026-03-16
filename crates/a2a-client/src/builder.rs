@@ -33,6 +33,7 @@ use crate::client::A2aClient;
 use crate::config::{ClientConfig, TlsConfig, BINDING_GRPC, BINDING_JSONRPC, BINDING_REST};
 use crate::error::{ClientError, ClientResult};
 use crate::interceptor::{CallInterceptor, InterceptorChain};
+use crate::retry::{RetryPolicy, RetryTransport};
 use crate::transport::{JsonRpcTransport, RestTransport, Transport};
 
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
@@ -47,6 +48,7 @@ pub struct ClientBuilder {
     interceptors: InterceptorChain,
     config: ClientConfig,
     preferred_binding: Option<String>,
+    retry_policy: Option<RetryPolicy>,
 }
 
 impl ClientBuilder {
@@ -62,6 +64,7 @@ impl ClientBuilder {
             interceptors: InterceptorChain::new(),
             config: ClientConfig::default(),
             preferred_binding: None,
+            retry_policy: None,
         }
     }
 
@@ -82,6 +85,7 @@ impl ClientBuilder {
             interceptors: InterceptorChain::new(),
             config: ClientConfig::default(),
             preferred_binding: Some(binding),
+            retry_policy: None,
         }
     }
 
@@ -161,6 +165,30 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets a retry policy for transient failures.
+    ///
+    /// When set, the client automatically retries requests that fail with
+    /// transient errors (connection errors, timeouts, HTTP 429/502/503/504)
+    /// using exponential backoff.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use a2a_protocol_client::{ClientBuilder, RetryPolicy};
+    ///
+    /// # fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
+    /// let client = ClientBuilder::new("http://localhost:8080")
+    ///     .with_retry_policy(RetryPolicy::default())
+    ///     .build()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub const fn with_retry_policy(mut self, policy: RetryPolicy) -> Self {
+        self.retry_policy = Some(policy);
+        self
+    }
+
     /// Adds an interceptor to the chain.
     ///
     /// Interceptors are run in the order they are added.
@@ -226,6 +254,13 @@ impl ClientBuilder {
                     )));
                 }
             }
+        };
+
+        // Wrap with retry transport if a policy is configured.
+        let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
+            Box::new(RetryTransport::new(transport, policy))
+        } else {
+            transport
         };
 
         Ok(A2aClient::new(transport, self.interceptors, self.config))

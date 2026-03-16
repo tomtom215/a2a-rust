@@ -100,6 +100,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `A2aClient` | Main client for calling remote agents |
 | `ClientBuilder` | Fluent builder for client configuration |
 | `EventStream` | Async SSE event stream |
+| `RetryPolicy` | Configurable retry with exponential backoff |
 
 ### Client Methods
 
@@ -152,13 +153,21 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `PushSender` | Webhook delivery |
 | `ServerInterceptor` | Server-side middleware |
 | `AgentCardProducer` | Dynamic agent card generation |
+| `Dispatcher` | HTTP dispatch trait (for `serve()`) |
 
 ### Dispatchers
 
 | Type | Description |
 |------|-------------|
-| `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher |
-| `RestDispatcher` | RESTful HTTP dispatcher |
+| `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
+| `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
+
+### Server Startup
+
+| Function | Description |
+|----------|-------------|
+| `serve(addr, dispatcher)` | Bind + accept loop (blocking) |
+| `serve_with_addr(addr, dispatcher)` | Bind + spawn, returns `SocketAddr` |
 
 ### Built-in Implementations
 
@@ -174,6 +183,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 
 | Type | Description |
 |------|-------------|
+| `EventEmitter` | Ergonomic event emission helper |
 | `EventQueueWriter` | Write events to a stream |
 | `EventQueueReader` | Read events from a stream |
 | `EventQueueManager` | Manages stream lifecycle |

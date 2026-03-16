@@ -24,6 +24,24 @@ use tokio::sync::{broadcast, RwLock};
 
 use crate::metrics::Metrics;
 
+/// A zero-allocation writer that counts bytes written without storing them.
+///
+/// Used by [`InMemoryQueueWriter::write`] to measure serialized event size
+/// without performing a full allocation — avoiding the "double serialization"
+/// penalty (serialize once here for size, then again in the SSE layer).
+struct CountingWriter(usize);
+
+impl std::io::Write for CountingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0 += buf.len();
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 /// Default channel capacity for event queues.
 pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
 
@@ -116,7 +134,15 @@ impl EventQueueWriter for InMemoryQueueWriter {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Check serialized event size to prevent OOM from oversized events.
-            let serialized_size = serde_json::to_string(&event).map(|s| s.len()).unwrap_or(0);
+            // Uses a zero-allocation CountingWriter instead of `to_string()` to
+            // avoid allocating a full String just for size measurement — the event
+            // will be serialized again in the SSE layer.
+            let serialized_size = {
+                let mut counter = CountingWriter(0);
+                serde_json::to_writer(&mut counter, &event)
+                    .map(|()| counter.0)
+                    .unwrap_or(0)
+            };
             if serialized_size > self.max_event_size {
                 return Err(A2aError::internal(format!(
                     "event size {} bytes exceeds maximum {} bytes",

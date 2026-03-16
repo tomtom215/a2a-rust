@@ -46,29 +46,25 @@ Fixed by adding blanket impl: `impl<T: Metrics + ?Sized> Metrics for Arc<T>`. Th
 
 Fixed by adding `on_latency(&self, method: &str, duration: Duration)` to the `Metrics` trait with a default no-op implementation. All handler methods now measure elapsed time via `Instant::now()` and report it through this callback.
 
-### No `TaskStore::count()`
+### ~~No `TaskStore::count()`~~ ✅ RESOLVED
 
-**Severity:** Low | **Effort:** Trivial
+~~**Severity:** Low | **Effort:** Trivial~~
 
-`InMemoryTaskStore` has no method to query current capacity utilization. Useful for metrics dashboards and capacity planning.
+Added `TaskStore::count()` with default implementation returning `0`. Implemented for both `InMemoryTaskStore` (read lock + `HashMap::len()`) and `SqliteTaskStore` (`SELECT COUNT(*)`).
 
 ## Performance Issues
 
-### Double Serialization in `EventQueueWriter::write()`
+### ~~Double Serialization in `EventQueueWriter::write()`~~ ✅ RESOLVED
 
-**Severity:** Low | **Effort:** Small
+~~**Severity:** Low | **Effort:** Small~~
 
-`InMemoryQueueWriter::write()` serializes the event to JSON just to check byte size against the limit, then broadcasts the unserialized `StreamResponse`. The serialized bytes are discarded.
+Fixed by replacing `serde_json::to_string()` (allocates a `String`) with a zero-allocation `CountingWriter` that counts serialized bytes via `serde_json::to_writer()` without allocating.
 
-**Recommended fix:** Either cache the serialized form or compute size without full serialization.
+### ~~`InMemoryTaskStore` Write Lock Contention~~ ✅ RESOLVED
 
-### `InMemoryTaskStore` Write Lock Contention
+~~**Severity:** Low | **Effort:** Medium~~
 
-**Severity:** Low | **Effort:** Medium
-
-`save()` acquires a write lock unconditionally, even when no eviction is needed. Under 20 parallel requests this works fine, but at higher concurrency it serializes all task saves.
-
-**Recommended fix:** Read-check-then-write pattern, or sharded `DashMap`.
+Fixed by decoupling the O(n) eviction sweep from the `save()` write lock. The insert now releases the write lock immediately; eviction runs in a separate lock acquisition with an `AtomicBool` guard to prevent concurrent sweeps.
 
 ## Durability Gaps
 
@@ -78,73 +74,57 @@ Fixed by adding `on_latency(&self, method: &str, duration: Duration)` to the `Me
 
 Fixed by adding `SqliteTaskStore` and `SqlitePushConfigStore` behind the `sqlite` feature flag. Uses `sqlx` for async SQLite access with schema auto-creation, cursor-based pagination, upsert support, and 12 integration tests using in-memory SQLite.
 
-## Remaining Hardcoded Constants
+## ~~Remaining Hardcoded Constants~~ ✅ RESOLVED
 
-These use sensible defaults but are not yet user-configurable via builder methods:
+All 5 constants are now configurable via builder methods:
 
-| Constant | Value | Location |
+| Constant | Default | How to configure |
 |---|---|---|
-| `EVICTION_INTERVAL` | 64 writes between eviction sweeps | `InMemoryTaskStore` |
-| `MAX_PAGE_SIZE` | 1000 tasks per page | `InMemoryTaskStore` |
-| `MAX_PUSH_CONFIGS_PER_TASK` | 100 configs per task | `InMemoryPushConfigStore` |
-| `DEFAULT_WRITE_TIMEOUT` | 5 seconds | SSE `SseBodyWriter` |
-| `DEFAULT_KEEP_ALIVE` | 30 seconds | SSE keep-alive interval |
+| `EVICTION_INTERVAL` | 64 writes | `TaskStoreConfig { eviction_interval: N, .. }` → `builder.with_task_store_config(config)` |
+| `MAX_PAGE_SIZE` | 1000 tasks | `TaskStoreConfig { max_page_size: N, .. }` → `builder.with_task_store_config(config)` |
+| `MAX_PUSH_CONFIGS_PER_TASK` | 100 configs | `InMemoryPushConfigStore::with_max_configs_per_task(N)` → `builder.with_push_config_store(store)` |
+| `DEFAULT_WRITE_TIMEOUT` | 5 seconds | `builder.with_event_queue_write_timeout(Duration::from_secs(N))` |
+| `DEFAULT_KEEP_ALIVE` | 30 seconds | `DispatchConfig::default().with_sse_keep_alive_interval(Duration::from_secs(N))` |
 
 ## Design Issues (Pass 4)
 
-### No Server Startup Helper
+### ~~No Server Startup Helper~~ ✅ Done
 
-**Severity:** Medium | **Effort:** Small
+Added `serve()` and `serve_with_addr()` in `a2a_protocol_server::serve`. Both `JsonRpcDispatcher` and `RestDispatcher` implement the `Dispatcher` trait.
 
-Users must manually wire `TcpListener` → `hyper::service_fn` → `hyper_util::server::conn::auto::Builder` for every agent. This is ~25 lines of identical boilerplate per server.
+### ~~No Request ID / Trace Context Propagation~~ ✅ Done
 
-**Recommendation:** Provide `a2a_protocol_server::serve(listener, handler)` or a builder pattern like `ServerBuilder::new(handler).bind("127.0.0.1:0").serve()`.
+Added `CallContext::request_id: Option<String>` — automatically populated from the `X-Request-ID` HTTP header. Also settable via `with_request_id()`.
 
-### No Request ID / Trace Context Propagation
+### ~~Client Has No Retry Logic~~ ✅ Done
 
-**Severity:** Medium | **Effort:** Medium
+Added `RetryPolicy` and `ClientBuilder::with_retry_policy()` with configurable exponential backoff. `ClientError::is_retryable()` classifies transient vs permanent errors.
 
-`CallContext` has `http_headers` but no structured trace ID field. Interceptors can extract `X-Request-ID` manually, but there's no first-class support for distributed tracing across agent-to-agent calls.
+### ~~No Connection Pooling in Coordinator Pattern~~ ✅ RESOLVED
 
-**Recommendation:** Add `request_id: Option<String>` to `CallContext` and propagate it through `RequestContext` so executors can include it in outbound A2A calls.
+~~**Severity:** Low | **Effort:** Small~~
 
-### Client Has No Retry Logic
+Fixed by refactoring `CoordinatorExecutor` to build clients once at construction time and reuse them across delegate calls. Added "Client Reuse (Best Practice)" section to the book's client builder page documenting the pattern.
 
-**Severity:** Medium | **Effort:** Small
+### ~~Executor Event Emission Boilerplate~~ ✅ Done
 
-`a2a-protocol-client` is single-attempt. Any transient network error causes immediate failure.
-
-**Recommendation:** Add `ClientBuilder::with_retry_policy(RetryPolicy)` with configurable max attempts and backoff strategy.
-
-### No Connection Pooling in Coordinator Pattern
-
-**Severity:** Low | **Effort:** Small
-
-Each `delegate_*` call in orchestrator agents creates a new `ClientBuilder::new(url).build()`. The hyper client inside does pool connections, but the client/builder overhead is repeated unnecessarily.
-
-**Recommendation:** Document the pattern of creating clients once and reusing them. Consider adding `A2aClient::clone()` support.
-
-### Executor Event Emission Boilerplate
-
-**Severity:** Low | **Effort:** Small
-
-Every executor must repeat `task_id.clone()`, `ContextId::new(ctx.context_id.clone())`, `metadata: None` for every event. A 4-line status update becomes a 9-line struct literal.
-
-**Recommendation:** Upstream the `EventEmitter` pattern from the agent-team example into `a2a_protocol_server::executor_helpers`.
+Upstreamed `EventEmitter` from the agent-team example to `a2a_protocol_server::executor_helpers`. Reduces 9-line struct literals to one-liners.
 
 ## Testing Gaps for Future Passes
 
-| Area | What to test | Why it matters |
-|---|---|---|
-| **Executor timeout** | Slow executor exceeding `with_executor_timeout()` | Verify the task gets `Failed` state, not hung |
-| **TLS/mTLS** | Client with `tls-rustls` feature connecting to TLS server | Verify cert validation, SNI, connection errors |
-| **Batch JSON-RPC** | Multiple JSON-RPC requests in single HTTP body | Verify batch response assembly |
-| **Graceful shutdown** | `handler.shutdown()` + `on_shutdown` hook | Verify in-flight tasks drain, tokens cleaned |
-| **Real auth rejection** | Interceptor that actually returns error for bad tokens | Verify 401/403 propagation |
-| **Backpressure** | Very slow consumer on broadcast channel | Verify `Lagged` handling, no OOM |
-| **Memory under sustained load** | Hundreds of concurrent requests over minutes | Detect leaks in task store, event queues, cancel tokens |
-| **Agent card caching** | ETag/Last-Modified/If-None-Match flow | Verify 304 responses, cache invalidation |
-| **Multi-tenancy** | Populate `tenant` field, verify isolation | Verify tasks from tenant A invisible to tenant B |
+| Area | Status | What to test | Why it matters |
+|---|---|---|---|
+| **Executor timeout** | ✅ Covered | `audit_tests::executor_timeout_causes_failure`, `edge_case_tests::executor_timeout` | Verify the task gets `Failed` state |
+| **TLS/mTLS** | ⏳ Open | Client with `tls-rustls` feature connecting to TLS server | Verify cert validation, SNI |
+| **Batch JSON-RPC** | ✅ Covered | `jsonrpc_edge_tests` — empty, mixed, single, streaming-in-batch | Verify batch response assembly |
+| **Graceful shutdown** | ✅ Covered | `audit_tests` — SlowExecutor with cancellation_token | Verify in-flight tasks drain |
+| **Auth rejection** | ✅ Covered | `interceptor_tests::RejectingInterceptor`, `handler_tests` | Verify error propagation |
+| **Backpressure** | ✅ Covered | `event_queue_tests::slow_reader_skips_lagged_events` | Verify `Lagged` handling |
+| **Memory under sustained load** | ⏳ Open | Hundreds of concurrent requests over minutes | Detect leaks |
+| **Agent card caching** | ✅ Covered | `caching.rs` — 13 unit tests (ETag, 304, If-None-Match) | Verify cache behavior |
+| **Multi-tenancy** | ✅ Covered | `store_tests::multi_tenant_context_isolation` | Verify tenant data isolation |
+| **TaskStore::count()** | ✅ Covered | `store_tests` — 3 new count tests + insert_if_absent | Verify count accuracy |
+| **Rate limiting** | ✅ Covered | `rate_limit::tests` — 5 unit tests | Verify per-caller limiting |
 
 ## Priority Order for Future Sessions
 

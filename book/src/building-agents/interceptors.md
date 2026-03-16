@@ -98,15 +98,27 @@ struct MetricsInterceptor {
 
 ### Rate Limiting
 
-Reject requests that exceed a rate limit:
+The built-in `RateLimitInterceptor` provides per-caller fixed-window rate limiting:
 
 ```rust
-struct RateLimitInterceptor {
-    limiter: Arc<RateLimiter>,
-}
-// Check rate limit before passing to handler
-// Return 429 Too Many Requests if exceeded
+use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
+use std::sync::Arc;
+
+let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
+    requests_per_window: 100,
+    window_secs: 60,
+}));
+
+// Add to handler builder:
+RequestHandlerBuilder::new(my_executor)
+    .with_interceptor(limiter)
+    .build()
 ```
+
+Caller keys are derived from `CallContext::caller_identity` (set by auth
+interceptors), the `X-Forwarded-For` header, or `"anonymous"`. For advanced
+use cases (sliding windows, distributed counters), implement a custom
+`ServerInterceptor` or use a reverse proxy.
 
 ## Interceptor Chain
 

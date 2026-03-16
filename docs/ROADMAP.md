@@ -11,7 +11,7 @@ implementation approach.
 
 ## 7.1 Request ID Propagation
 
-**Status:** Planned
+**Status:** ✅ Implemented
 
 **Motivation:** Correlating logs across client and server for distributed
 tracing. Without request IDs, debugging production issues requires manual
@@ -57,28 +57,31 @@ OpenTelemetry, etc.
 
 ## 7.3 Rate Limiting Hooks
 
-**Status:** Planned
+**Status:** ✅ Implemented
 
 **Motivation:** Public-facing agents need rate limiting to prevent abuse.
-Rate limiting policy varies widely (per-IP, per-tenant, per-method), so the
-framework should provide a hook rather than a built-in implementation.
 
-**Approach:**
+**Implementation:**
 
-- Define a `RateLimiter` trait:
+- `RateLimitInterceptor` — a built-in `ServerInterceptor` using a fixed-window
+  per-caller counter. Configurable via `RateLimitConfig` (requests per window,
+  window duration in seconds).
+- Caller keys derived from `CallContext::caller_identity` (set by auth
+  interceptors), `X-Forwarded-For` header (first IP), or `"anonymous"` fallback.
+- When the limit is exceeded, requests are rejected with an A2A error.
+- For advanced use cases (sliding windows, distributed counters), implement a
+  custom `ServerInterceptor` or use a reverse proxy (nginx, Envoy).
 
 ```rust
-pub trait RateLimiter: Send + Sync + 'static {
-    /// Returns `Ok(())` if the request is allowed, or `Err` with a
-    /// retry-after duration if rate-limited.
-    fn check(&self, method: &str, tenant: Option<&str>)
-        -> Result<(), Duration>;
-}
-```
+use a2a_protocol_server::{RateLimitInterceptor, RateLimitConfig};
+use std::sync::Arc;
 
-- The dispatcher calls `check()` before routing to the handler.
-- On rejection, return HTTP 429 with a `Retry-After` header.
-- Default: no rate limiting (always allows).
+let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
+    requests_per_window: 100,
+    window_secs: 60,
+}));
+// Add to handler: builder.with_interceptor(limiter)
+```
 
 ---
 

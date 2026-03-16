@@ -74,12 +74,13 @@ pub mod prelude {
 
     // ── Client ───────────────────────────────────────────────────────────
     pub use a2a_protocol_client::{
-        A2aClient, ClientBuilder, ClientError, ClientResult, EventStream,
+        A2aClient, ClientBuilder, ClientError, ClientResult, EventStream, RetryPolicy,
     };
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{
-        AgentExecutor, EventQueueWriter, JsonRpcDispatcher, RequestContext, RequestHandler,
+        serve, serve_with_addr, AgentExecutor, Dispatcher, EventEmitter, EventQueueWriter,
+        JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext, RequestHandler,
         RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
     };
 }

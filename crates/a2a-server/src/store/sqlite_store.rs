@@ -260,4 +260,15 @@ impl TaskStore for SqliteTaskStore {
             Ok(())
         })
     }
+
+    fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM tasks")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            #[allow(clippy::cast_sign_loss)]
+            Ok(row.0 as u64)
+        })
+    }
 }

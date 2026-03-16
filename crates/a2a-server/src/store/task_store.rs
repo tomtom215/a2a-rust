@@ -124,6 +124,19 @@ pub trait TaskStore: Send + Sync + 'static {
         &'a self,
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    /// Returns the total number of tasks in the store.
+    ///
+    /// Useful for monitoring, metrics, and capacity management. Has a default
+    /// implementation that returns `0` so existing implementations are not
+    /// broken when this method is added.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async { Ok(0) })
+    }
 }
 
 /// Entry in the in-memory task store, tracking creation time for TTL eviction.
@@ -179,21 +192,30 @@ impl Default for TaskStoreConfig {
 ///
 /// # Eviction behavior
 ///
-/// Eviction runs automatically every N writes (configurable via
+/// Eviction runs as a background task every N writes (configurable via
 /// [`TaskStoreConfig::eviction_interval`]) and whenever the store exceeds
-/// `max_capacity`. However, if the system goes
-/// idle (no `save()` calls), completed tasks may persist in memory longer
-/// than their TTL.
+/// `max_capacity`. The eviction sweep is decoupled from the `save()` write
+/// lock so that writers are not blocked during the O(n) cleanup. However,
+/// if the system goes idle (no `save()` calls), completed tasks may persist
+/// in memory longer than their TTL.
 ///
 /// **Operators should call [`run_eviction()`](Self::run_eviction) periodically**
 /// (e.g. every 60 seconds via `tokio::time::interval`) to ensure timely
 /// cleanup of terminal tasks during idle periods.
+///
+/// # Concurrency
+///
+/// For high-concurrency production deployments, consider `SqliteTaskStore`
+/// which uses a connection pool and row-level locking. The in-memory store
+/// uses a single `RwLock` and is optimized for testing and moderate load.
 #[derive(Debug)]
 pub struct InMemoryTaskStore {
     entries: RwLock<HashMap<TaskId, TaskEntry>>,
     config: TaskStoreConfig,
     /// Counter for amortized eviction (only run every `EVICTION_INTERVAL` writes).
     write_count: std::sync::atomic::AtomicU64,
+    /// Prevents multiple concurrent eviction sweeps.
+    eviction_in_progress: std::sync::atomic::AtomicBool,
 }
 
 impl Default for InMemoryTaskStore {
@@ -212,6 +234,7 @@ impl InMemoryTaskStore {
             entries: RwLock::new(HashMap::new()),
             config: TaskStoreConfig::default(),
             write_count: std::sync::atomic::AtomicU64::new(0),
+            eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -222,6 +245,7 @@ impl InMemoryTaskStore {
             entries: RwLock::new(HashMap::new()),
             config,
             write_count: std::sync::atomic::AtomicU64::new(0),
+            eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
         }
     }
 
@@ -232,6 +256,41 @@ impl InMemoryTaskStore {
     pub async fn run_eviction(&self) {
         let mut store = self.entries.write().await;
         Self::evict(&mut store, &self.config);
+    }
+
+    /// Returns `true` if eviction should run based on the write counter and capacity.
+    fn should_evict(&self, store_len: usize) -> bool {
+        let count = self
+            .write_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let over_capacity = self.config.max_capacity.is_some_and(|max| store_len > max);
+        count.is_multiple_of(self.config.eviction_interval) || over_capacity
+    }
+
+    /// Runs eviction in a separate lock acquisition if not already in progress.
+    ///
+    /// Uses `eviction_in_progress` to prevent multiple concurrent sweeps.
+    async fn maybe_evict(&self) {
+        // Try to claim the eviction slot. If another task is already evicting, skip.
+        if self
+            .eviction_in_progress
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_err()
+        {
+            return;
+        }
+
+        let mut store = self.entries.write().await;
+        Self::evict(&mut store, &self.config);
+        drop(store);
+
+        self.eviction_in_progress
+            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     /// Evicts expired and over-capacity entries (must be called with write lock held).
@@ -274,30 +333,27 @@ impl TaskStore for InMemoryTaskStore {
     fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             trace_debug!(task_id = %task.id, state = ?task.status.state, "saving task");
-            let mut store = self.entries.write().await;
 
-            store.insert(
-                task.id.clone(),
-                TaskEntry {
-                    task,
-                    last_updated: Instant::now(),
-                },
-            );
+            // Insert under write lock, then release immediately.
+            let needs_eviction = {
+                let mut store = self.entries.write().await;
+                store.insert(
+                    task.id.clone(),
+                    TaskEntry {
+                        task,
+                        last_updated: Instant::now(),
+                    },
+                );
+                let len = store.len();
+                drop(store);
+                self.should_evict(len)
+            };
 
-            // Amortized eviction: only run every EVICTION_INTERVAL writes,
-            // or immediately if the store exceeds max capacity.
-            let count = self
-                .write_count
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let over_capacity = self
-                .config
-                .max_capacity
-                .is_some_and(|max| store.len() > max);
-            if count.is_multiple_of(self.config.eviction_interval) || over_capacity {
-                Self::evict(&mut store, &self.config);
+            // Run eviction outside the write lock to reduce contention.
+            if needs_eviction {
+                self.maybe_evict().await;
             }
 
-            drop(store);
             Ok(())
         })
     }
@@ -380,31 +436,27 @@ impl TaskStore for InMemoryTaskStore {
         task: Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
-            let mut store = self.entries.write().await;
-            if store.contains_key(&task.id) {
-                return Ok(false);
-            }
-            store.insert(
-                task.id.clone(),
-                TaskEntry {
-                    task,
-                    last_updated: Instant::now(),
-                },
-            );
+            let (inserted, needs_eviction) = {
+                let mut store = self.entries.write().await;
+                if store.contains_key(&task.id) {
+                    return Ok(false);
+                }
+                store.insert(
+                    task.id.clone(),
+                    TaskEntry {
+                        task,
+                        last_updated: Instant::now(),
+                    },
+                );
+                let len = store.len();
+                drop(store);
+                (true, self.should_evict(len))
+            };
 
-            // Amortized eviction.
-            let count = self
-                .write_count
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let over_capacity = self
-                .config
-                .max_capacity
-                .is_some_and(|max| store.len() > max);
-            if count.is_multiple_of(self.config.eviction_interval) || over_capacity {
-                Self::evict(&mut store, &self.config);
+            if needs_eviction {
+                self.maybe_evict().await;
             }
-            drop(store);
-            Ok(true)
+            Ok(inserted)
         })
     }
 
@@ -417,6 +469,13 @@ impl TaskStore for InMemoryTaskStore {
             store.remove(id);
             drop(store);
             Ok(())
+        })
+    }
+
+    fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        Box::pin(async move {
+            let store = self.entries.read().await;
+            Ok(store.len() as u64)
         })
     }
 }

@@ -79,9 +79,26 @@ The REST dispatcher includes automatic protections:
 | **Body size** | Over 4 MiB → 413 |
 | **Content type** | Accepts `application/json` and `application/a2a+json` |
 
-## Wiring to Hyper
+## Server Startup
 
-Both dispatchers expose a `dispatch` method that takes a `hyper::Request` and returns a `hyper::Response`:
+### Using `serve()` (recommended)
+
+Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` helper to eliminate hyper boilerplate:
+
+```rust
+use a2a_protocol_server::serve::{serve, serve_with_addr};
+
+// Blocking — runs the accept loop on the current task
+serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await?;
+
+// Non-blocking — spawns the server and returns the bound address
+let addr = serve_with_addr("127.0.0.1:0", dispatcher).await?;
+println!("Listening on {addr}");
+```
+
+### Manual wiring (advanced)
+
+Both dispatchers also expose a `dispatch` method for direct hyper integration:
 
 ```rust
 use std::sync::Arc;
@@ -124,6 +141,8 @@ No web framework required — the dispatchers work directly with hyper's service
 Serve JSON-RPC and REST on different ports with the same handler:
 
 ```rust
+use a2a_protocol_server::serve::serve_with_addr;
+
 let handler = Arc::new(
     RequestHandlerBuilder::new(MyExecutor)
         .with_agent_card(make_agent_card("http://localhost:3000", "http://localhost:3001"))
@@ -132,12 +151,10 @@ let handler = Arc::new(
 );
 
 // JSON-RPC on port 3000
-let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-tokio::spawn(start_server(jsonrpc, "127.0.0.1:3000"));
+let jsonrpc_addr = serve_with_addr("127.0.0.1:3000", JsonRpcDispatcher::new(Arc::clone(&handler))).await?;
 
 // REST on port 3001
-let rest = Arc::new(RestDispatcher::new(handler));
-tokio::spawn(start_server(rest, "127.0.0.1:3001"));
+let rest_addr = serve_with_addr("127.0.0.1:3001", RestDispatcher::new(handler)).await?;
 ```
 
 ## CORS Configuration

@@ -25,6 +25,7 @@ use crate::agent_card::StaticAgentCardHandler;
 use crate::dispatch::cors::CorsConfig;
 use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
+use crate::serve::Dispatcher;
 use crate::streaming::build_sse_response;
 
 /// JSON-RPC 2.0 request dispatcher.
@@ -572,4 +573,17 @@ fn json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, I
                 .boxed(),
             )
         })
+}
+
+// ── Dispatcher impl ──────────────────────────────────────────────────────────
+
+impl Dispatcher for JsonRpcDispatcher {
+    fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+    > {
+        Box::pin(self.dispatch(req))
+    }
 }

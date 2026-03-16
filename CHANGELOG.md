@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `serve()` and `serve_with_addr()` server startup helpers — reduces the ~25 lines
+  of hyper boilerplate per agent to a single function call. Both `JsonRpcDispatcher`
+  and `RestDispatcher` implement the new `Dispatcher` trait.
+- `RetryPolicy` and `ClientBuilder::with_retry_policy()` — configurable automatic
+  retry with exponential backoff for transient client errors (connection errors,
+  timeouts, HTTP 429/502/503/504). Ships as a transparent `RetryTransport` wrapper.
+- `ClientError::is_retryable()` — classifies errors as transient or permanent.
+- `EventEmitter` upstreamed to `executor_helpers` module — reduces event emission
+  from 7-line struct literals to one-liners (`emit.status(TaskState::Working).await?`).
+  Previously lived only in the agent-team example.
+- `CallContext::request_id` — first-class request/trace ID field, automatically
+  populated from the `X-Request-ID` HTTP header when present.
 - `Metrics::on_latency(method, duration)` callback — the #1 production metric.
   All handler methods now measure and report request latency.
 - Blanket `impl Metrics for Arc<T>` — eliminates the `MetricsForward` wrapper
@@ -53,6 +65,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correctness, push config listing via JSON-RPC, event classification,
   resubscribe, multiple artifacts, concurrent streams, context filtering,
   file parts, and history length.
+- `RateLimitInterceptor` and `RateLimitConfig` — built-in fixed-window
+  per-caller rate limiting as a `ServerInterceptor`. Caller keys are derived
+  from `CallContext::caller_identity`, `X-Forwarded-For`, or `"anonymous"`.
+- `TaskStore::count()` method — returns the total number of stored tasks.
+  Useful for metrics and capacity monitoring. Has a default implementation
+  returning `0` for backward compatibility. Implemented for both
+  `InMemoryTaskStore` and `SqliteTaskStore`.
+
+### Improved
+
+- `InMemoryQueueWriter::write()` no longer allocates a full `String` to
+  measure serialized event size. Uses a zero-allocation `CountingWriter`
+  that counts bytes via `serde_json::to_writer()` instead of `to_string()`.
+- `InMemoryTaskStore::save()` no longer holds the write lock during O(n)
+  eviction sweeps. Eviction is decoupled from the insert and runs in a
+  separate lock acquisition, reducing write lock contention under high
+  concurrency.
 
 ### Changed
 

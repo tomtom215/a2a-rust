@@ -667,3 +667,16 @@ fn parse_list_tasks_query(
         history_length: parse_query_param_u32(query, "historyLength"),
     }
 }
+
+// ── Dispatcher impl ──────────────────────────────────────────────────────────
+
+impl crate::serve::Dispatcher for RestDispatcher {
+    fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+    > {
+        Box::pin(self.dispatch(req))
+    }
+}

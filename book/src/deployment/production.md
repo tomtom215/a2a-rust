@@ -79,11 +79,15 @@ use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
     .with_task_store_config(TaskStoreConfig {
-        ttl: Some(Duration::from_secs(3600)),
         max_capacity: Some(100_000),
+        task_ttl: Some(Duration::from_secs(3600)),
+        eviction_interval: 64,
+        max_page_size: 1000,
     })
     .build()
 ```
+
+Use `TaskStore::count()` for monitoring capacity utilization.
 
 ### Graceful Shutdown
 
@@ -96,6 +100,40 @@ fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         self.cancel_token.cancel();
     })
 }
+```
+
+### Rate Limiting
+
+Protect public-facing agents from abuse:
+
+```rust
+use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
+use std::sync::Arc;
+
+RequestHandlerBuilder::new(executor)
+    .with_interceptor(Arc::new(RateLimitInterceptor::new(RateLimitConfig {
+        requests_per_window: 100,
+        window_secs: 60,
+    })))
+    .build()
+```
+
+For advanced rate limiting (sliding windows, distributed counters), use a
+reverse proxy or implement a custom `ServerInterceptor`.
+
+### Client Retry & Reuse
+
+When calling remote agents, build clients once and reuse them:
+
+```rust
+// Build once at startup
+let client = ClientBuilder::new("http://agent.example.com")
+    .with_retry_policy(RetryPolicy::default())
+    .build()
+    .unwrap();
+
+// Reuse across all requests — client holds a connection pool
+let result = client.send_message(params).await;
 ```
 
 ## Observability
@@ -147,7 +185,7 @@ Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server
 
 ### No Web Framework Overhead
 
-a2a-rust works directly with hyper — no middleware framework overhead. If you need additional middleware (rate limiting, request logging), use interceptors rather than wrapping in a framework.
+a2a-rust works directly with hyper — no middleware framework overhead. Cross-cutting concerns (rate limiting, request logging, auth) are handled via the interceptor chain rather than a framework.
 
 ### Event Queue Sizing
 
@@ -168,6 +206,8 @@ Tune the event queue for your workload:
 - [ ] Executor timeout set
 - [ ] Max concurrent streams limited
 - [ ] Task store TTL and capacity configured
+- [ ] Rate limiting enabled for public-facing agents
+- [ ] A2A clients built once and reused (not per-request)
 - [ ] Structured logging enabled
 - [ ] Health check endpoint available
 - [ ] Push notification URLs restricted to HTTPS
