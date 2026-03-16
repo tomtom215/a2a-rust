@@ -21,9 +21,13 @@
 
 pub mod jsonrpc;
 pub mod rest;
+#[cfg(feature = "websocket")]
+pub mod websocket;
 
 pub use jsonrpc::JsonRpcTransport;
 pub use rest::RestTransport;
+#[cfg(feature = "websocket")]
+pub use websocket::WebSocketTransport;
 
 /// Maximum length for response body snippets included in error messages.
 const MAX_ERROR_BODY_LEN: usize = 512;

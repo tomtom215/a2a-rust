@@ -103,17 +103,68 @@ The REST dispatcher includes built-in protections:
 - **Query string limits** — Query strings over 4 KiB return 414
 - **Body size limits** — Request bodies over 4 MiB return 413
 
+## WebSocket
+
+The **WebSocket** transport (`websocket` feature flag) provides a persistent bidirectional channel over a single TCP connection. JSON-RPC 2.0 messages are exchanged as WebSocket text frames.
+
+```toml
+# Server
+a2a-protocol-server = { version = "0.2", features = ["websocket"] }
+
+# Client
+a2a-protocol-client = { version = "0.2", features = ["websocket"] }
+```
+
+### Server
+
+```rust
+use a2a_protocol_server::{WebSocketDispatcher, RequestHandlerBuilder};
+use std::sync::Arc;
+
+let handler = Arc::new(RequestHandlerBuilder::new(my_executor).build().unwrap());
+let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+
+// Start accepting WebSocket connections
+dispatcher.serve("0.0.0.0:3002").await?;
+```
+
+### Protocol
+
+- Client sends JSON-RPC 2.0 requests as text frames
+- Server responds with JSON-RPC 2.0 responses as text frames
+- For streaming methods (`SendStreamingMessage`, `SubscribeToTask`), the server sends multiple frames — one per event — followed by a `stream_complete` response
+- Ping/pong frames are handled automatically
+- Connection closes cleanly on WebSocket close frame
+
+### Client
+
+```rust
+use a2a_protocol_client::WebSocketTransport;
+
+let transport = WebSocketTransport::connect("ws://agent.example.com:3002").await?;
+let client = ClientBuilder::new("ws://agent.example.com:3002")
+    .with_transport(transport)
+    .build()?;
+```
+
+### When to Use WebSocket
+
+- **Long-lived connections** — Avoids TCP/TLS handshake overhead per request
+- **Bidirectional streaming** — Server can push events without SSE
+- **Low latency** — No HTTP framing overhead for small messages
+
 ## Choosing a Transport
 
-| Factor | JSON-RPC | REST |
-|--------|----------|------|
-| **Batch operations** | Supported | Not supported |
-| **Caching** | Limited (POST-only) | HTTP cache-friendly (GET) |
-| **Tooling** | Needs JSON-RPC client | Standard HTTP tools work |
-| **URL structure** | Single endpoint | Resource-oriented |
-| **Streaming** | SSE via POST | SSE via POST/GET |
+| Factor | JSON-RPC | REST | WebSocket |
+|--------|----------|------|-----------|
+| **Batch operations** | Supported | Not supported | Not supported |
+| **Caching** | Limited (POST-only) | HTTP cache-friendly (GET) | Not applicable |
+| **Tooling** | Needs JSON-RPC client | Standard HTTP tools work | WebSocket client needed |
+| **URL structure** | Single endpoint | Resource-oriented | Single connection |
+| **Streaming** | SSE via POST | SSE via POST/GET | Native text frames |
+| **Connection reuse** | HTTP keep-alive | HTTP keep-alive | Persistent connection |
 
-Both transports use SSE for streaming. The choice is mostly about ecosystem fit — JSON-RPC if you're building agent-to-agent communication, REST if you want standard HTTP tooling.
+JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. The choice is mostly about ecosystem fit — JSON-RPC for agent-to-agent communication, REST for standard HTTP tooling, WebSocket for persistent low-latency connections.
 
 ## Running Both Transports
 

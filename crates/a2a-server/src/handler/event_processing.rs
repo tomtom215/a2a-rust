@@ -211,7 +211,12 @@ impl RequestHandler {
         // The SSE reader and this background reader both see every event.
         let event_queue_mgr = self.event_queue_manager.clone();
 
-        tokio::spawn(async move {
+        // Capture the current tenant context so background store operations
+        // are scoped to the correct tenant (task_local doesn't propagate
+        // across tokio::spawn).
+        let tenant = crate::store::tenant::TenantContext::current();
+
+        tokio::spawn(crate::store::tenant::TenantContext::scope(tenant, async move {
             // Small yield to let the event queue be registered before subscribing.
             tokio::task::yield_now().await;
 
@@ -284,7 +289,7 @@ impl RequestHandler {
                     }
                 }
             }
-        });
+        }));
     }
 }
 

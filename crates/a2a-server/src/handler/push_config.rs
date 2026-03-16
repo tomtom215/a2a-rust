@@ -28,7 +28,8 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("CreateTaskPushNotificationConfig");
 
-        let result: ServerResult<_> = async {
+        let tenant = config.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             if self.push_sender.is_none() {
                 return Err(ServerError::PushNotSupported);
             }
@@ -37,7 +38,7 @@ impl RequestHandler {
             let result = self.push_config_store.set(config).await?;
             self.interceptors.run_after(&call_ctx).await?;
             Ok(result)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();
@@ -70,7 +71,8 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("GetTaskPushNotificationConfig");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
@@ -87,7 +89,7 @@ impl RequestHandler {
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(config)
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();
@@ -115,19 +117,22 @@ impl RequestHandler {
     pub async fn on_list_push_configs(
         &self,
         task_id: &str,
+        tenant: Option<&str>,
         headers: Option<&HashMap<String, String>>,
     ) -> ServerResult<Vec<TaskPushNotificationConfig>> {
         let start = Instant::now();
         self.metrics.on_request("ListTaskPushNotificationConfigs");
 
-        let result: ServerResult<_> = async {
-            let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
-            self.interceptors.run_before(&call_ctx).await?;
-            let configs = self.push_config_store.list(task_id).await?;
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(configs)
-        }
-        .await;
+        let tenant_owned = tenant.unwrap_or_default().to_owned();
+        let result: ServerResult<_> =
+            crate::store::tenant::TenantContext::scope(tenant_owned, async {
+                let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
+                self.interceptors.run_before(&call_ctx).await?;
+                let configs = self.push_config_store.list(task_id).await?;
+                self.interceptors.run_after(&call_ctx).await?;
+                Ok(configs)
+            })
+            .await;
 
         let elapsed = start.elapsed();
         match &result {
@@ -159,7 +164,8 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
-        let result: ServerResult<_> = async {
+        let tenant = params.tenant.clone().unwrap_or_default();
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
             self.push_config_store
@@ -167,7 +173,7 @@ impl RequestHandler {
                 .await?;
             self.interceptors.run_after(&call_ctx).await?;
             Ok(())
-        }
+        })
         .await;
 
         let elapsed = start.elapsed();

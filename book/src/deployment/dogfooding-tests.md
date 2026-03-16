@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **50 E2E tests** across 5 test modules. All tests pass in ~2 seconds.
+The agent team runs **55 E2E tests** across 6 test modules. All tests pass in ~2 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -77,14 +77,28 @@ The agent team runs **50 E2E tests** across 5 test modules. All tests pass in ~2
 | 49 | file-parts | JSON-RPC | `Part::file_bytes` with base64 content |
 | 50 | history-length | JSON-RPC | `history_length` configuration via builder |
 
+## Tests 51-55: WebSocket & Multi-Tenancy (`transport.rs`)
+
+| # | Test | Transport | What it exercises |
+|---|------|-----------|-------------------|
+| 51 | ws-send-message | WebSocket | JSON-RPC `SendMessage` over WebSocket (feature-gated) |
+| 52 | ws-streaming | WebSocket | `SendStreamingMessage` with multi-frame streaming (feature-gated) |
+| 53 | tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
+| 54 | tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
+| 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
+
+> **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
+
 ## Coverage by SDK Feature
 
 | SDK Feature | Tests exercising it |
 |---|---|
-| `AgentExecutor` trait | 1-5, 9-14, 22, 31-36, 38, 40, 46, 49 |
-| JSON-RPC dispatch | 1-2, 6-7, 9, 13, 15-16, 18-19, 23-24, 27, 29-34, 37-43, 45-46, 48-50 |
+| `AgentExecutor` trait | 1-5, 9-14, 22, 31-36, 38, 40, 46, 49, 51-52 |
+| JSON-RPC dispatch | 1-2, 6-7, 9, 13, 15-16, 18-19, 23-24, 27, 29-34, 37-43, 45-46, 48-50, 53 |
 | REST dispatch | 3-5, 8, 10-12, 14, 17, 20-22, 25-26, 28, 32, 35-36, 44, 47 |
+| WebSocket dispatch | 51, 52 |
 | SSE streaming | 2, 4, 14, 28, 35-36, 40, 44, 45, 47 |
+| WebSocket streaming | 52 |
 | `GetTask` | 6, 14, 25, 35 |
 | `ListTasks` + pagination | 7, 16, 26, 37, 48, 50 |
 | `CancelTask` | 14, 20, 21 |
@@ -102,20 +116,28 @@ The agent team runs **50 E2E tests** across 5 test modules. All tests pass in ~2
 | File parts (binary) | 49 |
 | History length config | 50 |
 | Context ID filtering | 33, 48 |
+| Multi-tenancy | 53, 54, 55 |
+| `TenantAwareInMemoryTaskStore` | 53, 54, 55 |
+| `TenantContext::scope` | 54, 55 |
+
+## Dedicated Integration Tests (Outside Agent-Team)
+
+In addition to the 55 agent-team E2E tests, the SDK includes dedicated integration test suites:
+
+| Suite | Location | Tests | What it covers |
+|---|---|---|---|
+| **TLS/mTLS** | `crates/a2a-client/tests/tls_integration_tests.rs` | 7 | Client cert validation, SNI hostname verification, unknown CA rejection, mutual TLS |
+| **WebSocket server** | `crates/a2a-server/tests/websocket_tests.rs` | 7 | Send/stream, error handling, ping/pong, connection reuse, close frames |
+| **Memory & load stress** | `crates/a2a-server/tests/stress_tests.rs` | 5 | 200 concurrent requests, sustained load (500 requests/10 waves), eviction under load, multi-tenant isolation (10×50), rapid connect/disconnect |
 
 ## Features NOT Covered by E2E Tests
 
-| Feature | Why not tested | Risk |
+| Feature | Covered elsewhere? | Risk |
 |---|---|---|
-| TLS/mTLS | No cert infrastructure in test harness | Low — rustls is well-tested |
-| Batch JSON-RPC | Not commonly used | Low |
-| Executor timeout | Requires slow executor + wall clock | Medium |
-| Graceful shutdown | `handler.shutdown()` not called | Low |
-| Agent card signing | Requires JWS key setup | Low |
-| Dynamic agent cards | `DynamicAgentCardHandler` unused | Low |
-| Extended agent card | `get_authenticated_extended_card` unused | Low |
-| Real auth rejection | Interceptor logs warnings but never rejects | Medium |
-| ~~Push notification delivery~~ | ~~Resolved — tested by tests 36, 44~~ | ~~Done~~ |
-| Backpressure / `Lagged` | Would need very slow consumers | Medium |
-| Multi-tenancy | `tenant` field never populated | Medium |
-| Agent card HTTP caching | ETag/Last-Modified/304 not verified | Low |
+| Batch JSON-RPC | `jsonrpc_edge_tests` (unit) | Low |
+| Agent card signing | `signing` module tests (unit) | Low |
+| Dynamic agent cards | `DynamicAgentCardHandler` tests (unit) | Low |
+| Extended agent card | Handler tests (unit) | Low |
+| Real auth rejection | `interceptor_tests` (unit) | Medium |
+| Backpressure / `Lagged` | `event_queue_tests` (unit) | Medium |
+| Agent card HTTP caching | `caching.rs` — 13 tests (unit) | Low |

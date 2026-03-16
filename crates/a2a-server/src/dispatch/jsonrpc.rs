@@ -320,7 +320,7 @@ impl JsonRpcDispatcher {
                 match parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req) {
                     Ok(p) => match self
                         .handler
-                        .on_list_push_configs(&p.task_id, Some(headers))
+                        .on_list_push_configs(&p.task_id, p.tenant.as_deref(), Some(headers))
                         .await
                     {
                         Ok(configs) => {

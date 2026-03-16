@@ -382,7 +382,7 @@ impl RestDispatcher {
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self
             .handler
-            .on_list_push_configs(task_id, Some(headers))
+            .on_list_push_configs(task_id, None, Some(headers))
             .await
         {
             Ok(configs) => {

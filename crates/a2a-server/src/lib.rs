@@ -79,6 +79,8 @@ pub use agent_card::{
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
+#[cfg(feature = "websocket")]
+pub use dispatch::WebSocketDispatcher;
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{boxed_future, EventEmitter};
@@ -87,16 +89,20 @@ pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
 pub use metrics::Metrics;
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
+    TenantAwareInMemoryPushConfigStore,
 };
 pub use rate_limit::{RateLimitConfig, RateLimitInterceptor};
 pub use request_context::RequestContext;
 pub use serve::{serve, serve_with_addr, Dispatcher};
-pub use store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+pub use store::{
+    InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
+    TenantStoreConfig,
+};
 
 #[cfg(feature = "sqlite")]
-pub use push::SqlitePushConfigStore;
+pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
 #[cfg(feature = "sqlite")]
-pub use store::SqliteTaskStore;
+pub use store::{SqliteTaskStore, TenantAwareSqliteTaskStore};
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };

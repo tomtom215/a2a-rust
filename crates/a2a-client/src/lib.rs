@@ -132,3 +132,5 @@ pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, Intercepto
 pub use retry::RetryPolicy;
 pub use streaming::EventStream;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};
+#[cfg(feature = "websocket")]
+pub use transport::WebSocketTransport;

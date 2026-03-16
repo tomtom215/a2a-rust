@@ -19,6 +19,13 @@ tracing = [
     "dep:tracing",
     "dep:tracing-subscriber",
 ]
+## Enable WebSocket transport tests.
+websocket = [
+    "a2a-protocol-server/websocket",
+    "a2a-protocol-client/websocket",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-types" }
@@ -28,6 +35,8 @@ a2a-protocol-server = { path = "../../crates/a2a-server" }
 tracing            = { workspace = true, optional = true }
 tracing-subscriber = { version = ">=0.3.18, <0.4", features = ["env-filter"], optional = true }
 
+tokio-tungstenite = { version = ">=0.24, <0.25", optional = true }
+futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper      = { workspace = true }

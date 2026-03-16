@@ -6,10 +6,14 @@
 pub mod cors;
 pub mod jsonrpc;
 pub mod rest;
+#[cfg(feature = "websocket")]
+pub mod websocket;
 
 pub use cors::CorsConfig;
 pub use jsonrpc::JsonRpcDispatcher;
 pub use rest::RestDispatcher;
+#[cfg(feature = "websocket")]
+pub use websocket::WebSocketDispatcher;
 
 /// Configuration for dispatch-layer limits shared by both JSON-RPC and REST
 /// dispatchers.
