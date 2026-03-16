@@ -13,10 +13,10 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, Instant};
 
-use a2a_types::error::A2aResult;
-use a2a_types::params::ListTasksParams;
-use a2a_types::responses::TaskListResponse;
-use a2a_types::task::{Task, TaskId};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::params::ListTasksParams;
+use a2a_protocol_types::responses::TaskListResponse;
+use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
 /// Trait for persisting and retrieving [`Task`] objects.
@@ -32,14 +32,14 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
     /// Retrieves a task by its ID, returning `None` if not found.
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn get<'a>(
         &'a self,
         id: &'a TaskId,
@@ -49,7 +49,7 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn list<'a>(
         &'a self,
         params: &'a ListTasksParams,
@@ -62,7 +62,7 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn insert_if_absent<'a>(
         &'a self,
         task: Task,
@@ -72,7 +72,7 @@ pub trait TaskStore: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if the store operation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn delete<'a>(
         &'a self,
         id: &'a TaskId,

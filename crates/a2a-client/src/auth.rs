@@ -11,10 +11,10 @@
 //!
 //! ```rust,no_run
 //! use std::sync::Arc;
-//! use a2a_client::auth::{
+//! use a2a_protocol_client::auth::{
 //!     InMemoryCredentialsStore, AuthInterceptor, SessionId, CredentialsStore,
 //! };
-//! use a2a_client::ClientBuilder;
+//! use a2a_protocol_client::ClientBuilder;
 //!
 //! let store = Arc::new(InMemoryCredentialsStore::new());
 //! let session = SessionId::new("my-session");

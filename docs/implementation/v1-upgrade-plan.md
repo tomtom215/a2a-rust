@@ -7,7 +7,7 @@ and the specification document, here is every change required across the three c
 
 ---
 
-## Phase A: `a2a-types` (Protocol Types)
+## Phase A: `a2a-protocol-types` (Protocol Types)
 
 ### A1. Enum serialization format — ADR-001 ProtoJSON (MASSIVE change)
 
@@ -295,7 +295,7 @@ For multi-tenancy support on gRPC, all request types gain an optional `tenant: S
 
 ---
 
-## Phase B: `a2a-client` (HTTP Client)
+## Phase B: `a2a-protocol-client` (HTTP Client)
 
 ### B1. Update all JSON-RPC method name strings
 All method names change from `message/send` → `SendMessage`, etc.
@@ -311,7 +311,7 @@ Use new combined `TaskPushNotificationConfig`, new `Part` format, etc.
 
 ---
 
-## Phase C: `a2a-server` (Server Framework)
+## Phase C: `a2a-protocol-server` (Server Framework)
 
 ### C1. Update JSON-RPC dispatcher method routing
 All method name strings change.
@@ -329,14 +329,14 @@ New `Part` format, combined push config, etc.
 
 ## Implementation Order
 
-1. **a2a-types** first (all type changes)
-2. **a2a-client** second (depends on types)
-3. **a2a-server** third (depends on types)
+1. **a2a-protocol-types** first (all type changes)
+2. **a2a-protocol-client** second (depends on types)
+3. **a2a-protocol-server** third (depends on types)
 
 ### Estimated scope per crate:
-- **a2a-types**: ~15 files modified, ~800 lines changed
-- **a2a-client**: ~8 files modified, ~200 lines changed
-- **a2a-server**: ~5 files modified, ~150 lines changed
+- **a2a-protocol-types**: ~15 files modified, ~800 lines changed
+- **a2a-protocol-client**: ~8 files modified, ~200 lines changed
+- **a2a-protocol-server**: ~5 files modified, ~150 lines changed
 
 ---
 

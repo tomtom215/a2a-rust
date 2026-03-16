@@ -9,7 +9,7 @@
 //! - Event types
 //! - Protocol constants
 
-use a2a_types::*;
+use a2a_protocol_types::*;
 
 // ── Protocol constants ───────────────────────────────────────────────────────
 
@@ -24,8 +24,8 @@ fn protocol_constants() {
 
 #[test]
 fn deeply_nested_metadata_roundtrip() {
-    use a2a_types::message::{Message, MessageId, MessageRole, Part};
-    use a2a_types::task::ContextId;
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    use a2a_protocol_types::task::ContextId;
 
     // Build 50 levels of nesting
     let mut nested = serde_json::json!("leaf");
@@ -235,8 +235,8 @@ fn push_config_with_auth_roundtrip() {
 
 #[test]
 fn stream_response_status_update_roundtrip() {
-    use a2a_types::events::*;
-    use a2a_types::task::*;
+    use a2a_protocol_types::events::*;
+    use a2a_protocol_types::task::*;
 
     let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
         task_id: TaskId::new("t1"),
@@ -265,8 +265,8 @@ fn stream_response_status_update_roundtrip() {
 
 #[test]
 fn stream_response_artifact_update_roundtrip() {
-    use a2a_types::events::*;
-    use a2a_types::task::*;
+    use a2a_protocol_types::events::*;
+    use a2a_protocol_types::task::*;
 
     let event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
         task_id: TaskId::new("t1"),
@@ -302,8 +302,8 @@ fn stream_response_artifact_update_roundtrip() {
 
 #[test]
 fn stream_response_task_roundtrip() {
-    use a2a_types::events::*;
-    use a2a_types::task::*;
+    use a2a_protocol_types::events::*;
+    use a2a_protocol_types::task::*;
 
     let event = StreamResponse::Task(Task {
         id: TaskId::new("t1"),
@@ -321,7 +321,7 @@ fn stream_response_task_roundtrip() {
 
 #[test]
 fn stream_response_message_roundtrip() {
-    use a2a_types::events::*;
+    use a2a_protocol_types::events::*;
 
     let event = StreamResponse::Message(message::Message {
         id: MessageId::new("msg-1"),
@@ -396,12 +396,12 @@ fn jsonrpc_error_response_roundtrip() {
 
 #[test]
 fn list_tasks_params_all_fields() {
-    use a2a_types::params::ListTasksParams;
+    use a2a_protocol_types::params::ListTasksParams;
 
     let params = ListTasksParams {
         tenant: Some("tenant-1".into()),
         context_id: Some("ctx-1".into()),
-        status: Some(a2a_types::task::TaskState::Working),
+        status: Some(a2a_protocol_types::task::TaskState::Working),
         page_size: Some(25),
         page_token: Some("page-2".into()),
         status_timestamp_after: Some("2026-01-01T00:00:00Z".into()),
@@ -455,10 +455,10 @@ fn a2a_error_convenience_constructors() {
     let e3 = A2aError::internal("server error");
     assert_eq!(e3.code, ErrorCode::InternalError);
 
-    let e4 = A2aError::task_not_found(a2a_types::task::TaskId::new("t1"));
+    let e4 = A2aError::task_not_found(a2a_protocol_types::task::TaskId::new("t1"));
     assert_eq!(e4.code, ErrorCode::TaskNotFound);
 
-    let e5 = A2aError::task_not_cancelable(a2a_types::task::TaskId::new("t1"));
+    let e5 = A2aError::task_not_cancelable(a2a_protocol_types::task::TaskId::new("t1"));
     assert_eq!(e5.code, ErrorCode::TaskNotCancelable);
 }
 
@@ -466,8 +466,8 @@ fn a2a_error_convenience_constructors() {
 
 #[test]
 fn send_message_response_task_variant() {
-    use a2a_types::responses::SendMessageResponse;
-    use a2a_types::task::*;
+    use a2a_protocol_types::responses::SendMessageResponse;
+    use a2a_protocol_types::task::*;
 
     let resp = SendMessageResponse::Task(Task {
         id: TaskId::new("t1"),
@@ -485,8 +485,8 @@ fn send_message_response_task_variant() {
 
 #[test]
 fn task_list_response_roundtrip() {
-    use a2a_types::responses::TaskListResponse;
-    use a2a_types::task::*;
+    use a2a_protocol_types::responses::TaskListResponse;
+    use a2a_protocol_types::task::*;
 
     let resp = TaskListResponse {
         tasks: vec![Task {
@@ -513,7 +513,7 @@ fn task_list_response_roundtrip() {
 
 #[test]
 fn utc_now_iso8601_produces_valid_format() {
-    let ts = a2a_types::utc_now_iso8601();
+    let ts = a2a_protocol_types::utc_now_iso8601();
     // Format: "YYYY-MM-DDTHH:MM:SSZ"
     assert_eq!(ts.len(), 20);
     assert!(ts.ends_with('Z'));
@@ -543,7 +543,7 @@ fn utc_now_iso8601_produces_valid_format() {
 
 #[test]
 fn agent_extension_roundtrip() {
-    use a2a_types::extensions::AgentExtension;
+    use a2a_protocol_types::extensions::AgentExtension;
 
     let ext = AgentExtension {
         uri: "https://example.com/extensions/custom".into(),

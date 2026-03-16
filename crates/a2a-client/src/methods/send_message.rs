@@ -3,7 +3,7 @@
 
 //! `SendMessage` and `SendStreamingMessage` client methods.
 
-use a2a_types::{MessageSendParams, SendMessageResponse};
+use a2a_protocol_types::{MessageSendParams, SendMessageResponse};
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};
@@ -20,8 +20,8 @@ impl A2aClient {
     ///
     /// Returns [`ClientError`] on transport, serialization, or protocol errors.
     ///
-    /// [`Task`]: a2a_types::Task
-    /// [`Message`]: a2a_types::Message
+    /// [`Task`]: a2a_protocol_types::Task
+    /// [`Message`]: a2a_protocol_types::Message
     pub async fn send_message(
         &self,
         params: MessageSendParams,
@@ -53,7 +53,7 @@ impl A2aClient {
     /// events.
     ///
     /// Calls the `SendStreamingMessage` JSON-RPC method. The agent responds
-    /// with an SSE stream of [`a2a_types::StreamResponse`] events.
+    /// with an SSE stream of [`a2a_protocol_types::StreamResponse`] events.
     ///
     /// # Errors
     ///

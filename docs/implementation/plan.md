@@ -16,9 +16,9 @@
 5. [Complete File Inventory](#5-complete-file-inventory)
 6. [Implementation Phases](#6-implementation-phases)
    - [Phase 0 — Project Foundation](#phase-0--project-foundation) ✅
-   - [Phase 1 — Protocol Types (`a2a-types`)](#phase-1--protocol-types-a2a-types) ✅
-   - [Phase 2 — HTTP Client (`a2a-client`)](#phase-2--http-client-a2a-client) ✅
-   - [Phase 3 — Server Framework (`a2a-server`)](#phase-3--server-framework-a2a-server) ✅
+   - [Phase 1 — Protocol Types (`a2a-protocol-types`)](#phase-1--protocol-types-a2a-protocol-types) ✅
+   - [Phase 2 — HTTP Client (`a2a-protocol-client`)](#phase-2--http-client-a2a-protocol-client) ✅
+   - [Phase 3 — Server Framework (`a2a-protocol-server`)](#phase-3--server-framework-a2a-protocol-server) ✅
    - [Phase 4 — v1.0 Protocol Upgrade](#phase-4--v10-protocol-upgrade) ✅
    - [Phase 5 — Server Tests & Bug Fixes](#phase-5--server-tests--bug-fixes) ✅
    - [Phase 6 — Umbrella Crate & Examples](#phase-6--umbrella-crate--examples) ✅
@@ -93,7 +93,7 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 
 - `reqwest` — too many transitive deps (native-tls, cookie jar, etc.)
 - `axum`/`actix-web` — framework lock-in; users choose their own
-- `anyhow`/`thiserror` — we define our own error types (see `a2a-types/src/error.rs`)
+- `anyhow`/`thiserror` — we define our own error types (see `a2a-protocol-types/src/error.rs`)
 - `openssl-sys` — prefer `rustls` for zero system deps
 - `wiremock` — tests use real TCP servers instead of mocking
 
@@ -119,10 +119,10 @@ a2a-rust/
 │       └── type-mapping.md     # Spec types → Rust types with serde annotations
 │
 ├── crates/
-│   ├── a2a-types/              # All protocol types — serde only, no I/O
-│   ├── a2a-client/             # HTTP client (hyper-backed)
-│   ├── a2a-server/             # Server framework (hyper-backed)
-│   └── a2a-sdk/                # Convenience umbrella re-export crate + prelude
+│   ├── a2a-protocol-types/              # All protocol types — serde only, no I/O
+│   ├── a2a-protocol-client/             # HTTP client (hyper-backed)
+│   ├── a2a-protocol-server/             # Server framework (hyper-backed)
+│   └── a2a-protocol-sdk/                # Convenience umbrella re-export crate + prelude
 │
 └── examples/
     └── echo-agent/             # Full-stack demo (server + client, sync + streaming)
@@ -131,25 +131,25 @@ a2a-rust/
 ### Crate Dependency Graph
 
 ```
-a2a-types  ←─────────────────────────── (no a2a-* deps)
+a2a-protocol-types  ←─────────────────────────── (no a2a-* deps)
      ↑
-a2a-client  (depends on a2a-types)
+a2a-protocol-client  (depends on a2a-protocol-types)
      ↑
-a2a-server  (depends on a2a-types)
+a2a-protocol-server  (depends on a2a-protocol-types)
      ↑
-a2a-sdk     (re-exports a2a-types + a2a-client + a2a-server)
+a2a-protocol-sdk     (re-exports a2a-protocol-types + a2a-protocol-client + a2a-protocol-server)
 ```
 
-`a2a-client` and `a2a-server` are **siblings** — neither depends on the other.
+`a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other.
 
 ### Why Four Crates?
 
 | Crate | Audience | Compile Weight |
 |---|---|---|
-| `a2a-types` | Shared by client, server, and downstream type derivers | Minimal |
-| `a2a-client` | Agent orchestrators, test harnesses | +hyper + tokio |
-| `a2a-server` | Agent implementors | +hyper + tokio |
-| `a2a-sdk` | Quick-start users who want everything | All of the above |
+| `a2a-protocol-types` | Shared by client, server, and downstream type derivers | Minimal |
+| `a2a-protocol-client` | Agent orchestrators, test harnesses | +hyper + tokio |
+| `a2a-protocol-server` | Agent implementors | +hyper + tokio |
+| `a2a-protocol-sdk` | Quick-start users who want everything | All of the above |
 
 A downstream crate that only implements an agent server does not pay for the client's dep tree, and vice versa.
 
@@ -166,7 +166,7 @@ A downstream crate that only implements an agent server does not pay for the cli
 └───────────────────┬─────────────────────────┘
                     │
 ┌───────────────────▼─────────────────────────┐
-│            a2a-server / a2a-client           │
+│            a2a-protocol-server / a2a-protocol-client           │
 │  RequestHandler | AgentExecutor | Client     │
 │  (protocol logic, dispatch, SSE, push)       │
 └───────────────────┬─────────────────────────┘
@@ -289,7 +289,7 @@ benches/
 ### `crates/a2a-client/` (3,909 lines)
 
 ```
-Cargo.toml                          [~46 lines]  a2a-types + hyper + tokio + uuid; optional tracing + rustls; criterion bench
+Cargo.toml                          [~46 lines]  a2a-protocol-types + hyper + tokio + uuid; optional tracing + rustls; criterion bench
 src/
   lib.rs                            [132 lines]  module declarations + pub use re-exports + doc examples
   trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
@@ -322,7 +322,7 @@ benches/
 ### `crates/a2a-server/` (5,399 lines)
 
 ```
-Cargo.toml                          [~46 lines]  a2a-types + hyper + tokio + uuid + bytes; optional tracing
+Cargo.toml                          [~46 lines]  a2a-protocol-types + hyper + tokio + uuid + bytes; optional tracing
 src/
   lib.rs                            [70 lines]   module declarations + pub use re-exports
   trace.rs                          [49 lines]   conditional tracing macros (zero cost when disabled)
@@ -390,10 +390,10 @@ crates/a2a-server/tests/
 
 | Component | Lines |
 |---|---|
-| a2a-types | 4,098 |
-| a2a-client | 3,909 |
-| a2a-server | 5,399 |
-| a2a-sdk | 83 |
+| a2a-protocol-types | 4,098 |
+| a2a-protocol-client | 3,909 |
+| a2a-protocol-server | 5,399 |
+| a2a-protocol-sdk | 83 |
 | examples | 427 |
 | integration tests | 2,022 |
 | **Total** | **~15,938** |
@@ -417,7 +417,7 @@ crates/a2a-server/tests/
 
 ---
 
-### Phase 1 — Protocol Types (`a2a-types`) ✅ COMPLETE
+### Phase 1 — Protocol Types (`a2a-protocol-types`) ✅ COMPLETE
 
 **Deliverables:** Complete, serialization-correct Rust types for every A2A v1.0.0 schema. 50 unit tests passing.
 
@@ -435,7 +435,7 @@ Key serde patterns:
 
 ---
 
-### Phase 2 — HTTP Client (`a2a-client`) ✅ COMPLETE
+### Phase 2 — HTTP Client (`a2a-protocol-client`) ✅ COMPLETE
 
 **Deliverables:** Working client supporting JSON-RPC and REST transports. 51 unit tests + 8 doc-tests passing.
 
@@ -451,7 +451,7 @@ Implemented:
 
 ---
 
-### Phase 3 — Server Framework (`a2a-server`) ✅ COMPLETE
+### Phase 3 — Server Framework (`a2a-protocol-server`) ✅ COMPLETE
 
 **Deliverables:** Full `AgentExecutor`-based server framework with both JSON-RPC and REST dispatchers, SSE streaming, push notification support, and in-memory stores.
 
@@ -493,7 +493,7 @@ Key changes:
 
 ### Phase 5 — Server Tests & Bug Fixes ✅ COMPLETE
 
-**Deliverables:** 48 integration tests for a2a-server. Critical event queue lifecycle bug fixed.
+**Deliverables:** 48 integration tests for a2a-protocol-server. Critical event queue lifecycle bug fixed.
 
 Tests organized across three files:
 - `handler_tests.rs` (20 tests): send message, get/list/cancel tasks, resubscribe, push config CRUD, error propagation, executor failure handling
@@ -508,9 +508,9 @@ Tests organized across three files:
 
 ### Phase 6 — Umbrella Crate & Examples ✅ COMPLETE
 
-**Deliverables:** `a2a-sdk` prelude module; working end-to-end echo-agent example.
+**Deliverables:** `a2a-protocol-sdk` prelude module; working end-to-end echo-agent example.
 
-#### `a2a-sdk` Enhancements
+#### `a2a-protocol-sdk` Enhancements
 
 - Added `prelude` module with curated re-exports of the most commonly used types:
   - Wire types: `Task`, `TaskState`, `Message`, `Part`, `Artifact`, `StreamResponse`, `AgentCard`, etc.
@@ -541,21 +541,21 @@ All demos complete successfully, validating the full client-server pipeline acro
 
 **Deliverables:** Close remaining gaps between our implementation and the A2A v1.0.0 specification. Each sub-phase was independently implemented and tested. Items were verified against the actual spec/proto before implementation — planned items not found in the spec were skipped.
 
-#### 7A. Type & Field Fixes (`a2a-types`) ✅
+#### 7A. Type & Field Fixes (`a2a-protocol-types`) ✅
 
 | Item | Status | Details |
 |---|---|---|
 | `TaskState::Submitted` → `Pending` | ✅ Done | Renamed variant to `Pending`, serde rename to `TASK_STATE_PENDING`. Updated all tests. |
 | `AgentCapabilities.state_transition_history` | ✅ Done | Added `state_transition_history: Option<bool>` with `skip_serializing_if`. Test added. |
 | Protocol constants | ✅ Done | Added `A2A_VERSION`, `A2A_CONTENT_TYPE`, `A2A_VERSION_HEADER` to `lib.rs`. |
-| Protocol binding constant | ✅ Done | Added `BINDING_HTTP_JSON = "HTTP+JSON"` to `a2a-client/config.rs`. |
+| Protocol binding constant | ✅ Done | Added `BINDING_HTTP_JSON = "HTTP+JSON"` to `a2a-protocol-client/config.rs`. |
 | `Task` timestamps | ⏭️ Skipped | Not found in A2A v1.0.0 proto/spec after verification. |
 | `Artifact.media_type` | ⏭️ Skipped | Not found in A2A v1.0.0 proto/spec after verification. |
 | `PushNotificationConfig.created_at` | ⏭️ Skipped | Not found in spec. |
 | `PushNotificationConfig.id` → `configId` | ⏭️ Skipped | Spec uses `id`, not `configId`. Already correct. |
 | `ListTasksParams.history_length` | ⏭️ Skipped | Not found in spec. |
 
-#### 7B. REST Dispatch Fixes (`a2a-server`) ✅
+#### 7B. REST Dispatch Fixes (`a2a-protocol-server`) ✅
 
 | Item | Status | Details |
 |---|---|---|
@@ -566,7 +566,7 @@ All demos complete successfully, validating the full client-server pipeline acro
 | GetTask `historyLength` query param | ✅ Done | Parsed from URL query string via `parse_query_param_u32()`. |
 | Protocol headers in responses | ✅ Done | All REST responses include `A2A-Version: 1.0.0` and `Content-Type: application/a2a+json`. |
 
-#### 7C. Protocol Headers (`a2a-server` + `a2a-client`) ✅
+#### 7C. Protocol Headers (`a2a-protocol-server` + `a2a-protocol-client`) ✅
 
 | Header | Direction | Status |
 |---|---|---|
@@ -576,7 +576,7 @@ All demos complete successfully, validating the full client-server pipeline acro
 | `Content-Type: application/a2a+json` | Client requests | ✅ Added to both transports |
 | `A2A-Extensions` | Both | ⏭️ Deferred — no extensions implemented yet |
 
-#### 7D. Handler & Protocol Logic Fixes (`a2a-server`) ✅
+#### 7D. Handler & Protocol Logic Fixes (`a2a-protocol-server`) ✅
 
 | Item | Status | Details |
 |---|---|---|
@@ -586,7 +586,7 @@ All demos complete successfully, validating the full client-server pipeline acro
 | Push delivery during events | ✅ Done | `deliver_push()` called during `collect_events()` for status/artifact events via `PushSender`. |
 | Interceptor chain enforcement | ✅ Done | Already implemented — verified with new `RejectInterceptor` test. |
 
-#### 7E. Client-Side Fixes (`a2a-client`) ✅
+#### 7E. Client-Side Fixes (`a2a-protocol-client`) ✅
 
 | Item | Status | Details |
 |---|---|---|
@@ -674,7 +674,7 @@ Files: `crates/a2a-types/src/signing.rs`
 | Benchmark suite (`criterion`) | ✅ | `json_serde` (5 benches), `sse_parse` (3 benches) |
 | `cargo doc --no-deps -D warnings` | ✅ | Zero warnings; all public items documented |
 | `CONTRIBUTING.md` update | ✅ | Testing guide, PR checklist, benchmark docs |
-| Publish dry-run | ✅ | `a2a-types` passes; client/server/sdk need types published first |
+| Publish dry-run | ✅ | `a2a-protocol-types` passes; client/server/sdk need types published first |
 | Version alignment | ✅ | All crates at `0.1.0`, descriptions updated to v1.0 |
 | `tracing` feature flag | ✅ | Implemented in Phase 9A |
 | TLS support | ✅ | Implemented in Phase 9B |
@@ -691,12 +691,12 @@ Files: `crates/a2a-types/src/signing.rs`
 | Item | Status |
 |---|---|
 | `tracing` workspace dependency (optional) | ✅ `>=0.1.40, <0.2` |
-| Feature-gate in `a2a-client` and `a2a-server` | ✅ Behind `tracing` feature flag |
+| Feature-gate in `a2a-protocol-client` and `a2a-protocol-server` | ✅ Behind `tracing` feature flag |
 | Conditional trace macros (zero cost when disabled) | ✅ `trace_info!`, `trace_debug!`, `trace_warn!`, `trace_error!` |
 | Client instrumentation | ✅ JSON-RPC + REST transport requests, SSE streams, discovery |
 | Server instrumentation | ✅ Handler dispatch, executor lifecycle, push delivery, task store, SSE |
 | Echo-agent `tracing-subscriber` setup | ✅ Optional via `tracing` feature, `RUST_LOG` env filter |
-| SDK umbrella feature | ✅ `a2a-sdk/tracing` enables both client + server tracing |
+| SDK umbrella feature | ✅ `a2a-protocol-sdk/tracing` enables both client + server tracing |
 
 Files: `crates/a2a-client/src/trace.rs`, `crates/a2a-server/src/trace.rs`
 
@@ -711,7 +711,7 @@ Files: `crates/a2a-client/src/trace.rs`, `crates/a2a-server/src/trace.rs`
 | `default_tls_config()` — Mozilla root certs | ✅ TLS 1.2+, ring crypto provider |
 | `tls_config_with_extra_roots()` — custom CA certs | ✅ For enterprise/internal PKI |
 | `TlsConfig` enum in `config.rs` | ✅ `Disabled` / `Rustls` variants |
-| SDK umbrella feature | ✅ `a2a-sdk/tls-rustls` enables client TLS |
+| SDK umbrella feature | ✅ `a2a-protocol-sdk/tls-rustls` enables client TLS |
 | Unit tests | ✅ 4 tests: config creation, client creation, custom roots |
 
 Files: `crates/a2a-client/src/tls.rs`
@@ -726,7 +726,7 @@ Files: `crates/a2a-client/src/tls.rs`
 | Test job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
 | Documentation build | ✅ `RUSTDOCFLAGS="-D warnings"` |
 | `cargo-deny` check | ✅ License/advisory/ban compliance |
-| Publish dry-run | ✅ `a2a-types` publish verification |
+| Publish dry-run | ✅ `a2a-protocol-types` publish verification |
 | Cargo caching | ✅ `actions/cache@v4` for registry + target |
 | `dtolnay/rust-toolchain` for reproducible installs | ✅ Stable + MSRV matrix |
 
@@ -740,10 +740,10 @@ Files: `.github/workflows/ci.yml`
 
 | Crate | Unit Tests | Integration Tests | Property/Corpus | Doc-Tests | Total |
 |---|---|---|---|---|---|
-| `a2a-types` | 59 | 25 | 17 | — | 101 |
-| `a2a-client` | 58 | — | — | 8 | 66 |
-| `a2a-server` | 24 | 24 | — | — | 48 |
-| `a2a-sdk` | — | — | — | 1 | 1 |
+| `a2a-protocol-types` | 59 | 25 | 17 | — | 101 |
+| `a2a-protocol-client` | 58 | — | — | 8 | 66 |
+| `a2a-protocol-server` | 24 | 24 | — | — | 48 |
+| `a2a-protocol-sdk` | — | — | — | 1 | 1 |
 | **Total** | **141** | **49** | **17** | **9** | **216** |
 
 *Note: 4 additional TLS tests run with `--features tls-rustls`. Total with all features: 225.*

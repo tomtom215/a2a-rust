@@ -15,10 +15,10 @@ This document describes the release process for the `a2a-rust` workspace.
 
 Publishing must happen in this order (each crate depends on the ones above it):
 
-1. `a2a-types` — no workspace dependencies
-2. `a2a-client` — depends on `a2a-types`
-3. `a2a-server` — depends on `a2a-types`
-4. `a2a-sdk` — depends on all three
+1. `a2a-protocol-types` — no workspace dependencies
+2. `a2a-protocol-client` — depends on `a2a-protocol-types`
+3. `a2a-protocol-server` — depends on `a2a-protocol-types`
+4. `a2a-protocol-sdk` — depends on all three
 
 ## Release checklist
 

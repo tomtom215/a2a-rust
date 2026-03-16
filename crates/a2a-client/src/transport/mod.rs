@@ -76,7 +76,7 @@ pub trait Transport: Send + Sync + 'static {
     ///
     /// The request is sent with `Accept: text/event-stream`; the response body
     /// is a Server-Sent Events stream. The returned [`EventStream`] lets the
-    /// caller iterate over [`a2a_types::StreamResponse`] events.
+    /// caller iterate over [`a2a_protocol_types::StreamResponse`] events.
     fn send_streaming_request<'a>(
         &'a self,
         method: &'a str,

@@ -7,8 +7,8 @@ a2a-rust makes it easy to test agents at multiple levels: unit testing executors
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
 
 ```rust
-use a2a_sdk::prelude::*;
-use a2a_sdk::server::{RequestContext, EventQueueManager};
+use a2a_protocol_sdk::prelude::*;
+use a2a_protocol_sdk::server::{RequestContext, EventQueueManager};
 
 #[tokio::test]
 async fn test_calculator_executor() {
@@ -56,8 +56,8 @@ async fn test_calculator_executor() {
 Test the full stack by starting a real server and using a client:
 
 ```rust
-use a2a_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
-use a2a_sdk::client::ClientBuilder;
+use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
+use a2a_protocol_sdk::client::ClientBuilder;
 use std::sync::Arc;
 
 #[tokio::test]
@@ -218,7 +218,7 @@ Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
 cargo test --workspace
 
 # Specific crate
-cargo test -p a2a-server
+cargo test -p a2a-protocol-server
 
 # With output
 cargo test --workspace -- --nocapture

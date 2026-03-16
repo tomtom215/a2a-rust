@@ -8,23 +8,23 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_types::artifact::Artifact;
-use a2a_types::error::{A2aError, A2aResult, ErrorCode};
-use a2a_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::{ListTasksParams, MessageSendParams};
-use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
+use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
+use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::call_context::CallContext;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::handler::SendMessageResult;
-use a2a_server::push::{InMemoryPushConfigStore, PushConfigStore};
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::call_context::CallContext;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::handler::SendMessageResult;
+use a2a_protocol_server::push::{InMemoryPushConfigStore, PushConfigStore};
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::{EventQueueManager, EventQueueReader, EventQueueWriter};
 
 // ── Test executor implementations ────────────────────────────────────────────
 
@@ -138,8 +138,8 @@ fn make_send_params(text: &str) -> MessageSendParams {
 /// Extracts the error from a `Result<SendMessageResult, ServerError>`,
 /// panicking if it was `Ok`.
 fn unwrap_send_err(
-    result: Result<SendMessageResult, a2a_server::ServerError>,
-) -> a2a_server::ServerError {
+    result: Result<SendMessageResult, a2a_protocol_server::ServerError>,
+) -> a2a_protocol_server::ServerError {
     match result {
         Err(e) => e,
         Ok(_) => panic!("expected error, got Ok(SendMessageResult)"),
@@ -185,7 +185,7 @@ fn minimal_agent_card() -> AgentCard {
 
 #[test]
 fn utc_now_iso8601_returns_valid_iso_format() {
-    let ts = a2a_types::utc_now_iso8601();
+    let ts = a2a_protocol_types::utc_now_iso8601();
 
     // Should match YYYY-MM-DDTHH:MM:SSZ
     assert!(ts.ends_with('Z'), "timestamp should end with Z: {ts}");
@@ -394,7 +394,7 @@ async fn get_extended_agent_card_unconfigured() {
 
     let err = handler.on_get_extended_agent_card().await.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::Internal(_)),
+        matches!(err, a2a_protocol_server::ServerError::Internal(_)),
         "expected Internal error, got {err:?}"
     );
 }
@@ -403,7 +403,7 @@ async fn get_extended_agent_card_unconfigured() {
 
 #[test]
 fn cors_config_permissive_returns_valid_config() {
-    let cors = a2a_server::dispatch::CorsConfig::permissive();
+    let cors = a2a_protocol_server::dispatch::CorsConfig::permissive();
     assert_eq!(cors.allow_origin, "*");
     assert!(!cors.allow_methods.is_empty());
     assert!(!cors.allow_headers.is_empty());
@@ -412,7 +412,7 @@ fn cors_config_permissive_returns_valid_config() {
 
 #[test]
 fn cors_config_new_with_specific_origin() {
-    let cors = a2a_server::dispatch::CorsConfig::new("https://example.com");
+    let cors = a2a_protocol_server::dispatch::CorsConfig::new("https://example.com");
     assert_eq!(cors.allow_origin, "https://example.com");
 }
 
@@ -474,7 +474,7 @@ fn request_context_with_stored_task() {
     let ctx = RequestContext::new(msg, TaskId::new("task-1"), "ctx-1".into());
     assert!(ctx.stored_task.is_none());
 
-    let stored = a2a_types::task::Task {
+    let stored = a2a_protocol_types::task::Task {
         id: TaskId::new("old-task"),
         context_id: ContextId::new("ctx-1"),
         status: TaskStatus::new(TaskState::Completed),
@@ -568,7 +568,7 @@ async fn context_id_over_max_length_fails() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "context_id of 1025 chars should be rejected, got {err:?}"
     );
 }
@@ -622,7 +622,7 @@ async fn task_id_over_max_length_fails() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "task_id of 1025 chars should be rejected, got {err:?}"
     );
 }
@@ -647,7 +647,7 @@ async fn empty_context_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "empty context_id should be rejected, got {err:?}"
     );
 }
@@ -670,7 +670,7 @@ async fn empty_task_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "empty task_id should be rejected, got {err:?}"
     );
 }
@@ -695,7 +695,7 @@ async fn whitespace_only_context_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "whitespace-only context_id should be rejected, got {err:?}"
     );
 }
@@ -718,7 +718,7 @@ async fn whitespace_only_task_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "whitespace-only task_id should be rejected, got {err:?}"
     );
 }
@@ -834,7 +834,7 @@ async fn duplicate_task_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false).await);
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "duplicate task_id should be rejected, got {err:?}"
     );
 }
@@ -873,7 +873,7 @@ async fn push_config_per_task_limit() {
 
 #[tokio::test]
 async fn oversized_event_rejected() {
-    use a2a_server::streaming::event_queue::new_in_memory_queue_with_options;
+    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue_with_options;
 
     // Create a queue with a very small max event size (128 bytes).
     let (writer, _reader) = new_in_memory_queue_with_options(8, 128);
@@ -920,7 +920,7 @@ fn builder_rejects_zero_timeout() {
     assert!(result.is_err(), "zero timeout should be rejected");
     let err = result.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "expected InvalidParams for zero timeout, got {err:?}"
     );
 }
@@ -937,7 +937,7 @@ fn builder_rejects_empty_interfaces() {
     assert!(result.is_err(), "empty interfaces should be rejected");
     let err = result.unwrap_err();
     assert!(
-        matches!(err, a2a_server::ServerError::InvalidParams(_)),
+        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
         "expected InvalidParams for empty interfaces, got {err:?}"
     );
 }
@@ -978,7 +978,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 2: Get the task by ID.
     let fetched = handler
-        .on_get_task(a2a_types::params::TaskQueryParams {
+        .on_get_task(a2a_protocol_types::params::TaskQueryParams {
             tenant: None,
             id: task_id.0.clone(),
             history_length: None,
@@ -1009,7 +1009,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
 
     // Step 4: Cancel a completed task — should fail with TaskNotCancelable.
     let cancel_err = handler
-        .on_cancel_task(a2a_types::params::CancelTaskParams {
+        .on_cancel_task(a2a_protocol_types::params::CancelTaskParams {
             tenant: None,
             id: task_id.0.clone(),
             metadata: None,
@@ -1017,7 +1017,7 @@ async fn full_handler_lifecycle_send_get_list_cancel() {
         .await
         .unwrap_err();
     assert!(
-        matches!(cancel_err, a2a_server::ServerError::TaskNotCancelable(_)),
+        matches!(cancel_err, a2a_protocol_server::ServerError::TaskNotCancelable(_)),
         "canceling a completed task should fail with TaskNotCancelable, got {cancel_err:?}"
     );
 }

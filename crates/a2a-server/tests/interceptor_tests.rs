@@ -8,10 +8,10 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
-use a2a_types::error::{A2aError, A2aResult, ErrorCode};
+use a2a_protocol_types::error::{A2aError, A2aResult, ErrorCode};
 
-use a2a_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
-use a2a_server::CallContext;
+use a2a_protocol_server::interceptor::{ServerInterceptor, ServerInterceptorChain};
+use a2a_protocol_server::CallContext;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

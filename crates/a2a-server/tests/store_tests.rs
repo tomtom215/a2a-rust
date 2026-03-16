@@ -5,10 +5,10 @@
 
 use std::time::Duration;
 
-use a2a_types::params::ListTasksParams;
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::params::ListTasksParams;
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-use a2a_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
     Task {

@@ -11,8 +11,8 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_types::agent_card::AgentCard;
-use a2a_types::error::A2aResult;
+use a2a_protocol_types::agent_card::AgentCard;
+use a2a_protocol_types::error::A2aResult;
 use bytes::Bytes;
 use http_body_util::Full;
 
@@ -27,7 +27,7 @@ pub trait AgentCardProducer: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_types::error::A2aError) if card generation fails.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if card generation fails.
     fn produce<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<AgentCard>> + Send + 'a>>;
 }
 

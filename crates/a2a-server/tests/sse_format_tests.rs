@@ -3,7 +3,7 @@
 
 //! Tests for SSE frame formatting and streaming.
 
-use a2a_server::streaming::sse::{write_event, write_keep_alive};
+use a2a_protocol_server::streaming::sse::{write_event, write_keep_alive};
 
 #[test]
 fn write_event_basic() {

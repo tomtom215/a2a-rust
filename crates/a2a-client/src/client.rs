@@ -18,7 +18,7 @@
 //!
 //! [`ClientBuilder`]: crate::ClientBuilder
 
-use a2a_types::AgentCard;
+use a2a_protocol_types::AgentCard;
 
 use crate::builder::ClientBuilder;
 use crate::config::ClientConfig;
@@ -36,9 +36,9 @@ use crate::transport::Transport;
 /// # Example
 ///
 /// ```rust,no_run
-/// use a2a_client::ClientBuilder;
+/// use a2a_protocol_client::ClientBuilder;
 ///
-/// # async fn example() -> Result<(), a2a_client::error::ClientError> {
+/// # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 /// let client = ClientBuilder::new("http://localhost:8080").build()?;
 /// # Ok(())
 /// # }

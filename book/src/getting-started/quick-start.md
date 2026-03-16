@@ -63,7 +63,7 @@ The example exercised all major protocol operations:
 The echo agent is about 100 lines of Rust. Here's the core executor:
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -87,7 +87,7 @@ impl AgentExecutor for EchoExecutor {
             // 2. Extract text from incoming message
             let input = ctx.message.parts.iter()
                 .find_map(|p| match &p.content {
-                    a2a_types::message::PartContent::Text { text } => Some(text.as_str()),
+                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.as_str()),
                     _ => None,
                 })
                 .unwrap_or("<no text>");

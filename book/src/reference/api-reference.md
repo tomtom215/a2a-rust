@@ -2,7 +2,7 @@
 
 A condensed overview of all public types, traits, and functions across the a2a-rust crates.
 
-## Wire Types (`a2a-types`)
+## Wire Types (`a2a-protocol-types`)
 
 ### Core Types
 
@@ -91,7 +91,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `JsonRpcError` | JSON-RPC error object |
 | `JsonRpcVersion` | Version marker (`"2.0"`) |
 
-## Client (`a2a-client`)
+## Client (`a2a-protocol-client`)
 
 ### Core Types
 
@@ -132,7 +132,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `JsonRpcTransport` | JSON-RPC 2.0 transport |
 | `RestTransport` | REST/HTTP transport |
 
-## Server (`a2a-server`)
+## Server (`a2a-protocol-server`)
 
 ### Core Types
 
@@ -189,16 +189,16 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `ServerError` | Server-level error type |
 | `ServerResult<T>` | Alias for `Result<T, ServerError>` |
 
-## SDK (`a2a-sdk`)
+## SDK (`a2a-protocol-sdk`)
 
 ### Modules
 
 | Module | Re-exports |
 |--------|-----------|
-| `a2a_sdk::types` | All `a2a-types` exports |
-| `a2a_sdk::client` | All `a2a-client` exports |
-| `a2a_sdk::server` | All `a2a-server` exports |
-| `a2a_sdk::prelude` | Most commonly used types |
+| `a2a_protocol_sdk::types` | All `a2a-protocol-types` exports |
+| `a2a_protocol_sdk::client` | All `a2a-protocol-client` exports |
+| `a2a_protocol_sdk::server` | All `a2a-protocol-server` exports |
+| `a2a_protocol_sdk::prelude` | Most commonly used types |
 
 ### Prelude Contents
 

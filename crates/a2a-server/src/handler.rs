@@ -10,15 +10,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use a2a_types::agent_card::AgentCard;
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::params::{
+use a2a_protocol_types::agent_card::AgentCard;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::params::{
     CancelTaskParams, DeletePushConfigParams, GetPushConfigParams, ListTasksParams,
     MessageSendParams, TaskIdParams, TaskQueryParams,
 };
-use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::responses::{SendMessageResponse, TaskListResponse};
-use a2a_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::responses::{SendMessageResponse, TaskListResponse};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
@@ -265,7 +265,7 @@ impl RequestHandler {
                     tokio::time::timeout(timeout, executor.execute(&ctx, writer.as_ref()))
                         .await
                         .unwrap_or_else(|_| {
-                            Err(a2a_types::error::A2aError::internal(format!(
+                            Err(a2a_protocol_types::error::A2aError::internal(format!(
                                 "executor timed out after {}s",
                                 timeout.as_secs()
                             )))
@@ -388,9 +388,9 @@ impl RequestHandler {
 
         // Build a request context for the cancel call.
         let ctx = RequestContext::new(
-            a2a_types::message::Message {
-                id: a2a_types::message::MessageId::new(uuid::Uuid::new_v4().to_string()),
-                role: a2a_types::message::MessageRole::User,
+            a2a_protocol_types::message::Message {
+                id: a2a_protocol_types::message::MessageId::new(uuid::Uuid::new_v4().to_string()),
+                role: a2a_protocol_types::message::MessageRole::User,
                 parts: vec![],
                 task_id: Some(task_id.clone()),
                 context_id: Some(task.context_id.clone()),
@@ -638,7 +638,7 @@ impl RequestHandler {
     /// delivering push notifications.
     async fn process_event(
         &self,
-        event: a2a_types::error::A2aResult<StreamResponse>,
+        event: a2a_protocol_types::error::A2aResult<StreamResponse>,
         task_id: &TaskId,
         last_task: &mut Task,
     ) -> ServerResult<()> {

@@ -8,7 +8,7 @@ a2a-rust is organized as a Cargo workspace with four crates, each with a clear r
 a2a-rust/
 ├── Cargo.toml              # Workspace root
 ├── crates/
-│   ├── a2a-types/          # Wire types (serde, no I/O)
+│   ├── a2a-protocol-types/          # Wire types (serde, no I/O)
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── task.rs         # Task, TaskState, TaskStatus, TaskId
@@ -24,7 +24,7 @@ a2a-rust/
 │   │       ├── security.rs     # Security schemes and requirements
 │   │       └── extensions.rs   # Extension and signing types
 │   │
-│   ├── a2a-client/         # HTTP client
+│   ├── a2a-protocol-client/         # HTTP client
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
 │   │       ├── transport/      # JsonRpcTransport, RestTransport
@@ -33,7 +33,7 @@ a2a-rust/
 │   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
 │   │       └── interceptor.rs  # CallInterceptor, InterceptorChain
 │   │
-│   ├── a2a-server/         # Server framework
+│   ├── a2a-protocol-server/         # Server framework
 │   │   └── src/
 │   │       ├── lib.rs          # Public re-exports
 │   │       ├── handler.rs      # RequestHandler (core orchestration)
@@ -47,7 +47,7 @@ a2a-rust/
 │   │       ├── metrics.rs      # Metrics trait, NoopMetrics
 │   │       └── request_context.rs  # RequestContext
 │   │
-│   └── a2a-sdk/            # Umbrella crate
+│   └── a2a-protocol-sdk/            # Umbrella crate
 │       └── src/
 │           └── lib.rs          # Re-exports + prelude
 │
@@ -63,37 +63,37 @@ a2a-rust/
 ## Crate Dependencies
 
 ```
-a2a-sdk
-├── a2a-client
-│   └── a2a-types
-├── a2a-server
-│   └── a2a-types
-└── a2a-types
+a2a-protocol-sdk
+├── a2a-protocol-client
+│   └── a2a-protocol-types
+├── a2a-protocol-server
+│   └── a2a-protocol-types
+└── a2a-protocol-types
 ```
 
 The dependency graph is intentionally shallow:
 
-- **`a2a-types`** has no internal dependencies — just `serde` and `serde_json`
-- **`a2a-client`** depends on `a2a-types` plus HTTP crates (`hyper`, `hyper-util`, `http-body-util`)
-- **`a2a-server`** depends on `a2a-types` plus the same HTTP stack
-- **`a2a-sdk`** depends on all three, adding nothing of its own
+- **`a2a-protocol-types`** has no internal dependencies — just `serde` and `serde_json`
+- **`a2a-protocol-client`** depends on `a2a-protocol-types` plus HTTP crates (`hyper`, `hyper-util`, `http-body-util`)
+- **`a2a-protocol-server`** depends on `a2a-protocol-types` plus the same HTTP stack
+- **`a2a-protocol-sdk`** depends on all three, adding nothing of its own
 
 ## Choosing Your Dependency
 
 | Use Case | Crate |
 |----------|-------|
-| Just want the types (e.g., for a custom transport) | `a2a-types` |
-| Building a client that calls remote agents | `a2a-client` |
-| Building an agent (server) | `a2a-server` |
-| Building both client and server | `a2a-sdk` |
-| Quick prototyping / examples | `a2a-sdk` (use the `prelude`) |
+| Just want the types (e.g., for a custom transport) | `a2a-protocol-types` |
+| Building a client that calls remote agents | `a2a-protocol-client` |
+| Building an agent (server) | `a2a-protocol-server` |
+| Building both client and server | `a2a-protocol-sdk` |
+| Quick prototyping / examples | `a2a-protocol-sdk` (use the `prelude`) |
 
 ## The Prelude
 
 The SDK's `prelude` module exports the most commonly used types so you can get started with a single import:
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 ```
 
 This gives you:

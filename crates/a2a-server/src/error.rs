@@ -9,8 +9,8 @@
 
 use std::fmt;
 
-use a2a_types::error::{A2aError, ErrorCode};
-use a2a_types::task::TaskId;
+use a2a_protocol_types::error::{A2aError, ErrorCode};
+use a2a_protocol_types::task::TaskId;
 
 // ── ServerError ──────────────────────────────────────────────────────────────
 
@@ -49,9 +49,9 @@ pub enum ServerError {
         /// The task ID.
         task_id: TaskId,
         /// The current state.
-        from: a2a_types::task::TaskState,
+        from: a2a_protocol_types::task::TaskState,
         /// The attempted target state.
-        to: a2a_types::task::TaskState,
+        to: a2a_protocol_types::task::TaskState,
     },
 }
 

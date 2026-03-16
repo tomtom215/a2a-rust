@@ -11,15 +11,15 @@ use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use a2a_types::error::A2aResult;
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::dispatch::RestDispatcher;
-use a2a_server::executor::AgentExecutor;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::EventQueueWriter;
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::dispatch::RestDispatcher;
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::EventQueueWriter;
 
 struct EchoExecutor;
 
@@ -43,11 +43,11 @@ impl AgentExecutor for EchoExecutor {
     }
 }
 
-fn make_handler() -> Arc<a2a_server::RequestHandler> {
+fn make_handler() -> Arc<a2a_protocol_server::RequestHandler> {
     Arc::new(RequestHandlerBuilder::new(EchoExecutor).build().unwrap())
 }
 
-async fn start_rest_server(handler: Arc<a2a_server::RequestHandler>) -> std::net::SocketAddr {
+async fn start_rest_server(handler: Arc<a2a_protocol_server::RequestHandler>) -> std::net::SocketAddr {
     let dispatcher = Arc::new(RestDispatcher::new(handler));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

@@ -367,7 +367,7 @@ jobs:
     # Configure it at: Settings → Environments → crates-io → Required reviewers
     environment:
       name: crates-io
-      url: https://crates.io/crates/a2a-sdk/${{ needs.validate.outputs.version }}
+      url: https://crates.io/crates/a2a-protocol-sdk/${{ needs.validate.outputs.version }}
     permissions:
       contents: read
     steps:
@@ -399,18 +399,18 @@ jobs:
           }
 
           # Tier 1: no workspace dependencies
-          publish_crate a2a-types
+          publish_crate a2a-protocol-types
           echo "Waiting for crates.io index to update..."
           sleep 30
 
-          # Tier 2: depends on a2a-types
-          publish_crate a2a-client
-          publish_crate a2a-server
+          # Tier 2: depends on a2a-protocol-types
+          publish_crate a2a-protocol-client
+          publish_crate a2a-protocol-server
           echo "Waiting for crates.io index to update..."
           sleep 30
 
           # Tier 3: depends on all of the above
-          publish_crate a2a-sdk
+          publish_crate a2a-protocol-sdk
 
           echo "::notice::All crates published successfully"
 
@@ -420,10 +420,10 @@ jobs:
             echo ""
             echo "| Crate | Link |"
             echo "|-------|------|"
-            echo "| a2a-types  | [crates.io](https://crates.io/crates/a2a-types/${VERSION}) |"
-            echo "| a2a-client | [crates.io](https://crates.io/crates/a2a-client/${VERSION}) |"
-            echo "| a2a-server | [crates.io](https://crates.io/crates/a2a-server/${VERSION}) |"
-            echo "| a2a-sdk    | [crates.io](https://crates.io/crates/a2a-sdk/${VERSION}) |"
+            echo "| a2a-protocol-types  | [crates.io](https://crates.io/crates/a2a-protocol-types/${VERSION}) |"
+            echo "| a2a-protocol-client | [crates.io](https://crates.io/crates/a2a-protocol-client/${VERSION}) |"
+            echo "| a2a-protocol-server | [crates.io](https://crates.io/crates/a2a-protocol-server/${VERSION}) |"
+            echo "| a2a-protocol-sdk    | [crates.io](https://crates.io/crates/a2a-protocol-sdk/${VERSION}) |"
             echo ""
             echo "> docs.rs may take a few minutes to build and index the documentation."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -7,7 +7,7 @@ The most common operation: send a message to an agent and get a response.
 `send_message` sends a message and waits for the task to complete:
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams {
     tenant: None,
@@ -42,7 +42,7 @@ match response {
         if let Some(artifacts) = &task.artifacts {
             for artifact in artifacts {
                 for part in &artifact.parts {
-                    if let a2a_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
                         println!("Result: {text}");
                     }
                 }
@@ -62,7 +62,7 @@ match response {
 Customize the send with `SendMessageConfiguration`:
 
 ```rust
-use a2a_sdk::types::params::SendMessageConfiguration;
+use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams {
     tenant: None,

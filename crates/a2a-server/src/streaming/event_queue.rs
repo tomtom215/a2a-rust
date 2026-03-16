@@ -15,9 +15,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use a2a_types::error::{A2aError, A2aResult};
-use a2a_types::events::StreamResponse;
-use a2a_types::task::TaskId;
+use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::task::TaskId;
 use tokio::sync::{mpsc, RwLock};
 
 /// Default channel capacity for event queues.
@@ -206,7 +206,7 @@ impl EventQueueManager {
     /// # Examples
     ///
     /// ```
-    /// use a2a_server::EventQueueManager;
+    /// use a2a_protocol_server::EventQueueManager;
     ///
     /// let manager = EventQueueManager::new();
     /// ```

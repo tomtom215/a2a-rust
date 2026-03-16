@@ -8,8 +8,8 @@
 //! - Part round-trip serialization fidelity
 //! - ID type uniqueness and Display consistency
 
-use a2a_types::message::{Part, PartContent};
-use a2a_types::task::{ContextId, TaskId, TaskState};
+use a2a_protocol_types::message::{Part, PartContent};
+use a2a_protocol_types::task::{ContextId, TaskId, TaskState};
 use proptest::prelude::*;
 
 // ── TaskState strategies ─────────────────────────────────────────────────────

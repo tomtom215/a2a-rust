@@ -49,12 +49,12 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | Crate | Purpose | When to Use |
 |---|---|---|
-| [`a2a-types`](crates/a2a-types) | All A2A wire types — `serde` only, no I/O | You need types without the HTTP stack |
-| [`a2a-client`](crates/a2a-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
-| [`a2a-server`](crates/a2a-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
-| [`a2a-sdk`](crates/a2a-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
+| [`a2a-protocol-types`](crates/a2a-types) | All A2A wire types — `serde` only, no I/O | You need types without the HTTP stack |
+| [`a2a-protocol-client`](crates/a2a-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
+| [`a2a-protocol-server`](crates/a2a-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
+| [`a2a-protocol-sdk`](crates/a2a-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
 
-`a2a-client` and `a2a-server` are **siblings** — neither depends on the other. Use only what you need.
+`a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other. Use only what you need.
 
 ## Quick Start
 
@@ -62,7 +62,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-sdk = "0.2"
+a2a-protocol-sdk = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -71,7 +71,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```rust
 use std::future::Future;
 use std::pin::Pin;
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 struct MyAgent;
 
@@ -122,7 +122,7 @@ impl AgentExecutor for MyAgent {
 
 ```rust
 use std::sync::Arc;
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 let handler = Arc::new(
     RequestHandlerBuilder::new(MyAgent)
@@ -141,7 +141,7 @@ let rest = Arc::new(RestDispatcher::new(handler));
 ### Use the client
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 let client = ClientBuilder::new("http://localhost:8080")
     .build()
@@ -195,7 +195,7 @@ This starts servers on random ports and runs 5 demos:
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
-│  a2a-server / a2a-client                   │
+│  a2a-protocol-server / a2a-protocol-client  │
 │  RequestHandler · AgentExecutor · Client   │
 └─────────────────────┬──────────────────────┘
                       │
@@ -248,7 +248,7 @@ cargo fmt --all -- --check
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Run benchmarks (task store, event queue)
-cargo bench -p a2a-server
+cargo bench -p a2a-protocol-server
 
 # Fuzz JSON deserialization (requires nightly)
 cd fuzz && cargo +nightly fuzz run json_deser
@@ -261,9 +261,9 @@ All phases are complete. The SDK is production-ready with all 11 A2A methods, du
 | Phase | Status |
 |---|---|
 | 0. Project Foundation | ✅ Complete |
-| 1. Protocol Types (`a2a-types`) | ✅ Complete |
-| 2. HTTP Client (`a2a-client`) | ✅ Complete |
-| 3. Server Framework (`a2a-server`) | ✅ Complete |
+| 1. Protocol Types (`a2a-protocol-types`) | ✅ Complete |
+| 2. HTTP Client (`a2a-protocol-client`) | ✅ Complete |
+| 3. Server Framework (`a2a-protocol-server`) | ✅ Complete |
 | 4. v1.0 Protocol Upgrade | ✅ Complete |
 | 5. Server Tests & Bug Fixes | ✅ Complete |
 | 6. Umbrella Crate & Examples | ✅ Complete |

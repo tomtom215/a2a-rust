@@ -6,7 +6,7 @@
 //! Provides `set_push_config`, `get_push_config`, `list_push_configs`, and
 //! `delete_push_config` on [`A2aClient`].
 
-use a2a_types::{
+use a2a_protocol_types::{
     DeletePushConfigParams, GetPushConfigParams, ListPushConfigsParams, ListPushConfigsResponse,
     TaskPushNotificationConfig,
 };
@@ -24,7 +24,7 @@ impl A2aClient {
     /// # Errors
     ///
     /// Returns [`ClientError::Protocol`] with
-    /// [`a2a_types::ErrorCode::PushNotificationNotSupported`] if the agent
+    /// [`a2a_protocol_types::ErrorCode::PushNotificationNotSupported`] if the agent
     /// does not support push notifications.
     pub async fn set_push_config(
         &self,

@@ -10,7 +10,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use a2a_server::metrics::Metrics;
+//! use a2a_protocol_server::metrics::Metrics;
 //!
 //! struct MyMetrics;
 //!

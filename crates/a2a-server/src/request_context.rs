@@ -7,8 +7,8 @@
 //! and any previously stored task snapshot so that the executor has all the
 //! information it needs to process a request.
 
-use a2a_types::message::Message;
-use a2a_types::task::{Task, TaskId};
+use a2a_protocol_types::message::Message;
+use a2a_protocol_types::task::{Task, TaskId};
 use tokio_util::sync::CancellationToken;
 
 /// Context for a single agent execution request.

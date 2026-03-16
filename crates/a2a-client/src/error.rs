@@ -8,7 +8,7 @@
 
 use std::fmt;
 
-use a2a_types::{A2aError, TaskId};
+use a2a_protocol_types::{A2aError, TaskId};
 
 // ── ClientError ───────────────────────────────────────────────────────────────
 
@@ -111,7 +111,7 @@ pub type ClientResult<T> = Result<T, ClientError>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_types::ErrorCode;
+    use a2a_protocol_types::ErrorCode;
 
     #[test]
     fn client_error_display_http_client() {

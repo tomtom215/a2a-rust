@@ -2,7 +2,7 @@
 # Copyright 2026 Tom F.
 
 [package]
-name        = "a2a-server"
+name        = "a2a-protocol-server"
 version     = "0.2.0"
 description = "A2A protocol v1.0 — server framework (hyper-backed)"
 readme      = "../../README.md"
@@ -13,18 +13,18 @@ license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
-documentation          = "https://docs.rs/a2a-server"
+documentation          = "https://docs.rs/a2a-protocol-server"
 keywords               = ["a2a", "agent", "server", "http"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
 ## Enable agent card signing (JWS, RFC 8785 canonicalization).
-signing = ["a2a-types/signing"]
+signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]
 
 [dependencies]
-a2a-types      = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-types      = { version = "0.2.0", path = "../a2a-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -47,7 +47,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-types = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
 criterion = { workspace = true }
 
 [[bench]]

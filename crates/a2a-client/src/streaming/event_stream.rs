@@ -4,11 +4,11 @@
 //! Async SSE event stream with typed deserialization.
 //!
 //! [`EventStream`] provides an async `next()` iterator over
-//! [`a2a_types::StreamResponse`] events received via Server-Sent Events.
+//! [`a2a_protocol_types::StreamResponse`] events received via Server-Sent Events.
 //!
 //! The stream terminates when:
 //! - The underlying HTTP body closes (normal end-of-stream).
-//! - A [`a2a_types::TaskStatusUpdateEvent`] with `final: true` is received.
+//! - A [`a2a_protocol_types::TaskStatusUpdateEvent`] with `final: true` is received.
 //! - A protocol or transport error occurs (returned as `Some(Err(...))`).
 //!
 //! # Example
@@ -29,7 +29,7 @@
 //! }
 //! ```
 
-use a2a_types::{JsonRpcResponse, StreamResponse};
+use a2a_protocol_types::{JsonRpcResponse, StreamResponse};
 use hyper::body::Bytes;
 use tokio::sync::mpsc;
 use tokio::task::AbortHandle;
@@ -163,9 +163,9 @@ impl EventStream {
             }
             JsonRpcResponse::Error(err) => {
                 self.done = true;
-                let a2a = a2a_types::A2aError::new(
-                    a2a_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_types::ErrorCode::InternalError),
+                let a2a = a2a_protocol_types::A2aError::new(
+                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
                     err.error.message,
                 );
                 Err(ClientError::Protocol(a2a))
@@ -206,7 +206,7 @@ const fn is_terminal(event: &StreamResponse) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_types::{
+    use a2a_protocol_types::{
         JsonRpcSuccessResponse, JsonRpcVersion, TaskId, TaskState, TaskStatus,
         TaskStatusUpdateEvent,
     };
@@ -214,7 +214,7 @@ mod tests {
     fn make_status_event(state: TaskState, _is_final: bool) -> StreamResponse {
         StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),
-            context_id: a2a_types::ContextId::new("c1"),
+            context_id: a2a_protocol_types::ContextId::new("c1"),
             status: TaskStatus {
                 state,
                 message: None,

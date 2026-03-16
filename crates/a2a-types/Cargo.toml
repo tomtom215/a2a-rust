@@ -2,7 +2,7 @@
 # Copyright 2026 Tom F.
 
 [package]
-name        = "a2a-types"
+name        = "a2a-protocol-types"
 version     = "0.2.0"
 description = "A2A protocol v1.0 — pure data types, serde only, no I/O"
 readme      = "../../README.md"
@@ -13,7 +13,7 @@ license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
-documentation          = "https://docs.rs/a2a-types"
+documentation          = "https://docs.rs/a2a-protocol-types"
 keywords               = ["a2a", "agent", "protocol", "types"]
 categories             = ["api-bindings"]
 

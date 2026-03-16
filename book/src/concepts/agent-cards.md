@@ -59,7 +59,7 @@ Agent cards are served at `/.well-known/agent.json` and contain:
 Skills describe discrete capabilities:
 
 ```rust
-use a2a_sdk::types::agent_card::AgentSkill;
+use a2a_protocol_sdk::types::agent_card::AgentSkill;
 
 let skill = AgentSkill {
     id: "summarize".into(),
@@ -83,7 +83,7 @@ Skills can override the agent's default input/output modes and declare their own
 The `AgentCapabilities` struct advertises what the agent supports:
 
 ```rust
-use a2a_sdk::prelude::AgentCapabilities;
+use a2a_protocol_sdk::prelude::AgentCapabilities;
 
 let caps = AgentCapabilities::none()
     .with_streaming(true)           // Supports SendStreamingMessage
@@ -98,7 +98,7 @@ let caps = AgentCapabilities::none()
 Each interface describes a transport endpoint:
 
 ```rust
-use a2a_sdk::types::agent_card::AgentInterface;
+use a2a_protocol_sdk::types::agent_card::AgentInterface;
 
 let interface = AgentInterface {
     url: "https://agent.example.com/rpc".into(),
@@ -117,7 +117,7 @@ An agent must have at least one interface. Having multiple interfaces (e.g., JSO
 For agent cards that don't change at runtime:
 
 ```rust
-use a2a_sdk::server::RequestHandlerBuilder;
+use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(my_executor)
     .with_agent_card(make_agent_card())
@@ -136,13 +136,13 @@ The static handler automatically provides:
 For agent cards that change (e.g., based on feature flags, load, or authentication):
 
 ```rust
-use a2a_sdk::server::{AgentCardProducer, DynamicAgentCardHandler};
-use a2a_sdk::types::agent_card::AgentCard;
+use a2a_protocol_sdk::server::{AgentCardProducer, DynamicAgentCardHandler};
+use a2a_protocol_sdk::types::agent_card::AgentCard;
 
 struct MyCardProducer;
 
 impl AgentCardProducer for MyCardProducer {
-    fn produce(&self) -> Result<AgentCard, a2a_sdk::types::error::A2aError> {
+    fn produce(&self) -> Result<AgentCard, a2a_protocol_sdk::types::error::A2aError> {
         // Generate card dynamically
         Ok(make_agent_card())
     }

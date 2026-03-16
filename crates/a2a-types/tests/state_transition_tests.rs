@@ -3,7 +3,7 @@
 
 //! Tests for task state transition validation.
 
-use a2a_types::task::TaskState;
+use a2a_protocol_types::task::TaskState;
 
 #[test]
 fn terminal_states_cannot_transition() {

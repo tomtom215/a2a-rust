@@ -40,7 +40,7 @@ use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use tokio::sync::mpsc;
 
-use a2a_types::JsonRpcResponse;
+use a2a_protocol_types::JsonRpcResponse;
 
 use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
@@ -304,8 +304,8 @@ impl RestTransport {
         let mut builder = hyper::Request::builder()
             .method(hyper_method)
             .uri(uri)
-            .header(header::CONTENT_TYPE, a2a_types::A2A_CONTENT_TYPE)
-            .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
+            .header(header::CONTENT_TYPE, a2a_protocol_types::A2A_CONTENT_TYPE)
+            .header(a2a_protocol_types::A2A_VERSION_HEADER, a2a_protocol_types::A2A_VERSION)
             .header(header::ACCEPT, accept);
 
         for (k, v) in extra_headers {
@@ -357,9 +357,9 @@ impl RestTransport {
             return match envelope {
                 JsonRpcResponse::Success(ok) => Ok(ok.result),
                 JsonRpcResponse::Error(err) => {
-                    let a2a = a2a_types::A2aError::new(
-                        a2a_types::ErrorCode::try_from(err.error.code)
-                            .unwrap_or(a2a_types::ErrorCode::InternalError),
+                    let a2a = a2a_protocol_types::A2aError::new(
+                        a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                            .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
                         err.error.message,
                     );
                     Err(ClientError::Protocol(a2a))

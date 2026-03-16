@@ -72,8 +72,8 @@ Before adding a dependency:
 |---|---|---|
 | Unit tests | `#[cfg(test)]` modules in source files | `cargo test --workspace` |
 | Integration tests | `crates/*/tests/` | included in workspace test |
-| Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-types --test proptest_types` |
-| Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-types --test corpus_json` |
+| Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
+| Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | End-to-end example | `examples/echo-agent` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
@@ -84,19 +84,19 @@ Before adding a dependency:
 cargo test --workspace
 
 # Run tests for a specific crate
-cargo test -p a2a-types
-cargo test -p a2a-client
-cargo test -p a2a-server
+cargo test -p a2a-protocol-types
+cargo test -p a2a-protocol-client
+cargo test -p a2a-protocol-server
 
 # Run tests with signing feature
 cargo test --workspace --features signing
 
 # Run a specific test
-cargo test -p a2a-types task_state_roundtrip
+cargo test -p a2a-protocol-types task_state_roundtrip
 
 # Run benchmarks
-cargo bench -p a2a-types
-cargo bench -p a2a-client
+cargo bench -p a2a-protocol-types
+cargo bench -p a2a-protocol-client
 ```
 
 ### Test Naming Convention
@@ -134,10 +134,10 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 
 | Benchmark | Crate | What it measures |
 |---|---|---|
-| `json_serde` | `a2a-types` | Serialize/deserialize AgentCard, Task, Message |
-| `sse_parse` | `a2a-client` | SSE frame parsing (single, batch, fragmented) |
+| `json_serde` | `a2a-protocol-types` | Serialize/deserialize AgentCard, Task, Message |
+| `sse_parse` | `a2a-protocol-client` | SSE frame parsing (single, batch, fragmented) |
 
-Run with `cargo bench -p a2a-types` or `cargo bench -p a2a-client`.
+Run with `cargo bench -p a2a-protocol-types` or `cargo bench -p a2a-protocol-client`.
 
 ---
 
@@ -178,7 +178,7 @@ cargo test --workspace --features signing
 cargo test --workspace --features tracing
 
 # 7. With TLS feature (if changes touch TLS code)
-cargo test -p a2a-client --features tls-rustls
+cargo test -p a2a-protocol-client --features tls-rustls
 ```
 
 ---

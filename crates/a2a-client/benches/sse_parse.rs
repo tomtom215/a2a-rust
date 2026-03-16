@@ -5,7 +5,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use a2a_client::streaming::SseParser;
+use a2a_protocol_client::streaming::SseParser;
 
 fn make_sse_payload(n_events: usize) -> Vec<u8> {
     let mut buf = Vec::new();

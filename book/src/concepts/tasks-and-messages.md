@@ -39,7 +39,7 @@ Tasks follow a state machine with validated transitions:
 Not all state transitions are allowed. The library enforces these rules:
 
 ```rust
-use a2a_sdk::prelude::TaskState;
+use a2a_protocol_sdk::prelude::TaskState;
 
 // Check if a transition is valid
 assert!(TaskState::Submitted.can_transition_to(TaskState::Working));
@@ -59,7 +59,7 @@ assert!(!TaskState::Working.is_terminal());
 The status combines a state with an optional message and timestamp:
 
 ```rust
-use a2a_sdk::prelude::{TaskStatus, TaskState};
+use a2a_protocol_sdk::prelude::{TaskStatus, TaskState};
 
 // Without timestamp
 let status = TaskStatus::new(TaskState::Working);
@@ -111,7 +111,7 @@ pub struct Message {
 ### Creating Messages
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 let message = Message {
     id: MessageId::new(uuid::Uuid::new_v4().to_string()),
@@ -196,7 +196,7 @@ pub struct Artifact {
 Create an artifact:
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 let artifact = Artifact::new(
     "result-1",

@@ -12,25 +12,25 @@ use std::sync::Arc;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 
-use a2a_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_types::error::A2aResult;
-use a2a_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse};
-use a2a_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_types::params::MessageSendParams;
-use a2a_types::push::TaskPushNotificationConfig;
-use a2a_types::responses::SendMessageResponse;
-use a2a_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+use a2a_protocol_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcSuccessResponse};
+use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::responses::SendMessageResponse;
+use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
-use a2a_server::builder::RequestHandlerBuilder;
-use a2a_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_server::executor::AgentExecutor;
-use a2a_server::push::PushSender;
-use a2a_server::request_context::RequestContext;
-use a2a_server::streaming::EventQueueWriter;
+use a2a_protocol_server::builder::RequestHandlerBuilder;
+use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
+use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::push::PushSender;
+use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::streaming::EventQueueWriter;
 
 // ── Test executor ───────────────────────────────────────────────────────────
 
@@ -902,7 +902,7 @@ async fn jsonrpc_response_has_a2a_version_header() {
     let (addr, _handle) = start_jsonrpc_server().await;
     let client = http_client();
 
-    let rpc_req = a2a_types::JsonRpcRequest::with_params(
+    let rpc_req = a2a_protocol_types::JsonRpcRequest::with_params(
         serde_json::json!(1),
         "SendMessage",
         serde_json::to_value(make_send_params()).unwrap(),

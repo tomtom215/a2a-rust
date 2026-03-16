@@ -3,7 +3,7 @@
 
 //! `GetExtendedAgentCard` client method.
 
-use a2a_types::AuthenticatedExtendedCardResponse;
+use a2a_protocol_types::AuthenticatedExtendedCardResponse;
 
 use crate::client::A2aClient;
 use crate::error::{ClientError, ClientResult};

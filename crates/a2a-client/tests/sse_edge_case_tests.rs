@@ -3,9 +3,9 @@
 
 //! Edge case tests for the SSE parser.
 
-use a2a_client::streaming::{SseParseError, SseParser};
+use a2a_protocol_client::streaming::{SseParseError, SseParser};
 
-fn parse_all(input: &[u8]) -> Vec<a2a_client::streaming::SseFrame> {
+fn parse_all(input: &[u8]) -> Vec<a2a_protocol_client::streaming::SseFrame> {
     let mut p = SseParser::new();
     p.feed(input);
     let mut frames = Vec::new();

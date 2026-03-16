@@ -27,7 +27,7 @@ pub trait TaskStore: Send + Sync + 'static {
 The default implementation with optional TTL and capacity limits:
 
 ```rust
-use a2a_sdk::server::{InMemoryTaskStore, TaskStoreConfig};
+use a2a_protocol_sdk::server::{InMemoryTaskStore, TaskStoreConfig};
 use std::time::Duration;
 
 // Default: no limits
@@ -99,7 +99,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
 The default implementation stores configs in a `HashMap`:
 
 ```rust
-use a2a_sdk::server::InMemoryPushConfigStore;
+use a2a_protocol_sdk::server::InMemoryPushConfigStore;
 
 let store = InMemoryPushConfigStore::new();
 ```

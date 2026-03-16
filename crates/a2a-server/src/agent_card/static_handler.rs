@@ -8,7 +8,7 @@
 //! on every request. Supports HTTP caching via `ETag`, `Last-Modified`,
 //! `Cache-Control`, and conditional request headers (spec §8.3).
 
-use a2a_types::agent_card::AgentCard;
+use a2a_protocol_types::agent_card::AgentCard;
 use bytes::Bytes;
 use http_body_util::Full;
 

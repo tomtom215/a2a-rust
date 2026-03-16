@@ -105,7 +105,7 @@ impl RestDispatcher {
             if let Some(ct) = req.headers().get("content-type") {
                 let ct_str = ct.to_str().unwrap_or("");
                 if !ct_str.starts_with("application/json")
-                    && !ct_str.starts_with(a2a_types::A2A_CONTENT_TYPE)
+                    && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
                 {
                     return error_json_response(
                         415,
@@ -213,7 +213,7 @@ impl RestDispatcher {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
-        let params: a2a_types::params::MessageSendParams = match serde_json::from_slice(&body_bytes)
+        let params: a2a_protocol_types::params::MessageSendParams = match serde_json::from_slice(&body_bytes)
         {
             Ok(p) => p,
             Err(e) => return error_json_response(400, &e.to_string()),
@@ -231,7 +231,7 @@ impl RestDispatcher {
         query: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let history_length = parse_query_param_u32(query, "historyLength");
-        let params = a2a_types::params::TaskQueryParams {
+        let params = a2a_protocol_types::params::TaskQueryParams {
             tenant: None,
             id: id.to_owned(),
             history_length,
@@ -255,7 +255,7 @@ impl RestDispatcher {
     }
 
     async fn handle_cancel_task(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_types::params::CancelTaskParams {
+        let params = a2a_protocol_types::params::CancelTaskParams {
             tenant: None,
             id: id.to_owned(),
             metadata: None,
@@ -267,7 +267,7 @@ impl RestDispatcher {
     }
 
     async fn handle_resubscribe(&self, id: &str) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_types::params::TaskIdParams {
+        let params = a2a_protocol_types::params::TaskIdParams {
             tenant: None,
             id: id.to_owned(),
         };
@@ -286,7 +286,7 @@ impl RestDispatcher {
             Ok(bytes) => bytes,
             Err(msg) => return error_json_response(413, &msg),
         };
-        let config: a2a_types::push::TaskPushNotificationConfig =
+        let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             match serde_json::from_slice(&body_bytes) {
                 Ok(c) => c,
                 Err(e) => return error_json_response(400, &e.to_string()),
@@ -302,7 +302,7 @@ impl RestDispatcher {
         task_id: &str,
         config_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_types::params::GetPushConfigParams {
+        let params = a2a_protocol_types::params::GetPushConfigParams {
             tenant: None,
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
@@ -328,7 +328,7 @@ impl RestDispatcher {
         task_id: &str,
         config_id: &str,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let params = a2a_types::params::DeletePushConfigParams {
+        let params = a2a_protocol_types::params::DeletePushConfigParams {
             tenant: None,
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
@@ -527,8 +527,8 @@ fn health_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
 fn build_json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        .header("content-type", a2a_types::A2A_CONTENT_TYPE)
-        .header(a2a_types::A2A_VERSION_HEADER, a2a_types::A2A_VERSION)
+        .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE)
+        .header(a2a_protocol_types::A2A_VERSION_HEADER, a2a_protocol_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
         .unwrap_or_else(|_| {
             // Fallback: plain 500 response if builder fails (should never happen
@@ -540,10 +540,10 @@ fn build_json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<By
 }
 
 /// Parses `ListTasksParams` from URL query parameters.
-fn parse_list_tasks_query(query: &str, tenant: Option<&str>) -> a2a_types::params::ListTasksParams {
+fn parse_list_tasks_query(query: &str, tenant: Option<&str>) -> a2a_protocol_types::params::ListTasksParams {
     let status = parse_query_param(query, "status")
         .and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok());
-    a2a_types::params::ListTasksParams {
+    a2a_protocol_types::params::ListTasksParams {
         tenant: tenant.map(str::to_owned),
         context_id: parse_query_param(query, "contextId"),
         status,

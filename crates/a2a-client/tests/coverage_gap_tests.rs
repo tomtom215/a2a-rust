@@ -4,11 +4,11 @@
 //! Tests covering client coverage gaps: builder edge cases, transport
 //! configuration, credential store, error types.
 
-use a2a_client::auth::{InMemoryCredentialsStore, SessionId};
-use a2a_client::builder::ClientBuilder;
-use a2a_client::error::ClientError;
-use a2a_client::interceptor::InterceptorChain;
-use a2a_client::CredentialsStore;
+use a2a_protocol_client::auth::{InMemoryCredentialsStore, SessionId};
+use a2a_protocol_client::builder::ClientBuilder;
+use a2a_protocol_client::error::ClientError;
+use a2a_protocol_client::interceptor::InterceptorChain;
+use a2a_protocol_client::CredentialsStore;
 
 // ── Builder edge cases ───────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ fn session_id_display() {
 
 #[test]
 fn client_error_display() {
-    let err = ClientError::from(a2a_types::error::A2aError::internal("test error"));
+    let err = ClientError::from(a2a_protocol_types::error::A2aError::internal("test error"));
     let display = err.to_string();
     assert!(!display.is_empty());
 }
@@ -182,8 +182,8 @@ fn interceptor_chain_empty() {
 
 #[test]
 fn client_from_card_with_valid_interface() {
-    use a2a_client::A2aClient;
-    use a2a_types::*;
+    use a2a_protocol_client::A2aClient;
+    use a2a_protocol_types::*;
 
     let card = AgentCard {
         name: "Test".into(),
@@ -207,7 +207,7 @@ fn client_from_card_with_valid_interface() {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: a2a_types::AgentCapabilities::none(),
+        capabilities: a2a_protocol_types::AgentCapabilities::none(),
         provider: None,
         icon_url: None,
         documentation_url: None,

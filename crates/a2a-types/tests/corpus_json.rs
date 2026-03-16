@@ -7,11 +7,11 @@
 //! wire format and verify round-trip fidelity: `deserialize → serialize →
 //! deserialize` produces structurally equivalent values.
 
-use a2a_types::agent_card::AgentCard;
-use a2a_types::events::StreamResponse;
-use a2a_types::jsonrpc::JsonRpcRequest;
-use a2a_types::message::{Message, MessageRole, Part, PartContent};
-use a2a_types::task::{Task, TaskState};
+use a2a_protocol_types::agent_card::AgentCard;
+use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::jsonrpc::JsonRpcRequest;
+use a2a_protocol_types::message::{Message, MessageRole, Part, PartContent};
+use a2a_protocol_types::task::{Task, TaskState};
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
@@ -243,7 +243,7 @@ fn corpus_jsonrpc_request() {
 
 #[test]
 fn corpus_jsonrpc_success_response() {
-    use a2a_types::jsonrpc::{JsonRpcResponse, JsonRpcSuccessResponse};
+    use a2a_protocol_types::jsonrpc::{JsonRpcResponse, JsonRpcSuccessResponse};
     let json = r#"{
         "jsonrpc": "2.0",
         "id": 1,
@@ -260,7 +260,7 @@ fn corpus_jsonrpc_success_response() {
 
 #[test]
 fn corpus_jsonrpc_error_response() {
-    use a2a_types::jsonrpc::JsonRpcResponse;
+    use a2a_protocol_types::jsonrpc::JsonRpcResponse;
     let json = r#"{
         "jsonrpc": "2.0",
         "id": 1,

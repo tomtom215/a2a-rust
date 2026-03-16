@@ -7,7 +7,7 @@ a2a-rust uses a layered error model: protocol-level errors (`A2aError`), client 
 Protocol errors defined by the A2A spec:
 
 ```rust
-use a2a_sdk::types::error::{A2aError, ErrorCode};
+use a2a_protocol_sdk::types::error::{A2aError, ErrorCode};
 
 // Common error codes
 ErrorCode::TaskNotFound         // Task doesn't exist
@@ -78,7 +78,7 @@ let client = ClientBuilder::new(url)
 When building an agent, the `ServerError` type covers handler-level failures:
 
 ```rust
-use a2a_sdk::server::ServerError;
+use a2a_protocol_sdk::server::ServerError;
 
 // Server errors are returned by RequestHandlerBuilder::build()
 // and by store/executor operations

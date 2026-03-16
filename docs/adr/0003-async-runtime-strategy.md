@@ -18,9 +18,9 @@ Tokio features are pinned to the minimum needed:
 
 | Crate | Tokio features |
 |---|---|
-| `a2a-types` | none (no async) |
-| `a2a-client` | `rt, net, io-util, sync, time` |
-| `a2a-server` | `rt, net, io-util, sync, time` |
+| `a2a-protocol-types` | none (no async) |
+| `a2a-protocol-client` | `rt, net, io-util, sync, time` |
+| `a2a-protocol-server` | `rt, net, io-util, sync, time` |
 
 `rt-multi-thread` is **not** forced. Users who run single-threaded runtimes (`#[tokio::main(flavor = "current_thread")]`) are supported without modification.
 
@@ -58,7 +58,7 @@ All async tests use the `#[tokio::test]` macro. No manual `tokio::runtime::Runti
 ### Negative
 
 - Users on `async-std` or `smol` runtimes cannot use this SDK as-is.
-- `tokio` appears in `a2a-client` and `a2a-server`'s public dep trees.
+- `tokio` appears in `a2a-protocol-client` and `a2a-protocol-server`'s public dep trees.
 
 ## Alternatives Considered
 

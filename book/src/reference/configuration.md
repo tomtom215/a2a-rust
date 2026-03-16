@@ -77,26 +77,26 @@ Complete reference of all configuration options across a2a-rust crates.
 
 ## Feature Flags
 
-### `a2a-server`
+### `a2a-protocol-server`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via `tracing` crate |
 
-### `a2a-client`
+### `a2a-protocol-client`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via `tracing` crate |
 | `tls-rustls` | Off | HTTPS via rustls (no OpenSSL dependency) |
 
-### `a2a-types`
+### `a2a-protocol-types`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
 
-### `a2a-sdk` (umbrella)
+### `a2a-protocol-sdk` (umbrella)
 
 | Feature | Default | Description |
 |---------|---------|-------------|
@@ -114,8 +114,8 @@ Examples:
 ```bash
 RUST_LOG=info              # Info and above
 RUST_LOG=debug             # Debug and above
-RUST_LOG=a2a_server=debug  # Debug for server crate only
-RUST_LOG=a2a_server=trace,a2a_client=debug  # Per-crate levels
+RUST_LOG=a2a_protocol_server=debug  # Debug for server crate only
+RUST_LOG=a2a_protocol_server=trace,a2a_protocol_client=debug  # Per-crate levels
 ```
 
 ## Next Steps

@@ -9,12 +9,12 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use a2a_client::error::{ClientError, ClientResult};
-use a2a_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
-use a2a_client::streaming::EventStream;
-use a2a_client::transport::Transport;
-use a2a_client::ClientBuilder;
-use a2a_types::{
+use a2a_protocol_client::error::{ClientError, ClientResult};
+use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
+use a2a_protocol_client::streaming::EventStream;
+use a2a_protocol_client::transport::Transport;
+use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_types::{
     ListPushConfigsParams, ListTasksParams, Message, MessageId, MessageRole, MessageSendParams,
     Part, SendMessageResponse, TaskPushNotificationConfig, TaskQueryParams, TaskState,
 };
@@ -102,7 +102,7 @@ impl Transport for ErrorTransport {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-fn make_client(transport: impl Transport) -> a2a_client::A2aClient {
+fn make_client(transport: impl Transport) -> a2a_protocol_client::A2aClient {
     ClientBuilder::new("http://localhost:8080")
         .with_custom_transport(transport)
         .build()
@@ -112,7 +112,7 @@ fn make_client(transport: impl Transport) -> a2a_client::A2aClient {
 fn make_client_with_interceptor(
     transport: impl Transport,
     interceptor: impl CallInterceptor,
-) -> a2a_client::A2aClient {
+) -> a2a_protocol_client::A2aClient {
     ClientBuilder::new("http://localhost:8080")
         .with_custom_transport(transport)
         .with_interceptor(interceptor)

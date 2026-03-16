@@ -9,10 +9,10 @@
 //! # Quick start
 //!
 //! ```rust,no_run
-//! use a2a_client::ClientBuilder;
-//! use a2a_types::{MessageSendParams, Message, MessageRole, Part, MessageId};
+//! use a2a_protocol_client::ClientBuilder;
+//! use a2a_protocol_types::{MessageSendParams, Message, MessageRole, Part, MessageId};
 //!
-//! # async fn example() -> Result<(), a2a_client::error::ClientError> {
+//! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let client = ClientBuilder::new("http://localhost:8080").build()?;
 //!
 //! let params = MessageSendParams {
@@ -40,9 +40,9 @@
 //! # Streaming
 //!
 //! ```rust,no_run
-//! # use a2a_client::ClientBuilder;
-//! # use a2a_types::{MessageSendParams, Message, MessageRole, Part, MessageId, StreamResponse};
-//! # async fn example() -> Result<(), a2a_client::error::ClientError> {
+//! # use a2a_protocol_client::ClientBuilder;
+//! # use a2a_protocol_types::{MessageSendParams, Message, MessageRole, Part, MessageId, StreamResponse};
+//! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
 //! # let params = MessageSendParams {
 //! #     tenant: None,
@@ -67,11 +67,11 @@
 //! # Authentication
 //!
 //! ```rust,no_run
-//! use a2a_client::{ClientBuilder, CredentialsStore};
-//! use a2a_client::auth::{AuthInterceptor, InMemoryCredentialsStore, SessionId};
+//! use a2a_protocol_client::{ClientBuilder, CredentialsStore};
+//! use a2a_protocol_client::auth::{AuthInterceptor, InMemoryCredentialsStore, SessionId};
 //! use std::sync::Arc;
 //!
-//! # fn example() -> Result<(), a2a_client::error::ClientError> {
+//! # fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let store = Arc::new(InMemoryCredentialsStore::new());
 //! let session = SessionId::new("session-1");
 //! store.set(session.clone(), "bearer", "my-token".into());
@@ -86,10 +86,10 @@
 //! # Agent card discovery
 //!
 //! ```rust,no_run
-//! use a2a_client::discovery::resolve_agent_card;
-//! use a2a_client::A2aClient;
+//! use a2a_protocol_client::discovery::resolve_agent_card;
+//! use a2a_protocol_client::A2aClient;
 //!
-//! # async fn example() -> Result<(), a2a_client::error::ClientError> {
+//! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let card = resolve_agent_card("http://localhost:8080").await?;
 //! let client = A2aClient::from_card(&card)?;
 //! # Ok(())

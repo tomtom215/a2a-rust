@@ -11,11 +11,11 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-sdk = "0.2"
+a2a-protocol-sdk = "0.2"
 tokio = { version = "1", features = ["full"] }
 ```
 
-The SDK crate re-exports `a2a-types`, `a2a-client`, and `a2a-server` so you only need one dependency.
+The SDK crate re-exports `a2a-protocol-types`, `a2a-protocol-client`, and `a2a-protocol-server` so you only need one dependency.
 
 ## Individual Crates
 
@@ -23,13 +23,13 @@ If you prefer fine-grained control, depend on individual crates:
 
 ```toml
 # Types only (no I/O, no async runtime)
-a2a-types = "0.2"
+a2a-protocol-types = "0.2"
 
 # Client only
-a2a-client = "0.2"
+a2a-protocol-client = "0.2"
 
 # Server only
-a2a-server = "0.2"
+a2a-protocol-server = "0.2"
 ```
 
 This is useful when:
@@ -39,19 +39,19 @@ This is useful when:
 
 ## Feature Flags
 
-### `a2a-server`
+### `a2a-protocol-server`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via the `tracing` crate |
 
-### `a2a-types`
+### `a2a-protocol-types`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
 
-### `a2a-client`
+### `a2a-protocol-client`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
@@ -61,9 +61,9 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-server = { version = "0.2", features = ["tracing"] }
-a2a-types = { version = "0.2", features = ["signing"] }
-a2a-client = { version = "0.2", features = ["tls-rustls"] }
+a2a-protocol-server = { version = "0.2", features = ["tracing"] }
+a2a-protocol-types = { version = "0.2", features = ["signing"] }
+a2a-protocol-client = { version = "0.2", features = ["tls-rustls"] }
 ```
 
 ## Verifying the Installation
@@ -71,7 +71,7 @@ a2a-client = { version = "0.2", features = ["tls-rustls"] }
 Create a simple `main.rs` to verify everything compiles:
 
 ```rust
-use a2a_sdk::prelude::*;
+use a2a_protocol_sdk::prelude::*;
 
 fn main() {
     // Create a task status

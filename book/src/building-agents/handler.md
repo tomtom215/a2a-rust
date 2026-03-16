@@ -7,7 +7,7 @@ The `RequestHandler` is the central orchestrator that connects your executor to 
 ### Minimal Setup
 
 ```rust
-use a2a_sdk::server::RequestHandlerBuilder;
+use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(MyExecutor)
     .build()
@@ -25,7 +25,7 @@ This gives you sensible defaults:
 ### Full Configuration
 
 ```rust
-use a2a_sdk::server::RequestHandlerBuilder;
+use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 
 let handler = RequestHandlerBuilder::new(MyExecutor)
@@ -111,7 +111,7 @@ This means JSON-RPC and REST clients share the same task store, push configs, an
 The default `InMemoryTaskStore` supports TTL and capacity limits:
 
 ```rust
-use a2a_sdk::server::TaskStoreConfig;
+use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
 let config = TaskStoreConfig {
@@ -131,7 +131,7 @@ When capacity is exceeded, the oldest tasks are evicted. When TTL expires, tasks
 For production use, implement the `TaskStore` trait for your database:
 
 ```rust
-use a2a_sdk::server::TaskStore;
+use a2a_protocol_sdk::server::TaskStore;
 
 struct PostgresTaskStore { /* ... */ }
 

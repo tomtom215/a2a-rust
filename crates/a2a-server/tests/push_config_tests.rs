@@ -3,9 +3,9 @@
 
 //! Edge case tests for push config store.
 
-use a2a_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::push::TaskPushNotificationConfig;
 
-use a2a_server::push::{InMemoryPushConfigStore, PushConfigStore};
+use a2a_protocol_server::push::{InMemoryPushConfigStore, PushConfigStore};
 
 #[tokio::test]
 async fn delete_nonexistent_config_succeeds() {
