@@ -57,11 +57,18 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
 - **Agent card discovery** — Static and dynamic card handlers with HTTP caching (ETag, Last-Modified, 304)
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits for custom backends
-- **Interceptor chains** — Client and server middleware for auth, logging, metrics
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory and SQLite backends
+- **Interceptor chains** — Client and server middleware for auth, logging, metrics, rate limiting
+- **Rate limiting** — Built-in `RateLimitInterceptor` with per-caller fixed-window limiting
+- **Client retry** — Configurable `RetryPolicy` with exponential backoff for transient failures
+- **Server startup helper** — `serve()` reduces ~25 lines of hyper boilerplate to one call
+- **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header
+- **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
 - **Task state machine** — Validated transitions per the A2A specification
+- **Executor ergonomics** — `boxed_future`, `agent_executor!` macro, `EventEmitter` reduce boilerplate
 - **Executor timeout** — Kills hung agent tasks automatically
 - **CORS support** — Configurable cross-origin policies
+- **Fully configurable** — All defaults (timeouts, limits, intervals) are overridable via builders
 - **No panics in library code** — All fallible operations return `Result`
 
 ## All 11 Protocol Methods
