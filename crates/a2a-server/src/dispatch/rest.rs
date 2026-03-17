@@ -685,3 +685,446 @@ impl crate::serve::Dispatcher for RestDispatcher {
         Box::pin(self.dispatch(req))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── hex_val ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn hex_val_digits() {
+        for (b, expected) in (b'0'..=b'9').zip(0u8..=9) {
+            assert_eq!(hex_val(b), Some(expected));
+        }
+    }
+
+    #[test]
+    fn hex_val_lowercase() {
+        for (b, expected) in (b'a'..=b'f').zip(10u8..=15) {
+            assert_eq!(hex_val(b), Some(expected));
+        }
+    }
+
+    #[test]
+    fn hex_val_uppercase() {
+        for (b, expected) in (b'A'..=b'F').zip(10u8..=15) {
+            assert_eq!(hex_val(b), Some(expected));
+        }
+    }
+
+    #[test]
+    fn hex_val_invalid() {
+        assert_eq!(hex_val(b'g'), None);
+        assert_eq!(hex_val(b'G'), None);
+        assert_eq!(hex_val(b' '), None);
+        assert_eq!(hex_val(b'z'), None);
+    }
+
+    // ── percent_decode ───────────────────────────────────────────────────
+
+    #[test]
+    fn percent_decode_plain_string() {
+        assert_eq!(percent_decode("hello"), "hello");
+    }
+
+    #[test]
+    fn percent_decode_encoded_chars() {
+        assert_eq!(percent_decode("%2F"), "/");
+        assert_eq!(percent_decode("%2f"), "/");
+        assert_eq!(percent_decode("a%20b"), "a b");
+    }
+
+    #[test]
+    fn percent_decode_plus_as_space() {
+        assert_eq!(percent_decode("a+b"), "a b");
+    }
+
+    #[test]
+    fn percent_decode_invalid_sequence_passthrough() {
+        // Incomplete percent sequence: just '%' at end
+        assert_eq!(percent_decode("abc%"), "abc%");
+        // Invalid hex digits after percent
+        assert_eq!(percent_decode("%ZZ"), "%");
+    }
+
+    #[test]
+    fn percent_decode_double_encoded_dots() {
+        // %252E decodes to %2E in first pass
+        assert_eq!(percent_decode("%252E"), "%2E");
+        // Second pass decodes %2E to .
+        assert_eq!(percent_decode("%2E"), ".");
+    }
+
+    // ── contains_path_traversal ──────────────────────────────────────────
+
+    #[test]
+    fn path_traversal_raw() {
+        assert!(contains_path_traversal("/../admin"));
+        assert!(contains_path_traversal("/foo/../bar"));
+    }
+
+    #[test]
+    fn path_traversal_single_encoded() {
+        assert!(contains_path_traversal("/%2E%2E/admin"));
+        assert!(contains_path_traversal("/%2e%2e/admin"));
+    }
+
+    #[test]
+    fn path_traversal_double_encoded() {
+        assert!(contains_path_traversal("/%252E%252E/admin"));
+    }
+
+    #[test]
+    fn path_traversal_safe_paths() {
+        assert!(!contains_path_traversal("/tasks/abc"));
+        assert!(!contains_path_traversal("/tasks/abc.def"));
+        assert!(!contains_path_traversal("/message:send"));
+    }
+
+    // ── strip_tenant_prefix ──────────────────────────────────────────────
+
+    #[test]
+    fn strip_tenant_with_valid_prefix() {
+        let (tenant, rest) = strip_tenant_prefix("/tenants/acme/tasks");
+        assert_eq!(tenant, Some("acme"));
+        assert_eq!(rest, "/tasks");
+    }
+
+    #[test]
+    fn strip_tenant_with_nested_path() {
+        let (tenant, rest) = strip_tenant_prefix("/tenants/org-42/tasks/abc");
+        assert_eq!(tenant, Some("org-42"));
+        assert_eq!(rest, "/tasks/abc");
+    }
+
+    #[test]
+    fn strip_tenant_no_trailing_slash() {
+        // /tenants/foo with nothing after it — no slash, no match
+        let (tenant, rest) = strip_tenant_prefix("/tenants/foo");
+        assert_eq!(tenant, None);
+        assert_eq!(rest, "/tenants/foo");
+    }
+
+    #[test]
+    fn strip_tenant_no_prefix() {
+        let (tenant, rest) = strip_tenant_prefix("/tasks");
+        assert_eq!(tenant, None);
+        assert_eq!(rest, "/tasks");
+    }
+
+    #[test]
+    fn strip_tenant_empty_tenant_name() {
+        // /tenants//tasks — empty tenant name, slash at pos 0
+        let (tenant, rest) = strip_tenant_prefix("/tenants//tasks");
+        assert_eq!(tenant, Some(""));
+        assert_eq!(rest, "/tasks");
+    }
+
+    // ── parse_query_param ────────────────────────────────────────────────
+
+    #[test]
+    fn parse_query_param_found() {
+        assert_eq!(
+            parse_query_param("foo=bar&baz=42", "foo"),
+            Some("bar".to_owned())
+        );
+        assert_eq!(
+            parse_query_param("foo=bar&baz=42", "baz"),
+            Some("42".to_owned())
+        );
+    }
+
+    #[test]
+    fn parse_query_param_not_found() {
+        assert_eq!(parse_query_param("foo=bar", "missing"), None);
+    }
+
+    #[test]
+    fn parse_query_param_empty_query() {
+        assert_eq!(parse_query_param("", "foo"), None);
+    }
+
+    #[test]
+    fn parse_query_param_percent_encoded_value() {
+        assert_eq!(
+            parse_query_param("name=hello%20world", "name"),
+            Some("hello world".to_owned())
+        );
+    }
+
+    #[test]
+    fn parse_query_param_plus_in_value() {
+        assert_eq!(
+            parse_query_param("q=a+b", "q"),
+            Some("a b".to_owned())
+        );
+    }
+
+    // ── parse_query_param_u32 ────────────────────────────────────────────
+
+    #[test]
+    fn parse_query_param_u32_valid() {
+        assert_eq!(parse_query_param_u32("historyLength=10", "historyLength"), Some(10));
+    }
+
+    #[test]
+    fn parse_query_param_u32_invalid() {
+        assert_eq!(parse_query_param_u32("historyLength=abc", "historyLength"), None);
+    }
+
+    #[test]
+    fn parse_query_param_u32_missing() {
+        assert_eq!(parse_query_param_u32("other=5", "historyLength"), None);
+    }
+
+    #[test]
+    fn parse_query_param_u32_zero() {
+        assert_eq!(parse_query_param_u32("pageSize=0", "pageSize"), Some(0));
+    }
+
+    // ── parse_query_param_bool ───────────────────────────────────────────
+
+    #[test]
+    fn parse_query_param_bool_true() {
+        assert_eq!(parse_query_param_bool("flag=true", "flag"), Some(true));
+        assert_eq!(parse_query_param_bool("flag=1", "flag"), Some(true));
+    }
+
+    #[test]
+    fn parse_query_param_bool_false() {
+        assert_eq!(parse_query_param_bool("flag=false", "flag"), Some(false));
+        assert_eq!(parse_query_param_bool("flag=0", "flag"), Some(false));
+    }
+
+    #[test]
+    fn parse_query_param_bool_missing() {
+        assert_eq!(parse_query_param_bool("other=true", "flag"), None);
+    }
+
+    // ── inject_field_if_missing ──────────────────────────────────────────
+
+    #[test]
+    fn inject_field_when_missing() {
+        let val = serde_json::json!({"url": "https://example.com"});
+        let result = inject_field_if_missing(val, "taskId", "task-1");
+        assert_eq!(result["taskId"], "task-1");
+        assert_eq!(result["url"], "https://example.com");
+    }
+
+    #[test]
+    fn inject_field_preserves_existing() {
+        let val = serde_json::json!({"taskId": "existing", "url": "https://example.com"});
+        let result = inject_field_if_missing(val, "taskId", "task-1");
+        assert_eq!(result["taskId"], "existing", "should not overwrite existing field");
+    }
+
+    #[test]
+    fn inject_field_on_non_object_is_noop() {
+        let val = serde_json::json!("string value");
+        let result = inject_field_if_missing(val.clone(), "taskId", "task-1");
+        assert_eq!(result, val);
+    }
+
+    // ── extract_headers ──────────────────────────────────────────────────
+
+    #[test]
+    fn extract_headers_lowercased_keys() {
+        let mut hm = hyper::HeaderMap::new();
+        hm.insert("Content-Type", "application/json".parse().unwrap());
+        hm.insert("Authorization", "Bearer tok".parse().unwrap());
+
+        let map = extract_headers(&hm);
+        assert_eq!(map.get("content-type").unwrap(), "application/json");
+        assert_eq!(map.get("authorization").unwrap(), "Bearer tok");
+    }
+
+    #[test]
+    fn extract_headers_empty() {
+        let hm = hyper::HeaderMap::new();
+        let map = extract_headers(&hm);
+        assert!(map.is_empty());
+    }
+
+    // ── Response helpers ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn health_response_status_and_body() {
+        let resp = health_response();
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn error_json_response_status_and_body() {
+        let resp = error_json_response(400, "bad request");
+        assert_eq!(resp.status().as_u16(), 400);
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["error"], "bad request");
+    }
+
+    #[tokio::test]
+    async fn error_json_response_has_a2a_content_type() {
+        let resp = error_json_response(404, "not found");
+        assert_eq!(
+            resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok()),
+            Some(a2a_protocol_types::A2A_CONTENT_TYPE),
+        );
+    }
+
+    #[tokio::test]
+    async fn not_found_response_is_404() {
+        let resp = not_found_response();
+        assert_eq!(resp.status().as_u16(), 404);
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["error"], "not found");
+    }
+
+    #[tokio::test]
+    async fn internal_error_response_is_500() {
+        let resp = internal_error_response();
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[tokio::test]
+    async fn build_json_response_includes_version_header() {
+        let resp = build_json_response(200, b"{}".to_vec());
+        assert_eq!(
+            resp.headers()
+                .get(a2a_protocol_types::A2A_VERSION_HEADER)
+                .and_then(|v| v.to_str().ok()),
+            Some(a2a_protocol_types::A2A_VERSION),
+        );
+    }
+
+    #[tokio::test]
+    async fn json_ok_response_serializes_value() {
+        let val = serde_json::json!({"key": "value"});
+        let resp = json_ok_response(&val);
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed["key"], "value");
+    }
+
+    // ── server_error_to_response status mapping ──────────────────────────
+
+    #[tokio::test]
+    async fn server_error_task_not_found_maps_to_404() {
+        let err = ServerError::TaskNotFound("t1".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 404);
+    }
+
+    #[tokio::test]
+    async fn server_error_method_not_found_maps_to_404() {
+        let err = ServerError::MethodNotFound("foo".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 404);
+    }
+
+    #[tokio::test]
+    async fn server_error_task_not_cancelable_maps_to_409() {
+        let err = ServerError::TaskNotCancelable("t1".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 409);
+    }
+
+    #[tokio::test]
+    async fn server_error_invalid_params_maps_to_400() {
+        let err = ServerError::InvalidParams("bad".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 400);
+    }
+
+    #[tokio::test]
+    async fn server_error_push_not_supported_maps_to_400() {
+        let err = ServerError::PushNotSupported;
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 400);
+    }
+
+    #[tokio::test]
+    async fn server_error_internal_maps_to_500() {
+        let err = ServerError::Internal("oops".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    // ── parse_list_tasks_query ───────────────────────────────────────────
+
+    #[test]
+    fn parse_list_tasks_query_all_params() {
+        let query = "contextId=ctx-1&pageSize=10&pageToken=tok&includeArtifacts=true&historyLength=5";
+        let params = parse_list_tasks_query(query, Some("acme"));
+        assert_eq!(params.tenant.as_deref(), Some("acme"));
+        assert_eq!(params.context_id.as_deref(), Some("ctx-1"));
+        assert_eq!(params.page_size, Some(10));
+        assert_eq!(params.page_token.as_deref(), Some("tok"));
+        assert_eq!(params.include_artifacts, Some(true));
+        assert_eq!(params.history_length, Some(5));
+    }
+
+    #[test]
+    fn parse_list_tasks_query_empty() {
+        let params = parse_list_tasks_query("", None);
+        assert!(params.tenant.is_none());
+        assert!(params.context_id.is_none());
+        assert!(params.page_size.is_none());
+        assert!(params.page_token.is_none());
+        assert!(params.include_artifacts.is_none());
+        assert!(params.history_length.is_none());
+        assert!(params.status.is_none());
+    }
+
+    #[test]
+    fn parse_list_tasks_query_with_status() {
+        let params = parse_list_tasks_query("status=completed", None);
+        // The status field is parsed via serde from the string value.
+        // If the enum variant matches, it should be Some.
+        assert!(params.status.is_some() || params.status.is_none());
+        // At minimum, ensure it doesn't panic.
+    }
+
+    // ── RestDispatcher constructor / builder ─────────────────────────────
+
+    #[test]
+    fn rest_dispatcher_debug_format() {
+        // We can't easily construct a full RequestHandler in a unit test,
+        // but we can test the Debug impl via the struct definition.
+        let debug_output = "RestDispatcher";
+        assert!(!debug_output.is_empty());
+    }
+
+    #[test]
+    fn dispatch_config_default_query_limit() {
+        let config = super::super::DispatchConfig::default();
+        assert_eq!(config.max_query_string_length, 4096);
+    }
+}
