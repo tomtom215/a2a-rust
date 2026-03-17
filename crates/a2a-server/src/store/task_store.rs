@@ -479,3 +479,478 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    /// Helper to create a task with the given ID and state.
+    fn make_task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx-default"),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    /// Helper to create a task with a specific context ID.
+    fn make_task_with_ctx(id: &str, ctx: &str, state: TaskState) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new(ctx),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    // ── CRUD basics ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn save_and_get_returns_task() {
+        let store = InMemoryTaskStore::new();
+        let task = make_task("t1", TaskState::Submitted);
+        store.save(task.clone()).await.unwrap();
+
+        let fetched = store.get(&TaskId::new("t1")).await.unwrap();
+        assert!(fetched.is_some(), "saved task should be retrievable");
+        assert_eq!(fetched.unwrap().id, task.id);
+    }
+
+    #[tokio::test]
+    async fn get_nonexistent_returns_none() {
+        let store = InMemoryTaskStore::new();
+        let result = store.get(&TaskId::new("no-such-task")).await.unwrap();
+        assert!(result.is_none(), "missing task should return None");
+    }
+
+    #[tokio::test]
+    async fn save_overwrites_existing_task() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+
+        let fetched = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
+        assert_eq!(
+            fetched.status.state,
+            TaskState::Working,
+            "save should overwrite existing task"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_removes_task() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        store.delete(&TaskId::new("t1")).await.unwrap();
+
+        let result = store.get(&TaskId::new("t1")).await.unwrap();
+        assert!(result.is_none(), "deleted task should no longer exist");
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_is_ok() {
+        let store = InMemoryTaskStore::new();
+        // Should not error even though the task does not exist.
+        store.delete(&TaskId::new("ghost")).await.unwrap();
+    }
+
+    // ── insert_if_absent ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn insert_if_absent_inserts_new_task() {
+        let store = InMemoryTaskStore::new();
+        let inserted = store
+            .insert_if_absent(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        assert!(inserted, "first insert should succeed");
+
+        let fetched = store.get(&TaskId::new("t1")).await.unwrap();
+        assert!(fetched.is_some());
+    }
+
+    #[tokio::test]
+    async fn insert_if_absent_rejects_duplicate() {
+        let store = InMemoryTaskStore::new();
+        store
+            .insert_if_absent(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let second = store
+            .insert_if_absent(make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+        assert!(!second, "duplicate insert should return false");
+
+        // Original task should be unchanged.
+        let fetched = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
+        assert_eq!(
+            fetched.status.state,
+            TaskState::Submitted,
+            "original task should not be overwritten by insert_if_absent"
+        );
+    }
+
+    // ── count ────────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn count_empty_store() {
+        let store = InMemoryTaskStore::new();
+        assert_eq!(store.count().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn count_reflects_saves_and_deletes() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task("t2", TaskState::Working))
+            .await
+            .unwrap();
+        assert_eq!(store.count().await.unwrap(), 2);
+
+        store.delete(&TaskId::new("t1")).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 1);
+    }
+
+    // ── list with pagination ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_empty_store_returns_empty() {
+        let store = InMemoryTaskStore::new();
+        let params = ListTasksParams::default();
+        let response = store.list(&params).await.unwrap();
+        assert!(response.tasks.is_empty());
+        assert!(response.next_page_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_returns_all_tasks_sorted_by_id() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("c", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task("a", TaskState::Working))
+            .await
+            .unwrap();
+        store
+            .save(make_task("b", TaskState::Completed))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams::default();
+        let response = store.list(&params).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b", "c"], "tasks should be sorted by ID");
+    }
+
+    #[tokio::test]
+    async fn list_filters_by_context_id() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task_with_ctx("t1", "ctx-a", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task_with_ctx("t2", "ctx-b", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task_with_ctx("t3", "ctx-a", TaskState::Working))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            context_id: Some("ctx-a".to_string()),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert_eq!(response.tasks.len(), 2);
+        assert!(response.tasks.iter().all(|t| t.context_id.0 == "ctx-a"));
+    }
+
+    #[tokio::test]
+    async fn list_filters_by_status() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(make_task("t2", TaskState::Working))
+            .await
+            .unwrap();
+        store
+            .save(make_task("t3", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            status: Some(TaskState::Submitted),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert_eq!(response.tasks.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn list_pagination_page_size() {
+        let store = InMemoryTaskStore::new();
+        for i in 0..5 {
+            store
+                .save(make_task(&format!("t{i:02}"), TaskState::Submitted))
+                .await
+                .unwrap();
+        }
+
+        let params = ListTasksParams {
+            page_size: Some(2),
+            ..Default::default()
+        };
+        let page1 = store.list(&params).await.unwrap();
+        assert_eq!(page1.tasks.len(), 2, "first page should have 2 tasks");
+        assert!(
+            page1.next_page_token.is_some(),
+            "should have next_page_token when more results exist"
+        );
+
+        // Fetch second page using the cursor.
+        let params2 = ListTasksParams {
+            page_size: Some(2),
+            page_token: page1.next_page_token,
+            ..Default::default()
+        };
+        let page2 = store.list(&params2).await.unwrap();
+        assert_eq!(page2.tasks.len(), 2, "second page should have 2 tasks");
+
+        // Fetch third page (should have 1 remaining task).
+        let params3 = ListTasksParams {
+            page_size: Some(2),
+            page_token: page2.next_page_token,
+            ..Default::default()
+        };
+        let page3 = store.list(&params3).await.unwrap();
+        assert_eq!(page3.tasks.len(), 1, "third page should have 1 task");
+        assert!(
+            page3.next_page_token.is_none(),
+            "no more pages after the last task"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_invalid_page_token_returns_empty() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            page_token: Some("nonexistent-cursor".to_string()),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert!(
+            response.tasks.is_empty(),
+            "invalid page_token should yield empty results"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_page_size_zero_uses_default() {
+        let store = InMemoryTaskStore::new();
+        for i in 0..60 {
+            store
+                .save(make_task(&format!("t{i:03}"), TaskState::Submitted))
+                .await
+                .unwrap();
+        }
+
+        let params = ListTasksParams {
+            page_size: Some(0),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        // Default page size is 50.
+        assert_eq!(
+            response.tasks.len(),
+            50,
+            "page_size=0 should use the default of 50"
+        );
+    }
+
+    // ── TTL eviction ─────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn ttl_eviction_removes_expired_terminal_tasks() {
+        let config = TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_millis(1)),
+            eviction_interval: 1,
+            max_page_size: 100,
+        };
+        let store = InMemoryTaskStore::with_config(config);
+
+        // Save a completed (terminal) task.
+        store
+            .save(make_task("terminal", TaskState::Completed))
+            .await
+            .unwrap();
+        // Save a non-terminal task.
+        store
+            .save(make_task("active", TaskState::Working))
+            .await
+            .unwrap();
+
+        // Wait for TTL to expire.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        // Trigger eviction via run_eviction.
+        store.run_eviction().await;
+
+        assert!(
+            store.get(&TaskId::new("terminal")).await.unwrap().is_none(),
+            "expired terminal task should be evicted"
+        );
+        assert!(
+            store.get(&TaskId::new("active")).await.unwrap().is_some(),
+            "non-terminal task should survive TTL eviction"
+        );
+    }
+
+    #[tokio::test]
+    async fn ttl_eviction_keeps_fresh_terminal_tasks() {
+        let config = TaskStoreConfig {
+            max_capacity: None,
+            task_ttl: Some(Duration::from_secs(3600)),
+            eviction_interval: 1,
+            max_page_size: 100,
+        };
+        let store = InMemoryTaskStore::with_config(config);
+
+        store
+            .save(make_task("t1", TaskState::Completed))
+            .await
+            .unwrap();
+        store.run_eviction().await;
+
+        assert!(
+            store.get(&TaskId::new("t1")).await.unwrap().is_some(),
+            "fresh terminal task should not be evicted"
+        );
+    }
+
+    // ── max capacity eviction ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn max_capacity_eviction_removes_oldest_terminal_tasks() {
+        let config = TaskStoreConfig {
+            max_capacity: Some(2),
+            task_ttl: None,
+            eviction_interval: 1,
+            max_page_size: 100,
+        };
+        let store = InMemoryTaskStore::with_config(config);
+
+        // Save 3 completed tasks; the oldest should be evicted when capacity is exceeded.
+        store
+            .save(make_task("oldest", TaskState::Completed))
+            .await
+            .unwrap();
+        // Small sleep to ensure ordering by last_updated.
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("middle", TaskState::Completed))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("newest", TaskState::Completed))
+            .await
+            .unwrap();
+
+        // The third save triggers should_evict (over max_capacity).
+        // Give the maybe_evict background task a moment to complete.
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(
+            store.get(&TaskId::new("oldest")).await.unwrap().is_none(),
+            "oldest terminal task should be evicted when over capacity"
+        );
+        assert_eq!(
+            store.count().await.unwrap(),
+            2,
+            "store should be back at max capacity"
+        );
+    }
+
+    #[tokio::test]
+    async fn capacity_eviction_prefers_terminal_tasks() {
+        let config = TaskStoreConfig {
+            max_capacity: Some(2),
+            task_ttl: None,
+            eviction_interval: 1,
+            max_page_size: 100,
+        };
+        let store = InMemoryTaskStore::with_config(config);
+
+        // 1 active + 1 terminal, then add a third.
+        store
+            .save(make_task("active", TaskState::Working))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("done", TaskState::Completed))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("new", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(
+            store.get(&TaskId::new("active")).await.unwrap().is_some(),
+            "non-terminal task should survive capacity eviction"
+        );
+        assert!(
+            store.get(&TaskId::new("done")).await.unwrap().is_none(),
+            "terminal task should be evicted first"
+        );
+    }
+
+    // ── Config defaults ──────────────────────────────────────────────────
+
+    #[test]
+    fn default_config_has_expected_values() {
+        let cfg = TaskStoreConfig::default();
+        assert_eq!(cfg.max_capacity, Some(10_000));
+        assert_eq!(cfg.task_ttl, Some(Duration::from_secs(3600)));
+        assert_eq!(cfg.eviction_interval, 64);
+        assert_eq!(cfg.max_page_size, 1000);
+    }
+}
