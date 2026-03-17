@@ -432,6 +432,11 @@ mod tests {
 
     use a2a_protocol_types::error::A2aResult;
 
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use a2a_protocol_types::push::TaskPushNotificationConfig;
+
     use crate::agent_executor;
     use crate::builder::RequestHandlerBuilder;
     use crate::push::InMemoryPushConfigStore;
@@ -445,6 +450,55 @@ mod tests {
 
     struct DummyExecutor;
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+    /// A push config store that always returns errors, for testing silent error swallowing.
+    struct AlwaysErrPushConfigStore;
+
+    impl PushConfigStore for AlwaysErrPushConfigStore {
+        fn set<'a>(
+            &'a self,
+            _cfg: TaskPushNotificationConfig,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<TaskPushNotificationConfig>> + Send + 'a>>
+        {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn get<'a>(
+            &'a self,
+            _task_id: &'a str,
+            _id: &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = a2a_protocol_types::error::A2aResult<Option<TaskPushNotificationConfig>>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn list<'a>(
+            &'a self,
+            _task_id: &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<
+                            Vec<TaskPushNotificationConfig>,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn delete<'a>(
+            &'a self,
+            _task_id: &'a str,
+            _id: &'a str,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+        {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+    }
 
     fn make_task(id: &str, state: TaskState) -> Task {
         Task {
@@ -496,54 +550,9 @@ mod tests {
 
     #[tokio::test]
     async fn deliver_push_bg_with_failing_store_returns_silently() {
-        // Use a push config store that has no configs for this task — the
-        // inner `Ok(configs)` branch is taken but configs is empty, so no
-        // send is attempted. The key coverage is that an Err from the store
-        // is silently swallowed (the function uses `let Ok(configs) = ...`).
-        struct AlwaysErrStore;
-
-        use std::future::Future;
-        use std::pin::Pin;
-        use a2a_protocol_types::error::{A2aError, A2aResult};
-        use a2a_protocol_types::push::TaskPushNotificationConfig;
-
-        impl PushConfigStore for AlwaysErrStore {
-            fn set<'a>(
-                &'a self,
-                _cfg: TaskPushNotificationConfig,
-            ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>>
-            {
-                Box::pin(async { Err(A2aError::internal("always err")) })
-            }
-            fn get<'a>(
-                &'a self,
-                _task_id: &'a str,
-                _id: &'a str,
-            ) -> Pin<
-                Box<
-                    dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a,
-                >,
-            > {
-                Box::pin(async { Err(A2aError::internal("always err")) })
-            }
-            fn list<'a>(
-                &'a self,
-                _task_id: &'a str,
-            ) -> Pin<
-                Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>,
-            > {
-                Box::pin(async { Err(A2aError::internal("always err")) })
-            }
-            fn delete<'a>(
-                &'a self,
-                _task_id: &'a str,
-                _id: &'a str,
-            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-                Box::pin(async { Err(A2aError::internal("always err")) })
-            }
-        }
-
-        let store = AlwaysErrStore;
+        // The key coverage here is that an Err from the push config store's
+        // `list()` is silently swallowed (the function uses `let Ok(configs) = ...`).
+        let store = AlwaysErrPushConfigStore;
         let task_id = TaskId::new("t1");
         let event = make_status_event("t1", TaskState::Working);
 
