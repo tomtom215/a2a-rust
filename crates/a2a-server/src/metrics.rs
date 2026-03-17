@@ -116,45 +116,45 @@ mod tests {
 
     /// A test metrics implementation that records which methods were called.
     struct RecordingMetrics {
-        request_count: AtomicU64,
-        response_count: AtomicU64,
-        error_count: AtomicU64,
-        latency_count: AtomicU64,
-        queue_depth_count: AtomicU64,
-        pool_stats_count: AtomicU64,
+        requests: AtomicU64,
+        responses: AtomicU64,
+        errors: AtomicU64,
+        latencies: AtomicU64,
+        queue_depths: AtomicU64,
+        pool_stats: AtomicU64,
     }
 
     impl RecordingMetrics {
         fn new() -> Self {
             Self {
-                request_count: AtomicU64::new(0),
-                response_count: AtomicU64::new(0),
-                error_count: AtomicU64::new(0),
-                latency_count: AtomicU64::new(0),
-                queue_depth_count: AtomicU64::new(0),
-                pool_stats_count: AtomicU64::new(0),
+                requests: AtomicU64::new(0),
+                responses: AtomicU64::new(0),
+                errors: AtomicU64::new(0),
+                latencies: AtomicU64::new(0),
+                queue_depths: AtomicU64::new(0),
+                pool_stats: AtomicU64::new(0),
             }
         }
     }
 
     impl Metrics for RecordingMetrics {
         fn on_request(&self, _method: &str) {
-            self.request_count.fetch_add(1, Ordering::Relaxed);
+            self.requests.fetch_add(1, Ordering::Relaxed);
         }
         fn on_response(&self, _method: &str) {
-            self.response_count.fetch_add(1, Ordering::Relaxed);
+            self.responses.fetch_add(1, Ordering::Relaxed);
         }
         fn on_error(&self, _method: &str, _error: &str) {
-            self.error_count.fetch_add(1, Ordering::Relaxed);
+            self.errors.fetch_add(1, Ordering::Relaxed);
         }
         fn on_latency(&self, _method: &str, _duration: Duration) {
-            self.latency_count.fetch_add(1, Ordering::Relaxed);
+            self.latencies.fetch_add(1, Ordering::Relaxed);
         }
         fn on_queue_depth_change(&self, _active_queues: usize) {
-            self.queue_depth_count.fetch_add(1, Ordering::Relaxed);
+            self.queue_depths.fetch_add(1, Ordering::Relaxed);
         }
         fn on_connection_pool_stats(&self, _stats: &ConnectionPoolStats) {
-            self.pool_stats_count.fetch_add(1, Ordering::Relaxed);
+            self.pool_stats.fetch_add(1, Ordering::Relaxed);
         }
     }
 
@@ -163,7 +163,7 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_request("test");
-        assert_eq!(inner.request_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.requests.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_response("test");
-        assert_eq!(inner.response_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.responses.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -179,7 +179,7 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_error("test", "err");
-        assert_eq!(inner.error_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.errors.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_latency("test", Duration::from_millis(10));
-        assert_eq!(inner.latency_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.latencies.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -195,7 +195,7 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_queue_depth_change(5);
-        assert_eq!(inner.queue_depth_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.queue_depths.load(Ordering::Relaxed), 1);
     }
 
     #[test]
@@ -203,6 +203,6 @@ mod tests {
         let inner = Arc::new(RecordingMetrics::new());
         let arc_metrics: Arc<RecordingMetrics> = Arc::clone(&inner);
         arc_metrics.on_connection_pool_stats(&ConnectionPoolStats::default());
-        assert_eq!(inner.pool_stats_count.load(Ordering::Relaxed), 1);
+        assert_eq!(inner.pool_stats.load(Ordering::Relaxed), 1);
     }
 }

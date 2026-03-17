@@ -748,7 +748,12 @@ mod tests {
         let transport = RestTransport::new("http://localhost:8080").unwrap();
         let params = serde_json::json!({"taskId": "t1", "id": "c1"});
         let req = transport
-            .build_request("DeleteTaskPushNotificationConfig", &params, &HashMap::new(), false)
+            .build_request(
+                "DeleteTaskPushNotificationConfig",
+                &params,
+                &HashMap::new(),
+                false,
+            )
             .unwrap();
         assert_eq!(req.method(), hyper::Method::DELETE);
         let size = req.body().size_hint().exact().unwrap_or(1);

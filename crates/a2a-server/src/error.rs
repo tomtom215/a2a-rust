@@ -188,11 +188,9 @@ mod tests {
             .serve_connection(
                 hyper_util::rt::TokioIo::new(server),
                 hyper::service::service_fn(|_req: hyper::Request<hyper::body::Incoming>| async {
-                    Ok::<_, hyper::Error>(
-                        hyper::Response::new(
-                            http_body_util::Full::new(hyper::body::Bytes::new()),
-                        ),
-                    )
+                    Ok::<_, hyper::Error>(hyper::Response::new(http_body_util::Full::new(
+                        hyper::body::Bytes::new(),
+                    )))
                 }),
             )
             .await

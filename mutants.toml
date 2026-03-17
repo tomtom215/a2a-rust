@@ -45,10 +45,9 @@ exclude_globs = [
     "crates/*/src/proto/**",              # generated protobuf code
 ]
 
-# Skip functions whose mutations are unproductive (logging, display-only,
-# debug formatting, builder doc strings).
+# Skip functions whose mutations are unproductive (logging, tracing).
+# Note: Display/Debug impls are NOT excluded — we have tests for them.
 exclude_re = [
-    "fmt$",                                # Display / Debug impls
     "^tracing::",                          # tracing instrumentation
     "^log::",                              # log macros
 ]

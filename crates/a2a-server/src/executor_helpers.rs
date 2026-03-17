@@ -278,7 +278,7 @@ mod tests {
         RequestContext::new(message, TaskId::new("test-task"), "test-ctx".into())
     }
 
-    /// Dummy writer for testing EventEmitter without needing a real queue.
+    /// Dummy writer for testing `EventEmitter` without needing a real queue.
     struct DummyWriter;
 
     impl EventQueueWriter for DummyWriter {

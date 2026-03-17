@@ -269,7 +269,10 @@ mod tests {
         let counter = Arc::new(AtomicUsize::new(0));
         let mut chain = InterceptorChain::new();
         chain.push(CountingInterceptor(Arc::clone(&counter)));
-        assert!(!chain.is_empty(), "chain with one interceptor should not be empty");
+        assert!(
+            !chain.is_empty(),
+            "chain with one interceptor should not be empty"
+        );
     }
 
     #[tokio::test]

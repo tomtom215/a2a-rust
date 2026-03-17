@@ -355,7 +355,7 @@ mod tests {
         );
     }
 
-    /// Test fetch_card_with_metadata handles 304 Not Modified correctly
+    /// Test `fetch_card_with_metadata` handles 304 Not Modified correctly
     /// and non-success status codes.
     #[tokio::test]
     async fn fetch_card_with_metadata_non_success_status() {
@@ -369,10 +369,14 @@ mod tests {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 tokio::spawn(async move {
                     let service = hyper::service::service_fn(|_req| async {
-                        Ok::<_, hyper::Error>(hyper::Response::builder()
-                            .status(404)
-                            .body(http_body_util::Full::new(hyper::body::Bytes::from("Not Found")))
-                            .unwrap())
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(404)
+                                .body(http_body_util::Full::new(hyper::body::Bytes::from(
+                                    "Not Found",
+                                )))
+                                .unwrap(),
+                        )
                     });
                     let _ = hyper_util::server::conn::auto::Builder::new(
                         hyper_util::rt::TokioExecutor::new(),
@@ -395,7 +399,7 @@ mod tests {
         }
     }
 
-    /// Test fetch_card_with_metadata returns cached card on 304 Not Modified.
+    /// Test `fetch_card_with_metadata` returns cached card on 304 Not Modified.
     #[tokio::test]
     async fn fetch_card_with_metadata_304_returns_cached() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
@@ -410,10 +414,12 @@ mod tests {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 tokio::spawn(async move {
                     let service = hyper::service::service_fn(|_req| async {
-                        Ok::<_, hyper::Error>(hyper::Response::builder()
-                            .status(304)
-                            .body(http_body_util::Full::new(hyper::body::Bytes::new()))
-                            .unwrap())
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(304)
+                                .body(http_body_util::Full::new(hyper::body::Bytes::new()))
+                                .unwrap(),
+                        )
                     });
                     let _ = hyper_util::server::conn::auto::Builder::new(
                         hyper_util::rt::TokioExecutor::new(),
@@ -451,7 +457,7 @@ mod tests {
         assert_eq!(etag, Some("\"abc123\"".into()));
     }
 
-    /// Test fetch_card_with_metadata succeeds on 200 and parses the card.
+    /// Test `fetch_card_with_metadata` succeeds on 200 and parses the card.
     #[tokio::test]
     async fn fetch_card_with_metadata_200_parses_card() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
@@ -491,14 +497,14 @@ mod tests {
                     let service = hyper::service::service_fn(move |_req| {
                         let body = body.clone();
                         async move {
-                            Ok::<_, hyper::Error>(hyper::Response::builder()
-                                .status(200)
-                                .header("etag", "\"xyz\"")
-                                .header("last-modified", "Mon, 01 Jan 2026 00:00:00 GMT")
-                                .body(http_body_util::Full::new(
-                                    hyper::body::Bytes::from(body),
-                                ))
-                                .unwrap())
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(200)
+                                    .header("etag", "\"xyz\"")
+                                    .header("last-modified", "Mon, 01 Jan 2026 00:00:00 GMT")
+                                    .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+                                    .unwrap(),
+                            )
                         }
                     });
                     let _ = hyper_util::server::conn::auto::Builder::new(

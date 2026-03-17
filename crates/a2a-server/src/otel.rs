@@ -387,9 +387,9 @@ mod tests {
     use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
     use opentelemetry_sdk::Resource;
 
-    /// Creates an OtelMetrics backed by a real in-memory pipeline.
+    /// Creates an `OtelMetrics` backed by a real in-memory pipeline.
     /// Returns the metrics instance and the reader for collection.
-    /// A MetricReader newtype that wraps a shared ManualReader.
+    /// A `MetricReader` newtype that wraps a shared `ManualReader`.
     struct CloneableReader(std::sync::Arc<ManualReader>);
 
     impl std::fmt::Debug for CloneableReader {
@@ -405,10 +405,16 @@ mod tests {
     }
 
     impl MetricReader for CloneableReader {
-        fn register_pipeline(&self, pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>) {
+        fn register_pipeline(
+            &self,
+            pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>,
+        ) {
             self.0.register_pipeline(pipeline);
         }
-        fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry_sdk::metrics::MetricResult<()> {
+        fn collect(
+            &self,
+            rm: &mut ResourceMetrics,
+        ) -> opentelemetry_sdk::metrics::MetricResult<()> {
             self.0.collect(rm)
         }
         fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
@@ -417,7 +423,10 @@ mod tests {
         fn shutdown(&self) -> opentelemetry_sdk::error::OTelSdkResult {
             self.0.shutdown()
         }
-        fn temporality(&self, kind: opentelemetry_sdk::metrics::InstrumentKind) -> opentelemetry_sdk::metrics::Temporality {
+        fn temporality(
+            &self,
+            kind: opentelemetry_sdk::metrics::InstrumentKind,
+        ) -> opentelemetry_sdk::metrics::Temporality {
             self.0.temporality(kind)
         }
     }
@@ -502,9 +511,7 @@ mod tests {
         for scope in &rm.scope_metrics {
             for metric in &scope.metrics {
                 if metric.name == "a2a.server.latency" {
-                    if let Some(hist) =
-                        metric.data.as_any().downcast_ref::<DataHistogram<f64>>()
-                    {
+                    if let Some(hist) = metric.data.as_any().downcast_ref::<DataHistogram<f64>>() {
                         let count: u64 = hist.data_points.iter().map(|dp| dp.count).sum();
                         assert!(count > 0, "histogram should have recorded a value");
                         found = true;
@@ -527,9 +534,7 @@ mod tests {
         for scope in &rm.scope_metrics {
             for metric in &scope.metrics {
                 if metric.name == "a2a.server.queue_depth" {
-                    if let Some(gauge) =
-                        metric.data.as_any().downcast_ref::<DataGauge<u64>>()
-                    {
+                    if let Some(gauge) = metric.data.as_any().downcast_ref::<DataGauge<u64>>() {
                         let val: u64 = gauge.data_points.iter().map(|dp| dp.value).sum();
                         assert_eq!(val, 42, "gauge should record 42");
                         found = true;

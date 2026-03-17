@@ -6,7 +6,7 @@ The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of eve
 
 ## Why Dogfood?
 
-Unit tests and integration tests are necessary but insufficient. Here's what they miss:
+Unit tests and integration tests are necessary but insufficient. **No single test type is enough — it requires an ensemble of all types to catch everything.** Here's what each layer catches and misses:
 
 | Testing level | What it catches | What it misses |
 |---|---|---|
@@ -14,12 +14,14 @@ Unit tests and integration tests are necessary but insufficient. Here's what the
 | **Integration tests** | Pairwise contracts between components | Multi-hop communication, emergent behavior |
 | **Property tests** | Edge cases in data handling | Protocol flow issues, lifecycle bugs |
 | **Fuzz tests** | Malformed input handling | Semantic correctness of valid flows |
+| **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
-| **Dogfooding** | All of the above + DX issues, performance surprises, missing features | — |
 
-Mutation testing fills the critical gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
+**The critical lesson:** After building 950+ tests across all of the above categories — unit, integration, property, fuzz, and 72 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
-Dogfooding operates at the highest level of the testing pyramid. It catches the class of bugs that live in the seams between components — bugs that only manifest when a real application exercises the full stack in realistic patterns.
+Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
+
+Dogfooding operates at the highest level of the testing pyramid. It catches the class of bugs that live in the seams between components — bugs that only manifest when a real application exercises the full stack in realistic patterns. But even dogfooding cannot verify that your *assertions* are strong enough to catch regressions — that's where mutation testing completes the picture.
 
 ## The Agent Team Architecture
 

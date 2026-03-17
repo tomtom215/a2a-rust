@@ -70,6 +70,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **Executor timeout** — Kills hung agent tasks automatically
 - **CORS support** — Configurable cross-origin policies
 - **Fully configurable** — All defaults (timeouts, limits, intervals) are overridable via builders
+- **Mutation-tested** — Zero surviving mutants enforced via `cargo-mutants` CI gate
 - **No panics in library code** — All fallible operations return `Result`
 
 ## All 11 Protocol Methods

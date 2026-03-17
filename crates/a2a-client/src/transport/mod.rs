@@ -45,51 +45,6 @@ pub(crate) fn truncate_body(body: &str) -> String {
     }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn truncate_body_short_string_unchanged() {
-        let short = "hello world";
-        let result = truncate_body(short);
-        assert_eq!(result, short);
-    }
-
-    #[test]
-    fn truncate_body_exact_limit_unchanged() {
-        let body = "x".repeat(MAX_ERROR_BODY_LEN);
-        let result = truncate_body(&body);
-        assert_eq!(result, body, "body at exact limit should not be truncated");
-    }
-
-    #[test]
-    fn truncate_body_over_limit_is_truncated() {
-        let body = "a".repeat(MAX_ERROR_BODY_LEN + 100);
-        let result = truncate_body(&body);
-        assert!(
-            result.len() < body.len(),
-            "result should be shorter than input"
-        );
-        assert!(
-            result.ends_with("...(truncated)"),
-            "truncated body should end with marker: {result}"
-        );
-        assert!(
-            result.starts_with(&"a".repeat(MAX_ERROR_BODY_LEN)),
-            "truncated body should start with the first MAX_ERROR_BODY_LEN chars"
-        );
-    }
-
-    #[test]
-    fn truncate_body_empty_string() {
-        let result = truncate_body("");
-        assert_eq!(result, "");
-    }
-}
-
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -136,4 +91,49 @@ pub trait Transport: Send + Sync + 'static {
         params: serde_json::Value,
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>>;
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_body_short_string_unchanged() {
+        let short = "hello world";
+        let result = truncate_body(short);
+        assert_eq!(result, short);
+    }
+
+    #[test]
+    fn truncate_body_exact_limit_unchanged() {
+        let body = "x".repeat(MAX_ERROR_BODY_LEN);
+        let result = truncate_body(&body);
+        assert_eq!(result, body, "body at exact limit should not be truncated");
+    }
+
+    #[test]
+    fn truncate_body_over_limit_is_truncated() {
+        let body = "a".repeat(MAX_ERROR_BODY_LEN + 100);
+        let result = truncate_body(&body);
+        assert!(
+            result.len() < body.len(),
+            "result should be shorter than input"
+        );
+        assert!(
+            result.ends_with("...(truncated)"),
+            "truncated body should end with marker: {result}"
+        );
+        assert!(
+            result.starts_with(&"a".repeat(MAX_ERROR_BODY_LEN)),
+            "truncated body should start with the first MAX_ERROR_BODY_LEN chars"
+        );
+    }
+
+    #[test]
+    fn truncate_body_empty_string() {
+        let result = truncate_body("");
+        assert_eq!(result, "");
+    }
 }

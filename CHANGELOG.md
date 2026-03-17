@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Testing)
+
+- **Mutation testing** — adopted `cargo-mutants` as a required quality gate with
+  zero surviving mutants across all library crates. Configuration in `mutants.toml`.
+- **Mutation testing CI** — nightly full sweep and incremental PR gate via
+  `.github/workflows/mutants.yml`. Surviving mutants fail the build.
+- **ADR 0006** — documents the rationale for mutation testing as a required quality
+  gate, including alternatives considered and consequences.
+- **60+ new tests** to kill surviving mutants across all crates, covering:
+  state machine transitions, serde round-trips, builder patterns, hash functions,
+  HTTP date formatting, rate limiter arithmetic, Debug impls, Arc delegation,
+  OTel instrument recording, cancellation tokens, and more.
+
 ### Added (Beyond-Spec Enhancements)
 
 - **OpenTelemetry metrics integration** (`otel` feature) — `OtelMetrics` implements the
@@ -321,7 +334,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (600+ tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (950+ tests).
 - `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.

@@ -321,7 +321,7 @@ pub fn serve_jsonrpc(
 
 /// Starts a gRPC server on a pre-bound listener.
 ///
-/// Uses [`GrpcDispatcher::serve_with_listener`] to avoid the placeholder-URL
+/// Uses `GrpcDispatcher::serve_with_listener` to avoid the placeholder-URL
 /// bug (Bug #12): the caller pre-binds the listener to get the address before
 /// building the handler, then passes the listener here.
 #[cfg(feature = "grpc")]

@@ -576,9 +576,6 @@ mod tests {
         headers.insert("x-custom".to_string(), "value123".to_string());
         GrpcTransport::add_metadata(&mut req, &headers);
         let md = req.metadata();
-        assert_eq!(
-            md.get("x-custom").unwrap().to_str().unwrap(),
-            "value123",
-        );
+        assert_eq!(md.get("x-custom").unwrap().to_str().unwrap(), "value123",);
     }
 }

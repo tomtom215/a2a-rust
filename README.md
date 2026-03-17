@@ -55,6 +55,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **WebSocket transport** — persistent bidirectional communication via `tokio-tungstenite` (`websocket` feature flag), JSON-RPC 2.0 over WebSocket text frames with native streaming
 - **gRPC transport** — optional gRPC binding via `tonic` (`grpc` feature flag), JSON-over-protobuf framing reusing all existing serde types, configurable via `GrpcConfig` and `GrpcTransportConfig`
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
+- **Mutation-tested** — zero surviving mutants enforced via `cargo-mutants` CI gate across all library crates
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
 ## Crate Structure
@@ -223,7 +224,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (600+ tests across 4 crates)
+# Run all tests (950+ tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
@@ -238,6 +239,9 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Run benchmarks (task store, event queue)
 cargo bench -p a2a-protocol-server
+
+# Mutation testing (requires cargo-mutants)
+cargo mutants --workspace
 
 # Fuzz JSON deserialization (requires nightly)
 cd fuzz && cargo +nightly fuzz run json_deser

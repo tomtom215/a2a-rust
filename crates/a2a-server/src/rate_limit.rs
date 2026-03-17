@@ -506,8 +506,10 @@ mod tests {
 
         // The stale bucket should have been cleaned up.
         let buckets = limiter.buckets.read().await;
+        let has_stale = buckets.contains_key("stale-for-cleanup");
+        drop(buckets);
         assert!(
-            !buckets.contains_key("stale-for-cleanup"),
+            !has_stale,
             "stale bucket should be cleaned up after CLEANUP_INTERVAL checks"
         );
     }

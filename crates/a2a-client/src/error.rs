@@ -182,17 +182,15 @@ mod tests {
         assert!(http_err.source().is_none());
 
         // Serialization error has a source.
-        let ser_err = ClientError::Serialization(
-            serde_json::from_str::<String>("not json").unwrap_err(),
-        );
+        let ser_err =
+            ClientError::Serialization(serde_json::from_str::<String>("not json").unwrap_err());
         assert!(
             ser_err.source().is_some(),
             "Serialization error should have a source"
         );
 
         // Protocol error has a source.
-        let proto_err =
-            ClientError::Protocol(a2a_protocol_types::A2aError::task_not_found("t"));
+        let proto_err = ClientError::Protocol(a2a_protocol_types::A2aError::task_not_found("t"));
         assert!(
             proto_err.source().is_some(),
             "Protocol error should have a source"

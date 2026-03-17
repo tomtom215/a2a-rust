@@ -393,10 +393,7 @@ mod tests {
     }
 
     /// Helper: start a local HTTP server returning a fixed status and body.
-    async fn start_server(
-        status: u16,
-        body: impl Into<String>,
-    ) -> std::net::SocketAddr {
+    async fn start_server(status: u16, body: impl Into<String>) -> std::net::SocketAddr {
         let body: String = body.into();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
@@ -466,7 +463,11 @@ mod tests {
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = JsonRpcTransport::new(&url).unwrap();
         let result = transport
-            .execute_streaming_request("SendStreamingMessage", serde_json::json!({}), &HashMap::new())
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
             .await;
         match result {
             Err(ClientError::UnexpectedStatus { status, .. }) => {
@@ -509,16 +510,20 @@ mod tests {
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = JsonRpcTransport::new(&url).unwrap();
         let mut stream = transport
-            .execute_streaming_request("SendStreamingMessage", serde_json::json!({}), &HashMap::new())
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
             .await
             .unwrap();
         // The EventStream should yield at least one event from body_reader_task.
-        let event = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            stream.next(),
-        )
-        .await
-        .expect("timed out waiting for event");
-        assert!(event.is_some(), "expected at least one event from the stream");
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
+            .expect("timed out waiting for event");
+        assert!(
+            event.is_some(),
+            "expected at least one event from the stream"
+        );
     }
 }

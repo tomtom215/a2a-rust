@@ -36,174 +36,6 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
     }
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use a2a_protocol_types::{Message, MessageId, MessageRole, Part};
-
-    fn make_params() -> MessageSendParams {
-        MessageSendParams {
-            tenant: None,
-            message: Message {
-                id: MessageId::new("msg-1"),
-                role: MessageRole::User,
-                parts: vec![Part::text("test")],
-                task_id: None,
-                context_id: None,
-                reference_task_ids: None,
-                extensions: None,
-                metadata: None,
-            },
-            configuration: None,
-            metadata: None,
-        }
-    }
-
-    #[test]
-    fn apply_config_sets_return_immediately_when_absent() {
-        let mut config = ClientConfig::default();
-        config.return_immediately = true;
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.return_immediately, Some(true));
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_return_immediately() {
-        let mut config = ClientConfig::default();
-        config.return_immediately = true;
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            return_immediately: Some(false),
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(
-            cfg.return_immediately,
-            Some(false),
-            "per-request value should take precedence"
-        );
-    }
-
-    #[test]
-    fn apply_config_does_not_set_return_immediately_when_config_false() {
-        let config = ClientConfig::default(); // return_immediately = false
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(
-            cfg.return_immediately, None,
-            "should not set return_immediately when config is false"
-        );
-    }
-
-    #[test]
-    fn apply_config_sets_history_length_when_absent() {
-        let mut config = ClientConfig::default();
-        config.history_length = Some(10);
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.history_length, Some(10));
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_history_length() {
-        let mut config = ClientConfig::default();
-        config.history_length = Some(10);
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            history_length: Some(5),
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.history_length, Some(5));
-    }
-
-    #[test]
-    fn apply_config_sets_accepted_output_modes_when_empty() {
-        let mut config = ClientConfig::default();
-        config.accepted_output_modes = vec!["text/plain".into()];
-
-        let mut params = make_params();
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.accepted_output_modes, vec!["text/plain"]);
-    }
-
-    #[test]
-    fn apply_config_does_not_override_per_request_output_modes() {
-        let mut config = ClientConfig::default();
-        config.accepted_output_modes = vec!["text/plain".into()];
-
-        let mut params = make_params();
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: vec!["application/json".into()],
-            ..Default::default()
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.accepted_output_modes, vec!["application/json"]);
-    }
-
-    #[test]
-    fn apply_config_no_op_when_config_has_no_overrides() {
-        let config = ClientConfig::default();
-        // Default config: return_immediately=false, history_length=None,
-        // accepted_output_modes=["text/plain", "application/json"]
-
-        let mut params = make_params();
-        // Pre-set configuration to empty.
-        params.configuration = Some(SendMessageConfiguration::default());
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        // return_immediately should remain None since config.return_immediately is false.
-        assert_eq!(cfg.return_immediately, None);
-        // history_length should remain None.
-        assert_eq!(cfg.history_length, None);
-    }
-
-    #[test]
-    fn apply_config_does_not_set_modes_when_config_modes_empty() {
-        let mut config = ClientConfig::default();
-        config.accepted_output_modes = vec![];
-
-        let mut params = make_params();
-        // Pre-set with empty modes to test that config doesn't override.
-        params.configuration = Some(SendMessageConfiguration {
-            accepted_output_modes: vec![],
-            task_push_notification_config: None,
-            history_length: None,
-            return_immediately: None,
-        });
-        apply_client_config(&mut params, &config);
-
-        let cfg = params.configuration.unwrap();
-        assert!(
-            cfg.accepted_output_modes.is_empty(),
-            "should not set modes when config modes are empty"
-        );
-    }
-}
-
 impl A2aClient {
     /// Sends a message to the agent and waits for a complete response.
     ///
@@ -271,5 +103,187 @@ impl A2aClient {
         self.transport
             .send_streaming_request(METHOD, req.params, &req.extra_headers)
             .await
+    }
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::{Message, MessageId, MessageRole, Part};
+
+    fn make_params() -> MessageSendParams {
+        MessageSendParams {
+            tenant: None,
+            message: Message {
+                id: MessageId::new("msg-1"),
+                role: MessageRole::User,
+                parts: vec![Part::text("test")],
+                task_id: None,
+                context_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            },
+            configuration: None,
+            metadata: None,
+        }
+    }
+
+    #[test]
+    fn apply_config_sets_return_immediately_when_absent() {
+        let config = ClientConfig {
+            return_immediately: true,
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(cfg.return_immediately, Some(true));
+    }
+
+    #[test]
+    fn apply_config_does_not_override_per_request_return_immediately() {
+        let config = ClientConfig {
+            return_immediately: true,
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        params.configuration = Some(SendMessageConfiguration {
+            return_immediately: Some(false),
+            ..Default::default()
+        });
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(
+            cfg.return_immediately,
+            Some(false),
+            "per-request value should take precedence"
+        );
+    }
+
+    #[test]
+    fn apply_config_does_not_set_return_immediately_when_config_false() {
+        let config = ClientConfig::default(); // return_immediately = false
+
+        let mut params = make_params();
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(
+            cfg.return_immediately, None,
+            "should not set return_immediately when config is false"
+        );
+    }
+
+    #[test]
+    fn apply_config_sets_history_length_when_absent() {
+        let config = ClientConfig {
+            history_length: Some(10),
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(cfg.history_length, Some(10));
+    }
+
+    #[test]
+    fn apply_config_does_not_override_per_request_history_length() {
+        let config = ClientConfig {
+            history_length: Some(10),
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        params.configuration = Some(SendMessageConfiguration {
+            history_length: Some(5),
+            ..Default::default()
+        });
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(cfg.history_length, Some(5));
+    }
+
+    #[test]
+    fn apply_config_sets_accepted_output_modes_when_empty() {
+        let config = ClientConfig {
+            accepted_output_modes: vec!["text/plain".into()],
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(cfg.accepted_output_modes, vec!["text/plain"]);
+    }
+
+    #[test]
+    fn apply_config_does_not_override_per_request_output_modes() {
+        let config = ClientConfig {
+            accepted_output_modes: vec!["text/plain".into()],
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        params.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["application/json".into()],
+            ..Default::default()
+        });
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert_eq!(cfg.accepted_output_modes, vec!["application/json"]);
+    }
+
+    #[test]
+    fn apply_config_no_op_when_config_has_no_overrides() {
+        let config = ClientConfig::default();
+        // Default config: return_immediately=false, history_length=None,
+        // accepted_output_modes=["text/plain", "application/json"]
+
+        let mut params = make_params();
+        // Pre-set configuration to empty.
+        params.configuration = Some(SendMessageConfiguration::default());
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        // return_immediately should remain None since config.return_immediately is false.
+        assert_eq!(cfg.return_immediately, None);
+        // history_length should remain None.
+        assert_eq!(cfg.history_length, None);
+    }
+
+    #[test]
+    fn apply_config_does_not_set_modes_when_config_modes_empty() {
+        let config = ClientConfig {
+            accepted_output_modes: vec![],
+            ..ClientConfig::default()
+        };
+
+        let mut params = make_params();
+        // Pre-set with empty modes to test that config doesn't override.
+        params.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec![],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: None,
+        });
+        apply_client_config(&mut params, &config);
+
+        let cfg = params.configuration.unwrap();
+        assert!(
+            cfg.accepted_output_modes.is_empty(),
+            "should not set modes when config modes are empty"
+        );
     }
 }

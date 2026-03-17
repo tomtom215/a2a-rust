@@ -387,9 +387,7 @@ mod tests {
             _params: serde_json::Value,
             _extra_headers: &'a HashMap<String, String>,
         ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
-            Box::pin(async move {
-                Err(ClientError::InvalidEndpoint("bad url".into()))
-            })
+            Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
         }
 
         fn send_streaming_request<'a>(
@@ -398,9 +396,7 @@ mod tests {
             _params: serde_json::Value,
             _extra_headers: &'a HashMap<String, String>,
         ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-            Box::pin(async move {
-                Err(ClientError::InvalidEndpoint("bad url".into()))
-            })
+            Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
         }
     }
 
@@ -554,6 +550,10 @@ mod tests {
             .send_request("test", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok());
-        assert_eq!(call_count.load(Ordering::SeqCst), 1, "should succeed on first try");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "should succeed on first try"
+        );
     }
 }

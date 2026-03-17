@@ -483,7 +483,10 @@ mod tests {
         let mut parser = SseParser::new();
         parser.feed(data.as_bytes());
         let frame = parser.next_frame().expect("should have a frame");
-        assert!(frame.is_ok(), "4096-byte event should be within default limit");
+        assert!(
+            frame.is_ok(),
+            "4096-byte event should be within default limit"
+        );
         // Also verify the exact constant value via with_max_event_size boundary.
         // A parser with exactly 16*1024*1024 should accept 16*1024*1024 bytes of data.
         let _ = p;
@@ -549,7 +552,7 @@ mod tests {
         // This covers: `!input.is_empty() || bytes.len() >= 3` mutations.
         let mut p = SseParser::new();
         p.feed(b""); // empty feed
-        // Now feed BOM + data — BOM should still be stripped.
+                     // Now feed BOM + data — BOM should still be stripped.
         let mut input = Vec::new();
         input.extend_from_slice(b"\xEF\xBB\xBF");
         input.extend_from_slice(b"data: still-works\n\n");
@@ -583,7 +586,10 @@ mod tests {
         let data = format!("data: {}\n\n", "x".repeat(limit + 1));
         p.feed(data.as_bytes());
         let result = p.next_frame().expect("should have a frame");
-        assert!(result.is_err(), "Event one byte over limit should be rejected");
+        assert!(
+            result.is_err(),
+            "Event one byte over limit should be rejected"
+        );
     }
 
     #[test]
@@ -636,8 +642,8 @@ mod tests {
         // With >= → <: `false || (3 < 3)` → `false || false` → false → bom_checked stays false.
         let mut p = SseParser::new();
         p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
-        // If bom_checked stayed false (mutation), next feed would try to strip BOM again.
-        // Feed normal data — should work regardless.
+                                 // If bom_checked stayed false (mutation), next feed would try to strip BOM again.
+                                 // Feed normal data — should work regardless.
         p.feed(b"data: ok\n\n");
         let frame = p.next_frame().unwrap().unwrap();
         assert_eq!(frame.data, "ok");
