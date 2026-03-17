@@ -257,3 +257,58 @@ impl<'a> EventEmitter<'a> {
         self.ctx.cancellation_token.is_cancelled()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole};
+    use a2a_protocol_types::task::TaskId;
+
+    fn make_request_context() -> RequestContext {
+        let message = Message {
+            id: MessageId::new("test-msg"),
+            role: MessageRole::User,
+            parts: vec![],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+        RequestContext::new(message, TaskId::new("test-task"), "test-ctx".into())
+    }
+
+    /// Dummy writer for testing EventEmitter without needing a real queue.
+    struct DummyWriter;
+
+    impl EventQueueWriter for DummyWriter {
+        fn write<'a>(
+            &'a self,
+            _event: a2a_protocol_types::events::StreamResponse,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(()) })
+        }
+        fn close<'a>(
+            &'a self,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+        {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn is_cancelled_returns_false_initially() {
+        let ctx = make_request_context();
+        let emit = EventEmitter::new(&ctx, &DummyWriter);
+        assert!(!emit.is_cancelled());
+    }
+
+    #[test]
+    fn is_cancelled_returns_true_after_cancel() {
+        let ctx = make_request_context();
+        let emit = EventEmitter::new(&ctx, &DummyWriter);
+        ctx.cancellation_token.cancel();
+        assert!(emit.is_cancelled());
+    }
+}

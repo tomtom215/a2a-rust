@@ -268,4 +268,20 @@ mod tests {
         assert_eq!(config.get("b").rate_limit_rps, Some(20));
         assert_eq!(config.get("c").rate_limit_rps, None);
     }
+
+    #[test]
+    fn tenant_limits_builder_returns_functional_builder() {
+        // Verifies TenantLimits::builder() returns a real builder (not Default::default()).
+        let limits = TenantLimits::builder().max_concurrent_tasks(42).build();
+        assert_eq!(limits.max_concurrent_tasks, Some(42));
+    }
+
+    #[test]
+    fn per_tenant_config_builder_returns_functional_builder() {
+        // Verifies PerTenantConfig::builder() returns a real builder (not Default::default()).
+        let config = PerTenantConfig::builder()
+            .default_limits(TenantLimits::builder().rate_limit_rps(99).build())
+            .build();
+        assert_eq!(config.get("any").rate_limit_rps, Some(99));
+    }
 }

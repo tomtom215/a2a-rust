@@ -378,4 +378,17 @@ mod tests {
         let ctx = make_ctx();
         assert_eq!(resolver.resolve(&ctx).await, None);
     }
+
+    #[test]
+    fn bearer_resolver_debug_shows_has_mapper() {
+        let resolver = BearerTokenTenantResolver::new();
+        let debug = format!("{resolver:?}");
+        assert!(debug.contains("BearerTokenTenantResolver"));
+        assert!(debug.contains("has_mapper"));
+        assert!(debug.contains("false"));
+
+        let resolver_with = BearerTokenTenantResolver::with_mapper(|t| Some(t.to_string()));
+        let debug = format!("{resolver_with:?}");
+        assert!(debug.contains("true"));
+    }
 }
