@@ -39,6 +39,7 @@ use crate::transport::{JsonRpcTransport, RestTransport, Transport};
 /// The major protocol version supported by this client.
 ///
 /// Used to warn when an agent card advertises an incompatible version.
+#[cfg(feature = "tracing")]
 const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
 
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
@@ -80,21 +81,20 @@ impl ClientBuilder {
     /// in the supported range.
     #[must_use]
     pub fn from_card(card: &AgentCard) -> Self {
-        let (endpoint, binding, version) = card
+        let (endpoint, binding) = card
             .supported_interfaces
             .first()
-            .map(|i| {
-                (
-                    i.url.clone(),
-                    i.protocol_binding.clone(),
-                    i.protocol_version.clone(),
-                )
-            })
+            .map(|i| (i.url.clone(), i.protocol_binding.clone()))
             .unwrap_or_default();
 
         // Warn if agent advertises a different major version than we support.
         #[cfg(feature = "tracing")]
-        if !version.is_empty() {
+        if let Some(version) = card
+            .supported_interfaces
+            .first()
+            .map(|i| i.protocol_version.clone())
+            .filter(|v| !v.is_empty())
+        {
             let major = version
                 .split('.')
                 .next()
