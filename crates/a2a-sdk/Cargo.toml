@@ -24,6 +24,8 @@ signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-pro
 tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 ## Enable HTTPS support via rustls.
 tls-rustls = ["a2a-protocol-client/tls-rustls"]
+## Enable gRPC transport via tonic.
+grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -26,6 +26,8 @@ tracing = ["dep:tracing"]
 sqlite = ["dep:sqlx"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
+## Enable gRPC transport via `tonic`.
+grpc = ["dep:tonic", "dep:prost", "dep:tokio-stream", "dep:tonic-build"]
 
 [dependencies]
 a2a-protocol-types      = { version = "0.2.0", path = "../a2a-types" }
@@ -42,6 +44,12 @@ tracing        = { workspace = true, optional = true }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.24, <0.25", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
+tonic             = { workspace = true, optional = true }
+prost             = { workspace = true, optional = true }
+tokio-stream      = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-build = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -110,6 +110,50 @@ pub fn health_monitor_card(url: &str) -> AgentCard {
     }
 }
 
+/// Agent card for the gRPC-served CodeAnalyzer agent.
+#[cfg(feature = "grpc")]
+pub fn grpc_analyzer_card(url: &str) -> AgentCard {
+    AgentCard {
+        name: "Code Analyzer (gRPC)".into(),
+        description: "Analyzes code via gRPC transport".into(),
+        version: "1.0.0".into(),
+        supported_interfaces: vec![AgentInterface {
+            url: url.into(),
+            protocol_binding: "GRPC".into(),
+            protocol_version: "1.0.0".into(),
+            tenant: None,
+        }],
+        default_input_modes: vec!["text/plain".into()],
+        default_output_modes: vec![
+            "text/plain".into(),
+            "application/json".into(),
+        ],
+        skills: vec![AgentSkill {
+            id: "analyze-grpc".into(),
+            name: "Code Analysis (gRPC)".into(),
+            description: "Same as Code Analyzer but over gRPC".into(),
+            tags: vec![
+                "code".into(),
+                "analysis".into(),
+                "grpc".into(),
+            ],
+            examples: None,
+            input_modes: None,
+            output_modes: None,
+            security_requirements: None,
+        }],
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(false),
+        provider: None,
+        icon_url: None,
+        documentation_url: None,
+        security_schemes: None,
+        security_requirements: None,
+        signatures: None,
+    }
+}
+
 pub fn coordinator_card(url: &str) -> AgentCard {
     AgentCard {
         name: "Coordinator".into(),

@@ -20,10 +20,14 @@
 //! [`RestTransport`]: rest::RestTransport
 
 pub mod jsonrpc;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod rest;
 #[cfg(feature = "websocket")]
 pub mod websocket;
 
+#[cfg(feature = "grpc")]
+pub use grpc::GrpcTransport;
 pub use jsonrpc::JsonRpcTransport;
 pub use rest::RestTransport;
 #[cfg(feature = "websocket")]

@@ -33,11 +33,10 @@
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //!
-//! # Transport limitations
+//! # gRPC transport
 //!
-//! The A2A specification lists gRPC as an optional transport binding. This
-//! implementation currently supports **HTTP + SSE only**; gRPC transport is
-//! not yet implemented.
+//! Enable the `grpc` feature flag to use [`GrpcDispatcher`] for gRPC
+//! transport (tonic-backed). See [`dispatch::grpc`] for details.
 //!
 //! # Rate limiting
 //!
@@ -78,6 +77,8 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
+#[cfg(feature = "grpc")]
+pub use dispatch::{GrpcConfig, GrpcDispatcher};
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
