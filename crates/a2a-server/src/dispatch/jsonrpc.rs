@@ -575,6 +575,162 @@ fn json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, I
         })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hyper::header::HeaderValue;
+
+    // ── extract_headers ──────────────────────────────────────────────────────
+
+    #[test]
+    fn extract_headers_lowercases_keys() {
+        // hyper HeaderMap normalises keys to lowercase internally, so
+        // inserting via the typed `header::AUTHORIZATION` constant gives us
+        // the lower-case key "authorization".
+        let mut headers = hyper::HeaderMap::new();
+        headers.insert(
+            hyper::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer token"),
+        );
+        let map = extract_headers(&headers);
+        assert_eq!(
+            map.get("authorization").map(String::as_str),
+            Some("Bearer token")
+        );
+    }
+
+    #[test]
+    fn extract_headers_skips_non_ascii_values() {
+        // Build a raw HeaderValue that contains non-UTF-8 bytes so that
+        // `to_str()` returns an error and the entry should be skipped.
+        let mut headers = hyper::HeaderMap::new();
+        let bad_value = HeaderValue::from_bytes(b"caf\xe9").unwrap();
+        headers.insert(hyper::header::X_CONTENT_TYPE_OPTIONS, bad_value);
+        let map = extract_headers(&headers);
+        // The entry must NOT appear in the output map.
+        assert!(!map.contains_key("x-content-type-options"));
+    }
+
+    #[test]
+    fn extract_headers_empty() {
+        let headers = hyper::HeaderMap::new();
+        let map = extract_headers(&headers);
+        assert!(map.is_empty());
+    }
+
+    // ── parse_params ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_params_missing_returns_invalid_params() {
+        use a2a_protocol_types::params::TaskQueryParams;
+        let req = JsonRpcRequest {
+            jsonrpc: JsonRpcVersion,
+            id: None,
+            method: "GetTask".to_owned(),
+            params: None,
+        };
+        let result: Result<TaskQueryParams, _> = parse_params(&req);
+        assert!(
+            result.is_err(),
+            "expected error when params are missing"
+        );
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, ServerError::InvalidParams(_)),
+            "expected InvalidParams, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_params_invalid_type_returns_error() {
+        use a2a_protocol_types::params::TaskQueryParams;
+        // TaskQueryParams expects an object with an `id` field (string).
+        // Passing a bare integer should produce an InvalidParams error.
+        let req = JsonRpcRequest {
+            jsonrpc: JsonRpcVersion,
+            id: Some(serde_json::json!(1)),
+            method: "GetTask".to_owned(),
+            params: Some(serde_json::json!(42)),
+        };
+        let result: Result<TaskQueryParams, _> = parse_params(&req);
+        assert!(result.is_err(), "expected error for wrong params type");
+    }
+
+    // ── json_response ────────────────────────────────────────────────────────
+
+    #[test]
+    fn json_response_200_status() {
+        let resp = json_response(200, b"{}".to_vec());
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[test]
+    fn json_response_404_status() {
+        let resp = json_response(404, b"not found".to_vec());
+        assert_eq!(resp.status().as_u16(), 404);
+    }
+
+    // ── parse_error_response ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_error_response_returns_200_with_error_body() {
+        let resp = parse_error_response(None, "bad json");
+        assert_eq!(resp.status().as_u16(), 200);
+    }
+
+    #[tokio::test]
+    async fn parse_error_response_has_error_code() {
+        let resp = parse_error_response(None, "something went wrong");
+        use http_body_util::BodyExt;
+        let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        // JSON-RPC parse error code is -32700.
+        assert_eq!(val["error"]["code"], -32700);
+        assert!(val["error"]["message"].is_string());
+    }
+
+    // ── success_response_bytes ───────────────────────────────────────────────
+
+    #[test]
+    fn success_response_bytes_structure() {
+        let id: JsonRpcId = Some(serde_json::json!(1));
+        let bytes = success_response_bytes(id, &serde_json::json!({"key": "val"}));
+        let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(val["result"]["key"], "val");
+        assert_eq!(val["id"], 1);
+    }
+
+    #[test]
+    fn success_response_includes_jsonrpc_version() {
+        let id: JsonRpcId = Some(serde_json::json!(42));
+        let bytes = success_response_bytes(id, &serde_json::json!(null));
+        let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(val["jsonrpc"], "2.0");
+    }
+
+    // ── error_response_bytes ─────────────────────────────────────────────────
+
+    #[test]
+    fn error_response_bytes_contains_error_object() {
+        let id: JsonRpcId = Some(serde_json::json!(1));
+        let err = ServerError::MethodNotFound("Foo".into());
+        let bytes = error_response_bytes(id, &err);
+        let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(val["error"].is_object(), "expected 'error' key to be an object");
+        assert!(val["error"]["code"].is_number());
+        assert!(val["error"]["message"].is_string());
+    }
+
+    #[test]
+    fn error_response_has_jsonrpc_version() {
+        let id: JsonRpcId = Some(serde_json::json!(7));
+        let err = ServerError::Internal("oops".into());
+        let bytes = error_response_bytes(id, &err);
+        let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(val["jsonrpc"], "2.0");
+    }
+}
+
 // ── Dispatcher impl ──────────────────────────────────────────────────────────
 
 impl Dispatcher for JsonRpcDispatcher {
