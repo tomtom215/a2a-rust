@@ -1,6 +1,6 @@
 # Transport Layers
 
-A2A supports two transport bindings: **JSON-RPC 2.0** and **REST**. Both are first-class citizens in a2a-rust — the server can serve both simultaneously, and the client auto-selects based on the agent card.
+A2A supports four transport bindings: **JSON-RPC 2.0**, **REST**, **WebSocket** (`websocket` feature flag), and **gRPC** (`grpc` feature flag). All four are first-class citizens in a2a-rust — the server can serve multiple transports simultaneously, and the client auto-selects based on the agent card.
 
 ## JSON-RPC 2.0
 

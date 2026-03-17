@@ -1,6 +1,6 @@
 # Dispatchers (JSON-RPC, REST & gRPC)
 
-Dispatchers translate HTTP requests into handler calls. a2a-rust provides two built-in dispatchers matching the A2A spec's transport bindings.
+Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides four built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature).
 
 ## JsonRpcDispatcher
 

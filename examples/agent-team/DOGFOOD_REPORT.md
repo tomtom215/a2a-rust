@@ -7,7 +7,7 @@
 > See the canonical versions at:
 >
 > - [Dogfooding Overview](../../book/src/deployment/dogfooding.md)
-> - [Bugs Found & Fixed](../../book/src/deployment/dogfooding-bugs.md) — 13 bugs across 4 passes
+> - [Bugs Found & Fixed](../../book/src/deployment/dogfooding-bugs.md) — 17 bugs across 5 passes
 > - [Test Coverage Matrix](../../book/src/deployment/dogfooding-tests.md) — 66 E2E tests (69 with gRPC)
 > - [Open Issues & Roadmap](../../book/src/deployment/dogfooding-open-issues.md) — design debt and future work
 
