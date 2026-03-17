@@ -610,4 +610,319 @@ mod tests {
         assert!(qs.contains("filter=status%3Dactive%26role%3Dadmin"));
         assert!(qs.contains("name=John%20Doe"));
     }
+
+    // ── Mutation-killing tests for route_for arms ─────────────────────────
+
+    #[test]
+    fn route_for_cancel_task() {
+        let r = route_for("CancelTask").expect("CancelTask should have a route");
+        assert_eq!(r.http_method, HttpMethod::Post);
+        assert_eq!(r.path_template, "/tasks/{id}:cancel");
+        assert_eq!(r.path_params, &["id"]);
+        assert!(!r.streaming);
+    }
+
+    #[test]
+    fn route_for_subscribe_to_task() {
+        let r = route_for("SubscribeToTask").expect("SubscribeToTask should have a route");
+        assert_eq!(r.http_method, HttpMethod::Post);
+        assert_eq!(r.path_template, "/tasks/{id}:subscribe");
+        assert_eq!(r.path_params, &["id"]);
+        assert!(r.streaming);
+    }
+
+    #[test]
+    fn route_for_create_task_push_notification_config() {
+        let r = route_for("CreateTaskPushNotificationConfig")
+            .expect("CreateTaskPushNotificationConfig should have a route");
+        assert_eq!(r.http_method, HttpMethod::Post);
+        assert_eq!(r.path_template, "/tasks/{taskId}/pushNotificationConfigs");
+        assert_eq!(r.path_params, &["taskId"]);
+        assert!(!r.streaming);
+    }
+
+    #[test]
+    fn route_for_get_task_push_notification_config() {
+        let r = route_for("GetTaskPushNotificationConfig")
+            .expect("GetTaskPushNotificationConfig should have a route");
+        assert_eq!(r.http_method, HttpMethod::Get);
+        assert_eq!(
+            r.path_template,
+            "/tasks/{taskId}/pushNotificationConfigs/{id}"
+        );
+        assert_eq!(r.path_params, &["taskId", "id"]);
+        assert!(!r.streaming);
+    }
+
+    #[test]
+    fn route_for_list_task_push_notification_configs() {
+        let r = route_for("ListTaskPushNotificationConfigs")
+            .expect("ListTaskPushNotificationConfigs should have a route");
+        assert_eq!(r.http_method, HttpMethod::Get);
+        assert_eq!(r.path_template, "/tasks/{taskId}/pushNotificationConfigs");
+        assert_eq!(r.path_params, &["taskId"]);
+        assert!(!r.streaming);
+    }
+
+    #[test]
+    fn route_for_delete_task_push_notification_config() {
+        let r = route_for("DeleteTaskPushNotificationConfig")
+            .expect("DeleteTaskPushNotificationConfig should have a route");
+        assert_eq!(r.http_method, HttpMethod::Delete);
+        assert_eq!(
+            r.path_template,
+            "/tasks/{taskId}/pushNotificationConfigs/{id}"
+        );
+        assert_eq!(r.path_params, &["taskId", "id"]);
+        assert!(!r.streaming);
+    }
+
+    #[test]
+    fn route_for_get_extended_agent_card() {
+        let r =
+            route_for("GetExtendedAgentCard").expect("GetExtendedAgentCard should have a route");
+        assert_eq!(r.http_method, HttpMethod::Get);
+        assert_eq!(r.path_template, "/extendedAgentCard");
+        assert!(r.path_params.is_empty());
+        assert!(!r.streaming);
+    }
+
+    // ── Mutation-killing tests for build_uri / build_request query param logic ──
+
+    #[test]
+    fn build_uri_post_does_not_append_query_params() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("SendMessage").unwrap();
+        assert_eq!(route.http_method, HttpMethod::Post);
+        let params = serde_json::json!({"key": "value", "extra": 42});
+        let (uri, _remaining) = transport.build_uri(&route, &params).unwrap();
+        assert!(
+            !uri.contains('?'),
+            "POST request should not have query params in URI, got: {uri}"
+        );
+    }
+
+    #[test]
+    fn build_uri_delete_appends_query_params() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("DeleteTaskPushNotificationConfig").unwrap();
+        assert_eq!(route.http_method, HttpMethod::Delete);
+        let params = serde_json::json!({"taskId": "t1", "id": "c1", "extra": "val"});
+        let (uri, _remaining) = transport.build_uri(&route, &params).unwrap();
+        assert!(
+            uri.contains("extra=val"),
+            "DELETE request should have remaining params in query string, got: {uri}"
+        );
+    }
+
+    #[test]
+    fn build_request_post_has_json_body() {
+        use hyper::body::Body;
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({"message": {"role": "user", "parts": []}});
+        let req = transport
+            .build_request("SendMessage", &params, &HashMap::new(), false)
+            .unwrap();
+        assert_eq!(req.method(), hyper::Method::POST);
+        // POST should have a non-empty body
+        let size = req.body().size_hint().exact().unwrap_or(0);
+        assert!(size > 0, "POST body should not be empty");
+    }
+
+    #[test]
+    fn build_request_get_has_empty_body() {
+        use hyper::body::Body;
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({"id": "task-1"});
+        let req = transport
+            .build_request("GetTask", &params, &HashMap::new(), false)
+            .unwrap();
+        assert_eq!(req.method(), hyper::Method::GET);
+        let size = req.body().size_hint().exact().unwrap_or(1);
+        assert_eq!(size, 0, "GET body should be empty");
+    }
+
+    #[test]
+    fn build_request_delete_has_empty_body() {
+        use hyper::body::Body;
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({"taskId": "t1", "id": "c1"});
+        let req = transport
+            .build_request("DeleteTaskPushNotificationConfig", &params, &HashMap::new(), false)
+            .unwrap();
+        assert_eq!(req.method(), hyper::Method::DELETE);
+        let size = req.body().size_hint().exact().unwrap_or(1);
+        assert_eq!(size, 0, "DELETE body should be empty");
+    }
+
+    // ── Mutation-killing tests for build_query_string null/number/bool ───
+
+    #[test]
+    fn build_query_string_skips_null() {
+        let params = serde_json::json!({"a": null, "b": "hello"});
+        let qs = build_query_string(&params);
+        assert!(!qs.contains("a="), "null values should be skipped");
+        assert!(qs.contains("b=hello"), "non-null values should be present");
+    }
+
+    #[test]
+    fn build_query_string_handles_number() {
+        let params = serde_json::json!({"count": 42});
+        let qs = build_query_string(&params);
+        assert_eq!(qs, "count=42");
+    }
+
+    #[test]
+    fn build_query_string_handles_bool() {
+        let params = serde_json::json!({"active": true});
+        let qs = build_query_string(&params);
+        assert_eq!(qs, "active=true");
+    }
+
+    #[test]
+    fn build_query_string_handles_false() {
+        let params = serde_json::json!({"active": false});
+        let qs = build_query_string(&params);
+        assert_eq!(qs, "active=false");
+    }
+
+    // ── HTTP server tests for execute_request / execute_streaming_request ──
+
+    async fn start_rest_server(
+        status: u16,
+        content_type: &'static str,
+        body: impl Into<String>,
+    ) -> std::net::SocketAddr {
+        let body: String = body.into();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = body.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(status)
+                                    .header("content-type", content_type)
+                                    .body(Full::new(Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        addr
+    }
+
+    #[tokio::test]
+    async fn execute_request_non_success_returns_error() {
+        let addr = start_rest_server(500, "text/plain", "Internal Server Error").await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::UnexpectedStatus { status, .. }) => {
+                assert_eq!(status, 500);
+            }
+            other => panic!("expected UnexpectedStatus, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_request_success_parses_json() {
+        let response_body = r#"{"jsonrpc":"2.0","id":"1","result":{"hello":"world"}}"#;
+        let addr = start_rest_server(200, "application/json", response_body).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        let value = result.unwrap();
+        assert_eq!(value["hello"], "world");
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_non_success_returns_error() {
+        let addr = start_rest_server(500, "text/plain", "Internal Server Error").await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        match result {
+            Err(ClientError::UnexpectedStatus { status, .. }) => {
+                assert_eq!(status, 500);
+            }
+            other => panic!("expected UnexpectedStatus, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_success_returns_event_stream() {
+        // Start a server that returns SSE data with a valid JSON-RPC wrapped StreamResponse.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(|_req| async {
+                        let sse_body = "data: {\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"status\":\"ok\"}}\n\n";
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(200)
+                                .header("content-type", "text/event-stream")
+                                .body(Full::new(Bytes::from(sse_body)))
+                                .unwrap(),
+                        )
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let mut stream = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await
+            .unwrap();
+        // The EventStream should yield at least one event from body_reader_task.
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
+            .expect("timed out waiting for event");
+        assert!(
+            event.is_some(),
+            "expected at least one event from the stream"
+        );
+    }
 }

@@ -122,3 +122,24 @@ impl CallContext {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn with_http_header_x_request_id_populates_request_id() {
+        let ctx = CallContext::new("test")
+            .with_http_header("x-request-id", "req-42");
+        assert_eq!(ctx.request_id.as_deref(), Some("req-42"));
+        assert_eq!(ctx.http_headers.get("x-request-id").map(String::as_str), Some("req-42"));
+    }
+
+    #[test]
+    fn with_http_header_other_key_does_not_populate_request_id() {
+        let ctx = CallContext::new("test")
+            .with_http_header("authorization", "Bearer tok");
+        assert!(ctx.request_id.is_none());
+        assert_eq!(ctx.http_headers.get("authorization").map(String::as_str), Some("Bearer tok"));
+    }
+}

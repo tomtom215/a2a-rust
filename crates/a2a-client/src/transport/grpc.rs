@@ -473,4 +473,112 @@ mod tests {
         assert_eq!(cfg.max_message_size, 8 * 1024 * 1024);
         assert_eq!(cfg.stream_channel_capacity, 128);
     }
+
+    #[test]
+    fn grpc_code_not_found_maps_to_task_not_found() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::NotFound),
+            a2a_protocol_types::ErrorCode::TaskNotFound,
+        );
+    }
+
+    #[test]
+    fn grpc_code_invalid_argument_maps_to_invalid_params() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::InvalidArgument),
+            a2a_protocol_types::ErrorCode::InvalidParams,
+        );
+    }
+
+    #[test]
+    fn grpc_code_unauthenticated_maps_to_invalid_params() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::Unauthenticated),
+            a2a_protocol_types::ErrorCode::InvalidParams,
+        );
+    }
+
+    #[test]
+    fn grpc_code_permission_denied_maps_to_invalid_params() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::PermissionDenied),
+            a2a_protocol_types::ErrorCode::InvalidParams,
+        );
+    }
+
+    #[test]
+    fn grpc_code_resource_exhausted_maps_to_invalid_params() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::ResourceExhausted),
+            a2a_protocol_types::ErrorCode::InvalidParams,
+        );
+    }
+
+    #[test]
+    fn grpc_code_unimplemented_maps_to_method_not_found() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::Unimplemented),
+            a2a_protocol_types::ErrorCode::MethodNotFound,
+        );
+    }
+
+    #[test]
+    fn grpc_code_failed_precondition_maps_to_task_not_cancelable() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::FailedPrecondition),
+            a2a_protocol_types::ErrorCode::TaskNotCancelable,
+        );
+    }
+
+    #[test]
+    fn grpc_code_deadline_exceeded_maps_to_internal() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::DeadlineExceeded),
+            a2a_protocol_types::ErrorCode::InternalError,
+        );
+    }
+
+    #[test]
+    fn grpc_code_cancelled_maps_to_internal() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::Cancelled),
+            a2a_protocol_types::ErrorCode::InternalError,
+        );
+    }
+
+    #[test]
+    fn grpc_code_unknown_maps_to_internal() {
+        assert_eq!(
+            grpc_code_to_error_code(tonic::Code::Unknown),
+            a2a_protocol_types::ErrorCode::InternalError,
+        );
+    }
+
+    #[test]
+    fn add_metadata_injects_a2a_version() {
+        let payload = JsonPayload { data: vec![] };
+        let mut req = tonic::Request::new(payload);
+        let headers = HashMap::new();
+        GrpcTransport::add_metadata(&mut req, &headers);
+        let md = req.metadata();
+        assert!(md.get("a2a-version").is_some());
+        assert_eq!(
+            md.get("a2a-version").unwrap().to_str().unwrap(),
+            a2a_protocol_types::A2A_VERSION,
+        );
+    }
+
+    #[test]
+    fn add_metadata_injects_extra_headers() {
+        let payload = JsonPayload { data: vec![] };
+        let mut req = tonic::Request::new(payload);
+        let mut headers = HashMap::new();
+        headers.insert("x-custom".to_string(), "value123".to_string());
+        GrpcTransport::add_metadata(&mut req, &headers);
+        let md = req.metadata();
+        assert_eq!(
+            md.get("x-custom").unwrap().to_str().unwrap(),
+            "value123",
+        );
+    }
 }

@@ -287,4 +287,69 @@ mod tests {
 
         assert!(stream.next().await.is_none());
     }
+
+    #[tokio::test]
+    async fn drop_aborts_background_task() {
+        let (tx, rx) = mpsc::channel::<BodyChunk>(8);
+        // Spawn a task that will block forever unless aborted.
+        let handle = tokio::spawn(async move {
+            // Keep the sender alive so the channel doesn't close.
+            let _tx = tx;
+            // Sleep forever — this will be aborted by EventStream::drop.
+            tokio::time::sleep(std::time::Duration::from_secs(60 * 60)).await;
+        });
+        let abort_handle = handle.abort_handle();
+        let stream = EventStream::with_abort_handle(rx, abort_handle);
+        // Drop the stream, which should abort the task.
+        drop(stream);
+        // The spawned task should finish with a cancelled error.
+        let result = handle.await;
+        assert!(result.is_err(), "task should have been aborted");
+        assert!(result.unwrap_err().is_cancelled(), "task should be cancelled");
+    }
+
+    #[test]
+    fn debug_output_contains_fields() {
+        let (_tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let stream = EventStream::new(rx);
+        let debug = format!("{:?}", stream);
+        assert!(debug.contains("EventStream"), "should contain struct name");
+        assert!(debug.contains("done"), "should contain 'done' field");
+        assert!(debug.contains("pending_frames"), "should contain 'pending_frames' field");
+    }
+
+    #[test]
+    fn is_terminal_returns_false_for_working() {
+        let event = make_status_event(TaskState::Working, false);
+        assert!(!is_terminal(&event), "Working state should not be terminal");
+    }
+
+    #[test]
+    fn is_terminal_returns_true_for_completed() {
+        let event = make_status_event(TaskState::Completed, true);
+        assert!(is_terminal(&event), "Completed state should be terminal");
+    }
+
+    #[tokio::test]
+    async fn non_terminal_event_does_not_end_stream() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx);
+
+        // Send a Working (non-terminal) event followed by another event.
+        let working = make_status_event(TaskState::Working, false);
+        let completed = make_status_event(TaskState::Completed, true);
+        tx.send(Ok(Bytes::from(sse_frame(&working)))).await.unwrap();
+        tx.send(Ok(Bytes::from(sse_frame(&completed)))).await.unwrap();
+
+        // First call should return the Working event.
+        let first = stream.next().await.unwrap().unwrap();
+        assert!(matches!(first, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Working));
+
+        // Second call should return the Completed event (stream didn't end early).
+        let second = stream.next().await.unwrap().unwrap();
+        assert!(matches!(second, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Completed));
+
+        // Now the stream should be done because Completed is terminal.
+        assert!(stream.next().await.is_none());
+    }
 }
