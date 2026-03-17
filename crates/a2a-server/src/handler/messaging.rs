@@ -293,3 +293,132 @@ impl RequestHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
+    use a2a_protocol_types::task::ContextId;
+
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+
+    struct DummyExecutor;
+    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+    fn make_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor)
+            .build()
+            .expect("default build should succeed")
+    }
+
+    fn make_params(context_id: Option<&str>) -> MessageSendParams {
+        MessageSendParams {
+            message: Message {
+                id: MessageId::new("msg-1"),
+                role: MessageRole::User,
+                parts: vec![Part::text("hello")],
+                context_id: context_id.map(ContextId::new),
+                task_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            },
+            configuration: None,
+            metadata: None,
+            tenant: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn empty_message_parts_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.parts = vec![];
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(_))),
+            "expected InvalidParams for empty parts"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_message_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        // Build a JSON string that exceeds the default 1 MiB limit.
+        let big_value = "x".repeat(1_100_000);
+        params.message.metadata = Some(serde_json::json!(big_value));
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(_))),
+            "expected InvalidParams for oversized message metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_request_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        // Build a JSON string that exceeds the default 1 MiB limit.
+        let big_value = "x".repeat(1_100_000);
+        params.metadata = Some(serde_json::json!(big_value));
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(_))),
+            "expected InvalidParams for oversized request metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn valid_message_returns_ok() {
+        let handler = make_handler();
+        let params = make_params(None);
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(result.is_ok(), "expected Ok for valid message");
+    }
+
+    #[tokio::test]
+    async fn return_immediately_returns_task() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        });
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(
+            matches!(
+                result,
+                Ok(SendMessageResult::Response(SendMessageResponse::Task(_)))
+            ),
+            "expected Response(Task) for return_immediately=true"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_context_id_returns_invalid_params() {
+        let handler = make_handler();
+        let params = make_params(Some(""));
+
+        let result = handler.on_send_message(params, false, None).await;
+
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(_))),
+            "expected InvalidParams for empty context_id"
+        );
+    }
+}

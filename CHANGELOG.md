@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state machine transitions, serde round-trips, builder patterns, hash functions,
   HTTP date formatting, rate limiter arithmetic, Debug impls, Arc delegation,
   OTel instrument recording, cancellation tokens, and more.
+- **Wave 2 inline unit tests** — added `#[cfg(test)]` modules directly to 9 critical
+  `a2a-protocol-server` source files covering the full request pipeline:
+  `handler/messaging` (6 tests: ID validation, empty parts, metadata size limits,
+  happy path, `return_immediately`), `handler/event_processing` (9 tests: state
+  transitions, artifact updates, push delivery, `collect_events`),
+  `handler/push_config` (4 tests: push CRUD), `handler/lifecycle` (10 tests:
+  get/list/cancel/resubscribe/agent card), `handler/mod` (11 tests: builder
+  accessors, Debug), `dispatch/rest` (40 tests: path parsing, response helpers,
+  error mapping), `dispatch/jsonrpc` (13 tests: header extraction, param parsing,
+  batch handling), `dispatch/grpc` (12 tests: config builders, encode/decode,
+  error-to-status mapping), `dispatch/websocket` (5 tests: param parsing, error
+  display). Total workspace test count: **1,255 passing tests**.
 
 ### Added (Beyond-Spec Enhancements)
 
@@ -334,7 +346,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (950+ tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,200+ tests).
 - `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.

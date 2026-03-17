@@ -402,3 +402,51 @@ fn parse_params<T: serde::de::DeserializeOwned>(
     serde_json::from_value(value)
         .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_params_with_valid_json() {
+        let value = Some(serde_json::json!({"id": "task-1"}));
+        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
+            parse_params(value.as_ref());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id, "task-1");
+    }
+
+    #[test]
+    fn parse_params_with_none_returns_error() {
+        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> = parse_params(None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_params_with_wrong_type_returns_error() {
+        let value = Some(serde_json::json!("not an object"));
+        let result: Result<a2a_protocol_types::params::TaskQueryParams, _> =
+            parse_params(value.as_ref());
+        assert!(result.is_err());
+    }
+
+    // WsError Display
+    #[test]
+    fn ws_error_display_contains_message() {
+        let err = WsError::Handshake(tokio_tungstenite::tungstenite::Error::ConnectionClosed);
+        let s = err.to_string();
+        assert!(s.contains("WebSocket handshake failed"));
+    }
+
+    // WebSocketDispatcher construction
+    #[test]
+    fn websocket_dispatcher_new() {
+        use crate::agent_executor;
+        use crate::RequestHandlerBuilder;
+        use std::sync::Arc;
+        struct DummyExec;
+        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let _dispatcher = WebSocketDispatcher::new(handler);
+    }
+}
