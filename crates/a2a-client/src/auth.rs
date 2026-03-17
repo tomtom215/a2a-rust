@@ -90,6 +90,12 @@ pub trait CredentialsStore: Send + Sync + 'static {
 ///
 /// Suitable for single-process deployments. Credentials are lost when the
 /// process exits.
+///
+/// # Lock poisoning
+///
+/// If a thread panics while holding the lock, subsequent operations will
+/// also panic (fail-fast) rather than silently returning `None`. This
+/// surfaces bugs early instead of masking them.
 pub struct InMemoryCredentialsStore {
     inner: RwLock<HashMap<SessionId, HashMap<String, String>>>,
 }
@@ -113,7 +119,11 @@ impl Default for InMemoryCredentialsStore {
 impl fmt::Debug for InMemoryCredentialsStore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Don't expose credential values in debug output.
-        let count = self.inner.read().map(|g| g.len()).unwrap_or(0);
+        let count = self
+            .inner
+            .read()
+            .expect("credentials store lock poisoned")
+            .len();
         f.debug_struct("InMemoryCredentialsStore")
             .field("sessions", &count)
             .finish()
@@ -122,23 +132,23 @@ impl fmt::Debug for InMemoryCredentialsStore {
 
 impl CredentialsStore for InMemoryCredentialsStore {
     fn get(&self, session: &SessionId, scheme: &str) -> Option<String> {
-        self.inner.read().ok()?.get(session)?.get(scheme).cloned()
+        // Propagate lock poisoning (fail-fast) rather than silently returning None.
+        let guard = self.inner.read().expect("credentials store lock poisoned");
+        guard.get(session)?.get(scheme).cloned()
     }
 
     fn set(&self, session: SessionId, scheme: &str, credential: String) {
-        if let Ok(mut guard) = self.inner.write() {
-            guard
-                .entry(session)
-                .or_default()
-                .insert(scheme.to_owned(), credential);
-        }
+        let mut guard = self.inner.write().expect("credentials store lock poisoned");
+        guard
+            .entry(session)
+            .or_default()
+            .insert(scheme.to_owned(), credential);
     }
 
     fn remove(&self, session: &SessionId, scheme: &str) {
-        if let Ok(mut guard) = self.inner.write() {
-            if let Some(schemes) = guard.get_mut(session) {
-                schemes.remove(scheme);
-            }
+        let mut guard = self.inner.write().expect("credentials store lock poisoned");
+        if let Some(schemes) = guard.get_mut(session) {
+            schemes.remove(scheme);
         }
     }
 }
@@ -278,5 +288,108 @@ mod tests {
         interceptor.before(&mut req).await.unwrap();
 
         assert!(!req.extra_headers.contains_key("authorization"));
+    }
+
+    #[test]
+    fn credentials_store_multiple_sessions() {
+        let store = InMemoryCredentialsStore::new();
+        let s1 = SessionId::new("session-1");
+        let s2 = SessionId::new("session-2");
+
+        store.set(s1.clone(), "bearer", "token-1".into());
+        store.set(s2.clone(), "bearer", "token-2".into());
+
+        assert_eq!(store.get(&s1, "bearer").as_deref(), Some("token-1"));
+        assert_eq!(store.get(&s2, "bearer").as_deref(), Some("token-2"));
+
+        // Removing from one session doesn't affect the other.
+        store.remove(&s1, "bearer");
+        assert!(store.get(&s1, "bearer").is_none());
+        assert_eq!(store.get(&s2, "bearer").as_deref(), Some("token-2"));
+    }
+
+    #[test]
+    fn credentials_store_multiple_schemes() {
+        let store = InMemoryCredentialsStore::new();
+        let session = SessionId::new("multi-scheme");
+
+        store.set(session.clone(), "bearer", "bearer-tok".into());
+        store.set(session.clone(), "api-key", "key-123".into());
+
+        assert_eq!(store.get(&session, "bearer").as_deref(), Some("bearer-tok"));
+        assert_eq!(store.get(&session, "api-key").as_deref(), Some("key-123"));
+    }
+
+    #[test]
+    fn credentials_store_overwrite() {
+        let store = InMemoryCredentialsStore::new();
+        let session = SessionId::new("overwrite");
+
+        store.set(session.clone(), "bearer", "old-token".into());
+        store.set(session.clone(), "bearer", "new-token".into());
+
+        assert_eq!(store.get(&session, "bearer").as_deref(), Some("new-token"));
+    }
+
+    #[test]
+    fn credentials_store_debug_hides_values() {
+        let store = InMemoryCredentialsStore::new();
+        let session = SessionId::new("secret");
+        store.set(session, "bearer", "super-secret-token".into());
+
+        let debug_output = format!("{store:?}");
+        assert!(
+            !debug_output.contains("super-secret"),
+            "debug output should not expose credentials: {debug_output}"
+        );
+        assert!(debug_output.contains("sessions"));
+    }
+
+    #[tokio::test]
+    async fn auth_interceptor_basic_scheme() {
+        let store = Arc::new(InMemoryCredentialsStore::new());
+        let session = SessionId::new("basic-test");
+        store.set(session.clone(), "basic", "dXNlcjpwYXNz".into());
+
+        let interceptor = AuthInterceptor::with_scheme(store, session, "basic");
+        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
+        interceptor.before(&mut req).await.unwrap();
+
+        assert_eq!(
+            req.extra_headers.get("authorization").map(String::as_str),
+            Some("Basic dXNlcjpwYXNz")
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_interceptor_custom_scheme() {
+        let store = Arc::new(InMemoryCredentialsStore::new());
+        let session = SessionId::new("custom-test");
+        store.set(session.clone(), "api-key", "my-api-key".into());
+
+        let interceptor = AuthInterceptor::with_scheme(store, session, "api-key");
+        let mut req = ClientRequest::new("message/send", serde_json::Value::Null);
+        interceptor.before(&mut req).await.unwrap();
+
+        // Custom schemes use the raw credential as the header value.
+        assert_eq!(
+            req.extra_headers.get("authorization").map(String::as_str),
+            Some("my-api-key")
+        );
+    }
+
+    #[test]
+    fn session_id_display() {
+        let session = SessionId::new("my-session");
+        assert_eq!(session.to_string(), "my-session");
+    }
+
+    #[test]
+    fn session_id_from_string() {
+        let session: SessionId = "test".into();
+        assert_eq!(session, SessionId::new("test"));
+
+        let session: SessionId = String::from("owned").into();
+        assert_eq!(session, SessionId::new("owned"));
     }
 }

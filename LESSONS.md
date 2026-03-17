@@ -92,6 +92,22 @@ use `Box::pin(async move { ... })`.
 The handler cleans up already-cancelled tokens before inserting new ones, and
 enforces a hard cap of 10,000 tokens.
 
+### `std::sync::RwLock` poisoning — fail-fast vs silent ignore
+
+When a thread panics while holding a `std::sync::RwLock`, the lock becomes
+"poisoned." Using `.ok()?` silently returns `None`, hiding the underlying bug.
+Using `.expect("poisoned")` panics immediately, surfacing the problem. a2a-rust
+uses fail-fast. If you see a "lock poisoned" panic, the root cause is a prior
+panic in another thread — fix that panic first.
+
+### Rate limiter atomics under read lock — CAS loop required
+
+When multiple threads share a rate limiter bucket under a read lock, non-atomic
+multi-step operations (load window → check → store count) create TOCTOU races.
+Two threads can both see an old window and both reset the counter. Use
+`compare_exchange` (CAS) to atomically swap the window number so only one thread
+wins the reset.
+
 ### Amortized eviction vs test expectations
 
 Running O(n) eviction on every `save()` call is expensive. The task store

@@ -93,6 +93,9 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | Limit | Value | Description |
 |-------|-------|-------------|
 | Event queue type | `broadcast` | Fan-out to multiple subscribers; slow readers skip missed events |
+| Rate limiter cleanup interval | 256 checks | Stale buckets (from departed callers) evicted every 256 `check()` calls |
+| Rate limiter window CAS | Lock-free | Window transitions use `compare_exchange` to avoid TOCTOU races |
+| Credential store poisoning | Fail-fast | `InMemoryCredentialsStore` panics on poisoned locks rather than returning `None` |
 
 ## Client Configuration
 

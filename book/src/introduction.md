@@ -53,7 +53,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 ## Key Features
 
 - **Full v1.0 wire types** — Every A2A type with correct JSON serialization
-- **Triple transport** — JSON-RPC 2.0, REST, and WebSocket (`websocket` feature flag), both client and server
+- **Quad transport** — JSON-RPC 2.0, REST, WebSocket (`websocket` feature flag), and gRPC (`grpc` feature flag), both client and server
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
 - **Agent card discovery** — Static and dynamic card handlers with HTTP caching (ETag, Last-Modified, 304)

@@ -282,3 +282,98 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_executor;
+
+    struct TestExecutor;
+
+    agent_executor!(TestExecutor, |_ctx, _queue| async { Ok(()) });
+
+    #[test]
+    fn builder_defaults_build_ok() {
+        let handler = RequestHandlerBuilder::new(TestExecutor).build();
+        assert!(handler.is_ok());
+    }
+
+    #[test]
+    fn builder_zero_executor_timeout_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_executor_timeout(Duration::ZERO)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_empty_agent_card_interfaces_errors() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard};
+
+        let card = AgentCard {
+            name: "empty".into(),
+            version: "1.0".into(),
+            description: "No interfaces".into(),
+            supported_interfaces: vec![],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_with_all_options() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            name: "test".into(),
+            version: "1.0".into(),
+            description: "Test agent".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:8080".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_agent_card(card)
+            .with_executor_timeout(Duration::from_secs(30))
+            .with_event_queue_capacity(128)
+            .with_max_event_size(1024 * 1024)
+            .with_max_concurrent_streams(10)
+            .with_handler_limits(HandlerLimits::default().with_max_id_length(2048))
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn builder_debug_does_not_panic() {
+        let builder = RequestHandlerBuilder::new(TestExecutor);
+        let debug = format!("{builder:?}");
+        assert!(debug.contains("RequestHandlerBuilder"));
+    }
+}

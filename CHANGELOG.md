@@ -10,7 +10,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`InMemoryCredentialsStore` lock poisoning** — changed from silent `.ok()?`
+  to `.expect()` (fail-fast). Poisoned locks now surface immediately instead of
+  masking failures with silent `None` returns.
+- **Rate limiter TOCTOU race on window advance** — replaced non-atomic
+  load-check-store sequence with a `compare_exchange` (CAS) loop. Two concurrent
+  threads can no longer both reset the counter to 1 on window boundary, which
+  previously allowed 2N requests through per window.
+- **Rate limiter unbounded bucket growth** — added amortized stale-bucket cleanup
+  (every 256 `check()` calls). Buckets from departed callers are now evicted when
+  their window is more than one window old.
+- **Clippy `is_multiple_of` lint** — replaced manual `count % N == 0` with
+  `count.is_multiple_of(N)` throughout.
+
 ### Added
+
+- **Protocol version compatibility warning** — `ClientBuilder::from_card()` now
+  emits a `tracing::warn!` when the agent card's major protocol version differs
+  from the client's supported version (currently `1.x`).
+- **21 new unit tests** — comprehensive coverage for credentials store
+  (multi-session, multi-scheme, overwrite, debug security), auth interceptor
+  (basic/custom schemes), client builder validation (zero timeouts, unknown
+  bindings, empty interfaces, config propagation), server builder validation
+  (zero executor timeout, empty agent card interfaces, full option chain),
+  rate limiter concurrency (200 concurrent requests), and stale-bucket cleanup.
+
+### Changed
 
 - **WebSocket transport** (`websocket` feature flag) — `WebSocketDispatcher` for
   server-side WebSocket support via `tokio-tungstenite`. JSON-RPC 2.0 messages
