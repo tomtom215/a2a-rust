@@ -224,7 +224,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (950+ tests across 4 crates)
+# Run all tests (1,200+ tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
