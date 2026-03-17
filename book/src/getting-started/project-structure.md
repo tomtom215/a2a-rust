@@ -47,13 +47,16 @@ a2a-rust/
 │   │       │   └── helpers.rs      # Validation, context builders
 │   │       ├── builder.rs      # RequestHandlerBuilder
 │   │       ├── executor.rs     # AgentExecutor trait
+│   │       ├── executor_helpers.rs # boxed_future, agent_executor!, EventEmitter
 │   │       ├── dispatch/       # JsonRpcDispatcher, RestDispatcher
 │   │       ├── store/          # TaskStore trait, InMemoryTaskStore
 │   │       ├── push/           # PushConfigStore, PushSender
 │   │       ├── streaming/      # EventQueueWriter, EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
 │   │       ├── call_context.rs # CallContext with HTTP headers
-│   │       ├── metrics.rs      # Metrics trait (incl. on_latency)
+│   │       ├── metrics.rs      # Metrics trait
+│   │       ├── rate_limit.rs   # RateLimitInterceptor, RateLimitConfig
+│   │       ├── serve.rs        # serve(), serve_with_addr() helpers
 │   │       └── request_context.rs  # RequestContext
 │   │
 │   └── a2a-protocol-sdk/            # Umbrella crate
@@ -106,16 +109,17 @@ use a2a_protocol_sdk::prelude::*;
 ```
 
 This gives you:
-- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`, `Artifact`
-- ID types: `TaskId`, `ContextId`, `MessageId`
+- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`, `Artifact`, `ArtifactId`
+- ID types: `TaskId`, `ContextId`, `MessageId`, `MessageRole`
 - Events: `StreamResponse`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
 - Agent card: `AgentCard`, `AgentInterface`, `AgentCapabilities`, `AgentSkill`
-- Params: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
+- Params: `MessageSendParams`, `TaskQueryParams`
 - Responses: `SendMessageResponse`, `TaskListResponse`
-- Errors: `A2aError`, `A2aResult`
-- Client: `A2aClient`, `ClientBuilder`, `EventStream`
-- Server: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `RequestContext`, `EventQueueWriter`
+- Errors: `A2aError`, `A2aResult`, `ClientError`, `ClientResult`, `ServerError`, `ServerResult`
+- Client: `A2aClient`, `ClientBuilder`, `EventStream`, `RetryPolicy`
+- Server: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`, `RequestContext`, `EventQueueWriter`, `EventEmitter`, `Dispatcher`
 - Dispatchers: `JsonRpcDispatcher`, `RestDispatcher`
+- Utilities: `serve`, `serve_with_addr`, `RateLimitInterceptor`, `RateLimitConfig`
 
 ## External Dependencies
 
