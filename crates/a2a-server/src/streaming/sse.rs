@@ -196,3 +196,233 @@ pub fn build_sse_response(
             )
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── write_event ──────────────────────────────────────────────────────
+
+    #[test]
+    fn write_event_single_line_data() {
+        let frame = write_event("message", r#"{"hello":"world"}"#);
+        let expected = "event: message\ndata: {\"hello\":\"world\"}\n\n";
+        assert_eq!(
+            frame,
+            Bytes::from(expected),
+            "single-line data should produce one data: line"
+        );
+    }
+
+    #[test]
+    fn write_event_multiline_data() {
+        let frame = write_event("error", "line1\nline2\nline3");
+        let expected = "event: error\ndata: line1\ndata: line2\ndata: line3\n\n";
+        assert_eq!(
+            frame,
+            Bytes::from(expected),
+            "multiline data should produce separate data: lines"
+        );
+    }
+
+    #[test]
+    fn write_event_empty_data() {
+        let frame = write_event("ping", "");
+        // "".lines() yields no items, so no data: lines are emitted
+        let expected = "event: ping\n\n";
+        assert_eq!(
+            frame,
+            Bytes::from(expected),
+            "empty data should produce no data: lines"
+        );
+    }
+
+    #[test]
+    fn write_event_empty_event_type() {
+        let frame = write_event("", "payload");
+        let expected = "event: \ndata: payload\n\n";
+        assert_eq!(
+            frame,
+            Bytes::from(expected),
+            "empty event type should still produce valid SSE frame"
+        );
+    }
+
+    // ── write_keep_alive ─────────────────────────────────────────────────
+
+    #[test]
+    fn write_keep_alive_format() {
+        let frame = write_keep_alive();
+        assert_eq!(
+            frame,
+            Bytes::from_static(b": keep-alive\n\n"),
+            "keep-alive should be an SSE comment terminated by double newline"
+        );
+    }
+
+    // ── SseBodyWriter ────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn sse_body_writer_send_event_delivers_frame() {
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let writer = SseBodyWriter { tx };
+
+        writer
+            .send_event("message", "hello")
+            .await
+            .expect("send_event should succeed while receiver is alive");
+
+        let received = rx.recv().await.expect("should receive a frame");
+        let frame = received.expect("frame result should be Ok");
+        let data = frame.into_data().expect("frame should be a data frame");
+        assert_eq!(
+            data,
+            write_event("message", "hello"),
+            "received frame should match write_event output"
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_body_writer_send_keep_alive_delivers_comment() {
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let writer = SseBodyWriter { tx };
+
+        writer
+            .send_keep_alive()
+            .await
+            .expect("send_keep_alive should succeed while receiver is alive");
+
+        let received = rx.recv().await.expect("should receive a frame");
+        let frame = received.expect("frame result should be Ok");
+        let data = frame.into_data().expect("frame should be a data frame");
+        assert_eq!(data, write_keep_alive(), "should receive keep-alive comment");
+    }
+
+    #[tokio::test]
+    async fn sse_body_writer_send_fails_after_receiver_dropped() {
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let writer = SseBodyWriter { tx };
+        drop(rx);
+
+        let result = writer.send_event("message", "data").await;
+        assert!(
+            result.is_err(),
+            "send_event should return Err after receiver is dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_body_writer_keep_alive_fails_after_receiver_dropped() {
+        let (tx, rx) =
+            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let writer = SseBodyWriter { tx };
+        drop(rx);
+
+        let result = writer.send_keep_alive().await;
+        assert!(
+            result.is_err(),
+            "send_keep_alive should return Err after receiver is dropped"
+        );
+    }
+
+    #[tokio::test]
+    async fn sse_body_writer_close_drops_sender() {
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let writer = SseBodyWriter { tx };
+
+        writer.close();
+
+        let result = rx.recv().await;
+        assert!(
+            result.is_none(),
+            "receiver should return None after writer is closed"
+        );
+    }
+
+    // ── build_sse_response ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn build_sse_response_has_correct_headers() {
+        let (_writer, reader) =
+            crate::streaming::event_queue::new_in_memory_queue();
+
+        let response = build_sse_response(reader, None, None);
+
+        assert_eq!(response.status(), 200, "status should be 200 OK");
+        assert_eq!(
+            response.headers().get("content-type").map(|v| v.as_bytes()),
+            Some(b"text/event-stream".as_slice()),
+            "Content-Type should be text/event-stream"
+        );
+        assert_eq!(
+            response.headers().get("cache-control").map(|v| v.as_bytes()),
+            Some(b"no-cache".as_slice()),
+            "Cache-Control should be no-cache"
+        );
+        assert_eq!(
+            response.headers().get("transfer-encoding").map(|v| v.as_bytes()),
+            Some(b"chunked".as_slice()),
+            "Transfer-Encoding should be chunked"
+        );
+    }
+
+    #[tokio::test]
+    async fn build_sse_response_streams_events() {
+        use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+        use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+        use http_body_util::BodyExt;
+
+        let (writer, reader) =
+            crate::streaming::event_queue::new_in_memory_queue();
+
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("t1"),
+            context_id: ContextId::new("c1"),
+            status: TaskStatus {
+                state: TaskState::Working,
+                message: None,
+                timestamp: None,
+            },
+            metadata: None,
+        });
+
+        // Write an event then close the writer so the stream terminates.
+        use crate::streaming::event_queue::EventQueueWriter;
+        writer.write(event).await.expect("write should succeed");
+        drop(writer);
+
+        let mut response = build_sse_response(reader, None, None);
+
+        // Collect the first data frame from the body.
+        let frame = response
+            .body_mut()
+            .frame()
+            .await
+            .expect("should have a frame")
+            .expect("frame should be Ok");
+        let data = frame.into_data().expect("should be a data frame");
+        let text = String::from_utf8_lossy(&data);
+
+        assert!(
+            text.starts_with("event: message\n"),
+            "SSE frame should start with 'event: message\\n', got: {text}"
+        );
+        assert!(
+            text.contains("data: "),
+            "SSE frame should contain a data: line"
+        );
+        // The data line should contain a JSON-RPC envelope with jsonrpc and result fields.
+        assert!(
+            text.contains("\"jsonrpc\""),
+            "data should contain JSON-RPC envelope"
+        );
+        assert!(
+            text.contains("\"result\""),
+            "data should contain result field"
+        );
+    }
+}

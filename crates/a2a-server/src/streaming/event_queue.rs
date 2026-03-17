@@ -434,3 +434,389 @@ impl EventQueueManager {
         map.clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+    use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+
+    /// Helper: create a minimal `StreamResponse::StatusUpdate` for testing.
+    fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new("ctx-test"),
+            status: TaskStatus {
+                state,
+                message: None,
+                timestamp: None,
+            },
+            metadata: None,
+        })
+    }
+
+    // ── new_in_memory_queue constructors ─────────────────────────────────
+
+    #[test]
+    fn new_in_memory_queue_returns_pair() {
+        let (_writer, _reader) = new_in_memory_queue();
+        // Should compile and not panic.
+    }
+
+    #[test]
+    fn new_in_memory_queue_with_capacity_returns_pair() {
+        let (_writer, _reader) = new_in_memory_queue_with_capacity(128);
+    }
+
+    #[test]
+    fn new_in_memory_queue_with_options_returns_pair() {
+        let (_writer, _reader) = new_in_memory_queue_with_options(
+            32,
+            1024,
+            std::time::Duration::from_secs(1),
+        );
+    }
+
+    // ── write / read lifecycle ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn write_then_read_single_event() {
+        let (writer, mut reader) = new_in_memory_queue();
+        let event = make_status_event("t1", TaskState::Working);
+
+        writer.write(event).await.expect("write should succeed");
+        drop(writer);
+
+        let received = reader.read().await;
+        assert!(
+            received.is_some(),
+            "reader should return the written event"
+        );
+        let result = received.unwrap();
+        assert!(result.is_ok(), "event should be Ok");
+
+        // After writer is dropped, reader should see EOF.
+        let eof = reader.read().await;
+        assert!(eof.is_none(), "reader should return None after writer is dropped");
+    }
+
+    #[tokio::test]
+    async fn write_multiple_events_read_in_order() {
+        let (writer, mut reader) = new_in_memory_queue();
+
+        let e1 = make_status_event("t1", TaskState::Working);
+        let e2 = make_status_event("t1", TaskState::Completed);
+
+        writer.write(e1).await.expect("first write should succeed");
+        writer.write(e2).await.expect("second write should succeed");
+        drop(writer);
+
+        // Read first event.
+        let r1 = reader.read().await.expect("should read first event");
+        let sr1 = r1.expect("first event should be Ok");
+        match &sr1 {
+            StreamResponse::StatusUpdate(evt) => {
+                assert_eq!(evt.status.state, TaskState::Working, "first event should be Working");
+            }
+            other => panic!("expected StatusUpdate, got: {other:?}"),
+        }
+
+        // Read second event.
+        let r2 = reader.read().await.expect("should read second event");
+        let sr2 = r2.expect("second event should be Ok");
+        match &sr2 {
+            StreamResponse::StatusUpdate(evt) => {
+                assert_eq!(
+                    evt.status.state,
+                    TaskState::Completed,
+                    "second event should be Completed"
+                );
+            }
+            other => panic!("expected StatusUpdate, got: {other:?}"),
+        }
+
+        // EOF.
+        assert!(reader.read().await.is_none(), "should be EOF after all events");
+    }
+
+    // ── closed queue behavior ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn read_returns_none_on_empty_closed_queue() {
+        let (writer, mut reader) = new_in_memory_queue();
+        drop(writer); // close immediately without writing
+
+        let result = reader.read().await;
+        assert!(
+            result.is_none(),
+            "reading from an empty closed queue should return None"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_after_all_readers_dropped_returns_error() {
+        let (writer, reader) = new_in_memory_queue();
+        drop(reader);
+
+        let result = writer.write(make_status_event("t1", TaskState::Working)).await;
+        assert!(
+            result.is_err(),
+            "writing with no active receivers should return an error"
+        );
+    }
+
+    #[tokio::test]
+    async fn close_is_no_op_and_succeeds() {
+        let (writer, _reader) = new_in_memory_queue();
+        let result = writer.close().await;
+        assert!(result.is_ok(), "close() should succeed");
+    }
+
+    // ── subscribe creates independent readers ────────────────────────────
+
+    #[tokio::test]
+    async fn subscribe_creates_independent_reader() {
+        let (writer, mut reader1) = new_in_memory_queue();
+        let mut reader2 = writer.subscribe();
+
+        let event = make_status_event("t1", TaskState::Working);
+        writer.write(event).await.expect("write should succeed");
+        drop(writer);
+
+        // Both readers should receive the event independently.
+        let r1 = reader1.read().await;
+        assert!(r1.is_some(), "reader1 should receive the event");
+
+        let r2 = reader2.read().await;
+        assert!(r2.is_some(), "reader2 should receive the event");
+
+        // Both should see EOF.
+        assert!(reader1.read().await.is_none(), "reader1 should see EOF");
+        assert!(reader2.read().await.is_none(), "reader2 should see EOF");
+    }
+
+    #[tokio::test]
+    async fn subscriber_only_sees_events_after_subscribe() {
+        let (writer, mut reader1) = new_in_memory_queue();
+
+        // Write first event before subscribing.
+        writer
+            .write(make_status_event("t1", TaskState::Submitted))
+            .await
+            .expect("write should succeed");
+
+        // Subscribe after the first event.
+        let mut reader2 = writer.subscribe();
+
+        // Write second event.
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("write should succeed");
+        drop(writer);
+
+        // reader1 sees both events.
+        let r1a = reader1.read().await.expect("reader1 should see first event");
+        assert!(r1a.is_ok());
+        let r1b = reader1.read().await.expect("reader1 should see second event");
+        assert!(r1b.is_ok());
+        assert!(reader1.read().await.is_none());
+
+        // reader2 only sees the second event (subscribed after first).
+        let r2a = reader2.read().await.expect("reader2 should see second event");
+        assert!(r2a.is_ok());
+        assert!(
+            reader2.read().await.is_none(),
+            "reader2 should see EOF after the one event it received"
+        );
+    }
+
+    // ── max event size enforcement ───────────────────────────────────────
+
+    #[tokio::test]
+    async fn oversized_event_is_rejected() {
+        // Use a very small max_event_size to trigger rejection.
+        let (writer, _reader) = new_in_memory_queue_with_options(
+            16,
+            10, // 10 bytes max — any real StreamResponse will exceed this
+            DEFAULT_WRITE_TIMEOUT,
+        );
+
+        let event = make_status_event("t1", TaskState::Working);
+        let result = writer.write(event).await;
+        assert!(
+            result.is_err(),
+            "event exceeding max_event_size should be rejected"
+        );
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("exceeds maximum"),
+            "error message should mention size limit, got: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn event_within_size_limit_is_accepted() {
+        // Use a generous max_event_size.
+        let (writer, mut reader) = new_in_memory_queue_with_options(
+            16,
+            DEFAULT_MAX_EVENT_SIZE,
+            DEFAULT_WRITE_TIMEOUT,
+        );
+
+        let event = make_status_event("t1", TaskState::Working);
+        writer
+            .write(event)
+            .await
+            .expect("event within size limit should be accepted");
+        drop(writer);
+
+        let r = reader.read().await;
+        assert!(r.is_some(), "reader should receive the event");
+    }
+
+    // ── EventQueueManager ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn manager_get_or_create_new_task() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("task-1");
+
+        let (writer, reader) = manager.get_or_create(&task_id).await;
+        assert!(
+            reader.is_some(),
+            "first get_or_create should return a reader"
+        );
+
+        // Writing through the returned writer should succeed.
+        writer
+            .write(make_status_event("task-1", TaskState::Working))
+            .await
+            .expect("write through manager writer should succeed");
+
+        assert_eq!(manager.active_count().await, 1, "should have 1 active queue");
+    }
+
+    #[tokio::test]
+    async fn manager_get_or_create_existing_task_returns_no_reader() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("task-1");
+
+        let (_w1, r1) = manager.get_or_create(&task_id).await;
+        assert!(r1.is_some(), "first call should return a reader");
+
+        let (_w2, r2) = manager.get_or_create(&task_id).await;
+        assert!(
+            r2.is_none(),
+            "second call for same task should return None reader"
+        );
+
+        assert_eq!(
+            manager.active_count().await,
+            1,
+            "should still have only 1 active queue"
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_subscribe_existing_task() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("task-1");
+
+        let (writer, _reader) = manager.get_or_create(&task_id).await;
+
+        let sub = manager.subscribe(&task_id).await;
+        assert!(sub.is_some(), "subscribe should return a reader for existing task");
+
+        let mut sub_reader = sub.unwrap();
+        writer
+            .write(make_status_event("task-1", TaskState::Working))
+            .await
+            .expect("write should succeed");
+        drop(writer);
+
+        let r = sub_reader.read().await;
+        assert!(r.is_some(), "subscriber should receive the event");
+    }
+
+    #[tokio::test]
+    async fn manager_subscribe_nonexistent_task_returns_none() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("no-such-task");
+
+        let sub = manager.subscribe(&task_id).await;
+        assert!(
+            sub.is_none(),
+            "subscribe should return None for nonexistent task"
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_destroy_removes_queue() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("task-1");
+
+        let (_writer, _reader) = manager.get_or_create(&task_id).await;
+        assert_eq!(manager.active_count().await, 1);
+
+        manager.destroy(&task_id).await;
+        assert_eq!(
+            manager.active_count().await,
+            0,
+            "destroy should remove the queue"
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_destroy_all_clears_queues() {
+        let manager = EventQueueManager::new();
+
+        let _q1 = manager.get_or_create(&TaskId::new("t1")).await;
+        let _q2 = manager.get_or_create(&TaskId::new("t2")).await;
+        assert_eq!(manager.active_count().await, 2);
+
+        manager.destroy_all().await;
+        assert_eq!(
+            manager.active_count().await,
+            0,
+            "destroy_all should clear all queues"
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_max_concurrent_queues_enforced() {
+        let manager = EventQueueManager::new().with_max_concurrent_queues(1);
+
+        let (_w1, r1) = manager.get_or_create(&TaskId::new("t1")).await;
+        assert!(r1.is_some(), "first queue should be created successfully");
+
+        // Second queue creation should hit the limit.
+        let (_w2, r2) = manager.get_or_create(&TaskId::new("t2")).await;
+        assert!(
+            r2.is_none(),
+            "second queue should return None reader when limit is reached"
+        );
+        assert_eq!(
+            manager.active_count().await,
+            1,
+            "should still have only 1 queue (second was not stored)"
+        );
+    }
+
+    #[tokio::test]
+    async fn manager_with_capacity_and_max_event_size() {
+        let manager = EventQueueManager::with_capacity(4)
+            .with_max_event_size(10); // tiny limit
+
+        let task_id = TaskId::new("t1");
+        let (writer, _reader) = manager.get_or_create(&task_id).await;
+
+        let event = make_status_event("t1", TaskState::Working);
+        let result = writer.write(event).await;
+        assert!(
+            result.is_err(),
+            "event should be rejected by the size limit configured on the manager"
+        );
+    }
+}
