@@ -1,6 +1,6 @@
 # Dogfooding: Open Issues & Future Work
 
-Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from passes 1–6 have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list (22 bugs across 6 passes).
+Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from passes 1–7 have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list (31 bugs across 7 passes).
 
 ## E2E Test Coverage Gaps
 
@@ -10,7 +10,18 @@ These features have dedicated unit/integration tests but are **not yet exercised
 |---|---|---|---|
 | **Agent card signing** | `signing` module tests (JWS/ES256, RFC 8785) | Requires JWS key setup in agent-team | Low |
 
-## Recently Closed Coverage Gaps (Tests 61-71)
+## Recently Closed Coverage Gaps (Tests 61-75)
+
+The following gaps were closed by adding E2E tests 72-75 in Pass 7:
+
+| Area | Test # | E2E Coverage |
+|---|---|---|
+| **Push config global limit** | 72 | `InMemoryPushConfigStore` enforces global cap (DoS prevention) |
+| **Webhook URL scheme validation** | 73 | Rejects `ftp://`, `file://`, schemeless URLs |
+| **Combined status+context filter** | 74 | `ListTasks` with both status and context_id filters |
+| **Metrics callback verification** | 75 | Confirms `on_request()` metrics fire for completed requests |
+
+## Previously Closed Coverage Gaps (Tests 61-71)
 
 The following gaps were closed by adding E2E tests 61-71 in `coverage_gaps.rs`:
 

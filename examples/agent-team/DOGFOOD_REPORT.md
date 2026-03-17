@@ -15,12 +15,13 @@
 
 | Category | Count |
 |----------|-------|
-| Critical bugs fixed | 3 (SDK) + 3 (example) + 2 (pass 6) |
+| Critical bugs fixed | 3 (SDK) + 3 (example) + 2 (pass 6) + 1 (pass 7) |
 | Concurrency/durability bugs fixed | 4 (pass 5) + 2 (pass 6) |
+| Security/robustness bugs fixed | 9 (pass 7) |
 | Design issues identified | 5 |
 | Test gaps found | 9 |
-| New tests added (passes 4-6) | 10 + 21 + 8 |
-| Total E2E tests | 66 (69 with optional gRPC) |
+| New tests added (passes 4-7) | 10 + 21 + 8 + 12 |
+| Total E2E tests | 70 (73 with optional gRPC) |
 
 ### Critical SDK Bug Fixed
 

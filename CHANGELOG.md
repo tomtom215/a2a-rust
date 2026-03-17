@@ -10,7 +10,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+### Fixed (Pass 7 — Deep Dogfood)
+
+- **Graceful shutdown executor hang** — `shutdown()` and `shutdown_with_timeout()`
+  now bound `executor.on_shutdown()` with a timeout to prevent indefinite hangs
+  if an executor blocks during cleanup.
+- **Push notification body clone per retry** — `body_bytes.clone()` inside the
+  retry loop now uses `Bytes` (reference-counted) instead of `Vec<u8>`, reducing
+  allocations from O(n × retries) to O(n) for push delivery.
+- **Webhook URL missing scheme validation** — `validate_webhook_url()` now
+  explicitly requires `http://` or `https://` schemes, rejecting `ftp://`,
+  `file://`, and schemeless URLs that previously bypassed SSRF validation.
+- **Push config unbounded global growth (DoS)** — `InMemoryPushConfigStore`
+  now enforces a configurable global limit (default 100,000) in addition to the
+  existing per-task limit. Prevents memory exhaustion from attackers creating
+  millions of tasks with configs.
+- **gRPC error code mapping incomplete** — added mappings for `Unauthenticated`,
+  `PermissionDenied`, `ResourceExhausted`, `DeadlineExceeded`, `Cancelled`, and
+  `Unavailable` tonic status codes to A2A error codes.
+- **BuildMonitor cancel race** — `cancel()` now checks if the task is already
+  cancelled before emitting a `Canceled` status, preventing invalid terminal
+  state transitions.
+- **CodeAnalyzer missing cancellation re-check** — added cancellation check
+  between artifact emissions to allow faster abort during analysis.
+- **Webhook/JSON-RPC/REST accept loop break on error** — accept loops in all
+  agent-team server functions now `continue` on transient accept errors instead
+  of terminating the entire server.
+- **Coordinator silent client build failure** — now logs warnings with agent
+  name and URL when client construction fails, aiding debugging.
+
+### Added
+
+- **`InMemoryPushConfigStore::with_max_total_configs()`** — configures the
+  global push config limit (default 100,000) to prevent DoS via unbounded
+  config creation.
+- **8 new SSRF validation tests** — webhook URL scheme rejection (ftp, file,
+  schemeless), CGNAT range, unspecified IPv4, IPv6 unique-local, IPv6 link-local.
+- **4 new E2E tests (72-75)** — push config global limit enforcement, webhook
+  URL scheme validation, combined status+context_id ListTasks filter, and
+  metrics callback verification.
+- **Total E2E tests: 73** (77 with optional gRPC+WebSocket transports).
+
+### Fixed (Pass 6)
 
 - **gRPC agent-team placeholder URL** — the gRPC `CodeAnalyzer` still used
   `"http://placeholder"` in its agent card (same Bug #12 pattern). Fixed by

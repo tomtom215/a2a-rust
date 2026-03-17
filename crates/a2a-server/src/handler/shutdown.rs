@@ -35,8 +35,8 @@ impl RequestHandler {
             tokens.clear();
         }
 
-        // Give executor a chance to clean up resources.
-        self.executor.on_shutdown().await;
+        // Give executor a chance to clean up resources (bounded to avoid hanging).
+        let _ = tokio::time::timeout(Duration::from_secs(10), self.executor.on_shutdown()).await;
     }
 
     /// Initiates graceful shutdown with a timeout.
@@ -79,7 +79,8 @@ impl RequestHandler {
             tokens.clear();
         }
 
-        // Give executor a chance to clean up resources.
-        self.executor.on_shutdown().await;
+        // Give executor a chance to clean up resources (bounded by the same timeout
+        // to avoid hanging if the executor blocks during cleanup).
+        let _ = tokio::time::timeout(timeout, self.executor.on_shutdown()).await;
     }
 }

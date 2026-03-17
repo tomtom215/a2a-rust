@@ -48,8 +48,13 @@ impl CoordinatorExecutor {
             } else {
                 ClientBuilder::new(url)
             };
-            if let Ok(client) = builder.build() {
-                clients.insert(name.clone(), client);
+            match builder.build() {
+                Ok(client) => {
+                    clients.insert(name.clone(), client);
+                }
+                Err(e) => {
+                    eprintln!("WARNING: failed to build client for agent '{name}' at {url}: {e}");
+                }
             }
         }
         Self {

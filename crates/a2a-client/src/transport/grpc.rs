@@ -424,6 +424,14 @@ const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::Error
         tonic::Code::InvalidArgument => a2a_protocol_types::ErrorCode::InvalidParams,
         tonic::Code::Unimplemented => a2a_protocol_types::ErrorCode::MethodNotFound,
         tonic::Code::FailedPrecondition => a2a_protocol_types::ErrorCode::TaskNotCancelable,
+        tonic::Code::Unauthenticated | tonic::Code::PermissionDenied => {
+            a2a_protocol_types::ErrorCode::InvalidParams
+        }
+        tonic::Code::ResourceExhausted => a2a_protocol_types::ErrorCode::InvalidParams,
+        tonic::Code::DeadlineExceeded | tonic::Code::Cancelled => {
+            a2a_protocol_types::ErrorCode::InternalError
+        }
+        tonic::Code::Unavailable => a2a_protocol_types::ErrorCode::InternalError,
         _ => a2a_protocol_types::ErrorCode::InternalError,
     }
 }

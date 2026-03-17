@@ -68,6 +68,12 @@ impl AgentExecutor for CodeAnalyzerExecutor {
 
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
+            // Re-check cancellation between artifact emissions.
+            if emit.is_cancelled() {
+                emit.status(TaskState::Canceled).await?;
+                return Ok(());
+            }
+
             // Stream artifact 2: word/char counts (append=true, last chunk).
             emit.artifact(
                 "analysis-metrics",
