@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::params::ListTasksParams;
@@ -326,6 +326,7 @@ impl TaskStore for InMemoryTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
     /// Helper to create a task with the given ID and state.
