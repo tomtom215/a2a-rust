@@ -179,3 +179,66 @@ pub async fn serve_with_addr(
 
     Ok(local_addr)
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use http_body_util::{BodyExt, Empty};
+    use hyper_util::client::legacy::Client;
+    use hyper_util::rt::TokioExecutor;
+
+    struct MockDispatcher;
+
+    impl Dispatcher for MockDispatcher {
+        fn dispatch(
+            &self,
+            _req: hyper::Request<Incoming>,
+        ) -> Pin<Box<dyn Future<Output = DispatchResponse> + Send + '_>> {
+            Box::pin(async {
+                let body = http_body_util::Full::new(Bytes::from("ok"));
+                hyper::Response::new(BoxBody::new(body.map_err(|e| match e {})))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn serve_with_addr_returns_bound_address() {
+        let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
+            .await
+            .expect("server should bind");
+
+        assert_ne!(addr.port(), 0, "should bind to a real port");
+        assert!(addr.ip().is_loopback());
+
+        let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+        let resp = client
+            .get(format!("http://{addr}/").parse().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(&body[..], b"ok");
+    }
+
+    #[tokio::test]
+    async fn serve_with_addr_handles_multiple_connections() {
+        let addr = serve_with_addr("127.0.0.1:0", MockDispatcher)
+            .await
+            .expect("server should bind");
+
+        let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+
+        for i in 0..3 {
+            let resp = client
+                .get(format!("http://{addr}/").parse().unwrap())
+                .await
+                .unwrap_or_else(|e| panic!("request {i} failed: {e}"));
+            let body = resp.into_body().collect().await.unwrap().to_bytes();
+            assert_eq!(&body[..], b"ok", "request {i} returned unexpected body");
+        }
+    }
+}

@@ -454,4 +454,233 @@ mod tests {
         let frame2 = p.next_frame().unwrap().unwrap();
         assert_eq!(frame2.data, "clean");
     }
+
+    #[test]
+    fn display_event_too_large_error() {
+        let err = SseParseError::EventTooLarge {
+            limit: 100,
+            actual: 200,
+        };
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("200") && msg.contains("100"),
+            "Display should contain actual and limit values, got: {msg}"
+        );
+        assert!(
+            msg.contains("too large"),
+            "Display should describe the error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn default_max_event_size_is_16mib() {
+        // DEFAULT_MAX_EVENT_SIZE = 16 * 1024 * 1024 = 16_777_216
+        // Mutation `replace * with +` at position 42 yields 16 * 1024 + 1024 = 17_408.
+        // Feed data larger than 17_408 to kill that mutation.
+        let data = format!("data: {}\n\n", "x".repeat(20_000));
+        let mut parser = SseParser::new();
+        parser.feed(data.as_bytes());
+        let frame = parser.next_frame().expect("should have a frame");
+        assert!(
+            frame.is_ok(),
+            "20_000-byte event should be within default 16 MiB limit"
+        );
+    }
+
+    #[test]
+    fn bom_at_stream_start_is_stripped() {
+        // Tests BOM stripping in feed() — covers mutations on lines 157 and 163.
+        let mut p = SseParser::new();
+        // Feed BOM followed by a data event.
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\xEF\xBB\xBF");
+        input.extend_from_slice(b"data: after-bom\n\n");
+        p.feed(&input);
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "after-bom");
+    }
+
+    #[test]
+    fn bom_only_stripped_at_start_not_later() {
+        // After BOM is checked, later BOM-like bytes in line_buf should NOT be stripped
+        // by process_line. This kills mutation: `delete ! in process_line` (line 189).
+        // If mutated to `self.bom_checked`, process_line would incorrectly strip BOM
+        // bytes from later lines when bom_checked=true.
+        let mut p = SseParser::new();
+        // First feed: normal data, sets bom_checked = true.
+        p.feed(b"data: first\n\n");
+        let _ = p.next_frame().unwrap().unwrap();
+        // Second feed: line_buf will start with BOM bytes (\xEF\xBB\xBF).
+        // These bytes represent a line that starts with BOM followed by "data: second".
+        // Since bom_checked=true, process_line should NOT strip them.
+        // The line will be: "\xEF\xBB\xBFdata: second" which is an unknown field
+        // (the BOM chars prefix "data"), so no frame is produced from that line.
+        // Then we send a normal event to verify the parser still works.
+        p.feed(b"\xEF\xBB\xBFdata: second\n\ndata: third\n\n");
+        // If the mutation were applied (delete !), process_line would strip BOM
+        // from lines where bom_checked=true, turning "\xEF\xBB\xBFdata: second"
+        // into "data: second", producing a frame with data="second".
+        // Without the mutation, BOM is NOT stripped, so the first line is unknown
+        // and only "third" produces a frame.
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(
+            frame.data, "third",
+            "BOM should not be stripped from later lines; 'second' line should be ignored"
+        );
+        // There should be no more frames (the BOM-prefixed line was not parsed as data).
+        assert!(p.next_frame().is_none());
+    }
+
+    #[test]
+    fn bom_fragmented_across_feeds() {
+        // Feed BOM as a complete 3-byte sequence at the start, followed by data.
+        // This tests the BOM stripping in feed() when line_buf is empty.
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB\xBFdata: after-bom\n\n");
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "after-bom");
+    }
+
+    #[test]
+    fn empty_feed_before_bom_does_not_mark_checked() {
+        // Feeding empty bytes should not set bom_checked = true.
+        // This covers: `!input.is_empty() || bytes.len() >= 3` mutations.
+        let mut p = SseParser::new();
+        p.feed(b""); // empty feed
+                     // Now feed BOM + data — BOM should still be stripped.
+        let mut input = Vec::new();
+        input.extend_from_slice(b"\xEF\xBB\xBF");
+        input.extend_from_slice(b"data: still-works\n\n");
+        p.feed(&input);
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "still-works");
+    }
+
+    #[test]
+    fn event_exactly_at_max_size_is_accepted() {
+        // Tests `>` vs `>=` mutation on line 229.
+        // current_event_size > max_event_size means exactly equal should be accepted.
+        let limit = 10;
+        let mut p = SseParser::with_max_event_size(limit);
+        // "data: " is the field prefix, value is exactly 10 bytes.
+        let data = format!("data: {}\n\n", "x".repeat(limit));
+        p.feed(data.as_bytes());
+        let result = p.next_frame().expect("should have a frame");
+        assert!(
+            result.is_ok(),
+            "Event exactly at max_event_size should be accepted, not rejected"
+        );
+        assert_eq!(result.unwrap().data, "x".repeat(limit));
+    }
+
+    #[test]
+    fn event_one_byte_over_max_size_is_rejected() {
+        // Complement to the above: one byte over should be rejected.
+        let limit = 10;
+        let mut p = SseParser::with_max_event_size(limit);
+        let data = format!("data: {}\n\n", "x".repeat(limit + 1));
+        p.feed(data.as_bytes());
+        let result = p.next_frame().expect("should have a frame");
+        assert!(
+            result.is_err(),
+            "Event one byte over limit should be rejected"
+        );
+    }
+
+    #[test]
+    fn bom_at_line_start_not_stripped_after_first_event() {
+        // Kill mutation: `delete ! in process_line` (line 189).
+        // If `!self.bom_checked` becomes `self.bom_checked`, BOM bytes at line_buf
+        // start would be stripped on all lines AFTER the first, corrupting data.
+        let mut p = SseParser::new();
+        // Normal first event sets bom_checked = true.
+        p.feed(b"data: first\n\n");
+        let f1 = p.next_frame().unwrap().unwrap();
+        assert_eq!(f1.data, "first");
+
+        // Now send a line whose line_buf starts with BOM bytes.
+        // This is an "unknown field" line (field name starts with BOM chars).
+        // After it, send a normal data line and dispatch.
+        // If mutation applied, BOM would be stripped making the field name "data"
+        // and we'd get frame data = "corrupted".
+        p.feed(b"\xEF\xBB\xBFdata: corrupted\ndata: clean\n\n");
+        let f2 = p.next_frame().unwrap().unwrap();
+        // Only "clean" should be in the frame; the BOM-prefixed line is an unknown field.
+        assert_eq!(f2.data, "clean");
+    }
+
+    #[test]
+    fn bom_not_stripped_on_second_feed_kills_and_or_mutation() {
+        // Kill mutation: `replace && with || in SseParser::feed` (line 157)
+        // With &&→||, the feed BOM check runs when EITHER bom_checked=false
+        // OR line_buf is empty. After first event, bom_checked=true but line_buf
+        // is empty → with mutation the check runs and strips BOM incorrectly.
+        let mut p = SseParser::new();
+        p.feed(b"data: first\n\n");
+        let _ = p.next_frame().unwrap().unwrap();
+        // Second feed starts with raw BOM bytes.
+        // With correct code (&&): bom_checked=true → check doesn't run → BOM NOT stripped.
+        // With mutation (||): line_buf empty → check runs → BOM stripped → "data: second" parsed.
+        p.feed(b"\xEF\xBB\xBFdata: second\n\n");
+        // BOM should NOT be stripped, so field name is "\u{FEFF}data" (unknown) → no frame.
+        assert!(
+            p.next_frame().is_none(),
+            "BOM at start of second feed should NOT be stripped (bom_checked=true)"
+        );
+    }
+
+    #[test]
+    fn bom_only_three_bytes_marks_checked() {
+        // Kill mutation: `replace >= with < in SseParser::feed` (line 163)
+        // Feed exactly 3 BOM bytes. After stripping, input is empty.
+        // `!input.is_empty() || bytes.len() >= 3` → `false || true` → true → bom_checked = true.
+        // With >= → <: `false || (3 < 3)` → `false || false` → false → bom_checked stays false.
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
+                                 // If bom_checked stayed false (mutation), next feed would try to strip BOM again.
+                                 // Feed normal data — should work regardless.
+        p.feed(b"data: ok\n\n");
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "ok");
+        // Now feed BOM+data again. With correct code: bom_checked=true, BOM not stripped.
+        // With mutation: bom_checked=false, BOM stripped, "data: again" parsed → frame.
+        p.feed(b"\xEF\xBB\xBFdata: again\n\n");
+        assert!(
+            p.next_frame().is_none(),
+            "After first BOM-only feed (3 bytes), bom_checked should be true"
+        );
+    }
+
+    #[test]
+    fn bom_only_feed_then_bom_data_kills_or_to_and_mutation() {
+        // Kill mutation: `replace || with && in SseParser::feed` (line 163)
+        // Feed exactly 3 BOM bytes. After stripping, input is empty.
+        // Original: `!input.is_empty() || bytes.len() >= 3` → `false || true` → true
+        // Mutated:  `!input.is_empty() && bytes.len() >= 3` → `false && true` → false
+        // With mutation, bom_checked stays false, so a second BOM would be stripped.
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
+                                 // Immediately feed BOM + data. If bom_checked was not set (mutation),
+                                 // the BOM is stripped again and "data: stolen" is parsed as a frame.
+        p.feed(b"\xEF\xBB\xBFdata: stolen\n\n");
+        // With correct code: bom_checked=true after first feed → BOM not stripped
+        // → line is unknown field → no frame.
+        assert!(
+            p.next_frame().is_none(),
+            "BOM-only feed should mark bom_checked; second BOM must not be stripped"
+        );
+    }
+
+    #[test]
+    fn short_non_bom_feed_then_bom_feed() {
+        // Feed a short (< 3 bytes) non-empty, non-BOM input first.
+        // This should set bom_checked = false still (input not empty, bytes.len() < 3
+        // but input is not empty so the condition is true — bom_checked becomes true).
+        // Then feeding BOM should NOT strip it.
+        let mut p = SseParser::new();
+        p.feed(b"d"); // single non-BOM byte, not empty so bom_checked = true
+        p.feed(b"ata: hello\n\n");
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "hello");
+    }
 }

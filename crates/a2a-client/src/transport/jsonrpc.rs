@@ -391,4 +391,139 @@ mod tests {
         let t = JsonRpcTransport::new("http://localhost:9090").unwrap();
         assert_eq!(t.endpoint(), "http://localhost:9090");
     }
+
+    /// Helper: start a local HTTP server returning a fixed status and body.
+    async fn start_server(status: u16, body: impl Into<String>) -> std::net::SocketAddr {
+        let body: String = body.into();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = body.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(status)
+                                    .header("content-type", "application/json")
+                                    .body(Full::new(Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        addr
+    }
+
+    #[tokio::test]
+    async fn execute_request_non_success_status_returns_error() {
+        let addr = start_server(404, "Not Found").await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::UnexpectedStatus { status, .. }) => {
+                assert_eq!(status, 404);
+            }
+            other => panic!("expected UnexpectedStatus, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_request_success_parses_jsonrpc() {
+        let response_body = r#"{"jsonrpc":"2.0","id":"1","result":{"hello":"world"}}"#;
+        let addr = start_server(200, response_body).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        let value = result.unwrap();
+        assert_eq!(value["hello"], "world");
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_non_success_returns_error() {
+        let addr = start_server(500, "Internal Server Error").await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        match result {
+            Err(ClientError::UnexpectedStatus { status, .. }) => {
+                assert_eq!(status, 500);
+            }
+            other => panic!("expected UnexpectedStatus, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_success_returns_event_stream() {
+        // Start a server that returns SSE data.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(|_req| async {
+                        let sse_body = "data: {\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"status\":\"ok\"}}\n\n";
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(200)
+                                .header("content-type", "text/event-stream")
+                                .body(Full::new(Bytes::from(sse_body)))
+                                .unwrap(),
+                        )
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let mut stream = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await
+            .unwrap();
+        // The EventStream should yield at least one event from body_reader_task.
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
+            .expect("timed out waiting for event");
+        assert!(
+            event.is_some(),
+            "expected at least one event from the stream"
+        );
+    }
 }

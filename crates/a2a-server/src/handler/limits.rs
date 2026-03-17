@@ -85,3 +85,76 @@ impl HandlerLimits {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_values() {
+        let limits = HandlerLimits::default();
+        assert_eq!(limits.max_id_length, 1024);
+        assert_eq!(limits.max_metadata_size, 1_048_576);
+        assert_eq!(limits.max_cancellation_tokens, 10_000);
+        assert_eq!(limits.max_token_age, Duration::from_secs(3600));
+        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn with_max_id_length_sets_value() {
+        let limits = HandlerLimits::default().with_max_id_length(2048);
+        assert_eq!(limits.max_id_length, 2048);
+    }
+
+    #[test]
+    fn with_max_metadata_size_sets_value() {
+        let limits = HandlerLimits::default().with_max_metadata_size(2_097_152);
+        assert_eq!(limits.max_metadata_size, 2_097_152);
+    }
+
+    #[test]
+    fn with_max_cancellation_tokens_sets_value() {
+        let limits = HandlerLimits::default().with_max_cancellation_tokens(5_000);
+        assert_eq!(limits.max_cancellation_tokens, 5_000);
+    }
+
+    #[test]
+    fn with_max_token_age_sets_value() {
+        let limits = HandlerLimits::default().with_max_token_age(Duration::from_secs(7200));
+        assert_eq!(limits.max_token_age, Duration::from_secs(7200));
+    }
+
+    #[test]
+    fn with_push_delivery_timeout_sets_value() {
+        let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(10));
+        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn builder_chaining() {
+        let limits = HandlerLimits::default()
+            .with_max_id_length(512)
+            .with_max_metadata_size(500_000)
+            .with_max_cancellation_tokens(1_000)
+            .with_max_token_age(Duration::from_secs(1800))
+            .with_push_delivery_timeout(Duration::from_secs(15));
+
+        assert_eq!(limits.max_id_length, 512);
+        assert_eq!(limits.max_metadata_size, 500_000);
+        assert_eq!(limits.max_cancellation_tokens, 1_000);
+        assert_eq!(limits.max_token_age, Duration::from_secs(1800));
+        assert_eq!(limits.push_delivery_timeout, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn debug_format() {
+        let limits = HandlerLimits::default();
+        let debug = format!("{limits:?}");
+        assert!(debug.contains("HandlerLimits"));
+        assert!(debug.contains("max_id_length"));
+        assert!(debug.contains("max_metadata_size"));
+        assert!(debug.contains("max_cancellation_tokens"));
+        assert!(debug.contains("max_token_age"));
+        assert!(debug.contains("push_delivery_timeout"));
+    }
+}

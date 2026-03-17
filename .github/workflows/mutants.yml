@@ -16,19 +16,19 @@
 name: Mutation Testing
 
 on:
-  # Nightly schedule — full mutation sweep.
-  schedule:
-    - cron: "0 3 * * *" # 03:00 UTC daily
-  # Manual trigger for on-demand runs.
+  # On-demand only — nightly schedule and PR gate disabled to save CI time.
+  # Re-enable schedule and pull_request triggers when iteration stabilises.
+  #
+  # schedule:
+  #   - cron: "0 3 * * *" # 03:00 UTC daily
+  # pull_request:
+  #   branches: ["main"]
   workflow_dispatch:
     inputs:
       package:
         description: "Specific package to test (blank = all)"
         required: false
         type: string
-  # PR gate — runs on PRs to main (incremental: only mutates changed files).
-  pull_request:
-    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always

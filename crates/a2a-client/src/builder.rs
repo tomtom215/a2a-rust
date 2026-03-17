@@ -505,4 +505,49 @@ mod tests {
             .expect("build");
         assert_eq!(client.config().history_length, Some(10));
     }
+
+    #[test]
+    fn builder_debug_contains_fields() {
+        let builder = ClientBuilder::new("http://localhost:8080");
+        let debug = format!("{builder:?}");
+        assert!(
+            debug.contains("ClientBuilder"),
+            "debug output missing struct name: {debug}"
+        );
+        assert!(
+            debug.contains("http://localhost:8080"),
+            "debug output missing endpoint: {debug}"
+        );
+    }
+
+    #[test]
+    fn builder_from_card_rejects_incompatible_binding() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        // Card with non-JSONRPC/REST binding should fail build.
+        let card = AgentCard {
+            name: "test".into(),
+            version: "1.0".into(),
+            description: "Test agent".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9090".into(),
+                protocol_binding: "UNKNOWN".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let result = ClientBuilder::from_card(&card).build();
+        assert!(result.is_err(), "unknown binding should fail");
+    }
 }

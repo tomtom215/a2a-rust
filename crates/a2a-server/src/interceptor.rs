@@ -109,3 +109,42 @@ impl fmt::Debug for ServerInterceptorChain {
 }
 
 use std::fmt;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_shows_count() {
+        let chain = ServerInterceptorChain::new();
+        let debug = format!("{chain:?}");
+        assert!(debug.contains("ServerInterceptorChain"));
+        assert!(debug.contains("count"));
+        assert!(debug.contains('0'));
+    }
+
+    struct NoopInterceptor;
+    impl ServerInterceptor for NoopInterceptor {
+        fn before<'a>(
+            &'a self,
+            _ctx: &'a CallContext,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn after<'a>(
+            &'a self,
+            _ctx: &'a CallContext,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[test]
+    fn debug_shows_correct_count_after_push() {
+        let mut chain = ServerInterceptorChain::new();
+        chain.push(Arc::new(NoopInterceptor));
+        chain.push(Arc::new(NoopInterceptor));
+        let debug = format!("{chain:?}");
+        assert!(debug.contains('2'), "expected count=2 in debug: {debug}");
+    }
+}

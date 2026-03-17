@@ -102,3 +102,78 @@ impl DispatchConfig {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[test]
+    fn default_values() {
+        let config = DispatchConfig::default();
+        assert_eq!(config.max_request_body_size, 4 * 1024 * 1024);
+        assert_eq!(config.body_read_timeout, Duration::from_secs(30));
+        assert_eq!(config.max_query_string_length, 4096);
+        assert_eq!(config.sse_keep_alive_interval, Duration::from_secs(30));
+        assert_eq!(config.sse_channel_capacity, 64);
+    }
+
+    #[test]
+    fn with_max_request_body_size_sets_value() {
+        let config = DispatchConfig::default().with_max_request_body_size(8 * 1024 * 1024);
+        assert_eq!(config.max_request_body_size, 8 * 1024 * 1024);
+    }
+
+    #[test]
+    fn with_body_read_timeout_sets_value() {
+        let config = DispatchConfig::default().with_body_read_timeout(Duration::from_secs(60));
+        assert_eq!(config.body_read_timeout, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn with_max_query_string_length_sets_value() {
+        let config = DispatchConfig::default().with_max_query_string_length(8192);
+        assert_eq!(config.max_query_string_length, 8192);
+    }
+
+    #[test]
+    fn with_sse_keep_alive_interval_sets_value() {
+        let config =
+            DispatchConfig::default().with_sse_keep_alive_interval(Duration::from_secs(15));
+        assert_eq!(config.sse_keep_alive_interval, Duration::from_secs(15));
+    }
+
+    #[test]
+    fn with_sse_channel_capacity_sets_value() {
+        let config = DispatchConfig::default().with_sse_channel_capacity(128);
+        assert_eq!(config.sse_channel_capacity, 128);
+    }
+
+    #[test]
+    fn builder_chaining() {
+        let config = DispatchConfig::default()
+            .with_max_request_body_size(1024)
+            .with_body_read_timeout(Duration::from_secs(10))
+            .with_max_query_string_length(2048)
+            .with_sse_keep_alive_interval(Duration::from_secs(5))
+            .with_sse_channel_capacity(32);
+
+        assert_eq!(config.max_request_body_size, 1024);
+        assert_eq!(config.body_read_timeout, Duration::from_secs(10));
+        assert_eq!(config.max_query_string_length, 2048);
+        assert_eq!(config.sse_keep_alive_interval, Duration::from_secs(5));
+        assert_eq!(config.sse_channel_capacity, 32);
+    }
+
+    #[test]
+    fn debug_format() {
+        let config = DispatchConfig::default();
+        let debug = format!("{config:?}");
+        assert!(debug.contains("DispatchConfig"));
+        assert!(debug.contains("max_request_body_size"));
+        assert!(debug.contains("body_read_timeout"));
+        assert!(debug.contains("max_query_string_length"));
+        assert!(debug.contains("sse_keep_alive_interval"));
+        assert!(debug.contains("sse_channel_capacity"));
+    }
+}

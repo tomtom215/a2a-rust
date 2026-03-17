@@ -301,4 +301,259 @@ mod tests {
         let result = cap_backoff(Duration::from_secs(4), 2.0, Duration::from_secs(5));
         assert_eq!(result, Duration::from_secs(5));
     }
+
+    #[test]
+    fn cap_backoff_exact_boundary() {
+        // When next == max, should return next (not max via the > branch).
+        let result = cap_backoff(Duration::from_secs(5), 1.0, Duration::from_secs(5));
+        assert_eq!(result, Duration::from_secs(5));
+
+        // When next < max, should return next.
+        let result = cap_backoff(Duration::from_millis(1), 2.0, Duration::from_secs(5));
+        assert_eq!(result, Duration::from_millis(2));
+    }
+
+    // ── Mock transport for retry tests ────────────────────────────────────
+
+    use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use crate::streaming::EventStream;
+
+    /// A transport that fails N times with a retryable error, then succeeds.
+    struct FailNTransport {
+        failures_remaining: Arc<AtomicUsize>,
+        success_response: serde_json::Value,
+        call_count: Arc<AtomicUsize>,
+    }
+
+    impl FailNTransport {
+        fn new(fail_count: usize, response: serde_json::Value) -> Self {
+            Self {
+                failures_remaining: Arc::new(AtomicUsize::new(fail_count)),
+                success_response: response,
+                call_count: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
+
+    impl crate::transport::Transport for FailNTransport {
+        fn send_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _extra_headers: &'a HashMap<String, String>,
+        ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            let remaining = self.failures_remaining.fetch_sub(1, Ordering::SeqCst);
+            let resp = self.success_response.clone();
+            Box::pin(async move {
+                if remaining > 0 {
+                    Err(ClientError::Timeout("transient".into()))
+                } else {
+                    Ok(resp)
+                }
+            })
+        }
+
+        fn send_streaming_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _extra_headers: &'a HashMap<String, String>,
+        ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
+            let remaining = self.failures_remaining.fetch_sub(1, Ordering::SeqCst);
+            Box::pin(async move {
+                if remaining > 0 {
+                    Err(ClientError::Timeout("transient".into()))
+                } else {
+                    Err(ClientError::Transport("streaming not mocked".into()))
+                }
+            })
+        }
+    }
+
+    /// A transport that always fails with a non-retryable error.
+    struct NonRetryableErrorTransport;
+
+    impl crate::transport::Transport for NonRetryableErrorTransport {
+        fn send_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _extra_headers: &'a HashMap<String, String>,
+        ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+            Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
+        }
+
+        fn send_streaming_request<'a>(
+            &'a self,
+            _method: &'a str,
+            _params: serde_json::Value,
+            _extra_headers: &'a HashMap<String, String>,
+        ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+            Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
+        }
+    }
+
+    #[tokio::test]
+    async fn retry_transport_retries_on_transient_error() {
+        let inner = FailNTransport::new(2, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok(), "should succeed after retries");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "should have made 3 attempts (2 failures + 1 success)"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_transport_gives_up_after_max_retries() {
+        // Fail more times than max_retries allows.
+        let inner = FailNTransport::new(10, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(2),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_err(), "should fail after exhausting retries");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "should have made 3 attempts (initial + 2 retries)"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_transport_no_retry_on_non_retryable() {
+        let transport = RetryTransport::new(
+            Box::new(NonRetryableErrorTransport),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            ClientError::InvalidEndpoint(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn retry_transport_streaming_retries() {
+        let inner = FailNTransport::new(1, serde_json::json!(null));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(2),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .await;
+        // After 1 transient failure, the mock returns a Transport error
+        // (non-retryable) on "success" path, but the point is it retried.
+        assert!(result.is_err());
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            2,
+            "should have retried once for streaming"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_transport_streaming_no_retry_on_non_retryable() {
+        let transport = RetryTransport::new(
+            Box::new(NonRetryableErrorTransport),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(matches!(
+            result.unwrap_err(),
+            ClientError::InvalidEndpoint(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn retry_transport_streaming_exhausts_retries() {
+        let inner = FailNTransport::new(10, serde_json::json!(null));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(2),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            3,
+            "should make 3 attempts total for streaming"
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_transport_succeeds_without_retry_on_first_attempt() {
+        let inner = FailNTransport::new(0, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "should succeed on first try"
+        );
+    }
 }

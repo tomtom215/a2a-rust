@@ -45,12 +45,31 @@ exclude_globs = [
     "crates/*/src/proto/**",              # generated protobuf code
 ]
 
-# Skip functions whose mutations are unproductive (logging, display-only,
-# debug formatting, builder doc strings).
+# Skip functions whose mutations are unproductive (logging, tracing)
+# or semantically unkillable.
+# Note: Display/Debug impls are NOT excluded — we have tests for them.
 exclude_re = [
-    "fmt$",                                # Display / Debug impls
     "^tracing::",                          # tracing instrumentation
     "^log::",                              # log macros
+
+    # ── Unkillable: wildcard catches same value ──────────────────────
+    # grpc_code_to_error_code: DeadlineExceeded|Cancelled → InternalError
+    # matches the wildcard arm `_ => InternalError`, so deleting the
+    # specific arm has no semantic effect.
+    "DeadlineExceeded.*grpc_code_to_error_code",
+    "Cancelled.*grpc_code_to_error_code",
+
+    # build_query_string: Number(n) => n.to_string() and Bool(b) => b.to_string()
+    # fall through to `_ => serde_json::to_string(v)` which produces identical output.
+    "Number.*build_query_string",
+    "Bool.*build_query_string",
+
+    # GrpcTransport::endpoint — requires a live gRPC connection to construct,
+    # not feasible to unit-test without an integration server.
+    "GrpcTransport::endpoint",
+
+    # grpc_stream_reader_task — requires a live gRPC streaming connection.
+    "grpc_stream_reader_task",
 ]
 
 # ── Additional cargo test arguments ─────────────────────────────────────────

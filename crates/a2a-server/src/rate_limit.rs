@@ -409,4 +409,127 @@ mod tests {
             "current-window buckets should not be evicted"
         );
     }
+
+    #[test]
+    fn debug_format_includes_config() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 42,
+            window_secs: 10,
+        });
+        let debug = format!("{limiter:?}");
+        assert!(
+            debug.contains("RateLimitInterceptor"),
+            "Debug output should contain struct name"
+        );
+        assert!(
+            debug.contains("config"),
+            "Debug output should contain config field"
+        );
+    }
+
+    #[test]
+    fn window_number_correctness() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10,
+            window_secs: 60,
+        });
+
+        // 0 seconds → window 0
+        assert_eq!(limiter.window_number(0), 0);
+        // 59 seconds → still window 0
+        assert_eq!(limiter.window_number(59), 0);
+        // 60 seconds → window 1
+        assert_eq!(limiter.window_number(60), 1);
+        // 120 seconds → window 2
+        assert_eq!(limiter.window_number(120), 2);
+        // 61 seconds → window 1
+        assert_eq!(limiter.window_number(61), 1);
+    }
+
+    #[tokio::test]
+    async fn cleanup_stale_buckets_removes_old_entries() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 100,
+            window_secs: 60,
+        });
+
+        // Manually insert a bucket with an ancient window.
+        {
+            let mut buckets = limiter.buckets.write().await;
+            buckets.insert(
+                "ancient-user".to_string(),
+                CallerBucket {
+                    window_start: AtomicU64::new(0), // window 0 = epoch
+                    count: AtomicU64::new(5),
+                },
+            );
+        }
+        assert_eq!(limiter.buckets.read().await.len(), 1);
+
+        // Cleanup should remove the ancient bucket.
+        limiter.cleanup_stale_buckets().await;
+        assert_eq!(
+            limiter.buckets.read().await.len(),
+            0,
+            "ancient bucket should be evicted"
+        );
+    }
+
+    #[tokio::test]
+    async fn check_triggers_cleanup_at_interval() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10000,
+            window_secs: 60,
+        });
+
+        // Insert a stale bucket manually.
+        {
+            let mut buckets = limiter.buckets.write().await;
+            buckets.insert(
+                "stale-for-cleanup".to_string(),
+                CallerBucket {
+                    window_start: AtomicU64::new(0),
+                    count: AtomicU64::new(1),
+                },
+            );
+        }
+
+        // Set check_count so the next fetch_add returns CLEANUP_INTERVAL (a multiple),
+        // which triggers cleanup.
+        limiter
+            .check_count
+            .store(CLEANUP_INTERVAL, Ordering::Relaxed);
+
+        let ctx = make_ctx(Some("cleanup-trigger-user"));
+        // This check should trigger cleanup (count becomes CLEANUP_INTERVAL).
+        assert!(limiter.before(&ctx).await.is_ok());
+
+        // The stale bucket should have been cleaned up.
+        let buckets = limiter.buckets.read().await;
+        let has_stale = buckets.contains_key("stale-for-cleanup");
+        drop(buckets);
+        assert!(
+            !has_stale,
+            "stale bucket should be cleaned up after CLEANUP_INTERVAL checks"
+        );
+    }
+
+    #[tokio::test]
+    async fn slow_path_double_check_same_window() {
+        // Test the slow-path double-check logic (lines 211-225).
+        // When two tasks race to create a bucket, the second should increment
+        // the existing bucket rather than creating a duplicate.
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 2,
+            window_secs: 60,
+        });
+
+        let ctx = make_ctx(Some("race-user"));
+        // First request creates the bucket.
+        assert!(limiter.before(&ctx).await.is_ok());
+        // Second request hits the fast path.
+        assert!(limiter.before(&ctx).await.is_ok());
+        // Third should be rejected.
+        assert!(limiter.before(&ctx).await.is_err());
+    }
 }

@@ -335,4 +335,60 @@ pub(crate) mod tests {
         let c = CacheConfig::with_max_age(600);
         assert_eq!(c.header_value(), "public, max-age=600");
     }
+
+    // ── fnv1a hash correctness ──────────────────────────────────────────────
+
+    #[test]
+    fn fnv1a_known_vectors() {
+        // Empty input should return the FNV offset basis.
+        assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+
+        // Single byte: XOR then multiply.
+        let expected = (0xcbf2_9ce4_8422_2325_u64 ^ 0x61).wrapping_mul(0x0100_0000_01b3);
+        assert_eq!(fnv1a(b"a"), expected);
+    }
+
+    #[test]
+    fn fnv1a_xor_not_or() {
+        // If ^= were replaced with |=, results would differ for most inputs.
+        // "ab" exercises both bytes, verifying the XOR step.
+        let h_ab = fnv1a(b"ab");
+        let h_ba = fnv1a(b"ba");
+        assert_ne!(h_ab, h_ba, "fnv1a should be order-sensitive (XOR step)");
+    }
+
+    // ── format_http_date arithmetic ─────────────────────────────────────────
+
+    #[test]
+    fn format_http_date_known_timestamp() {
+        // 2025-06-15 14:30:45 UTC = 1750000245 seconds since epoch.
+        // This is a Sunday.
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_750_000_245);
+        let date = format_http_date(time);
+        assert_eq!(date, "Sun, 15 Jun 2025 15:10:45 GMT");
+    }
+
+    #[test]
+    fn format_http_date_end_of_day() {
+        // 1970-01-01 23:59:59 = 86399 seconds
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(86399);
+        let date = format_http_date(time);
+        assert_eq!(date, "Thu, 01 Jan 1970 23:59:59 GMT");
+    }
+
+    #[test]
+    fn format_http_date_next_day() {
+        // 1970-01-02 00:00:00 = 86400 seconds
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(86400);
+        let date = format_http_date(time);
+        assert_eq!(date, "Fri, 02 Jan 1970 00:00:00 GMT");
+    }
+
+    #[test]
+    fn format_http_date_midday() {
+        // 1970-01-01 12:30:15 = 12*3600 + 30*60 + 15 = 45015
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(45015);
+        let date = format_http_date(time);
+        assert_eq!(date, "Thu, 01 Jan 1970 12:30:15 GMT");
+    }
 }

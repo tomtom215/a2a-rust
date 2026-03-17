@@ -213,6 +213,33 @@ cargo +nightly fuzz run fuzz_target
 
 Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
 
+## Why No Single Test Type Is Enough
+
+A key lesson from a2a-rust is that **no single testing technique — not even all
+of them together minus one — is sufficient.** Each layer catches a different
+class of bug, and the gaps between layers are where production incidents hide:
+
+| Test type | What it proves | What it cannot prove |
+|---|---|---|
+| **Unit tests** | Individual functions return correct values | That calling code uses those values correctly |
+| **Integration tests** | Components work together pairwise | Multi-hop and emergent system behavior |
+| **Property tests** | Invariants hold for all generated inputs | That real-world inputs exercise those invariants |
+| **Fuzz tests** | Parser doesn't crash on malformed input | Semantic correctness of valid input handling |
+| **E2E dogfooding** | The full stack works under realistic conditions | That your *assertions* actually detect regressions |
+| **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
+
+**The a2a-rust experience:** After building 600+ unit/integration/property/fuzz
+tests, an exhaustive 72-test E2E dogfood suite that caught 36 real bugs across 8
+passes, and achieving full green CI — **mutation testing still found gaps.** Tests
+that looked comprehensive were silently missing assertions on return values,
+boundary conditions, and delegation correctness. The suite was green, but mutants
+survived because no test *verified* the specific behavior being mutated.
+
+This is why mutation testing is a required quality gate: it is the only technique
+that measures test *effectiveness* rather than test *existence*. Every other
+technique answers "does the code work?" — mutation testing answers "would the
+tests catch it if the code broke?"
+
 ## Mutation Testing
 
 Mutation testing is the final, critical layer of test quality assurance. While
@@ -238,6 +265,31 @@ testing are precisely the kind that mutation testing catches:
 These are the subtle, semantic correctness issues that only manifest under load,
 across network partitions, or during multi-hop agent orchestration — exactly the
 conditions that are hardest to reproduce in staging.
+
+### What Mutation Testing Found in a2a-rust
+
+Even with 950+ tests, 72 E2E dogfood tests, property tests, and fuzz targets —
+all green — the first mutation testing run surfaced gaps across every crate:
+
+- **Delegation methods** returning `()` instead of forwarding calls (e.g.,
+  `Arc<T>` metrics delegation, OTel instrument recording)
+- **Hash function correctness** — replacing `^=` with `|=` in FNV-1a was
+  undetected because no test verified specific hash values
+- **Date arithmetic** — swapping `/` with `%` or `*` in HTTP date formatting
+  was undetected because the only test used epoch (where all fields are 0)
+- **Rate limiter logic** — replacing `>` with `>=` in window checks, `&&` with
+  `||` in cleanup conditions, and `/` with `%` in window calculations
+- **Builder patterns** — `builder()` returning `Default::default()` instead of
+  a functional builder was undetected because existing tests used the built
+  result without verifying builder-specific behavior
+- **Debug formatting** — `fmt` returning `Ok(Default::default())` (empty string)
+  instead of the real debug output
+- **Cancellation token** — `is_cancelled()` returning a hardcoded `true` or
+  `false` instead of delegating to the actual token
+
+Every one of these mutations represents a real bug that could have been
+introduced without any test catching it. The fix in each case was
+straightforward: add a test that asserts the specific behavior.
 
 ### Running Mutation Tests
 

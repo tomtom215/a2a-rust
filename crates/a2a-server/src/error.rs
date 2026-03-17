@@ -156,3 +156,65 @@ impl From<hyper::Error> for ServerError {
 
 /// Convenience type alias: `Result<T, ServerError>`.
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::error::Error;
+
+    #[test]
+    fn source_serialization_returns_some() {
+        let err = ServerError::Serialization(serde_json::from_str::<String>("x").unwrap_err());
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn source_protocol_returns_some() {
+        let err = ServerError::Protocol(A2aError::task_not_found("t"));
+        assert!(err.source().is_some());
+    }
+
+    #[tokio::test]
+    async fn source_http_returns_some() {
+        // Get a hyper::Error by feeding invalid HTTP data to the server parser.
+        use tokio::io::AsyncWriteExt;
+        let (mut client, server) = tokio::io::duplex(256);
+        // Write invalid HTTP data and close.
+        let client_task = tokio::spawn(async move {
+            client.write_all(b"NOT VALID HTTP\r\n\r\n").await.unwrap();
+            client.shutdown().await.unwrap();
+        });
+        let hyper_err = hyper::server::conn::http1::Builder::new()
+            .serve_connection(
+                hyper_util::rt::TokioIo::new(server),
+                hyper::service::service_fn(|_req: hyper::Request<hyper::body::Incoming>| async {
+                    Ok::<_, hyper::Error>(hyper::Response::new(http_body_util::Full::new(
+                        hyper::body::Bytes::new(),
+                    )))
+                }),
+            )
+            .await
+            .unwrap_err();
+        client_task.await.unwrap();
+        let err = ServerError::Http(hyper_err);
+        assert!(err.source().is_some());
+    }
+
+    #[test]
+    fn source_transport_returns_none() {
+        let err = ServerError::Transport("test".into());
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn source_task_not_found_returns_none() {
+        let err = ServerError::TaskNotFound("t".into());
+        assert!(err.source().is_none());
+    }
+
+    #[test]
+    fn source_internal_returns_none() {
+        let err = ServerError::Internal("oops".into());
+        assert!(err.source().is_none());
+    }
+}

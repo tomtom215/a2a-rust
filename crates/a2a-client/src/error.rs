@@ -172,6 +172,35 @@ mod tests {
         );
     }
 
+    #[test]
+    fn client_error_source_http() {
+        use std::error::Error;
+        // Create a hyper error by trying to parse invalid HTTP.
+        // Use a Transport error wrapping an Http error via From.
+        let http_err: ClientError = ClientError::HttpClient("test".into());
+        // HttpClient is not Http, so source is None.
+        assert!(http_err.source().is_none());
+
+        // Serialization error has a source.
+        let ser_err =
+            ClientError::Serialization(serde_json::from_str::<String>("not json").unwrap_err());
+        assert!(
+            ser_err.source().is_some(),
+            "Serialization error should have a source"
+        );
+
+        // Protocol error has a source.
+        let proto_err = ClientError::Protocol(a2a_protocol_types::A2aError::task_not_found("t"));
+        assert!(
+            proto_err.source().is_some(),
+            "Protocol error should have a source"
+        );
+
+        // Transport error has no source.
+        let transport_err = ClientError::Transport("config".into());
+        assert!(transport_err.source().is_none());
+    }
+
     /// Verify all retryable/non-retryable classifications.
     #[test]
     fn retryable_classification_exhaustive() {
