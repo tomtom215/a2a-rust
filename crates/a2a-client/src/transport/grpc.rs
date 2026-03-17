@@ -102,10 +102,7 @@ impl GrpcTransportConfig {
 
     /// Sets the connection timeout.
     #[must_use]
-    pub const fn with_connect_timeout(
-        mut self,
-        timeout: Duration,
-    ) -> Self {
+    pub const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
         self.connect_timeout = timeout;
         self
     }
@@ -119,10 +116,7 @@ impl GrpcTransportConfig {
 
     /// Sets the channel capacity for streaming responses.
     #[must_use]
-    pub const fn with_stream_channel_capacity(
-        mut self,
-        capacity: usize,
-    ) -> Self {
+    pub const fn with_stream_channel_capacity(mut self, capacity: usize) -> Self {
         self.stream_channel_capacity = capacity;
         self
     }
@@ -155,14 +149,8 @@ impl GrpcTransport {
     /// # Errors
     ///
     /// Returns [`ClientError::Transport`] if the connection fails.
-    pub async fn connect(
-        endpoint: impl Into<String>,
-    ) -> ClientResult<Self> {
-        Self::connect_with_config(
-            endpoint,
-            GrpcTransportConfig::default(),
-        )
-        .await
+    pub async fn connect(endpoint: impl Into<String>) -> ClientResult<Self> {
+        Self::connect_with_config(endpoint, GrpcTransportConfig::default()).await
     }
 
     /// Connects to a gRPC endpoint with custom configuration.
@@ -177,23 +165,13 @@ impl GrpcTransport {
         let endpoint_str = endpoint.into();
         validate_url(&endpoint_str)?;
 
-        let channel = tonic::transport::Channel::from_shared(
-            endpoint_str.clone(),
-        )
-        .map_err(|e| {
-            ClientError::InvalidEndpoint(format!(
-                "invalid gRPC endpoint: {e}"
-            ))
-        })?
-        .connect_timeout(config.connect_timeout)
-        .timeout(config.timeout)
-        .connect()
-        .await
-        .map_err(|e| {
-            ClientError::Transport(format!(
-                "gRPC connect failed: {e}"
-            ))
-        })?;
+        let channel = tonic::transport::Channel::from_shared(endpoint_str.clone())
+            .map_err(|e| ClientError::InvalidEndpoint(format!("invalid gRPC endpoint: {e}")))?
+            .connect_timeout(config.connect_timeout)
+            .timeout(config.timeout)
+            .connect()
+            .await
+            .map_err(|e| ClientError::Transport(format!("gRPC connect failed: {e}")))?;
 
         let client = A2aServiceClient::new(channel)
             .max_decoding_message_size(config.max_message_size)
@@ -216,17 +194,12 @@ impl GrpcTransport {
 
     // ── internals ────────────────────────────────────────────────────────
 
-    fn encode_params(
-        &self,
-        params: serde_json::Value,
-    ) -> ClientResult<JsonPayload> {
-        let data = serde_json::to_vec(&params)
-            .map_err(ClientError::Serialization)?;
+    fn encode_params(params: &serde_json::Value) -> ClientResult<JsonPayload> {
+        let data = serde_json::to_vec(params).map_err(ClientError::Serialization)?;
         Ok(JsonPayload { data })
     }
 
     fn add_metadata(
-        &self,
         req: &mut tonic::Request<JsonPayload>,
         extra_headers: &HashMap<String, String>,
     ) {
@@ -247,15 +220,11 @@ impl GrpcTransport {
         }
     }
 
-    fn decode_response(
-        &self,
-        payload: JsonPayload,
-    ) -> ClientResult<serde_json::Value> {
-        serde_json::from_slice(&payload.data)
-            .map_err(ClientError::Serialization)
+    fn decode_response(payload: &JsonPayload) -> ClientResult<serde_json::Value> {
+        serde_json::from_slice(&payload.data).map_err(ClientError::Serialization)
     }
 
-    fn status_to_error(status: tonic::Status) -> ClientError {
+    fn status_to_error(status: &tonic::Status) -> ClientError {
         let a2a = a2a_protocol_types::A2aError::new(
             grpc_code_to_error_code(status.code()),
             status.message().to_owned(),
@@ -263,6 +232,7 @@ impl GrpcTransport {
         ClientError::Protocol(a2a)
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     async fn execute_unary(
         &self,
         method: &str,
@@ -275,48 +245,45 @@ impl GrpcTransport {
             "sending gRPC request"
         );
 
-        let payload = self.encode_params(params)?;
+        let payload = Self::encode_params(&params)?;
         let mut req = tonic::Request::new(payload);
-        self.add_metadata(&mut req, extra_headers);
+        Self::add_metadata(&mut req, extra_headers);
 
-        let mut client = self.inner.client.lock().await;
-        let response = match method {
-            "SendMessage" => client.send_message(req).await,
-            "GetTask" => client.get_task(req).await,
-            "ListTasks" => client.list_tasks(req).await,
-            "CancelTask" => client.cancel_task(req).await,
-            "CreateTaskPushNotificationConfig" => {
-                client.create_task_push_notification_config(req).await
-            }
-            "GetTaskPushNotificationConfig" => {
-                client.get_task_push_notification_config(req).await
-            }
-            "ListTaskPushNotificationConfigs" => {
-                client
-                    .list_task_push_notification_configs(req)
-                    .await
-            }
-            "DeleteTaskPushNotificationConfig" => {
-                client
-                    .delete_task_push_notification_config(req)
-                    .await
-            }
-            "GetExtendedAgentCard" => {
-                client.get_extended_agent_card(req).await
-            }
-            other => {
-                return Err(ClientError::Transport(format!(
-                    "unknown gRPC method: {other}"
-                )));
+        let response = {
+            let mut client = self.inner.client.lock().await;
+            match method {
+                "SendMessage" => client.send_message(req).await,
+                "GetTask" => client.get_task(req).await,
+                "ListTasks" => client.list_tasks(req).await,
+                "CancelTask" => client.cancel_task(req).await,
+                "CreateTaskPushNotificationConfig" => {
+                    client.create_task_push_notification_config(req).await
+                }
+                "GetTaskPushNotificationConfig" => {
+                    client.get_task_push_notification_config(req).await
+                }
+                "ListTaskPushNotificationConfigs" => {
+                    client.list_task_push_notification_configs(req).await
+                }
+                "DeleteTaskPushNotificationConfig" => {
+                    client.delete_task_push_notification_config(req).await
+                }
+                "GetExtendedAgentCard" => client.get_extended_agent_card(req).await,
+                other => {
+                    return Err(ClientError::Transport(format!(
+                        "unknown gRPC method: {other}"
+                    )));
+                }
             }
         };
 
         match response {
-            Ok(resp) => self.decode_response(resp.into_inner()),
-            Err(status) => Err(Self::status_to_error(status)),
+            Ok(resp) => Self::decode_response(&resp.into_inner()),
+            Err(status) => Err(Self::status_to_error(&status)),
         }
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     async fn execute_streaming(
         &self,
         method: &str,
@@ -329,33 +296,29 @@ impl GrpcTransport {
             "opening gRPC stream"
         );
 
-        let payload = self.encode_params(params)?;
+        let payload = Self::encode_params(&params)?;
         let mut req = tonic::Request::new(payload);
-        self.add_metadata(&mut req, extra_headers);
+        Self::add_metadata(&mut req, extra_headers);
 
-        let mut client = self.inner.client.lock().await;
-        let response = match method {
-            "SendStreamingMessage" => {
-                client.send_streaming_message(req).await
+        let stream = {
+            let mut client = self.inner.client.lock().await;
+            let response = match method {
+                "SendStreamingMessage" => client.send_streaming_message(req).await,
+                "SubscribeToTask" => client.subscribe_to_task(req).await,
+                other => {
+                    return Err(ClientError::Transport(format!(
+                        "unknown streaming gRPC method: {other}"
+                    )));
+                }
+            };
+            match response {
+                Ok(resp) => resp.into_inner(),
+                Err(status) => return Err(Self::status_to_error(&status)),
             }
-            "SubscribeToTask" => {
-                client.subscribe_to_task(req).await
-            }
-            other => {
-                return Err(ClientError::Transport(format!(
-                    "unknown streaming gRPC method: {other}"
-                )));
-            }
-        };
-
-        let stream = match response {
-            Ok(resp) => resp.into_inner(),
-            Err(status) => return Err(Self::status_to_error(status)),
         };
 
         let cap = self.inner.config.stream_channel_capacity;
-        let (tx, rx) =
-            mpsc::channel::<crate::streaming::event_stream::BodyChunk>(cap);
+        let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(cap);
 
         let task_handle = tokio::spawn(async move {
             grpc_stream_reader_task(stream, tx).await;
@@ -374,9 +337,7 @@ impl Transport for GrpcTransport {
         method: &'a str,
         params: serde_json::Value,
         extra_headers: &'a HashMap<String, String>,
-    ) -> Pin<
-        Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
         Box::pin(self.execute_unary(method, params, extra_headers))
     }
 
@@ -385,9 +346,7 @@ impl Transport for GrpcTransport {
         method: &'a str,
         params: serde_json::Value,
         extra_headers: &'a HashMap<String, String>,
-    ) -> Pin<
-        Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>,
-    > {
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
         Box::pin(self.execute_streaming(method, params, extra_headers))
     }
 }
@@ -421,9 +380,8 @@ async fn grpc_stream_reader_task(
                     }
                 };
                 // Wrap in JSON-RPC envelope for SSE parser compatibility.
-                let envelope = format!(
-                    "data: {{\"jsonrpc\":\"2.0\",\"id\":null,\"result\":{json_str}}}\n\n"
-                );
+                let envelope =
+                    format!("data: {{\"jsonrpc\":\"2.0\",\"id\":null,\"result\":{json_str}}}\n\n");
                 if tx
                     .send(Ok(hyper::body::Bytes::from(envelope)))
                     .await
@@ -450,9 +408,7 @@ async fn grpc_stream_reader_task(
 
 fn validate_url(url: &str) -> ClientResult<()> {
     if url.is_empty() {
-        return Err(ClientError::InvalidEndpoint(
-            "URL must not be empty".into(),
-        ));
+        return Err(ClientError::InvalidEndpoint("URL must not be empty".into()));
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ClientError::InvalidEndpoint(format!(
@@ -462,22 +418,12 @@ fn validate_url(url: &str) -> ClientResult<()> {
     Ok(())
 }
 
-fn grpc_code_to_error_code(
-    code: tonic::Code,
-) -> a2a_protocol_types::ErrorCode {
+const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::ErrorCode {
     match code {
-        tonic::Code::NotFound => {
-            a2a_protocol_types::ErrorCode::TaskNotFound
-        }
-        tonic::Code::InvalidArgument => {
-            a2a_protocol_types::ErrorCode::InvalidParams
-        }
-        tonic::Code::Unimplemented => {
-            a2a_protocol_types::ErrorCode::MethodNotFound
-        }
-        tonic::Code::FailedPrecondition => {
-            a2a_protocol_types::ErrorCode::TaskNotCancelable
-        }
+        tonic::Code::NotFound => a2a_protocol_types::ErrorCode::TaskNotFound,
+        tonic::Code::InvalidArgument => a2a_protocol_types::ErrorCode::InvalidParams,
+        tonic::Code::Unimplemented => a2a_protocol_types::ErrorCode::MethodNotFound,
+        tonic::Code::FailedPrecondition => a2a_protocol_types::ErrorCode::TaskNotCancelable,
         _ => a2a_protocol_types::ErrorCode::InternalError,
     }
 }

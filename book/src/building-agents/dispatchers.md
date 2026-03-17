@@ -1,4 +1,4 @@
-# Dispatchers (JSON-RPC & REST)
+# Dispatchers (JSON-RPC, REST & gRPC)
 
 Dispatchers translate HTTP requests into handler calls. a2a-rust provides two built-in dispatchers matching the A2A spec's transport bindings.
 
@@ -136,7 +136,59 @@ async fn start_server(
 
 No web framework required — the dispatchers work directly with hyper's service layer.
 
-## Running Both Transports
+## GrpcDispatcher
+
+Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
+
+```toml
+a2a-protocol-server = { version = "0.2", features = ["grpc"] }
+```
+
+```rust
+use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
+use std::sync::Arc;
+
+let config = GrpcConfig::default()
+    .with_max_message_size(8 * 1024 * 1024)
+    .with_concurrency_limit(128);
+
+let dispatcher = GrpcDispatcher::new(handler, config);
+
+// Blocking server
+dispatcher.serve("0.0.0.0:50051").await?;
+
+// Non-blocking (returns bound address)
+let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
+println!("gRPC listening on {addr}");
+```
+
+### GrpcConfig
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
+| `concurrency_limit` | `usize` | 256 | Maximum concurrent gRPC requests per connection |
+| `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+
+### Protocol
+
+All 11 A2A methods are mapped to gRPC RPCs. JSON payloads are carried inside protobuf `bytes` fields, reusing the same serde types as JSON-RPC and REST — no duplicate protobuf definitions needed.
+
+Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming.
+
+### Custom Server Setup
+
+For advanced scenarios, use `into_service()` to get a tonic service:
+
+```rust
+let svc = dispatcher.into_service();
+tonic::transport::Server::builder()
+    .add_service(svc)
+    .serve(addr)
+    .await?;
+```
+
+## Running Multiple Transports
 
 Serve JSON-RPC and REST on different ports with the same handler:
 

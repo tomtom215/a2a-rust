@@ -239,20 +239,17 @@ pub async fn test_grpc_streaming(ctx: &TestContext) -> TestResult {
     match client.stream_message(params).await {
         Ok(mut stream) => {
             let mut event_count = 0u32;
-            let timeout = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                async {
-                    while let Some(event) = stream.next().await {
-                        match event {
-                            Ok(_) => event_count += 1,
-                            Err(e) => {
-                                return Err(format!("stream error: {e}"));
-                            }
+            let timeout = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while let Some(event) = stream.next().await {
+                    match event {
+                        Ok(_) => event_count += 1,
+                        Err(e) => {
+                            return Err(format!("stream error: {e}"));
                         }
                     }
-                    Ok(event_count)
-                },
-            );
+                }
+                Ok(event_count)
+            });
             match timeout.await {
                 Ok(Ok(count)) if count >= 2 => TestResult::pass(
                     "57-grpc-streaming",
@@ -264,16 +261,12 @@ pub async fn test_grpc_streaming(ctx: &TestContext) -> TestResult {
                     start.elapsed().as_millis(),
                     &format!("too few events: {count}"),
                 ),
-                Ok(Err(msg)) => TestResult::fail(
-                    "57-grpc-streaming",
-                    start.elapsed().as_millis(),
-                    &msg,
-                ),
-                Err(_) => TestResult::fail(
-                    "57-grpc-streaming",
-                    start.elapsed().as_millis(),
-                    "timeout",
-                ),
+                Ok(Err(msg)) => {
+                    TestResult::fail("57-grpc-streaming", start.elapsed().as_millis(), &msg)
+                }
+                Err(_) => {
+                    TestResult::fail("57-grpc-streaming", start.elapsed().as_millis(), "timeout")
+                }
             }
         }
         Err(e) => TestResult::fail(

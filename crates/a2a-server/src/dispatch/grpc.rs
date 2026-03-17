@@ -3,7 +3,7 @@
 
 //! gRPC dispatcher for the A2A server.
 //!
-//! [`GrpcDispatcher`] implements the tonic-generated [`A2aService`] trait,
+//! [`GrpcDispatcher`] implements the tonic-generated `A2aService` trait,
 //! routing gRPC calls to the underlying [`RequestHandler`]. JSON payloads
 //! are carried inside protobuf `bytes` fields, reusing the same serde types
 //! as the JSON-RPC and REST bindings.
@@ -62,8 +62,8 @@ mod proto {
     tonic::include_proto!("a2a.v1");
 }
 
-pub use proto::a2a_service_server::A2aServiceServer;
 use proto::a2a_service_server::A2aService;
+pub use proto::a2a_service_server::A2aServiceServer;
 use proto::JsonPayload;
 
 // ── GrpcConfig ──────────────────────────────────────────────────────────────
@@ -118,10 +118,7 @@ impl GrpcConfig {
 
     /// Sets the channel capacity for streaming responses.
     #[must_use]
-    pub const fn with_stream_channel_capacity(
-        mut self,
-        capacity: usize,
-    ) -> Self {
+    pub const fn with_stream_channel_capacity(mut self, capacity: usize) -> Self {
         self.stream_channel_capacity = capacity;
         self
     }
@@ -142,7 +139,7 @@ pub struct GrpcDispatcher {
 impl GrpcDispatcher {
     /// Creates a new gRPC dispatcher wrapping the given handler.
     #[must_use]
-    pub fn new(handler: Arc<RequestHandler>, config: GrpcConfig) -> Self {
+    pub const fn new(handler: Arc<RequestHandler>, config: GrpcConfig) -> Self {
         Self { handler, config }
     }
 
@@ -154,10 +151,7 @@ impl GrpcDispatcher {
     /// # Errors
     ///
     /// Returns `std::io::Error` if binding fails.
-    pub async fn serve(
-        self,
-        addr: impl tokio::net::ToSocketAddrs,
-    ) -> std::io::Result<()> {
+    pub async fn serve(self, addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<()> {
         let addr = resolve_addr(addr).await?;
         let svc = self.into_service();
 
@@ -171,7 +165,7 @@ impl GrpcDispatcher {
             .add_service(svc)
             .serve(addr)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 
     /// Starts a gRPC server and returns the bound [`SocketAddr`].
@@ -188,8 +182,7 @@ impl GrpcDispatcher {
     ) -> std::io::Result<SocketAddr> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
         let local_addr = listener.local_addr()?;
-        let incoming =
-            tokio_stream::wrappers::TcpListenerStream::new(listener);
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
         let svc = self.into_service();
 
         trace_info!(
@@ -214,9 +207,7 @@ impl GrpcDispatcher {
     /// Returns an [`A2aServiceServer`] that can be added to a
     /// [`tonic::transport::Server`] via `add_service`.
     #[must_use]
-    pub fn into_service(
-        &self,
-    ) -> A2aServiceServer<GrpcServiceImpl> {
+    pub fn into_service(&self) -> A2aServiceServer<GrpcServiceImpl> {
         let inner = GrpcServiceImpl {
             handler: Arc::clone(&self.handler),
             config: self.config.clone(),
@@ -230,6 +221,7 @@ impl GrpcDispatcher {
 impl std::fmt::Debug for GrpcDispatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GrpcDispatcher")
+            .field("handler", &"RequestHandler { .. }")
             .field("config", &self.config)
             .finish()
     }
@@ -249,21 +241,14 @@ pub struct GrpcServiceImpl {
 // ── Stream type alias ───────────────────────────────────────────────────────
 
 /// The streaming response type for gRPC server-streaming methods.
-type GrpcStream = Pin<
-    Box<
-        dyn tokio_stream::Stream<Item = Result<JsonPayload, Status>>
-            + Send
-            + 'static,
-    >,
->;
+type GrpcStream =
+    Pin<Box<dyn tokio_stream::Stream<Item = Result<JsonPayload, Status>> + Send + 'static>>;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Extracts gRPC metadata into a `HashMap` matching the HTTP headers
 /// interface used by `RequestHandler`.
-fn extract_metadata(
-    metadata: &tonic::metadata::MetadataMap,
-) -> HashMap<String, String> {
+fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for kv in metadata.iter() {
         if let tonic::metadata::KeyAndValueRef::Ascii(key, value) = kv {
@@ -276,19 +261,17 @@ fn extract_metadata(
 }
 
 /// Deserializes a JSON payload from a gRPC request.
-fn decode_json<T: serde::de::DeserializeOwned>(
-    payload: &JsonPayload,
-) -> Result<T, Status> {
-    serde_json::from_slice(&payload.data).map_err(|e| {
-        Status::invalid_argument(format!("invalid JSON payload: {e}"))
-    })
+#[allow(clippy::result_large_err)]
+fn decode_json<T: serde::de::DeserializeOwned>(payload: &JsonPayload) -> Result<T, Status> {
+    serde_json::from_slice(&payload.data)
+        .map_err(|e| Status::invalid_argument(format!("invalid JSON payload: {e}")))
 }
 
 /// Serializes a value into a JSON payload for a gRPC response.
+#[allow(clippy::result_large_err)]
 fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload, Status> {
-    let data = serde_json::to_vec(value).map_err(|e| {
-        Status::internal(format!("JSON serialization failed: {e}"))
-    })?;
+    let data = serde_json::to_vec(value)
+        .map_err(|e| Status::internal(format!("JSON serialization failed: {e}")))?;
     Ok(JsonPayload { data })
 }
 
@@ -297,39 +280,24 @@ fn server_error_to_status(err: &ServerError) -> Status {
     let a2a_err = err.to_a2a_error();
     let code = match a2a_err.code {
         a2a_protocol_types::ErrorCode::TaskNotFound => tonic::Code::NotFound,
-        a2a_protocol_types::ErrorCode::TaskNotCancelable => {
-            tonic::Code::FailedPrecondition
-        }
-        a2a_protocol_types::ErrorCode::InvalidParams => {
-            tonic::Code::InvalidArgument
-        }
-        a2a_protocol_types::ErrorCode::MethodNotFound => {
-            tonic::Code::Unimplemented
-        }
-        a2a_protocol_types::ErrorCode::ParseError => {
-            tonic::Code::InvalidArgument
-        }
-        a2a_protocol_types::ErrorCode::PushNotificationNotSupported => {
-            tonic::Code::Unimplemented
-        }
+        a2a_protocol_types::ErrorCode::TaskNotCancelable => tonic::Code::FailedPrecondition,
+        a2a_protocol_types::ErrorCode::InvalidParams
+        | a2a_protocol_types::ErrorCode::ParseError => tonic::Code::InvalidArgument,
+        a2a_protocol_types::ErrorCode::MethodNotFound
+        | a2a_protocol_types::ErrorCode::PushNotificationNotSupported => tonic::Code::Unimplemented,
         _ => tonic::Code::Internal,
     };
     Status::new(code, a2a_err.message)
 }
 
 /// Resolves a `ToSocketAddrs` to a single `SocketAddr`.
-async fn resolve_addr(
-    addr: impl tokio::net::ToSocketAddrs,
-) -> std::io::Result<SocketAddr> {
-    tokio::net::lookup_host(addr)
-        .await?
-        .next()
-        .ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::AddrNotAvailable,
-                "could not resolve address",
-            )
-        })
+async fn resolve_addr(addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<SocketAddr> {
+    tokio::net::lookup_host(addr).await?.next().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            "could not resolve address",
+        )
+    })
 }
 
 /// Converts an [`InMemoryQueueReader`] into a gRPC streaming response.
@@ -354,9 +322,7 @@ fn reader_to_grpc_stream(
                     }
                 }
                 Some(Err(_)) => {
-                    let _ = tx
-                        .send(Err(Status::internal("event queue error")))
-                        .await;
+                    let _ = tx.send(Err(Status::internal("event queue error"))).await;
                     break;
                 }
                 None => break,
@@ -378,11 +344,12 @@ impl A2aService for GrpcServiceImpl {
     ) -> Result<Response<JsonPayload>, Status> {
         let headers = extract_metadata(request.metadata());
         let params = decode_json(request.get_ref())?;
-        match self.handler.on_send_message(params, false, Some(&headers)).await
+        match self
+            .handler
+            .on_send_message(params, false, Some(&headers))
+            .await
         {
-            Ok(SendMessageResult::Response(resp)) => {
-                Ok(Response::new(encode_json(&resp)?))
-            }
+            Ok(SendMessageResult::Response(resp)) => Ok(Response::new(encode_json(&resp)?)),
             Ok(SendMessageResult::Stream(_)) => Err(Status::internal(
                 "unexpected stream response for unary call",
             )),
@@ -398,13 +365,13 @@ impl A2aService for GrpcServiceImpl {
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
         let headers = extract_metadata(request.metadata());
         let params = decode_json(request.get_ref())?;
-        match self.handler.on_send_message(params, true, Some(&headers)).await
+        match self
+            .handler
+            .on_send_message(params, true, Some(&headers))
+            .await
         {
             Ok(SendMessageResult::Stream(reader)) => {
-                let stream = reader_to_grpc_stream(
-                    reader,
-                    self.config.stream_channel_capacity,
-                );
+                let stream = reader_to_grpc_stream(reader, self.config.stream_channel_capacity);
                 Ok(Response::new(stream))
             }
             Ok(SendMessageResult::Response(resp)) => {
@@ -465,10 +432,7 @@ impl A2aService for GrpcServiceImpl {
         let params = decode_json(request.get_ref())?;
         match self.handler.on_resubscribe(params, Some(&headers)).await {
             Ok(reader) => {
-                let stream = reader_to_grpc_stream(
-                    reader,
-                    self.config.stream_channel_capacity,
-                );
+                let stream = reader_to_grpc_stream(reader, self.config.stream_channel_capacity);
                 Ok(Response::new(stream))
             }
             Err(e) => Err(server_error_to_status(&e)),
@@ -518,19 +482,14 @@ impl A2aService for GrpcServiceImpl {
             decode_json(request.get_ref())?;
         match self
             .handler
-            .on_list_push_configs(
-                &params.task_id,
-                params.tenant.as_deref(),
-                Some(&headers),
-            )
+            .on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(&headers))
             .await
         {
             Ok(configs) => {
-                let resp =
-                    a2a_protocol_types::responses::ListPushConfigsResponse {
-                        configs,
-                        next_page_token: None,
-                    };
+                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                    configs,
+                    next_page_token: None,
+                };
                 Ok(Response::new(encode_json(&resp)?))
             }
             Err(e) => Err(server_error_to_status(&e)),
@@ -548,9 +507,7 @@ impl A2aService for GrpcServiceImpl {
             .on_delete_push_config(params, Some(&headers))
             .await
         {
-            Ok(()) => {
-                Ok(Response::new(encode_json(&serde_json::json!({}))?))
-            }
+            Ok(()) => Ok(Response::new(encode_json(&serde_json::json!({}))?)),
             Err(e) => Err(server_error_to_status(&e)),
         }
     }

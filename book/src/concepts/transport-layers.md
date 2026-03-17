@@ -153,18 +153,68 @@ let client = ClientBuilder::new("ws://agent.example.com:3002")
 - **Bidirectional streaming** — Server can push events without SSE
 - **Low latency** — No HTTP framing overhead for small messages
 
+## gRPC
+
+The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. JSON payloads are carried inside protobuf `bytes` fields, reusing all existing serde types — no duplicate type definitions.
+
+```toml
+# Server
+a2a-protocol-server = { version = "0.2", features = ["grpc"] }
+
+# Client
+a2a-protocol-client = { version = "0.2", features = ["grpc"] }
+```
+
+### Server
+
+```rust
+use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
+use std::sync::Arc;
+
+let handler = Arc::new(RequestHandlerBuilder::new(my_executor).build().unwrap());
+let config = GrpcConfig::default()
+    .with_max_message_size(8 * 1024 * 1024);
+let dispatcher = GrpcDispatcher::new(handler, config);
+dispatcher.serve("0.0.0.0:50051").await?;
+```
+
+### Client
+
+```rust
+use a2a_protocol_client::GrpcTransport;
+
+let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
+let client = ClientBuilder::new("http://agent.example.com:50051")
+    .with_custom_transport(transport)
+    .build()?;
+```
+
+### Protocol
+
+- All 11 A2A methods are mapped to gRPC RPCs
+- Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming
+- JSON payloads are wrapped in `JsonPayload { bytes data = 1 }` protobuf messages
+- The proto definition is at `proto/a2a.proto`
+
+### When to Use gRPC
+
+- **Service mesh integration** — gRPC is native to Kubernetes, Istio, Envoy
+- **Language interop** — gRPC has code generation for 10+ languages
+- **HTTP/2 multiplexing** — Multiple RPCs over a single connection
+- **Streaming** — Native server streaming without SSE
+
 ## Choosing a Transport
 
-| Factor | JSON-RPC | REST | WebSocket |
-|--------|----------|------|-----------|
-| **Batch operations** | Supported | Not supported | Not supported |
-| **Caching** | Limited (POST-only) | HTTP cache-friendly (GET) | Not applicable |
-| **Tooling** | Needs JSON-RPC client | Standard HTTP tools work | WebSocket client needed |
-| **URL structure** | Single endpoint | Resource-oriented | Single connection |
-| **Streaming** | SSE via POST | SSE via POST/GET | Native text frames |
-| **Connection reuse** | HTTP keep-alive | HTTP keep-alive | Persistent connection |
+| Factor | JSON-RPC | REST | WebSocket | gRPC |
+|--------|----------|------|-----------|------|
+| **Batch operations** | Supported | Not supported | Not supported | Not supported |
+| **Caching** | Limited (POST-only) | HTTP cache-friendly (GET) | Not applicable | Not applicable |
+| **Tooling** | Needs JSON-RPC client | Standard HTTP tools work | WebSocket client needed | gRPC client needed |
+| **URL structure** | Single endpoint | Resource-oriented | Single connection | Single connection |
+| **Streaming** | SSE via POST | SSE via POST/GET | Native text frames | Native server streaming |
+| **Connection reuse** | HTTP keep-alive | HTTP keep-alive | Persistent connection | HTTP/2 multiplexing |
 
-JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. The choice is mostly about ecosystem fit — JSON-RPC for agent-to-agent communication, REST for standard HTTP tooling, WebSocket for persistent low-latency connections.
+JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC uses native server streaming over HTTP/2. The choice is mostly about ecosystem fit — JSON-RPC for agent-to-agent communication, REST for standard HTTP tooling, WebSocket for persistent low-latency connections, gRPC for service mesh and cross-language interop.
 
 ## Running Both Transports
 
@@ -185,7 +235,7 @@ let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
 let rest = Arc::new(RestDispatcher::new(handler));
 ```
 
-Both dispatchers share the same `RequestHandler`, which means they share the same task store, push config store, and executor.
+All dispatchers share the same `RequestHandler`, which means they share the same task store, push config store, and executor.
 
 ## Next Steps
 

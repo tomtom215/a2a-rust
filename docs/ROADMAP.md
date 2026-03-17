@@ -85,7 +85,46 @@ let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
 
 ---
 
-## 7.4 WebSocket Transport
+## 7.4 gRPC Transport
+
+**Status:** ✅ Implemented
+
+The `grpc` feature flag enables gRPC transport via `tonic`. JSON payloads are
+carried inside protobuf `bytes` fields, reusing all existing serde types — no
+duplicate type definitions needed.
+
+**Server:** `GrpcDispatcher` implements the tonic-generated `A2aService` trait
+and routes to the same `RequestHandler` used by HTTP transports. Configure via
+`GrpcConfig` (message size limits, concurrency, stream channel capacity).
+
+**Client:** `GrpcTransport` implements the `Transport` trait for use with
+`ClientBuilder`. Configure via `GrpcTransportConfig` (timeouts, message sizes).
+
+```toml
+# Server
+a2a-protocol-server = { version = "0.2", features = ["grpc"] }
+
+# Client
+a2a-protocol-client = { version = "0.2", features = ["grpc"] }
+```
+
+```rust
+// Server
+use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
+let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
+dispatcher.serve("127.0.0.1:50051").await?;
+
+// Client
+use a2a_protocol_client::GrpcTransport;
+let transport = GrpcTransport::connect("http://localhost:50051").await?;
+let client = ClientBuilder::new("http://localhost:50051")
+    .with_custom_transport(transport)
+    .build()?;
+```
+
+---
+
+## 7.5 WebSocket Transport
 
 **Status:** ✅ Implemented
 
@@ -109,7 +148,7 @@ a2a-protocol-client = { version = "0.2", features = ["websocket"] }
 
 ---
 
-## 7.5 Multi-Tenancy
+## 7.6 Multi-Tenancy
 
 **Status:** ✅ Implemented
 
@@ -141,7 +180,7 @@ TenantContext::scope("tenant-alpha".to_string(), async move {
 
 ---
 
-## 7.6 Persistent Task Store
+## 7.7 Persistent Task Store
 
 **Status:** ✅ Implemented
 

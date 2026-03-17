@@ -90,5 +90,6 @@ pub struct TestContext {
     pub grpc_analyzer_url: String,
     /// Metrics for the gRPC CodeAnalyzer agent.
     #[cfg(feature = "grpc")]
+    #[allow(dead_code)]
     pub grpc_analyzer_metrics: Arc<TeamMetrics>,
 }

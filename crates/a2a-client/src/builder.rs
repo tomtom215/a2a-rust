@@ -207,6 +207,7 @@ impl ClientBuilder {
     /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized.
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ClientResult<A2aClient> {
         if self.config.request_timeout.is_zero() {
             return Err(ClientError::Transport(
@@ -258,8 +259,7 @@ impl ClientBuilder {
                 #[cfg(not(feature = "grpc"))]
                 BINDING_GRPC => {
                     return Err(ClientError::Transport(
-                        "gRPC transport requires the `grpc` feature flag"
-                            .into(),
+                        "gRPC transport requires the `grpc` feature flag".into(),
                     ));
                 }
                 other => {
@@ -305,11 +305,7 @@ impl ClientBuilder {
             let grpc_config = GrpcTransportConfig::default()
                 .with_timeout(self.config.request_timeout)
                 .with_connect_timeout(self.config.connection_timeout);
-            let t = GrpcTransport::connect_with_config(
-                &self.endpoint,
-                grpc_config,
-            )
-            .await?;
+            let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config).await?;
             Box::new(t)
         };
 

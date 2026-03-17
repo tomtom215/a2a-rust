@@ -124,19 +124,12 @@ pub fn grpc_analyzer_card(url: &str) -> AgentCard {
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec![
-            "text/plain".into(),
-            "application/json".into(),
-        ],
+        default_output_modes: vec!["text/plain".into(), "application/json".into()],
         skills: vec![AgentSkill {
             id: "analyze-grpc".into(),
             name: "Code Analysis (gRPC)".into(),
             description: "Same as Code Analyzer but over gRPC".into(),
-            tags: vec![
-                "code".into(),
-                "analysis".into(),
-                "grpc".into(),
-            ],
+            tags: vec!["code".into(), "analysis".into(), "grpc".into()],
             examples: None,
             input_modes: None,
             output_modes: None,

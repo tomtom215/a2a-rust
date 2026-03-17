@@ -61,6 +61,16 @@ Shared configuration for both JSON-RPC and REST dispatchers. Pass to
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
 
+### GrpcConfig
+
+Configuration for the gRPC dispatcher (requires `grpc` feature).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
+| `concurrency_limit` | `usize` | 256 | Max concurrent gRPC requests per connection |
+| `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+
 ### PushRetryPolicy
 
 Configurable retry policy for `HttpPushSender`. Pass via
@@ -100,6 +110,17 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 
+### GrpcTransportConfig
+
+Configuration for the gRPC client transport (requires `grpc` feature).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `timeout` | `Duration` | 30s | Per-request timeout |
+| `connect_timeout` | `Duration` | 10s | Connection timeout |
+| `max_message_size` | `usize` | 4 MiB | Maximum message size |
+| `stream_channel_capacity` | `usize` | 64 | Streaming response buffer |
+
 ### RetryPolicy
 
 | Field | Type | Default | Description |
@@ -131,6 +152,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via `tracing` crate |
+| `grpc` | Off | gRPC transport via `tonic` |
 
 ### `a2a-protocol-client`
 
@@ -138,6 +160,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 |---------|---------|-------------|
 | `tracing` | Off | Structured logging via `tracing` crate |
 | `tls-rustls` | Off | HTTPS via rustls (no OpenSSL dependency) |
+| `grpc` | Off | gRPC transport via `tonic` |
 
 ### `a2a-protocol-types`
 
@@ -152,6 +175,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `signing` | Off | Enables `signing` in all sub-crates |
 | `tracing` | Off | Enables `tracing` in client and server |
 | `tls-rustls` | Off | Enables `tls-rustls` in client |
+| `grpc` | Off | Enables `grpc` in client and server |
 
 ## Environment Variables
 

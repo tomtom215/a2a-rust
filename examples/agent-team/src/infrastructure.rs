@@ -320,9 +320,7 @@ pub fn serve_jsonrpc(
 ///
 /// Returns the local address the server bound to.
 #[cfg(feature = "grpc")]
-pub async fn serve_grpc(
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) -> SocketAddr {
+pub async fn serve_grpc(handler: Arc<a2a_protocol_server::handler::RequestHandler>) -> SocketAddr {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
     let config = GrpcConfig::default();

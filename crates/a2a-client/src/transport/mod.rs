@@ -19,9 +19,9 @@
 //! [`JsonRpcTransport`]: jsonrpc::JsonRpcTransport
 //! [`RestTransport`]: rest::RestTransport
 
-pub mod jsonrpc;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+pub mod jsonrpc;
 pub mod rest;
 #[cfg(feature = "websocket")]
 pub mod websocket;
