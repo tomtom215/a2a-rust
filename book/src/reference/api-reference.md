@@ -110,12 +110,12 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `stream_message(params)` | `EventStream` | Streaming send |
 | `get_task(params)` | `Task` | Retrieve task by ID |
 | `list_tasks(params)` | `TaskListResponse` | Query tasks |
-| `cancel_task(params)` | `Task` | Cancel a running task |
-| `resubscribe(params)` | `EventStream` | Re-subscribe to task events |
+| `cancel_task(id)` | `Task` | Cancel a running task |
+| `subscribe_to_task(id)` | `EventStream` | Re-subscribe to task events |
 | `set_push_config(config)` | `TaskPushNotificationConfig` | Create push config |
-| `get_push_config(params)` | `TaskPushNotificationConfig` | Get push config |
-| `list_push_configs(params)` | `Vec<TaskPushNotificationConfig>` | List push configs |
-| `delete_push_config(params)` | `()` | Delete push config |
+| `get_push_config(task_id, id)` | `TaskPushNotificationConfig` | Get push config |
+| `list_push_configs(params)` | `ListPushConfigsResponse` | List push configs |
+| `delete_push_config(task_id, id)` | `()` | Delete push config |
 | `get_authenticated_extended_card(params)` | `AgentCard` | Get extended card |
 
 ### Interceptors

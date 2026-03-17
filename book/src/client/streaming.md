@@ -79,13 +79,8 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
 If a stream disconnects, re-subscribe to get the latest state:
 
 ```rust
-use a2a_protocol_sdk::types::params::TaskIdParams;
-
 let mut stream = client
-    .resubscribe(TaskIdParams {
-        tenant: None,
-        id: "task-abc".into(),
-    })
+    .subscribe_to_task("task-abc")
     .await?;
 
 // Continue processing events...

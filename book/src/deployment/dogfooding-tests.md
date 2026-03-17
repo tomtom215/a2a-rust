@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRPC). All tests pass in ~2.5 seconds.
+The agent team runs **71 E2E tests** across 7 test modules (76 with optional transports). All tests pass in ~2.5 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -150,10 +150,13 @@ The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRP
 | Webhook URL scheme validation | 73 |
 | Combined status+context filter | 74 |
 | `Metrics` callbacks | 29, 30, 39, 75 |
+| Timeout retryability (Bug #32) | 76 |
+| Concurrent cancel stress | 77 |
+| Stale page token handling | 78 |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 70 agent-team E2E tests (73 with gRPC), the SDK includes dedicated integration test suites:
+In addition to the 71 agent-team E2E tests (76 with optional transports), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|

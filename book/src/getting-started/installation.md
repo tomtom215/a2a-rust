@@ -39,30 +39,51 @@ This is useful when:
 
 ## Feature Flags
 
-### `a2a-protocol-server`
-
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `tracing` | Off | Structured logging via the `tracing` crate |
+All features are off by default to minimize compile times and dependency trees.
 
 ### `a2a-protocol-types`
 
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `signing` | Off | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
+| Feature | Description |
+|---------|-------------|
+| `signing` | JWS/ES256 agent card signing (RFC 8785 canonicalization) |
 
 ### `a2a-protocol-client`
 
-| Feature | Default | Description |
-|---------|---------|-------------|
-| `tls-rustls` | Off | HTTPS via rustls (no OpenSSL required) |
+| Feature | Description |
+|---------|-------------|
+| `tls-rustls` | HTTPS via rustls (no OpenSSL required) |
+| `signing` | Agent card signing verification |
+| `tracing` | Structured logging via the `tracing` crate |
+| `websocket` | WebSocket transport via `tokio-tungstenite` |
+| `grpc` | gRPC transport via `tonic` |
+
+### `a2a-protocol-server`
+
+| Feature | Description |
+|---------|-------------|
+| `signing` | Agent card signing |
+| `tracing` | Structured logging via the `tracing` crate |
+| `sqlite` | SQLite-backed task and push config stores via `sqlx` |
+| `websocket` | WebSocket transport via `tokio-tungstenite` |
+| `grpc` | gRPC transport via `tonic` |
+
+### `a2a-protocol-sdk` (umbrella)
+
+| Feature | Description |
+|---------|-------------|
+| `signing` | Enables signing across types, client, and server |
+| `tracing` | Enables tracing across client and server |
+| `tls-rustls` | Enables HTTPS in the client |
+| `grpc` | Enables gRPC across client and server |
 
 Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.2", features = ["tracing"] }
-a2a-protocol-types = { version = "0.2", features = ["signing"] }
+a2a-protocol-sdk = { version = "0.2", features = ["tracing", "signing"] }
+
+# Or with individual crates:
+a2a-protocol-server = { version = "0.2", features = ["tracing", "sqlite"] }
 a2a-protocol-client = { version = "0.2", features = ["tls-rustls"] }
 ```
 

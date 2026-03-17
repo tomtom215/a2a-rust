@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **71 E2E tests** (69 with optional gRPC) runs in ~2.5 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **71 E2E tests** (76 with optional transports) runs in ~2.5 seconds.
 
 ## Why Dogfood?
 
@@ -99,7 +99,7 @@ The agent team exercises **35+ distinct SDK features** in a single run:
 
 ```
 examples/agent-team/src/
-├── main.rs                      # Thin orchestrator (~330 lines)
+├── main.rs                      # Thin orchestrator (~400 lines)
 ├── executors/
 │   ├── mod.rs                   # Re-exports
 │   ├── code_analyzer.rs         # CodeAnalyzer executor
@@ -165,8 +165,8 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Sub-pages
 
-- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 22 bugs discovered across six dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 66-test E2E coverage map (69 with gRPC)
+- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 36 bugs discovered across eight dogfooding passes
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 71-test E2E coverage map (76 with optional transports)
 - **[Open Issues & Roadmap](./dogfooding-open-issues.md)** — Remaining gaps and future work
 
 ## See Also

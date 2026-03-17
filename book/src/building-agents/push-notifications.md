@@ -79,18 +79,10 @@ let configs = client.list_push_configs(ListPushConfigsParams {
 }).await?;
 
 // Get a specific config
-let config = client.get_push_config(GetPushConfigParams {
-    tenant: None,
-    task_id: "task-abc".into(),
-    id: "config-123".into(),
-}).await?;
+let config = client.get_push_config("task-abc", "config-123").await?;
 
 // Delete a config
-client.delete_push_config(DeletePushConfigParams {
-    tenant: None,
-    task_id: "task-abc".into(),
-    id: "config-123".into(),
-}).await?;
+client.delete_push_config("task-abc", "config-123").await?;
 ```
 
 ## Authentication

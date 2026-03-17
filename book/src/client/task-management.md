@@ -74,13 +74,7 @@ if let Some(token) = &response.next_page_token {
 Request cancellation of a running task:
 
 ```rust
-use a2a_protocol_sdk::types::params::CancelTaskParams;
-
-let task = client.cancel_task(CancelTaskParams {
-    tenant: None,
-    id: "task-abc".into(),
-    metadata: None,
-}).await?;
+let task = client.cancel_task("task-abc").await?;
 
 println!("Task state: {:?}", task.status.state);
 // → Canceled (if the agent supports cancellation)

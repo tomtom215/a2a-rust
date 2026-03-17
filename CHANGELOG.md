@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path traversal (Bug #35), exhaustive retryable classification.
 - **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
   cancel stress test (10 parallel), stale page token graceful handling.
-- **Total E2E tests: 76** (80 with optional gRPC+WebSocket transports).
+- **Total E2E tests: 71** (76 with optional gRPC+WebSocket transports).
 
 ### Fixed (Pass 7 — Deep Dogfood)
 
