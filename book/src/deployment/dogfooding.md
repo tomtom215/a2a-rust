@@ -174,7 +174,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 
 | Feature | Location |
 |---|---|
-| **OpenTelemetry integration** | `crates/a2a-server/src/otel.rs` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+| **OpenTelemetry integration** | `crates/a2a-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
 | **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
 | **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
 | **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` — `MigrationRunner`, V1–V3 migrations |

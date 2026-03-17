@@ -24,39 +24,64 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ## Features
 
-- **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
-- **Quad transport** — JSON-RPC 2.0, REST, WebSocket, and gRPC dispatchers, both client and server
-- **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
-- **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
-- **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution; hot-reload via `HotReloadAgentCardHandler` with file polling or SIGHUP-based reload
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults, SQLite reference implementations (`sqlite` feature flag) with schema versioning and migrations (`MigrationRunner`), and tenant-aware variants for multi-tenancy
-- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` provide full tenant isolation via `tokio::task_local!` or `tenant_id` column partitioning; per-tenant configuration via `PerTenantConfig` for differentiated service levels (timeouts, capacity, rate limits)
-- **Tenant resolution** — `TenantResolver` trait with built-in strategies: `HeaderTenantResolver` (HTTP header), `BearerTokenTenantResolver` (Bearer token with optional mapper), `PathSegmentTenantResolver` (URL path segment)
-- **Executor ergonomics** — `boxed_future` helper, `agent_executor!` macro, and `EventEmitter` eliminate `Pin<Box<dyn Future>>` and event-emission boilerplate
-- **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
-- **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
-- **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
-- **OpenTelemetry integration** — native OTLP export of metrics via the `otel` feature flag; records request counts, latency histograms, error rates, queue depth, and connection pool statistics
-- **Connection pool metrics** — `ConnectionPoolStats` and `Metrics::on_connection_pool_stats()` for monitoring active/idle connections, creation, and closure
-- **Optional tracing** — structured logging via `tracing` crate, zero cost when disabled
-- **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
-- **State transition validation** — `TaskState::can_transition_to()` enforces valid state machine transitions at the handler level
-- **Executor timeout** — configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors
-- **CORS support** — `CorsConfig` for browser-based A2A clients with preflight handling
-- **Graceful shutdown** — `RequestHandler::shutdown()` cancels all tokens and destroys queues
-- **Enterprise hardening** — request body size limits, Content-Type validation, path traversal protection (including percent-encoded bypass), query string length limits, health/readiness endpoints
-- **Task store management** — configurable TTL-based eviction, capacity limits, amortized eviction (every 64 writes), and cursor-based pagination via `TaskStoreConfig`
-- **Security** — SSRF protection for push webhooks, header injection prevention, SSE memory limits, cancellation token map bounds with stale cleanup
-- **Server startup helper** — `serve()` and `serve_with_addr()` reduce the ~25-line hyper boilerplate to a single call
-- **Client retry** — configurable `RetryPolicy` with exponential backoff for transient failures (connection errors, timeouts, 429/502/503/504)
-- **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header for distributed tracing
-- **Rate limiting** — built-in `RateLimitInterceptor` with fixed-window per-caller limiting; plug in via `ServerInterceptor` chain
-- **Observability** — `Metrics` trait with callbacks for requests, responses, errors, latency, queue depth, and connection pool stats; `TaskStore::count()` for capacity management
-- **WebSocket transport** — persistent bidirectional communication via `tokio-tungstenite` (`websocket` feature flag), JSON-RPC 2.0 over WebSocket text frames with native streaming
-- **gRPC transport** — optional gRPC binding via `tonic` (`grpc` feature flag), JSON-over-protobuf framing reusing all existing serde types, configurable via `GrpcConfig` and `GrpcTransportConfig`
-- **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
-- **Mutation-tested** — zero surviving mutants enforced via `cargo-mutants` CI gate across all library crates
-- **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
+### Protocol & Transport
+
+| | |
+|---|---|
+| **Full A2A v1.0.0 wire types** | Every struct, enum, and field from the spec with correct serde annotations |
+| **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
+| **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
+| **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
+| **Agent card discovery** | `/.well-known/agent.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
+| **Agent card signing** | JWS/ES256 with RFC 8785 JSON canonicalization (`signing` feature) |
+| **HTTP caching** | `ETag`, `Last-Modified`, `304 Not Modified` for agent card endpoints |
+
+### Server Framework
+
+| | |
+|---|---|
+| **Pluggable stores** | `TaskStore` / `PushConfigStore` traits; in-memory defaults + SQLite (`sqlite` feature) with migrations |
+| **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path) |
+| **Executor ergonomics** | `agent_executor!` macro, `EventEmitter`, `boxed_future` — no manual `Pin<Box<dyn Future>>` |
+| **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc. |
+| **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
+| **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
+| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues |
+| **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call |
+
+### Client
+
+| | |
+|---|---|
+| **Retry policy** | Configurable `RetryPolicy` with exponential backoff (connection errors, timeouts, 429/502/503/504) |
+| **TLS support** | HTTPS via `rustls`, no OpenSSL dependency (`tls-rustls` feature) |
+| **Zero framework lock-in** | Built on raw `hyper` 1.x; bring your own web framework |
+
+### Observability & Operations
+
+| | |
+|---|---|
+| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats (`otel` feature) |
+| **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, and connection pool statistics |
+| **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
+| **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
+
+### Security & Hardening
+
+| | |
+|---|---|
+| **Enterprise hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, health endpoints |
+| **SSRF protection** | Push webhook URL validation, header injection prevention, SSE memory limits |
+| **CORS support** | `CorsConfig` for browser-based clients with preflight handling |
+| **Executor timeout** | Configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors |
+| **Task eviction** | TTL-based eviction, capacity limits, amortized sweeps, cursor-based pagination |
+
+### Quality
+
+| | |
+|---|---|
+| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` CI gate |
+| **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate |
 
 ## Crate Structure
 

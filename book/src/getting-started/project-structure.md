@@ -27,10 +27,15 @@ a2a-rust/
 │   ├── a2a-protocol-client/         # HTTP client
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
+│   │       ├── builder/        # ClientBuilder (fluent config)
+│   │       │   ├── mod.rs            # Builder struct, configuration setters
+│   │       │   └── transport_factory.rs  # build() / build_grpc() assembly
 │   │       ├── transport/      # Transport trait + implementations
 │   │       │   ├── mod.rs          # Transport trait, truncate_body
 │   │       │   ├── rest/           # REST transport
-│   │       │   │   ├── mod.rs          # RestTransport, request execution
+│   │       │   │   ├── mod.rs          # RestTransport struct, constructors
+│   │       │   │   ├── request.rs      # URI/request building, execution
+│   │       │   │   ├── streaming.rs    # SSE streaming, body reader
 │   │       │   │   ├── routing.rs      # Route definitions, method mapping
 │   │       │   │   └── query.rs        # Query string building, encoding
 │   │       │   └── jsonrpc.rs      # JsonRpcTransport
@@ -51,12 +56,21 @@ a2a-rust/
 │   │       │   ├── mod.rs          # Struct definition, SendMessageResult
 │   │       │   ├── limits.rs       # HandlerLimits config
 │   │       │   ├── messaging.rs    # SendMessage / SendStreamingMessage
-│   │       │   ├── lifecycle.rs    # GetTask, ListTasks, CancelTask, etc.
+│   │       │   ├── lifecycle/        # Task lifecycle handlers
+│   │       │   │   ├── mod.rs            # Re-exports
+│   │       │   │   ├── get_task.rs       # GetTask handler
+│   │       │   │   ├── list_tasks.rs     # ListTasks handler
+│   │       │   │   ├── cancel_task.rs    # CancelTask handler
+│   │       │   │   ├── subscribe.rs      # SubscribeToTask handler
+│   │       │   │   └── extended_card.rs  # GetExtendedAgentCard handler
 │   │       │   ├── push_config.rs  # Push notification config CRUD
 │   │       │   ├── event_processing/  # Event collection & push delivery
 │   │       │   │   ├── mod.rs          # Re-exports
 │   │       │   │   ├── sync_collector.rs   # Sync-mode event collection
-│   │       │   │   └── background.rs       # Background event processor
+│   │       │   │   └── background/       # Background event processor
+│   │       │   │       ├── mod.rs            # Event loop orchestration
+│   │       │   │       ├── state_machine.rs  # Event dispatch, state transitions
+│   │       │   │       └── push_delivery.rs  # Push notification delivery
 │   │       │   ├── shutdown.rs     # Graceful shutdown
 │   │       │   └── helpers.rs      # Validation, context builders
 │   │       ├── builder.rs      # RequestHandlerBuilder
@@ -81,7 +95,9 @@ a2a-rust/
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── task_store/     # TaskStore trait + in-memory impl
 │   │       │   │   ├── mod.rs          # TaskStore trait, TaskStoreConfig
-│   │       │   │   └── in_memory.rs    # InMemoryTaskStore + eviction
+│   │       │   │   └── in_memory/      # InMemoryTaskStore
+│   │       │   │       ├── mod.rs          # Core CRUD, TaskStore impl
+│   │       │   │       └── eviction.rs     # TTL + capacity eviction
 │   │       │   └── tenant/         # Multi-tenant isolation
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── context.rs      # TenantContext (task-local)

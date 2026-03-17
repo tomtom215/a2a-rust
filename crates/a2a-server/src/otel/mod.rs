@@ -8,6 +8,14 @@
 //! queue depth to OpenTelemetry instruments. Data is exported via the OTLP
 //! protocol (gRPC) using the `opentelemetry-otlp` crate.
 //!
+//! # Module structure
+//!
+//! | Module | Responsibility |
+//! |---|---|
+//! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
+//! | [`builder`] | `OtelMetricsBuilder` — fluent configuration |
+//! | [`pipeline`] | `init_otlp_pipeline` — OTLP export setup |
+//!
 //! # Feature flag
 //!
 //! This module is only available when the `otel` feature is enabled.
@@ -31,66 +39,18 @@
 //! # }
 //! ```
 
+mod builder;
+mod pipeline;
+
 use std::time::Duration;
 
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::KeyValue;
-use opentelemetry_sdk::metrics::SdkMeterProvider;
 
 use crate::metrics::{ConnectionPoolStats, Metrics};
 
-/// Default meter name used when none is specified via the builder.
-const DEFAULT_METER_NAME: &str = "a2a.server";
-
-// ── Builder ──────────────────────────────────────────────────────────────────
-
-/// Builder for [`OtelMetrics`].
-///
-/// Use [`OtelMetricsBuilder::new`] to create a builder, optionally configure
-/// the meter name, then call [`build`](OtelMetricsBuilder::build) to obtain an
-/// [`OtelMetrics`] instance.
-#[derive(Debug, Clone)]
-pub struct OtelMetricsBuilder {
-    meter_name: &'static str,
-}
-
-impl Default for OtelMetricsBuilder {
-    fn default() -> Self {
-        Self {
-            meter_name: DEFAULT_METER_NAME,
-        }
-    }
-}
-
-impl OtelMetricsBuilder {
-    /// Create a new builder with default settings.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set the OpenTelemetry meter name.
-    ///
-    /// Defaults to `"a2a.server"`.
-    #[must_use]
-    pub const fn meter_name(mut self, name: &'static str) -> Self {
-        self.meter_name = name;
-        self
-    }
-
-    /// Build the [`OtelMetrics`] instance.
-    ///
-    /// Instruments are created from the global [`MeterProvider`]. Make sure
-    /// you have called [`init_otlp_pipeline`] (or otherwise installed a
-    /// `MeterProvider`) before calling this method.
-    ///
-    /// [`MeterProvider`]: opentelemetry::metrics::MeterProvider
-    #[must_use]
-    pub fn build(self) -> OtelMetrics {
-        let meter = opentelemetry::global::meter(self.meter_name);
-        OtelMetrics::from_meter(&meter)
-    }
-}
+pub use builder::OtelMetricsBuilder;
+pub use pipeline::init_otlp_pipeline;
 
 // ── OtelMetrics ──────────────────────────────────────────────────────────────
 
@@ -248,55 +208,6 @@ impl Metrics for OtelMetrics {
     }
 }
 
-// ── Pipeline initialisation ──────────────────────────────────────────────────
-
-/// Initialise an OTLP metrics export pipeline and install it as the global
-/// [`MeterProvider`].
-///
-/// This configures a periodic reader that exports metrics via gRPC to an
-/// OTLP-compatible collector (e.g. the OpenTelemetry Collector, Grafana
-/// Alloy, or Datadog Agent). The endpoint defaults to `http://localhost:4317`
-/// and can be overridden via the `OTEL_EXPORTER_OTLP_ENDPOINT` environment
-/// variable.
-///
-/// Returns the [`SdkMeterProvider`] so the caller can hold onto it and call
-/// [`SdkMeterProvider::shutdown`] during graceful termination.
-///
-/// # Arguments
-///
-/// * `service_name` — value for the `service.name` resource attribute.
-///
-/// # Errors
-///
-/// Returns an error if the OTLP exporter or meter provider cannot be created.
-///
-/// [`MeterProvider`]: opentelemetry::metrics::MeterProvider
-pub fn init_otlp_pipeline(
-    service_name: &str,
-) -> Result<SdkMeterProvider, Box<dyn std::error::Error>> {
-    use opentelemetry::KeyValue as Kv;
-    use opentelemetry_otlp::MetricExporter;
-    use opentelemetry_sdk::metrics::PeriodicReader;
-    use opentelemetry_sdk::Resource;
-
-    let exporter = MetricExporter::builder().with_tonic().build()?;
-
-    let reader = PeriodicReader::builder(exporter).build();
-
-    let resource = Resource::builder()
-        .with_attributes([Kv::new("service.name", service_name.to_owned())])
-        .build();
-
-    let provider = SdkMeterProvider::builder()
-        .with_reader(reader)
-        .with_resource(resource)
-        .build();
-
-    opentelemetry::global::set_meter_provider(provider.clone());
-
-    Ok(provider)
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -312,7 +223,6 @@ mod tests {
     #[test]
     fn from_meter_creates_all_instruments() {
         let metrics = noop_otel_metrics();
-        // Verify the struct was created without panics (instruments are valid).
         let debug = format!("{metrics:?}");
         assert!(debug.contains("OtelMetrics"));
     }
@@ -362,24 +272,7 @@ mod tests {
         });
     }
 
-    #[test]
-    fn builder_default_meter_name() {
-        let metrics = OtelMetricsBuilder::new().build();
-        let debug = format!("{metrics:?}");
-        assert!(debug.contains("OtelMetrics"));
-    }
-
-    #[test]
-    fn builder_custom_meter_name() {
-        let metrics = OtelMetricsBuilder::new().meter_name("custom.meter").build();
-        let debug = format!("{metrics:?}");
-        assert!(debug.contains("OtelMetrics"));
-    }
-
     // ── Observable-effect tests ─────────────────────────────────────────────
-    //
-    // These use a ManualReader + SdkMeterProvider to collect actual metric
-    // data, proving the Metrics methods call the underlying instruments.
 
     use opentelemetry::metrics::MeterProvider;
     use opentelemetry_sdk::metrics::data::{ResourceMetrics, Sum};
@@ -387,9 +280,6 @@ mod tests {
     use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
     use opentelemetry_sdk::Resource;
 
-    /// Creates an `OtelMetrics` backed by a real in-memory pipeline.
-    /// Returns the metrics instance and the reader for collection.
-    /// A `MetricReader` newtype that wraps a shared `ManualReader`.
     struct CloneableReader(std::sync::Arc<ManualReader>);
 
     impl std::fmt::Debug for CloneableReader {
@@ -439,7 +329,6 @@ mod tests {
             .build();
         let meter = provider.meter("test");
         let metrics = OtelMetrics::from_meter(&meter);
-        // Keep provider alive by leaking it (it's a test).
         std::mem::forget(provider);
         (metrics, reader)
     }

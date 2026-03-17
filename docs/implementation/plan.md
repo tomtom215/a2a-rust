@@ -15,7 +15,7 @@ All proposed beyond-spec features have been implemented:
 
 | Feature | Location | Details |
 |---|---|---|
-| **OpenTelemetry integration** | `crates/a2a-server/src/otel.rs` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
+| **OpenTelemetry integration** | `crates/a2a-server/src/otel/` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
 | **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
 | **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
 | **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
@@ -315,8 +315,9 @@ benches/
 ### `crates/a2a-client/` (3,909 lines)
 
 > **Note:** Several monolithic files listed below have since been refactored into
-> submodule directories (e.g., `rest.rs` → `rest/{mod, routing, query}.rs`,
-> `sse_parser.rs` → `sse_parser/{mod, types, parser}.rs`). The line counts
+> submodule directories (e.g., `rest.rs` → `rest/{mod, routing, query, request, streaming}.rs`,
+> `sse_parser.rs` → `sse_parser/{mod, types, parser}.rs`,
+> `builder.rs` → `builder/{mod, transport_factory}.rs`). The line counts
 > reflect the state at the time of initial implementation.
 
 ```
@@ -354,8 +355,11 @@ benches/
 
 > **Note:** Several monolithic files listed below have since been refactored into
 > submodule directories (e.g., `dispatch/rest.rs` → `dispatch/rest/{mod, response, query}.rs`,
-> `store/task_store.rs` → `store/task_store/{mod, in_memory}.rs`,
-> `streaming/event_queue.rs` → `streaming/event_queue/{mod, in_memory, manager}.rs`).
+> `store/task_store.rs` → `store/task_store/{mod, in_memory/{mod, eviction}}.rs`,
+> `streaming/event_queue.rs` → `streaming/event_queue/{mod, in_memory, manager}.rs`,
+> `otel.rs` → `otel/{mod, builder, pipeline}.rs`,
+> `handler/lifecycle.rs` → `handler/lifecycle/{mod, get_task, list_tasks, cancel_task, subscribe, extended_card}.rs`,
+> `handler/event_processing/background.rs` → `background/{mod, state_machine, push_delivery}.rs`).
 > The line counts reflect the state at the time of initial implementation.
 
 ```
