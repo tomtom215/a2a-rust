@@ -316,17 +316,22 @@ pub fn serve_jsonrpc(
     });
 }
 
-/// Starts a gRPC server on the given listener.
+/// Starts a gRPC server on a pre-bound listener.
 ///
-/// Returns the local address the server bound to.
+/// Uses [`GrpcDispatcher::serve_with_listener`] to avoid the placeholder-URL
+/// bug (Bug #12): the caller pre-binds the listener to get the address before
+/// building the handler, then passes the listener here.
 #[cfg(feature = "grpc")]
-pub async fn serve_grpc(handler: Arc<a2a_protocol_server::handler::RequestHandler>) -> SocketAddr {
+pub async fn serve_grpc(
+    listener: tokio::net::TcpListener,
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) -> SocketAddr {
     use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
 
     let config = GrpcConfig::default();
     let dispatcher = GrpcDispatcher::new(handler, config);
     dispatcher
-        .serve_with_addr("127.0.0.1:0")
+        .serve_with_listener(listener)
         .await
         .expect("start gRPC server")
 }

@@ -181,6 +181,25 @@ impl GrpcDispatcher {
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<SocketAddr> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
+        self.serve_with_listener(listener).await
+    }
+
+    /// Starts a gRPC server on a pre-bound [`TcpListener`](tokio::net::TcpListener).
+    ///
+    /// This is the recommended approach when you need to know the server
+    /// address before constructing the handler (e.g., for agent cards with
+    /// correct URLs). Pre-bind the listener, extract the address, build
+    /// your handler, then pass the listener here.
+    ///
+    /// Returns the local address and runs the server in a background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns `std::io::Error` if the listener's local address cannot be read.
+    pub async fn serve_with_listener(
+        self,
+        listener: tokio::net::TcpListener,
+    ) -> std::io::Result<SocketAddr> {
         let local_addr = listener.local_addr()?;
         let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
         let svc = self.into_service();

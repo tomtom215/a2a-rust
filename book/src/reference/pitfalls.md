@@ -135,6 +135,32 @@ When multiple threads share a rate limiter bucket under a read lock, non-atomic 
 
 **Solution:** Use `compare_exchange` (CAS) to atomically swap the window number. Only one thread wins the CAS; others loop and retry with the updated state.
 
+## Transport Pitfalls
+
+### Query string parameters must be URL-encoded
+
+When building REST transport query strings from JSON values, parameter values must be percent-encoded per RFC 3986. A value like `status=active&role=admin` without encoding becomes three separate query parameters instead of one.
+
+**Solution:** The `build_query_string()` function in the REST transport encodes all non-unreserved characters (`A-Z a-z 0-9 - . _ ~`).
+
+### WebSocket stream termination must use structured parsing
+
+Detecting stream completion by checking `text.contains("stream_complete")` is fragile — it false-positives on any payload text containing that substring, and misses terminal status updates that don't contain that exact string.
+
+**Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`completed`, `failed`, `canceled`, `rejected`) or the `stream_complete` sentinel.
+
+### Pre-bind listeners for all server types when building agent cards
+
+The gRPC dispatcher had the same placeholder-URL bug as the HTTP dispatchers: the agent card was built before the server bound to a port, so the card contained `"http://placeholder"`. This applied to any transport that binds its own port.
+
+**Solution:** Pre-bind a `TcpListener`, extract the address, build the handler with the correct URL, then pass the listener via `serve_with_listener()` (gRPC) or the accept loop (HTTP).
+
+### Background tasks cannot propagate errors — log them
+
+In a `tokio::spawn`-ed task, errors have no caller to return to. Using `let _ = store.save(...).await` silently drops failures, causing task state to diverge between the event queue and the persistent store.
+
+**Solution:** Use `if let Err(e) = store.save(...).await { trace_error!(...) }` so failures are observable via logs and metrics.
+
 ## Workspace / Cargo Pitfalls
 
 ### `cargo-fuzz` needs its own workspace

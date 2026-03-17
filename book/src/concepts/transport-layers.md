@@ -178,6 +178,8 @@ let dispatcher = GrpcDispatcher::new(handler, config);
 dispatcher.serve("0.0.0.0:50051").await?;
 ```
 
+> **Tip:** Use `serve_with_listener()` when you need to know the server address before constructing the handler (e.g., for agent cards with correct URLs). Pre-bind a `TcpListener`, extract the address, build your handler, then pass the listener.
+
 ### Client
 
 ```rust
