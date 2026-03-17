@@ -49,8 +49,8 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
-use query::*;
-use routing::*;
+use query::build_query_string;
+use routing::{route_for, HttpMethod, Route};
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
 

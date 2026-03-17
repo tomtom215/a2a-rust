@@ -5,7 +5,7 @@
 //!
 //! Provides [`TenantContext`] for threading tenant identity through store
 //! operations and [`TenantAwareInMemoryTaskStore`] for full tenant isolation
-//! without changing the [`TaskStore`] trait signature.
+//! without changing the [`TaskStore`](super::TaskStore) trait signature.
 //!
 //! # Architecture
 //!

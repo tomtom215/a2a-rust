@@ -53,7 +53,7 @@ pub struct InMemoryQueueWriter {
 
 impl InMemoryQueueWriter {
     /// Creates a new `InMemoryQueueWriter`.
-    pub(super) fn new(
+    pub(super) const fn new(
         tx: broadcast::Sender<A2aResult<StreamResponse>>,
         max_event_size: usize,
         write_timeout: std::time::Duration,
@@ -129,7 +129,7 @@ pub struct InMemoryQueueReader {
 
 impl InMemoryQueueReader {
     /// Creates a new `InMemoryQueueReader`.
-    pub(super) fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
+    pub(super) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
         Self { rx }
     }
 }

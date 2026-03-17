@@ -70,10 +70,7 @@ mod tests {
         // Percent sign itself
         assert_eq!(encode_query_value("100%"), "100%25");
         // Unreserved characters pass through
-        assert_eq!(
-            encode_query_value("safe-._~AZaz09"),
-            "safe-._~AZaz09"
-        );
+        assert_eq!(encode_query_value("safe-._~AZaz09"), "safe-._~AZaz09");
     }
 
     #[test]

@@ -14,8 +14,8 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::context::TenantContext;
 use super::super::task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+use super::context::TenantContext;
 
 // ── TenantAwareInMemoryTaskStore ────────────────────────────────────────────
 

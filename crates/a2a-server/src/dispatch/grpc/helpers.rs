@@ -58,9 +58,7 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
         a2a_protocol_types::ErrorCode::InvalidParams
         | a2a_protocol_types::ErrorCode::ParseError => tonic::Code::InvalidArgument,
         a2a_protocol_types::ErrorCode::MethodNotFound
-        | a2a_protocol_types::ErrorCode::PushNotificationNotSupported => {
-            tonic::Code::Unimplemented
-        }
+        | a2a_protocol_types::ErrorCode::PushNotificationNotSupported => tonic::Code::Unimplemented,
         _ => tonic::Code::Internal,
     };
     Status::new(code, a2a_err.message)

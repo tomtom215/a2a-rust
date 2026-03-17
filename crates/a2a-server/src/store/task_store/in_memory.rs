@@ -326,8 +326,8 @@ impl TaskStore for InMemoryTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+    use std::time::Duration;
 
     /// Helper to create a task with the given ID and state.
     fn make_task(id: &str, state: TaskState) -> Task {
