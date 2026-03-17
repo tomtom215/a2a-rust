@@ -120,6 +120,21 @@ fn my_method<'a>(
 
 Running O(n) eviction on every `save()` call is expensive. The task store amortizes eviction to every 64 writes. Tests that depend on eviction must call `run_eviction()` explicitly or account for the amortization interval.
 
+### `std::sync::RwLock` poisoning — fail-fast vs silent ignore
+
+When a thread panics while holding a `std::sync::RwLock`, the lock becomes "poisoned." There are two strategies:
+
+1. **Silent ignore** (`lock.read().ok()?`) — returns `None`/no-op on poisoned locks. This hides bugs.
+2. **Fail-fast** (`lock.read().expect("poisoned")`) — panics immediately, surfacing the problem.
+
+a2a-rust uses fail-fast. If you see a "lock poisoned" panic, the root cause is a prior panic in another thread. Fix that panic first.
+
+### Rate limiter atomics under read lock — CAS loop required
+
+When multiple threads share a rate limiter bucket under a read lock, non-atomic multi-step operations (load window → check → store count) create TOCTOU races. Two threads can both see an old window and both reset the counter.
+
+**Solution:** Use `compare_exchange` (CAS) to atomically swap the window number. Only one thread wins the CAS; others loop and retry with the updated state.
+
 ## Workspace / Cargo Pitfalls
 
 ### `cargo-fuzz` needs its own workspace

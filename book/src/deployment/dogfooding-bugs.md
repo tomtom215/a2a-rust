@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Four dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **13 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 13 have been fixed.
+Five dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **17 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 17 have been fixed.
 
 ## Pass 1: Initial Dogfood (3 bugs)
 
@@ -121,6 +121,48 @@ Agent cards were constructed with `code_analyzer_card("http://placeholder")` *be
 The webhook receiver classified events by checking `value.get("status")` and `value.get("artifact")`, but `StreamResponse` serializes as `{"statusUpdate": {...}}` / `{"artifactUpdate": {...}}` (camelCase variant names). All push events were classified as "Unknown".
 
 **Fix:** Check `statusUpdate`/`artifactUpdate`/`task` instead.
+
+## Pass 5: Hardening & Concurrency Audit (4 bugs)
+
+### Bug 14: Lock Poisoning Silently Masked in `InMemoryCredentialsStore`
+
+**Severity:** High | **Component:** `InMemoryCredentialsStore`
+
+All three `CredentialsStore` methods (`get`, `set`, `remove`) used `.ok()?` or `if let Ok(...)` to silently ignore `RwLock` poisoning. If a thread panicked while holding the lock, subsequent calls would return `None` (for `get`) or silently skip the operation (for `set`/`remove`), masking the underlying bug.
+
+**Why tests missed it:** Tests don't exercise lock poisoning because `#[test]` functions that panic abort the test, not the lock.
+
+**Fix:** Changed all three methods to `.expect("credentials store lock poisoned")` for fail-fast behavior. Added documentation explaining the poisoning semantics.
+
+### Bug 15: Rate Limiter TOCTOU Race on Window Advance
+
+**Severity:** High | **Component:** `RateLimitInterceptor`
+
+When two concurrent requests arrived at a window boundary, both could see the old `window_start`, and both would store `count = 1` for the new window. This let 2N requests through per window instead of N.
+
+The race: Thread A loads `window_start` (old), Thread B loads `window_start` (old), Thread A stores new `window_start` + count=1, Thread B stores new `window_start` + count=1 (clobbering A's count).
+
+**Why tests missed it:** The single-threaded test executor doesn't interleave atomic operations. The race only manifests under real concurrent load.
+
+**Fix:** Replaced the non-atomic load-check-store sequence with a `compare_exchange` (CAS) loop. Only one thread wins the CAS to reset the window; others retry and see the updated window on the next iteration.
+
+### Bug 16: Rate Limiter Unbounded Bucket Growth
+
+**Severity:** Medium | **Component:** `RateLimitInterceptor`
+
+The `buckets` HashMap grew without bound. Each unique caller key created a `CallerBucket` that was never removed, even after the caller departed. In a service with many transient callers (e.g., serverless functions), this would leak memory indefinitely.
+
+**Why tests missed it:** Tests use a small fixed set of callers. The leak only manifests with high caller churn over time.
+
+**Fix:** Added amortized stale-bucket cleanup (every 256 `check()` calls). Buckets whose `window_start` is more than one window old are evicted.
+
+### Bug 17: No Protocol Version Compatibility Warning
+
+**Severity:** Low | **Component:** `ClientBuilder`
+
+`ClientBuilder::from_card()` silently accepted any `protocol_version` from the agent card, including incompatible versions (e.g., `"2.0.0"` when the client supports `"1.x"`). Users would only discover the mismatch through obscure deserialization errors.
+
+**Fix:** Added protocol version major-version check in `from_card()`. When the agent's major version differs from the client's supported version, a `tracing::warn!` is emitted.
 
 ## Configuration Hardening (Pass 2)
 

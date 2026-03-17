@@ -36,6 +36,11 @@ use crate::interceptor::{CallInterceptor, InterceptorChain};
 use crate::retry::{RetryPolicy, RetryTransport};
 use crate::transport::{JsonRpcTransport, RestTransport, Transport};
 
+/// The major protocol version supported by this client.
+///
+/// Used to warn when an agent card advertises an incompatible version.
+const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
+
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
 
 /// Builder for [`A2aClient`].
@@ -70,14 +75,39 @@ impl ClientBuilder {
 
     /// Creates a builder pre-configured from an [`AgentCard`].
     ///
-    /// Selects the first supported interface from the card.
+    /// Selects the first supported interface from the card. Logs a warning
+    /// (via `tracing`, if enabled) if the agent's protocol version is not
+    /// in the supported range.
     #[must_use]
     pub fn from_card(card: &AgentCard) -> Self {
-        let (endpoint, binding) = card
+        let (endpoint, binding, version) = card
             .supported_interfaces
             .first()
-            .map(|i| (i.url.clone(), i.protocol_binding.clone()))
+            .map(|i| {
+                (
+                    i.url.clone(),
+                    i.protocol_binding.clone(),
+                    i.protocol_version.clone(),
+                )
+            })
             .unwrap_or_default();
+
+        // Warn if agent advertises a different major version than we support.
+        #[cfg(feature = "tracing")]
+        if !version.is_empty() {
+            let major = version
+                .split('.')
+                .next()
+                .and_then(|s| s.parse::<u32>().ok());
+            if major != Some(SUPPORTED_PROTOCOL_MAJOR) {
+                trace_warn!(
+                    agent = %card.name,
+                    protocol_version = %version,
+                    supported_major = SUPPORTED_PROTOCOL_MAJOR,
+                    "agent protocol version may be incompatible with this client"
+                );
+            }
+        }
 
         Self {
             endpoint,
@@ -405,5 +435,74 @@ mod tests {
             .build()
             .expect("build");
         assert_eq!(client.config().request_timeout, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn builder_zero_request_timeout_errors() {
+        let result = ClientBuilder::new("http://localhost:8080")
+            .with_timeout(Duration::ZERO)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_zero_stream_timeout_errors() {
+        let result = ClientBuilder::new("http://localhost:8080")
+            .with_stream_connect_timeout(Duration::ZERO)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_unknown_binding_errors() {
+        let result = ClientBuilder::new("http://localhost:8080")
+            .with_protocol_binding("UNKNOWN_PROTOCOL")
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn builder_from_card_empty_interfaces_uses_defaults() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard};
+
+        let card = AgentCard {
+            name: "empty".into(),
+            version: "1.0".into(),
+            description: "No interfaces".into(),
+            supported_interfaces: vec![],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        // from_card with empty interfaces should still create a builder
+        // (it will fail at build() if the endpoint is invalid).
+        let builder = ClientBuilder::from_card(&card);
+        let _ = format!("{builder:?}");
+    }
+
+    #[test]
+    fn builder_with_return_immediately() {
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_return_immediately(true)
+            .build()
+            .expect("build");
+        assert!(client.config().return_immediately);
+    }
+
+    #[test]
+    fn builder_with_history_length() {
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_history_length(10)
+            .build()
+            .expect("build");
+        assert_eq!(client.config().history_length, Some(10));
     }
 }

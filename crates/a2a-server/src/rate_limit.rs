@@ -88,7 +88,12 @@ struct CallerBucket {
 pub struct RateLimitInterceptor {
     config: RateLimitConfig,
     buckets: RwLock<HashMap<String, CallerBucket>>,
+    /// Counter for amortized stale-bucket cleanup.
+    check_count: AtomicU64,
 }
+
+/// Number of `check()` calls between stale-bucket cleanup sweeps.
+const CLEANUP_INTERVAL: u64 = 256;
 
 impl std::fmt::Debug for RateLimitInterceptor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -105,6 +110,7 @@ impl RateLimitInterceptor {
         Self {
             config,
             buckets: RwLock::new(HashMap::new()),
+            check_count: AtomicU64::new(0),
         }
     }
 
@@ -127,7 +133,25 @@ impl RateLimitInterceptor {
         now_secs / self.config.window_secs
     }
 
+    /// Removes buckets whose window is older than the current window.
+    ///
+    /// Called periodically (every [`CLEANUP_INTERVAL`] checks) to prevent
+    /// unbounded growth of the bucket map from departed callers.
+    async fn cleanup_stale_buckets(&self) {
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let current_window = self.window_number(now_secs);
+
+        let mut buckets = self.buckets.write().await;
+        buckets.retain(|_, bucket| {
+            bucket.window_start.load(Ordering::Relaxed) >= current_window.saturating_sub(1)
+        });
+    }
+
     /// Checks rate limit for the caller. Returns `Ok(())` if allowed, `Err` if exceeded.
+    #[allow(clippy::too_many_lines)]
     async fn check(&self, key: &str) -> A2aResult<()> {
         let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -135,30 +159,71 @@ impl RateLimitInterceptor {
             .as_secs();
         let current_window = self.window_number(now_secs);
 
+        // Amortized stale-bucket cleanup to prevent unbounded memory growth.
+        let count = self.check_count.fetch_add(1, Ordering::Relaxed);
+        if count > 0 && count.is_multiple_of(CLEANUP_INTERVAL) {
+            self.cleanup_stale_buckets().await;
+        }
+
         // Fast path: try read lock first.
         {
             let buckets = self.buckets.read().await;
             if let Some(bucket) = buckets.get(key) {
-                let bucket_window = bucket.window_start.load(Ordering::Relaxed);
-                if bucket_window == current_window {
-                    let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
-                    if count > self.config.requests_per_window {
-                        return Err(A2aError::internal(format!(
-                            "rate limit exceeded: {} requests per {} seconds",
-                            self.config.requests_per_window, self.config.window_secs
-                        )));
+                // CAS loop to atomically reset window or increment counter.
+                // Avoids the TOCTOU race where two threads both see an old
+                // window and both reset count to 1.
+                loop {
+                    let bucket_window = bucket.window_start.load(Ordering::Acquire);
+                    if bucket_window == current_window {
+                        let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
+                        if count > self.config.requests_per_window {
+                            return Err(A2aError::internal(format!(
+                                "rate limit exceeded: {} requests per {} seconds",
+                                self.config.requests_per_window, self.config.window_secs
+                            )));
+                        }
+                        return Ok(());
                     }
-                    return Ok(());
+                    // Window has advanced — atomically swap to the new window.
+                    // Only one thread succeeds the CAS; others loop and see the
+                    // updated window on the next iteration.
+                    if bucket
+                        .window_start
+                        .compare_exchange(
+                            bucket_window,
+                            current_window,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        bucket.count.store(1, Ordering::Release);
+                        return Ok(());
+                    }
+                    // CAS failed — another thread updated the window. Retry.
                 }
-                // Window has advanced — reset under the read lock using atomics.
-                bucket.window_start.store(current_window, Ordering::Relaxed);
-                bucket.count.store(1, Ordering::Relaxed);
-                return Ok(());
             }
         }
 
         // Slow path: create new bucket under write lock.
         let mut buckets = self.buckets.write().await;
+        // Double-check: another task may have inserted while we waited.
+        if let Some(bucket) = buckets.get(key) {
+            let bucket_window = bucket.window_start.load(Ordering::Acquire);
+            if bucket_window == current_window {
+                let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
+                if count > self.config.requests_per_window {
+                    return Err(A2aError::internal(format!(
+                        "rate limit exceeded: {} requests per {} seconds",
+                        self.config.requests_per_window, self.config.window_secs
+                    )));
+                }
+            } else {
+                bucket.window_start.store(current_window, Ordering::Release);
+                bucket.count.store(1, Ordering::Release);
+            }
+            return Ok(());
+        }
         buckets.insert(
             key.to_string(),
             CallerBucket {
@@ -280,5 +345,68 @@ mod tests {
         };
         assert!(limiter.before(&ctx).await.is_ok());
         assert!(limiter.before(&ctx).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn concurrent_rate_limit_checks() {
+        use std::sync::Arc;
+
+        let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 100,
+            window_secs: 60,
+        }));
+
+        // Spawn 200 concurrent requests from the same caller.
+        let mut handles = Vec::new();
+        for _ in 0..200 {
+            let lim = Arc::clone(&limiter);
+            handles.push(tokio::spawn(async move {
+                let ctx = CallContext {
+                    method: "message/send".to_string(),
+                    caller_identity: Some("concurrent-user".into()),
+                    extensions: vec![],
+                    request_id: None,
+                    http_headers: HashMap::new(),
+                };
+                lim.before(&ctx).await
+            }));
+        }
+
+        let mut ok_count = 0;
+        let mut err_count = 0;
+        for handle in handles {
+            match handle.await.unwrap() {
+                Ok(()) => ok_count += 1,
+                Err(_) => err_count += 1,
+            }
+        }
+
+        // Exactly 100 should succeed, 100 should be rejected.
+        assert_eq!(ok_count, 100, "expected 100 allowed, got {ok_count}");
+        assert_eq!(err_count, 100, "expected 100 rejected, got {err_count}");
+    }
+
+    #[tokio::test]
+    async fn stale_bucket_cleanup() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10,
+            window_secs: 60,
+        });
+
+        // Create some buckets.
+        let ctx_a = make_ctx(Some("stale-a"));
+        let ctx_b = make_ctx(Some("stale-b"));
+        assert!(limiter.before(&ctx_a).await.is_ok());
+        assert!(limiter.before(&ctx_b).await.is_ok());
+
+        assert_eq!(limiter.buckets.read().await.len(), 2);
+
+        // Cleanup shouldn't remove current-window buckets.
+        limiter.cleanup_stale_buckets().await;
+        assert_eq!(
+            limiter.buckets.read().await.len(),
+            2,
+            "current-window buckets should not be evicted"
+        );
     }
 }
