@@ -26,6 +26,8 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 tls-rustls = ["a2a-protocol-client/tls-rustls"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
+## Enable OpenTelemetry integration.
+otel = ["a2a-protocol-server/otel"]
 
 [package.metadata.docs.rs]
 all-features = true

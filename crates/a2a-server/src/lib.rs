@@ -32,6 +32,8 @@
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
+//! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
+//! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
 //!
 //! # gRPC transport
 //!
@@ -69,11 +71,17 @@ pub mod request_context;
 pub mod serve;
 pub mod store;
 pub mod streaming;
+pub mod tenant_config;
+pub mod tenant_resolver;
+
+#[cfg(feature = "otel")]
+pub mod otel;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{
-    AgentCardProducer, DynamicAgentCardHandler, StaticAgentCardHandler, CORS_ALLOW_ALL,
+    AgentCardProducer, DynamicAgentCardHandler, HotReloadAgentCardHandler,
+    StaticAgentCardHandler, CORS_ALLOW_ALL,
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
@@ -87,7 +95,9 @@ pub use executor::AgentExecutor;
 pub use executor_helpers::{boxed_future, EventEmitter};
 pub use handler::{HandlerLimits, RequestHandler, SendMessageResult};
 pub use interceptor::{ServerInterceptor, ServerInterceptorChain};
-pub use metrics::Metrics;
+pub use metrics::{ConnectionPoolStats, Metrics};
+#[cfg(feature = "otel")]
+pub use otel::OtelMetrics;
 pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
     TenantAwareInMemoryPushConfigStore,
@@ -103,7 +113,11 @@ pub use store::{
 #[cfg(feature = "sqlite")]
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
 #[cfg(feature = "sqlite")]
-pub use store::{SqliteTaskStore, TenantAwareSqliteTaskStore};
+pub use store::{Migration, MigrationRunner, SqliteTaskStore, TenantAwareSqliteTaskStore};
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
+};
+pub use tenant_config::{PerTenantConfig, TenantLimits};
+pub use tenant_resolver::{
+    BearerTokenTenantResolver, HeaderTenantResolver, PathSegmentTenantResolver, TenantResolver,
 };

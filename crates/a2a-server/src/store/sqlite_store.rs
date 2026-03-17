@@ -64,6 +64,27 @@ impl SqliteTaskStore {
         Self::from_pool(pool).await
     }
 
+    /// Opens a SQLite database with automatic schema migration.
+    ///
+    /// Runs all pending migrations before returning the store. This is the
+    /// recommended constructor for production deployments because it ensures
+    /// the schema is always up to date without duplicating DDL statements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database cannot be opened or any migration fails.
+    pub async fn with_migrations(url: &str) -> Result<Self, sqlx::Error> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(4)
+            .connect(url)
+            .await?;
+
+        let runner = super::migration::MigrationRunner::new(pool.clone());
+        runner.run_pending().await?;
+
+        Ok(Self { pool })
+    }
+
     /// Creates a store from an existing connection pool.
     ///
     /// # Errors

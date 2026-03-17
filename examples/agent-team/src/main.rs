@@ -293,6 +293,10 @@ async fn main() {
     results.push(coverage_gaps::test_concurrent_cancels(&ctx).await);
     results.push(coverage_gaps::test_stale_page_token(&ctx).await);
 
+    // Test 79: Agent card signing (signing feature)
+    #[cfg(feature = "signing")]
+    results.push(coverage_gaps::test_agent_card_signing(&ctx).await);
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -388,6 +392,8 @@ async fn main() {
         "WebSocket transport (SendMessage + streaming)",
         #[cfg(feature = "grpc")]
         "gRPC transport (SendMessage + streaming + GetTask)",
+        #[cfg(feature = "signing")]
+        "Agent card signing (JWS ES256, sign + verify + tamper detection)",
     ];
     for f in &features {
         println!("║   [x] {f}");

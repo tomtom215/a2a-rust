@@ -33,6 +33,8 @@ grpc = [
     "dep:tonic",
     "dep:tokio-stream",
 ]
+## Enable agent card signing tests.
+signing = ["a2a-protocol-types/signing", "dep:ring", "dep:base64"]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-types" }
@@ -46,6 +48,8 @@ tokio-tungstenite = { version = ">=0.24, <0.25", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 tonic        = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
+ring       = { version = "0.17", optional = true }
+base64     = { version = "0.22", optional = true }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper      = { workspace = true }
