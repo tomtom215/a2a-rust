@@ -27,8 +27,19 @@ a2a-rust/
 │   ├── a2a-protocol-client/         # HTTP client
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
-│   │       ├── transport/      # JsonRpcTransport, RestTransport
+│   │       ├── transport/      # Transport trait + implementations
+│   │       │   ├── mod.rs          # Transport trait, truncate_body
+│   │       │   ├── rest/           # REST transport
+│   │       │   │   ├── mod.rs          # RestTransport, request execution
+│   │       │   │   ├── routing.rs      # Route definitions, method mapping
+│   │       │   │   └── query.rs        # Query string building, encoding
+│   │       │   └── jsonrpc.rs      # JsonRpcTransport
 │   │       ├── streaming/      # SSE parser, EventStream
+│   │       │   ├── event_stream.rs # EventStream for consuming SSE
+│   │       │   └── sse_parser/     # SSE frame parser
+│   │       │       ├── mod.rs          # Re-exports
+│   │       │       ├── types.rs        # SseFrame, SseParseError
+│   │       │       └── parser.rs       # SseParser state machine
 │   │       ├── methods/        # send_message, tasks, push_config
 │   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
 │   │       └── interceptor.rs  # CallInterceptor, InterceptorChain
@@ -42,16 +53,47 @@ a2a-rust/
 │   │       │   ├── messaging.rs    # SendMessage / SendStreamingMessage
 │   │       │   ├── lifecycle.rs    # GetTask, ListTasks, CancelTask, etc.
 │   │       │   ├── push_config.rs  # Push notification config CRUD
-│   │       │   ├── event_processing.rs  # Event collection, push delivery
+│   │       │   ├── event_processing/  # Event collection & push delivery
+│   │       │   │   ├── mod.rs          # Re-exports
+│   │       │   │   ├── sync_collector.rs   # Sync-mode event collection
+│   │       │   │   └── background.rs       # Background event processor
 │   │       │   ├── shutdown.rs     # Graceful shutdown
 │   │       │   └── helpers.rs      # Validation, context builders
 │   │       ├── builder.rs      # RequestHandlerBuilder
 │   │       ├── executor.rs     # AgentExecutor trait
 │   │       ├── executor_helpers.rs # boxed_future, agent_executor!, EventEmitter
-│   │       ├── dispatch/       # JsonRpcDispatcher, RestDispatcher
-│   │       ├── store/          # TaskStore trait, InMemoryTaskStore
+│   │       ├── dispatch/       # Protocol dispatchers
+│   │       │   ├── mod.rs          # DispatchConfig, re-exports
+│   │       │   ├── rest/           # REST dispatcher
+│   │       │   │   ├── mod.rs          # RestDispatcher, route handlers
+│   │       │   │   ├── response.rs     # HTTP response helpers
+│   │       │   │   └── query.rs        # Query/URL parsing utilities
+│   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
+│   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
+│   │       │   │   └── response.rs     # JSON-RPC response serialization
+│   │       │   └── grpc/           # gRPC dispatcher (feature-gated)
+│   │       │       ├── mod.rs          # Proto includes, re-exports
+│   │       │       ├── config.rs       # GrpcConfig
+│   │       │       ├── dispatcher.rs   # GrpcDispatcher, server setup
+│   │       │       ├── service.rs      # A2aService trait implementation
+│   │       │       └── helpers.rs      # JSON codec, error mapping
+│   │       ├── store/          # Task persistence
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── task_store/     # TaskStore trait + in-memory impl
+│   │       │   │   ├── mod.rs          # TaskStore trait, TaskStoreConfig
+│   │       │   │   └── in_memory.rs    # InMemoryTaskStore + eviction
+│   │       │   └── tenant/         # Multi-tenant isolation
+│   │       │       ├── mod.rs          # Re-exports
+│   │       │       ├── context.rs      # TenantContext (task-local)
+│   │       │       └── store.rs        # TenantAwareInMemoryTaskStore
 │   │       ├── push/           # PushConfigStore, PushSender
-│   │       ├── streaming/      # EventQueueWriter, EventQueueManager
+│   │       ├── streaming/      # Event streaming
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── sse.rs          # SSE response builder
+│   │       │   └── event_queue/    # Event queue system
+│   │       │       ├── mod.rs          # Traits, constants, constructors
+│   │       │       ├── in_memory.rs    # Broadcast-backed queue impl
+│   │       │       └── manager.rs      # EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
 │   │       ├── call_context.rs # CallContext with HTTP headers
 │   │       ├── metrics.rs      # Metrics trait

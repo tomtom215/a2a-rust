@@ -1,189 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Event collection, state-transition processing, and push notification delivery.
-//!
-//! Contains both the `&self`-based methods (used by sync mode's `collect_events`)
-//! and standalone free functions (used by the background event processor in
-//! streaming mode, which cannot hold a reference to `RequestHandler`).
+//! Background event processing for streaming mode.
 
 use std::sync::Arc;
 
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
-use crate::error::{ServerError, ServerResult};
 use crate::push::{PushConfigStore, PushSender};
 use crate::store::TaskStore;
-use crate::streaming::{EventQueueReader, InMemoryQueueReader};
+use crate::streaming::EventQueueReader;
 
-use super::limits::HandlerLimits;
-use super::RequestHandler;
-
-// ── &self methods (sync mode) ───────────────────────────────────────────────
-
-impl RequestHandler {
-    /// Collects events until stream closes, updating the task store and
-    /// delivering push notifications. Returns the final task.
-    ///
-    /// Takes the executor's `JoinHandle` so that if the executor panics or
-    /// terminates without closing the queue properly, we detect it and avoid
-    /// blocking forever (CB-3).
-    pub(crate) async fn collect_events(
-        &self,
-        mut reader: InMemoryQueueReader,
-        task_id: TaskId,
-        executor_handle: tokio::task::JoinHandle<()>,
-    ) -> ServerResult<Task> {
-        let mut last_task = self
-            .task_store
-            .get(&task_id)
-            .await?
-            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
-
-        // Pin the executor handle so we can poll it alongside the reader.
-        // When the executor finishes (or panics), we'll drain remaining events
-        // and then return, rather than blocking forever.
-        let mut executor_done = false;
-        let mut handle_fuse = executor_handle;
-
-        loop {
-            if executor_done {
-                // Executor finished — drain any remaining buffered events.
-                match reader.read().await {
-                    Some(event) => {
-                        self.process_event(event, &task_id, &mut last_task).await?;
-                    }
-                    None => break,
-                }
-            } else {
-                tokio::select! {
-                    biased;
-                    event = reader.read() => {
-                        match event {
-                            Some(event) => {
-                                self.process_event(event, &task_id, &mut last_task).await?;
-                            }
-                            None => break,
-                        }
-                    }
-                    result = &mut handle_fuse => {
-                        executor_done = true;
-                        if result.is_err() {
-                            // Executor panicked (CB-2). Mark task as failed
-                            // and drain remaining events.
-                            trace_error!(
-                                task_id = %task_id,
-                                "executor task panicked"
-                            );
-                            if !last_task.status.state.is_terminal() {
-                                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                self.task_store.save(last_task.clone()).await?;
-                            }
-                        }
-                        // Continue to drain remaining events from the queue.
-                    }
-                }
-            }
-        }
-
-        Ok(last_task)
-    }
-
-    /// Processes a single event from the queue reader, updating the task and
-    /// delivering push notifications.
-    async fn process_event(
-        &self,
-        event: a2a_protocol_types::error::A2aResult<StreamResponse>,
-        task_id: &TaskId,
-        last_task: &mut Task,
-    ) -> ServerResult<()> {
-        match event {
-            Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
-                let current = last_task.status.state;
-                let next = update.status.state;
-                if !current.can_transition_to(next) {
-                    trace_warn!(
-                        task_id = %task_id,
-                        from = %current,
-                        to = %next,
-                        "invalid state transition rejected"
-                    );
-                    return Err(ServerError::InvalidStateTransition {
-                        task_id: task_id.clone(),
-                        from: current,
-                        to: next,
-                    });
-                }
-                last_task.status = TaskStatus {
-                    state: next,
-                    message: update.status.message.clone(),
-                    timestamp: update.status.timestamp.clone(),
-                };
-                self.task_store.save(last_task.clone()).await?;
-                self.deliver_push(task_id, stream_resp).await;
-            }
-            Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
-                let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
-                artifacts.push(update.artifact.clone());
-                self.task_store.save(last_task.clone()).await?;
-                self.deliver_push(task_id, stream_resp).await;
-            }
-            Ok(StreamResponse::Task(task)) => {
-                *last_task = task;
-                self.task_store.save(last_task.clone()).await?;
-            }
-            Ok(StreamResponse::Message(_) | _) => {
-                // Messages and future stream response variants — continue.
-            }
-            Err(e) => {
-                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                self.task_store.save(last_task.clone()).await?;
-                return Err(ServerError::Protocol(e));
-            }
-        }
-        Ok(())
-    }
-
-    /// Delivers push notifications for a streaming event if configs exist.
-    ///
-    /// Push deliveries are sequential per-config, but each delivery is bounded
-    /// by a timeout to prevent one slow webhook from blocking all subsequent
-    /// deliveries indefinitely.
-    async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
-        let Some(ref sender) = self.push_sender else {
-            return;
-        };
-        let Ok(configs) = self.push_config_store.list(task_id.as_ref()).await else {
-            return;
-        };
-        for config in &configs {
-            let result = tokio::time::timeout(
-                self.limits.push_delivery_timeout,
-                sender.send(&config.url, event, config),
-            )
-            .await;
-            match result {
-                Ok(Err(_err)) => {
-                    trace_warn!(
-                        task_id = %task_id,
-                        url = %config.url,
-                        error = %_err,
-                        "push notification delivery failed"
-                    );
-                }
-                Err(_) => {
-                    trace_warn!(
-                        task_id = %task_id,
-                        url = %config.url,
-                        "push notification delivery timed out"
-                    );
-                }
-                Ok(Ok(())) => {}
-            }
-        }
-    }
-}
+use super::super::limits::HandlerLimits;
+use super::super::RequestHandler;
 
 // ── Background event processor (streaming mode) ─────────────────────────────
 
@@ -420,36 +250,25 @@ async fn deliver_push_bg(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::future::Future;
+    use std::pin::Pin;
 
     use a2a_protocol_types::artifact::{Artifact, ArtifactId};
-    use a2a_protocol_types::error::A2aError;
+    use a2a_protocol_types::error::{A2aError, A2aResult};
     use a2a_protocol_types::events::{
         StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
     };
     use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::push::TaskPushNotificationConfig;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-    use a2a_protocol_types::error::A2aResult;
-
-    use std::future::Future;
-    use std::pin::Pin;
-
-    use a2a_protocol_types::push::TaskPushNotificationConfig;
-
-    use crate::agent_executor;
-    use crate::builder::RequestHandlerBuilder;
-    use crate::push::InMemoryPushConfigStore;
+    use crate::push::{InMemoryPushConfigStore, PushConfigStore};
     use crate::store::InMemoryTaskStore;
-    use crate::streaming::event_queue::new_in_memory_queue;
-    use crate::streaming::EventQueueWriter;
 
+    use super::super::super::limits::HandlerLimits;
     use super::*;
 
     // ── helpers ───────────────────────────────────────────────────────────
-
-    struct DummyExecutor;
-    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
     /// A push config store that always returns errors, for testing silent error swallowing.
     struct AlwaysErrPushConfigStore;
@@ -737,88 +556,5 @@ mod tests {
 
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Completed);
-    }
-
-    // ── process_event (&self method) tests ───────────────────────────────
-
-    #[tokio::test]
-    async fn process_event_self_valid_state_transition() {
-        let task_store = Arc::new(InMemoryTaskStore::new());
-        let task_id = TaskId::new("t1");
-
-        task_store
-            .save(make_task("t1", TaskState::Submitted))
-            .await
-            .unwrap();
-
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
-            .build()
-            .unwrap();
-
-        // process_event is private — test it indirectly via collect_events.
-        let (writer, reader) = new_in_memory_queue();
-        writer
-            .write(make_status_event("t1", TaskState::Working))
-            .await
-            .unwrap();
-        drop(writer); // close the queue so collect_events terminates
-
-        // collect_events reads from the queue and processes events.
-        let executor_handle = tokio::spawn(async {});
-        let result = handler
-            .collect_events(reader, task_id.clone(), executor_handle)
-            .await;
-
-        assert!(result.is_ok(), "collect_events should succeed");
-        let final_task = result.unwrap();
-        assert_eq!(final_task.status.state, TaskState::Working);
-
-        let stored = task_store.get(&task_id).await.unwrap().unwrap();
-        assert_eq!(stored.status.state, TaskState::Working);
-    }
-
-    // ── collect_events tests ──────────────────────────────────────────────
-
-    #[tokio::test]
-    async fn collect_events_returns_final_task() {
-        let task_store = Arc::new(InMemoryTaskStore::new());
-        let task_id = TaskId::new("t-collect");
-
-        // Seed initial task.
-        task_store
-            .save(make_task("t-collect", TaskState::Submitted))
-            .await
-            .unwrap();
-
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
-            .build()
-            .unwrap();
-
-        let (writer, reader) = new_in_memory_queue();
-
-        // Write a sequence of events, then close.
-        writer
-            .write(make_status_event("t-collect", TaskState::Working))
-            .await
-            .unwrap();
-        writer
-            .write(make_status_event("t-collect", TaskState::Completed))
-            .await
-            .unwrap();
-        drop(writer);
-
-        let executor_handle = tokio::spawn(async {});
-        let final_task = handler
-            .collect_events(reader, task_id.clone(), executor_handle)
-            .await
-            .expect("collect_events should not fail");
-
-        assert_eq!(
-            final_task.status.state,
-            TaskState::Completed,
-            "collect_events should return the task in its final state"
-        );
     }
 }

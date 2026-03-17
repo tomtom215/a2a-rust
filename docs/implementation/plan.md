@@ -25,9 +25,9 @@ All proposed beyond-spec features have been implemented:
 | **Request ID propagation** | `crates/a2a-server/src/call_context.rs` | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
 | **Metrics hooks** | `crates/a2a-server/src/metrics.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
 | **Rate limiting** | `crates/a2a-server/src/rate_limit.rs` | `RateLimitInterceptor` with fixed-window per-caller counters |
-| **gRPC transport** | `crates/a2a-server/src/dispatch/grpc.rs` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
+| **gRPC transport** | `crates/a2a-server/src/dispatch/grpc/` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
 | **WebSocket transport** | `crates/a2a-server/src/dispatch/websocket.rs` | `WebSocketDispatcher` + `WebSocketTransport` via `tokio-tungstenite` (`websocket` feature) |
-| **Multi-tenancy** | `crates/a2a-server/src/store/tenant*.rs` | In-memory via `task_local!`, SQLite via `tenant_id` column partitioning |
+| **Multi-tenancy** | `crates/a2a-server/src/store/tenant/` | In-memory via `task_local!`, SQLite via `tenant_id` column partitioning |
 | **Persistent task store** | `crates/a2a-server/src/store/sqlite_store.rs` | `SqliteTaskStore` + `SqlitePushConfigStore` behind `sqlite` feature flag |
 
 See the book's [Configuration Reference](../../book/src/reference/configuration.md) for usage details.
@@ -314,6 +314,11 @@ benches/
 
 ### `crates/a2a-client/` (3,909 lines)
 
+> **Note:** Several monolithic files listed below have since been refactored into
+> submodule directories (e.g., `rest.rs` → `rest/{mod, routing, query}.rs`,
+> `sse_parser.rs` → `sse_parser/{mod, types, parser}.rs`). The line counts
+> reflect the state at the time of initial implementation.
+
 ```
 Cargo.toml                          [~46 lines]  a2a-protocol-types + hyper + tokio + uuid; optional tracing + rustls; criterion bench
 src/
@@ -346,6 +351,12 @@ benches/
 ```
 
 ### `crates/a2a-server/` (5,399 lines)
+
+> **Note:** Several monolithic files listed below have since been refactored into
+> submodule directories (e.g., `dispatch/rest.rs` → `dispatch/rest/{mod, response, query}.rs`,
+> `store/task_store.rs` → `store/task_store/{mod, in_memory}.rs`,
+> `streaming/event_queue.rs` → `streaming/event_queue/{mod, in_memory, manager}.rs`).
+> The line counts reflect the state at the time of initial implementation.
 
 ```
 Cargo.toml                          [~46 lines]  a2a-protocol-types + hyper + tokio + uuid + bytes; optional tracing
