@@ -264,8 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn sse_body_writer_send_event_delivers_frame() {
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
         let writer = SseBodyWriter { tx };
 
         writer
@@ -285,8 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn sse_body_writer_send_keep_alive_delivers_comment() {
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
         let writer = SseBodyWriter { tx };
 
         writer
@@ -297,13 +295,16 @@ mod tests {
         let received = rx.recv().await.expect("should receive a frame");
         let frame = received.expect("frame result should be Ok");
         let data = frame.into_data().expect("frame should be a data frame");
-        assert_eq!(data, write_keep_alive(), "should receive keep-alive comment");
+        assert_eq!(
+            data,
+            write_keep_alive(),
+            "should receive keep-alive comment"
+        );
     }
 
     #[tokio::test]
     async fn sse_body_writer_send_fails_after_receiver_dropped() {
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
         let writer = SseBodyWriter { tx };
         drop(rx);
 
@@ -316,8 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn sse_body_writer_keep_alive_fails_after_receiver_dropped() {
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
         let writer = SseBodyWriter { tx };
         drop(rx);
 
@@ -330,8 +330,7 @@ mod tests {
 
     #[tokio::test]
     async fn sse_body_writer_close_drops_sender() {
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<Frame<Bytes>, Infallible>>(8);
         let writer = SseBodyWriter { tx };
 
         writer.close();
@@ -347,8 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_sse_response_has_correct_headers() {
-        let (_writer, reader) =
-            crate::streaming::event_queue::new_in_memory_queue();
+        let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
         let response = build_sse_response(reader, None, None);
 
@@ -359,12 +357,18 @@ mod tests {
             "Content-Type should be text/event-stream"
         );
         assert_eq!(
-            response.headers().get("cache-control").map(|v| v.as_bytes()),
+            response
+                .headers()
+                .get("cache-control")
+                .map(|v| v.as_bytes()),
             Some(b"no-cache".as_slice()),
             "Cache-Control should be no-cache"
         );
         assert_eq!(
-            response.headers().get("transfer-encoding").map(|v| v.as_bytes()),
+            response
+                .headers()
+                .get("transfer-encoding")
+                .map(|v| v.as_bytes()),
             Some(b"chunked".as_slice()),
             "Transfer-Encoding should be chunked"
         );
@@ -376,8 +380,7 @@ mod tests {
         use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
         use http_body_util::BodyExt;
 
-        let (writer, reader) =
-            crate::streaming::event_queue::new_in_memory_queue();
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
         let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
             task_id: TaskId::new("t1"),

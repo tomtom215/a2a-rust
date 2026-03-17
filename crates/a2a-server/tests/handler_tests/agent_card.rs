@@ -19,11 +19,11 @@ async fn get_extended_agent_card_returns_card() {
         .on_get_extended_agent_card(None)
         .await
         .expect("get agent card");
-    assert_eq!(card.name, "Test Agent", "agent card name must be 'Test Agent'");
     assert_eq!(
-        card.version, "1.0.0",
-        "agent card version must be '1.0.0'"
+        card.name, "Test Agent",
+        "agent card name must be 'Test Agent'"
     );
+    assert_eq!(card.version, "1.0.0", "agent card version must be '1.0.0'");
 }
 
 #[tokio::test]

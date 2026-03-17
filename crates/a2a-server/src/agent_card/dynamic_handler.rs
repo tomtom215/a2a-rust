@@ -412,6 +412,9 @@ mod tests {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let card: AgentCard =
             serde_json::from_slice(&body).expect("response body should be valid AgentCard JSON");
-        assert_eq!(card.name, "Test Agent", "deserialized card name should match");
+        assert_eq!(
+            card.name, "Test Agent",
+            "deserialized card name should match"
+        );
     }
 }

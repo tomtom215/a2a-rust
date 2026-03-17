@@ -323,9 +323,15 @@ mod tests {
     async fn save_and_get_within_tenant() {
         let store = make_store().await;
         TenantContext::scope("acme", async {
-            store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
             let task = store.get(&TaskId::new("t1")).await.unwrap();
-            assert!(task.is_some(), "task should be retrievable within its tenant");
+            assert!(
+                task.is_some(),
+                "task should be retrievable within its tenant"
+            );
             assert_eq!(task.unwrap().id, TaskId::new("t1"));
         })
         .await;
@@ -335,7 +341,10 @@ mod tests {
     async fn tenant_isolation_get() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
         })
         .await;
 
@@ -350,25 +359,42 @@ mod tests {
     async fn tenant_isolation_list() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
-            store.save(make_task("t2", "ctx1", TaskState::Working)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
+            store
+                .save(make_task("t2", "ctx1", TaskState::Working))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
-            store.save(make_task("t3", "ctx1", TaskState::Submitted)).await.unwrap();
+            store
+                .save(make_task("t3", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-a", async {
             let response = store.list(&ListTasksParams::default()).await.unwrap();
-            assert_eq!(response.tasks.len(), 2, "tenant-a should see only its 2 tasks");
+            assert_eq!(
+                response.tasks.len(),
+                2,
+                "tenant-a should see only its 2 tasks"
+            );
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
             let response = store.list(&ListTasksParams::default()).await.unwrap();
-            assert_eq!(response.tasks.len(), 1, "tenant-b should see only its 1 task");
+            assert_eq!(
+                response.tasks.len(),
+                1,
+                "tenant-b should see only its 1 task"
+            );
         })
         .await;
     }
@@ -377,8 +403,14 @@ mod tests {
     async fn tenant_isolation_count() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
-            store.save(make_task("t2", "ctx1", TaskState::Working)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
+            store
+                .save(make_task("t2", "ctx1", TaskState::Working))
+                .await
+                .unwrap();
         })
         .await;
 
@@ -399,7 +431,10 @@ mod tests {
     async fn tenant_isolation_delete() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
         })
         .await;
 
@@ -411,7 +446,10 @@ mod tests {
 
         TenantContext::scope("tenant-a", async {
             let task = store.get(&TaskId::new("t1")).await.unwrap();
-            assert!(task.is_some(), "tenant-a's task should still exist after tenant-b's delete");
+            assert!(
+                task.is_some(),
+                "tenant-a's task should still exist after tenant-b's delete"
+            );
         })
         .await;
     }
@@ -420,25 +458,39 @@ mod tests {
     async fn same_task_id_different_tenants() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.save(make_task("t1", "ctx-a", TaskState::Submitted)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx-a", TaskState::Submitted))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
-            store.save(make_task("t1", "ctx-b", TaskState::Working)).await.unwrap();
+            store
+                .save(make_task("t1", "ctx-b", TaskState::Working))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-a", async {
             let task = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
-            assert_eq!(task.context_id, ContextId::new("ctx-a"), "tenant-a should get its own version of t1");
+            assert_eq!(
+                task.context_id,
+                ContextId::new("ctx-a"),
+                "tenant-a should get its own version of t1"
+            );
             assert_eq!(task.status.state, TaskState::Submitted);
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
             let task = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
-            assert_eq!(task.context_id, ContextId::new("ctx-b"), "tenant-b should get its own version of t1");
+            assert_eq!(
+                task.context_id,
+                ContextId::new("ctx-b"),
+                "tenant-b should get its own version of t1"
+            );
             assert_eq!(task.status.state, TaskState::Working);
         })
         .await;
@@ -448,18 +500,30 @@ mod tests {
     async fn insert_if_absent_respects_tenant_scope() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            let inserted = store.insert_if_absent(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+            let inserted = store
+                .insert_if_absent(make_task("t1", "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
             assert!(inserted, "first insert should succeed");
 
-            let inserted = store.insert_if_absent(make_task("t1", "ctx1", TaskState::Working)).await.unwrap();
+            let inserted = store
+                .insert_if_absent(make_task("t1", "ctx1", TaskState::Working))
+                .await
+                .unwrap();
             assert!(!inserted, "duplicate insert in same tenant should fail");
         })
         .await;
 
         // Same task ID in different tenant should succeed
         TenantContext::scope("tenant-b", async {
-            let inserted = store.insert_if_absent(make_task("t1", "ctx1", TaskState::Working)).await.unwrap();
-            assert!(inserted, "insert of same task id in different tenant should succeed");
+            let inserted = store
+                .insert_if_absent(make_task("t1", "ctx1", TaskState::Working))
+                .await
+                .unwrap();
+            assert!(
+                inserted,
+                "insert of same task id in different tenant should succeed"
+            );
         })
         .await;
     }
@@ -469,7 +533,14 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             for i in 0..5 {
-                store.save(make_task(&format!("task-{i:03}"), "ctx1", TaskState::Submitted)).await.unwrap();
+                store
+                    .save(make_task(
+                        &format!("task-{i:03}"),
+                        "ctx1",
+                        TaskState::Submitted,
+                    ))
+                    .await
+                    .unwrap();
             }
 
             let params = ListTasksParams {
@@ -478,7 +549,10 @@ mod tests {
             };
             let response = store.list(&params).await.unwrap();
             assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
-            assert!(response.next_page_token.is_some(), "should have a next page token");
+            assert!(
+                response.next_page_token.is_some(),
+                "should have a next page token"
+            );
 
             let params2 = ListTasksParams {
                 page_size: Some(2),
@@ -495,7 +569,10 @@ mod tests {
     async fn default_tenant_context_uses_empty_string() {
         let store = make_store().await;
         // No TenantContext::scope wrapper - should use "" as tenant
-        store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+        store
+            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .await
+            .unwrap();
         let task = store.get(&TaskId::new("t1")).await.unwrap();
         assert!(task.is_some(), "default (empty) tenant should work");
     }

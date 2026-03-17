@@ -24,7 +24,10 @@ async fn send_message_returns_completed_task() {
                 TaskState::Completed,
                 "task should be in Completed state"
             );
-            assert!(task.artifacts.is_some(), "completed task must have artifacts");
+            assert!(
+                task.artifacts.is_some(),
+                "completed task must have artifacts"
+            );
             let artifacts = task.artifacts.unwrap();
             assert_eq!(
                 artifacts.len(),

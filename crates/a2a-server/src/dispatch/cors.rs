@@ -109,7 +109,10 @@ mod tests {
             "content-type, authorization, a2a-notification-token",
             "default headers should include content-type, authorization, and a2a-notification-token"
         );
-        assert_eq!(cors.max_age_secs, 86400, "default max-age should be 24 hours");
+        assert_eq!(
+            cors.max_age_secs, 86400,
+            "default max-age should be 24 hours"
+        );
     }
 
     #[test]
@@ -124,7 +127,10 @@ mod tests {
     #[test]
     fn permissive_allows_all_origins() {
         let cors = CorsConfig::permissive();
-        assert_eq!(cors.allow_origin, "*", "permissive config should use wildcard origin");
+        assert_eq!(
+            cors.allow_origin, "*",
+            "permissive config should use wildcard origin"
+        );
     }
 
     #[test]
@@ -146,10 +152,7 @@ mod tests {
             headers.get("access-control-allow-headers").unwrap(),
             "content-type, authorization, a2a-notification-token"
         );
-        assert_eq!(
-            headers.get("access-control-max-age").unwrap(),
-            "86400"
-        );
+        assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
     }
 
     #[test]

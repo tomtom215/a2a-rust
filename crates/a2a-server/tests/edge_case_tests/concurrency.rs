@@ -36,10 +36,7 @@ async fn concurrent_save_to_same_task_id() {
     let result = a2a_protocol_server::TaskStore::get(store.as_ref(), &TaskId::new("shared-task"))
         .await
         .unwrap();
-    assert!(
-        result.is_some(),
-        "task must exist after concurrent saves"
-    );
+    assert!(result.is_some(), "task must exist after concurrent saves");
 }
 
 #[tokio::test]
@@ -90,7 +87,10 @@ async fn concurrent_send_message() {
             success_count += 1;
         }
     }
-    assert_eq!(success_count, 10, "all 10 concurrent sends should succeed, got {success_count}");
+    assert_eq!(
+        success_count, 10,
+        "all 10 concurrent sends should succeed, got {success_count}"
+    );
 }
 
 #[tokio::test]

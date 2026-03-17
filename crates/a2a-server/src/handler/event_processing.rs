@@ -458,8 +458,14 @@ mod tests {
         fn set<'a>(
             &'a self,
             _cfg: TaskPushNotificationConfig,
-        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<TaskPushNotificationConfig>> + Send + 'a>>
-        {
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<TaskPushNotificationConfig>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
             Box::pin(async { Err(A2aError::internal("always err")) })
         }
         fn get<'a>(
@@ -468,8 +474,11 @@ mod tests {
             _id: &'a str,
         ) -> Pin<
             Box<
-                dyn Future<Output = a2a_protocol_types::error::A2aResult<Option<TaskPushNotificationConfig>>>
-                    + Send
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<
+                            Option<TaskPushNotificationConfig>,
+                        >,
+                    > + Send
                     + 'a,
             >,
         > {
@@ -653,7 +662,10 @@ mod tests {
         .await;
 
         // Artifact should be appended to last_task.
-        let artifacts = last_task.artifacts.as_ref().expect("artifacts should be Some");
+        let artifacts = last_task
+            .artifacts
+            .as_ref()
+            .expect("artifacts should be Some");
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
 

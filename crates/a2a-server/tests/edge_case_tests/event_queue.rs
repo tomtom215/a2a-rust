@@ -10,17 +10,32 @@ async fn event_queue_manager_lifecycle() {
     let mgr = a2a_protocol_server::EventQueueManager::new();
 
     let task_id = TaskId::new("task-1");
-    assert_eq!(mgr.active_count().await, 0, "fresh manager must have 0 queues");
+    assert_eq!(
+        mgr.active_count().await,
+        0,
+        "fresh manager must have 0 queues"
+    );
 
     // Create a queue
     let (_writer, reader) = mgr.get_or_create(&task_id).await;
     assert!(reader.is_some(), "first get_or_create must return a reader");
-    assert_eq!(mgr.active_count().await, 1, "one queue must be active after creation");
+    assert_eq!(
+        mgr.active_count().await,
+        1,
+        "one queue must be active after creation"
+    );
 
     // get_or_create again returns existing writer, no new reader
     let (_writer2, reader2) = mgr.get_or_create(&task_id).await;
-    assert!(reader2.is_none(), "second get_or_create must NOT return a new reader");
-    assert_eq!(mgr.active_count().await, 1, "count must remain 1 for same task_id");
+    assert!(
+        reader2.is_none(),
+        "second get_or_create must NOT return a new reader"
+    );
+    assert_eq!(
+        mgr.active_count().await,
+        1,
+        "count must remain 1 for same task_id"
+    );
 
     // Destroy the queue
     mgr.destroy(&task_id).await;
@@ -65,5 +80,8 @@ async fn event_queue_write_and_read() {
 
     // After writer is dropped, reader should get None
     let eof: Option<a2a_protocol_types::error::A2aResult<StreamResponse>> = reader.read().await;
-    assert!(eof.is_none(), "reader must return None after writer is dropped");
+    assert!(
+        eof.is_none(),
+        "reader must return None after writer is dropped"
+    );
 }

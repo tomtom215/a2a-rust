@@ -630,10 +630,7 @@ mod tests {
             params: None,
         };
         let result: Result<TaskQueryParams, _> = parse_params(&req);
-        assert!(
-            result.is_err(),
-            "expected error when params are missing"
-        );
+        assert!(result.is_err(), "expected error when params are missing");
         let err = result.unwrap_err();
         assert!(
             matches!(err, ServerError::InvalidParams(_)),
@@ -716,7 +713,10 @@ mod tests {
         let err = ServerError::MethodNotFound("Foo".into());
         let bytes = error_response_bytes(id, &err);
         let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert!(val["error"].is_object(), "expected 'error' key to be an object");
+        assert!(
+            val["error"].is_object(),
+            "expected 'error' key to be an object"
+        );
         assert!(val["error"]["code"].is_number());
         assert!(val["error"]["message"].is_string());
     }

@@ -347,10 +347,7 @@ mod tests {
             .expect("delete should succeed");
 
         let result = store.get("task-1", "cfg-1").await.unwrap();
-        assert!(
-            result.is_none(),
-            "config should be gone after delete"
-        );
+        assert!(result.is_none(), "config should be gone after delete");
     }
 
     #[tokio::test]

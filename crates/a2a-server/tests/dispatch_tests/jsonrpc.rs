@@ -70,7 +70,10 @@ async fn jsonrpc_get_task_not_found() {
     let result: JsonRpcErrorResponse = serde_json::from_slice(&body).expect("parse error");
     assert_eq!(result.id, Some(serde_json::json!(2)));
     // TaskNotFound = -32001
-    assert_eq!(result.error.code, -32001, "expected TaskNotFound error code");
+    assert_eq!(
+        result.error.code, -32001,
+        "expected TaskNotFound error code"
+    );
 }
 
 #[tokio::test]

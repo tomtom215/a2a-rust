@@ -286,11 +286,13 @@ impl RequestHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_protocol_types::agent_card::{AgentCapabilities, AgentInterface};
-    use a2a_protocol_types::params::{CancelTaskParams, ListTasksParams, TaskIdParams, TaskQueryParams};
-    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
     use crate::agent_executor;
     use crate::builder::RequestHandlerBuilder;
+    use a2a_protocol_types::agent_card::{AgentCapabilities, AgentInterface};
+    use a2a_protocol_types::params::{
+        CancelTaskParams, ListTasksParams, TaskIdParams, TaskQueryParams,
+    };
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     struct DummyExecutor;
     agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
@@ -306,7 +308,9 @@ mod tests {
     }
 
     fn make_cancelable_handler() -> RequestHandler {
-        RequestHandlerBuilder::new(CancelableExecutor).build().unwrap()
+        RequestHandlerBuilder::new(CancelableExecutor)
+            .build()
+            .unwrap()
     }
 
     fn make_completed_task(id: &str) -> Task {
@@ -384,7 +388,10 @@ mod tests {
             history_length: None,
         };
         let result = handler.on_get_task(params, None).await;
-        assert!(result.is_ok(), "expected Ok for existing task, got: {result:?}");
+        assert!(
+            result.is_ok(),
+            "expected Ok for existing task, got: {result:?}"
+        );
         assert_eq!(result.unwrap().id, TaskId::new("t-get-1"));
     }
 
@@ -415,11 +422,7 @@ mod tests {
             .on_list_tasks(params, None)
             .await
             .expect("list_tasks should succeed");
-        assert_eq!(
-            result.tasks.len(),
-            1,
-            "should return the one saved task"
-        );
+        assert_eq!(result.tasks.len(), 1, "should return the one saved task");
     }
 
     // ── on_cancel_task ───────────────────────────────────────────────────────

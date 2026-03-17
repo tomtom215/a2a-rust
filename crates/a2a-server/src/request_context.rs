@@ -117,11 +117,7 @@ mod tests {
 
     #[test]
     fn new_defaults_optional_fields_to_none() {
-        let ctx = RequestContext::new(
-            make_message("hi"),
-            TaskId::new("t-2"),
-            "ctx-2".to_owned(),
-        );
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-2"), "ctx-2".to_owned());
 
         assert!(
             ctx.stored_task.is_none(),
@@ -132,11 +128,7 @@ mod tests {
 
     #[test]
     fn new_provides_uncancelled_token() {
-        let ctx = RequestContext::new(
-            make_message("hi"),
-            TaskId::new("t-3"),
-            "ctx-3".to_owned(),
-        );
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-3"), "ctx-3".to_owned());
         assert!(
             !ctx.cancellation_token.is_cancelled(),
             "fresh token should not be cancelled"
@@ -148,12 +140,8 @@ mod tests {
     #[test]
     fn with_stored_task_sets_task() {
         let task = make_task();
-        let ctx = RequestContext::new(
-            make_message("hi"),
-            TaskId::new("t-4"),
-            "ctx-4".to_owned(),
-        )
-        .with_stored_task(task.clone());
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-4"), "ctx-4".to_owned())
+            .with_stored_task(task.clone());
 
         assert_eq!(
             ctx.stored_task.as_ref().map(|t| &t.id),
@@ -164,14 +152,14 @@ mod tests {
 
     #[test]
     fn with_stored_task_preserves_other_fields() {
-        let ctx = RequestContext::new(
-            make_message("hi"),
-            TaskId::new("t-5"),
-            "ctx-5".to_owned(),
-        )
-        .with_stored_task(make_task());
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-5"), "ctx-5".to_owned())
+            .with_stored_task(make_task());
 
-        assert_eq!(ctx.task_id, TaskId::new("t-5"), "task_id should be unchanged");
+        assert_eq!(
+            ctx.task_id,
+            TaskId::new("t-5"),
+            "task_id should be unchanged"
+        );
         assert_eq!(ctx.context_id, "ctx-5", "context_id should be unchanged");
     }
 
@@ -180,12 +168,8 @@ mod tests {
     #[test]
     fn with_metadata_sets_value() {
         let meta = serde_json::json!({"key": "value", "num": 42});
-        let ctx = RequestContext::new(
-            make_message("hi"),
-            TaskId::new("t-6"),
-            "ctx-6".to_owned(),
-        )
-        .with_metadata(meta.clone());
+        let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-6"), "ctx-6".to_owned())
+            .with_metadata(meta.clone());
 
         assert_eq!(
             ctx.metadata.as_ref(),
@@ -208,8 +192,15 @@ mod tests {
         .with_stored_task(task.clone())
         .with_metadata(meta.clone());
 
-        assert!(ctx.stored_task.is_some(), "stored_task should be set after chaining");
-        assert_eq!(ctx.metadata, Some(meta), "metadata should be set after chaining");
+        assert!(
+            ctx.stored_task.is_some(),
+            "stored_task should be set after chaining"
+        );
+        assert_eq!(
+            ctx.metadata,
+            Some(meta),
+            "metadata should be set after chaining"
+        );
     }
 
     // ── Clone / Debug ──────────────────────────────────────────────────────
@@ -222,7 +213,10 @@ mod tests {
             "ctx-8".to_owned(),
         );
         let cloned = ctx.clone();
-        assert_eq!(cloned.task_id, ctx.task_id, "cloned context should have same task_id");
+        assert_eq!(
+            cloned.task_id, ctx.task_id,
+            "cloned context should have same task_id"
+        );
     }
 
     #[test]

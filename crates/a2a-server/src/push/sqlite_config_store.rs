@@ -197,7 +197,10 @@ mod tests {
         let store = make_store().await;
         let config = make_config("task-1", None, "https://example.com/hook");
         let result = store.set(config).await.expect("set should succeed");
-        assert!(result.id.is_some(), "set should assign an id when none is provided");
+        assert!(
+            result.id.is_some(),
+            "set should assign an id when none is provided"
+        );
     }
 
     #[tokio::test]
@@ -205,7 +208,11 @@ mod tests {
         let store = make_store().await;
         let config = make_config("task-1", Some("my-id"), "https://example.com/hook");
         let result = store.set(config).await.expect("set should succeed");
-        assert_eq!(result.id.as_deref(), Some("my-id"), "set should preserve the explicit id");
+        assert_eq!(
+            result.id.as_deref(),
+            Some("my-id"),
+            "set should preserve the explicit id"
+        );
     }
 
     #[tokio::test]
@@ -224,33 +231,68 @@ mod tests {
     #[tokio::test]
     async fn get_returns_none_for_missing_config() {
         let store = make_store().await;
-        let result = store.get("no-task", "no-id").await.expect("get should succeed");
-        assert!(result.is_none(), "get should return None for a missing config");
+        let result = store
+            .get("no-task", "no-id")
+            .await
+            .expect("get should succeed");
+        assert!(
+            result.is_none(),
+            "get should return None for a missing config"
+        );
     }
 
     #[tokio::test]
     async fn overwrite_existing_config() {
         let store = make_store().await;
-        store.set(make_config("task-1", Some("cfg-1"), "https://example.com/v1")).await.unwrap();
-        store.set(make_config("task-1", Some("cfg-1"), "https://example.com/v2")).await.unwrap();
+        store
+            .set(make_config(
+                "task-1",
+                Some("cfg-1"),
+                "https://example.com/v1",
+            ))
+            .await
+            .unwrap();
+        store
+            .set(make_config(
+                "task-1",
+                Some("cfg-1"),
+                "https://example.com/v2",
+            ))
+            .await
+            .unwrap();
 
         let retrieved = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-        assert_eq!(retrieved.url, "https://example.com/v2", "overwrite should update the URL");
+        assert_eq!(
+            retrieved.url, "https://example.com/v2",
+            "overwrite should update the URL"
+        );
     }
 
     #[tokio::test]
     async fn list_returns_empty_for_unknown_task() {
         let store = make_store().await;
         let configs = store.list("no-such-task").await.unwrap();
-        assert!(configs.is_empty(), "list should return empty vec for unknown task");
+        assert!(
+            configs.is_empty(),
+            "list should return empty vec for unknown task"
+        );
     }
 
     #[tokio::test]
     async fn list_returns_only_configs_for_given_task() {
         let store = make_store().await;
-        store.set(make_config("task-a", Some("c1"), "https://a.com/1")).await.unwrap();
-        store.set(make_config("task-a", Some("c2"), "https://a.com/2")).await.unwrap();
-        store.set(make_config("task-b", Some("c3"), "https://b.com/1")).await.unwrap();
+        store
+            .set(make_config("task-a", Some("c1"), "https://a.com/1"))
+            .await
+            .unwrap();
+        store
+            .set(make_config("task-a", Some("c2"), "https://a.com/2"))
+            .await
+            .unwrap();
+        store
+            .set(make_config("task-b", Some("c3"), "https://b.com/1"))
+            .await
+            .unwrap();
 
         let a_configs = store.list("task-a").await.unwrap();
         assert_eq!(a_configs.len(), 2, "task-a should have exactly 2 configs");
@@ -262,9 +304,15 @@ mod tests {
     #[tokio::test]
     async fn delete_removes_config() {
         let store = make_store().await;
-        store.set(make_config("task-1", Some("cfg-1"), "https://example.com")).await.unwrap();
+        store
+            .set(make_config("task-1", Some("cfg-1"), "https://example.com"))
+            .await
+            .unwrap();
 
-        store.delete("task-1", "cfg-1").await.expect("delete should succeed");
+        store
+            .delete("task-1", "cfg-1")
+            .await
+            .expect("delete should succeed");
 
         let result = store.get("task-1", "cfg-1").await.unwrap();
         assert!(result.is_none(), "config should be gone after delete");
@@ -274,19 +322,32 @@ mod tests {
     async fn delete_nonexistent_is_ok() {
         let store = make_store().await;
         let result = store.delete("no-task", "no-id").await;
-        assert!(result.is_ok(), "deleting a nonexistent config should not error");
+        assert!(
+            result.is_ok(),
+            "deleting a nonexistent config should not error"
+        );
     }
 
     #[tokio::test]
     async fn delete_does_not_affect_other_configs() {
         let store = make_store().await;
-        store.set(make_config("task-1", Some("c1"), "https://a.com")).await.unwrap();
-        store.set(make_config("task-1", Some("c2"), "https://b.com")).await.unwrap();
+        store
+            .set(make_config("task-1", Some("c1"), "https://a.com"))
+            .await
+            .unwrap();
+        store
+            .set(make_config("task-1", Some("c2"), "https://b.com"))
+            .await
+            .unwrap();
 
         store.delete("task-1", "c1").await.unwrap();
 
         let remaining = store.list("task-1").await.unwrap();
-        assert_eq!(remaining.len(), 1, "only the deleted config should be removed");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the deleted config should be removed"
+        );
         assert_eq!(remaining[0].id.as_deref(), Some("c2"));
     }
 
@@ -294,8 +355,14 @@ mod tests {
     async fn multiple_tasks_independent_configs() {
         let store = make_store().await;
         // Same config id for different tasks should coexist
-        store.set(make_config("task-a", Some("cfg-1"), "https://a.com")).await.unwrap();
-        store.set(make_config("task-b", Some("cfg-1"), "https://b.com")).await.unwrap();
+        store
+            .set(make_config("task-a", Some("cfg-1"), "https://a.com"))
+            .await
+            .unwrap();
+        store
+            .set(make_config("task-b", Some("cfg-1"), "https://b.com"))
+            .await
+            .unwrap();
 
         let a = store.get("task-a", "cfg-1").await.unwrap().unwrap();
         assert_eq!(a.url, "https://a.com");

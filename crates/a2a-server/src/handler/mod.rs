@@ -132,8 +132,8 @@ pub enum SendMessageResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builder::RequestHandlerBuilder;
     use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
     use crate::tenant_config::{PerTenantConfig, TenantLimits};
     use crate::tenant_resolver::HeaderTenantResolver;
 
@@ -222,10 +222,7 @@ mod tests {
     fn tenant_config_preserves_values() {
         let config = PerTenantConfig::builder()
             .default_limits(TenantLimits::builder().rate_limit_rps(100).build())
-            .with_override(
-                "vip",
-                TenantLimits::builder().rate_limit_rps(500).build(),
-            )
+            .with_override("vip", TenantLimits::builder().rate_limit_rps(500).build())
             .build();
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
@@ -272,9 +269,7 @@ mod tests {
 
     #[test]
     fn debug_shows_tenant_resolver_presence() {
-        let without = RequestHandlerBuilder::new(DummyExecutor)
-            .build()
-            .unwrap();
+        let without = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let with = RequestHandlerBuilder::new(DummyExecutor)
             .with_tenant_resolver(HeaderTenantResolver::default())
             .build()
@@ -298,7 +293,7 @@ mod tests {
     #[test]
     fn send_message_result_response_variant() {
         use a2a_protocol_types::responses::SendMessageResponse;
-        use a2a_protocol_types::task::{Task, TaskStatus, TaskState};
+        use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
         let task = Task {
             id: "t1".into(),
