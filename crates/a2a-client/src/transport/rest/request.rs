@@ -165,6 +165,9 @@ impl RestTransport {
 
 #[cfg(test)]
 mod tests {
+    use http_body_util::Full;
+    use hyper::body::Bytes;
+
     use super::super::routing::{route_for, HttpMethod};
     use super::super::*;
 

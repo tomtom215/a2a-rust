@@ -103,6 +103,9 @@ async fn body_reader_task(
 
 #[cfg(test)]
 mod tests {
+    use http_body_util::Full;
+    use hyper::body::Bytes;
+
     use super::super::*;
 
     #[tokio::test]
