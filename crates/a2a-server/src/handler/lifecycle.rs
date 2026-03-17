@@ -282,3 +282,244 @@ impl RequestHandler {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::agent_card::{AgentCapabilities, AgentInterface};
+    use a2a_protocol_types::params::{CancelTaskParams, ListTasksParams, TaskIdParams, TaskQueryParams};
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+
+    struct DummyExecutor;
+    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+    struct CancelableExecutor;
+    agent_executor!(CancelableExecutor,
+        execute: |_ctx, _queue| async { Ok(()) },
+        cancel: |_ctx, _queue| async { Ok(()) }
+    );
+
+    fn make_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor).build().unwrap()
+    }
+
+    fn make_cancelable_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(CancelableExecutor).build().unwrap()
+    }
+
+    fn make_completed_task(id: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    fn make_submitted_task(id: &str) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    fn make_agent_card() -> AgentCard {
+        AgentCard {
+            name: "Test Agent".into(),
+            description: "A test agent".into(),
+            version: "1.0.0".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:8080".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            capabilities: AgentCapabilities::none(),
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            security_schemes: None,
+            security_requirements: None,
+            signatures: None,
+        }
+    }
+
+    // ── on_get_task ──────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_task_not_found_returns_error() {
+        let handler = make_handler();
+        let params = TaskQueryParams {
+            tenant: None,
+            id: "nonexistent-task".to_owned(),
+            history_length: None,
+        };
+        let result = handler.on_get_task(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for missing task, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_task_found_returns_task() {
+        let handler = make_handler();
+        let task = make_completed_task("t-get-1");
+        handler.task_store.save(task).await.unwrap();
+
+        let params = TaskQueryParams {
+            tenant: None,
+            id: "t-get-1".to_owned(),
+            history_length: None,
+        };
+        let result = handler.on_get_task(params, None).await;
+        assert!(result.is_ok(), "expected Ok for existing task, got: {result:?}");
+        assert_eq!(result.unwrap().id, TaskId::new("t-get-1"));
+    }
+
+    // ── on_list_tasks ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_tasks_empty_store_returns_empty() {
+        let handler = make_handler();
+        let params = ListTasksParams::default();
+        let result = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect("list_tasks should succeed on empty store");
+        assert!(
+            result.tasks.is_empty(),
+            "listing tasks on an empty store should return an empty list"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_tasks_returns_saved_task() {
+        let handler = make_handler();
+        let task = make_completed_task("t-list-1");
+        handler.task_store.save(task).await.unwrap();
+
+        let params = ListTasksParams::default();
+        let result = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect("list_tasks should succeed");
+        assert_eq!(
+            result.tasks.len(),
+            1,
+            "should return the one saved task"
+        );
+    }
+
+    // ── on_cancel_task ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn cancel_task_not_found_returns_error() {
+        let handler = make_handler();
+        let params = CancelTaskParams {
+            tenant: None,
+            id: "nonexistent-task".to_owned(),
+            metadata: None,
+        };
+        let result = handler.on_cancel_task(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for missing task, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_task_terminal_state_returns_not_cancelable() {
+        let handler = make_handler();
+        let task = make_completed_task("t-cancel-terminal");
+        handler.task_store.save(task).await.unwrap();
+
+        let params = CancelTaskParams {
+            tenant: None,
+            id: "t-cancel-terminal".to_owned(),
+            metadata: None,
+        };
+        let result = handler.on_cancel_task(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotCancelable(_))),
+            "expected TaskNotCancelable for completed task, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_task_non_terminal_succeeds() {
+        let handler = make_cancelable_handler();
+        let task = make_submitted_task("t-cancel-active");
+        handler.task_store.save(task).await.unwrap();
+
+        let params = CancelTaskParams {
+            tenant: None,
+            id: "t-cancel-active".to_owned(),
+            metadata: None,
+        };
+        let result = handler.on_cancel_task(params, None).await;
+        assert!(
+            result.is_ok(),
+            "canceling a non-terminal task should succeed, got: {result:?}"
+        );
+        assert_eq!(
+            result.unwrap().status.state,
+            TaskState::Canceled,
+            "canceled task should have Canceled state"
+        );
+    }
+
+    // ── on_resubscribe ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn resubscribe_task_not_found_returns_error() {
+        let handler = make_handler();
+        let params = TaskIdParams {
+            tenant: None,
+            id: "nonexistent-task".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for missing task, got: {result:?}"
+        );
+    }
+
+    // ── on_get_extended_agent_card ───────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_extended_agent_card_no_card_returns_error() {
+        let handler = make_handler();
+        let result = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            matches!(result, Err(ServerError::Internal(_))),
+            "expected Internal error when no agent card is configured, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_extended_agent_card_with_card_returns_ok() {
+        let card = make_agent_card();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card)
+            .build()
+            .unwrap();
+        let result = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            result.is_ok(),
+            "expected Ok when agent card is configured, got: {result:?}"
+        );
+        assert_eq!(result.unwrap().name, "Test Agent");
+    }
+}
