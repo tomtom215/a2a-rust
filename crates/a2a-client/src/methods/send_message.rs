@@ -215,8 +215,10 @@ mod tests {
 
     #[test]
     fn apply_config_sets_accepted_output_modes_when_empty() {
-        let mut config = ClientConfig::default();
-        config.accepted_output_modes = vec!["audio/wav".into()];
+        let config = ClientConfig {
+            accepted_output_modes: vec!["audio/wav".into()],
+            ..ClientConfig::default()
+        };
 
         let mut params = make_params();
         // Explicitly set empty modes so the config value is applied.
