@@ -87,10 +87,15 @@ let first_response = client.send_message(MessageSendParams {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::User,
         parts: vec![Part::text("Tell me about Rust")],
+        task_id: None,
         context_id: None,  // New conversation
-        ..Default::default()
+        reference_task_ids: None,
+        extensions: None,
+        metadata: None,
     },
-    ..Default::default()
+    tenant: None,
+    configuration: None,
+    metadata: None,
 }).await?;
 
 // Get the context ID from the first response
@@ -106,10 +111,15 @@ let follow_up = client.send_message(MessageSendParams {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::User,
         parts: vec![Part::text("What about error handling?")],
+        task_id: None,
         context_id: context_id.map(|c| ContextId::new(c.to_string())),
-        ..Default::default()
+        reference_task_ids: None,
+        extensions: None,
+        metadata: None,
     },
-    ..Default::default()
+    tenant: None,
+    configuration: None,
+    metadata: None,
 }).await?;
 ```
 

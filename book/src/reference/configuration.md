@@ -103,12 +103,12 @@ Configurable retry policy for `HttpPushSender`. Pass via
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_protocol_binding` | `&str` | Auto-detect | Transport: `"JSONRPC"` or `"REST"` |
+| `with_protocol_binding` | `&str` | Auto-detect | Transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | SSE connect timeout |
 | `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors |
-| `with_accepted_output_modes` | `Vec<String>` | `["text/plain"]` | MIME types accepted |
+| `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
@@ -154,15 +154,20 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 
 | Feature | Default | Description |
 |---------|---------|-------------|
+| `signing` | Off | Agent card signing |
 | `tracing` | Off | Structured logging via `tracing` crate |
+| `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
+| `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` |
 
 ### `a2a-protocol-client`
 
 | Feature | Default | Description |
 |---------|---------|-------------|
+| `signing` | Off | Agent card signing verification |
 | `tracing` | Off | Structured logging via `tracing` crate |
 | `tls-rustls` | Off | HTTPS via rustls (no OpenSSL dependency) |
+| `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` |
 
 ### `a2a-protocol-types`

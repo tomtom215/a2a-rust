@@ -8,7 +8,8 @@ Test your executor logic directly by creating a `RequestContext` and mock `Event
 
 ```rust
 use a2a_protocol_sdk::prelude::*;
-use a2a_protocol_server::streaming::{EventQueueManager, new_in_memory_queue};
+use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn test_calculator_executor() {
@@ -31,7 +32,9 @@ async fn test_calculator_executor() {
             extensions: None,
             metadata: None,
         },
-        tenant: None,
+        stored_task: None,
+        metadata: None,
+        cancellation_token: CancellationToken::new(),
     };
 
     // Run the executor
