@@ -34,7 +34,7 @@
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
-//! | [`otel`] | [`OtelMetrics`], `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+//! | `otel` | `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
 //!
 //! # gRPC transport
 //!
