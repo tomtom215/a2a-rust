@@ -1,9 +1,11 @@
 # a2a-rust: Implementation Plan & Roadmap
 
+> **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
+
 **Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)
 **License:** Apache-2.0
-**Status:** Core implementation complete — hardening & polish phase
+**Status:** All 9 phases complete
 
 ---
 

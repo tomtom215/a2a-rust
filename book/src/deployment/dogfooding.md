@@ -166,6 +166,9 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 ## Sub-pages
 
 - **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 36 bugs discovered across eight dogfooding passes
+    - [Passes 1–4: Foundation](./dogfooding-bugs-early.md) — 13 bugs (initial discovery, hardening, stress, regressions)
+    - [Passes 5–6: Hardening](./dogfooding-bugs-hardening.md) — 9 bugs (concurrency, architecture, durability)
+    - [Passes 7–8: Deep Dogfood](./dogfooding-bugs-deep.md) — 14 bugs (security, performance, error handling)
 - **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 71-test E2E coverage map (76 with optional transports)
 - **[Open Issues & Roadmap](./dogfooding-open-issues.md)** — Remaining gaps and future work
 

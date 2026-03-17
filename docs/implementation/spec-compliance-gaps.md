@@ -1,5 +1,7 @@
 # A2A v1.0.0 Spec Compliance Gaps
 
+> **Historical Reference** — All gaps have been resolved (Phase 7.5). This document is retained as a record of the compliance verification process.
+
 **Created:** 2026-03-15
 **Verified against:**
 - Proto: <https://a2a-protocol.org/latest/spec/a2a.proto>
