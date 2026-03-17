@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Mutation testing — verifies that tests actually detect code changes.
+#
+# Runs cargo-mutants on all library crates and fails if any mutant survives.
+# Scheduled nightly + on-demand; also runs on PRs to main (but as a non-blocking
+# informational check during initial rollout, then promoted to required).
+
+name: Mutation Testing
+
+on:
+  # Nightly schedule — full mutation sweep.
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  # Manual trigger for on-demand runs.
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Specific package to test (blank = all)"
+        required: false
+        type: string
+  # PR gate — runs on PRs to main (incremental: only mutates changed files).
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ── Full mutation sweep (nightly / manual) ────────────────────────────────
+  mutants-full:
+    name: "Mutation Testing (full)"
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install protoc (for gRPC feature)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Run mutation tests (all crates)
+        if: inputs.package == ''
+        run: cargo mutants --workspace -- --all-features
+
+      - name: Run mutation tests (specific package)
+        if: inputs.package != ''
+        run: cargo mutants -p ${{ inputs.package }} -- --all-features
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report-full
+          path: mutants.out/
+          retention-days: 30
+
+      - name: Check for surviving mutants
+        run: |
+          if [ -f mutants.out/caught.txt ] && [ -f mutants.out/unviable.txt ] && [ -f mutants.out/missed.txt ]; then
+            MISSED=$(wc -l < mutants.out/missed.txt)
+            CAUGHT=$(wc -l < mutants.out/caught.txt)
+            UNVIABLE=$(wc -l < mutants.out/unviable.txt)
+            TOTAL=$((CAUGHT + MISSED))
+            if [ "$TOTAL" -gt 0 ]; then
+              SCORE=$(( (CAUGHT * 100) / TOTAL ))
+            else
+              SCORE=100
+            fi
+            echo "## Mutation Testing Results" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Metric | Count |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Caught | $CAUGHT |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Missed | $MISSED |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Unviable | $UNVIABLE |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| **Mutation Score** | **${SCORE}%** |" >> "$GITHUB_STEP_SUMMARY"
+            echo ""
+            echo "Mutation score: ${SCORE}% (${CAUGHT} caught, ${MISSED} missed, ${UNVIABLE} unviable)"
+            if [ "$MISSED" -gt 0 ]; then
+              echo ""
+              echo "::error::${MISSED} mutant(s) survived — tests do not detect these code changes."
+              echo ""
+              echo "Surviving mutants:"
+              cat mutants.out/missed.txt
+              exit 1
+            fi
+          fi
+
+  # ── Incremental mutation testing (PR only) ────────────────────────────────
+  mutants-incremental:
+    name: "Mutation Testing (incremental)"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0 # full history for diff
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install protoc (for gRPC feature)
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants
+
+      - name: Determine changed files
+        id: changed
+        run: |
+          FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'crates/*/src/**/*.rs' | tr '\n' ',')
+          echo "files=${FILES}" >> "$GITHUB_OUTPUT"
+          if [ -z "$FILES" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run mutation tests on changed files
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          IFS=',' read -ra FILE_ARRAY <<< "${{ steps.changed.outputs.files }}"
+          GLOB_ARGS=""
+          for f in "${FILE_ARRAY[@]}"; do
+            if [ -n "$f" ]; then
+              GLOB_ARGS="$GLOB_ARGS --file $f"
+            fi
+          done
+          cargo mutants $GLOB_ARGS -- --all-features
+
+      - name: No source changes to mutate
+        if: steps.changed.outputs.skip == 'true'
+        run: echo "No Rust source files changed in crates/ — skipping mutation testing."
+
+      - name: Upload mutation report
+        if: always() && steps.changed.outputs.skip == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mutation-report-incremental
+          path: mutants.out/
+          retention-days: 14
+
+      - name: Check for surviving mutants
+        if: steps.changed.outputs.skip == 'false'
+        run: |
+          if [ -f mutants.out/missed.txt ]; then
+            MISSED=$(wc -l < mutants.out/missed.txt)
+            if [ "$MISSED" -gt 0 ]; then
+              echo "::error::${MISSED} mutant(s) survived in changed files — add tests that detect these mutations."
+              cat mutants.out/missed.txt
+              exit 1
+            fi
+          fi
+          echo "All mutants in changed files were caught."

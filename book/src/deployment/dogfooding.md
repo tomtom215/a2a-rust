@@ -14,7 +14,10 @@ Unit tests and integration tests are necessary but insufficient. Here's what the
 | **Integration tests** | Pairwise contracts between components | Multi-hop communication, emergent behavior |
 | **Property tests** | Edge cases in data handling | Protocol flow issues, lifecycle bugs |
 | **Fuzz tests** | Malformed input handling | Semantic correctness of valid flows |
+| **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 | **Dogfooding** | All of the above + DX issues, performance surprises, missing features | — |
+
+Mutation testing fills the critical gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 
 Dogfooding operates at the highest level of the testing pyramid. It catches the class of bugs that live in the seams between components — bugs that only manifest when a real application exercises the full stack in realistic patterns.
 

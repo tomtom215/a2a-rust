@@ -77,6 +77,16 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Rationale:** Third-party SSE crates either use older hyper versions, carry unnecessary dependencies, or lack proper backpressure. The in-tree implementation is small enough to audit, test, and maintain.
 
+## ADR 0006: Mutation Testing as a Required Quality Gate
+
+**Status:** Accepted
+
+**Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
+
+**Decision:** Adopt `cargo-mutants` as a mandatory quality gate with zero surviving mutants required across all library crates. CI runs a full nightly sweep and incremental PR checks on changed files. Configuration is centralized in `mutants.toml`.
+
+**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The compute cost is managed through incremental mode, nightly scheduling, and exclusion of unproductive targets.
+
 ## Summary
 
 | ADR | Key Decision |
@@ -86,6 +96,7 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 | 0003 | Tokio as mandatory runtime |
 | 0004 | Three-layer architecture (dispatcher → handler → executor) |
 | 0005 | In-tree SSE parser/emitter, zero additional deps |
+| 0006 | `cargo-mutants` as mandatory quality gate, zero surviving mutants |
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Configuration for cargo-mutants — mutation testing for a2a-rust.
+#
+# Install:  cargo install cargo-mutants
+# Run:      cargo mutants --workspace
+# Docs:     https://mutants.rs/
+
+# ── Timeout ──────────────────────────────────────────────────────────────────
+# Generous timeout multiplier so async / network tests don't flake under
+# mutation.  The base timeout is auto-detected from `cargo test`.
+timeout_multiplier = 3.0
+
+# Absolute cap: no single mutant may run longer than 120 seconds.
+minimum_test_timeout = 30
+
+# ── Parallelism ──────────────────────────────────────────────────────────────
+# Run mutants in parallel.  Adjust to your CI runner's core count.
+# Default: number of logical CPUs.
+# jobs = 4
+
+# ── Packages to test ────────────────────────────────────────────────────────
+# Test the four library crates.  Examples are excluded — they are exercised
+# indirectly by the dogfood test suite but are not the subject of mutation
+# testing (their code is demonstration, not library surface area).
+examine_globs = [
+    "crates/a2a-types/src/**/*.rs",
+    "crates/a2a-client/src/**/*.rs",
+    "crates/a2a-server/src/**/*.rs",
+    "crates/a2a-sdk/src/**/*.rs",
+]
+
+# ── Exclusions ───────────────────────────────────────────────────────────────
+# Thin re-export modules:  mutating `pub use` re-exports produces false
+# positives because they are tested indirectly through the public API.
+exclude_globs = [
+    "crates/a2a-sdk/src/lib.rs",        # pure re-exports
+    "**/mod.rs",                          # thin mod files (re-exports only)
+    "crates/*/src/proto/**",              # generated protobuf code
+]
+
+# Skip functions whose mutations are unproductive (logging, display-only,
+# debug formatting, builder doc strings).
+exclude_re = [
+    "fmt$",                                # Display / Debug impls
+    "^tracing::",                          # tracing instrumentation
+    "^log::",                              # log macros
+]
+
+# ── Additional cargo test arguments ─────────────────────────────────────────
+# Pass --all-features so mutation tests exercise signing, tracing, websocket,
+# sqlite, etc.  This matches the CI test matrix.
+additional_cargo_test_args = ["--all-features"]

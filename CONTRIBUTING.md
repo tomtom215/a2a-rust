@@ -74,6 +74,7 @@ Before adding a dependency:
 | Integration tests | `crates/*/tests/` | included in workspace test |
 | Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
+| Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
 | End-to-end example | `examples/echo-agent` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
@@ -98,6 +99,42 @@ cargo test -p a2a-protocol-types task_state_roundtrip
 cargo bench -p a2a-protocol-types
 cargo bench -p a2a-protocol-client
 ```
+
+### Mutation Testing
+
+Mutation testing verifies that your tests actually detect code changes. A mutant
+is a small, deliberate modification to the source (e.g., replacing `+` with `-`,
+flipping a boolean, returning a default value). If a mutant compiles and all
+tests still pass, the test suite has a gap.
+
+```bash
+# Install cargo-mutants
+cargo install cargo-mutants
+
+# Run mutation tests on all library crates
+cargo mutants --workspace
+
+# Run on a specific crate
+cargo mutants -p a2a-protocol-types
+
+# Run on a specific file
+cargo mutants --file crates/a2a-types/src/task.rs
+
+# List mutants without running (dry-run)
+cargo mutants --list --workspace
+```
+
+**Configuration** is in `mutants.toml` at the workspace root. It controls which
+files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
+and timeout settings.
+
+**Zero surviving mutants is required.** The nightly CI job runs a full mutation
+sweep and fails if any mutant survives. PR checks run an incremental sweep on
+changed files only.
+
+When a mutant survives, the output shows the exact mutation and the file/line.
+Add or strengthen tests to cover the gap, then re-run to confirm the mutant is
+caught.
 
 ### Test Naming Convention
 
@@ -149,6 +186,7 @@ Run with `cargo bench -p a2a-protocol-types` or `cargo bench -p a2a-protocol-cli
 | Async unit | `#[tokio::test]` | Every async function |
 | Integration | `tests/` directory | Each crate |
 | Property | `proptest` | Serde round-trips for all types |
+| Mutation | `cargo-mutants` | Zero surviving mutants across all library crates |
 | E2E | real HTTP, `wiremock` | Client ↔ server interaction |
 
 ---
@@ -179,6 +217,9 @@ cargo test --workspace --features tracing
 
 # 7. With TLS feature (if changes touch TLS code)
 cargo test -p a2a-protocol-client --features tls-rustls
+
+# 8. Mutation testing (zero surviving mutants in changed files)
+cargo mutants --workspace
 ```
 
 ---
@@ -193,6 +234,7 @@ cargo test -p a2a-protocol-client --features tls-rustls
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
+- [ ] `cargo mutants` shows zero surviving mutants for changed files
 - [ ] `book/src/reference/pitfalls.md` updated if a non-obvious pitfall was encountered
 - [ ] ADR created or updated if an architectural decision was made or revised
 
