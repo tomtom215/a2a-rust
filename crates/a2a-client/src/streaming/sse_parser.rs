@@ -660,8 +660,8 @@ mod tests {
         // With mutation, bom_checked stays false, so a second BOM would be stripped.
         let mut p = SseParser::new();
         p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
-        // Immediately feed BOM + data. If bom_checked was not set (mutation),
-        // the BOM is stripped again and "data: stolen" is parsed as a frame.
+                                 // Immediately feed BOM + data. If bom_checked was not set (mutation),
+                                 // the BOM is stripped again and "data: stolen" is parsed as a frame.
         p.feed(b"\xEF\xBB\xBFdata: stolen\n\n");
         // With correct code: bom_checked=true after first feed → BOM not stripped
         // → line is unknown field → no frame.
