@@ -161,6 +161,54 @@ In a `tokio::spawn`-ed task, errors have no caller to return to. Using `let _ = 
 
 **Solution:** Use `if let Err(e) = store.save(...).await { trace_error!(...) }` so failures are observable via logs and metrics.
 
+## Push Config Store Pitfalls
+
+### Per-resource limits are not enough — add global limits
+
+A per-task push config limit (e.g., 100 configs per task) does not prevent an attacker from creating millions of tasks with 100 configs each. Always pair per-resource limits with a global cap (e.g., `max_total_configs = 100_000`). The global check must run before the per-resource check in the write path.
+
+### Webhook URL scheme validation
+
+Checking for private IPs and hostnames in webhook URLs is insufficient. URLs like `ftp://evil.com/hook` or `file:///etc/passwd` bypass IP-based SSRF checks entirely. Always validate that the URL scheme is `http` or `https` before performing any further validation.
+
+## Performance Pitfalls
+
+### `Vec<u8>` vs `Bytes` in retry loops
+
+Cloning a `Vec<u8>` inside a retry loop allocates a full heap copy each time. Use `bytes::Bytes` (reference-counted) so that `.clone()` is just an atomic reference count increment. This matters for push notification delivery where large payloads may be retried 3+ times.
+
+## Graceful Shutdown Pitfalls
+
+### Bound executor cleanup with a timeout
+
+`executor.on_shutdown().await` can hang indefinitely if the executor's cleanup routine blocks. Always wrap with `tokio::time::timeout()` — the default is 10 seconds. Users can override via `shutdown_with_timeout(duration)`.
+
+## gRPC Pitfalls
+
+### Map all tonic status codes, not just the common ones
+
+Only mapping 4 gRPC status codes to A2A error codes loses semantic information for `Unauthenticated`, `PermissionDenied`, `ResourceExhausted`, etc. Map all relevant codes explicitly so clients can distinguish between error categories.
+
+### Feature-gated code paths need their own dogfood pass
+
+The gRPC path behind `#[cfg(feature = "grpc")]` had the exact same placeholder URL bug that was already fixed for HTTP (Bug #12 → Bug #18). Feature-gated code is easy to miss during reviews. Always re-verify known bug patterns across all feature gates.
+
+## Cancel / State Machine Pitfalls
+
+### Check terminal state before emitting cancel
+
+If an executor completes between the handler's cancel check and the cancel signal arrival, unconditionally emitting `TaskState::Canceled` causes an invalid `Completed → Canceled` state transition. Guard cancel emission with `cancellation_token.is_cancelled()` or a terminal-state check.
+
+### Re-check cancellation between multi-phase work
+
+If an executor performs multiple phases (e.g., two artifact emissions), check cancellation between phases. Otherwise, cancellation between phases is delayed until the next natural check point.
+
+## Server Accept Loop Pitfalls
+
+### `break` vs `continue` on transient accept errors
+
+Using `Err(_) => break` in a TCP accept loop kills the entire server on a single transient error (e.g., `EMFILE` when the file descriptor limit is reached). Use `Err(_) => continue` to skip the bad connection and keep serving. Log the error for observability but do not let it take down the server.
+
 ## Workspace / Cargo Pitfalls
 
 ### `cargo-fuzz` needs its own workspace

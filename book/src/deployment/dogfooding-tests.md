@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **71 E2E tests** across 7 test modules (76 with optional transports). All tests pass in ~2.5 seconds.
+The agent team runs **72 E2E tests** across 8 test modules (79 with optional transports and signing). All tests pass in ~2.5 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -93,7 +93,7 @@ The agent team runs **71 E2E tests** across 7 test modules (76 with optional tra
 > **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
 > Tests 56-58 require the `grpc` feature flag: `cargo run -p agent-team --features grpc`
 
-## Tests 61-71: E2E Coverage Gaps (`coverage_gaps.rs`)
+## Tests 61-79: E2E Coverage Gaps (`coverage_gaps.rs`)
 
 | # | Test | Category | What it exercises |
 |---|------|----------|-------------------|
@@ -112,6 +112,10 @@ The agent team runs **71 E2E tests** across 7 test modules (76 with optional tra
 | 73 | webhook-url-scheme | Push config | Rejects non-HTTP webhook URL schemes (ftp://, file://) |
 | 74 | combined-filter | ListTasks | Combined status + context_id filtering |
 | 75 | latency-metrics | Metrics | Verifies `on_request()` callback fires |
+| 76 | timeout-retryable | Retry | Timeout errors are classified as retryable |
+| 77 | concurrent-cancels | Stress | 10 parallel cancel requests on same task |
+| 78 | stale-page-token | Pagination | Graceful handling of invalid page tokens |
+| 79 | agent-card-signing | Signing | ES256 key generation, JWS sign/verify, tamper detection (`signing` feature) |
 
 ## Coverage by SDK Feature
 
@@ -148,6 +152,7 @@ The agent team runs **71 E2E tests** across 7 test modules (76 with optional tra
 | `GetExtendedAgentCard` | 68 |
 | `DynamicAgentCardHandler` | 69 |
 | Agent card HTTP caching (ETag/304) | 70 |
+| Agent card signing (JWS/ES256) | 79 |
 | Backpressure / `Lagged` events | 71 |
 | Push config global limit | 72 |
 | Webhook URL scheme validation | 73 |
@@ -156,10 +161,11 @@ The agent team runs **71 E2E tests** across 7 test modules (76 with optional tra
 | Timeout retryability (Bug #32) | 76 |
 | Concurrent cancel stress | 77 |
 | Stale page token handling | 78 |
+| Agent card signing (JWS/ES256) | 79 |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 71 agent-team E2E tests (76 with optional transports), the SDK includes dedicated integration test suites:
+In addition to the 72 agent-team E2E tests (79 with optional transports and signing), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
@@ -169,6 +175,4 @@ In addition to the 71 agent-team E2E tests (76 with optional transports), the SD
 
 ## Features NOT Covered by E2E Tests
 
-| Feature | Covered elsewhere? | Risk |
-|---|---|---|
-| Agent card signing | `signing` module tests (unit) | Low |
+All previously uncovered features now have E2E test coverage. Agent card signing is covered by test 79 (`#[cfg(feature = "signing")]`).

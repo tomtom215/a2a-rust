@@ -28,6 +28,8 @@ sqlite = ["dep:sqlx"]
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`.
 grpc = ["dep:tonic", "dep:prost", "dep:tokio-stream", "dep:tonic-build"]
+## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 
 [dependencies]
 a2a-protocol-types      = { version = "0.2.0", path = "../a2a-types" }
@@ -36,7 +38,7 @@ serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
-tokio          = { workspace = true }
+tokio          = { workspace = true, features = ["signal"] }
 uuid           = { workspace = true }
 bytes          = "1"
 tokio-util     = { version = ">=0.7, <0.8", features = ["rt"] }
@@ -47,6 +49,9 @@ futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-featu
 tonic             = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
+opentelemetry     = { version = "0.28", optional = true }
+opentelemetry_sdk = { version = "0.28", optional = true, features = ["rt-tokio", "metrics"] }
+opentelemetry-otlp = { version = "0.28", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
 
 [build-dependencies]
 tonic-build = { workspace = true, optional = true }

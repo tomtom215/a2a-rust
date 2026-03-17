@@ -159,6 +159,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` |
+| `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
 
 ### `a2a-protocol-client`
 
@@ -184,6 +185,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `tracing` | Off | Enables `tracing` in client and server |
 | `tls-rustls` | Off | Enables `tls-rustls` in client |
 | `grpc` | Off | Enables `grpc` in client and server |
+| `otel` | Off | Enables `otel` in the server |
 
 ## Environment Variables
 

@@ -153,6 +153,32 @@ impl AgentCardProducer for MyCardProducer {
 
 The dynamic handler calls the producer on every request, computes a fresh ETag, and handles conditional caching.
 
+### Hot-Reload Handler
+
+For agent cards loaded from a JSON file that may change at runtime:
+
+```rust
+use a2a_protocol_sdk::server::HotReloadAgentCardHandler;
+use std::path::Path;
+use std::time::Duration;
+
+let handler = HotReloadAgentCardHandler::new(initial_card);
+
+// Cross-platform: poll the file every 30 seconds
+let watcher = handler.spawn_poll_watcher(
+    Path::new("/etc/a2a/agent.json"),
+    Duration::from_secs(30),
+);
+
+// Unix only: reload on SIGHUP
+#[cfg(unix)]
+let signal_watcher = handler.spawn_signal_watcher(
+    Path::new("/etc/a2a/agent.json"),
+);
+```
+
+`HotReloadAgentCardHandler` implements `AgentCardProducer`, so it plugs directly into `DynamicAgentCardHandler` for full HTTP caching support. The internal `Arc<RwLock<AgentCard>>` ensures updates are atomic and lock-free for readers.
+
 ## HTTP Caching
 
 Agent card responses include standard HTTP caching headers (RFC 7232):

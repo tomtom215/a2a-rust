@@ -28,13 +28,16 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Quad transport** — JSON-RPC 2.0, REST, WebSocket, and gRPC dispatchers, both client and server
 - **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
-- **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults, SQLite reference implementations (`sqlite` feature flag), and tenant-aware variants for multi-tenancy
-- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` provide full tenant isolation via `tokio::task_local!` or `tenant_id` column partitioning
+- **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution; hot-reload via `HotReloadAgentCardHandler` with file polling or SIGHUP-based reload
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory defaults, SQLite reference implementations (`sqlite` feature flag) with schema versioning and migrations (`MigrationRunner`), and tenant-aware variants for multi-tenancy
+- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` provide full tenant isolation via `tokio::task_local!` or `tenant_id` column partitioning; per-tenant configuration via `PerTenantConfig` for differentiated service levels (timeouts, capacity, rate limits)
+- **Tenant resolution** — `TenantResolver` trait with built-in strategies: `HeaderTenantResolver` (HTTP header), `BearerTokenTenantResolver` (Bearer token with optional mapper), `PathSegmentTenantResolver` (URL path segment)
 - **Executor ergonomics** — `boxed_future` helper, `agent_executor!` macro, and `EventEmitter` eliminate `Pin<Box<dyn Future>>` and event-emission boilerplate
 - **Interceptors** — client-side `CallInterceptor` and server-side `ServerInterceptor` chains for auth, logging, etc.
 - **HTTP caching** — `ETag`, `Last-Modified`, `304 Not Modified` for agent card discovery
 - **Agent card signing** — JWS/ES256 with RFC 8785 JSON canonicalization (feature-gated)
+- **OpenTelemetry integration** — native OTLP export of metrics via the `otel` feature flag; records request counts, latency histograms, error rates, queue depth, and connection pool statistics
+- **Connection pool metrics** — `ConnectionPoolStats` and `Metrics::on_connection_pool_stats()` for monitoring active/idle connections, creation, and closure
 - **Optional tracing** — structured logging via `tracing` crate, zero cost when disabled
 - **TLS support** — HTTPS via `rustls`, no OpenSSL system dependency (feature-gated)
 - **State transition validation** — `TaskState::can_transition_to()` enforces valid state machine transitions at the handler level
@@ -48,7 +51,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Client retry** — configurable `RetryPolicy` with exponential backoff for transient failures (connection errors, timeouts, 429/502/503/504)
 - **Request ID propagation** — `CallContext::request_id` auto-extracted from `X-Request-ID` header for distributed tracing
 - **Rate limiting** — built-in `RateLimitInterceptor` with fixed-window per-caller limiting; plug in via `ServerInterceptor` chain
-- **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
+- **Observability** — `Metrics` trait with callbacks for requests, responses, errors, latency, queue depth, and connection pool stats; `TaskStore::count()` for capacity management
 - **WebSocket transport** — persistent bidirectional communication via `tokio-tungstenite` (`websocket` feature flag), JSON-RPC 2.0 over WebSocket text frames with native streaming
 - **gRPC transport** — optional gRPC binding via `tonic` (`grpc` feature flag), JSON-over-protobuf framing reusing all existing serde types, configurable via `GrpcConfig` and `GrpcTransportConfig`
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
@@ -151,7 +154,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 71 E2E tests (76 with optional transports) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, and backpressure:
+A comprehensive 4-agent team that exercises every SDK feature — 72 E2E tests (79 with optional transports and signing) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, and agent card signing:
 
 ```bash
 cargo run -p agent-team
@@ -242,7 +245,7 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 ## Project Status
 
-All phases are complete. The SDK is production-ready with all 11 A2A methods, dual transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full roadmap and [`docs/ROADMAP.md`](docs/ROADMAP.md) for planned beyond-spec extensions.
+All phases are complete. The SDK is production-ready with all 11 A2A methods, quad transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full implementation roadmap and beyond-spec extensions.
 
 | Phase | Status |
 |---|---|

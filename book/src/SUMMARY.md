@@ -39,11 +39,7 @@
 - [Testing Your Agent](./deployment/testing.md)
 - [Dogfooding: The Agent Team](./deployment/dogfooding.md)
     - [Bugs Found & Fixed](./deployment/dogfooding-bugs.md)
-        - [Passes 1–4: Foundation](./deployment/dogfooding-bugs-early.md)
-        - [Passes 5–6: Hardening](./deployment/dogfooding-bugs-hardening.md)
-        - [Passes 7–8: Deep Dogfood](./deployment/dogfooding-bugs-deep.md)
     - [Test Coverage Matrix](./deployment/dogfooding-tests.md)
-    - [Open Issues & Roadmap](./deployment/dogfooding-open-issues.md)
 - [Production Hardening](./deployment/production.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
 
