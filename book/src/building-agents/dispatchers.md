@@ -166,7 +166,7 @@ let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
 let addr = listener.local_addr()?;
 // ... build handler using addr for agent card URL ...
 let dispatcher = GrpcDispatcher::new(handler, config);
-let bound = dispatcher.serve_with_listener(listener).await?;
+let bound = dispatcher.serve_with_listener(listener)?;
 ```
 
 ### GrpcConfig

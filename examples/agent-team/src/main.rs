@@ -167,7 +167,7 @@ async fn main() {
                 .build()
                 .expect("build gRPC code analyzer handler"),
         );
-        let _grpc_addr = serve_grpc(grpc_listener, Arc::clone(&grpc_handler)).await;
+        let _grpc_addr = serve_grpc(grpc_listener, Arc::clone(&grpc_handler));
         println!("Agent [GrpcAnalyzer]  gRPC     on {grpc_base_url}");
         grpc_base_url
     };

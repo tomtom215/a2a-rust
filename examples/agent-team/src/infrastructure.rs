@@ -322,7 +322,7 @@ pub fn serve_jsonrpc(
 /// bug (Bug #12): the caller pre-binds the listener to get the address before
 /// building the handler, then passes the listener here.
 #[cfg(feature = "grpc")]
-pub async fn serve_grpc(
+pub fn serve_grpc(
     listener: tokio::net::TcpListener,
     handler: Arc<a2a_protocol_server::handler::RequestHandler>,
 ) -> SocketAddr {
@@ -332,7 +332,6 @@ pub async fn serve_grpc(
     let dispatcher = GrpcDispatcher::new(handler, config);
     dispatcher
         .serve_with_listener(listener)
-        .await
         .expect("start gRPC server")
 }
 

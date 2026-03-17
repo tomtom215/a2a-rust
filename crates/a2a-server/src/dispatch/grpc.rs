@@ -181,7 +181,7 @@ impl GrpcDispatcher {
         addr: impl tokio::net::ToSocketAddrs,
     ) -> std::io::Result<SocketAddr> {
         let listener = tokio::net::TcpListener::bind(addr).await?;
-        self.serve_with_listener(listener).await
+        self.serve_with_listener(listener)
     }
 
     /// Starts a gRPC server on a pre-bound [`TcpListener`](tokio::net::TcpListener).
@@ -196,7 +196,7 @@ impl GrpcDispatcher {
     /// # Errors
     ///
     /// Returns `std::io::Error` if the listener's local address cannot be read.
-    pub async fn serve_with_listener(
+    pub fn serve_with_listener(
         self,
         listener: tokio::net::TcpListener,
     ) -> std::io::Result<SocketAddr> {
