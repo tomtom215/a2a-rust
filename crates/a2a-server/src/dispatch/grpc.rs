@@ -351,117 +351,6 @@ fn reader_to_grpc_stream(
     Box::pin(ReceiverStream::new(rx))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::error::ServerError;
-
-    // GrpcConfig defaults
-    #[test]
-    fn grpc_config_default_values() {
-        let config = GrpcConfig::default();
-        assert_eq!(config.max_message_size, 4 * 1024 * 1024);
-        assert_eq!(config.concurrency_limit, 256);
-        assert_eq!(config.stream_channel_capacity, 64);
-    }
-
-    #[test]
-    fn grpc_config_builders() {
-        let config = GrpcConfig::default()
-            .with_max_message_size(8 * 1024 * 1024)
-            .with_concurrency_limit(128)
-            .with_stream_channel_capacity(32);
-        assert_eq!(config.max_message_size, 8 * 1024 * 1024);
-        assert_eq!(config.concurrency_limit, 128);
-        assert_eq!(config.stream_channel_capacity, 32);
-    }
-
-    // decode_json / encode_json round-trip
-    #[test]
-    fn encode_decode_json_roundtrip() {
-        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
-        struct Foo {
-            x: u32,
-        }
-        let original = Foo { x: 42 };
-        let payload = encode_json(&original).unwrap();
-        let decoded: Foo = decode_json(&payload).unwrap();
-        assert_eq!(original, decoded);
-    }
-
-    #[test]
-    fn decode_json_invalid_returns_status_error() {
-        let payload = proto::JsonPayload {
-            data: b"not-json".to_vec(),
-        };
-        let result: Result<serde_json::Value, _> = decode_json(&payload);
-        assert!(result.is_err());
-    }
-
-    // server_error_to_status mapping
-    #[test]
-    fn task_not_found_maps_to_not_found() {
-        let status = server_error_to_status(&ServerError::TaskNotFound("t1".into()));
-        assert_eq!(status.code(), tonic::Code::NotFound);
-    }
-
-    #[test]
-    fn task_not_cancelable_maps_to_failed_precondition() {
-        let status = server_error_to_status(&ServerError::TaskNotCancelable("t1".into()));
-        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
-    }
-
-    #[test]
-    fn invalid_params_maps_to_invalid_argument() {
-        let status = server_error_to_status(&ServerError::InvalidParams("bad".into()));
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    }
-
-    #[test]
-    fn method_not_found_maps_to_unimplemented() {
-        let status = server_error_to_status(&ServerError::MethodNotFound("Foo".into()));
-        assert_eq!(status.code(), tonic::Code::Unimplemented);
-    }
-
-    #[test]
-    fn internal_error_maps_to_internal() {
-        let status = server_error_to_status(&ServerError::Internal("oops".into()));
-        assert_eq!(status.code(), tonic::Code::Internal);
-    }
-
-    // extract_metadata
-    #[test]
-    fn extract_metadata_ascii_keys() {
-        let mut meta = tonic::metadata::MetadataMap::new();
-        meta.insert("authorization", "Bearer token".parse().unwrap());
-        let map = extract_metadata(&meta);
-        assert_eq!(
-            map.get("authorization").map(String::as_str),
-            Some("Bearer token")
-        );
-    }
-
-    #[test]
-    fn extract_metadata_empty() {
-        let meta = tonic::metadata::MetadataMap::new();
-        let map = extract_metadata(&meta);
-        assert!(map.is_empty());
-    }
-
-    // GrpcDispatcher Debug impl
-    #[test]
-    fn grpc_dispatcher_debug_does_not_panic() {
-        use crate::agent_executor;
-        use crate::RequestHandlerBuilder;
-        use std::sync::Arc;
-        struct DummyExec;
-        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
-        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
-        let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
-        let _ = format!("{dispatcher:?}");
-    }
-}
-
 // ── A2aService impl ─────────────────────────────────────────────────────────
 
 #[tonic::async_trait]
@@ -657,5 +546,116 @@ impl A2aService for GrpcServiceImpl {
             Ok(card) => Ok(Response::new(encode_json(&card)?)),
             Err(e) => Err(server_error_to_status(&e)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::ServerError;
+
+    // GrpcConfig defaults
+    #[test]
+    fn grpc_config_default_values() {
+        let config = GrpcConfig::default();
+        assert_eq!(config.max_message_size, 4 * 1024 * 1024);
+        assert_eq!(config.concurrency_limit, 256);
+        assert_eq!(config.stream_channel_capacity, 64);
+    }
+
+    #[test]
+    fn grpc_config_builders() {
+        let config = GrpcConfig::default()
+            .with_max_message_size(8 * 1024 * 1024)
+            .with_concurrency_limit(128)
+            .with_stream_channel_capacity(32);
+        assert_eq!(config.max_message_size, 8 * 1024 * 1024);
+        assert_eq!(config.concurrency_limit, 128);
+        assert_eq!(config.stream_channel_capacity, 32);
+    }
+
+    // decode_json / encode_json round-trip
+    #[test]
+    fn encode_decode_json_roundtrip() {
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct Foo {
+            x: u32,
+        }
+        let original = Foo { x: 42 };
+        let payload = encode_json(&original).unwrap();
+        let decoded: Foo = decode_json(&payload).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn decode_json_invalid_returns_status_error() {
+        let payload = proto::JsonPayload {
+            data: b"not-json".to_vec(),
+        };
+        let result: Result<serde_json::Value, _> = decode_json(&payload);
+        assert!(result.is_err());
+    }
+
+    // server_error_to_status mapping
+    #[test]
+    fn task_not_found_maps_to_not_found() {
+        let status = server_error_to_status(&ServerError::TaskNotFound("t1".into()));
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    #[test]
+    fn task_not_cancelable_maps_to_failed_precondition() {
+        let status = server_error_to_status(&ServerError::TaskNotCancelable("t1".into()));
+        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    }
+
+    #[test]
+    fn invalid_params_maps_to_invalid_argument() {
+        let status = server_error_to_status(&ServerError::InvalidParams("bad".into()));
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+
+    #[test]
+    fn method_not_found_maps_to_unimplemented() {
+        let status = server_error_to_status(&ServerError::MethodNotFound("Foo".into()));
+        assert_eq!(status.code(), tonic::Code::Unimplemented);
+    }
+
+    #[test]
+    fn internal_error_maps_to_internal() {
+        let status = server_error_to_status(&ServerError::Internal("oops".into()));
+        assert_eq!(status.code(), tonic::Code::Internal);
+    }
+
+    // extract_metadata
+    #[test]
+    fn extract_metadata_ascii_keys() {
+        let mut meta = tonic::metadata::MetadataMap::new();
+        meta.insert("authorization", "Bearer token".parse().unwrap());
+        let map = extract_metadata(&meta);
+        assert_eq!(
+            map.get("authorization").map(String::as_str),
+            Some("Bearer token")
+        );
+    }
+
+    #[test]
+    fn extract_metadata_empty() {
+        let meta = tonic::metadata::MetadataMap::new();
+        let map = extract_metadata(&meta);
+        assert!(map.is_empty());
+    }
+
+    // GrpcDispatcher Debug impl
+    #[test]
+    fn grpc_dispatcher_debug_does_not_panic() {
+        use crate::agent_executor;
+        use crate::RequestHandlerBuilder;
+        use std::sync::Arc;
+        struct DummyExec;
+        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+        let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
+        let _ = format!("{dispatcher:?}");
     }
 }
