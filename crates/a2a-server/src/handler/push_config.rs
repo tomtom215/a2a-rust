@@ -193,3 +193,96 @@ impl RequestHandler {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+
+    struct DummyExecutor;
+    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+    fn make_handler() -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor).build().unwrap()
+    }
+
+    fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
+        TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-1".to_owned()),
+            task_id: task_id.to_owned(),
+            url: "https://example.com/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        }
+    }
+
+    // ── on_set_push_config ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn set_push_config_without_sender_returns_push_not_supported() {
+        let handler = make_handler();
+        let config = make_push_config("task-1");
+        let result = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::PushNotSupported)),
+            "expected PushNotSupported, got: {result:?}"
+        );
+    }
+
+    // ── on_get_push_config ───────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn get_push_config_not_found_returns_invalid_params() {
+        use a2a_protocol_types::params::GetPushConfigParams;
+
+        let handler = make_handler();
+        let params = GetPushConfigParams {
+            tenant: None,
+            task_id: "no-task".to_owned(),
+            id: "no-id".to_owned(),
+        };
+        let result = handler.on_get_push_config(params, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+            "expected InvalidParams for missing config, got: {result:?}"
+        );
+    }
+
+    // ── on_list_push_configs ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn list_push_configs_empty_returns_empty_vec() {
+        let handler = make_handler();
+        let result = handler
+            .on_list_push_configs("no-task", None, None)
+            .await
+            .expect("list should succeed on empty store");
+        assert!(
+            result.is_empty(),
+            "listing configs for an unknown task should return an empty vec"
+        );
+    }
+
+    // ── on_delete_push_config ────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn delete_push_config_nonexistent_returns_ok() {
+        use a2a_protocol_types::params::DeletePushConfigParams;
+
+        let handler = make_handler();
+        let params = DeletePushConfigParams {
+            tenant: None,
+            task_id: "no-task".to_owned(),
+            id: "no-id".to_owned(),
+        };
+        // The in-memory store's delete is idempotent: deleting a non-existent
+        // config returns Ok(()) rather than an error.
+        let result = handler.on_delete_push_config(params, None).await;
+        assert!(
+            result.is_ok(),
+            "deleting a non-existent push config should return Ok, got: {result:?}"
+        );
+    }
+}
