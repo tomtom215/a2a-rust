@@ -65,3 +65,114 @@ impl RequestHandler {
             .and_then(|resp| resp.tasks.into_iter().next())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── validate_id ────────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_id_accepts_normal_id() {
+        assert!(
+            validate_id("task-123", "task_id", 1024).is_ok(),
+            "a normal short ID should be accepted"
+        );
+    }
+
+    #[test]
+    fn validate_id_rejects_empty_string() {
+        let err = validate_id("", "task_id", 1024).unwrap_err();
+        assert!(
+            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("empty")),
+            "empty string should be rejected with InvalidParams: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_id_rejects_whitespace_only() {
+        let err = validate_id("   \t\n  ", "context_id", 1024).unwrap_err();
+        assert!(
+            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("empty")),
+            "whitespace-only string should be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_id_rejects_exceeding_max_length() {
+        let long_id = "a".repeat(2000);
+        let err = validate_id(&long_id, "task_id", 1024).unwrap_err();
+        assert!(
+            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("maximum length")),
+            "overly long ID should be rejected: {err:?}"
+        );
+    }
+
+    #[test]
+    fn validate_id_accepts_exactly_max_length() {
+        let exact = "b".repeat(128);
+        assert!(
+            validate_id(&exact, "task_id", 128).is_ok(),
+            "ID at exactly max length should be accepted"
+        );
+    }
+
+    #[test]
+    fn validate_id_trims_before_length_check() {
+        // 3 content chars + surrounding whitespace = 7 raw chars, but trimmed = 3
+        assert!(
+            validate_id("  abc  ", "id", 3).is_ok(),
+            "trimmed length (3) should pass a max of 3"
+        );
+    }
+
+    #[test]
+    fn validate_id_includes_field_name_in_error() {
+        let err = validate_id("", "my_field", 1024).unwrap_err();
+        assert!(
+            matches!(err, ServerError::InvalidParams(ref msg) if msg.contains("my_field")),
+            "error message should contain the field name: {err:?}"
+        );
+    }
+
+    // ── build_call_context ─────────────────────────────────────────────────
+
+    #[test]
+    fn build_call_context_without_headers() {
+        let ctx = build_call_context("message/send", None);
+        assert_eq!(ctx.method, "message/send", "method should be set");
+        assert!(
+            ctx.http_headers.is_empty(),
+            "headers should be empty when None is passed"
+        );
+    }
+
+    #[test]
+    fn build_call_context_with_headers() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
+        headers.insert("x-request-id".to_owned(), "req-99".to_owned());
+
+        let ctx = build_call_context("tasks/get", Some(&headers));
+        assert_eq!(ctx.method, "tasks/get");
+        assert_eq!(
+            ctx.http_headers.get("authorization").map(String::as_str),
+            Some("Bearer tok"),
+            "headers should be cloned into the context"
+        );
+        assert_eq!(
+            ctx.http_headers.get("x-request-id").map(String::as_str),
+            Some("req-99"),
+        );
+    }
+
+    #[test]
+    fn build_call_context_with_empty_headers_map() {
+        let headers = HashMap::new();
+        let ctx = build_call_context("test", Some(&headers));
+        assert!(
+            ctx.http_headers.is_empty(),
+            "an empty map should result in empty headers"
+        );
+    }
+}
