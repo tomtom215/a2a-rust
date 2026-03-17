@@ -146,4 +146,56 @@ mod tests {
             Some("Bearer tok")
         );
     }
+
+    #[test]
+    fn with_request_id_sets_field() {
+        let ctx = CallContext::new("test").with_request_id("req-99");
+        assert_eq!(ctx.request_id.as_deref(), Some("req-99"));
+    }
+
+    #[test]
+    fn with_http_headers_extracts_request_id() {
+        let mut headers = HashMap::new();
+        headers.insert("x-request-id".to_owned(), "trace-123".to_owned());
+        headers.insert("content-type".to_owned(), "application/json".to_owned());
+
+        let ctx = CallContext::new("test").with_http_headers(headers);
+        assert_eq!(ctx.request_id.as_deref(), Some("trace-123"));
+        assert_eq!(
+            ctx.http_headers.get("content-type").map(String::as_str),
+            Some("application/json")
+        );
+    }
+
+    #[test]
+    fn with_http_headers_without_request_id() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
+
+        let ctx = CallContext::new("test").with_http_headers(headers);
+        assert!(ctx.request_id.is_none());
+    }
+
+    #[test]
+    fn with_caller_identity_sets_field() {
+        let ctx = CallContext::new("test").with_caller_identity("user@example.com".into());
+        assert_eq!(ctx.caller_identity.as_deref(), Some("user@example.com"));
+    }
+
+    #[test]
+    fn with_extensions_sets_field() {
+        let ctx = CallContext::new("test")
+            .with_extensions(vec!["ext1".into(), "ext2".into()]);
+        assert_eq!(ctx.extensions, vec!["ext1", "ext2"]);
+    }
+
+    #[test]
+    fn new_defaults_are_empty() {
+        let ctx = CallContext::new("method");
+        assert_eq!(ctx.method, "method");
+        assert!(ctx.caller_identity.is_none());
+        assert!(ctx.extensions.is_empty());
+        assert!(ctx.request_id.is_none());
+        assert!(ctx.http_headers.is_empty());
+    }
 }

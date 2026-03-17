@@ -394,6 +394,26 @@ mod tests {
     }
 
     #[test]
+    fn credentials_store_default_impl() {
+        let store = InMemoryCredentialsStore::default();
+        let session = SessionId::new("test");
+        assert!(store.get(&session, "bearer").is_none());
+    }
+
+    #[tokio::test]
+    async fn auth_interceptor_after_is_noop() {
+        let store = Arc::new(InMemoryCredentialsStore::new());
+        let session = SessionId::new("test");
+        let interceptor = AuthInterceptor::new(store, session);
+        let resp = ClientResponse {
+            method: "test".into(),
+            result: serde_json::Value::Null,
+            status_code: 200,
+        };
+        interceptor.after(&resp).await.unwrap();
+    }
+
+    #[test]
     fn auth_interceptor_debug_contains_fields() {
         let store = Arc::new(InMemoryCredentialsStore::new());
         let session = SessionId::new("debug-session");

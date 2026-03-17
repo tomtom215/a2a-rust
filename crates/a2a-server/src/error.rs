@@ -217,4 +217,107 @@ mod tests {
         let err = ServerError::Internal("oops".into());
         assert!(err.source().is_none());
     }
+
+    // ── Display tests for all variants ────────────────────────────────────
+
+    #[test]
+    fn display_all_variants() {
+        assert!(ServerError::TaskNotFound("t1".into()).to_string().contains("t1"));
+        assert!(ServerError::TaskNotCancelable("t2".into()).to_string().contains("t2"));
+        assert!(ServerError::InvalidParams("bad".into()).to_string().contains("bad"));
+        assert!(ServerError::HttpClient("conn".into()).to_string().contains("conn"));
+        assert!(ServerError::Transport("tcp".into()).to_string().contains("tcp"));
+        assert_eq!(
+            ServerError::PushNotSupported.to_string(),
+            "push notifications not supported"
+        );
+        assert!(ServerError::Internal("oops".into()).to_string().contains("oops"));
+        assert!(ServerError::MethodNotFound("foo/bar".into()).to_string().contains("foo/bar"));
+        assert!(
+            ServerError::Protocol(A2aError::task_not_found("t")).to_string().contains("protocol error")
+        );
+        assert!(ServerError::PayloadTooLarge("too big".into()).to_string().contains("too big"));
+        let ist = ServerError::InvalidStateTransition {
+            task_id: "t3".into(),
+            from: a2a_protocol_types::task::TaskState::Working,
+            to: a2a_protocol_types::task::TaskState::Submitted,
+        };
+        let s = ist.to_string();
+        assert!(s.contains("t3"), "missing task_id: {s}");
+        assert!(s.contains("WORKING") || s.contains("Working"), "missing from state: {s}");
+    }
+
+    // ── to_a2a_error mapping tests ────────────────────────────────────────
+
+    #[test]
+    fn to_a2a_error_all_variants() {
+        assert_eq!(
+            ServerError::TaskNotFound("t".into()).to_a2a_error().code,
+            ErrorCode::TaskNotFound
+        );
+        assert_eq!(
+            ServerError::TaskNotCancelable("t".into()).to_a2a_error().code,
+            ErrorCode::TaskNotCancelable
+        );
+        assert_eq!(
+            ServerError::InvalidParams("x".into()).to_a2a_error().code,
+            ErrorCode::InvalidParams
+        );
+        assert_eq!(
+            ServerError::Serialization(serde_json::from_str::<String>("x").unwrap_err())
+                .to_a2a_error()
+                .code,
+            ErrorCode::ParseError
+        );
+        assert_eq!(
+            ServerError::MethodNotFound("m".into()).to_a2a_error().code,
+            ErrorCode::MethodNotFound
+        );
+        assert_eq!(
+            ServerError::PushNotSupported.to_a2a_error().code,
+            ErrorCode::PushNotificationNotSupported
+        );
+        assert_eq!(
+            ServerError::Protocol(A2aError::task_not_found("t"))
+                .to_a2a_error()
+                .code,
+            ErrorCode::TaskNotFound
+        );
+        assert_eq!(
+            ServerError::HttpClient("x".into()).to_a2a_error().code,
+            ErrorCode::InternalError
+        );
+        assert_eq!(
+            ServerError::Transport("x".into()).to_a2a_error().code,
+            ErrorCode::InternalError
+        );
+        assert_eq!(
+            ServerError::Internal("x".into()).to_a2a_error().code,
+            ErrorCode::InternalError
+        );
+        assert_eq!(
+            ServerError::PayloadTooLarge("x".into()).to_a2a_error().code,
+            ErrorCode::InternalError
+        );
+        let ist = ServerError::InvalidStateTransition {
+            task_id: "t".into(),
+            from: a2a_protocol_types::task::TaskState::Working,
+            to: a2a_protocol_types::task::TaskState::Submitted,
+        };
+        assert_eq!(ist.to_a2a_error().code, ErrorCode::InvalidParams);
+    }
+
+    // ── From impls ────────────────────────────────────────────────────────
+
+    #[test]
+    fn from_a2a_error() {
+        let e: ServerError = A2aError::internal("test").into();
+        assert!(matches!(e, ServerError::Protocol(_)));
+    }
+
+    #[test]
+    fn from_serde_error() {
+        let e: ServerError = serde_json::from_str::<String>("bad").unwrap_err().into();
+        assert!(matches!(e, ServerError::Serialization(_)));
+    }
 }

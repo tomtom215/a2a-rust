@@ -147,4 +147,30 @@ mod tests {
         let debug = format!("{chain:?}");
         assert!(debug.contains('2'), "expected count=2 in debug: {debug}");
     }
+
+    #[tokio::test]
+    async fn run_before_calls_interceptors_in_order() {
+        let mut chain = ServerInterceptorChain::new();
+        chain.push(Arc::new(NoopInterceptor));
+        chain.push(Arc::new(NoopInterceptor));
+        let ctx = CallContext::new("test");
+        chain.run_before(&ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_after_calls_interceptors_in_reverse() {
+        let mut chain = ServerInterceptorChain::new();
+        chain.push(Arc::new(NoopInterceptor));
+        chain.push(Arc::new(NoopInterceptor));
+        let ctx = CallContext::new("test");
+        chain.run_after(&ctx).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn empty_chain_succeeds() {
+        let chain = ServerInterceptorChain::new();
+        let ctx = CallContext::new("test");
+        chain.run_before(&ctx).await.unwrap();
+        chain.run_after(&ctx).await.unwrap();
+    }
 }

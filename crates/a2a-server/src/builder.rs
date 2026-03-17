@@ -463,4 +463,21 @@ mod tests {
         let debug = format!("{builder:?}");
         assert!(debug.contains("RequestHandlerBuilder"));
     }
+
+    #[test]
+    fn builder_with_push_config_store_builds_ok() {
+        use crate::push::InMemoryPushConfigStore;
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_push_config_store(InMemoryPushConfigStore::new())
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn builder_with_event_queue_write_timeout_builds_ok() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_event_queue_write_timeout(Duration::from_secs(10))
+            .build();
+        assert!(result.is_ok());
+    }
 }
