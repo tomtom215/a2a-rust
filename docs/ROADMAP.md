@@ -96,6 +96,8 @@ duplicate type definitions needed.
 **Server:** `GrpcDispatcher` implements the tonic-generated `A2aService` trait
 and routes to the same `RequestHandler` used by HTTP transports. Configure via
 `GrpcConfig` (message size limits, concurrency, stream channel capacity).
+Use `serve_with_listener()` when you need to know the bound address before
+constructing the handler (e.g., for agent cards with correct URLs).
 
 **Client:** `GrpcTransport` implements the `Transport` trait for use with
 `ClientBuilder`. Configure via `GrpcTransportConfig` (timeouts, message sizes).

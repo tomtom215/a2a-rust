@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (66 tests, 69 with optional gRPC) that exercises every major SDK feature.
+//! suite (64 tests, 69 with optional transports) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -149,13 +149,17 @@ async fn main() {
     println!("Agent [Coordinator]   REST     on {coordinator_url}");
 
     // ── Agent 5: Code Analyzer (gRPC) ────────────────────────────────────
+    // Uses the same pre-bind pattern as other agents to avoid Bug #12
+    // (placeholder URL in agent card).
     #[cfg(feature = "grpc")]
     let grpc_analyzer_metrics = Arc::new(TeamMetrics::new("GrpcAnalyzer"));
     #[cfg(feature = "grpc")]
     let grpc_analyzer_url = {
+        let (grpc_listener, grpc_bind_addr) = bind_listener().await;
+        let grpc_base_url = format!("http://{grpc_bind_addr}");
         let grpc_handler = Arc::new(
             RequestHandlerBuilder::new(CodeAnalyzerExecutor)
-                .with_agent_card(grpc_analyzer_card("http://placeholder"))
+                .with_agent_card(grpc_analyzer_card(&grpc_base_url))
                 .with_interceptor(AuditInterceptor::new("GrpcAnalyzer"))
                 .with_metrics(MetricsForward(Arc::clone(&grpc_analyzer_metrics)))
                 .with_executor_timeout(std::time::Duration::from_secs(30))
@@ -163,10 +167,9 @@ async fn main() {
                 .build()
                 .expect("build gRPC code analyzer handler"),
         );
-        let grpc_addr = serve_grpc(Arc::clone(&grpc_handler)).await;
-        let url = format!("http://{grpc_addr}");
-        println!("Agent [GrpcAnalyzer]  gRPC     on {url}");
-        url
+        let _grpc_addr = serve_grpc(grpc_listener, Arc::clone(&grpc_handler));
+        println!("Agent [GrpcAnalyzer]  gRPC     on {grpc_base_url}");
+        grpc_base_url
     };
 
     println!();

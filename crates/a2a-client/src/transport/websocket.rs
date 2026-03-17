@@ -261,8 +261,10 @@ async fn ws_stream_reader_task(
                     break; // Consumer dropped
                 }
 
-                // Check if this is the final "stream_complete" response.
-                if text.contains("stream_complete") {
+                // Check if this is the final response by parsing the JSON-RPC
+                // envelope and looking for a terminal task state in the result.
+                // This replaces fragile string matching with proper deserialization.
+                if is_stream_terminal(&text) {
                     break;
                 }
             }
@@ -281,6 +283,42 @@ async fn ws_stream_reader_task(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Checks whether a JSON-RPC frame represents a terminal streaming event.
+///
+/// A stream is terminal when the result contains a status update with a
+/// terminal task state (`completed`, `failed`, `canceled`, `rejected`),
+/// or when the frame is a `stream_complete` sentinel.
+///
+/// Uses structural JSON inspection rather than fragile string matching
+/// to avoid false positives from payload content containing those words.
+fn is_stream_terminal(text: &str) -> bool {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    let result = frame.get("result");
+    // Check for explicit stream_complete sentinel
+    if let Some(r) = result {
+        if r.get("stream_complete").is_some() {
+            return true;
+        }
+        // Check for terminal status in statusUpdate
+        if let Some(status_update) = r.get("statusUpdate") {
+            if let Some(status) = status_update.get("status") {
+                if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
+                    return matches!(state, "completed" | "failed" | "canceled" | "rejected");
+                }
+            }
+        }
+        // Check for terminal status in a full task response
+        if let Some(status) = r.get("status") {
+            if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
+                return matches!(state, "completed" | "failed" | "canceled" | "rejected");
+            }
+        }
+    }
+    false
+}
 
 fn build_rpc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     let id = serde_json::Value::String(Uuid::new_v4().to_string());
@@ -337,5 +375,43 @@ mod tests {
     #[test]
     fn validate_ws_url_accepts_wss() {
         assert!(validate_ws_url("wss://agent.example.com/a2a").is_ok());
+    }
+
+    #[test]
+    fn is_stream_terminal_completed_status() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"completed"}}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_failed_status() {
+        let frame =
+            r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"failed"}}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_working_is_not_terminal() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"working"}}}}"#;
+        assert!(!is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_stream_complete_sentinel() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"stream_complete":true}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_artifact_not_terminal() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"artifactUpdate":{"artifact":{"id":"a1","parts":[]}}}}"#;
+        assert!(!is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_payload_containing_word_not_terminal() {
+        // Payload text containing "completed" should NOT trigger termination
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"artifactUpdate":{"artifact":{"id":"a1","parts":[{"text":"task completed successfully"}]}}}}"#;
+        assert!(!is_stream_terminal(frame));
     }
 }

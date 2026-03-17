@@ -165,7 +165,7 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Sub-pages
 
-- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 17 bugs discovered across five dogfooding passes
+- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 22 bugs discovered across six dogfooding passes
 - **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 66-test E2E coverage map (69 with gRPC)
 - **[Open Issues & Roadmap](./dogfooding-open-issues.md)** — Remaining gaps and future work
 

@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Five dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **17 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 17 have been fixed.
+Six dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **22 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 22 have been fixed.
 
 ## Pass 1: Initial Dogfood (3 bugs)
 
@@ -163,6 +163,54 @@ The `buckets` HashMap grew without bound. Each unique caller key created a `Call
 `ClientBuilder::from_card()` silently accepted any `protocol_version` from the agent card, including incompatible versions (e.g., `"2.0.0"` when the client supports `"1.x"`). Users would only discover the mismatch through obscure deserialization errors.
 
 **Fix:** Added protocol version major-version check in `from_card()`. When the agent's major version differs from the client's supported version, a `tracing::warn!` is emitted.
+
+## Pass 6: Architecture Audit (5 bugs)
+
+### Bug 18: gRPC Agent Card Still Uses Placeholder URL
+
+**Severity:** Critical | **Component:** Agent-team example (gRPC path)
+
+The gRPC `CodeAnalyzer` agent was still constructed with `grpc_analyzer_card("http://placeholder")` — the exact same Bug #12 pattern that was fixed for HTTP agents in Pass 4. The gRPC path was missed because it was behind a `#[cfg(feature = "grpc")]` gate.
+
+**Why tests missed it:** gRPC tests used the address from `serve_grpc()` return value, not from the agent card. Agent card discovery tests only ran for HTTP agents.
+
+**Fix:** Added `GrpcDispatcher::serve_with_listener()` to accept a pre-bound `TcpListener`. The agent-team example now pre-binds for gRPC the same way it does for HTTP, ensuring the agent card URL is correct from the start.
+
+### Bug 19: REST Transport Query Strings Not URL-Encoded
+
+**Severity:** High | **Component:** Client REST transport
+
+`build_query_string()` concatenated parameter values directly into query strings without percent-encoding. Values containing `&`, `=`, spaces, or other special characters would corrupt the query string, causing server-side parsing failures or parameter injection.
+
+**Why tests missed it:** All test parameters used simple alphanumeric values that don't need encoding.
+
+**Fix:** Added `encode_query_value()` implementing RFC 3986 percent-encoding for all non-unreserved characters. Both keys and values are now encoded.
+
+### Bug 20: WebSocket Stream Termination Uses Fragile String Matching
+
+**Severity:** Medium | **Component:** Client WebSocket transport
+
+The WebSocket stream reader detected stream completion by checking `text.contains("stream_complete")`. This would false-positive on any payload containing that substring (e.g., a task whose output mentions "stream_complete") and would miss terminal status updates that don't contain that exact string.
+
+**Fix:** Replaced with `is_stream_terminal()` that deserializes the JSON-RPC frame and checks for terminal task states (`completed`, `failed`, `canceled`, `rejected`) or the `stream_complete` sentinel in the result object.
+
+### Bug 21: Background Event Processor Silently Drops Store Write Failures
+
+**Severity:** High | **Component:** Server `RequestHandler` background processor
+
+In streaming mode, the background event processor called `let _ = task_store.save(...).await;` at 5 call sites, silently discarding any store errors. If the store failed (disk full, permission denied), task state would diverge: the event queue showed completion but the persistent store didn't record it.
+
+**Why tests missed it:** In-memory stores don't fail. The bug only manifests with persistent backends under storage pressure.
+
+**Fix:** All 5 sites now use `if let Err(_e) = task_store.save(...).await { trace_error!(...) }` to surface failures via structured logging.
+
+### Bug 22: Metadata Size Validation Bypass via Serialization Failure
+
+**Severity:** Medium | **Component:** Server `RequestHandler` messaging
+
+Metadata size was measured with `serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0)`. If serialization failed, the size defaulted to 0, bypassing the size limit entirely.
+
+**Fix:** Changed `unwrap_or(0)` to `map_err(|_| ServerError::InvalidParams("metadata is not serializable"))`, rejecting unserializable metadata outright.
 
 ## Configuration Hardening (Pass 2)
 

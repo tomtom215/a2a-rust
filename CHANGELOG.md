@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **gRPC agent-team placeholder URL** — the gRPC `CodeAnalyzer` still used
+  `"http://placeholder"` in its agent card (same Bug #12 pattern). Fixed by
+  adding `GrpcDispatcher::serve_with_listener()` and using the pre-bind pattern.
+- **REST transport query string encoding** — `build_query_string()` did not
+  percent-encode parameter values. Values containing `&`, `=`, or spaces
+  would corrupt query strings. Added RFC 3986 percent-encoding.
+- **WebSocket stream termination detection** — replaced fragile
+  `text.contains("stream_complete")` with proper JSON-RPC frame deserialization
+  that checks for terminal task states. Prevents false positives from payloads
+  containing the word "stream_complete".
+- **Background event processor silent data loss** — 5 `let _ = task_store.save(...)`
+  call sites in the streaming background processor silently dropped store errors.
+  Now logs failures via `trace_error!`.
+- **Metadata size validation bypass** — `unwrap_or(0)` allowed unserializable
+  metadata to bypass size limits. Now rejects with `InvalidParams` error.
 - **`InMemoryCredentialsStore` lock poisoning** — changed from silent `.ok()?`
   to `.expect()` (fail-fast). Poisoned locks now surface immediately instead of
   masking failures with silent `None` returns.
@@ -27,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`GrpcDispatcher::serve_with_listener()`** — accepts a pre-bound
+  `TcpListener` for the gRPC server, enabling the same pre-bind pattern used
+  by HTTP dispatchers. Ensures agent cards contain correct URLs.
+- **`encode_query_value()`** — internal URL encoding for REST transport query
+  string parameters (RFC 3986 §2.3 unreserved character set).
+- **`is_stream_terminal()`** — WebSocket transport now uses structured JSON
+  parsing for stream completion detection, with 6 new unit tests.
 - **Protocol version compatibility warning** — `ClientBuilder::from_card()` now
   emits a `tracing::warn!` when the agent card's major protocol version differs
   from the client's supported version (currently `1.x`).

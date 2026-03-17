@@ -284,7 +284,12 @@ impl RequestHandler {
                                     );
                                     if !last_task.status.state.is_terminal() {
                                         last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                        let _ = task_store.save(last_task.clone()).await;
+                                        if let Err(_e) = task_store.save(last_task.clone()).await {
+                                            trace_error!(
+                                                task_id = %task_id,
+                                                "background processor: task store save failed after executor panic"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -329,23 +334,43 @@ async fn process_event_bg(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            let _ = task_store.save(last_task.clone()).await;
+            if let Err(_e) = task_store.save(last_task.clone()).await {
+                trace_error!(
+                    task_id = %task_id,
+                    "background processor: task store save failed for status update"
+                );
+            }
             deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
             let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
             artifacts.push(update.artifact.clone());
-            let _ = task_store.save(last_task.clone()).await;
+            if let Err(_e) = task_store.save(last_task.clone()).await {
+                trace_error!(
+                    task_id = %task_id,
+                    "background processor: task store save failed for artifact update"
+                );
+            }
             deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
         }
         Ok(StreamResponse::Task(task)) => {
             *last_task = task;
-            let _ = task_store.save(last_task.clone()).await;
+            if let Err(_e) = task_store.save(last_task.clone()).await {
+                trace_error!(
+                    task_id = %task_id,
+                    "background processor: task store save failed for task snapshot"
+                );
+            }
         }
         Ok(StreamResponse::Message(_) | _) => {}
         Err(_e) => {
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            let _ = task_store.save(last_task.clone()).await;
+            if let Err(_save_err) = task_store.save(last_task.clone()).await {
+                trace_error!(
+                    task_id = %task_id,
+                    "background processor: task store save failed for error state"
+                );
+            }
         }
     }
 }

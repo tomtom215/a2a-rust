@@ -7,7 +7,7 @@
 > See the canonical versions at:
 >
 > - [Dogfooding Overview](../../book/src/deployment/dogfooding.md)
-> - [Bugs Found & Fixed](../../book/src/deployment/dogfooding-bugs.md) — 17 bugs across 5 passes
+> - [Bugs Found & Fixed](../../book/src/deployment/dogfooding-bugs.md) — 22 bugs across 6 passes
 > - [Test Coverage Matrix](../../book/src/deployment/dogfooding-tests.md) — 66 E2E tests (69 with gRPC)
 > - [Open Issues & Roadmap](../../book/src/deployment/dogfooding-open-issues.md) — design debt and future work
 
@@ -15,11 +15,11 @@
 
 | Category | Count |
 |----------|-------|
-| Critical bugs fixed | 3 (SDK) + 3 (example) |
-| Concurrency/durability bugs fixed | 4 (pass 5) |
+| Critical bugs fixed | 3 (SDK) + 3 (example) + 2 (pass 6) |
+| Concurrency/durability bugs fixed | 4 (pass 5) + 2 (pass 6) |
 | Design issues identified | 5 |
 | Test gaps found | 9 |
-| New tests added (passes 4-5) | 10 + 21 |
+| New tests added (passes 4-6) | 10 + 21 + 8 |
 | Total E2E tests | 66 (69 with optional gRPC) |
 
 ### Critical SDK Bug Fixed

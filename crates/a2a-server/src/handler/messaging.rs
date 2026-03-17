@@ -94,7 +94,9 @@ impl RequestHandler {
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
         let max_meta = self.limits.max_metadata_size;
         if let Some(ref meta) = params.message.metadata {
-            let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
+            let meta_size = serde_json::to_string(meta).map(|s| s.len()).map_err(|_| {
+                ServerError::InvalidParams("message metadata is not serializable".into())
+            })?;
             if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
                     "message metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"
@@ -102,7 +104,9 @@ impl RequestHandler {
             }
         }
         if let Some(ref meta) = params.metadata {
-            let meta_size = serde_json::to_string(meta).map(|s| s.len()).unwrap_or(0);
+            let meta_size = serde_json::to_string(meta).map(|s| s.len()).map_err(|_| {
+                ServerError::InvalidParams("request metadata is not serializable".into())
+            })?;
             if meta_size > max_meta {
                 return Err(ServerError::InvalidParams(format!(
                     "request metadata exceeds maximum size ({meta_size} bytes, max {max_meta})"

@@ -1,6 +1,6 @@
 # Dogfooding: Open Issues & Future Work
 
-Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from earlier passes have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list.
+Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from passes 1–6 have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list (22 bugs across 6 passes).
 
 ## E2E Test Coverage Gaps
 
@@ -74,7 +74,7 @@ Features that are not part of the current A2A v1.0.0 spec but could add value:
 
 ## Resolved in Previous Passes
 
-All issues from dogfooding passes 1–5 have been resolved:
+All issues from dogfooding passes 1–6 have been resolved:
 
 - Push delivery for streaming mode (background event processor)
 - `CallContext` HTTP headers for interceptors
@@ -96,5 +96,10 @@ All issues from dogfooding passes 1–5 have been resolved:
 - Rate limiter TOCTOU race condition (CAS loop fix)
 - Rate limiter stale-bucket cleanup (unbounded growth prevention)
 - Client protocol version compatibility warning
+- gRPC placeholder URL bug (pre-bind pattern via `serve_with_listener`)
+- REST transport query string percent-encoding (RFC 3986)
+- WebSocket stream termination detection (proper JSON parsing)
+- Background event processor error logging (silent `let _` → `trace_error!`)
+- Metadata size validation bypass (`unwrap_or(0)` → reject unserializable)
 
 See [Bugs Found & Fixed](./dogfooding-bugs.md) for details on each resolution.
