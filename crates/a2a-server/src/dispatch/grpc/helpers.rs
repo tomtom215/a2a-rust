@@ -13,6 +13,7 @@ use tonic::Status;
 
 use super::JsonPayload;
 use crate::error::ServerError;
+use crate::streaming::EventQueueReader;
 
 /// The streaming response type for gRPC server-streaming methods.
 pub(super) type GrpcStream =
