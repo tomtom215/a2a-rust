@@ -207,6 +207,7 @@ impl ClientBuilder {
     /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
     /// - [`ClientError::Transport`] if the selected transport cannot be
     ///   initialized.
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ClientResult<A2aClient> {
         if self.config.request_timeout.is_zero() {
             return Err(ClientError::Transport(
@@ -243,9 +244,22 @@ impl ClientBuilder {
                     )?;
                     Box::new(t)
                 }
+                #[cfg(feature = "grpc")]
+                BINDING_GRPC => {
+                    // gRPC transport requires async connect; can't do in
+                    // sync build(). Use with_custom_transport() instead,
+                    // or use ClientBuilder::build_async().
+                    return Err(ClientError::Transport(
+                        "gRPC transport requires async connect; \
+                         use ClientBuilder::build_grpc() or \
+                         with_custom_transport(GrpcTransport::connect(...))"
+                            .into(),
+                    ));
+                }
+                #[cfg(not(feature = "grpc"))]
                 BINDING_GRPC => {
                     return Err(ClientError::Transport(
-                        "gRPC transport is not supported in this version".into(),
+                        "gRPC transport requires the `grpc` feature flag".into(),
                     ));
                 }
                 other => {
@@ -257,6 +271,44 @@ impl ClientBuilder {
         };
 
         // Wrap with retry transport if a policy is configured.
+        let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
+            Box::new(RetryTransport::new(transport, policy))
+        } else {
+            transport
+        };
+
+        Ok(A2aClient::new(transport, self.interceptors, self.config))
+    }
+
+    /// Validates configuration and constructs a gRPC-backed [`A2aClient`].
+    ///
+    /// Unlike [`build`](Self::build), this method is async because gRPC
+    /// transport requires establishing a connection.
+    ///
+    /// # Errors
+    ///
+    /// - [`ClientError::InvalidEndpoint`] if the endpoint URL is malformed.
+    /// - [`ClientError::Transport`] if the gRPC connection fails.
+    #[cfg(feature = "grpc")]
+    pub async fn build_grpc(self) -> ClientResult<A2aClient> {
+        use crate::transport::grpc::{GrpcTransport, GrpcTransportConfig};
+
+        if self.config.request_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "request_timeout must be non-zero".into(),
+            ));
+        }
+
+        let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
+            t
+        } else {
+            let grpc_config = GrpcTransportConfig::default()
+                .with_timeout(self.config.request_timeout)
+                .with_connect_timeout(self.config.connection_timeout);
+            let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config).await?;
+            Box::new(t)
+        };
+
         let transport: Box<dyn Transport> = if let Some(policy) = self.retry_policy {
             Box::new(RetryTransport::new(transport, policy))
         } else {
@@ -301,7 +353,9 @@ mod tests {
     }
 
     #[test]
-    fn builder_grpc_returns_error() {
+    fn builder_grpc_sync_build_returns_error() {
+        // gRPC requires async connect; sync build() returns an error
+        // directing users to build_grpc().
         let result = ClientBuilder::new("http://localhost:8080")
             .with_protocol_binding(BINDING_GRPC)
             .build();

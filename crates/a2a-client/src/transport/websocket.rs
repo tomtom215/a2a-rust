@@ -42,7 +42,7 @@ use crate::transport::Transport;
 /// WebSocket transport: JSON-RPC 2.0 over a persistent WebSocket connection.
 ///
 /// Create via [`WebSocketTransport::connect`] and pass to
-/// [`crate::ClientBuilder::with_transport`].
+/// [`crate::ClientBuilder::with_custom_transport`].
 ///
 /// The transport opens a single WebSocket connection that is reused across
 /// all requests. Requests are serialized through a mutex to ensure only one

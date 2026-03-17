@@ -31,10 +31,14 @@ use std::time::Instant;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::push::HttpPushSender;
 
+#[cfg(feature = "grpc")]
+use cards::grpc_analyzer_card;
 use cards::{build_monitor_card, code_analyzer_card, coordinator_card, health_monitor_card};
 use executors::{
     BuildMonitorExecutor, CodeAnalyzerExecutor, CoordinatorExecutor, HealthMonitorExecutor,
 };
+#[cfg(feature = "grpc")]
+use infrastructure::serve_grpc;
 use infrastructure::{
     bind_listener, serve_jsonrpc, serve_rest, start_webhook_server, AuditInterceptor,
     MetricsForward, TeamMetrics, WebhookReceiver,
@@ -140,6 +144,28 @@ async fn main() {
     );
     serve_rest(coord_listener, Arc::clone(&coord_handler));
     println!("Agent [Coordinator]   REST     on {coordinator_url}");
+
+    // ── Agent 5: Code Analyzer (gRPC) ────────────────────────────────────
+    #[cfg(feature = "grpc")]
+    let grpc_analyzer_metrics = Arc::new(TeamMetrics::new("GrpcAnalyzer"));
+    #[cfg(feature = "grpc")]
+    let grpc_analyzer_url = {
+        let grpc_handler = Arc::new(
+            RequestHandlerBuilder::new(CodeAnalyzerExecutor)
+                .with_agent_card(grpc_analyzer_card("http://placeholder"))
+                .with_interceptor(AuditInterceptor::new("GrpcAnalyzer"))
+                .with_metrics(MetricsForward(Arc::clone(&grpc_analyzer_metrics)))
+                .with_executor_timeout(std::time::Duration::from_secs(30))
+                .with_event_queue_capacity(128)
+                .build()
+                .expect("build gRPC code analyzer handler"),
+        );
+        let grpc_addr = serve_grpc(Arc::clone(&grpc_handler)).await;
+        let url = format!("http://{grpc_addr}");
+        println!("Agent [GrpcAnalyzer]  gRPC     on {url}");
+        url
+    };
+
     println!();
 
     // ── Build test context ───────────────────────────────────────────────
@@ -154,6 +180,10 @@ async fn main() {
         build_metrics: Arc::clone(&build_metrics),
         health_metrics: Arc::clone(&health_metrics),
         coordinator_metrics: Arc::clone(&coordinator_metrics),
+        #[cfg(feature = "grpc")]
+        grpc_analyzer_url,
+        #[cfg(feature = "grpc")]
+        grpc_analyzer_metrics: Arc::clone(&grpc_analyzer_metrics),
     };
 
     // ── Run E2E test suite ───────────────────────────────────────────────
@@ -229,6 +259,14 @@ async fn main() {
     results.push(transport::test_tenant_id_independence(&ctx).await);
     results.push(transport::test_tenant_count(&ctx).await);
 
+    // Tests 56-58: gRPC transport
+    #[cfg(feature = "grpc")]
+    {
+        results.push(transport::test_grpc_send_message(&ctx).await);
+        results.push(transport::test_grpc_streaming(&ctx).await);
+        results.push(transport::test_grpc_get_task(&ctx).await);
+    }
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -265,6 +303,8 @@ async fn main() {
     println!("║ {}", build_metrics.summary());
     println!("║ {}", health_metrics.summary());
     println!("║ {}", coordinator_metrics.summary());
+    #[cfg(feature = "grpc")]
+    println!("║ {}", grpc_analyzer_metrics.summary());
 
     // Push notification summary (snapshot — test 36 drains separately).
     let push_events = webhook_receiver.snapshot().await;
@@ -314,6 +354,8 @@ async fn main() {
         "TenantContext::scope task_local threading",
         #[cfg(feature = "websocket")]
         "WebSocket transport (SendMessage + streaming)",
+        #[cfg(feature = "grpc")]
+        "gRPC transport (SendMessage + streaming + GetTask)",
     ];
     for f in &features {
         println!("║   [x] {f}");

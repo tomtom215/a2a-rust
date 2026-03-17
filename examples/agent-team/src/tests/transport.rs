@@ -149,6 +149,209 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
     }
 }
 
+// ── gRPC tests (require `grpc` feature) ─────────────────────────────────────
+
+/// Test 56: gRPC send message over the code analyzer agent.
+#[cfg(feature = "grpc")]
+pub async fn test_grpc_send_message(ctx: &TestContext) -> TestResult {
+    use a2a_protocol_client::transport::grpc::GrpcTransport;
+    use a2a_protocol_types::responses::SendMessageResponse;
+
+    let start = Instant::now();
+
+    let transport = match GrpcTransport::connect(&ctx.grpc_analyzer_url).await {
+        Ok(t) => t,
+        Err(e) => {
+            return TestResult::fail(
+                "56-grpc-send-message",
+                start.elapsed().as_millis(),
+                &format!("connect failed: {e}"),
+            );
+        }
+    };
+
+    let client = a2a_protocol_client::ClientBuilder::new(&ctx.grpc_analyzer_url)
+        .with_custom_transport(transport)
+        .without_tls()
+        .build()
+        .expect("build gRPC client");
+
+    let params = make_send_params("fn main() { println!(\"grpc!\"); }");
+    match client.send_message(params).await {
+        Ok(SendMessageResponse::Task(task)) => {
+            if task.status.state.is_terminal() {
+                TestResult::pass(
+                    "56-grpc-send-message",
+                    start.elapsed().as_millis(),
+                    &format!("task {}", task.id),
+                )
+            } else {
+                TestResult::fail(
+                    "56-grpc-send-message",
+                    start.elapsed().as_millis(),
+                    &format!("non-terminal: {:?}", task.status.state),
+                )
+            }
+        }
+        Ok(SendMessageResponse::Message(_)) => TestResult::pass(
+            "56-grpc-send-message",
+            start.elapsed().as_millis(),
+            "immediate message response",
+        ),
+        Ok(_) => TestResult::fail(
+            "56-grpc-send-message",
+            start.elapsed().as_millis(),
+            "unexpected response variant",
+        ),
+        Err(e) => TestResult::fail(
+            "56-grpc-send-message",
+            start.elapsed().as_millis(),
+            &format!("error: {e}"),
+        ),
+    }
+}
+
+/// Test 57: gRPC streaming over the code analyzer agent.
+#[cfg(feature = "grpc")]
+pub async fn test_grpc_streaming(ctx: &TestContext) -> TestResult {
+    use a2a_protocol_client::transport::grpc::GrpcTransport;
+
+    let start = Instant::now();
+
+    let transport = match GrpcTransport::connect(&ctx.grpc_analyzer_url).await {
+        Ok(t) => t,
+        Err(e) => {
+            return TestResult::fail(
+                "57-grpc-streaming",
+                start.elapsed().as_millis(),
+                &format!("connect failed: {e}"),
+            );
+        }
+    };
+
+    let client = a2a_protocol_client::ClientBuilder::new(&ctx.grpc_analyzer_url)
+        .with_custom_transport(transport)
+        .without_tls()
+        .build()
+        .expect("build gRPC client");
+
+    let params = make_send_params("fn main() {}");
+    match client.stream_message(params).await {
+        Ok(mut stream) => {
+            let mut event_count = 0u32;
+            let timeout = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                while let Some(event) = stream.next().await {
+                    match event {
+                        Ok(_) => event_count += 1,
+                        Err(e) => {
+                            return Err(format!("stream error: {e}"));
+                        }
+                    }
+                }
+                Ok(event_count)
+            });
+            match timeout.await {
+                Ok(Ok(count)) if count >= 2 => TestResult::pass(
+                    "57-grpc-streaming",
+                    start.elapsed().as_millis(),
+                    &format!("{count} events"),
+                ),
+                Ok(Ok(count)) => TestResult::fail(
+                    "57-grpc-streaming",
+                    start.elapsed().as_millis(),
+                    &format!("too few events: {count}"),
+                ),
+                Ok(Err(msg)) => {
+                    TestResult::fail("57-grpc-streaming", start.elapsed().as_millis(), &msg)
+                }
+                Err(_) => {
+                    TestResult::fail("57-grpc-streaming", start.elapsed().as_millis(), "timeout")
+                }
+            }
+        }
+        Err(e) => TestResult::fail(
+            "57-grpc-streaming",
+            start.elapsed().as_millis(),
+            &format!("stream_message failed: {e}"),
+        ),
+    }
+}
+
+/// Test 58: gRPC get_task after send_message.
+#[cfg(feature = "grpc")]
+pub async fn test_grpc_get_task(ctx: &TestContext) -> TestResult {
+    use a2a_protocol_client::transport::grpc::GrpcTransport;
+    use a2a_protocol_types::responses::SendMessageResponse;
+
+    let start = Instant::now();
+
+    let transport = match GrpcTransport::connect(&ctx.grpc_analyzer_url).await {
+        Ok(t) => t,
+        Err(e) => {
+            return TestResult::fail(
+                "58-grpc-get-task",
+                start.elapsed().as_millis(),
+                &format!("connect failed: {e}"),
+            );
+        }
+    };
+
+    let client = a2a_protocol_client::ClientBuilder::new(&ctx.grpc_analyzer_url)
+        .with_custom_transport(transport)
+        .without_tls()
+        .build()
+        .expect("build gRPC client");
+
+    // First send a message to create a task.
+    let params = make_send_params("fn grpc_test() {}");
+    let task_id = match client.send_message(params).await {
+        Ok(SendMessageResponse::Task(task)) => task.id.to_string(),
+        Ok(_) => {
+            return TestResult::fail(
+                "58-grpc-get-task",
+                start.elapsed().as_millis(),
+                "got non-task response",
+            );
+        }
+        Err(e) => {
+            return TestResult::fail(
+                "58-grpc-get-task",
+                start.elapsed().as_millis(),
+                &format!("send failed: {e}"),
+            );
+        }
+    };
+
+    // Now get the task by ID.
+    let query = a2a_protocol_types::params::TaskQueryParams {
+        tenant: None,
+        id: task_id.clone(),
+        history_length: None,
+    };
+    match client.get_task(query).await {
+        Ok(task) => {
+            if task.id.to_string() == task_id {
+                TestResult::pass(
+                    "58-grpc-get-task",
+                    start.elapsed().as_millis(),
+                    &format!("task {task_id}"),
+                )
+            } else {
+                TestResult::fail(
+                    "58-grpc-get-task",
+                    start.elapsed().as_millis(),
+                    "wrong task ID returned",
+                )
+            }
+        }
+        Err(e) => TestResult::fail(
+            "58-grpc-get-task",
+            start.elapsed().as_millis(),
+            &format!("get_task failed: {e}"),
+        ),
+    }
+}
+
 // ── Multi-tenancy tests ─────────────────────────────────────────────────────
 
 /// Test 53: Tenant isolation — different tenants can't see each other's tasks.

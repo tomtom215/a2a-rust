@@ -26,6 +26,13 @@ websocket = [
     "dep:tokio-tungstenite",
     "dep:futures-util",
 ]
+## Enable gRPC transport tests.
+grpc = [
+    "a2a-protocol-server/grpc",
+    "a2a-protocol-client/grpc",
+    "dep:tonic",
+    "dep:tokio-stream",
+]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-types" }
@@ -37,6 +44,8 @@ tracing-subscriber = { version = ">=0.3.18, <0.4", features = ["env-filter"], op
 
 tokio-tungstenite = { version = ">=0.24, <0.25", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
+tonic        = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper      = { workspace = true }

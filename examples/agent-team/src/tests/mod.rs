@@ -84,4 +84,12 @@ pub struct TestContext {
     pub health_metrics: Arc<TeamMetrics>,
     /// Metrics for Coordinator.
     pub coordinator_metrics: Arc<TeamMetrics>,
+
+    /// Base URL for the gRPC CodeAnalyzer agent (gRPC transport).
+    #[cfg(feature = "grpc")]
+    pub grpc_analyzer_url: String,
+    /// Metrics for the gRPC CodeAnalyzer agent.
+    #[cfg(feature = "grpc")]
+    #[allow(dead_code)]
+    pub grpc_analyzer_metrics: Arc<TeamMetrics>,
 }

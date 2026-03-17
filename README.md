@@ -25,7 +25,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 ## Features
 
 - **Full A2A v1.0.0 wire types** — every struct, enum, and field from the specification with correct serde annotations
-- **Triple transport** — JSON-RPC 2.0, REST, and WebSocket dispatchers, both client and server
+- **Quad transport** — JSON-RPC 2.0, REST, WebSocket, and gRPC dispatchers, both client and server
 - **SSE streaming** — real-time `SendStreamingMessage` and `SubscribeToTask` with broadcast-based multi-subscriber event streams
 - **Push notifications** — pluggable `PushSender` trait with HTTP webhook implementation
 - **Agent card discovery** — `/.well-known/agent.json` serving and client-side resolution
@@ -50,6 +50,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 - **Rate limiting** — built-in `RateLimitInterceptor` with fixed-window per-caller limiting; plug in via `ServerInterceptor` chain
 - **Task store metrics** — `TaskStore::count()` for monitoring and capacity management
 - **WebSocket transport** — persistent bidirectional communication via `tokio-tungstenite` (`websocket` feature flag), JSON-RPC 2.0 over WebSocket text frames with native streaming
+- **gRPC transport** — optional gRPC binding via `tonic` (`grpc` feature flag), JSON-over-protobuf framing reusing all existing serde types, configurable via `GrpcConfig` and `GrpcTransportConfig`
 - **Zero framework lock-in** — built on raw `hyper` 1.x; bring your own web framework
 - **No `unsafe`** — `#![deny(unsafe_op_in_unsafe_fn)]` in every crate
 
@@ -150,10 +151,13 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 55 E2E tests covering all three transports (JSON-RPC, REST, WebSocket), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, and SDK regression testing:
+A comprehensive 5-agent team that exercises every SDK feature — 58 E2E tests covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, and SDK regression testing:
 
 ```bash
 cargo run -p agent-team
+
+# With gRPC transport enabled
+cargo run -p agent-team --features grpc
 ```
 
 ### Echo Agent
@@ -181,8 +185,10 @@ cargo run -p echo-agent
 │  Transport Layer                           │
 │  JsonRpcDispatcher · RestDispatcher        │
 │  WebSocketDispatcher (feature-gated)       │
+│  GrpcDispatcher (feature-gated)            │
 │  JsonRpcTransport · RestTransport          │
 │  WebSocketTransport (feature-gated)        │
+│  GrpcTransport (feature-gated)             │
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
@@ -193,7 +199,7 @@ cargo run -p echo-agent
 The server uses a 3-layer architecture:
 1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
 2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
-3. **Dispatchers handle HTTP** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), and `WebSocketDispatcher` (WebSocket) wire hyper to the handler
+3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic to the handler
 
 ## Supported Methods
 

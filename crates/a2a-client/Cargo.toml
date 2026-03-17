@@ -26,6 +26,8 @@ signing = ["a2a-protocol-types/signing"]
 tracing = ["dep:tracing"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
+## Enable gRPC transport via `tonic`.
+grpc = ["dep:tonic", "dep:prost", "dep:tokio-stream", "dep:tonic-build"]
 
 [dependencies]
 a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
@@ -42,6 +44,12 @@ hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features 
 rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
+tonic          = { workspace = true, optional = true }
+prost          = { workspace = true, optional = true }
+tokio-stream   = { workspace = true, optional = true }
+
+[build-dependencies]
+tonic-build = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

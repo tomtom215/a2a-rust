@@ -124,7 +124,8 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"` or `"REST"` |
+| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
+| `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout(Duration)` | 30s | SSE stream connect timeout |
@@ -173,6 +174,35 @@ async fn bad_pattern(url: &str) {
     let client = ClientBuilder::new(url).build().unwrap();
     let _ = client.send_message(params).await;
 }
+```
+
+## gRPC Client
+
+For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
+
+```rust
+use a2a_protocol_client::GrpcTransport;
+
+let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
+let client = ClientBuilder::new("http://agent.example.com:50051")
+    .with_custom_transport(transport)
+    .build()?;
+```
+
+Configure with `GrpcTransportConfig`:
+
+```rust
+use a2a_protocol_client::transport::grpc::{GrpcTransport, GrpcTransportConfig};
+use std::time::Duration;
+
+let config = GrpcTransportConfig::default()
+    .with_timeout(Duration::from_secs(60))
+    .with_max_message_size(8 * 1024 * 1024);
+
+let transport = GrpcTransport::connect_with_config(
+    "http://agent.example.com:50051",
+    config,
+).await?;
 ```
 
 ## Thread Safety

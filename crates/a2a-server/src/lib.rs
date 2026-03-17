@@ -33,11 +33,10 @@
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //!
-//! # Transport limitations
+//! # gRPC transport
 //!
-//! The A2A specification lists gRPC as an optional transport binding. This
-//! implementation currently supports **HTTP + SSE only**; gRPC transport is
-//! not yet implemented.
+//! Enable the `grpc` feature flag to use `GrpcDispatcher` for gRPC
+//! transport (tonic-backed). See the `dispatch::grpc` module for details.
 //!
 //! # Rate limiting
 //!
@@ -81,6 +80,8 @@ pub use call_context::CallContext;
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
+#[cfg(feature = "grpc")]
+pub use dispatch::{GrpcConfig, GrpcDispatcher};
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{boxed_future, EventEmitter};
