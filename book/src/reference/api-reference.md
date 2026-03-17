@@ -22,8 +22,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `Message` | Structured payload with ID, role, parts |
 | `MessageId` | Newtype wrapper for message identifiers |
 | `MessageRole` | Enum: User, Agent |
-| `Part` | Content unit: text, raw, url, or data |
-| `PartContent` | Enum: Text, Raw, Url, Data |
+| `Part` | Content unit: text, file, or data |
+| `PartContent` | Enum: Text, File, Data |
 
 ### Artifacts
 
@@ -223,8 +223,8 @@ TaskStatus::with_timestamp(TaskState::Completed)
 
 // Messages and parts
 Part::text("hello")
-Part::raw(base64_string)
-Part::url("https://...")
+Part::file_bytes(base64_string)
+Part::file_uri("https://...")
 Part::data(json_value)
 
 // Artifacts

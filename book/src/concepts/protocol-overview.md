@@ -73,13 +73,12 @@ A **Message** is a structured payload sent between agents. Each message has:
 
 ### Parts
 
-A **Part** is a content unit within a message. Four content types are supported:
+A **Part** is a content unit within a message. Three content types are supported:
 
 | Type | Description | Example |
 |------|-------------|---------|
 | `Text` | Plain text | `"Summarize this document"` |
-| `Raw` | Base64-encoded binary | Image data, audio clips |
-| `Url` | URL reference | `"https://example.com/doc.pdf"` |
+| `File` | Inline bytes or URI reference | Image data, `"https://example.com/doc.pdf"` |
 | `Data` | Structured JSON | `{"table": [...], "columns": [...]}` |
 
 ### Artifacts

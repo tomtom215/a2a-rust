@@ -128,7 +128,9 @@ The `RequestContext` provides information about the incoming request:
 | `task_id` | `TaskId` | Server-assigned task ID |
 | `context_id` | `String` | Conversation context ID |
 | `message` | `Message` | The incoming message with parts |
-| `tenant` | `Option<String>` | Tenant identifier (multi-tenancy) |
+| `stored_task` | `Option<Task>` | Previously stored task snapshot (for continuations) |
+| `metadata` | `Option<Value>` | Arbitrary metadata from the request |
+| `cancellation_token` | `CancellationToken` | Token for cooperative cancellation |
 
 ## EventQueueWriter
 

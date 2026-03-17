@@ -37,13 +37,14 @@ The default implementation with optional TTL and capacity limits:
 use a2a_protocol_sdk::server::{InMemoryTaskStore, TaskStoreConfig};
 use std::time::Duration;
 
-// Default: no limits
+// Default: 1hr TTL, 10k capacity
 let store = InMemoryTaskStore::new();
 
-// With limits
+// With custom limits
 let store = InMemoryTaskStore::with_config(TaskStoreConfig {
-    ttl: Some(Duration::from_secs(3600)),
-    max_capacity: Some(10_000),
+    task_ttl: Some(Duration::from_secs(7200)),  // 2 hour TTL
+    max_capacity: Some(50_000),
+    ..Default::default()
 });
 ```
 
@@ -134,13 +135,12 @@ struct PostgresTaskStore {
 }
 
 impl TaskStore for PostgresTaskStore {
-    fn get(&self, tenant: Option<&str>, id: &str)
-        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + '_>>
+    fn get<'a>(&'a self, id: &'a TaskId)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>
     {
         Box::pin(async move {
-            let row = sqlx::query_as("SELECT data FROM tasks WHERE id = $1 AND tenant = $2")
-                .bind(id)
-                .bind(tenant)
+            let row = sqlx::query_as("SELECT data FROM tasks WHERE id = $1")
+                .bind(id.as_ref())
                 .fetch_optional(&self.pool)
                 .await
                 .map_err(|e| A2aError::internal(e.to_string()))?;
@@ -149,7 +149,7 @@ impl TaskStore for PostgresTaskStore {
         })
     }
 
-    // ... implement put, list, delete similarly
+    // ... implement save, list, delete, insert_if_absent, count similarly
 }
 ```
 
@@ -159,16 +159,16 @@ The `PushConfigStore` trait manages push notification configurations:
 
 ```rust
 pub trait PushConfigStore: Send + Sync + 'static {
-    fn create(&self, tenant: Option<&str>, config: TaskPushNotificationConfig)
+    fn set(&self, config: TaskPushNotificationConfig)
         -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + '_>>;
 
-    fn get(&self, tenant: Option<&str>, task_id: &str, id: &str)
+    fn get(&self, task_id: &str, id: &str)
         -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + '_>>;
 
-    fn list(&self, tenant: Option<&str>, task_id: &str)
+    fn list(&self, task_id: &str)
         -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + '_>>;
 
-    fn delete(&self, tenant: Option<&str>, task_id: &str, id: &str)
+    fn delete(&self, task_id: &str, id: &str)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
 }
 ```
@@ -206,15 +206,7 @@ Both traits use `Pin<Box<dyn Future>>` return types for object safety. This allo
 
 ### Tenant Isolation
 
-The `tenant` parameter is passed to every store operation. Your implementation should use it to partition data:
-
-```sql
--- Good: tenant-aware query
-SELECT * FROM tasks WHERE tenant = $1 AND id = $2;
-
--- Bad: no tenant isolation
-SELECT * FROM tasks WHERE id = $1;
-```
+Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not method parameters. For in-memory stores, `TenantAwareInMemoryTaskStore` automatically partitions data by tenant. For SQL stores, `TenantAwareSqliteTaskStore` partitions by a `tenant_id` column. If you implement a custom store, use `TenantContext::current_tenant()` to retrieve the active tenant within the async call stack.
 
 ### Pagination
 
