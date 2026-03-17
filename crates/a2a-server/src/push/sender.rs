@@ -194,6 +194,21 @@ fn validate_webhook_url(url: &str) -> A2aResult<()> {
         .parse()
         .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
 
+    // Require http or https scheme.
+    match uri.scheme_str() {
+        Some("http" | "https") => {}
+        Some(other) => {
+            return Err(A2aError::invalid_params(format!(
+                "webhook URL has unsupported scheme: {other} (expected http or https)"
+            )));
+        }
+        None => {
+            return Err(A2aError::invalid_params(
+                "webhook URL missing scheme (expected http:// or https://)",
+            ));
+        }
+    }
+
     let host = uri
         .host()
         .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
@@ -259,7 +274,8 @@ impl PushSender for HttpPushSender {
                 validate_header_value(token, "notification token")?;
             }
 
-            let body_bytes = serde_json::to_vec(event)
+            let body_bytes: Bytes = serde_json::to_vec(event)
+                .map(Bytes::from)
                 .map_err(|e| A2aError::internal(format!("push serialization: {e}")))?;
 
             let mut last_err = String::new();
@@ -296,7 +312,7 @@ impl PushSender for HttpPushSender {
                 }
 
                 let req = builder
-                    .body(Full::new(Bytes::from(body_bytes.clone())))
+                    .body(Full::new(body_bytes.clone()))
                     .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
 
                 let request_result =
@@ -421,5 +437,45 @@ mod tests {
     #[test]
     fn accepts_clean_header_value() {
         assert!(validate_header_value("Bearer abc123+/=", "test").is_ok());
+    }
+
+    #[test]
+    fn rejects_url_without_scheme() {
+        assert!(validate_webhook_url("example.com/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ftp_scheme() {
+        assert!(validate_webhook_url("ftp://example.com/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_file_scheme() {
+        assert!(validate_webhook_url("file:///etc/passwd").is_err());
+    }
+
+    #[test]
+    fn accepts_http_scheme() {
+        assert!(validate_webhook_url("http://example.com/webhook").is_ok());
+    }
+
+    #[test]
+    fn rejects_cgnat_range() {
+        assert!(validate_webhook_url("http://100.64.0.1/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_unspecified_ipv4() {
+        assert!(validate_webhook_url("http://0.0.0.0/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv6_unique_local() {
+        assert!(validate_webhook_url("http://[fc00::1]:8080/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv6_link_local() {
+        assert!(validate_webhook_url("http://[fe80::1]:8080/webhook").is_err());
     }
 }

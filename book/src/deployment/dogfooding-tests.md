@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **66 E2E tests** across 7 test modules (69 with optional gRPC). All tests pass in ~2.5 seconds.
+The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRPC). All tests pass in ~2.5 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -105,6 +105,10 @@ The agent team runs **66 E2E tests** across 7 test modules (69 with optional gRP
 | 69 | dynamic-agent-card | Cards | `DynamicAgentCardHandler` runtime card generation |
 | 70 | agent-card-caching | Caching | ETag, `If-None-Match`, 304 Not Modified |
 | 71 | backpressure-lagged | Streaming | Slow reader skips lagged events (capacity=2) |
+| 72 | push-global-limit | Push config | Global push config limit enforcement (DoS prevention) |
+| 73 | webhook-url-scheme | Push config | Rejects non-HTTP webhook URL schemes (ftp://, file://) |
+| 74 | combined-filter | ListTasks | Combined status + context_id filtering |
+| 75 | latency-metrics | Metrics | Verifies `on_request()` callback fires |
 
 ## Coverage by SDK Feature
 
@@ -142,10 +146,14 @@ The agent team runs **66 E2E tests** across 7 test modules (69 with optional gRP
 | `DynamicAgentCardHandler` | 69 |
 | Agent card HTTP caching (ETag/304) | 70 |
 | Backpressure / `Lagged` events | 71 |
+| Push config global limit | 72 |
+| Webhook URL scheme validation | 73 |
+| Combined status+context filter | 74 |
+| `Metrics` callbacks | 29, 30, 39, 75 |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 66 agent-team E2E tests (69 with gRPC), the SDK includes dedicated integration test suites:
+In addition to the 70 agent-team E2E tests (73 with gRPC), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|

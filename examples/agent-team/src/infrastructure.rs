@@ -220,7 +220,10 @@ pub async fn start_webhook_server(receiver: WebhookReceiver) -> SocketAddr {
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(e) => {
+                    eprintln!("webhook accept error (continuing): {e}");
+                    continue;
+                }
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let receiver = receiver.clone();
@@ -297,7 +300,7 @@ pub fn serve_jsonrpc(
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(_) => continue,
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
@@ -345,7 +348,7 @@ pub fn serve_rest(
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(_) => continue,
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);

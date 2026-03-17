@@ -61,12 +61,18 @@ pub trait PushConfigStore: Send + Sync + 'static {
 /// Default maximum number of push notification configs allowed per task.
 const DEFAULT_MAX_PUSH_CONFIGS_PER_TASK: usize = 100;
 
+/// Default global maximum number of push notification configs across all tasks.
+/// Prevents unbounded memory growth when many tasks register configs.
+const DEFAULT_MAX_TOTAL_PUSH_CONFIGS: usize = 100_000;
+
 /// In-memory [`PushConfigStore`] backed by a `HashMap`.
 #[derive(Debug)]
 pub struct InMemoryPushConfigStore {
     configs: RwLock<HashMap<(String, String), TaskPushNotificationConfig>>,
     /// Maximum number of push configs allowed per task.
     max_configs_per_task: usize,
+    /// Global maximum number of push configs across all tasks.
+    max_total_configs: usize,
 }
 
 impl Default for InMemoryPushConfigStore {
@@ -74,6 +80,7 @@ impl Default for InMemoryPushConfigStore {
         Self {
             configs: RwLock::new(HashMap::new()),
             max_configs_per_task: DEFAULT_MAX_PUSH_CONFIGS_PER_TASK,
+            max_total_configs: DEFAULT_MAX_TOTAL_PUSH_CONFIGS,
         }
     }
 }
@@ -91,7 +98,18 @@ impl InMemoryPushConfigStore {
         Self {
             configs: RwLock::new(HashMap::new()),
             max_configs_per_task: max,
+            max_total_configs: DEFAULT_MAX_TOTAL_PUSH_CONFIGS,
         }
+    }
+
+    /// Sets the global maximum number of push configs across all tasks.
+    ///
+    /// Prevents unbounded memory growth when many tasks register configs.
+    /// Default: 100,000.
+    #[must_use]
+    pub const fn with_max_total_configs(mut self, max: usize) -> Self {
+        self.max_total_configs = max;
+        self
     }
 }
 
@@ -112,8 +130,20 @@ impl PushConfigStore for InMemoryPushConfigStore {
             let key = (config.task_id.clone(), id);
             let mut store = self.configs.write().await;
 
-            // Reject if this is a new config and the per-task limit is reached.
+            // Reject if this is a new config and limits are reached.
             if !store.contains_key(&key) {
+                // Global limit: prevent unbounded memory growth.
+                let total = store.len();
+                if total >= self.max_total_configs {
+                    drop(store);
+                    return Err(a2a_protocol_types::error::A2aError::invalid_params(
+                        format!(
+                            "global push config limit exceeded: {total} configs (max {})",
+                            self.max_total_configs,
+                        ),
+                    ));
+                }
+                // Per-task limit.
                 let task_id = &config.task_id;
                 let count = store.keys().filter(|(tid, _)| tid == task_id).count();
                 let max = self.max_configs_per_task;

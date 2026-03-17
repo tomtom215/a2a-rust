@@ -123,9 +123,13 @@ impl AgentExecutor for BuildMonitorExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         boxed_future(async move {
-            EventEmitter::new(ctx, queue)
-                .status(TaskState::Canceled)
-                .await?;
+            // Only transition to Canceled if not already in a terminal state.
+            // This prevents invalid Completed → Canceled transitions if the
+            // executor finishes just before the cancel arrives.
+            let emit = EventEmitter::new(ctx, queue);
+            if !ctx.cancellation_token.is_cancelled() {
+                emit.status(TaskState::Canceled).await?;
+            }
             Ok(())
         })
     }
