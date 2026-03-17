@@ -213,6 +213,104 @@ cargo +nightly fuzz run fuzz_target
 
 Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
 
+## Mutation Testing
+
+Mutation testing is the final, critical layer of test quality assurance. While
+unit tests verify correctness and fuzz tests find edge cases, mutation testing
+answers a fundamentally different question: **do your tests actually detect real
+bugs?**
+
+A *mutant* is a small, deliberate code change — replacing `+` with `-`, flipping
+`true` to `false`, returning a default value instead of a computed one. If the
+test suite still passes after a mutation, there is a gap: a real bug in that
+exact location would go undetected.
+
+### Why This Matters at Scale
+
+At multi-data-center deployment scales, the bugs that slip through traditional
+testing are precisely the kind that mutation testing catches:
+
+- **Off-by-one errors** in pagination, retry logic, and timeout calculations
+- **Swapped operands** in status comparisons (e.g., `==` vs `!=` on task state)
+- **Missing boundary checks** where a default return looks plausible
+- **Dead code paths** where a branch is never exercised by any test
+
+These are the subtle, semantic correctness issues that only manifest under load,
+across network partitions, or during multi-hop agent orchestration — exactly the
+conditions that are hardest to reproduce in staging.
+
+### Running Mutation Tests
+
+```bash
+# Install cargo-mutants (one-time setup)
+cargo install cargo-mutants
+
+# Full mutation sweep (all library crates)
+cargo mutants --workspace
+
+# Test a specific crate
+cargo mutants -p a2a-protocol-types
+
+# Test a specific file
+cargo mutants --file crates/a2a-types/src/task.rs
+
+# Dry-run: list all mutants without running tests
+cargo mutants --list --workspace
+```
+
+### Configuration
+
+Mutation testing is configured via `mutants.toml` at the workspace root:
+
+```toml
+# Which files to mutate
+examine_globs = [
+    "crates/a2a-types/src/**/*.rs",
+    "crates/a2a-client/src/**/*.rs",
+    "crates/a2a-server/src/**/*.rs",
+    "crates/a2a-sdk/src/**/*.rs",
+]
+
+# Skip unproductive mutations (re-exports, generated code, formatting)
+exclude_globs = ["**/mod.rs", "crates/*/src/proto/**"]
+exclude_re = ["fmt$", "^tracing::", "^log::"]
+```
+
+### CI Integration
+
+- **Nightly**: A full mutation sweep runs every night. Any surviving mutant fails
+  the build and is reported as a CI artifact.
+- **PR gate**: An incremental sweep runs on changed files only, so PR feedback is
+  fast while still enforcing zero surviving mutants on new/modified code.
+
+### Interpreting Results
+
+```
+Found 247 mutants to test
+ 247 caught   ✓     # Test suite detected the mutation
+   0 missed   ✗     # ALERT: test gap — add or strengthen tests
+   3 unviable ⊘     # Mutation caused compile error (not a gap)
+```
+
+- **Caught**: The test suite correctly detected the mutation. Good.
+- **Missed**: A real bug in this location would go undetected. Add tests.
+- **Unviable**: The mutation produced a compile error. Not a test gap.
+
+**Target: 100% mutation score** (zero missed mutants across all library crates).
+
+### Fixing Surviving Mutants
+
+When a mutant survives, `cargo mutants` prints the exact source location and
+mutation. For example:
+
+```
+MISSED: crates/a2a-types/src/task.rs:42: replace TaskState::is_terminal -> bool with false
+```
+
+This tells you that replacing the body of `is_terminal()` with `false` did not
+cause any test to fail. The fix is to add a test that asserts `is_terminal()`
+returns `true` for terminal states.
+
 ## Running the Test Suite
 
 ```bash

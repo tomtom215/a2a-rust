@@ -13,6 +13,18 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | **Test** | `cargo test --workspace` — runs all tests |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --no-deps` — verifies documentation builds |
+| **Mutants** | `cargo mutants --workspace` — zero surviving mutants required |
+
+The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separately:
+
+| Mode | Trigger | Scope |
+|------|---------|-------|
+| **Full sweep** | Nightly (03:00 UTC) + manual | All library crates |
+| **Incremental** | Pull requests to `main` | Changed `.rs` files only |
+
+The full sweep produces a mutation report artifact with caught/missed/unviable
+counts and a mutation score. Zero missed mutants is required — any surviving
+mutant fails the build.
 
 All actions are **SHA-pinned** for supply chain security:
 
