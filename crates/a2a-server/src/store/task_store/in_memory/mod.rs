@@ -2,6 +2,15 @@
 // Copyright 2026 Tom F.
 
 //! In-memory task store backed by a `HashMap` under a `RwLock`.
+//!
+//! # Module structure
+//!
+//! | Module | Responsibility |
+//! |---|---|
+//! | (this file) | Core CRUD operations and `TaskStore` trait impl |
+//! | [`eviction`] | TTL and capacity-based eviction logic |
+
+mod eviction;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -18,11 +27,11 @@ use super::{TaskStore, TaskStoreConfig};
 
 /// Entry in the in-memory task store, tracking creation time for TTL eviction.
 #[derive(Debug, Clone)]
-struct TaskEntry {
+pub(super) struct TaskEntry {
     /// The stored task.
-    task: Task,
+    pub(super) task: Task,
     /// When this entry was last written (for TTL-based eviction).
-    last_updated: Instant,
+    pub(super) last_updated: Instant,
 }
 
 /// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
@@ -53,12 +62,12 @@ struct TaskEntry {
 /// uses a single `RwLock` and is optimized for testing and moderate load.
 #[derive(Debug)]
 pub struct InMemoryTaskStore {
-    entries: RwLock<HashMap<TaskId, TaskEntry>>,
-    config: TaskStoreConfig,
+    pub(super) entries: RwLock<HashMap<TaskId, TaskEntry>>,
+    pub(super) config: TaskStoreConfig,
     /// Counter for amortized eviction (only run every `EVICTION_INTERVAL` writes).
-    write_count: std::sync::atomic::AtomicU64,
+    pub(super) write_count: std::sync::atomic::AtomicU64,
     /// Prevents multiple concurrent eviction sweeps.
-    eviction_in_progress: std::sync::atomic::AtomicBool,
+    pub(super) eviction_in_progress: std::sync::atomic::AtomicBool,
 }
 
 impl Default for InMemoryTaskStore {
@@ -89,84 +98,6 @@ impl InMemoryTaskStore {
             config,
             write_count: std::sync::atomic::AtomicU64::new(0),
             eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
-        }
-    }
-
-    /// Runs background eviction of expired and over-capacity entries.
-    ///
-    /// Call this periodically (e.g. every 60 seconds) to clean up terminal
-    /// tasks that would otherwise persist until the next `save()` call.
-    pub async fn run_eviction(&self) {
-        let mut store = self.entries.write().await;
-        Self::evict(&mut store, &self.config);
-    }
-
-    /// Returns `true` if eviction should run based on the write counter and capacity.
-    fn should_evict(&self, store_len: usize) -> bool {
-        let count = self
-            .write_count
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let over_capacity = self.config.max_capacity.is_some_and(|max| store_len > max);
-        count.is_multiple_of(self.config.eviction_interval) || over_capacity
-    }
-
-    /// Runs eviction in a separate lock acquisition if not already in progress.
-    ///
-    /// Uses `eviction_in_progress` to prevent multiple concurrent sweeps.
-    async fn maybe_evict(&self) {
-        // Try to claim the eviction slot. If another task is already evicting, skip.
-        if self
-            .eviction_in_progress
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_err()
-        {
-            return;
-        }
-
-        let mut store = self.entries.write().await;
-        Self::evict(&mut store, &self.config);
-        drop(store);
-
-        self.eviction_in_progress
-            .store(false, std::sync::atomic::Ordering::Release);
-    }
-
-    /// Evicts expired and over-capacity entries (must be called with write lock held).
-    fn evict(store: &mut HashMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
-        let now = Instant::now();
-
-        // TTL eviction: remove terminal tasks older than the TTL.
-        if let Some(ttl) = config.task_ttl {
-            store.retain(|_, entry| {
-                if entry.task.status.state.is_terminal() {
-                    now.duration_since(entry.last_updated) < ttl
-                } else {
-                    true
-                }
-            });
-        }
-
-        // Capacity eviction: remove oldest terminal tasks if over capacity.
-        if let Some(max) = config.max_capacity {
-            if store.len() > max {
-                let overflow = store.len() - max;
-                // Collect terminal tasks sorted by age (oldest first).
-                let mut terminal: Vec<(TaskId, Instant)> = store
-                    .iter()
-                    .filter(|(_, e)| e.task.status.state.is_terminal())
-                    .map(|(id, e)| (id.clone(), e.last_updated))
-                    .collect();
-                terminal.sort_by_key(|(_, t)| *t);
-
-                for (id, _) in terminal.into_iter().take(overflow) {
-                    store.remove(&id);
-                }
-            }
         }
     }
 }
