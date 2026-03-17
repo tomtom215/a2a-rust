@@ -441,8 +441,8 @@ mod tests {
     // WebSocketDispatcher construction
     #[test]
     fn websocket_dispatcher_new() {
-        use crate::executor_helpers::agent_executor;
-        use crate::handler::RequestHandlerBuilder;
+        use crate::agent_executor;
+        use crate::RequestHandlerBuilder;
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });

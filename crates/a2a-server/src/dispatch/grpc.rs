@@ -451,8 +451,8 @@ mod tests {
     // GrpcDispatcher Debug impl
     #[test]
     fn grpc_dispatcher_debug_does_not_panic() {
-        use crate::executor_helpers::agent_executor;
-        use crate::handler::RequestHandlerBuilder;
+        use crate::agent_executor;
+        use crate::RequestHandlerBuilder;
         use std::sync::Arc;
         struct DummyExec;
         agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
