@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (70 tests, 75 with optional transports) that exercises every major SDK feature.
+//! suite (71 tests, 76 with optional transports) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -289,6 +289,9 @@ async fn main() {
     results.push(coverage_gaps::test_webhook_url_scheme_validation(&ctx).await);
     results.push(coverage_gaps::test_combined_status_context_filter(&ctx).await);
     results.push(coverage_gaps::test_latency_metrics(&ctx).await);
+    results.push(coverage_gaps::test_timeout_retryable(&ctx).await);
+    results.push(coverage_gaps::test_concurrent_cancels(&ctx).await);
+    results.push(coverage_gaps::test_stale_page_token(&ctx).await);
 
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();

@@ -1,5 +1,7 @@
 # A2A v0.3.0 → v1.0.0 Upgrade Plan
 
+> **Historical Reference** — All migrations are complete (Phase 4). This document is retained as a record of the v0.3.0 → v1.0.0 change matrices and design decisions.
+
 ## Summary of Breaking Changes
 
 Based on the v1.0.0 release notes, the authoritative proto definition (`specification/a2a.proto`),

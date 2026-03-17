@@ -267,3 +267,38 @@ async fn request_body_just_under_limit_accepted() {
         "body just under limit should not be rejected as too large"
     );
 }
+
+// ── Double-encoded path traversal ──────────────────────────────────────────
+
+/// Bug #35: Path traversal check must catch double-encoded sequences.
+/// `%252E%252E` decodes to `%2E%2E` then to `..`.
+#[tokio::test]
+async fn double_encoded_path_traversal_rejected() {
+    let addr = start_rest_server(make_handler()).await;
+    // %252E = double-encoded '.', so %252E%252E/%252E%252E = ../../..
+    let (status, _) =
+        http_request(addr, "GET", "/%252E%252E/%252E%252E/etc/passwd", None, None).await;
+    assert_eq!(
+        status, 400,
+        "double-encoded path traversal must be rejected"
+    );
+}
+
+/// Single-encoded path traversal must also be rejected.
+#[tokio::test]
+async fn single_encoded_path_traversal_rejected() {
+    let addr = start_rest_server(make_handler()).await;
+    let (status, _) = http_request(addr, "GET", "/%2E%2E/%2E%2E/etc/passwd", None, None).await;
+    assert_eq!(
+        status, 400,
+        "single-encoded path traversal must be rejected"
+    );
+}
+
+/// Raw path traversal must also be rejected.
+#[tokio::test]
+async fn raw_path_traversal_rejected() {
+    let addr = start_rest_server(make_handler()).await;
+    let (status, _) = http_request(addr, "GET", "/../../etc/passwd", None, None).await;
+    assert_eq!(status, 400, "raw path traversal must be rejected");
+}

@@ -108,13 +108,12 @@ Protect public-facing agents from abuse:
 
 ```rust
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
-use std::sync::Arc;
 
 RequestHandlerBuilder::new(executor)
-    .with_interceptor(Arc::new(RateLimitInterceptor::new(RateLimitConfig {
+    .with_interceptor(RateLimitInterceptor::new(RateLimitConfig {
         requests_per_window: 100,
         window_secs: 60,
-    })))
+    }))
     .build()
 ```
 

@@ -391,12 +391,14 @@ async fn grpc_stream_reader_task(
                 }
             }
             Some(Err(status)) => {
-                let _ = tx
-                    .send(Err(ClientError::Transport(format!(
-                        "gRPC stream error: {}",
-                        status.message()
-                    ))))
-                    .await;
+                // Use proper error code mapping instead of generic Transport
+                // error, so callers can distinguish protocol errors from
+                // transport issues and retry logic works correctly.
+                let a2a = a2a_protocol_types::A2aError::new(
+                    grpc_code_to_error_code(status.code()),
+                    status.message().to_owned(),
+                );
+                let _ = tx.send(Err(ClientError::Protocol(a2a))).await;
                 break;
             }
             None => break,

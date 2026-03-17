@@ -143,7 +143,7 @@ use a2a_protocol_client::WebSocketTransport;
 
 let transport = WebSocketTransport::connect("ws://agent.example.com:3002").await?;
 let client = ClientBuilder::new("ws://agent.example.com:3002")
-    .with_transport(transport)
+    .with_custom_transport(transport)
     .build()?;
 ```
 

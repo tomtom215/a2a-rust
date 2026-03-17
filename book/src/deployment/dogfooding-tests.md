@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRPC). All tests pass in ~2.5 seconds.
+The agent team runs **71 E2E tests** across 7 test modules (76 with optional transports). All tests pass in ~2.5 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -86,6 +86,9 @@ The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRP
 | 53 | tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
 | 54 | tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
 | 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
+| 56 | grpc-send-message | gRPC | JSON-RPC `SendMessage` over gRPC transport (feature-gated) |
+| 57 | grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
+| 58 | grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
 
 > **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
 > Tests 56-58 require the `grpc` feature flag: `cargo run -p agent-team --features grpc`
@@ -150,10 +153,13 @@ The agent team runs **70 E2E tests** across 7 test modules (73 with optional gRP
 | Webhook URL scheme validation | 73 |
 | Combined status+context filter | 74 |
 | `Metrics` callbacks | 29, 30, 39, 75 |
+| Timeout retryability (Bug #32) | 76 |
+| Concurrent cancel stress | 77 |
+| Stale page token handling | 78 |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 70 agent-team E2E tests (73 with gRPC), the SDK includes dedicated integration test suites:
+In addition to the 71 agent-team E2E tests (76 with optional transports), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|

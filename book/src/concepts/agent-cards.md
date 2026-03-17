@@ -142,9 +142,11 @@ use a2a_protocol_sdk::types::agent_card::AgentCard;
 struct MyCardProducer;
 
 impl AgentCardProducer for MyCardProducer {
-    fn produce(&self) -> Result<AgentCard, a2a_protocol_sdk::types::error::A2aError> {
-        // Generate card dynamically
-        Ok(make_agent_card())
+    fn produce<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<AgentCard>> + Send + 'a>> {
+        Box::pin(async move {
+            // Generate card dynamically
+            Ok(make_agent_card())
+        })
     }
 }
 ```

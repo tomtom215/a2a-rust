@@ -151,7 +151,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 69 E2E tests covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, and backpressure:
+A comprehensive 4-agent team that exercises every SDK feature — 71 E2E tests (76 with optional transports) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, and backpressure:
 
 ```bash
 cargo run -p agent-team

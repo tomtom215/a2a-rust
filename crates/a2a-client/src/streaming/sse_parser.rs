@@ -14,6 +14,8 @@
 //! - Double-newline event dispatch (`\n\n` terminates each frame).
 //! - Configurable maximum event size to prevent unbounded memory growth.
 
+use std::collections::VecDeque;
+
 // ── SseFrame ──────────────────────────────────────────────────────────────────
 
 /// A fully-accumulated SSE event frame.
@@ -99,8 +101,8 @@ pub struct SseParser {
     id: Option<String>,
     /// Current `retry:` field value.
     retry: Option<u64>,
-    /// Complete frames ready for consumption.
-    ready: Vec<Result<SseFrame, SseParseError>>,
+    /// Complete frames ready for consumption (`VecDeque` for O(1) `pop_front`).
+    ready: VecDeque<Result<SseFrame, SseParseError>>,
     /// Whether the UTF-8 BOM has already been checked/stripped.
     bom_checked: bool,
 }
@@ -115,7 +117,7 @@ impl Default for SseParser {
             event_type: None,
             id: None,
             retry: None,
-            ready: Vec::new(),
+            ready: VecDeque::new(),
             bom_checked: false,
         }
     }
@@ -141,7 +143,7 @@ impl SseParser {
 
     /// Returns the number of complete frames waiting to be consumed.
     #[must_use]
-    pub const fn pending_count(&self) -> usize {
+    pub fn pending_count(&self) -> usize {
         self.ready.len()
     }
 
@@ -177,11 +179,7 @@ impl SseParser {
     ///
     /// Returns `Err` if an event exceeded the maximum size limit.
     pub fn next_frame(&mut self) -> Option<Result<SseFrame, SseParseError>> {
-        if self.ready.is_empty() {
-            None
-        } else {
-            Some(self.ready.remove(0))
-        }
+        self.ready.pop_front()
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
@@ -196,7 +194,13 @@ impl SseParser {
         }
         let line = match std::str::from_utf8(&self.line_buf) {
             Ok(s) => s.to_owned(),
-            Err(_) => return, // skip malformed UTF-8 lines
+            Err(_) => {
+                // Use lossy conversion instead of silently dropping the line.
+                // This preserves valid portions while replacing invalid bytes
+                // with U+FFFD, preventing data loss on fragmented multi-byte
+                // sequences delivered across TCP chunk boundaries.
+                String::from_utf8_lossy(&self.line_buf).into_owned()
+            }
         };
 
         if line.is_empty() {
@@ -231,7 +235,7 @@ impl SseParser {
             self.data_lines.clear();
             self.event_type = None;
             self.current_event_size = 0;
-            self.ready.push(Err(error));
+            self.ready.push_back(Err(error));
             return;
         }
 
@@ -280,7 +284,7 @@ impl SseParser {
 
         self.data_lines.clear();
         self.current_event_size = 0;
-        self.ready.push(Ok(frame));
+        self.ready.push_back(Ok(frame));
     }
 }
 
@@ -408,5 +412,46 @@ mod tests {
 
         let second = p.next_frame().expect("expected result");
         assert_eq!(second.unwrap().data, "ok");
+    }
+
+    /// Bug #33: `next_frame` used `Vec::remove(0)` which is O(n).
+    /// Verify `VecDeque`-based dequeue works correctly for many events.
+    #[test]
+    fn many_events_dequeue_correctly() {
+        let mut input = String::new();
+        for i in 0..100 {
+            use std::fmt::Write;
+            let _ = write!(input, "data: event-{i}\n\n");
+        }
+        let mut p = SseParser::new();
+        p.feed(input.as_bytes());
+        assert_eq!(p.pending_count(), 100);
+
+        for i in 0..100 {
+            let frame = p.next_frame().unwrap().unwrap();
+            assert_eq!(frame.data, format!("event-{i}"));
+        }
+        assert!(p.next_frame().is_none());
+    }
+
+    /// Bug #34: Malformed UTF-8 lines were silently dropped.
+    /// Now uses lossy conversion to preserve data.
+    #[test]
+    fn malformed_utf8_uses_lossy_conversion() {
+        let mut p = SseParser::new();
+        // Feed "data: " + invalid byte + valid suffix, then double-newline.
+        let mut bytes = b"data: hello\xFFworld\n\n".to_vec();
+        p.feed(&bytes);
+        let frame = p.next_frame().unwrap().unwrap();
+        // The invalid byte should be replaced with U+FFFD.
+        assert!(frame.data.contains("hello"));
+        assert!(frame.data.contains("world"));
+        assert!(frame.data.contains('\u{FFFD}'));
+
+        // Also test that a fully valid line after the malformed one still works.
+        bytes = b"data: clean\n\n".to_vec();
+        p.feed(&bytes);
+        let frame2 = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame2.data, "clean");
     }
 }

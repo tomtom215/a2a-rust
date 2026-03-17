@@ -127,7 +127,7 @@ let message = Message {
 
 ## Parts
 
-Parts are the content units within messages and artifacts. Four types are supported:
+Parts are the content units within messages and artifacts. Three types are supported:
 
 ### Text
 
@@ -135,23 +135,21 @@ Parts are the content units within messages and artifacts. Four types are suppor
 let part = Part::text("Hello, agent!");
 ```
 
-Wire format: `{"text": "Hello, agent!"}`
+Wire format: `{"type": "text", "text": "Hello, agent!"}`
 
-### Raw (Base64)
-
-```rust
-let part = Part::raw(base64_encoded_string);
-```
-
-Wire format: `{"raw": "aGVsbG8="}`
-
-### URL Reference
+### File (bytes or URI)
 
 ```rust
-let part = Part::url("https://example.com/document.pdf");
+// Inline bytes (base64-encoded)
+let part = Part::file_bytes(base64_encoded_string);
+
+// URI reference
+let part = Part::file_uri("https://example.com/document.pdf");
 ```
 
-Wire format: `{"url": "https://example.com/document.pdf"}`
+Wire format (bytes): `{"type": "file", "file": {"bytes": "aGVsbG8="}}`
+
+Wire format (URI): `{"type": "file", "file": {"uri": "https://example.com/document.pdf"}}`
 
 ### Structured Data
 
@@ -164,16 +162,16 @@ let part = Part::data(serde_json::json!({
 }));
 ```
 
-Wire format: `{"data": {"table": [...]}}`
+Wire format: `{"type": "data", "data": {"table": [...]}}`
 
 ### Part Metadata
 
-Any part can carry optional metadata and MIME type information:
+Any part can carry optional metadata:
 
 ```json
 {
+  "type": "text",
   "text": "Hello",
-  "mediaType": "text/plain",
   "metadata": {"language": "en"}
 }
 ```

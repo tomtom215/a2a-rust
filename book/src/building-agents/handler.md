@@ -34,8 +34,9 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 
     // Task storage
     .with_task_store_config(TaskStoreConfig {
-        ttl: Some(Duration::from_secs(3600)),     // 1 hour TTL
-        max_capacity: Some(10_000),                // Max 10k tasks
+        task_ttl: Some(Duration::from_secs(3600)),  // 1 hour TTL
+        max_capacity: Some(10_000),                 // Max 10k tasks
+        ..Default::default()
     })
 
     // Push notifications
@@ -71,7 +72,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 |--------|---------|-------------|
 | `with_agent_card(AgentCard)` | None | Discovery card for `/.well-known/agent.json` |
 | `with_task_store(impl TaskStore)` | `InMemoryTaskStore` | Custom task storage backend |
-| `with_task_store_config(TaskStoreConfig)` | No TTL, no limit | TTL and capacity for the default store |
+| `with_task_store_config(TaskStoreConfig)` | 1hr TTL, 10k capacity | TTL and capacity for the default store |
 | `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore` | Custom push config storage |
 | `with_push_sender(impl PushSender)` | None | Webhook delivery implementation |
 | `with_interceptor(impl ServerInterceptor)` | Empty chain | Add a server interceptor |
@@ -115,8 +116,9 @@ use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
 let config = TaskStoreConfig {
-    ttl: Some(Duration::from_secs(3600)),  // Tasks expire after 1 hour
-    max_capacity: Some(50_000),             // Keep at most 50k tasks
+    task_ttl: Some(Duration::from_secs(3600)),  // Tasks expire after 1 hour
+    max_capacity: Some(50_000),                 // Keep at most 50k tasks
+    ..Default::default()
 };
 
 RequestHandlerBuilder::new(executor)
