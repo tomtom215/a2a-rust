@@ -326,4 +326,55 @@ mod tests {
         let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(val["jsonrpc"], "2.0");
     }
+
+    // ── success_response (HTTP) ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn success_response_http_200_with_result() {
+        let id: JsonRpcId = Some(serde_json::json!(1));
+        let resp = success_response(id, &serde_json::json!({"status": "ok"}));
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["result"]["status"], "ok");
+        assert_eq!(val["jsonrpc"], "2.0");
+    }
+
+    // ── error_response (HTTP) ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn error_response_http_200_with_error() {
+        let id: JsonRpcId = Some(serde_json::json!(2));
+        let err = ServerError::TaskNotFound("t-123".into());
+        let resp = error_response(id, &err);
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(val["error"]["code"].is_number());
+        assert!(val["error"]["message"].as_str().unwrap().contains("t-123"));
+    }
+
+    // ── internal_serialization_error ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn internal_serialization_error_returns_500() {
+        let err = serde_json::from_str::<String>("bad").unwrap_err();
+        let resp = internal_serialization_error(None, &err);
+        assert_eq!(resp.status().as_u16(), 500);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["error"]["code"], -32603);
+    }
+
+    // ── json_response content-type ───────────────────────────────────────
+
+    #[test]
+    fn json_response_has_content_type_and_version_header() {
+        let resp = json_response(200, b"{}".to_vec());
+        assert!(resp.headers().get("content-type").is_some());
+        assert!(resp
+            .headers()
+            .get(a2a_protocol_types::A2A_VERSION_HEADER)
+            .is_some());
+    }
 }
