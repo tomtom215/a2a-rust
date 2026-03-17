@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rapid connect/disconnect cycles.
 - **Agent-team dogfood tests 51-55** — WebSocket send message, WebSocket
   streaming, tenant isolation, tenant ID independence, and tenant count tracking.
-  Total agent-team E2E tests: 55.
+  Total agent-team E2E tests: 55 (66 with coverage gap tests, 69 with gRPC).
 - `tls::build_https_client_with_config()` made public for custom TLS scenarios.
 - `serve()` and `serve_with_addr()` server startup helpers — reduces the ~25 lines
   of hyper boilerplate per agent to a single function call. Both `JsonRpcDispatcher`
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (18 files, all under 500 lines) with 50 E2E
+  best-practice modular structure (19 files, all under 500 lines) with 50 E2E
   tests across 5 categories (basic, lifecycle, edge cases, stress, dogfood).
 - Client `send_message()` and `stream_message()` now merge client-level config
   (`return_immediately`, `history_length`, `accepted_output_modes`) into

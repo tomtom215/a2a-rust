@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **55 E2E tests** across 6 test modules. All tests pass in ~2 seconds.
+The agent team runs **66 E2E tests** across 7 test modules (69 with optional gRPC). All tests pass in ~2.5 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -77,7 +77,7 @@ The agent team runs **55 E2E tests** across 6 test modules. All tests pass in ~2
 | 49 | file-parts | JSON-RPC | `Part::file_bytes` with base64 content |
 | 50 | history-length | JSON-RPC | `history_length` configuration via builder |
 
-## Tests 51-55: WebSocket & Multi-Tenancy (`transport.rs`)
+## Tests 51-58: WebSocket, Multi-Tenancy & gRPC (`transport.rs`)
 
 | # | Test | Transport | What it exercises |
 |---|------|-----------|-------------------|
@@ -88,6 +88,23 @@ The agent team runs **55 E2E tests** across 6 test modules. All tests pass in ~2
 | 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
 
 > **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
+> Tests 56-58 require the `grpc` feature flag: `cargo run -p agent-team --features grpc`
+
+## Tests 61-71: E2E Coverage Gaps (`coverage_gaps.rs`)
+
+| # | Test | Category | What it exercises |
+|---|------|----------|-------------------|
+| 61 | batch-single-element | Batch JSON-RPC | Single-element batch `[{...}]` with `SendMessage` |
+| 62 | batch-multi-request | Batch JSON-RPC | Multi-request batch: `SendMessage` + `GetTask` |
+| 63 | batch-empty | Batch JSON-RPC | Empty batch `[]` returns parse error |
+| 64 | batch-mixed | Batch JSON-RPC | Mixed valid/invalid requests in batch |
+| 65 | batch-streaming-rejected | Batch JSON-RPC | `SendStreamingMessage` in batch returns error |
+| 66 | batch-subscribe-rejected | Batch JSON-RPC | `SubscribeToTask` in batch returns error |
+| 67 | real-auth-rejection | Auth | Interceptor rejects unauthenticated requests |
+| 68 | extended-agent-card | Cards | `GetExtendedAgentCard` via JSON-RPC |
+| 69 | dynamic-agent-card | Cards | `DynamicAgentCardHandler` runtime card generation |
+| 70 | agent-card-caching | Caching | ETag, `If-None-Match`, 304 Not Modified |
+| 71 | backpressure-lagged | Streaming | Slow reader skips lagged events (capacity=2) |
 
 ## Coverage by SDK Feature
 
@@ -119,10 +136,16 @@ The agent team runs **55 E2E tests** across 6 test modules. All tests pass in ~2
 | Multi-tenancy | 53, 54, 55 |
 | `TenantAwareInMemoryTaskStore` | 53, 54, 55 |
 | `TenantContext::scope` | 54, 55 |
+| Batch JSON-RPC | 61, 62, 63, 64, 65, 66 |
+| Auth rejection (interceptor) | 67 |
+| `GetExtendedAgentCard` | 68 |
+| `DynamicAgentCardHandler` | 69 |
+| Agent card HTTP caching (ETag/304) | 70 |
+| Backpressure / `Lagged` events | 71 |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 55 agent-team E2E tests, the SDK includes dedicated integration test suites:
+In addition to the 66 agent-team E2E tests (69 with gRPC), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
@@ -134,10 +157,4 @@ In addition to the 55 agent-team E2E tests, the SDK includes dedicated integrati
 
 | Feature | Covered elsewhere? | Risk |
 |---|---|---|
-| Batch JSON-RPC | `jsonrpc_edge_tests` (unit) | Low |
 | Agent card signing | `signing` module tests (unit) | Low |
-| Dynamic agent cards | `DynamicAgentCardHandler` tests (unit) | Low |
-| Extended agent card | Handler tests (unit) | Low |
-| Real auth rejection | `interceptor_tests` (unit) | Medium |
-| Backpressure / `Lagged` | `event_queue_tests` (unit) | Medium |
-| Agent card HTTP caching | `caching.rs` — 13 tests (unit) | Low |
