@@ -12,8 +12,13 @@
 # mutation.  The base timeout is auto-detected from `cargo test`.
 timeout_multiplier = 3.0
 
-# Absolute cap: no single mutant may run longer than 120 seconds.
+# Floor: no mutant gets less than 30s even if the baseline is very fast.
 minimum_test_timeout = 30
+
+# Hard cap: kill any mutant that runs longer than 120s.  Prevents infinite
+# loops and deadlocks from blocking CI.  Timed-out mutants are reported
+# separately in the CI summary so they are easy to identify and debug.
+cap_timeout = 120
 
 # ── Parallelism ──────────────────────────────────────────────────────────────
 # Run mutants in parallel.  Adjust to your CI runner's core count.
