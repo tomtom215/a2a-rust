@@ -148,14 +148,14 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...66 tests...
+...71 tests...
 
-║ Total: 66 | Passed: 66 | Failed: 0 | Time: ~2500ms
+║ Total: 71 | Passed: 71 | Failed: 0 | Time: ~2500ms
 ```
 
 ## Lessons for Your Own Agents
 
-1. **Test all three transports.** JSON-RPC, REST, and WebSocket have different serialization and framing paths. A bug in one may not exist in the others.
+1. **Test all four transports.** JSON-RPC, REST, WebSocket, and gRPC have different serialization and framing paths. A bug in one may not exist in the others.
 2. **Test multi-hop flows.** Agent A calling Agent B is different from a client calling Agent A. The interaction patterns surface different bugs.
 3. **Test failure paths explicitly.** The agent team tests `TaskState::Failed` and `TaskState::Canceled` alongside `Completed`. Happy-path-only testing misses lifecycle bugs.
 4. **Use real metrics and interceptors.** They exercise code paths that exist in the handler but are invisible to pure request/response tests.

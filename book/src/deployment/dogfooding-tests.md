@@ -86,6 +86,9 @@ The agent team runs **71 E2E tests** across 7 test modules (76 with optional tra
 | 53 | tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
 | 54 | tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
 | 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
+| 56 | grpc-send-message | gRPC | JSON-RPC `SendMessage` over gRPC transport (feature-gated) |
+| 57 | grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
+| 58 | grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
 
 > **Note:** Tests 51-52 require the `websocket` feature flag: `cargo run -p agent-team --features websocket`
 > Tests 56-58 require the `grpc` feature flag: `cargo run -p agent-team --features grpc`
