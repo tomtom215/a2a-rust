@@ -8,13 +8,20 @@ These features have dedicated unit/integration tests but are **not yet exercised
 
 | Area | Unit/Integration Coverage | E2E Status | Risk |
 |---|---|---|---|
-| **Batch JSON-RPC** | `jsonrpc_edge_tests` — empty, mixed, single, streaming-in-batch | Not used in agent-team | Low |
 | **Agent card signing** | `signing` module tests (JWS/ES256, RFC 8785) | Requires JWS key setup in agent-team | Low |
-| **Dynamic agent cards** | `DynamicAgentCardHandler` unit tests | Not used in agent-team | Low |
-| **Extended agent card** | `GetExtendedAgentCard` handler tests | Not used in agent-team | Low |
-| **Real auth rejection** | `interceptor_tests::RejectingInterceptor` | Agent-team interceptor logs but never rejects | Medium |
-| **Backpressure / `Lagged`** | `event_queue_tests::slow_reader_skips_lagged_events` | Would need very slow consumers in E2E | Medium |
-| **Agent card HTTP caching** | `caching.rs` — 13 unit tests (ETag, 304, If-None-Match) | Not verified end-to-end | Low |
+
+## Recently Closed Coverage Gaps (Tests 61-71)
+
+The following gaps were closed by adding E2E tests 61-71 in `coverage_gaps.rs`:
+
+| Area | Test # | E2E Coverage |
+|---|---|---|
+| **Batch JSON-RPC** | 61-66 | Single, multi, empty, mixed, streaming/subscribe rejection |
+| **Real auth rejection** | 67 | Interceptor rejects unauthenticated requests |
+| **Extended agent card** | 68 | `GetExtendedAgentCard` via JSON-RPC |
+| **Dynamic agent cards** | 69 | `DynamicAgentCardHandler` runtime card generation |
+| **Agent card HTTP caching** | 70 | ETag, `If-None-Match`, 304 Not Modified |
+| **Backpressure / `Lagged`** | 71 | Slow reader skips lagged events (capacity=2) |
 
 ## Potential Future Work
 

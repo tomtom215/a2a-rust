@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **55 E2E tests** runs in ~2 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **66 E2E tests** (69 with optional gRPC) runs in ~2.5 seconds.
 
 ## Why Dogfood?
 
@@ -23,7 +23,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (55 tests, ~2000ms total)                      │
+│              (66 tests, ~2500ms total)                      │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -88,6 +88,12 @@ The agent team exercises **35+ distinct SDK features** in a single run:
 - `TenantAwareInMemoryTaskStore` isolation
 - `TenantContext::scope` task-local threading
 - WebSocket transport (`SendMessage` + streaming) — with `websocket` feature
+- Batch JSON-RPC (single, multi, empty, mixed, streaming rejection)
+- Real auth rejection (interceptor short-circuit)
+- `GetExtendedAgentCard` via JSON-RPC
+- `DynamicAgentCardHandler` (runtime-generated cards)
+- Agent card HTTP caching (ETag + 304 Not Modified)
+- Backpressure / lagged event queue (capacity=2)
 
 ## Modular Example Structure
 
@@ -110,7 +116,8 @@ examples/agent-team/src/
     ├── edge_cases.rs            # Tests 21-30: errors, concurrency, metrics
     ├── stress.rs                # Tests 31-40: stress, durability, event ordering
     ├── dogfood.rs               # Tests 41-50: SDK gaps, regressions, edge cases
-    └── transport.rs             # Tests 51-55: WebSocket transport, multi-tenancy
+    ├── transport.rs             # Tests 51-58: WebSocket, gRPC, multi-tenancy
+    └── coverage_gaps.rs         # Tests 61-71: Batch JSON-RPC, auth, cards, caching, backpressure
 ```
 
 ## Running the Agent Team
@@ -141,9 +148,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...55 tests...
+...66 tests...
 
-║ Total: 55 | Passed: 55 | Failed: 0 | Time: ~2000ms
+║ Total: 66 | Passed: 66 | Failed: 0 | Time: ~2500ms
 ```
 
 ## Lessons for Your Own Agents
@@ -159,7 +166,7 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 ## Sub-pages
 
 - **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 13 bugs discovered across four dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 55-test E2E coverage map
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 66-test E2E coverage map (69 with gRPC)
 - **[Open Issues & Roadmap](./dogfooding-open-issues.md)** — Remaining gaps and future work
 
 ## See Also

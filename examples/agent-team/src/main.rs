@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (50 tests) that exercises every major SDK feature.
+//! suite (66 tests, 69 with optional gRPC) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -43,7 +43,10 @@ use infrastructure::{
     bind_listener, serve_jsonrpc, serve_rest, start_webhook_server, AuditInterceptor,
     MetricsForward, TeamMetrics, WebhookReceiver,
 };
-use tests::{basic, dogfood, edge_cases, lifecycle, stress, transport, TestContext, TestResult};
+use tests::{
+    basic, coverage_gaps, dogfood, edge_cases, lifecycle, stress, transport, TestContext,
+    TestResult,
+};
 
 #[tokio::main]
 async fn main() {
@@ -267,6 +270,19 @@ async fn main() {
         results.push(transport::test_grpc_get_task(&ctx).await);
     }
 
+    // Tests 61-71: E2E coverage gaps (batch JSON-RPC, auth, cards, caching, backpressure)
+    results.push(coverage_gaps::test_batch_single_element(&ctx).await);
+    results.push(coverage_gaps::test_batch_multi_request(&ctx).await);
+    results.push(coverage_gaps::test_batch_empty(&ctx).await);
+    results.push(coverage_gaps::test_batch_mixed_valid_invalid(&ctx).await);
+    results.push(coverage_gaps::test_batch_streaming_rejected(&ctx).await);
+    results.push(coverage_gaps::test_batch_subscribe_rejected(&ctx).await);
+    results.push(coverage_gaps::test_real_auth_rejection(&ctx).await);
+    results.push(coverage_gaps::test_extended_agent_card(&ctx).await);
+    results.push(coverage_gaps::test_dynamic_agent_card(&ctx).await);
+    results.push(coverage_gaps::test_agent_card_caching(&ctx).await);
+    results.push(coverage_gaps::test_backpressure_lagged(&ctx).await);
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -352,6 +368,12 @@ async fn main() {
         "history_length config",
         "TenantAwareInMemoryTaskStore isolation",
         "TenantContext::scope task_local threading",
+        "Batch JSON-RPC (single, multi, empty, mixed, streaming rejection)",
+        "Real auth rejection (interceptor short-circuit)",
+        "GetExtendedAgentCard via JSON-RPC",
+        "DynamicAgentCardHandler (runtime-generated cards)",
+        "Agent card HTTP caching (ETag + 304 Not Modified)",
+        "Backpressure / lagged event queue (capacity=2)",
         #[cfg(feature = "websocket")]
         "WebSocket transport (SendMessage + streaming)",
         #[cfg(feature = "grpc")]
