@@ -51,7 +51,7 @@ prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
 opentelemetry     = { version = "0.28", optional = true }
 opentelemetry_sdk = { version = "0.28", optional = true, features = ["rt-tokio", "metrics"] }
-opentelemetry-otlp = { version = "0.28", optional = true, features = ["grpc-tonic", "metrics"] }
+opentelemetry-otlp = { version = "0.28", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
 
 [build-dependencies]
 tonic-build = { workspace = true, optional = true }
