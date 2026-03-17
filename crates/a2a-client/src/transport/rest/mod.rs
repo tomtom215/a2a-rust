@@ -23,6 +23,9 @@
 //! | `DeleteTaskPushNotificationConfig` | DELETE | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 //! | `GetExtendedAgentCard` | GET | `/extendedAgentCard` |
 
+mod query;
+mod routing;
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -46,6 +49,9 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
+use query::*;
+use routing::*;
+
 // ── Type aliases ──────────────────────────────────────────────────────────────
 
 #[cfg(not(feature = "tls-rustls"))]
@@ -53,101 +59,6 @@ type HttpClient = Client<HttpConnector, Full<Bytes>>;
 
 #[cfg(feature = "tls-rustls")]
 type HttpClient = crate::tls::HttpsClient;
-
-// ── Route ─────────────────────────────────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HttpMethod {
-    Get,
-    Post,
-    Delete,
-}
-
-#[derive(Debug)]
-struct Route {
-    http_method: HttpMethod,
-    path_template: &'static str,
-    /// Names of params that are path parameters (extracted from JSON params).
-    path_params: &'static [&'static str],
-    /// Whether the response is SSE (used in tests).
-    #[allow(dead_code)]
-    streaming: bool,
-}
-
-// ── Method routing ────────────────────────────────────────────────────────────
-
-#[allow(clippy::too_many_lines)]
-fn route_for(method: &str) -> Option<Route> {
-    match method {
-        "SendMessage" => Some(Route {
-            http_method: HttpMethod::Post,
-            path_template: "/message:send",
-            path_params: &[],
-            streaming: false,
-        }),
-        "SendStreamingMessage" => Some(Route {
-            http_method: HttpMethod::Post,
-            path_template: "/message:stream",
-            path_params: &[],
-            streaming: true,
-        }),
-        "GetTask" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/tasks/{id}",
-            path_params: &["id"],
-            streaming: false,
-        }),
-        "CancelTask" => Some(Route {
-            http_method: HttpMethod::Post,
-            path_template: "/tasks/{id}:cancel",
-            path_params: &["id"],
-            streaming: false,
-        }),
-        "ListTasks" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/tasks",
-            path_params: &[],
-            streaming: false,
-        }),
-        "SubscribeToTask" => Some(Route {
-            http_method: HttpMethod::Post,
-            path_template: "/tasks/{id}:subscribe",
-            path_params: &["id"],
-            streaming: true,
-        }),
-        "CreateTaskPushNotificationConfig" => Some(Route {
-            http_method: HttpMethod::Post,
-            path_template: "/tasks/{taskId}/pushNotificationConfigs",
-            path_params: &["taskId"],
-            streaming: false,
-        }),
-        "GetTaskPushNotificationConfig" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/tasks/{taskId}/pushNotificationConfigs/{id}",
-            path_params: &["taskId", "id"],
-            streaming: false,
-        }),
-        "ListTaskPushNotificationConfigs" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/tasks/{taskId}/pushNotificationConfigs",
-            path_params: &["taskId"],
-            streaming: false,
-        }),
-        "DeleteTaskPushNotificationConfig" => Some(Route {
-            http_method: HttpMethod::Delete,
-            path_template: "/tasks/{taskId}/pushNotificationConfigs/{id}",
-            path_params: &["taskId", "id"],
-            streaming: false,
-        }),
-        "GetExtendedAgentCard" => Some(Route {
-            http_method: HttpMethod::Get,
-            path_template: "/extendedAgentCard",
-            path_params: &[],
-            streaming: false,
-        }),
-        _ => None,
-    }
-}
 
 // ── RestTransport ─────────────────────────────────────────────────────────────
 
@@ -475,78 +386,11 @@ async fn body_reader_task(
     }
 }
 
-// ── Query string builder ─────────────────────────────────────────────────────
-
-/// Builds a URL query string from a JSON object's non-null fields.
-///
-/// Values are percent-encoded per RFC 3986 to avoid query-string
-/// injection (e.g., values containing `&`, `=`, or spaces).
-fn build_query_string(params: &serde_json::Value) -> String {
-    let Some(obj) = params.as_object() else {
-        return String::new();
-    };
-    let mut parts = Vec::new();
-    for (k, v) in obj {
-        let raw = match v {
-            serde_json::Value::Null => continue,
-            serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Number(n) => n.to_string(),
-            serde_json::Value::Bool(b) => b.to_string(),
-            _ => match serde_json::to_string(v) {
-                Ok(s) => s,
-                Err(_) => continue,
-            },
-        };
-        parts.push(format!(
-            "{}={}",
-            encode_query_value(k),
-            encode_query_value(&raw)
-        ));
-    }
-    parts.join("&")
-}
-
-/// Percent-encodes a string for safe use in a URL query parameter.
-///
-/// Encodes all characters except unreserved characters (RFC 3986 §2.3):
-/// `A-Z a-z 0-9 - . _ ~`
-fn encode_query_value(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(b as char);
-            }
-            _ => {
-                out.push('%');
-                out.push(char::from(HEX_CHARS[(b >> 4) as usize]));
-                out.push(char::from(HEX_CHARS[(b & 0x0F) as usize]));
-            }
-        }
-    }
-    out
-}
-
-const HEX_CHARS: [u8; 16] = *b"0123456789ABCDEF";
-
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn route_for_known_methods() {
-        assert!(route_for("SendMessage").is_some());
-        assert!(route_for("GetTask").is_some());
-        assert!(route_for("ListTasks").is_some());
-        assert!(route_for("SendStreamingMessage").is_some_and(|r| r.streaming));
-    }
-
-    #[test]
-    fn route_for_unknown_method_returns_none() {
-        assert!(route_for("unknown/method").is_none());
-    }
 
     #[test]
     fn build_uri_extracts_path_param_and_appends_query() {
@@ -582,109 +426,6 @@ mod tests {
     fn rest_transport_stores_base_url() {
         let t = RestTransport::new("http://localhost:9090").unwrap();
         assert_eq!(t.base_url(), "http://localhost:9090");
-    }
-
-    #[test]
-    fn encode_query_value_encodes_special_chars() {
-        // Spaces
-        assert_eq!(super::encode_query_value("hello world"), "hello%20world");
-        // Ampersand & equals — would break query string parsing if unencoded
-        assert_eq!(super::encode_query_value("a=1&b=2"), "a%3D1%26b%3D2");
-        // Percent sign itself
-        assert_eq!(super::encode_query_value("100%"), "100%25");
-        // Unreserved characters pass through
-        assert_eq!(
-            super::encode_query_value("safe-._~AZaz09"),
-            "safe-._~AZaz09"
-        );
-    }
-
-    #[test]
-    fn build_query_string_encodes_values() {
-        let params = serde_json::json!({
-            "filter": "status=active&role=admin",
-            "name": "John Doe"
-        });
-        let qs = super::build_query_string(&params);
-        // Values should be percent-encoded
-        assert!(qs.contains("filter=status%3Dactive%26role%3Dadmin"));
-        assert!(qs.contains("name=John%20Doe"));
-    }
-
-    // ── Mutation-killing tests for route_for arms ─────────────────────────
-
-    #[test]
-    fn route_for_cancel_task() {
-        let r = route_for("CancelTask").expect("CancelTask should have a route");
-        assert_eq!(r.http_method, HttpMethod::Post);
-        assert_eq!(r.path_template, "/tasks/{id}:cancel");
-        assert_eq!(r.path_params, &["id"]);
-        assert!(!r.streaming);
-    }
-
-    #[test]
-    fn route_for_subscribe_to_task() {
-        let r = route_for("SubscribeToTask").expect("SubscribeToTask should have a route");
-        assert_eq!(r.http_method, HttpMethod::Post);
-        assert_eq!(r.path_template, "/tasks/{id}:subscribe");
-        assert_eq!(r.path_params, &["id"]);
-        assert!(r.streaming);
-    }
-
-    #[test]
-    fn route_for_create_task_push_notification_config() {
-        let r = route_for("CreateTaskPushNotificationConfig")
-            .expect("CreateTaskPushNotificationConfig should have a route");
-        assert_eq!(r.http_method, HttpMethod::Post);
-        assert_eq!(r.path_template, "/tasks/{taskId}/pushNotificationConfigs");
-        assert_eq!(r.path_params, &["taskId"]);
-        assert!(!r.streaming);
-    }
-
-    #[test]
-    fn route_for_get_task_push_notification_config() {
-        let r = route_for("GetTaskPushNotificationConfig")
-            .expect("GetTaskPushNotificationConfig should have a route");
-        assert_eq!(r.http_method, HttpMethod::Get);
-        assert_eq!(
-            r.path_template,
-            "/tasks/{taskId}/pushNotificationConfigs/{id}"
-        );
-        assert_eq!(r.path_params, &["taskId", "id"]);
-        assert!(!r.streaming);
-    }
-
-    #[test]
-    fn route_for_list_task_push_notification_configs() {
-        let r = route_for("ListTaskPushNotificationConfigs")
-            .expect("ListTaskPushNotificationConfigs should have a route");
-        assert_eq!(r.http_method, HttpMethod::Get);
-        assert_eq!(r.path_template, "/tasks/{taskId}/pushNotificationConfigs");
-        assert_eq!(r.path_params, &["taskId"]);
-        assert!(!r.streaming);
-    }
-
-    #[test]
-    fn route_for_delete_task_push_notification_config() {
-        let r = route_for("DeleteTaskPushNotificationConfig")
-            .expect("DeleteTaskPushNotificationConfig should have a route");
-        assert_eq!(r.http_method, HttpMethod::Delete);
-        assert_eq!(
-            r.path_template,
-            "/tasks/{taskId}/pushNotificationConfigs/{id}"
-        );
-        assert_eq!(r.path_params, &["taskId", "id"]);
-        assert!(!r.streaming);
-    }
-
-    #[test]
-    fn route_for_get_extended_agent_card() {
-        let r =
-            route_for("GetExtendedAgentCard").expect("GetExtendedAgentCard should have a route");
-        assert_eq!(r.http_method, HttpMethod::Get);
-        assert_eq!(r.path_template, "/extendedAgentCard");
-        assert!(r.path_params.is_empty());
-        assert!(!r.streaming);
     }
 
     // ── Mutation-killing tests for build_uri / build_request query param logic ──
@@ -758,37 +499,6 @@ mod tests {
         assert_eq!(req.method(), hyper::Method::DELETE);
         let size = req.body().size_hint().exact().unwrap_or(1);
         assert_eq!(size, 0, "DELETE body should be empty");
-    }
-
-    // ── Mutation-killing tests for build_query_string null/number/bool ───
-
-    #[test]
-    fn build_query_string_skips_null() {
-        let params = serde_json::json!({"a": null, "b": "hello"});
-        let qs = build_query_string(&params);
-        assert!(!qs.contains("a="), "null values should be skipped");
-        assert!(qs.contains("b=hello"), "non-null values should be present");
-    }
-
-    #[test]
-    fn build_query_string_handles_number() {
-        let params = serde_json::json!({"count": 42});
-        let qs = build_query_string(&params);
-        assert_eq!(qs, "count=42");
-    }
-
-    #[test]
-    fn build_query_string_handles_bool() {
-        let params = serde_json::json!({"active": true});
-        let qs = build_query_string(&params);
-        assert_eq!(qs, "active=true");
-    }
-
-    #[test]
-    fn build_query_string_handles_false() {
-        let params = serde_json::json!({"active": false});
-        let qs = build_query_string(&params);
-        assert_eq!(qs, "active=false");
     }
 
     // ── HTTP server tests for execute_request / execute_streaming_request ──

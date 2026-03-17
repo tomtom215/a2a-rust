@@ -1,39 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Tenant-scoped task store implementations.
-//!
-//! Provides [`TenantContext`] for threading tenant identity through store
-//! operations and [`TenantAwareInMemoryTaskStore`] for full tenant isolation
-//! without changing the [`TaskStore`] trait signature.
-//!
-//! # Architecture
-//!
-//! The A2A `TaskStore` trait doesn't accept a tenant parameter — tenant
-//! identity flows through request params at the handler level. To achieve
-//! tenant isolation without a breaking trait change, we use `tokio::task_local!`
-//! to propagate the current tenant ID into store operations.
-//!
-//! The handler sets the tenant context before calling store methods:
-//!
-//! ```rust,no_run
-//! use a2a_protocol_server::store::tenant::TenantContext;
-//!
-//! # async fn example(store: &impl a2a_protocol_server::store::TaskStore) {
-//! let tenant = "acme-corp";
-//! TenantContext::scope(tenant, async {
-//!     // All store operations here are scoped to "acme-corp"
-//!     // store.save(task).await;
-//! }).await;
-//! # }
-//! ```
-//!
-//! # Isolation guarantees
-//!
-//! - Each tenant's tasks live in a separate `InMemoryTaskStore` instance
-//! - Tenant A cannot read, list, or delete tenant B's tasks
-//! - Per-tenant eviction configuration is supported
-//! - Operations without a tenant context use the `""` (default) partition
+//! Tenant-isolated in-memory task store implementation.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -46,40 +14,8 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
-
-// ── Tenant context ──────────────────────────────────────────────────────────
-
-tokio::task_local! {
-    static CURRENT_TENANT: String;
-}
-
-/// Thread-safe tenant context for scoping store operations.
-///
-/// Uses `tokio::task_local!` to propagate tenant identity into store calls
-/// without changing the `TaskStore` trait.
-pub struct TenantContext;
-
-impl TenantContext {
-    /// Runs a future within a tenant scope.
-    ///
-    /// All `TenantAwareInMemoryTaskStore` operations executed within `f`
-    /// will be scoped to the given tenant.
-    pub async fn scope<F, R>(tenant: impl Into<String>, f: F) -> R
-    where
-        F: Future<Output = R>,
-    {
-        CURRENT_TENANT.scope(tenant.into(), f).await
-    }
-
-    /// Returns the current tenant ID, or `""` if no tenant context is set.
-    #[must_use]
-    pub fn current() -> String {
-        CURRENT_TENANT
-            .try_with(std::clone::Clone::clone)
-            .unwrap_or_default()
-    }
-}
+use super::context::TenantContext;
+use super::super::task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 
 // ── TenantAwareInMemoryTaskStore ────────────────────────────────────────────
 
