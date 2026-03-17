@@ -590,6 +590,32 @@ mod tests {
         );
     }
 
+    /// Covers lines 120-122 (to_a2a_error conversion).
+    #[test]
+    fn to_a2a_error_formats_message() {
+        let sqlite_err = sqlx::Error::RowNotFound;
+        let a2a_err = to_a2a_error(sqlite_err);
+        let msg = format!("{a2a_err}");
+        assert!(
+            msg.contains("sqlite error"),
+            "error message should contain 'sqlite error': {msg}"
+        );
+    }
+
+    /// Covers lines 76-86 (with_migrations constructor).
+    #[tokio::test]
+    async fn with_migrations_creates_store() {
+        // with_migrations should work with an in-memory database
+        let result = SqliteTaskStore::with_migrations("sqlite::memory:").await;
+        assert!(
+            result.is_ok(),
+            "with_migrations should succeed on a fresh database"
+        );
+        let store = result.unwrap();
+        let count = store.count().await.unwrap();
+        assert_eq!(count, 0, "freshly migrated store should be empty");
+    }
+
     #[tokio::test]
     async fn list_empty_store() {
         let store = make_store().await;

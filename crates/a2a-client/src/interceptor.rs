@@ -301,4 +301,33 @@ mod tests {
         chain.run_after(&resp).await.unwrap();
         assert_eq!(counter.load(Ordering::SeqCst), 10);
     }
+
+    /// Tests the `CallInterceptorBoxed` impl for `Box<dyn CallInterceptorBoxed>`.
+    /// Covers lines 152-157 (before_boxed delegation) and 159-164 (after_boxed delegation).
+    #[tokio::test]
+    async fn boxed_interceptor_delegates_before_and_after() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let interceptor = CountingInterceptor(Arc::clone(&counter));
+        // Wrap in Box<dyn CallInterceptorBoxed> to test the delegation impl
+        let boxed: Box<dyn CallInterceptorBoxed> = Box::new(interceptor);
+
+        let mut req = ClientRequest::new("test", serde_json::Value::Null);
+        boxed.before_boxed(&mut req).await.unwrap();
+        assert_eq!(counter.load(Ordering::SeqCst), 1, "before_boxed should delegate");
+
+        let resp = ClientResponse {
+            method: "test".into(),
+            result: serde_json::Value::Null,
+            status_code: 200,
+        };
+        boxed.after_boxed(&resp).await.unwrap();
+        assert_eq!(counter.load(Ordering::SeqCst), 11, "after_boxed should delegate");
+
+        // Now test the impl for Box<dyn CallInterceptorBoxed> itself (double indirection)
+        let double_boxed: Box<dyn CallInterceptorBoxed> = Box::new(boxed);
+        double_boxed.before_boxed(&mut req).await.unwrap();
+        assert_eq!(counter.load(Ordering::SeqCst), 12, "double-boxed before should delegate");
+        double_boxed.after_boxed(&resp).await.unwrap();
+        assert_eq!(counter.load(Ordering::SeqCst), 22, "double-boxed after should delegate");
+    }
 }

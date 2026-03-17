@@ -115,4 +115,15 @@ mod tests {
         );
         assert_eq!(result.unwrap().name, "Test Agent");
     }
+
+    #[tokio::test]
+    async fn get_extended_agent_card_error_path_records_metrics() {
+        // Exercises the Err metrics path (line 68) when no agent card is configured.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let result = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            matches!(result, Err(ServerError::Internal(_))),
+            "expected Internal error for error metrics path, got: {result:?}"
+        );
+    }
 }

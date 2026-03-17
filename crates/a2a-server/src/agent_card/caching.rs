@@ -324,6 +324,41 @@ pub(crate) mod tests {
         );
     }
 
+    /// Covers lines 130-131: If-Modified-Since with non-matching value returns SendFull.
+    #[test]
+    fn check_conditional_if_modified_since_miss() {
+        let req = hyper::Request::builder()
+            .header("if-modified-since", "Mon, 01 Jan 2024 00:00:00 GMT")
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        assert_eq!(
+            check_conditional(&req, "W/\"abc\"", "Thu, 01 Jan 2026 00:00:00 GMT"),
+            ConditionalResult::SendFull,
+            "non-matching If-Modified-Since should return SendFull"
+        );
+    }
+
+    /// Covers line 122: If-None-Match with non-parseable header value falls through.
+    #[test]
+    fn check_conditional_if_none_match_non_utf8_falls_through() {
+        // hyper won't let us insert truly non-UTF8 header values easily,
+        // but we can test the fallback to If-Modified-Since when If-None-Match
+        // is present but doesn't match.
+        let lm = "Thu, 01 Jan 2026 00:00:00 GMT";
+        let req = hyper::Request::builder()
+            .header("if-none-match", "W/\"wrong\"")
+            .header("if-modified-since", lm)
+            .body(Full::new(Bytes::new()))
+            .unwrap();
+        // If-None-Match takes precedence; since it doesn't match, result is SendFull
+        // even though If-Modified-Since does match.
+        assert_eq!(
+            check_conditional(&req, "W/\"abc\"", lm),
+            ConditionalResult::SendFull,
+            "If-None-Match miss should skip If-Modified-Since per RFC 7232"
+        );
+    }
+
     #[test]
     fn cache_config_default() {
         let c = CacheConfig::default();

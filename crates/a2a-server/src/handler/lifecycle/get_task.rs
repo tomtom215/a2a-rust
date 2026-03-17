@@ -117,4 +117,20 @@ mod tests {
         );
         assert_eq!(result.unwrap().id, TaskId::new("t-get-1"));
     }
+
+    #[tokio::test]
+    async fn get_task_error_path_records_metrics() {
+        // Exercises the Err metrics path (line 74) via TaskNotFound.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = TaskQueryParams {
+            tenant: None,
+            id: "nonexistent-metrics".to_owned(),
+            history_length: None,
+        };
+        let result = handler.on_get_task(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for error metrics path, got: {result:?}"
+        );
+    }
 }

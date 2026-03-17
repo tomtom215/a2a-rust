@@ -103,4 +103,45 @@ mod tests {
             .expect("list_tasks should succeed");
         assert_eq!(result.tasks.len(), 1, "should return the one saved task");
     }
+
+    #[tokio::test]
+    async fn list_tasks_error_path_records_metrics() {
+        // Use an interceptor that always fails to trigger the error metrics path (lines 48-51).
+        use std::future::Future;
+        use std::pin::Pin;
+        use crate::interceptor::ServerInterceptor;
+        use crate::call_context::CallContext;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = ListTasksParams::default();
+        let result = handler.on_list_tasks(params, None).await;
+        assert!(
+            result.is_err(),
+            "list_tasks should fail when interceptor rejects, got: {result:?}"
+        );
+    }
 }

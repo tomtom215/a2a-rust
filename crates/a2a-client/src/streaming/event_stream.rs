@@ -358,6 +358,98 @@ mod tests {
         assert!(is_terminal(&event), "Completed state should be terminal");
     }
 
+    /// Tests that an SSE frame containing a JSON-RPC error response
+    /// is decoded as a ClientError::Protocol. Covers lines 164-171.
+    #[tokio::test]
+    async fn stream_decodes_jsonrpc_error_as_protocol_error() {
+        use a2a_protocol_types::{JsonRpcErrorResponse, JsonRpcVersion};
+
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx);
+
+        // Build a JSON-RPC error response frame.
+        let error_resp = JsonRpcErrorResponse {
+            jsonrpc: JsonRpcVersion,
+            id: Some(serde_json::json!(1)),
+            error: a2a_protocol_types::JsonRpcError {
+                code: -32601,
+                message: "method not found".into(),
+                data: None,
+            },
+        };
+        let json = serde_json::to_string(&error_resp).unwrap();
+        let sse_data = format!("data: {json}\n\n");
+        tx.send(Ok(Bytes::from(sse_data))).await.unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
+        assert!(result.is_err(), "JSON-RPC error should produce Err");
+        match result.unwrap_err() {
+            ClientError::Protocol(err) => {
+                assert!(
+                    format!("{err}").contains("method not found"),
+                    "error message should be preserved"
+                );
+            }
+            other => panic!("expected Protocol error, got {other:?}"),
+        }
+
+        // Stream should be done after an error response.
+        let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
+        assert!(end.is_none(), "stream should end after JSON-RPC error");
+    }
+
+    /// Tests that invalid JSON in an SSE frame produces a serialization error.
+    /// Covers the decode_frame path for malformed data.
+    #[tokio::test]
+    async fn stream_invalid_json_returns_serialization_error() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx);
+
+        let sse_data = "data: {not valid json}\n\n";
+        tx.send(Ok(Bytes::from(sse_data))).await.unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
+        assert!(result.is_err(), "invalid JSON should produce Err");
+        assert!(
+            matches!(result.unwrap_err(), ClientError::Serialization(_)),
+            "should be a Serialization error"
+        );
+    }
+
+    /// Tests that channel close with remaining parser data produces a frame.
+    /// Covers lines 129-132 (drain after channel close).
+    #[tokio::test]
+    async fn stream_drains_parser_after_channel_close() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx);
+
+        // Send an event split across two chunks, then close the channel
+        // before the event is complete (but the second chunk completes it).
+        let event = make_status_event(TaskState::Working, false);
+        let sse_bytes = sse_frame(&event);
+        let (first_half, second_half) = sse_bytes.split_at(sse_bytes.len() / 2);
+
+        tx.send(Ok(Bytes::from(first_half.to_owned()))).await.unwrap();
+        tx.send(Ok(Bytes::from(second_half.to_owned()))).await.unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
+        assert!(result.is_ok(), "should deliver event from drained parser");
+    }
+
     #[tokio::test]
     async fn non_terminal_event_does_not_end_stream() {
         let (tx, rx) = mpsc::channel(8);

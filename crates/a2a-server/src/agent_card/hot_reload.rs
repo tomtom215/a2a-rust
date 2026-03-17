@@ -336,6 +336,51 @@ mod tests {
         assert_eq!(produced.name, card.name);
     }
 
+    /// Covers lines 167-171 (spawn_signal_watcher, unix only).
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn signal_watcher_can_be_spawned_and_aborted() {
+        let card = minimal_agent_card();
+        let handler = HotReloadAgentCardHandler::new(card);
+
+        let dir = std::env::temp_dir().join("a2a_signal_watcher_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let handle = handler.spawn_signal_watcher(&file);
+        // Just verify it can be spawned and aborted without panicking.
+        handle.abort();
+
+        // Cleanup
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Covers file_mtime helper function (line 182-184).
+    #[test]
+    fn file_mtime_returns_none_for_missing_file() {
+        let result = file_mtime(Path::new("/tmp/nonexistent_a2a_mtime_test.json"));
+        assert!(result.is_none(), "missing file should return None");
+    }
+
+    /// Covers file_mtime for existing file.
+    #[test]
+    fn file_mtime_returns_some_for_existing_file() {
+        let dir = std::env::temp_dir().join("a2a_mtime_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("test.json");
+        std::fs::write(&file, "{}").unwrap();
+
+        let result = file_mtime(&file);
+        assert!(result.is_some(), "existing file should return Some");
+
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
     #[tokio::test]
     async fn poll_watcher_detects_change() {
         let dir = std::env::temp_dir().join("a2a_poll_watcher_test");

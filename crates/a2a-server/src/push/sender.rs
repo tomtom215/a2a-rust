@@ -364,6 +364,68 @@ impl PushSender for HttpPushSender {
 mod tests {
     use super::*;
 
+    /// Covers lines 89-92 (PushRetryPolicy::with_max_attempts).
+    #[test]
+    fn push_retry_policy_with_max_attempts() {
+        let policy = PushRetryPolicy::default().with_max_attempts(5);
+        assert_eq!(policy.max_attempts, 5);
+        // Default backoff should be preserved
+        assert_eq!(policy.backoff.len(), 2);
+    }
+
+    /// Covers lines 96-99 (PushRetryPolicy::with_backoff).
+    #[test]
+    fn push_retry_policy_with_backoff() {
+        let backoff = vec![
+            std::time::Duration::from_millis(100),
+            std::time::Duration::from_millis(500),
+            std::time::Duration::from_secs(1),
+        ];
+        let policy = PushRetryPolicy::default().with_backoff(backoff.clone());
+        assert_eq!(policy.backoff, backoff);
+        // Default max_attempts should be preserved
+        assert_eq!(policy.max_attempts, 3);
+    }
+
+    /// Covers lines 149-152 (HttpPushSender::with_retry_policy).
+    #[test]
+    fn http_push_sender_with_retry_policy() {
+        let policy = PushRetryPolicy::default().with_max_attempts(10);
+        let sender = HttpPushSender::new().with_retry_policy(policy);
+        assert_eq!(sender.retry_policy.max_attempts, 10);
+    }
+
+    /// Covers lines 206-208 (validate_webhook_url missing host).
+    #[test]
+    fn rejects_url_without_host() {
+        assert!(validate_webhook_url("http:///path").is_err());
+    }
+
+    /// Covers lines 265 and related (HttpPushSender::allow_private_urls).
+    #[test]
+    fn http_push_sender_allow_private_urls() {
+        let sender = HttpPushSender::new().allow_private_urls();
+        assert!(sender.allow_private_urls);
+    }
+
+    /// Covers Default impl for HttpPushSender (line 122-124).
+    #[test]
+    fn http_push_sender_default() {
+        let sender = HttpPushSender::default();
+        assert_eq!(sender.request_timeout, DEFAULT_PUSH_REQUEST_TIMEOUT);
+        assert!(!sender.allow_private_urls);
+    }
+
+    /// Covers PushRetryPolicy::default() (lines 74-84).
+    #[test]
+    fn push_retry_policy_default() {
+        let policy = PushRetryPolicy::default();
+        assert_eq!(policy.max_attempts, 3);
+        assert_eq!(policy.backoff.len(), 2);
+        assert_eq!(policy.backoff[0], std::time::Duration::from_secs(1));
+        assert_eq!(policy.backoff[1], std::time::Duration::from_secs(2));
+    }
+
     #[test]
     fn rejects_loopback_ipv4() {
         assert!(validate_webhook_url("http://127.0.0.1:8080/webhook").is_err());

@@ -565,6 +565,18 @@ mod tests {
         .await;
     }
 
+    /// Covers lines 113-115 (to_a2a_error conversion).
+    #[test]
+    fn to_a2a_error_formats_message() {
+        let sqlite_err = sqlx::Error::RowNotFound;
+        let a2a_err = to_a2a_error(&sqlite_err);
+        let msg = format!("{a2a_err}");
+        assert!(
+            msg.contains("sqlite error"),
+            "error message should contain 'sqlite error': {msg}"
+        );
+    }
+
     #[tokio::test]
     async fn default_tenant_context_uses_empty_string() {
         let store = make_store().await;

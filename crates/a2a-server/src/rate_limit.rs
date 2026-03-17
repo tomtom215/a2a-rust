@@ -427,6 +427,23 @@ mod tests {
         );
     }
 
+    /// Covers lines 63-68 (RateLimitConfig::default).
+    #[test]
+    fn default_config_values() {
+        let config = RateLimitConfig::default();
+        assert_eq!(config.requests_per_window, 100);
+        assert_eq!(config.window_secs, 60);
+    }
+
+    /// Covers lines 250-255 (after hook returns Ok).
+    #[tokio::test]
+    async fn after_hook_is_noop() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig::default());
+        let ctx = make_ctx(Some("user"));
+        let result = limiter.after(&ctx).await;
+        assert!(result.is_ok(), "after hook should always return Ok");
+    }
+
     #[test]
     fn window_number_correctness() {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {

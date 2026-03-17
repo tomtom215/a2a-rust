@@ -609,6 +609,25 @@ mod tests {
         );
     }
 
+    /// Multiple data lines are joined with newlines.
+    #[test]
+    fn multiple_data_lines_joined() {
+        let input = "data: hello\ndata: world\n\n";
+        let mut p = SseParser::new();
+        p.feed(input.as_bytes());
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "hello\nworld");
+    }
+
+    /// BOM at the very start of a stream is stripped.
+    #[test]
+    fn bom_at_stream_start_stripped() {
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB\xBFdata: bom-test\n\n");
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(frame.data, "bom-test");
+    }
+
     #[test]
     fn short_non_bom_feed_then_bom_feed() {
         // Feed a short (< 3 bytes) non-empty, non-BOM input first.

@@ -370,6 +370,21 @@ mod tests {
         );
     }
 
+    /// Covers lines 99-102 (with_write_timeout builder method).
+    #[tokio::test]
+    async fn manager_with_write_timeout() {
+        let manager =
+            EventQueueManager::new().with_write_timeout(std::time::Duration::from_secs(10));
+        // Verify the manager still works after configuring write_timeout
+        let task_id = TaskId::new("t1");
+        let (writer, reader) = manager.get_or_create(&task_id).await;
+        assert!(reader.is_some());
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("write should succeed with custom write_timeout");
+    }
+
     #[tokio::test]
     async fn manager_with_capacity_and_max_event_size() {
         let manager = EventQueueManager::with_capacity(4).with_max_event_size(10); // tiny limit

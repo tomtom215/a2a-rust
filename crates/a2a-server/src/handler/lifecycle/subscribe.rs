@@ -94,4 +94,75 @@ mod tests {
             "expected TaskNotFound for missing task, got: {result:?}"
         );
     }
+
+    #[tokio::test]
+    async fn resubscribe_task_exists_but_no_queue_returns_internal_error() {
+        // Task exists in store but has no active event queue (lines 53-54, 60-63).
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let task = Task {
+            id: TaskId::new("t-resub-1"),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        let params = TaskIdParams {
+            tenant: None,
+            id: "t-resub-1".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::Internal(_))),
+            "expected Internal error when no event queue exists, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resubscribe_error_path_records_error_metrics() {
+        // Triggers the Err branch in the metrics match (lines 60-63, 82).
+        use std::future::Future;
+        use std::pin::Pin;
+        use crate::interceptor::ServerInterceptor;
+        use crate::call_context::CallContext;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = TaskIdParams {
+            tenant: None,
+            id: "t-resub-fail".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
+            result.is_err(),
+            "resubscribe should fail when interceptor rejects"
+        );
+    }
 }

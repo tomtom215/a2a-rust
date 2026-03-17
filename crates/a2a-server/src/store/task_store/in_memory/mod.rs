@@ -720,6 +720,19 @@ mod tests {
 
     // ── Config defaults ──────────────────────────────────────────────────
 
+    /// Covers lines 74-76 (InMemoryTaskStore Default impl).
+    #[test]
+    fn default_creates_new_store() {
+        let store = InMemoryTaskStore::default();
+        // Default should be equivalent to InMemoryTaskStore::new().
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let count = rt.block_on(store.count()).unwrap();
+        assert_eq!(count, 0, "default store should be empty");
+    }
+
     #[test]
     fn default_config_has_expected_values() {
         let cfg = TaskStoreConfig::default();

@@ -376,6 +376,18 @@ mod tests {
         );
     }
 
+    /// Covers lines 28-30 (CountingWriter::flush).
+    #[test]
+    fn counting_writer_flush_is_noop() {
+        use std::io::Write;
+        let mut cw = super::CountingWriter(0);
+        cw.write_all(b"hello").unwrap();
+        assert_eq!(cw.0, 5);
+        // flush should succeed as no-op
+        cw.flush().unwrap();
+        assert_eq!(cw.0, 5, "flush should not change the count");
+    }
+
     #[tokio::test]
     async fn event_within_size_limit_is_accepted() {
         // Use a generous max_event_size.

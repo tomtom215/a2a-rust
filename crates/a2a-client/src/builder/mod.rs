@@ -342,4 +342,62 @@ mod tests {
             "debug output missing endpoint: {debug}"
         );
     }
+
+    /// Covers line 107 (version mismatch warning branch in from_card with tracing).
+    /// Even without tracing feature, this exercises the code path.
+    #[test]
+    fn builder_from_card_mismatched_version() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            name: "mismatch".into(),
+            version: "1.0".into(),
+            description: "Version mismatch test".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9091".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "99.0.0".into(), // non-matching major version
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let builder = ClientBuilder::from_card(&card);
+        assert_eq!(builder.endpoint, "http://localhost:9091");
+    }
+
+    /// Covers lines 150-153 (with_connection_timeout) and 221-224 (with_retry_policy).
+    #[test]
+    fn builder_with_connection_timeout_and_retry_policy() {
+        use crate::retry::RetryPolicy;
+
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_connection_timeout(Duration::from_secs(5))
+            .with_retry_policy(RetryPolicy::default())
+            .build()
+            .expect("build");
+        assert_eq!(client.config().connection_timeout, Duration::from_secs(5));
+    }
+
+    /// Covers with_stream_connect_timeout (line ~140).
+    #[test]
+    fn builder_with_stream_connect_timeout() {
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_stream_connect_timeout(Duration::from_secs(15))
+            .build()
+            .expect("build");
+        assert_eq!(
+            client.config().stream_connect_timeout,
+            Duration::from_secs(15)
+        );
+    }
 }

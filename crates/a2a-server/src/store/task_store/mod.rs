@@ -141,6 +141,61 @@ pub trait TaskStore: Send + Sync + 'static {
     }
 }
 
+/// Tests for the default `count` implementation on `TaskStore`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A minimal TaskStore that only implements required methods.
+    struct MinimalStore;
+
+    impl TaskStore for MinimalStore {
+        fn save<'a>(
+            &'a self,
+            _task: Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+            Box::pin(async { Ok(None) })
+        }
+
+        fn list<'a>(
+            &'a self,
+            _params: &'a ListTasksParams,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+            Box::pin(async { Ok(TaskListResponse::new(vec![])) })
+        }
+
+        fn insert_if_absent<'a>(
+            &'a self,
+            _task: Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            Box::pin(async { Ok(true) })
+        }
+
+        fn delete<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+        // Note: count() is NOT overridden, so the default impl is used.
+    }
+
+    /// Covers lines 139-141: default count() returns 0.
+    #[tokio::test]
+    async fn default_count_returns_zero() {
+        let store = MinimalStore;
+        let count = store.count().await.unwrap();
+        assert_eq!(count, 0, "default count() should return 0");
+    }
+}
+
 /// Configuration for [`InMemoryTaskStore`].
 #[derive(Debug, Clone)]
 pub struct TaskStoreConfig {

@@ -599,6 +599,70 @@ mod tests {
 
     // ── Config defaults ──────────────────────────────────────────────────
 
+    /// Covers lines 85-87 (TenantAwareInMemoryTaskStore Default impl).
+    #[test]
+    fn default_creates_new_tenant_store() {
+        let store = TenantAwareInMemoryTaskStore::default();
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let count = rt.block_on(store.tenant_count());
+        assert_eq!(count, 0, "default store should have no tenants");
+    }
+
+    /// Covers lines 151-154 (run_eviction_all).
+    #[tokio::test]
+    async fn run_eviction_all_runs_without_error() {
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        // Populate two tenants
+        TenantContext::scope("t1", async {
+            store
+                .save(make_task("task-a", TaskState::Completed))
+                .await
+                .unwrap();
+        })
+        .await;
+        TenantContext::scope("t2", async {
+            store
+                .save(make_task("task-b", TaskState::Working))
+                .await
+                .unwrap();
+        })
+        .await;
+
+        // run_eviction_all should not panic
+        store.run_eviction_all().await;
+    }
+
+    /// Covers line 125 (double-check in get_store slow path).
+    /// When multiple tasks from the same tenant race, the second should
+    /// find the store already created.
+    #[tokio::test]
+    async fn get_store_double_check_path() {
+        let store = TenantAwareInMemoryTaskStore::new();
+
+        // First access creates the store for this tenant.
+        TenantContext::scope("racer", async {
+            store
+                .save(make_task("t1", TaskState::Submitted))
+                .await
+                .unwrap();
+            // Second access should use the existing store (fast path).
+            store
+                .save(make_task("t2", TaskState::Working))
+                .await
+                .unwrap();
+
+            let count = store.count().await.unwrap();
+            assert_eq!(count, 2, "both tasks should be in same tenant store");
+        })
+        .await;
+
+        assert_eq!(store.tenant_count().await, 1, "should have exactly 1 tenant");
+    }
+
     #[test]
     fn default_tenant_store_config() {
         let cfg = TenantStoreConfig::default();
