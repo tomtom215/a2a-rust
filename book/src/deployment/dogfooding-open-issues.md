@@ -1,6 +1,6 @@
 # Dogfooding: Open Issues & Future Work
 
-Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from passes 1–7 have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list (31 bugs across 7 passes).
+Remaining gaps identified during dogfooding that have not yet been addressed. All architecture, ergonomics, observability, performance, and durability issues from passes 1–8 have been resolved — see [Bugs Found & Fixed](./dogfooding-bugs.md) for the full list (36 bugs across 8 passes).
 
 ## E2E Test Coverage Gaps
 
@@ -10,7 +10,15 @@ These features have dedicated unit/integration tests but are **not yet exercised
 |---|---|---|---|
 | **Agent card signing** | `signing` module tests (JWS/ES256, RFC 8785) | Requires JWS key setup in agent-team | Low |
 
-## Recently Closed Coverage Gaps (Tests 61-75)
+## Recently Closed Coverage Gaps (Tests 76-78, Pass 8)
+
+| Area | Test # | E2E Coverage |
+|---|---|---|
+| **Timeout retryability** | 76 | Verifies `ClientError::Timeout` is retryable, `Transport` is not (Bug #32 regression) |
+| **Concurrent cancels** | 77 | 10 parallel CancelTask requests without panic or deadlock |
+| **Stale page token** | 78 | Graceful handling of page tokens referencing evicted tasks |
+
+## Closed Coverage Gaps (Tests 72-75, Pass 7)
 
 The following gaps were closed by adding E2E tests 72-75 in Pass 7:
 
@@ -85,7 +93,7 @@ Features that are not part of the current A2A v1.0.0 spec but could add value:
 
 ## Resolved in Previous Passes
 
-All issues from dogfooding passes 1–6 have been resolved:
+All issues from dogfooding passes 1–8 have been resolved:
 
 - Push delivery for streaming mode (background event processor)
 - `CallContext` HTTP headers for interceptors
@@ -107,6 +115,11 @@ All issues from dogfooding passes 1–6 have been resolved:
 - Rate limiter TOCTOU race condition (CAS loop fix)
 - Rate limiter stale-bucket cleanup (unbounded growth prevention)
 - Client protocol version compatibility warning
+- Timeout error misclassification (Transport → Timeout, Bug #32)
+- SSE parser O(n) dequeue (Vec → VecDeque, Bug #33)
+- SSE parser silent UTF-8 data loss (lossy conversion, Bug #34)
+- Double-encoded path traversal bypass (two-pass decode, Bug #35)
+- gRPC stream error context loss (proper error code mapping, Bug #36)
 - gRPC placeholder URL bug (pre-bind pattern via `serve_with_listener`)
 - REST transport query string percent-encoding (RFC 3986)
 - WebSocket stream termination detection (proper JSON parsing)

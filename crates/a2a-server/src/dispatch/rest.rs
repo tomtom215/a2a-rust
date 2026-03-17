@@ -570,15 +570,20 @@ fn percent_decode(input: &str) -> String {
     output
 }
 
-/// Checks if a path contains traversal sequences (`..`) in either raw or
-/// percent-encoded form (`%2E%2E`, `%2e%2e`).
+/// Checks if a path contains traversal sequences (`..`) in either raw,
+/// percent-encoded (`%2E%2E`), or double-encoded (`%252E%252E`) form.
 fn contains_path_traversal(path: &str) -> bool {
     if path.contains("..") {
         return true;
     }
-    // Also check percent-encoded variants.
+    // Check single-encoded variants (%2E%2E, %2e%2e).
     let decoded = percent_decode(path);
-    decoded.contains("..")
+    if decoded.contains("..") {
+        return true;
+    }
+    // Check double-encoded variants (%252E%252E → %2E%2E → ..).
+    let double_decoded = percent_decode(&decoded);
+    double_decoded.contains("..")
 }
 
 /// Returns the numeric value of a hex digit, or `None` if invalid.

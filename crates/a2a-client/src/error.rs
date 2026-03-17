@@ -154,4 +154,73 @@ mod tests {
         };
         assert!(e.to_string().contains("404"));
     }
+
+    /// Bug #32: Timeout errors must be retryable.
+    ///
+    /// Previously, REST/JSON-RPC transports used `ClientError::Transport` for
+    /// timeouts, which is non-retryable. This test verifies `Timeout` is
+    /// retryable and `Transport` is not, ensuring retry logic works correctly.
+    #[test]
+    fn timeout_is_retryable_transport_is_not() {
+        let timeout = ClientError::Timeout("request timed out".into());
+        assert!(timeout.is_retryable(), "Timeout errors must be retryable");
+
+        let transport = ClientError::Transport("config error".into());
+        assert!(
+            !transport.is_retryable(),
+            "Transport errors must not be retryable"
+        );
+    }
+
+    /// Verify all retryable/non-retryable classifications.
+    #[test]
+    fn retryable_classification_exhaustive() {
+        // Retryable
+        assert!(ClientError::HttpClient("conn reset".into()).is_retryable());
+        assert!(ClientError::Timeout("deadline".into()).is_retryable());
+        assert!(ClientError::UnexpectedStatus {
+            status: 429,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(ClientError::UnexpectedStatus {
+            status: 502,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(ClientError::UnexpectedStatus {
+            status: 503,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(ClientError::UnexpectedStatus {
+            status: 504,
+            body: String::new()
+        }
+        .is_retryable());
+
+        // Non-retryable
+        assert!(!ClientError::Transport("bad config".into()).is_retryable());
+        assert!(!ClientError::InvalidEndpoint("bad url".into()).is_retryable());
+        assert!(!ClientError::UnexpectedStatus {
+            status: 400,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(!ClientError::UnexpectedStatus {
+            status: 401,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(!ClientError::UnexpectedStatus {
+            status: 404,
+            body: String::new()
+        }
+        .is_retryable());
+        assert!(!ClientError::ProtocolBindingMismatch("wrong".into()).is_retryable());
+        assert!(!ClientError::AuthRequired {
+            task_id: TaskId::new("t")
+        }
+        .is_retryable());
+    }
 }

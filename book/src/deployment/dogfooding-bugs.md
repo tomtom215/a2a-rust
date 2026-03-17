@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Seven dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **31 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 31 have been fixed.
+Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** that 600+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 36 have been fixed.
 
 ## Pass 1: Initial Dogfood (3 bugs)
 
@@ -309,3 +309,55 @@ These use sensible defaults but are not yet user-configurable:
 | `MAX_PUSH_CONFIGS_PER_TASK` | 100 | `InMemoryPushConfigStore` |
 | `DEFAULT_WRITE_TIMEOUT` | 5s | SSE streaming |
 | `DEFAULT_KEEP_ALIVE` | 30s | SSE streaming |
+
+## Pass 8: Deep Dogfood (5 bugs)
+
+### Bug 32: Timeout Errors Misclassified as Transport (CRITICAL)
+
+**Severity:** Critical | **Component:** Client REST + JSON-RPC transports
+
+Both `RestTransport::execute_request()` and `JsonRpcTransport::execute_request()` mapped `tokio::time::timeout` errors to `ClientError::Transport`. Since `Transport` is explicitly marked **non-retryable** in `is_retryable()`, timeouts never triggered retry logic — defeating the entire retry system for the most common transient failure mode.
+
+**Why tests missed it:** Unit tests checked that timeouts produced errors, but never checked the error *variant*. The retry integration tests used simulated errors, not real timeouts.
+
+**Fix:** Changed both transports to use `ClientError::Timeout("request timed out")`. Added exhaustive retryability classification tests.
+
+### Bug 33: SSE Parser O(n) Dequeue Performance
+
+**Severity:** Medium | **Component:** Client SSE parser
+
+`SseParser::next_frame()` used `Vec::remove(0)` which is O(n) because it shifts all remaining elements. With high-throughput streaming (hundreds of events per second), this creates quadratic overhead.
+
+**Why tests missed it:** Unit tests parse small event counts (1-3 events). The performance issue only manifests with large event queues.
+
+**Fix:** Replaced `Vec<Result<SseFrame, SseParseError>>` with `VecDeque` for O(1) `pop_front()`.
+
+### Bug 34: SSE Parser Silent UTF-8 Data Loss
+
+**Severity:** Medium | **Component:** Client SSE parser
+
+Malformed UTF-8 lines were silently discarded (`return` on `from_utf8` failure). When a multi-byte UTF-8 character spans a TCP chunk boundary, the trailing bytes can appear invalid. The entire line would be dropped, causing silent data loss.
+
+**Why tests missed it:** All test inputs use ASCII. The bug only manifests with non-ASCII content delivered across TCP fragment boundaries.
+
+**Fix:** Changed to `String::from_utf8_lossy()` which replaces invalid bytes with U+FFFD instead of dropping the entire line.
+
+### Bug 35: Double-Encoded Path Traversal Bypass
+
+**Severity:** Medium | **Component:** Server REST dispatcher
+
+`contains_path_traversal()` only decoded one level of percent-encoding. An attacker could use `%252E%252E` (which decodes to `%2E%2E`, then to `..`) to bypass the check.
+
+**Why tests missed it:** No test used double-encoded inputs. The existing test only checked raw `..` sequences.
+
+**Fix:** Added a second decoding pass. Added tests for raw, single-encoded, and double-encoded path traversal.
+
+### Bug 36: gRPC Stream Errors Lose Error Context
+
+**Severity:** Low | **Component:** Client gRPC transport
+
+`grpc_stream_reader_task` mapped gRPC stream errors to generic `ClientError::Transport(format!("gRPC stream error: {}", status.message()))` instead of using the existing `grpc_code_to_error_code()` function. This lost the structured error code information (NotFound, InvalidArgument, etc.).
+
+**Why tests missed it:** gRPC streaming tests check for successful completion, not error paths within the stream.
+
+**Fix:** Changed to use `ClientError::Protocol(A2aError::new(grpc_code_to_error_code(...), ...))` for proper error classification.

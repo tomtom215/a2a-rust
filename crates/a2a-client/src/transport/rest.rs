@@ -334,7 +334,7 @@ impl RestTransport {
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
-                ClientError::Transport("request timed out".into())
+                ClientError::Timeout("request timed out".into())
             })?
             .map_err(|e| {
                 trace_error!(method, error = %e, "HTTP client error");

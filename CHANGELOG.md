@@ -10,6 +10,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Pass 8 — Deep Dogfood)
+
+- **Bug #32: Timeout errors misclassified as Transport (CRITICAL)** — REST and
+  JSON-RPC transports mapped `tokio::time::timeout` errors to
+  `ClientError::Transport` instead of `ClientError::Timeout`. Since `Transport`
+  is non-retryable, timeouts never triggered retry logic. Fixed in both
+  `rest.rs` and `jsonrpc.rs`.
+- **Bug #33: SSE parser O(n) dequeue** — `SseParser::next_frame()` used
+  `Vec::remove(0)` which shifts all remaining elements. Replaced internal
+  `Vec<Result<SseFrame, SseParseError>>` with `VecDeque` for O(1) `pop_front`.
+- **Bug #34: SSE parser silent UTF-8 data loss** — Malformed UTF-8 lines were
+  silently discarded, causing data loss when multi-byte sequences split across
+  TCP chunks. Now uses `String::from_utf8_lossy()` to preserve data with
+  replacement characters instead of dropping entire lines.
+- **Bug #35: Double-encoded path traversal bypass** — `contains_path_traversal()`
+  only decoded one level of percent-encoding, allowing `%252E%252E` to bypass
+  the check. Now applies two decoding passes to catch double-encoded sequences.
+- **Bug #36: gRPC stream errors lose error context** — `grpc_stream_reader_task`
+  mapped gRPC stream errors to generic `ClientError::Transport` instead of using
+  `grpc_code_to_error_code()`, losing protocol error codes. Fixed to use
+  `ClientError::Protocol(A2aError)` with proper code mapping.
+
+### Added
+
+- **6 new regression tests** — timeout retryability (Bug #32), SSE VecDeque
+  dequeue correctness (Bug #33), SSE lossy UTF-8 (Bug #34), double/single/raw
+  path traversal (Bug #35), exhaustive retryable classification.
+- **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
+  cancel stress test (10 parallel), stale page token graceful handling.
+- **Total E2E tests: 76** (80 with optional gRPC+WebSocket transports).
+
 ### Fixed (Pass 7 — Deep Dogfood)
 
 - **Graceful shutdown executor hang** — `shutdown()` and `shutdown_with_timeout()`
@@ -49,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **4 new E2E tests (72-75)** — push config global limit enforcement, webhook
   URL scheme validation, combined status+context_id ListTasks filter, and
   metrics callback verification.
-- **Total E2E tests: 73** (77 with optional gRPC+WebSocket transports).
+- **Total E2E tests: 68** (73 with optional gRPC+WebSocket transports).
 
 ### Fixed (Pass 6)
 
