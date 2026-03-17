@@ -352,7 +352,10 @@ mod tests {
 
         assert_eq!(response.status(), 200, "status should be 200 OK");
         assert_eq!(
-            response.headers().get("content-type").map(|v| v.as_bytes()),
+            response
+                .headers()
+                .get("content-type")
+                .map(hyper::http::HeaderValue::as_bytes),
             Some(b"text/event-stream".as_slice()),
             "Content-Type should be text/event-stream"
         );
@@ -360,7 +363,7 @@ mod tests {
             response
                 .headers()
                 .get("cache-control")
-                .map(|v| v.as_bytes()),
+                .map(hyper::http::HeaderValue::as_bytes),
             Some(b"no-cache".as_slice()),
             "Cache-Control should be no-cache"
         );
@@ -368,7 +371,7 @@ mod tests {
             response
                 .headers()
                 .get("transfer-encoding")
-                .map(|v| v.as_bytes()),
+                .map(hyper::http::HeaderValue::as_bytes),
             Some(b"chunked".as_slice()),
             "Transfer-Encoding should be chunked"
         );
@@ -376,6 +379,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_sse_response_streams_events() {
+        use crate::streaming::event_queue::EventQueueWriter;
         use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
         use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
         use http_body_util::BodyExt;
@@ -394,7 +398,6 @@ mod tests {
         });
 
         // Write an event then close the writer so the stream terminates.
-        use crate::streaming::event_queue::EventQueueWriter;
         writer.write(event).await.expect("write should succeed");
         drop(writer);
 

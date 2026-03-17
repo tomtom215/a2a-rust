@@ -141,7 +141,7 @@ mod tests {
     fn with_stored_task_sets_task() {
         let task = make_task();
         let ctx = RequestContext::new(make_message("hi"), TaskId::new("t-4"), "ctx-4".to_owned())
-            .with_stored_task(task.clone());
+            .with_stored_task(task);
 
         assert_eq!(
             ctx.stored_task.as_ref().map(|t| &t.id),
@@ -189,7 +189,7 @@ mod tests {
             TaskId::new("t-7"),
             "ctx-7".to_owned(),
         )
-        .with_stored_task(task.clone())
+        .with_stored_task(task)
         .with_metadata(meta.clone());
 
         assert!(

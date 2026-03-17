@@ -131,7 +131,7 @@ async fn task_version_from_u64() {
     assert_eq!(v.get(), 42);
     assert!(TaskVersion::new(2) > TaskVersion::new(1));
     assert!(
-        !(TaskVersion::new(1) > TaskVersion::new(1)),
+        TaskVersion::new(1) <= TaskVersion::new(1),
         "equal versions must not be greater"
     );
 }

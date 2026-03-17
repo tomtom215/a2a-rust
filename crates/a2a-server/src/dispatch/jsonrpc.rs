@@ -575,9 +575,23 @@ fn json_response(status: u16, body: Vec<u8>) -> hyper::Response<BoxBody<Bytes, I
         })
 }
 
+// ── Dispatcher impl ──────────────────────────────────────────────────────────
+
+impl Dispatcher for JsonRpcDispatcher {
+    fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
+    > {
+        Box::pin(self.dispatch(req))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use http_body_util::BodyExt;
     use hyper::header::HeaderValue;
 
     // ── extract_headers ──────────────────────────────────────────────────────
@@ -678,7 +692,6 @@ mod tests {
     #[tokio::test]
     async fn parse_error_response_has_error_code() {
         let resp = parse_error_response(None, "something went wrong");
-        use http_body_util::BodyExt;
         let body_bytes = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
         // JSON-RPC parse error code is -32700.
@@ -728,18 +741,5 @@ mod tests {
         let bytes = error_response_bytes(id, &err);
         let val: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(val["jsonrpc"], "2.0");
-    }
-}
-
-// ── Dispatcher impl ──────────────────────────────────────────────────────────
-
-impl Dispatcher for JsonRpcDispatcher {
-    fn dispatch(
-        &self,
-        req: hyper::Request<Incoming>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = crate::serve::DispatchResponse> + Send + '_>,
-    > {
-        Box::pin(self.dispatch(req))
     }
 }
