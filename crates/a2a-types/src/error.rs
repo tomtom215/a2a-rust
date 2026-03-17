@@ -274,4 +274,178 @@ mod tests {
         let back: A2aError = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.data, Some(data));
     }
+
+    // ── Exhaustive ErrorCode roundtrip tests ──────────────────────────────
+
+    /// Every error code must roundtrip through i32 → ErrorCode → i32.
+    /// A mutation changing any discriminant value will be caught.
+    #[test]
+    fn error_code_roundtrip_all_variants() {
+        let cases: &[(ErrorCode, i32, &str)] = &[
+            (ErrorCode::ParseError, -32700, "Parse error"),
+            (ErrorCode::InvalidRequest, -32600, "Invalid request"),
+            (ErrorCode::MethodNotFound, -32601, "Method not found"),
+            (ErrorCode::InvalidParams, -32602, "Invalid params"),
+            (ErrorCode::InternalError, -32603, "Internal error"),
+            (ErrorCode::TaskNotFound, -32001, "Task not found"),
+            (ErrorCode::TaskNotCancelable, -32002, "Task not cancelable"),
+            (
+                ErrorCode::PushNotificationNotSupported,
+                -32003,
+                "Push notification not supported",
+            ),
+            (ErrorCode::UnsupportedOperation, -32004, "Unsupported operation"),
+            (
+                ErrorCode::ContentTypeNotSupported,
+                -32005,
+                "Content type not supported",
+            ),
+            (
+                ErrorCode::InvalidAgentResponse,
+                -32006,
+                "Invalid agent response",
+            ),
+            (
+                ErrorCode::ExtendedAgentCardNotConfigured,
+                -32007,
+                "Extended agent card not configured",
+            ),
+            (
+                ErrorCode::ExtensionSupportRequired,
+                -32008,
+                "Extension support required",
+            ),
+            (ErrorCode::VersionNotSupported, -32009, "Version not supported"),
+        ];
+
+        for &(code, expected_i32, expected_msg) in cases {
+            // as_i32 returns the correct numeric value
+            assert_eq!(code.as_i32(), expected_i32, "as_i32 mismatch for {code:?}");
+
+            // From<ErrorCode> for i32
+            let n: i32 = code.into();
+            assert_eq!(n, expected_i32, "Into<i32> mismatch for {code:?}");
+
+            // TryFrom<i32> for ErrorCode
+            let back = ErrorCode::try_from(expected_i32).expect("try_from should succeed");
+            assert_eq!(back, code, "TryFrom roundtrip mismatch for {code:?}");
+
+            // default_message returns the expected string
+            assert_eq!(
+                code.default_message(),
+                expected_msg,
+                "default_message mismatch for {code:?}"
+            );
+
+            // Display includes both the message and the numeric code
+            let display = code.to_string();
+            assert!(
+                display.contains(expected_msg),
+                "Display missing message for {code:?}: {display}"
+            );
+            assert!(
+                display.contains(&expected_i32.to_string()),
+                "Display missing code for {code:?}: {display}"
+            );
+        }
+    }
+
+    /// Adjacent integer values must NOT convert to an ErrorCode.
+    /// Catches mutations that widen match arms.
+    #[test]
+    fn error_code_rejects_adjacent_values() {
+        let invalid: &[i32] = &[
+            -32701, -32699, // around ParseError
+            -32599, -32601 + 1, // around InvalidRequest (avoid MethodNotFound)
+            -32000, -32010, // around A2A range boundaries
+            0, 1, -1, i32::MIN, i32::MAX,
+        ];
+        for &v in invalid {
+            // Skip values that are actually valid codes
+            if ErrorCode::try_from(v).is_ok() {
+                continue;
+            }
+            assert_eq!(
+                ErrorCode::try_from(v),
+                Err(v),
+                "value {v} should not convert to ErrorCode"
+            );
+        }
+    }
+
+    // ── Named constructor tests ───────────────────────────────────────────
+
+    #[test]
+    fn named_constructors_use_correct_codes() {
+        assert_eq!(
+            A2aError::task_not_found("t1").code,
+            ErrorCode::TaskNotFound
+        );
+        assert_eq!(
+            A2aError::task_not_cancelable("t1").code,
+            ErrorCode::TaskNotCancelable
+        );
+        assert_eq!(A2aError::internal("x").code, ErrorCode::InternalError);
+        assert_eq!(A2aError::invalid_params("x").code, ErrorCode::InvalidParams);
+        assert_eq!(
+            A2aError::unsupported_operation("x").code,
+            ErrorCode::UnsupportedOperation
+        );
+        assert_eq!(A2aError::parse_error("x").code, ErrorCode::ParseError);
+        assert_eq!(
+            A2aError::invalid_agent_response("x").code,
+            ErrorCode::InvalidAgentResponse
+        );
+        assert_eq!(
+            A2aError::extended_card_not_configured("x").code,
+            ErrorCode::ExtendedAgentCardNotConfigured
+        );
+    }
+
+    #[test]
+    fn named_constructors_include_argument_in_message() {
+        let err = A2aError::task_not_found("my-task-id");
+        assert!(
+            err.message.contains("my-task-id"),
+            "task_not_found should include task_id: {}",
+            err.message
+        );
+
+        let err = A2aError::task_not_cancelable("cancel-me");
+        assert!(
+            err.message.contains("cancel-me"),
+            "task_not_cancelable should include task_id: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn a2a_error_new_has_no_data() {
+        let err = A2aError::new(ErrorCode::InternalError, "msg");
+        assert!(err.data.is_none());
+    }
+
+    #[test]
+    fn a2a_error_with_data_has_some_data() {
+        let err = A2aError::with_data(
+            ErrorCode::InternalError,
+            "msg",
+            serde_json::json!("details"),
+        );
+        assert!(err.data.is_some());
+        assert_eq!(err.data.unwrap(), serde_json::json!("details"));
+    }
+
+    #[test]
+    fn a2a_error_is_std_error() {
+        let err = A2aError::internal("test");
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn a2a_error_display_format() {
+        let err = A2aError::new(ErrorCode::ParseError, "bad json");
+        let s = err.to_string();
+        assert_eq!(s, "[-32700] bad json");
+    }
 }

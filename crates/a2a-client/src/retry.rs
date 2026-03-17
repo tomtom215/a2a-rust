@@ -303,6 +303,52 @@ mod tests {
     }
 
     #[test]
+    fn status_502_is_retryable() {
+        let e = ClientError::UnexpectedStatus {
+            status: 502,
+            body: "Bad Gateway".into(),
+        };
+        assert!(e.is_retryable());
+    }
+
+    #[test]
+    fn status_504_is_retryable() {
+        let e = ClientError::UnexpectedStatus {
+            status: 504,
+            body: "Gateway Timeout".into(),
+        };
+        assert!(e.is_retryable());
+    }
+
+    /// Status codes adjacent to retryable ones must NOT be retryable.
+    #[test]
+    fn status_boundary_not_retryable() {
+        for status in [428, 430, 500, 501, 505] {
+            let e = ClientError::UnexpectedStatus {
+                status,
+                body: String::new(),
+            };
+            assert!(
+                !e.is_retryable(),
+                "status {status} should not be retryable"
+            );
+        }
+    }
+
+    #[test]
+    fn retry_policy_builder_methods() {
+        let p = RetryPolicy::default()
+            .with_max_retries(5)
+            .with_initial_backoff(Duration::from_secs(1))
+            .with_max_backoff(Duration::from_secs(60))
+            .with_backoff_multiplier(3.0);
+        assert_eq!(p.max_retries, 5);
+        assert_eq!(p.initial_backoff, Duration::from_secs(1));
+        assert_eq!(p.max_backoff, Duration::from_secs(60));
+        assert!((p.backoff_multiplier - 3.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn cap_backoff_exact_boundary() {
         // When next == max, should return next (not max via the > branch).
         let result = cap_backoff(Duration::from_secs(5), 1.0, Duration::from_secs(5));

@@ -475,4 +475,188 @@ mod tests {
         );
         assert_eq!(TaskState::Unspecified.to_string(), "TASK_STATE_UNSPECIFIED");
     }
+
+    // ── is_terminal exhaustive ────────────────────────────────────────────
+
+    #[test]
+    fn is_terminal_all_variants() {
+        assert!(!TaskState::Unspecified.is_terminal());
+        assert!(!TaskState::Submitted.is_terminal());
+        assert!(!TaskState::Working.is_terminal());
+        assert!(!TaskState::InputRequired.is_terminal());
+        assert!(!TaskState::AuthRequired.is_terminal());
+        assert!(TaskState::Completed.is_terminal());
+        assert!(TaskState::Failed.is_terminal());
+        assert!(TaskState::Canceled.is_terminal());
+        assert!(TaskState::Rejected.is_terminal());
+    }
+
+    // ── can_transition_to exhaustive ──────────────────────────────────────
+
+    /// All valid transitions per A2A protocol spec.
+    #[test]
+    fn can_transition_to_valid_transitions() {
+        use TaskState::*;
+
+        // Unspecified → anything is valid
+        for &target in &[
+            Unspecified,
+            Submitted,
+            Working,
+            InputRequired,
+            AuthRequired,
+            Completed,
+            Failed,
+            Canceled,
+            Rejected,
+        ] {
+            assert!(
+                Unspecified.can_transition_to(target),
+                "Unspecified → {target:?} should be valid"
+            );
+        }
+
+        // Submitted → Working, Failed, Canceled, Rejected
+        assert!(Submitted.can_transition_to(Working));
+        assert!(Submitted.can_transition_to(Failed));
+        assert!(Submitted.can_transition_to(Canceled));
+        assert!(Submitted.can_transition_to(Rejected));
+
+        // Working → Completed, Failed, Canceled, InputRequired, AuthRequired
+        assert!(Working.can_transition_to(Completed));
+        assert!(Working.can_transition_to(Failed));
+        assert!(Working.can_transition_to(Canceled));
+        assert!(Working.can_transition_to(InputRequired));
+        assert!(Working.can_transition_to(AuthRequired));
+
+        // InputRequired → Working, Failed, Canceled
+        assert!(InputRequired.can_transition_to(Working));
+        assert!(InputRequired.can_transition_to(Failed));
+        assert!(InputRequired.can_transition_to(Canceled));
+
+        // AuthRequired → Working, Failed, Canceled
+        assert!(AuthRequired.can_transition_to(Working));
+        assert!(AuthRequired.can_transition_to(Failed));
+        assert!(AuthRequired.can_transition_to(Canceled));
+    }
+
+    /// All invalid transitions per A2A protocol spec.
+    #[test]
+    fn can_transition_to_invalid_transitions() {
+        use TaskState::*;
+
+        // Terminal states cannot transition anywhere (including to themselves)
+        for &terminal in &[Completed, Failed, Canceled, Rejected] {
+            for &target in &[
+                Unspecified,
+                Submitted,
+                Working,
+                InputRequired,
+                AuthRequired,
+                Completed,
+                Failed,
+                Canceled,
+                Rejected,
+            ] {
+                assert!(
+                    !terminal.can_transition_to(target),
+                    "{terminal:?} → {target:?} should be invalid (terminal state)"
+                );
+            }
+        }
+
+        // Submitted cannot go to Completed, InputRequired, AuthRequired, Submitted, Unspecified
+        assert!(!Submitted.can_transition_to(Completed));
+        assert!(!Submitted.can_transition_to(InputRequired));
+        assert!(!Submitted.can_transition_to(AuthRequired));
+        assert!(!Submitted.can_transition_to(Submitted));
+        assert!(!Submitted.can_transition_to(Unspecified));
+
+        // Working cannot go to Submitted, Working, Unspecified, Rejected
+        assert!(!Working.can_transition_to(Submitted));
+        assert!(!Working.can_transition_to(Working));
+        assert!(!Working.can_transition_to(Unspecified));
+        assert!(!Working.can_transition_to(Rejected));
+
+        // InputRequired cannot go to Completed, Submitted, InputRequired, AuthRequired, Unspecified, Rejected
+        assert!(!InputRequired.can_transition_to(Completed));
+        assert!(!InputRequired.can_transition_to(Submitted));
+        assert!(!InputRequired.can_transition_to(InputRequired));
+        assert!(!InputRequired.can_transition_to(AuthRequired));
+        assert!(!InputRequired.can_transition_to(Unspecified));
+        assert!(!InputRequired.can_transition_to(Rejected));
+
+        // AuthRequired cannot go to Completed, Submitted, InputRequired, AuthRequired, Unspecified, Rejected
+        assert!(!AuthRequired.can_transition_to(Completed));
+        assert!(!AuthRequired.can_transition_to(Submitted));
+        assert!(!AuthRequired.can_transition_to(InputRequired));
+        assert!(!AuthRequired.can_transition_to(AuthRequired));
+        assert!(!AuthRequired.can_transition_to(Unspecified));
+        assert!(!AuthRequired.can_transition_to(Rejected));
+    }
+
+    // ── Newtype coverage ──────────────────────────────────────────────────
+
+    #[test]
+    fn task_id_display_and_as_ref() {
+        let id = TaskId::new("abc");
+        assert_eq!(id.to_string(), "abc");
+        assert_eq!(id.as_ref(), "abc");
+    }
+
+    #[test]
+    fn task_id_from_impls() {
+        let from_str: TaskId = "hello".into();
+        assert_eq!(from_str, TaskId::new("hello"));
+
+        let from_string: TaskId = String::from("world").into();
+        assert_eq!(from_string, TaskId::new("world"));
+    }
+
+    #[test]
+    fn context_id_display_and_as_ref() {
+        let id = ContextId::new("ctx");
+        assert_eq!(id.to_string(), "ctx");
+        assert_eq!(id.as_ref(), "ctx");
+    }
+
+    #[test]
+    fn context_id_from_impls() {
+        let from_str: ContextId = "c1".into();
+        assert_eq!(from_str, ContextId::new("c1"));
+
+        let from_string: ContextId = String::from("c2").into();
+        assert_eq!(from_string, ContextId::new("c2"));
+    }
+
+    #[test]
+    fn task_version_display() {
+        assert_eq!(TaskVersion::new(42).to_string(), "42");
+        assert_eq!(TaskVersion::new(0).to_string(), "0");
+    }
+
+    #[test]
+    fn task_version_from_u64() {
+        let v: TaskVersion = 99u64.into();
+        assert_eq!(v.get(), 99);
+    }
+
+    #[test]
+    fn task_status_with_timestamp_has_timestamp() {
+        let status = TaskStatus::with_timestamp(TaskState::Working);
+        assert!(
+            status.timestamp.is_some(),
+            "with_timestamp should set timestamp"
+        );
+        assert!(status.message.is_none());
+        assert_eq!(status.state, TaskState::Working);
+    }
+
+    #[test]
+    fn task_status_new_has_no_timestamp() {
+        let status = TaskStatus::new(TaskState::Submitted);
+        assert!(status.timestamp.is_none());
+        assert!(status.message.is_none());
+        assert_eq!(status.state, TaskState::Submitted);
+    }
 }

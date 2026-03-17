@@ -201,6 +201,115 @@ mod tests {
         assert!(transport_err.source().is_none());
     }
 
+    // ── Display tests for every variant ────────────────────────────────
+
+    #[test]
+    fn client_error_display_transport() {
+        let e = ClientError::Transport("socket closed".into());
+        let s = e.to_string();
+        assert!(s.contains("transport error"), "missing prefix: {s}");
+        assert!(s.contains("socket closed"), "missing message: {s}");
+    }
+
+    #[test]
+    fn client_error_display_invalid_endpoint() {
+        let e = ClientError::InvalidEndpoint("bad url".into());
+        let s = e.to_string();
+        assert!(s.contains("invalid endpoint"), "missing prefix: {s}");
+        assert!(s.contains("bad url"), "missing message: {s}");
+    }
+
+    #[test]
+    fn client_error_display_auth_required() {
+        let e = ClientError::AuthRequired {
+            task_id: TaskId::new("task-7"),
+        };
+        let s = e.to_string();
+        assert!(s.contains("authentication required"), "missing prefix: {s}");
+        assert!(s.contains("task-7"), "missing task_id: {s}");
+    }
+
+    #[test]
+    fn client_error_display_timeout() {
+        let e = ClientError::Timeout("30s elapsed".into());
+        let s = e.to_string();
+        assert!(s.contains("timeout"), "missing prefix: {s}");
+        assert!(s.contains("30s elapsed"), "missing message: {s}");
+    }
+
+    #[test]
+    fn client_error_display_protocol_binding_mismatch() {
+        let e = ClientError::ProtocolBindingMismatch("expected REST".into());
+        let s = e.to_string();
+        assert!(
+            s.contains("protocol binding mismatch"),
+            "missing prefix: {s}"
+        );
+        assert!(s.contains("expected REST"), "missing message: {s}");
+        assert!(
+            s.contains("supported_interfaces"),
+            "missing advice: {s}"
+        );
+    }
+
+    #[test]
+    fn client_error_display_serialization() {
+        let e = ClientError::Serialization(serde_json::from_str::<String>("bad").unwrap_err());
+        let s = e.to_string();
+        assert!(s.contains("serialization error"), "missing prefix: {s}");
+    }
+
+    #[test]
+    fn client_error_display_unexpected_status() {
+        let e = ClientError::UnexpectedStatus {
+            status: 500,
+            body: "Internal Server Error".into(),
+        };
+        let s = e.to_string();
+        assert!(s.contains("500"), "missing status code: {s}");
+        assert!(
+            s.contains("Internal Server Error"),
+            "missing body: {s}"
+        );
+    }
+
+    // ── Error::source coverage ────────────────────────────────────────────
+
+    #[test]
+    fn client_error_source_none_for_string_variants() {
+        use std::error::Error;
+        let cases: Vec<ClientError> = vec![
+            ClientError::HttpClient("msg".into()),
+            ClientError::Transport("msg".into()),
+            ClientError::InvalidEndpoint("msg".into()),
+            ClientError::UnexpectedStatus {
+                status: 404,
+                body: String::new(),
+            },
+            ClientError::AuthRequired {
+                task_id: TaskId::new("t"),
+            },
+            ClientError::Timeout("msg".into()),
+            ClientError::ProtocolBindingMismatch("msg".into()),
+        ];
+        for e in &cases {
+            assert!(
+                e.source().is_none(),
+                "{:?} should have no source",
+                std::mem::discriminant(e)
+            );
+        }
+    }
+
+    // ── From impls ────────────────────────────────────────────────────────
+
+    #[test]
+    fn client_error_from_serde_json_error() {
+        let serde_err = serde_json::from_str::<String>("not json").unwrap_err();
+        let e: ClientError = serde_err.into();
+        assert!(matches!(e, ClientError::Serialization(_)));
+    }
+
     /// Verify all retryable/non-retryable classifications.
     #[test]
     fn retryable_classification_exhaustive() {
