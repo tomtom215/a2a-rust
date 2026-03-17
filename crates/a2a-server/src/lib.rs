@@ -35,8 +35,8 @@
 //!
 //! # gRPC transport
 //!
-//! Enable the `grpc` feature flag to use [`GrpcDispatcher`] for gRPC
-//! transport (tonic-backed). See [`dispatch::grpc`] for details.
+//! Enable the `grpc` feature flag to use `GrpcDispatcher` for gRPC
+//! transport (tonic-backed). See the `dispatch::grpc` module for details.
 //!
 //! # Rate limiting
 //!
