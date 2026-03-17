@@ -210,6 +210,11 @@ mod tests {
         JsonRpcSuccessResponse, JsonRpcVersion, TaskId, TaskState, TaskStatus,
         TaskStatusUpdateEvent,
     };
+    use std::time::Duration;
+
+    /// Generous per-test timeout to prevent async tests from hanging
+    /// when mutations break the SSE parser or event stream logic.
+    const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
     fn make_status_event(state: TaskState, _is_final: bool) -> StreamResponse {
         StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
@@ -244,7 +249,10 @@ mod tests {
         tx.send(Ok(Bytes::from(sse_bytes))).await.unwrap();
         drop(tx);
 
-        let result = stream.next().await.unwrap();
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
         assert!(result.is_ok());
         assert!(matches!(result.unwrap(), StreamResponse::StatusUpdate(_)));
     }
@@ -259,11 +267,17 @@ mod tests {
         tx.send(Ok(Bytes::from(sse_bytes))).await.unwrap();
 
         // First next() returns the final event.
-        let result = stream.next().await.unwrap();
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out waiting for final event")
+            .unwrap();
         assert!(result.is_ok());
 
         // Second next() returns None — stream is done.
-        assert!(stream.next().await.is_none());
+        let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out waiting for stream end");
+        assert!(end.is_none());
     }
 
     #[tokio::test]
@@ -275,7 +289,10 @@ mod tests {
             .await
             .unwrap();
 
-        let result = stream.next().await.unwrap();
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
         assert!(result.is_err());
     }
 
@@ -285,7 +302,10 @@ mod tests {
         let mut stream = EventStream::new(rx);
         drop(tx);
 
-        assert!(stream.next().await.is_none());
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
+        assert!(result.is_none());
     }
 
     #[tokio::test]
@@ -296,14 +316,16 @@ mod tests {
             // Keep the sender alive so the channel doesn't close.
             let _tx = tx;
             // Sleep forever — this will be aborted by EventStream::drop.
-            tokio::time::sleep(std::time::Duration::from_secs(60 * 60)).await;
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         });
         let abort_handle = handle.abort_handle();
         let stream = EventStream::with_abort_handle(rx, abort_handle);
         // Drop the stream, which should abort the task.
         drop(stream);
         // The spawned task should finish with a cancelled error.
-        let result = handle.await;
+        let result = tokio::time::timeout(TEST_TIMEOUT, handle)
+            .await
+            .expect("timed out waiting for task abort");
         assert!(result.is_err(), "task should have been aborted");
         assert!(
             result.unwrap_err().is_cancelled(),
@@ -350,18 +372,29 @@ mod tests {
             .unwrap();
 
         // First call should return the Working event.
-        let first = stream.next().await.unwrap().unwrap();
+        let first = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out on first event")
+            .unwrap()
+            .unwrap();
         assert!(
             matches!(first, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Working)
         );
 
         // Second call should return the Completed event (stream didn't end early).
-        let second = stream.next().await.unwrap().unwrap();
+        let second = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out on second event")
+            .unwrap()
+            .unwrap();
         assert!(
             matches!(second, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Completed)
         );
 
         // Now the stream should be done because Completed is terminal.
-        assert!(stream.next().await.is_none());
+        let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out waiting for stream end");
+        assert!(end.is_none());
     }
 }

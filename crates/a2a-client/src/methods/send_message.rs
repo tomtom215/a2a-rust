@@ -215,16 +215,22 @@ mod tests {
 
     #[test]
     fn apply_config_sets_accepted_output_modes_when_empty() {
-        let config = ClientConfig {
-            accepted_output_modes: vec!["text/plain".into()],
-            ..ClientConfig::default()
-        };
+        let mut config = ClientConfig::default();
+        config.accepted_output_modes = vec!["audio/wav".into()];
 
         let mut params = make_params();
+        // Explicitly set empty modes so the config value is applied.
+        // (SendMessageConfiguration::default() has non-empty modes, so we must override.)
+        params.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec![],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: None,
+        });
         apply_client_config(&mut params, &config);
 
         let cfg = params.configuration.unwrap();
-        assert_eq!(cfg.accepted_output_modes, vec!["text/plain"]);
+        assert_eq!(cfg.accepted_output_modes, vec!["audio/wav"]);
     }
 
     #[test]

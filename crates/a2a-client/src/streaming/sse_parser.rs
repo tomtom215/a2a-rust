@@ -475,21 +475,16 @@ mod tests {
     #[test]
     fn default_max_event_size_is_16mib() {
         // DEFAULT_MAX_EVENT_SIZE = 16 * 1024 * 1024 = 16_777_216
-        // If mutated to 16 + 1024 + 1024 = 2064, this test will fail.
-        let p = SseParser::new();
-        // Feed data that is larger than 2064 but smaller than 16 MiB.
-        // If the default were wrong (e.g. 2064), this would produce an error.
-        let data = format!("data: {}\n\n", "x".repeat(4096));
+        // Mutation `replace * with +` at position 42 yields 16 * 1024 + 1024 = 17_408.
+        // Feed data larger than 17_408 to kill that mutation.
+        let data = format!("data: {}\n\n", "x".repeat(20_000));
         let mut parser = SseParser::new();
         parser.feed(data.as_bytes());
         let frame = parser.next_frame().expect("should have a frame");
         assert!(
             frame.is_ok(),
-            "4096-byte event should be within default limit"
+            "20_000-byte event should be within default 16 MiB limit"
         );
-        // Also verify the exact constant value via with_max_event_size boundary.
-        // A parser with exactly 16*1024*1024 should accept 16*1024*1024 bytes of data.
-        let _ = p;
     }
 
     #[test]
@@ -653,6 +648,26 @@ mod tests {
         assert!(
             p.next_frame().is_none(),
             "After first BOM-only feed (3 bytes), bom_checked should be true"
+        );
+    }
+
+    #[test]
+    fn bom_only_feed_then_bom_data_kills_or_to_and_mutation() {
+        // Kill mutation: `replace || with && in SseParser::feed` (line 163)
+        // Feed exactly 3 BOM bytes. After stripping, input is empty.
+        // Original: `!input.is_empty() || bytes.len() >= 3` → `false || true` → true
+        // Mutated:  `!input.is_empty() && bytes.len() >= 3` → `false && true` → false
+        // With mutation, bom_checked stays false, so a second BOM would be stripped.
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB\xBF"); // exactly 3 BOM bytes
+        // Immediately feed BOM + data. If bom_checked was not set (mutation),
+        // the BOM is stripped again and "data: stolen" is parsed as a frame.
+        p.feed(b"\xEF\xBB\xBFdata: stolen\n\n");
+        // With correct code: bom_checked=true after first feed → BOM not stripped
+        // → line is unknown field → no frame.
+        assert!(
+            p.next_frame().is_none(),
+            "BOM-only feed should mark bom_checked; second BOM must not be stripped"
         );
     }
 
