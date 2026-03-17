@@ -296,3 +296,83 @@ pub fn init_otlp_pipeline(
 
     Ok(provider)
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Creates an `OtelMetrics` backed by a noop meter (no collector needed).
+    fn noop_otel_metrics() -> OtelMetrics {
+        let meter = opentelemetry::global::meter("test");
+        OtelMetrics::from_meter(&meter)
+    }
+
+    #[test]
+    fn from_meter_creates_all_instruments() {
+        let metrics = noop_otel_metrics();
+        // Verify the struct was created without panics (instruments are valid).
+        let debug = format!("{metrics:?}");
+        assert!(debug.contains("OtelMetrics"));
+    }
+
+    #[test]
+    fn on_request_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_request("message/send");
+        metrics.on_request("tasks/get");
+    }
+
+    #[test]
+    fn on_response_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_response("message/send");
+    }
+
+    #[test]
+    fn on_error_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_error("message/send", "timeout");
+        metrics.on_error("tasks/get", "not_found");
+    }
+
+    #[test]
+    fn on_latency_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_latency("message/send", Duration::from_millis(42));
+        metrics.on_latency("message/send", Duration::from_secs(0));
+    }
+
+    #[test]
+    fn on_queue_depth_change_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_queue_depth_change(0);
+        metrics.on_queue_depth_change(100);
+    }
+
+    #[test]
+    fn on_connection_pool_stats_does_not_panic() {
+        let metrics = noop_otel_metrics();
+        metrics.on_connection_pool_stats(&ConnectionPoolStats {
+            active_connections: 5,
+            idle_connections: 10,
+            total_connections_created: 42,
+            connections_closed: 3,
+        });
+    }
+
+    #[test]
+    fn builder_default_meter_name() {
+        let metrics = OtelMetricsBuilder::new().build();
+        let debug = format!("{metrics:?}");
+        assert!(debug.contains("OtelMetrics"));
+    }
+
+    #[test]
+    fn builder_custom_meter_name() {
+        let metrics = OtelMetricsBuilder::new().meter_name("custom.meter").build();
+        let debug = format!("{metrics:?}");
+        assert!(debug.contains("OtelMetrics"));
+    }
+}

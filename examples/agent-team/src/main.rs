@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (71 tests, 76 with optional transports) that exercises every major SDK feature.
+//! suite (72 tests, 80 with optional transports, signing, and OTel) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -297,6 +297,10 @@ async fn main() {
     #[cfg(feature = "signing")]
     results.push(coverage_gaps::test_agent_card_signing(&ctx).await);
 
+    // Test 80: OtelMetrics integration (otel feature)
+    #[cfg(feature = "otel")]
+    results.push(coverage_gaps::test_otel_metrics_integration(&ctx).await);
+
     // ── Report ───────────────────────────────────────────────────────────
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
@@ -394,6 +398,8 @@ async fn main() {
         "gRPC transport (SendMessage + streaming + GetTask)",
         #[cfg(feature = "signing")]
         "Agent card signing (JWS ES256, sign + verify + tamper detection)",
+        #[cfg(feature = "otel")]
+        "OpenTelemetry metrics (OtelMetrics with noop provider)",
     ];
     for f in &features {
         println!("║   [x] {f}");

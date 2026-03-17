@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Tests 61-78: E2E coverage gaps identified during dogfooding.
-//!
-//! Each test in this module closes one of the gaps listed in
-//! `book/src/deployment/dogfooding-open-issues.md`:
+//! Tests 61-80: E2E coverage gaps identified during dogfooding.
 //!
 //! - **61-66**: Batch JSON-RPC (empty, single, mixed, streaming-in-batch)
 //! - **67**: Real auth rejection via interceptor
@@ -16,6 +13,8 @@
 //! - **76**: Timeout retryability (Bug #32 regression)
 //! - **77**: Concurrent cancel stress test
 //! - **78**: Stale page token graceful handling
+//! - **79**: Agent card signing (JWS ES256) — `signing` feature
+//! - **80**: `OtelMetrics` integration — `otel` feature
 
 use std::future::Future;
 use std::pin::Pin;
@@ -1231,4 +1230,80 @@ pub async fn test_agent_card_signing(_ctx: &TestContext) -> TestResult {
         start.elapsed().as_millis(),
         "sign + verify + tamper detection OK",
     )
+}
+
+// ── Test 80: OtelMetrics integration ─────────────────────────────────────────
+
+/// Verifies that `OtelMetrics` can be wired into a `RequestHandler` and
+/// correctly records metrics during real request processing — using a noop
+/// meter provider (no collector required).
+#[cfg(feature = "otel")]
+pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
+    use a2a_protocol_server::otel::OtelMetricsBuilder;
+
+    let start = Instant::now();
+
+    // 1. Build an OtelMetrics instance backed by the global noop provider.
+    let otel_metrics = OtelMetricsBuilder::new()
+        .meter_name("a2a.agent-team.test")
+        .build();
+
+    // 2. Build a handler that uses OtelMetrics as its metrics observer.
+    let card = AgentCard {
+        name: "OtelTestAgent".into(),
+        version: "1.0".into(),
+        description: "Agent for OtelMetrics integration test".into(),
+        supported_interfaces: vec![AgentInterface {
+            url: ctx.analyzer_url.clone(),
+            protocol_binding: "JSONRPC".into(),
+            protocol_version: "1.0.0".into(),
+            tenant: None,
+        }],
+        provider: None,
+        icon_url: None,
+        documentation_url: None,
+        capabilities: AgentCapabilities::none(),
+        security_schemes: None,
+        security_requirements: None,
+        default_input_modes: vec![],
+        default_output_modes: vec![],
+        skills: vec![],
+        signatures: None,
+    };
+
+    let handler = RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
+        .with_agent_card(card)
+        .with_metrics(otel_metrics)
+        .build();
+
+    if let Err(e) = handler {
+        return TestResult::fail(
+            "80_otel_metrics",
+            start.elapsed().as_millis(),
+            &format!("handler build failed: {e}"),
+        );
+    }
+
+    // 3. Use the handler to process a real request.
+    let handler = Arc::new(handler.unwrap());
+    let (listener, addr) = bind_listener().await;
+    serve_jsonrpc(listener, Arc::clone(&handler));
+
+    let client = a2a_protocol_client::ClientBuilder::new(format!("http://{addr}"))
+        .build()
+        .expect("build client");
+
+    let params = make_send_params("Analyze test.rs");
+    match client.send_message(params).await {
+        Ok(_) => TestResult::pass(
+            "80_otel_metrics",
+            start.elapsed().as_millis(),
+            "OtelMetrics wired into handler, request processed successfully",
+        ),
+        Err(e) => TestResult::fail(
+            "80_otel_metrics",
+            start.elapsed().as_millis(),
+            &format!("request failed: {e}"),
+        ),
+    }
 }

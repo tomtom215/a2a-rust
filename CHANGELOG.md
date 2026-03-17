@@ -339,8 +339,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cargo-fuzz target for JSON deserialization of all major protocol types.
 - `docs/ROADMAP.md` documenting planned beyond-spec extensions (request IDs,
   metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
-- `LESSONS.md` pitfalls catalog with entries for serde, hyper, SSE, push
-  notifications, async/tokio, workspace, and testing gotchas.
+- Pitfalls catalog (`book/src/reference/pitfalls.md`) with entries for serde,
+  hyper, SSE, push notifications, async/tokio, workspace, and testing gotchas.
 
 ### Changed
 

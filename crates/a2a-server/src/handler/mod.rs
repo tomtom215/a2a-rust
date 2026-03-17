@@ -38,6 +38,8 @@ use crate::metrics::Metrics;
 use crate::push::{PushConfigStore, PushSender};
 use crate::store::TaskStore;
 use crate::streaming::{EventQueueManager, InMemoryQueueReader};
+use crate::tenant_config::PerTenantConfig;
+use crate::tenant_resolver::TenantResolver;
 
 pub use limits::HandlerLimits;
 
@@ -69,6 +71,8 @@ pub struct RequestHandler {
     pub(crate) executor_timeout: Option<Duration>,
     pub(crate) metrics: Arc<dyn Metrics>,
     pub(crate) limits: HandlerLimits,
+    pub(crate) tenant_resolver: Option<Arc<dyn TenantResolver>>,
+    pub(crate) tenant_config: Option<PerTenantConfig>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
 }
@@ -82,6 +86,26 @@ pub(crate) struct CancellationEntry {
     pub(crate) created_at: Instant,
 }
 
+impl RequestHandler {
+    /// Returns the tenant resolver, if configured.
+    ///
+    /// Use this in dispatchers or middleware to resolve the tenant identity
+    /// from a [`CallContext`](crate::CallContext) before processing a request.
+    #[must_use]
+    pub fn tenant_resolver(&self) -> Option<&dyn TenantResolver> {
+        self.tenant_resolver.as_deref()
+    }
+
+    /// Returns the per-tenant configuration, if configured.
+    ///
+    /// Use this alongside [`tenant_resolver`](Self::tenant_resolver) to look up
+    /// resource limits for the resolved tenant.
+    #[must_use]
+    pub const fn tenant_config(&self) -> Option<&PerTenantConfig> {
+        self.tenant_config.as_ref()
+    }
+}
+
 impl std::fmt::Debug for RequestHandler {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RequestHandler")
@@ -90,6 +114,8 @@ impl std::fmt::Debug for RequestHandler {
             .field("interceptors", &self.interceptors)
             .field("agent_card", &self.agent_card.is_some())
             .field("metrics", &"<dyn Metrics>")
+            .field("tenant_resolver", &self.tenant_resolver.is_some())
+            .field("tenant_config", &self.tenant_config)
             .finish_non_exhaustive()
     }
 }

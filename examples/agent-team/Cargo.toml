@@ -35,6 +35,8 @@ grpc = [
 ]
 ## Enable agent card signing tests.
 signing = ["a2a-protocol-types/signing", "dep:ring", "dep:base64"]
+## Enable OpenTelemetry metrics (noop provider for testing).
+otel = ["a2a-protocol-server/otel"]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-types" }

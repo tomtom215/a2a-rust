@@ -9,6 +9,31 @@
 
 ---
 
+## Beyond-Spec Enhancements (All Complete)
+
+All proposed beyond-spec features have been implemented:
+
+| Feature | Location | Details |
+|---|---|---|
+| **OpenTelemetry integration** | `crates/a2a-server/src/otel.rs` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
+| **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
+| **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
+| **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
+| **Per-tenant configuration** | `crates/a2a-server/src/tenant_config.rs` | `PerTenantConfig`, `TenantLimits` with per-tenant overrides |
+| **TenantResolver trait** | `crates/a2a-server/src/tenant_resolver.rs` | `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver` |
+| **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps.rs` | `test_agent_card_signing` with ES256 key generation (`#[cfg(feature = "signing")]`) |
+| **Request ID propagation** | `crates/a2a-server/src/call_context.rs` | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
+| **Metrics hooks** | `crates/a2a-server/src/metrics.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
+| **Rate limiting** | `crates/a2a-server/src/rate_limit.rs` | `RateLimitInterceptor` with fixed-window per-caller counters |
+| **gRPC transport** | `crates/a2a-server/src/dispatch/grpc.rs` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
+| **WebSocket transport** | `crates/a2a-server/src/dispatch/websocket.rs` | `WebSocketDispatcher` + `WebSocketTransport` via `tokio-tungstenite` (`websocket` feature) |
+| **Multi-tenancy** | `crates/a2a-server/src/store/tenant*.rs` | In-memory via `task_local!`, SQLite via `tenant_id` column partitioning |
+| **Persistent task store** | `crates/a2a-server/src/store/sqlite_store.rs` | `SqliteTaskStore` + `SqlitePushConfigStore` behind `sqlite` feature flag |
+
+See the book's [Configuration Reference](../../book/src/reference/configuration.md) for usage details.
+
+---
+
 ## Table of Contents
 
 1. [Goals and Non-Goals](#1-goals-and-non-goals)
@@ -109,7 +134,6 @@ a2a-rust/
 ├── Cargo.lock
 ├── LICENSE                     # Apache-2.0
 ├── README.md
-├── LESSONS.md                  # Pitfall catalog
 ├── CONTRIBUTING.md
 ├── rust-toolchain.toml         # channel = "stable", components = [rustfmt, clippy]
 ├── deny.toml                   # cargo-deny: licenses, advisories, duplicates
@@ -414,7 +438,7 @@ crates/a2a-server/tests/
 | Workspace `Cargo.toml` with `[profile.release]` | ✅ |
 | `rust-toolchain.toml` pinned to stable | ✅ |
 | `deny.toml`, `clippy.toml` | ✅ |
-| README, LESSONS, CONTRIBUTING | ✅ |
+| README, CONTRIBUTING, Pitfalls catalog | ✅ |
 | Empty crate stubs | ✅ |
 
 ---

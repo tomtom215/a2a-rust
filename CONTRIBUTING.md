@@ -193,7 +193,7 @@ cargo test -p a2a-protocol-client --features tls-rustls
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
-- [ ] `LESSONS.md` updated if a non-obvious pitfall was encountered
+- [ ] `book/src/reference/pitfalls.md` updated if a non-obvious pitfall was encountered
 - [ ] ADR created or updated if an architectural decision was made or revised
 
 ---

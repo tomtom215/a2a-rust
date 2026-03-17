@@ -36,6 +36,29 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
-## Current Version
+## Latest (Unreleased)
 
-See the [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) for the latest release notes and version history.
+### Beyond-Spec Enhancements
+
+- **OpenTelemetry metrics** (`otel` feature) — `OtelMetrics` with native OTLP export
+- **Connection pool metrics** — `ConnectionPoolStats` and `on_connection_pool_stats` callback
+- **Hot-reload agent cards** — `HotReloadAgentCardHandler` with file polling and SIGHUP
+- **Store migration tooling** (`sqlite` feature) — `MigrationRunner` with V1–V3 built-in migrations
+- **Per-tenant configuration** — `PerTenantConfig` and `TenantLimits` for differentiated service levels
+- **`TenantResolver` trait** — `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver`
+- **Agent card signing E2E** — test 79 in agent-team suite (`signing` feature)
+
+### Bug Fixes (Passes 7–8)
+
+- Timeout errors now correctly classified as retryable (`ClientError::Timeout`)
+- SSE parser O(n) dequeue replaced with `VecDeque` for O(1) `pop_front`
+- Double-encoded path traversal bypass fixed with two-pass percent-decoding
+- gRPC stream errors now preserve protocol error codes
+- Rate limiter TOCTOU race fixed with CAS loop
+- Push config store now enforces global limits (DoS prevention)
+
+### v0.2.0 (2026-03-15)
+
+Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests.
+
+For the complete version history, see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).

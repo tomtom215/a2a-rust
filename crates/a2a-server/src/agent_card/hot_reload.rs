@@ -6,7 +6,7 @@
 //! [`HotReloadAgentCardHandler`] wraps an [`AgentCard`] behind an
 //! [`Arc<RwLock<_>>`](std::sync::Arc) so the card can be replaced at runtime
 //! without restarting the server. The handler implements [`AgentCardProducer`]
-//! and can therefore be used with [`DynamicAgentCardHandler`].
+//! and can therefore be used with [`DynamicAgentCardHandler`](super::DynamicAgentCardHandler).
 //!
 //! Three reload strategies are provided:
 //!
