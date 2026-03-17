@@ -392,4 +392,24 @@ mod tests {
         let session: SessionId = String::from("owned").into();
         assert_eq!(session, SessionId::new("owned"));
     }
+
+    #[test]
+    fn auth_interceptor_debug_contains_fields() {
+        let store = Arc::new(InMemoryCredentialsStore::new());
+        let session = SessionId::new("debug-session");
+        let interceptor = AuthInterceptor::new(store, session);
+        let debug = format!("{interceptor:?}");
+        assert!(
+            debug.contains("AuthInterceptor"),
+            "debug output missing struct name: {debug}"
+        );
+        assert!(
+            debug.contains("debug-session"),
+            "debug output missing session: {debug}"
+        );
+        assert!(
+            debug.contains("bearer"),
+            "debug output missing scheme: {debug}"
+        );
+    }
 }

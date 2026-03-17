@@ -258,6 +258,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn chain_is_empty_when_new() {
+        let chain = InterceptorChain::new();
+        assert!(chain.is_empty(), "new chain should be empty");
+    }
+
+    #[test]
+    fn chain_is_not_empty_after_push() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let mut chain = InterceptorChain::new();
+        chain.push(CountingInterceptor(Arc::clone(&counter)));
+        assert!(!chain.is_empty(), "chain with one interceptor should not be empty");
+    }
+
     #[tokio::test]
     async fn chain_runs_before_in_order() {
         let counter = Arc::new(AtomicUsize::new(0));
