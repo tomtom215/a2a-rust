@@ -324,10 +324,7 @@ mod tests {
         let before = TenantContext::current();
         assert_eq!(before, "");
 
-        let inside = TenantContext::scope("acme", async {
-            TenantContext::current()
-        })
-        .await;
+        let inside = TenantContext::scope("acme", async { TenantContext::current() }).await;
         assert_eq!(inside, "acme", "scope should set the tenant");
 
         let after = TenantContext::current();
@@ -506,16 +503,10 @@ mod tests {
         })
         .await;
 
-        let count_x = TenantContext::scope("x", async {
-            store.count().await.unwrap()
-        })
-        .await;
+        let count_x = TenantContext::scope("x", async { store.count().await.unwrap() }).await;
         assert_eq!(count_x, 2, "tenant x should have 2 tasks");
 
-        let count_y = TenantContext::scope("y", async {
-            store.count().await.unwrap()
-        })
-        .await;
+        let count_y = TenantContext::scope("y", async { store.count().await.unwrap() }).await;
         assert_eq!(count_y, 1, "tenant y should have 1 task");
     }
 
@@ -601,10 +592,7 @@ mod tests {
         })
         .await;
 
-        let count = TenantContext::scope("only", async {
-            store.count().await.unwrap()
-        })
-        .await;
+        let count = TenantContext::scope("only", async { store.count().await.unwrap() }).await;
         assert_eq!(count, 2, "existing tenant can add more tasks");
     }
 
@@ -620,10 +608,7 @@ mod tests {
             .await
             .unwrap();
 
-        let fetched = store
-            .get(&TaskId::new("default-task"))
-            .await
-            .unwrap();
+        let fetched = store.get(&TaskId::new("default-task")).await.unwrap();
         assert!(
             fetched.is_some(),
             "task saved without tenant context should be retrievable without context"

@@ -89,9 +89,9 @@ impl RequestHandler {
 mod tests {
     use super::*;
 
+    use a2a_protocol_types::error::A2aResult;
     use std::future::Future;
     use std::pin::Pin;
-    use a2a_protocol_types::error::A2aResult;
 
     use crate::builder::RequestHandlerBuilder;
     use crate::executor::AgentExecutor;

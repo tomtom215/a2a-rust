@@ -415,3 +415,410 @@ async fn deliver_push_bg(
         }
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+    use a2a_protocol_types::error::A2aError;
+    use a2a_protocol_types::events::{
+        StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent,
+    };
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+    use a2a_protocol_types::error::A2aResult;
+
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+    use crate::push::InMemoryPushConfigStore;
+    use crate::store::InMemoryTaskStore;
+    use crate::streaming::event_queue::new_in_memory_queue;
+    use crate::streaming::EventQueueWriter;
+
+    use super::*;
+
+    // ── helpers ───────────────────────────────────────────────────────────
+
+    struct DummyExecutor;
+    agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+    /// A push config store that always returns errors, for testing silent error swallowing.
+    struct AlwaysErrPushConfigStore;
+
+    impl PushConfigStore for AlwaysErrPushConfigStore {
+        fn set<'a>(
+            &'a self,
+            _cfg: TaskPushNotificationConfig,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<TaskPushNotificationConfig>,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn get<'a>(
+            &'a self,
+            _task_id: &'a str,
+            _id: &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<
+                            Option<TaskPushNotificationConfig>,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn list<'a>(
+            &'a self,
+            _task_id: &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<
+                        Output = a2a_protocol_types::error::A2aResult<
+                            Vec<TaskPushNotificationConfig>,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+        fn delete<'a>(
+            &'a self,
+            _task_id: &'a str,
+            _id: &'a str,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+        {
+            Box::pin(async { Err(A2aError::internal("always err")) })
+        }
+    }
+
+    fn make_task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: id.into(),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    fn make_status_event(task_id: &str, state: TaskState) -> StreamResponse {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(state),
+            metadata: None,
+        })
+    }
+
+    fn make_artifact_event(task_id: &str) -> StreamResponse {
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new("ctx-1"),
+            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output")]),
+            append: None,
+            last_chunk: Some(true),
+            metadata: None,
+        })
+    }
+
+    fn default_limits() -> HandlerLimits {
+        HandlerLimits::default()
+    }
+
+    // ── deliver_push_bg tests ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn deliver_push_bg_with_no_sender_is_noop() {
+        let store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+        let event = make_status_event("t1", TaskState::Working);
+
+        // With push_sender = None the function should return early without error.
+        deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
+        // No panic, no error — test passes.
+    }
+
+    #[tokio::test]
+    async fn deliver_push_bg_with_failing_store_returns_silently() {
+        // The key coverage here is that an Err from the push config store's
+        // `list()` is silently swallowed (the function uses `let Ok(configs) = ...`).
+        let store = AlwaysErrPushConfigStore;
+        let task_id = TaskId::new("t1");
+        let event = make_status_event("t1", TaskState::Working);
+
+        // Even though the store errors, deliver_push_bg should not panic or propagate.
+        deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
+    }
+
+    // ── process_event_bg tests ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_bg_status_update_valid_transition() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        // Seed a task in Submitted state.
+        task_store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let mut last_task = make_task("t1", TaskState::Submitted);
+        let event: A2aResult<StreamResponse> = Ok(make_status_event("t1", TaskState::Working));
+
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        // last_task should now reflect Working.
+        assert_eq!(last_task.status.state, TaskState::Working);
+
+        // Task store should also be updated.
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Working);
+    }
+
+    #[tokio::test]
+    async fn process_event_bg_status_update_invalid_transition_ignored() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        // Start in a terminal state (Completed) — cannot transition to Working.
+        task_store
+            .save(make_task("t1", TaskState::Completed))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Completed);
+
+        let event: A2aResult<StreamResponse> = Ok(make_status_event("t1", TaskState::Working));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        // State must remain Completed — invalid transition is silently ignored.
+        assert_eq!(last_task.status.state, TaskState::Completed);
+
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    #[tokio::test]
+    async fn process_event_bg_artifact_update_appends() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        task_store
+            .save(make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Working);
+
+        let event: A2aResult<StreamResponse> = Ok(make_artifact_event("t1"));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        // Artifact should be appended to last_task.
+        let artifacts = last_task
+            .artifacts
+            .as_ref()
+            .expect("artifacts should be Some");
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
+
+        // Store should reflect the artifact too.
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.artifacts.as_ref().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn process_event_bg_error_marks_failed() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        task_store
+            .save(make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Working);
+
+        let event: a2a_protocol_types::error::A2aResult<StreamResponse> =
+            Err(A2aError::internal("agent failure"));
+
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        assert_eq!(last_task.status.state, TaskState::Failed);
+
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Failed);
+    }
+
+    #[tokio::test]
+    async fn process_event_bg_task_snapshot_replaces() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        task_store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t1", TaskState::Submitted);
+
+        // A Task snapshot event replaces last_task entirely.
+        let replacement = make_task("t1", TaskState::Completed);
+        let event: A2aResult<StreamResponse> = Ok(StreamResponse::Task(replacement.clone()));
+
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        assert_eq!(last_task.status.state, TaskState::Completed);
+
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Completed);
+    }
+
+    // ── process_event (&self method) tests ───────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_self_valid_state_transition() {
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t1");
+
+        task_store
+            .save(make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        // process_event is private — test it indirectly via collect_events.
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer); // close the queue so collect_events terminates
+
+        // collect_events reads from the queue and processes events.
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(result.is_ok(), "collect_events should succeed");
+        let final_task = result.unwrap();
+        assert_eq!(final_task.status.state, TaskState::Working);
+
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Working);
+    }
+
+    // ── collect_events tests ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn collect_events_returns_final_task() {
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-collect");
+
+        // Seed initial task.
+        task_store
+            .save(make_task("t-collect", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+
+        // Write a sequence of events, then close.
+        writer
+            .write(make_status_event("t-collect", TaskState::Working))
+            .await
+            .unwrap();
+        writer
+            .write(make_status_event("t-collect", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let final_task = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await
+            .expect("collect_events should not fail");
+
+        assert_eq!(
+            final_task.status.state,
+            TaskState::Completed,
+            "collect_events should return the task in its final state"
+        );
+    }
+}

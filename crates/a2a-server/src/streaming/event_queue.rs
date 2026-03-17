@@ -470,11 +470,8 @@ mod tests {
 
     #[test]
     fn new_in_memory_queue_with_options_returns_pair() {
-        let (_writer, _reader) = new_in_memory_queue_with_options(
-            32,
-            1024,
-            std::time::Duration::from_secs(1),
-        );
+        let (_writer, _reader) =
+            new_in_memory_queue_with_options(32, 1024, std::time::Duration::from_secs(1));
     }
 
     // ── write / read lifecycle ───────────────────────────────────────────
@@ -488,16 +485,16 @@ mod tests {
         drop(writer);
 
         let received = reader.read().await;
-        assert!(
-            received.is_some(),
-            "reader should return the written event"
-        );
+        assert!(received.is_some(), "reader should return the written event");
         let result = received.unwrap();
         assert!(result.is_ok(), "event should be Ok");
 
         // After writer is dropped, reader should see EOF.
         let eof = reader.read().await;
-        assert!(eof.is_none(), "reader should return None after writer is dropped");
+        assert!(
+            eof.is_none(),
+            "reader should return None after writer is dropped"
+        );
     }
 
     #[tokio::test]
@@ -516,7 +513,11 @@ mod tests {
         let sr1 = r1.expect("first event should be Ok");
         match &sr1 {
             StreamResponse::StatusUpdate(evt) => {
-                assert_eq!(evt.status.state, TaskState::Working, "first event should be Working");
+                assert_eq!(
+                    evt.status.state,
+                    TaskState::Working,
+                    "first event should be Working"
+                );
             }
             other => panic!("expected StatusUpdate, got: {other:?}"),
         }
@@ -536,7 +537,10 @@ mod tests {
         }
 
         // EOF.
-        assert!(reader.read().await.is_none(), "should be EOF after all events");
+        assert!(
+            reader.read().await.is_none(),
+            "should be EOF after all events"
+        );
     }
 
     // ── closed queue behavior ────────────────────────────────────────────
@@ -558,7 +562,9 @@ mod tests {
         let (writer, reader) = new_in_memory_queue();
         drop(reader);
 
-        let result = writer.write(make_status_event("t1", TaskState::Working)).await;
+        let result = writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await;
         assert!(
             result.is_err(),
             "writing with no active receivers should return an error"
@@ -616,14 +622,23 @@ mod tests {
         drop(writer);
 
         // reader1 sees both events.
-        let r1a = reader1.read().await.expect("reader1 should see first event");
+        let r1a = reader1
+            .read()
+            .await
+            .expect("reader1 should see first event");
         assert!(r1a.is_ok());
-        let r1b = reader1.read().await.expect("reader1 should see second event");
+        let r1b = reader1
+            .read()
+            .await
+            .expect("reader1 should see second event");
         assert!(r1b.is_ok());
         assert!(reader1.read().await.is_none());
 
         // reader2 only sees the second event (subscribed after first).
-        let r2a = reader2.read().await.expect("reader2 should see second event");
+        let r2a = reader2
+            .read()
+            .await
+            .expect("reader2 should see second event");
         assert!(r2a.is_ok());
         assert!(
             reader2.read().await.is_none(),
@@ -659,11 +674,8 @@ mod tests {
     #[tokio::test]
     async fn event_within_size_limit_is_accepted() {
         // Use a generous max_event_size.
-        let (writer, mut reader) = new_in_memory_queue_with_options(
-            16,
-            DEFAULT_MAX_EVENT_SIZE,
-            DEFAULT_WRITE_TIMEOUT,
-        );
+        let (writer, mut reader) =
+            new_in_memory_queue_with_options(16, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT);
 
         let event = make_status_event("t1", TaskState::Working);
         writer
@@ -695,7 +707,11 @@ mod tests {
             .await
             .expect("write through manager writer should succeed");
 
-        assert_eq!(manager.active_count().await, 1, "should have 1 active queue");
+        assert_eq!(
+            manager.active_count().await,
+            1,
+            "should have 1 active queue"
+        );
     }
 
     #[tokio::test]
@@ -727,7 +743,10 @@ mod tests {
         let (writer, _reader) = manager.get_or_create(&task_id).await;
 
         let sub = manager.subscribe(&task_id).await;
-        assert!(sub.is_some(), "subscribe should return a reader for existing task");
+        assert!(
+            sub.is_some(),
+            "subscribe should return a reader for existing task"
+        );
 
         let mut sub_reader = sub.unwrap();
         writer
@@ -806,8 +825,7 @@ mod tests {
 
     #[tokio::test]
     async fn manager_with_capacity_and_max_event_size() {
-        let manager = EventQueueManager::with_capacity(4)
-            .with_max_event_size(10); // tiny limit
+        let manager = EventQueueManager::with_capacity(4).with_max_event_size(10); // tiny limit
 
         let task_id = TaskId::new("t1");
         let (writer, _reader) = manager.get_or_create(&task_id).await;

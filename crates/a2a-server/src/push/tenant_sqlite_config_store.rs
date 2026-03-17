@@ -212,9 +212,15 @@ mod tests {
     async fn set_and_get_within_tenant() {
         let store = make_store().await;
         TenantContext::scope("acme", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://example.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://example.com"))
+                .await
+                .unwrap();
             let config = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(config.is_some(), "config should be retrievable within its tenant");
+            assert!(
+                config.is_some(),
+                "config should be retrievable within its tenant"
+            );
             assert_eq!(config.unwrap().url, "https://example.com");
         })
         .await;
@@ -224,13 +230,19 @@ mod tests {
     async fn tenant_isolation_get() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://a.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
             let result = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(result.is_none(), "tenant-b should not see tenant-a's config");
+            assert!(
+                result.is_none(),
+                "tenant-b should not see tenant-a's config"
+            );
         })
         .await;
     }
@@ -239,13 +251,22 @@ mod tests {
     async fn tenant_isolation_list() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.set(make_config("task-1", Some("c1"), "https://a.com/1")).await.unwrap();
-            store.set(make_config("task-1", Some("c2"), "https://a.com/2")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("c1"), "https://a.com/1"))
+                .await
+                .unwrap();
+            store
+                .set(make_config("task-1", Some("c2"), "https://a.com/2"))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
-            store.set(make_config("task-1", Some("c3"), "https://b.com/1")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("c3"), "https://b.com/1"))
+                .await
+                .unwrap();
         })
         .await;
 
@@ -266,7 +287,10 @@ mod tests {
     async fn tenant_isolation_delete() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://a.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
+                .await
+                .unwrap();
         })
         .await;
 
@@ -278,7 +302,10 @@ mod tests {
 
         TenantContext::scope("tenant-a", async {
             let config = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(config.is_some(), "tenant-a's config should survive tenant-b's delete");
+            assert!(
+                config.is_some(),
+                "tenant-a's config should survive tenant-b's delete"
+            );
         })
         .await;
     }
@@ -287,24 +314,36 @@ mod tests {
     async fn same_keys_different_tenants() {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://a.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://a.com"))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://b.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://b.com"))
+                .await
+                .unwrap();
         })
         .await;
 
         TenantContext::scope("tenant-a", async {
             let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(config.url, "https://a.com", "tenant-a should get its own config");
+            assert_eq!(
+                config.url, "https://a.com",
+                "tenant-a should get its own config"
+            );
         })
         .await;
 
         TenantContext::scope("tenant-b", async {
             let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(config.url, "https://b.com", "tenant-b should get its own config");
+            assert_eq!(
+                config.url, "https://b.com",
+                "tenant-b should get its own config"
+            );
         })
         .await;
     }
@@ -313,11 +352,20 @@ mod tests {
     async fn overwrite_within_tenant() {
         let store = make_store().await;
         TenantContext::scope("acme", async {
-            store.set(make_config("task-1", Some("cfg-1"), "https://old.com")).await.unwrap();
-            store.set(make_config("task-1", Some("cfg-1"), "https://new.com")).await.unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://old.com"))
+                .await
+                .unwrap();
+            store
+                .set(make_config("task-1", Some("cfg-1"), "https://new.com"))
+                .await
+                .unwrap();
 
             let config = store.get("task-1", "cfg-1").await.unwrap().unwrap();
-            assert_eq!(config.url, "https://new.com", "overwrite should update the URL");
+            assert_eq!(
+                config.url, "https://new.com",
+                "overwrite should update the URL"
+            );
         })
         .await;
     }
@@ -328,7 +376,10 @@ mod tests {
         TenantContext::scope("acme", async {
             let config = make_config("task-1", None, "https://example.com");
             let result = store.set(config).await.unwrap();
-            assert!(result.id.is_some(), "set should assign an id when none is provided");
+            assert!(
+                result.id.is_some(),
+                "set should assign an id when none is provided"
+            );
         })
         .await;
     }
@@ -338,7 +389,10 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("acme", async {
             let result = store.delete("no-task", "no-id").await;
-            assert!(result.is_ok(), "deleting a nonexistent config should not error");
+            assert!(
+                result.is_ok(),
+                "deleting a nonexistent config should not error"
+            );
         })
         .await;
     }
@@ -347,7 +401,10 @@ mod tests {
     async fn default_tenant_context_uses_empty_string() {
         let store = make_store().await;
         // No TenantContext::scope - should use "" as tenant
-        store.set(make_config("task-1", Some("cfg-1"), "https://default.com")).await.unwrap();
+        store
+            .set(make_config("task-1", Some("cfg-1"), "https://default.com"))
+            .await
+            .unwrap();
         let config = store.get("task-1", "cfg-1").await.unwrap();
         assert!(config.is_some(), "default (empty) tenant should work");
     }

@@ -70,7 +70,10 @@ async fn a2a_error_non_exhaustive() {
     let err = A2aError::new(ErrorCode::InternalError, "test");
     assert_eq!(err.code, ErrorCode::InternalError);
     assert_eq!(err.message, "test");
-    assert!(err.data.is_none(), "data must be None for basic constructor");
+    assert!(
+        err.data.is_none(),
+        "data must be None for basic constructor"
+    );
 
     let err = A2aError::with_data(
         ErrorCode::InvalidParams,
@@ -79,7 +82,9 @@ async fn a2a_error_non_exhaustive() {
     );
     assert_eq!(err.code, ErrorCode::InvalidParams);
     assert_eq!(err.message, "bad");
-    let data = err.data.expect("data must be present when constructed with_data");
+    let data = err
+        .data
+        .expect("data must be present when constructed with_data");
     assert_eq!(data, serde_json::json!({"detail": "extra"}));
 }
 
@@ -107,10 +112,16 @@ async fn error_code_all_values_roundtrip() {
         assert_eq!(back, *code, "roundtrip failed for code {n}");
         // Verify Display produces a non-empty string
         let display = format!("{code}");
-        assert!(!display.is_empty(), "Display for {code:?} must not be empty");
+        assert!(
+            !display.is_empty(),
+            "Display for {code:?} must not be empty"
+        );
         // Verify default_message produces a non-empty string
         let msg = code.default_message();
-        assert!(!msg.is_empty(), "default_message for {code:?} must not be empty");
+        assert!(
+            !msg.is_empty(),
+            "default_message for {code:?} must not be empty"
+        );
     }
 }
 
@@ -119,7 +130,10 @@ async fn task_version_from_u64() {
     let v: TaskVersion = 42u64.into();
     assert_eq!(v.get(), 42);
     assert!(TaskVersion::new(2) > TaskVersion::new(1));
-    assert!(!(TaskVersion::new(1) > TaskVersion::new(1)), "equal versions must not be greater");
+    assert!(
+        TaskVersion::new(1) <= TaskVersion::new(1),
+        "equal versions must not be greater"
+    );
 }
 
 #[tokio::test]

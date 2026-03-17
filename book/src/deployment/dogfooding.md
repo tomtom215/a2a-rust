@@ -17,7 +17,7 @@ Unit tests and integration tests are necessary but insufficient. **No single tes
 | **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 
-**The critical lesson:** After building 950+ tests across all of the above categories — unit, integration, property, fuzz, and 72 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
+**The critical lesson:** After building 1,255 tests across all of the above categories — unit, integration, property, fuzz, and 72 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
 Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 

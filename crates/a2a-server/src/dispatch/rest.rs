@@ -855,22 +855,25 @@ mod tests {
 
     #[test]
     fn parse_query_param_plus_in_value() {
-        assert_eq!(
-            parse_query_param("q=a+b", "q"),
-            Some("a b".to_owned())
-        );
+        assert_eq!(parse_query_param("q=a+b", "q"), Some("a b".to_owned()));
     }
 
     // ── parse_query_param_u32 ────────────────────────────────────────────
 
     #[test]
     fn parse_query_param_u32_valid() {
-        assert_eq!(parse_query_param_u32("historyLength=10", "historyLength"), Some(10));
+        assert_eq!(
+            parse_query_param_u32("historyLength=10", "historyLength"),
+            Some(10)
+        );
     }
 
     #[test]
     fn parse_query_param_u32_invalid() {
-        assert_eq!(parse_query_param_u32("historyLength=abc", "historyLength"), None);
+        assert_eq!(
+            parse_query_param_u32("historyLength=abc", "historyLength"),
+            None
+        );
     }
 
     #[test]
@@ -916,7 +919,10 @@ mod tests {
     fn inject_field_preserves_existing() {
         let val = serde_json::json!({"taskId": "existing", "url": "https://example.com"});
         let result = inject_field_if_missing(val, "taskId", "task-1");
-        assert_eq!(result["taskId"], "existing", "should not overwrite existing field");
+        assert_eq!(
+            result["taskId"], "existing",
+            "should not overwrite existing field"
+        );
     }
 
     #[test]
@@ -952,12 +958,7 @@ mod tests {
     async fn health_response_status_and_body() {
         let resp = health_response();
         assert_eq!(resp.status().as_u16(), 200);
-        let body = resp
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["status"], "ok");
     }
@@ -966,12 +967,7 @@ mod tests {
     async fn error_json_response_status_and_body() {
         let resp = error_json_response(400, "bad request");
         assert_eq!(resp.status().as_u16(), 400);
-        let body = resp
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["error"], "bad request");
     }
@@ -991,12 +987,7 @@ mod tests {
     async fn not_found_response_is_404() {
         let resp = not_found_response();
         assert_eq!(resp.status().as_u16(), 404);
-        let body = resp
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["error"], "not found");
     }
@@ -1023,12 +1014,7 @@ mod tests {
         let val = serde_json::json!({"key": "value"});
         let resp = json_ok_response(&val);
         assert_eq!(resp.status().as_u16(), 200);
-        let body = resp
-            .into_body()
-            .collect()
-            .await
-            .unwrap()
-            .to_bytes();
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
         let parsed: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed["key"], "value");
     }
@@ -1081,7 +1067,8 @@ mod tests {
 
     #[test]
     fn parse_list_tasks_query_all_params() {
-        let query = "contextId=ctx-1&pageSize=10&pageToken=tok&includeArtifacts=true&historyLength=5";
+        let query =
+            "contextId=ctx-1&pageSize=10&pageToken=tok&includeArtifacts=true&historyLength=5";
         let params = parse_list_tasks_query(query, Some("acme"));
         assert_eq!(params.tenant.as_deref(), Some("acme"));
         assert_eq!(params.context_id.as_deref(), Some("ctx-1"));

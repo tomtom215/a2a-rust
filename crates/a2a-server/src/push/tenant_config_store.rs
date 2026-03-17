@@ -227,10 +227,7 @@ mod tests {
         // tenant-a should still see it
         TenantContext::scope("tenant-a", async {
             let result = store.get("task-1", "cfg-1").await.unwrap();
-            assert!(
-                result.is_some(),
-                "tenant-a should still see its own config"
-            );
+            assert!(result.is_some(), "tenant-a should still see its own config");
         })
         .await;
     }
@@ -346,25 +343,13 @@ mod tests {
         })
         .await;
 
-        let a_list = TenantContext::scope("tenant-a", async {
-            store.list("t1").await.unwrap()
-        })
-        .await;
-        assert_eq!(
-            a_list.len(),
-            2,
-            "tenant-a should see 2 configs for task t1"
-        );
+        let a_list =
+            TenantContext::scope("tenant-a", async { store.list("t1").await.unwrap() }).await;
+        assert_eq!(a_list.len(), 2, "tenant-a should see 2 configs for task t1");
 
-        let b_list = TenantContext::scope("tenant-b", async {
-            store.list("t1").await.unwrap()
-        })
-        .await;
-        assert_eq!(
-            b_list.len(),
-            1,
-            "tenant-b should see 1 config for task t1"
-        );
+        let b_list =
+            TenantContext::scope("tenant-b", async { store.list("t1").await.unwrap() }).await;
+        assert_eq!(b_list.len(), 1, "tenant-b should see 1 config for task t1");
     }
 
     #[tokio::test]
@@ -394,17 +379,13 @@ mod tests {
         .await;
 
         // tenant-a's config is gone
-        let a_result = TenantContext::scope("tenant-a", async {
-            store.get("t1", "c1").await.unwrap()
-        })
-        .await;
+        let a_result =
+            TenantContext::scope("tenant-a", async { store.get("t1", "c1").await.unwrap() }).await;
         assert!(a_result.is_none(), "tenant-a config should be deleted");
 
         // tenant-b's config is untouched
-        let b_result = TenantContext::scope("tenant-b", async {
-            store.get("t1", "c1").await.unwrap()
-        })
-        .await;
+        let b_result =
+            TenantContext::scope("tenant-b", async { store.get("t1", "c1").await.unwrap() }).await;
         assert!(
             b_result.is_some(),
             "tenant-b config should be unaffected by tenant-a's delete"

@@ -139,7 +139,10 @@ pub async fn test_combined_status_context_filter(ctx: &TestContext) -> TestResul
                         TestResult::pass(
                             "combined-filter",
                             start.elapsed().as_millis(),
-                            &format!("status+context filter returned exactly 1 matching task (id={})", task.id),
+                            &format!(
+                                "status+context filter returned exactly 1 matching task (id={})",
+                                task.id
+                            ),
                         )
                     } else {
                         TestResult::fail(
@@ -191,7 +194,12 @@ pub async fn test_latency_metrics(ctx: &TestContext) -> TestResult {
         TestResult::pass(
             "latency-metrics",
             start.elapsed().as_millis(),
-            &format!("metrics incremented: {} -> {} (delta={})", before, after, after - before),
+            &format!(
+                "metrics incremented: {} -> {} (delta={})",
+                before,
+                after,
+                after - before
+            ),
         )
     } else {
         TestResult::fail(

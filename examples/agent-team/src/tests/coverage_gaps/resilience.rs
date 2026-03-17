@@ -120,7 +120,10 @@ pub async fn test_stale_page_token(ctx: &TestContext) -> TestResult {
             TestResult::pass(
                 "stale-page-token",
                 start.elapsed().as_millis(),
-                &format!("{} tasks returned, server handled stale token gracefully", resp.tasks.len()),
+                &format!(
+                    "{} tasks returned, server handled stale token gracefully",
+                    resp.tasks.len()
+                ),
             )
         }
         Err(e) => {
