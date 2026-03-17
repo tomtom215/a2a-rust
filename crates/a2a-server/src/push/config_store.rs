@@ -107,7 +107,7 @@ impl InMemoryPushConfigStore {
     /// Prevents unbounded memory growth when many tasks register configs.
     /// Default: 100,000.
     #[must_use]
-    pub fn with_max_total_configs(mut self, max: usize) -> Self {
+    pub const fn with_max_total_configs(mut self, max: usize) -> Self {
         self.max_total_configs = max;
         self
     }

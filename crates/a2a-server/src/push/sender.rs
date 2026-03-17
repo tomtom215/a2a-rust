@@ -196,7 +196,7 @@ fn validate_webhook_url(url: &str) -> A2aResult<()> {
 
     // Require http or https scheme.
     match uri.scheme_str() {
-        Some("http") | Some("https") => {}
+        Some("http" | "https") => {}
         Some(other) => {
             return Err(A2aError::invalid_params(format!(
                 "webhook URL has unsupported scheme: {other} (expected http or https)"
@@ -312,7 +312,7 @@ impl PushSender for HttpPushSender {
                 }
 
                 let req = builder
-                    .body(Full::new(Bytes::from(body_bytes.clone())))
+                    .body(Full::new(body_bytes.clone()))
                     .map_err(|e| A2aError::internal(format!("push request build: {e}")))?;
 
                 let request_result =
