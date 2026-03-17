@@ -34,6 +34,7 @@
 //! | [`metrics`] | [`Metrics`] trait (request counts, latency, errors) |
 //! | [`tenant_resolver`] | [`TenantResolver`], [`HeaderTenantResolver`], [`BearerTokenTenantResolver`], [`PathSegmentTenantResolver`] |
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
+//! | [`otel`] | [`OtelMetrics`], [`OtelMetricsBuilder`], `init_otlp_pipeline` (`otel` feature) |
 //!
 //! # gRPC transport
 //!
@@ -80,8 +81,8 @@ pub mod otel;
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{
-    AgentCardProducer, DynamicAgentCardHandler, HotReloadAgentCardHandler,
-    StaticAgentCardHandler, CORS_ALLOW_ALL,
+    AgentCardProducer, DynamicAgentCardHandler, HotReloadAgentCardHandler, StaticAgentCardHandler,
+    CORS_ALLOW_ALL,
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;

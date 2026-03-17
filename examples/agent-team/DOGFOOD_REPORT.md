@@ -8,8 +8,8 @@
 >
 > - [Dogfooding Overview](../../book/src/deployment/dogfooding.md)
 > - [Bugs Found & Fixed](../../book/src/deployment/dogfooding-bugs.md) — 36 bugs across 8 passes
-> - [Test Coverage Matrix](../../book/src/deployment/dogfooding-tests.md) — 71 E2E tests (76 with optional transports)
-> - [Open Issues & Roadmap](../../book/src/deployment/dogfooding-open-issues.md) — design debt and future work
+> - [Test Coverage Matrix](../../book/src/deployment/dogfooding-tests.md) — 72 E2E tests (79 with optional transports and signing)
+> - [Open Issues & Roadmap](../../book/src/deployment/dogfooding-open-issues.md) — all issues resolved
 
 ## Quick Summary
 
@@ -21,7 +21,7 @@
 | Design issues identified | 5 |
 | Test gaps found | 9 |
 | New tests added (passes 4-8) | 10 + 21 + 8 + 12 + 9 |
-| Total E2E tests | 71 (76 with optional transports) |
+| Total E2E tests | 72 (79 with optional transports and signing) |
 
 ### Critical SDK Bug Fixed
 

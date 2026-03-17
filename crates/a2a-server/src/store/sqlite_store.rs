@@ -64,7 +64,7 @@ impl SqliteTaskStore {
         Self::from_pool(pool).await
     }
 
-    /// Opens a SQLite database with automatic schema migration.
+    /// Opens a `SQLite` database with automatic schema migration.
     ///
     /// Runs all pending migrations before returning the store. This is the
     /// recommended constructor for production deployments because it ensures

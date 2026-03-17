@@ -181,17 +181,17 @@ impl TenantResolver for BearerTokenTenantResolver {
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>> {
         Box::pin(async move {
             let auth = ctx.http_headers.get("authorization")?;
-            let token = auth.strip_prefix("Bearer ")
+            let token = auth
+                .strip_prefix("Bearer ")
                 .or_else(|| auth.strip_prefix("bearer "))?;
 
             if token.is_empty() {
                 return None;
             }
 
-            match &self.mapper {
-                Some(mapper) => mapper(token),
-                None => Some(token.to_owned()),
-            }
+            self.mapper
+                .as_ref()
+                .map_or_else(|| Some(token.to_owned()), |mapper| mapper(token))
         })
     }
 }
@@ -226,7 +226,7 @@ impl PathSegmentTenantResolver {
     ///
     /// Index `0` is the first non-empty segment after the leading `/`.
     #[must_use]
-    pub fn new(segment_index: usize) -> Self {
+    pub const fn new(segment_index: usize) -> Self {
         Self { segment_index }
     }
 
@@ -306,7 +306,7 @@ mod tests {
     #[tokio::test]
     async fn bearer_resolver_with_mapper() {
         let resolver = BearerTokenTenantResolver::with_mapper(|token| {
-            token.strip_prefix("tok_").map(|s| s.to_uppercase())
+            token.strip_prefix("tok_").map(str::to_uppercase)
         });
         let ctx = make_ctx().with_http_header("authorization", "Bearer tok_abc");
         assert_eq!(resolver.resolve(&ctx).await, Some("ABC".into()));

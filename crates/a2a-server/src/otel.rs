@@ -73,7 +73,7 @@ impl OtelMetricsBuilder {
     ///
     /// Defaults to `"a2a.server"`.
     #[must_use]
-    pub fn meter_name(mut self, name: &'static str) -> Self {
+    pub const fn meter_name(mut self, name: &'static str) -> Self {
         self.meter_name = name;
         self
     }
@@ -88,7 +88,7 @@ impl OtelMetricsBuilder {
     #[must_use]
     pub fn build(self) -> OtelMetrics {
         let meter = opentelemetry::global::meter(self.meter_name);
-        OtelMetrics::from_meter(meter)
+        OtelMetrics::from_meter(&meter)
     }
 }
 
@@ -135,7 +135,7 @@ impl OtelMetrics {
     ///
     /// Prefer [`OtelMetricsBuilder`] for typical usage.
     #[must_use]
-    pub fn from_meter(meter: Meter) -> Self {
+    pub fn from_meter(meter: &Meter) -> Self {
         let request_counter = meter
             .u64_counter("a2a.server.requests")
             .with_description("Total number of inbound A2A requests")
@@ -234,8 +234,7 @@ impl Metrics for OtelMetrics {
 
     fn on_queue_depth_change(&self, active_queues: usize) {
         #[allow(clippy::cast_possible_truncation)]
-        self.queue_depth_gauge
-            .record(active_queues as u64, &[]);
+        self.queue_depth_gauge.record(active_queues as u64, &[]);
     }
 
     fn on_connection_pool_stats(&self, stats: &ConnectionPoolStats) {
@@ -245,8 +244,7 @@ impl Metrics for OtelMetrics {
             .record(u64::from(stats.idle_connections), &[]);
         self.pool_created_counter
             .add(stats.total_connections_created, &[]);
-        self.pool_closed_counter
-            .add(stats.connections_closed, &[]);
+        self.pool_closed_counter.add(stats.connections_closed, &[]);
     }
 }
 
@@ -281,12 +279,9 @@ pub fn init_otlp_pipeline(
     use opentelemetry_sdk::metrics::PeriodicReader;
     use opentelemetry_sdk::Resource;
 
-    let exporter = MetricExporter::builder()
-        .with_tonic()
-        .build()?;
+    let exporter = MetricExporter::builder().with_tonic().build()?;
 
-    let reader = PeriodicReader::builder(exporter)
-        .build();
+    let reader = PeriodicReader::builder(exporter).build();
 
     let resource = Resource::builder()
         .with_attributes([Kv::new("service.name", service_name.to_owned())])

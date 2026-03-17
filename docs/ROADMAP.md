@@ -3,21 +3,19 @@
 
 # Roadmap
 
-## Open Items
+## Recently Completed Enhancements
 
-### Potential Future Enhancements
+All proposed beyond-spec features have been implemented:
 
-Features not part of A2A v1.0.0 that could add value:
-
-| Feature | Description | Effort |
+| Feature | Location | Details |
 |---|---|---|
-| **OpenTelemetry integration** | Native OTLP export for traces and metrics instead of the callback-based `Metrics` trait. | Medium |
-| **Connection pooling metrics** | Expose hyper connection pool stats (active/idle connections) via the `Metrics` trait. | Small |
-| **Hot-reload agent cards** | File-watch or signal-based agent card reload without server restart. | Small |
-| **Store migration tooling** | Schema versioning and migration support for `SqliteTaskStore`. | Medium |
-| **Per-tenant configuration** | Per-tenant timeouts, capacity limits, executor selection. | Medium |
-| **TenantResolver trait** | Custom tenant ID extraction from requests. | Small |
-| **Agent card signing E2E** | Add JWS key setup to agent-team for E2E signing test coverage. | Small |
+| **OpenTelemetry integration** | `crates/a2a-server/src/otel.rs` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
+| **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
+| **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
+| **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
+| **Per-tenant configuration** | `crates/a2a-server/src/tenant_config.rs` | `PerTenantConfig`, `TenantLimits` with per-tenant overrides |
+| **TenantResolver trait** | `crates/a2a-server/src/tenant_resolver.rs` | `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver` |
+| **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps.rs` | `test_agent_card_signing` with ES256 key generation (`#[cfg(feature = "signing")]`) |
 
 ---
 

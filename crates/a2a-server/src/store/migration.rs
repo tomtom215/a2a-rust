@@ -82,7 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
     },
 ];
 
-/// Runs schema migrations against a SQLite database.
+/// Runs schema migrations against a `SQLite` database.
 ///
 /// `MigrationRunner` tracks which migrations have been applied in a
 /// `schema_versions` table and only executes those that have not yet been
@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
 ///
 /// The runner is safe to use from multiple tasks, but concurrent calls to
 /// [`run_pending`](Self::run_pending) on the same database should be avoided
-/// as SQLite serializes writes anyway and the version table does not use
+/// as `SQLite` serializes writes anyway and the version table does not use
 /// advisory locks.
 #[derive(Debug, Clone)]
 pub struct MigrationRunner {
@@ -114,7 +114,7 @@ impl MigrationRunner {
     ///
     /// This is primarily useful for testing. In production, prefer [`new`](Self::new).
     #[must_use]
-    pub fn with_migrations(pool: SqlitePool, migrations: &'static [Migration]) -> Self {
+    pub const fn with_migrations(pool: SqlitePool, migrations: &'static [Migration]) -> Self {
         Self { pool, migrations }
     }
 
@@ -198,13 +198,11 @@ impl MigrationRunner {
             }
 
             // Record the migration as applied.
-            sqlx::query(
-                "INSERT INTO schema_versions (version, description) VALUES (?1, ?2)",
-            )
-            .bind(migration.version)
-            .bind(migration.description)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("INSERT INTO schema_versions (version, description) VALUES (?1, ?2)")
+                .bind(migration.version)
+                .bind(migration.description)
+                .execute(&mut *tx)
+                .await?;
 
             tx.commit().await?;
             applied.push(migration.version);
@@ -219,7 +217,7 @@ mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
 
-    /// Helper to create an in-memory SQLite pool.
+    /// Helper to create an in-memory `SQLite` pool.
     async fn memory_pool() -> SqlitePool {
         SqlitePoolOptions::new()
             .max_connections(1)
@@ -320,10 +318,12 @@ mod tests {
         let runner = MigrationRunner::new(pool.clone());
         runner.run_pending().await.unwrap();
 
-        let rows = sqlx::query("SELECT version, description, applied_at FROM schema_versions ORDER BY version")
-            .fetch_all(&pool)
-            .await
-            .unwrap();
+        let rows = sqlx::query(
+            "SELECT version, description, applied_at FROM schema_versions ORDER BY version",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
 
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].get::<i32, _>("version"), 1);

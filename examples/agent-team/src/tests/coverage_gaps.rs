@@ -1157,19 +1157,17 @@ pub async fn test_agent_card_signing(_ctx: &TestContext) -> TestResult {
 
     // 1. Generate an ES256 key pair.
     let rng = SystemRandom::new();
-    let pkcs8 = match EcdsaKeyPair::generate_pkcs8(
-        &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-        &rng,
-    ) {
-        Ok(k) => k,
-        Err(e) => {
-            return TestResult::fail(
-                "79_signing_e2e",
-                start.elapsed().as_millis(),
-                &format!("key generation failed: {e}"),
-            );
-        }
-    };
+    let pkcs8 =
+        match EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng) {
+            Ok(k) => k,
+            Err(e) => {
+                return TestResult::fail(
+                    "79_signing_e2e",
+                    start.elapsed().as_millis(),
+                    &format!("key generation failed: {e}"),
+                );
+            }
+        };
 
     // 2. Create an agent card using the real code_analyzer_card builder.
     let card = crate::cards::code_analyzer_card("https://example.com/agent");

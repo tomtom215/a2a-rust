@@ -83,42 +83,42 @@ pub struct TenantLimitsBuilder {
 impl TenantLimitsBuilder {
     /// Sets the maximum concurrent tasks.
     #[must_use]
-    pub fn max_concurrent_tasks(mut self, n: usize) -> Self {
+    pub const fn max_concurrent_tasks(mut self, n: usize) -> Self {
         self.max_concurrent_tasks = Some(n);
         self
     }
 
     /// Sets the executor timeout.
     #[must_use]
-    pub fn executor_timeout(mut self, d: Duration) -> Self {
+    pub const fn executor_timeout(mut self, d: Duration) -> Self {
         self.executor_timeout = Some(d);
         self
     }
 
     /// Sets the event queue capacity per stream.
     #[must_use]
-    pub fn event_queue_capacity(mut self, n: usize) -> Self {
+    pub const fn event_queue_capacity(mut self, n: usize) -> Self {
         self.event_queue_capacity = Some(n);
         self
     }
 
     /// Sets the maximum stored tasks.
     #[must_use]
-    pub fn max_stored_tasks(mut self, n: usize) -> Self {
+    pub const fn max_stored_tasks(mut self, n: usize) -> Self {
         self.max_stored_tasks = Some(n);
         self
     }
 
     /// Sets the rate limit in requests per second.
     #[must_use]
-    pub fn rate_limit_rps(mut self, rps: u32) -> Self {
+    pub const fn rate_limit_rps(mut self, rps: u32) -> Self {
         self.rate_limit_rps = Some(rps);
         self
     }
 
     /// Builds the [`TenantLimits`].
     #[must_use]
-    pub fn build(self) -> TenantLimits {
+    pub const fn build(self) -> TenantLimits {
         TenantLimits {
             max_concurrent_tasks: self.max_concurrent_tasks,
             executor_timeout: self.executor_timeout,
@@ -136,7 +136,7 @@ impl TenantLimitsBuilder {
 /// Allows operators to differentiate service levels across tenants. Use
 /// [`get`](Self::get) to resolve the effective limits for a tenant — it returns
 /// the tenant-specific overrides if present, or falls back to the default.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct PerTenantConfig {
     /// Default configuration for tenants without specific overrides.
     pub default: TenantLimits,
@@ -162,15 +162,6 @@ impl PerTenantConfig {
     }
 }
 
-impl Default for PerTenantConfig {
-    fn default() -> Self {
-        Self {
-            default: TenantLimits::default(),
-            overrides: HashMap::new(),
-        }
-    }
-}
-
 /// Builder for [`PerTenantConfig`].
 #[derive(Debug, Clone, Default)]
 pub struct PerTenantConfigBuilder {
@@ -181,7 +172,7 @@ pub struct PerTenantConfigBuilder {
 impl PerTenantConfigBuilder {
     /// Sets the default tenant limits applied when no override matches.
     #[must_use]
-    pub fn default_limits(mut self, limits: TenantLimits) -> Self {
+    pub const fn default_limits(mut self, limits: TenantLimits) -> Self {
         self.default = limits;
         self
     }

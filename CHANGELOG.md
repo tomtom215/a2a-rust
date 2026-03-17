@@ -10,6 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Beyond-Spec Enhancements)
+
+- **OpenTelemetry metrics integration** (`otel` feature) — `OtelMetrics` implements the
+  `Metrics` trait with native OTLP export via `opentelemetry-otlp`. Instruments: request
+  counts, response counts, error counts (with error type label), request latency (seconds),
+  queue depth, and HTTP connection pool stats (active, idle, created, closed). Use
+  `init_otlp_pipeline()` to bootstrap the global meter provider.
+- **Connection pool metrics** — `ConnectionPoolStats` struct and
+  `Metrics::on_connection_pool_stats()` callback for monitoring active/idle connections,
+  total connections created, and connections closed.
+- **Hot-reload agent cards** — `HotReloadAgentCardHandler` wraps agent cards behind
+  `Arc<RwLock<_>>` for runtime updates without restarts. Three reload strategies:
+  `reload_from_file()` (on-demand), `spawn_poll_watcher()` (periodic polling,
+  cross-platform), `spawn_signal_watcher()` (Unix SIGHUP).
+- **Store migration tooling** (`sqlite` feature) — `Migration` and `MigrationRunner`
+  provide forward-only schema versioning for `SqliteTaskStore`. Built-in migrations:
+  v1 (initial schema with indexes), v2 (add `created_at` column), v3 (composite index
+  on `context_id, state`). Tracks applied versions in a `schema_versions` table.
+- **Per-tenant configuration** — `PerTenantConfig` and `TenantLimits` allow operators
+  to set per-tenant overrides for max concurrent tasks, executor timeout, event queue
+  capacity, max stored tasks, and rate limits, with fallback to defaults.
+- **`TenantResolver` trait** — abstracts tenant identity extraction from requests.
+  Built-in implementations: `HeaderTenantResolver` (default `x-tenant-id`),
+  `BearerTokenTenantResolver` (with optional token-to-tenant mapping),
+  `PathSegmentTenantResolver` (URL path segment by index).
+- **Agent card signing E2E test** — `test_agent_card_signing` in the agent-team suite
+  generates an ES256 key pair, signs a card, verifies the signature, and tests tamper
+  detection (`#[cfg(feature = "signing")]`).
+
 ### Fixed (Pass 8 — Deep Dogfood)
 
 - **Bug #32: Timeout errors misclassified as Transport (CRITICAL)** — REST and
@@ -39,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path traversal (Bug #35), exhaustive retryable classification.
 - **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
   cancel stress test (10 parallel), stale page token graceful handling.
-- **Total E2E tests: 71** (76 with optional gRPC+WebSocket transports).
+- **Total E2E tests: 72** (79 with optional gRPC+WebSocket+signing).
 
 ### Fixed (Pass 7 — Deep Dogfood)
 

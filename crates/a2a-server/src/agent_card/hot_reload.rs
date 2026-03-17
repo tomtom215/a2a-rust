@@ -73,6 +73,11 @@ impl HotReloadAgentCardHandler {
     /// Returns a snapshot of the current [`AgentCard`].
     ///
     /// This acquires a short-lived read lock and clones the card.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned (another thread panicked
+    /// while holding the write lock).
     #[must_use]
     pub fn current(&self) -> AgentCard {
         self.card
@@ -84,6 +89,10 @@ impl HotReloadAgentCardHandler {
     /// Replaces the current agent card with `card`.
     ///
     /// All subsequent requests will see the new card immediately.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the internal `RwLock` is poisoned.
     pub fn update(&self, card: AgentCard) {
         let mut guard = self.card.write().expect("agent card RwLock poisoned");
         *guard = card;
@@ -99,7 +108,10 @@ impl HotReloadAgentCardHandler {
     /// Returns [`ServerError::Internal`] if the file cannot be read or parsed.
     pub fn reload_from_file(&self, path: &Path) -> ServerResult<()> {
         let contents = std::fs::read_to_string(path).map_err(|e| {
-            ServerError::Internal(format!("failed to read agent card file {}: {e}", path.display()))
+            ServerError::Internal(format!(
+                "failed to read agent card file {}: {e}",
+                path.display()
+            ))
         })?;
         self.reload_from_json(&contents)
     }
@@ -126,6 +138,7 @@ impl HotReloadAgentCardHandler {
     ///
     /// Returns a [`tokio::task::JoinHandle`] that can be used to abort the
     /// watcher (via [`JoinHandle::abort`](tokio::task::JoinHandle::abort)).
+    #[must_use]
     pub fn spawn_poll_watcher(
         &self,
         path: &Path,
@@ -150,10 +163,8 @@ impl HotReloadAgentCardHandler {
     /// Panics if the tokio signal handler cannot be registered (e.g. if the
     /// runtime was built without the `signal` feature).
     #[cfg(unix)]
-    pub fn spawn_signal_watcher(
-        &self,
-        path: &Path,
-    ) -> tokio::task::JoinHandle<()> {
+    #[must_use]
+    pub fn spawn_signal_watcher(&self, path: &Path) -> tokio::task::JoinHandle<()> {
         let handler = self.clone();
         let path = path.to_path_buf();
         tokio::spawn(signal_watcher_loop(handler, path))
@@ -169,18 +180,12 @@ impl AgentCardProducer for HotReloadAgentCardHandler {
 /// Returns the modification time of a file, or `None` if the metadata cannot
 /// be read.
 fn file_mtime(path: &Path) -> Option<SystemTime> {
-    std::fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
+    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
 /// Background loop that polls `path` for modification time changes and reloads
 /// the agent card when a change is detected.
-async fn poll_watcher_loop(
-    handler: HotReloadAgentCardHandler,
-    path: PathBuf,
-    interval: Duration,
-) {
+async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, interval: Duration) {
     let mut last_mtime = file_mtime(&path);
     let mut tick = tokio::time::interval(interval);
     // The first tick completes immediately; consume it so we don't reload on

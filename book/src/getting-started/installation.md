@@ -66,6 +66,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
+| `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
 
 ### `a2a-protocol-sdk` (umbrella)
 
@@ -75,6 +76,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `tracing` | Enables tracing across client and server |
 | `tls-rustls` | Enables HTTPS in the client |
 | `grpc` | Enables gRPC across client and server |
+| `otel` | Enables OpenTelemetry metrics in the server |
 
 Enable features in your `Cargo.toml`:
 
