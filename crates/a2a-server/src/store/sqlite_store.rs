@@ -293,3 +293,199 @@ impl TaskStore for SqliteTaskStore {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+    async fn make_store() -> SqliteTaskStore {
+        SqliteTaskStore::new("sqlite::memory:").await.expect("failed to create in-memory store")
+    }
+
+    fn make_task(id: &str, ctx: &str, state: TaskState) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new(ctx),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn save_and_get_round_trip() {
+        let store = make_store().await;
+        let task = make_task("t1", "ctx1", TaskState::Submitted);
+        store.save(task.clone()).await.expect("save should succeed");
+
+        let retrieved = store.get(&TaskId::new("t1")).await.expect("get should succeed");
+        let retrieved = retrieved.expect("task should exist after save");
+        assert_eq!(retrieved.id, TaskId::new("t1"), "task id should match");
+        assert_eq!(retrieved.context_id, ContextId::new("ctx1"), "context_id should match");
+        assert_eq!(retrieved.status.state, TaskState::Submitted, "state should match");
+    }
+
+    #[tokio::test]
+    async fn get_returns_none_for_missing_task() {
+        let store = make_store().await;
+        let result = store.get(&TaskId::new("nonexistent")).await.expect("get should succeed");
+        assert!(result.is_none(), "get should return None for a missing task");
+    }
+
+    #[tokio::test]
+    async fn save_overwrites_existing_task() {
+        let store = make_store().await;
+        let task1 = make_task("t1", "ctx1", TaskState::Submitted);
+        store.save(task1).await.expect("first save should succeed");
+
+        let task2 = make_task("t1", "ctx1", TaskState::Working);
+        store.save(task2).await.expect("second save should succeed");
+
+        let retrieved = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
+        assert_eq!(retrieved.status.state, TaskState::Working, "state should be updated after overwrite");
+    }
+
+    #[tokio::test]
+    async fn insert_if_absent_returns_true_for_new_task() {
+        let store = make_store().await;
+        let task = make_task("t1", "ctx1", TaskState::Submitted);
+        let inserted = store.insert_if_absent(task).await.expect("insert_if_absent should succeed");
+        assert!(inserted, "insert_if_absent should return true for a new task");
+    }
+
+    #[tokio::test]
+    async fn insert_if_absent_returns_false_for_existing_task() {
+        let store = make_store().await;
+        let task = make_task("t1", "ctx1", TaskState::Submitted);
+        store.save(task.clone()).await.unwrap();
+
+        let duplicate = make_task("t1", "ctx1", TaskState::Working);
+        let inserted = store.insert_if_absent(duplicate).await.expect("insert_if_absent should succeed");
+        assert!(!inserted, "insert_if_absent should return false for an existing task");
+
+        // Original state should be preserved
+        let retrieved = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
+        assert_eq!(retrieved.status.state, TaskState::Submitted, "original state should be preserved");
+    }
+
+    #[tokio::test]
+    async fn delete_removes_task() {
+        let store = make_store().await;
+        store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+
+        store.delete(&TaskId::new("t1")).await.expect("delete should succeed");
+
+        let result = store.get(&TaskId::new("t1")).await.unwrap();
+        assert!(result.is_none(), "task should be gone after delete");
+    }
+
+    #[tokio::test]
+    async fn delete_nonexistent_is_ok() {
+        let store = make_store().await;
+        let result = store.delete(&TaskId::new("nonexistent")).await;
+        assert!(result.is_ok(), "deleting a nonexistent task should not error");
+    }
+
+    #[tokio::test]
+    async fn count_tracks_inserts_and_deletes() {
+        let store = make_store().await;
+        assert_eq!(store.count().await.unwrap(), 0, "empty store should have count 0");
+
+        store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+        store.save(make_task("t2", "ctx1", TaskState::Working)).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 2, "count should be 2 after two saves");
+
+        store.delete(&TaskId::new("t1")).await.unwrap();
+        assert_eq!(store.count().await.unwrap(), 1, "count should be 1 after one delete");
+    }
+
+    #[tokio::test]
+    async fn list_all_tasks() {
+        let store = make_store().await;
+        store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+        store.save(make_task("t2", "ctx2", TaskState::Working)).await.unwrap();
+
+        let params = ListTasksParams::default();
+        let response = store.list(&params).await.expect("list should succeed");
+        assert_eq!(response.tasks.len(), 2, "list should return all tasks");
+    }
+
+    #[tokio::test]
+    async fn list_filter_by_context_id() {
+        let store = make_store().await;
+        store.save(make_task("t1", "ctx-a", TaskState::Submitted)).await.unwrap();
+        store.save(make_task("t2", "ctx-b", TaskState::Submitted)).await.unwrap();
+        store.save(make_task("t3", "ctx-a", TaskState::Working)).await.unwrap();
+
+        let params = ListTasksParams {
+            context_id: Some("ctx-a".to_string()),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert_eq!(response.tasks.len(), 2, "should return only tasks with context_id ctx-a");
+    }
+
+    #[tokio::test]
+    async fn list_filter_by_status() {
+        let store = make_store().await;
+        store.save(make_task("t1", "ctx1", TaskState::Submitted)).await.unwrap();
+        store.save(make_task("t2", "ctx1", TaskState::Working)).await.unwrap();
+        store.save(make_task("t3", "ctx1", TaskState::Working)).await.unwrap();
+
+        let params = ListTasksParams {
+            status: Some(TaskState::Working),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert_eq!(response.tasks.len(), 2, "should return only Working tasks");
+    }
+
+    #[tokio::test]
+    async fn list_pagination() {
+        let store = make_store().await;
+        // Insert tasks with sorted IDs to ensure deterministic ordering
+        for i in 0..5 {
+            store.save(make_task(&format!("task-{i:03}"), "ctx1", TaskState::Submitted)).await.unwrap();
+        }
+
+        // First page of 2
+        let params = ListTasksParams {
+            page_size: Some(2),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
+        assert!(response.next_page_token.is_some(), "should have a next page token");
+
+        // Second page using the token
+        let params2 = ListTasksParams {
+            page_size: Some(2),
+            page_token: response.next_page_token,
+            ..Default::default()
+        };
+        let response2 = store.list(&params2).await.unwrap();
+        assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
+        assert!(response2.next_page_token.is_some(), "should still have a next page token");
+
+        // Third page - only 1 remaining
+        let params3 = ListTasksParams {
+            page_size: Some(2),
+            page_token: response2.next_page_token,
+            ..Default::default()
+        };
+        let response3 = store.list(&params3).await.unwrap();
+        assert_eq!(response3.tasks.len(), 1, "last page should have 1 task");
+        assert!(response3.next_page_token.is_none(), "last page should have no next page token");
+    }
+
+    #[tokio::test]
+    async fn list_empty_store() {
+        let store = make_store().await;
+        let params = ListTasksParams::default();
+        let response = store.list(&params).await.unwrap();
+        assert!(response.tasks.is_empty(), "list on empty store should return no tasks");
+        assert!(response.next_page_token.is_none(), "no pagination token for empty results");
+    }
+}
