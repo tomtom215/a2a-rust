@@ -38,6 +38,11 @@ This ensures each crate's dependencies are available before it publishes.
 
 ## Latest (Unreleased)
 
+- **Wave 2 inline unit tests** — 110 new `#[cfg(test)]` tests added directly
+  to 9 critical `a2a-protocol-server` source files (messaging, event_processing,
+  push_config, lifecycle, handler/mod, REST/JSON-RPC/gRPC/WebSocket dispatchers).
+  Total workspace test count: 1,255 passing tests.
+
 ### Beyond-Spec Enhancements
 
 - **OpenTelemetry metrics** (`otel` feature) — `OtelMetrics` with native OTLP export
@@ -59,6 +64,6 @@ This ensures each crate's dependencies are available before it publishes.
 
 ### v0.2.0 (2026-03-15)
 
-Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests.
+Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests (workspace total now 1,255 after subsequent waves).
 
 For the complete version history, see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).
