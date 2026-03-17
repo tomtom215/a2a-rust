@@ -296,14 +296,12 @@ fn is_stream_terminal(text: &str) -> bool {
     let Ok(frame) = serde_json::from_str::<serde_json::Value>(text) else {
         return false;
     };
-    let result = frame.get("result");
-    // Check for explicit stream_complete sentinel
-    if let Some(r) = result {
-        if r.get("stream_complete").is_some() {
-            return true;
-        }
+
+    // Helper: check whether a JSON object contains a terminal task state
+    // at one of the known locations (statusUpdate.status.state or status.state).
+    let has_terminal_state = |obj: &serde_json::Value| -> bool {
         // Check for terminal status in statusUpdate
-        if let Some(status_update) = r.get("statusUpdate") {
+        if let Some(status_update) = obj.get("statusUpdate") {
             if let Some(status) = status_update.get("status") {
                 if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
                     return matches!(state, "completed" | "failed" | "canceled" | "rejected");
@@ -311,13 +309,31 @@ fn is_stream_terminal(text: &str) -> bool {
             }
         }
         // Check for terminal status in a full task response
-        if let Some(status) = r.get("status") {
+        if let Some(status) = obj.get("status") {
             if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
                 return matches!(state, "completed" | "failed" | "canceled" | "rejected");
             }
         }
+        false
+    };
+
+    // If the frame is a JSON-RPC envelope, inspect the result field.
+    if let Some(r) = frame.get("result") {
+        // Check for explicit stream_complete sentinel.
+        // The server may send either {"stream_complete": true} or
+        // {"status": "stream_complete"}.
+        if r.get("stream_complete").is_some() {
+            return true;
+        }
+        if r.get("status").and_then(|s| s.as_str()) == Some("stream_complete") {
+            return true;
+        }
+        return has_terminal_state(r);
     }
-    false
+
+    // The frame may be a raw StreamResponse (not wrapped in a JSON-RPC envelope).
+    // This happens when the server sends streaming events as bare JSON objects.
+    has_terminal_state(&frame)
 }
 
 fn build_rpc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
@@ -413,5 +429,66 @@ mod tests {
         // Payload text containing "completed" should NOT trigger termination
         let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"artifactUpdate":{"artifact":{"id":"a1","parts":[{"text":"task completed successfully"}]}}}}"#;
         assert!(!is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn build_rpc_request_has_method() {
+        let req = build_rpc_request("TestMethod", serde_json::json!({"key": "val"}));
+        assert_eq!(req.method, "TestMethod");
+        assert!(req.params.is_some());
+        // ID should be a UUID string
+        assert!(req.id.is_some());
+    }
+
+    #[test]
+    fn is_stream_terminal_invalid_json() {
+        assert!(!is_stream_terminal("not json"));
+    }
+
+    #[test]
+    fn is_stream_terminal_no_result() {
+        assert!(!is_stream_terminal(r#"{"jsonrpc":"2.0","id":"1"}"#));
+    }
+
+    #[test]
+    fn is_stream_terminal_task_level_completed() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"status":{"state":"completed"}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_canceled() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"canceled"}}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_rejected() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"rejected"}}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_task_level_failed() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"status":{"state":"failed"}}}"#;
+        assert!(is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn is_stream_terminal_non_string_state() {
+        let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"status":{"state":42}}}"#;
+        assert!(!is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn validate_ws_url_rejects_https() {
+        assert!(validate_ws_url("https://example.com").is_err());
+    }
+
+    #[test]
+    fn validate_ws_url_error_message_contains_url() {
+        let err = validate_ws_url("http://bad").unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("http://bad") || msg.contains("ws://"));
     }
 }
