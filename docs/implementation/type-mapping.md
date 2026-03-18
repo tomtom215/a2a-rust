@@ -77,7 +77,7 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-The `kind` field (`"task"`) is injected by enclosing discriminated union serialization, not as a struct field on `Task` itself.
+In v1.0, enclosing enums (`StreamResponse`, `SendMessageResponse`) use externally-tagged serialization: `{"task": {...}}`. There is no explicit `kind` field.
 
 ---
 
@@ -112,7 +112,7 @@ pub enum MessageRole {
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-The `kind` field (`"message"`) is injected by enclosing discriminated union serialization.
+In v1.0, enclosing enums use externally-tagged serialization: `{"message": {...}}`. There is no explicit `kind` field.
 
 ### `PartContent` (discriminated union, tag = `"type"`)
 
