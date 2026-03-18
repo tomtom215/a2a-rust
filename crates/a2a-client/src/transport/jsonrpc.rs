@@ -303,26 +303,13 @@ impl Transport for JsonRpcTransport {
 ///
 /// Exits when the body is exhausted or the channel receiver is dropped.
 async fn body_reader_task(
-    body: hyper::body::Incoming,
+    mut body: hyper::body::Incoming,
     tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
 ) {
-    // We need to pin the Incoming body before polling it.
-    // Safety: we do not move `body` after this point.
-    tokio::pin!(body);
+    use http_body_util::BodyExt;
 
     loop {
-        // Poll one frame from the body.
-        let frame = std::future::poll_fn(|cx| {
-            use hyper::body::Body;
-            // SAFETY: `body` is pinned by `tokio::pin!` above and we do not
-            // move it. `Pin::new_unchecked` is safe here because the future
-            // created by `poll_fn` ensures stable addressing.
-            let pinned = unsafe { Pin::new_unchecked(&mut *body) };
-            pinned.poll_frame(cx)
-        })
-        .await;
-
-        match frame {
+        match body.frame().await {
             None => break, // body exhausted
             Some(Err(e)) => {
                 let _ = tx.send(Err(ClientError::Http(e))).await;

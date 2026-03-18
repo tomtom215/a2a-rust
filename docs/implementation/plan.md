@@ -71,7 +71,7 @@ See the book's [Configuration Reference](../../book/src/reference/configuration.
 - **Transport abstraction** — pluggable HTTP backends; the protocol core carries no HTTP dep.
 - **Strict modularity** — 500-line file cap, single-responsibility per module, thin `mod.rs` files.
 - **Complete test coverage** — unit tests, integration tests with real TCP servers, end-to-end examples.
-- **Minimal `unsafe`** — only for necessary pinning operations, with mandatory `// SAFETY:` comments. `#![deny(unsafe_op_in_unsafe_fn)]` in every crate.
+- **Zero `unsafe`** — no `unsafe` blocks in any library crate. `#![deny(unsafe_op_in_unsafe_fn)]` in every crate.
 
 ### Original Non-Goals (subsequently implemented as optional features)
 
