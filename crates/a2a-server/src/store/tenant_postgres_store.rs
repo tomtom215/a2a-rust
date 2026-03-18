@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Tenant-scoped PostgreSQL-backed [`TaskStore`] implementation.
+//! Tenant-scoped `PostgreSQL`-backed [`TaskStore`] implementation.
 //!
 //! Adds a `tenant_id` column to the `tasks` table for full tenant isolation
 //! at the database level. Uses [`TenantContext`] to scope all operations.
@@ -35,7 +35,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use super::task_store::TaskStore;
 use super::tenant::TenantContext;
 
-/// Tenant-scoped PostgreSQL-backed [`TaskStore`].
+/// Tenant-scoped `PostgreSQL`-backed [`TaskStore`].
 ///
 /// Each operation is scoped to the tenant from [`TenantContext`]. Tasks are
 /// stored with a `tenant_id` column for database-level isolation, enabling
@@ -46,7 +46,7 @@ pub struct TenantAwarePostgresTaskStore {
 }
 
 impl TenantAwarePostgresTaskStore {
-    /// Opens a PostgreSQL connection pool and initializes the schema.
+    /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
     ///

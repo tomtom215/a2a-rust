@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! PostgreSQL-backed [`PushConfigStore`] implementation.
+//! `PostgreSQL`-backed [`PushConfigStore`] implementation.
 //!
-//! Requires the `postgres` feature flag. Uses `sqlx` for async PostgreSQL access.
+//! Requires the `postgres` feature flag. Uses `sqlx` for async `PostgreSQL` access.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -14,7 +14,7 @@ use sqlx::postgres::PgPool;
 
 use super::config_store::PushConfigStore;
 
-/// PostgreSQL-backed [`PushConfigStore`].
+/// `PostgreSQL`-backed [`PushConfigStore`].
 ///
 /// Stores push notification configs as JSONB blobs in a `push_configs` table.
 ///
@@ -40,7 +40,7 @@ fn to_a2a_error(e: sqlx::Error) -> A2aError {
 }
 
 impl PostgresPushConfigStore {
-    /// Opens a PostgreSQL connection pool and initializes the schema.
+    /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
     ///

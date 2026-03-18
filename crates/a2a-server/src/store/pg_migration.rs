@@ -72,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
     },
 ];
 
-/// Runs schema migrations against a PostgreSQL database.
+/// Runs schema migrations against a `PostgreSQL` database.
 ///
 /// Tracks which migrations have been applied in a `schema_versions` table and
 /// only executes those that have not yet been applied. Migrations are executed
@@ -197,8 +197,10 @@ impl PgMigrationRunner {
                 sqlx::query(trimmed).execute(&mut *tx).await?;
             }
 
+            #[allow(clippy::cast_possible_wrap)] // migration versions are small constants (<100)
+            let version_i32 = migration.version as i32;
             sqlx::query("INSERT INTO schema_versions (version, description) VALUES ($1, $2)")
-                .bind(migration.version as i32)
+                .bind(version_i32)
                 .bind(migration.description)
                 .execute(&mut *tx)
                 .await?;
