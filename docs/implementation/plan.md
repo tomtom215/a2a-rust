@@ -3,7 +3,7 @@
 > **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
 
 **Protocol Version:** A2A v1.0.0
-**Target Rust Version:** 1.94.x (stable)
+**Target Rust Version:** 1.93.x (stable)
 **License:** Apache-2.0
 **Status:** All 9 phases complete
 
@@ -761,7 +761,7 @@ Files: `crates/a2a-client/src/tls.rs`
 
 | Item | Status |
 |---|---|
-| Matrix strategy (stable + MSRV 1.94) | ✅ Clippy + test on both |
+| Matrix strategy (stable + MSRV 1.93) | ✅ Clippy + test on both |
 | Format check job | ✅ `cargo fmt --all -- --check` |
 | Clippy job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
 | Test job (all feature combos) | ✅ default, signing, tracing, tls-rustls |
@@ -820,7 +820,7 @@ Examples:
 
 ## 8. Quality Gates
 
-All gates must pass before tagging a release. Enforced by CI (`.github/workflows/ci.yml`) on stable + MSRV (1.94).
+All gates must pass before tagging a release. Enforced by CI (`.github/workflows/ci.yml`) on stable + MSRV (1.93).
 
 ```bash
 # Formatting (zero diffs allowed)

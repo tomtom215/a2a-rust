@@ -9,7 +9,7 @@
 [![Crates.io](https://img.shields.io/crates/v/a2a-protocol-sdk.svg)](https://crates.io/crates/a2a-protocol-sdk)
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![MSRV](https://img.shields.io/badge/rust-1.94%2B-orange.svg)](https://www.rust-lang.org)
+[![MSRV](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org)
 [![A2A Conformance](https://img.shields.io/badge/A2A%20v1.0-TCK%20conformant-brightgreen)](tck/)
 
 Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) v1.0.0.
@@ -331,7 +331,7 @@ All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `
 
 ## Minimum Supported Rust Version
 
-Rust **1.94** or later (stable).
+Rust **1.93** or later (stable).
 
 ## License
 

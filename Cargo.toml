@@ -18,7 +18,7 @@ members = [
 
 [workspace.package]
 edition      = "2021"
-rust-version = "1.94"
+rust-version = "1.93"
 license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"

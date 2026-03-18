@@ -148,9 +148,9 @@ jobs:
             os: ubuntu-latest
             toolchain: stable
             command: cargo doc --workspace --no-deps
-          - name: "MSRV 1.94"
+          - name: "MSRV 1.93"
             os: ubuntu-latest
-            toolchain: "1.94"
+            toolchain: "1.93"
             command: cargo check --workspace
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

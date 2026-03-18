@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Rust 1.94+** (stable)
+- **Rust 1.93+** (stable; also tested on 1.94)
 - A working internet connection for downloading crates
 
 ## Adding to Your Project
