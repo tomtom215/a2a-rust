@@ -91,13 +91,13 @@ impl EventQueueWriter for InMemoryQueueWriter {
             let serialized_size = {
                 let mut counter = CountingWriter(0);
                 serde_json::to_writer(&mut counter, &event)
-                    .map(|()| counter.0)
-                    .unwrap_or(0)
+                    .map_err(|e| A2aError::internal(format!("event serialization failed: {e}")))?;
+                counter.0
             };
             if serialized_size > self.max_event_size {
                 return Err(A2aError::internal(format!(
-                    "event size {} bytes exceeds maximum {} bytes",
-                    serialized_size, self.max_event_size
+                    "event size {serialized_size} bytes exceeds maximum {} bytes",
+                    self.max_event_size
                 )));
             }
             self.tx
@@ -144,8 +144,8 @@ impl EventQueueReader for InMemoryQueueReader {
                     Ok(event) => return Some(event),
                     Err(broadcast::error::RecvError::Lagged(_n)) => {
                         trace_warn!(
-                            lagged = _n,
-                            "event queue reader lagged, skipping missed events"
+                            dropped_events = _n,
+                            "event queue reader lagged, {_n} events skipped"
                         );
                     }
                     Err(broadcast::error::RecvError::Closed) => return None,

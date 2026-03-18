@@ -718,6 +718,52 @@ mod tests {
         );
     }
 
+    // ── capacity eviction fallback to non-terminal ────────────────────────
+
+    #[tokio::test]
+    async fn capacity_eviction_falls_back_to_non_terminal_when_needed() {
+        let config = TaskStoreConfig {
+            max_capacity: Some(2),
+            task_ttl: None,
+            eviction_interval: 1,
+            max_page_size: 100,
+        };
+        let store = InMemoryTaskStore::with_config(config);
+
+        // 3 non-terminal tasks — eviction must evict oldest non-terminal
+        // to enforce the hard capacity limit.
+        store
+            .save(make_task("oldest-active", TaskState::Working))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("middle-active", TaskState::Submitted))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(2)).await;
+        store
+            .save(make_task("newest-active", TaskState::Working))
+            .await
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        assert!(
+            store
+                .get(&TaskId::new("oldest-active"))
+                .await
+                .unwrap()
+                .is_none(),
+            "oldest non-terminal task should be evicted as fallback"
+        );
+        assert_eq!(
+            store.count().await.unwrap(),
+            2,
+            "store should be at max capacity after fallback eviction"
+        );
+    }
+
     // ── Config defaults ──────────────────────────────────────────────────
 
     /// Covers lines 74-76 (`InMemoryTaskStore` Default impl).

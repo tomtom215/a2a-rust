@@ -81,6 +81,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generates an ES256 key pair, signs a card, verifies the signature, and tests tamper
   detection (`#[cfg(feature = "signing")]`).
 
+### Fixed (Pass 10 — Exhaustive Audit)
+
+- **Bug #40: Event queue serialization error silently swallowed** —
+  `InMemoryQueueWriter::write()` used `unwrap_or(0)` when measuring serialized
+  event size via `CountingWriter`. If `serde_json::to_writer` failed during size
+  measurement, the error was silently masked and the event was sent through the
+  channel without validation. Now propagates the serialization error as
+  `A2aError::internal("event serialization failed: ...")`.
+- **Bug #41: Capacity eviction fails when insufficient terminal tasks** —
+  `InMemoryTaskStore` capacity eviction only removed terminal (completed/failed)
+  tasks. When the store exceeded `max_capacity` with mostly non-terminal tasks,
+  eviction could not remove enough entries, leaving the store permanently over
+  capacity. Now falls back to evicting the oldest non-terminal tasks as a last
+  resort to guarantee the hard capacity limit is enforced.
+- **Bug #42: Lagged event count not exposed in reader warning** — The broadcast
+  channel `Lagged(n)` error discarded the count of dropped events (`_n`). Now
+  includes the actual count in the `trace_warn!` message for production
+  observability (`"event queue reader lagged, {n} events skipped"`).
+
+### Added (Pass 10)
+
+- **1 new unit test** — `capacity_eviction_falls_back_to_non_terminal_when_needed`
+  verifies that the fallback eviction path correctly removes non-terminal tasks
+  when there are insufficient terminal tasks to bring the store under capacity.
+- **94 passing E2E tests** with all features enabled (websocket, grpc, axum,
+  sqlite, signing, otel). All tests exercised in a single dogfood run.
+- **Total workspace tests: 1,750+** passing across all crates.
+
 ### Fixed (Pass 8 — Deep Dogfood)
 
 - **Bug #32: Timeout errors misclassified as Transport (CRITICAL)** — REST and

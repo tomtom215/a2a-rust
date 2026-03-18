@@ -57,8 +57,11 @@ This ensures each crate's dependencies are available before it publishes.
 - **`TenantResolver` trait** — `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver`
 - **Agent card signing E2E** — test 79 in agent-team suite (`signing` feature)
 
-### Bug Fixes (Passes 7–8)
+### Bug Fixes (Passes 7–10)
 
+- Event queue serialization error swallowing fixed with proper error propagation
+- Capacity eviction now falls back to non-terminal tasks when terminal tasks are insufficient
+- Lagged event count now exposed in reader warnings for observability
 - Timeout errors now correctly classified as retryable (`ClientError::Timeout`)
 - SSE parser O(n) dequeue replaced with `VecDeque` for O(1) `pop_front`
 - Double-encoded path traversal bypass fixed with two-pass percent-decoding

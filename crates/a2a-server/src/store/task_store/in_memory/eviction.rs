@@ -79,6 +79,8 @@ impl InMemoryTaskStore {
         }
 
         // Capacity eviction: remove oldest terminal tasks if over capacity.
+        // If there aren't enough terminal tasks, fall back to removing the
+        // oldest non-terminal tasks to guarantee the capacity limit is enforced.
         if let Some(max) = config.max_capacity {
             if store.len() > max {
                 let overflow = store.len() - max;
@@ -90,8 +92,24 @@ impl InMemoryTaskStore {
                     .collect();
                 terminal.sort_by_key(|(_, t)| *t);
 
+                let mut removed = 0;
                 for (id, _) in terminal.into_iter().take(overflow) {
                     store.remove(&id);
+                    removed += 1;
+                }
+
+                // If there weren't enough terminal tasks, evict oldest
+                // non-terminal tasks as a last resort to enforce the hard cap.
+                if removed < overflow && store.len() > max {
+                    let remaining = store.len() - max;
+                    let mut non_terminal: Vec<(TaskId, Instant)> = store
+                        .iter()
+                        .map(|(id, e)| (id.clone(), e.last_updated))
+                        .collect();
+                    non_terminal.sort_by_key(|(_, t)| *t);
+                    for (id, _) in non_terminal.into_iter().take(remaining) {
+                        store.remove(&id);
+                    }
                 }
             }
         }
