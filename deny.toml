@@ -50,9 +50,17 @@ wildcards         = "warn"
 
 deny = [
     # System OpenSSL dep breaks musl/alpine cross-compilation
-    { name = "openssl-sys" },
+    { name = "openssl-sys", wrappers = ["rig-core"] },
     # reqwest carries 30+ transitive deps we do not need
-    { name = "reqwest" },
+    { name = "reqwest", wrappers = ["rig-core", "genai"] },
+]
+
+skip = [
+    # rig-core transitively pulls reqwest 0.11 and openssl-sys;
+    # we cannot remove them until rig-core drops these dependencies.
+    { crate = "openssl-sys@0.9", reason = "transitive dep of rig-core" },
+    { crate = "reqwest@0.11", reason = "transitive dep of rig-core" },
+    { crate = "reqwest@0.12", reason = "transitive dep of genai" },
 ]
 
 # ---------------------------------------------------------------------------
