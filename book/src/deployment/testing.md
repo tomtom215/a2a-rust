@@ -268,7 +268,7 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with 1,750+ passing tests, 71 E2E dogfood tests, property tests, and fuzz targets —
+Even with 1,750+ passing tests, 72 E2E dogfood tests, property tests, and fuzz targets —
 all green — the first mutation testing run surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,
@@ -364,8 +364,8 @@ returns `true` for terminal states.
 
 ## Running the Test Suite
 
-> **Current status:** The workspace has **1,750+ passing tests** across all crates
-> (unit, integration, property, fuzz, and E2E dogfood).
+> **Current status:** The workspace has **1,750+ passing tests** (with feature flags)
+> across all crates (unit, integration, property, TCK conformance, and E2E dogfood).
 
 ```bash
 # All tests

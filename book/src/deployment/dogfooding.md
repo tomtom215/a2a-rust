@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **71 E2E tests** (78 with optional WebSocket, gRPC, signing, and OTel features) runs in ~2.5 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **72 E2E tests** (79 with optional WebSocket, gRPC, signing, and OTel features) runs in ~2.5 seconds.
 
 ## Why Dogfood?
 
@@ -17,7 +17,7 @@ Unit tests and integration tests are necessary but insufficient. **No single tes
 | **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 
-**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 71 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
+**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 72 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
 Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 
@@ -192,7 +192,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 ## Sub-pages
 
 - **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 36 bugs discovered across eight dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 71-test E2E coverage map (78 with optional transports, signing, and OTel)
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 72-test E2E coverage map (79 with optional transports, signing, and OTel)
 
 ## See Also
 

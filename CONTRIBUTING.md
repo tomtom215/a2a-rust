@@ -26,8 +26,10 @@ only re-exports.
 
 ### Thin `mod.rs` files
 
-`mod.rs` files contain only `mod` declarations and `pub use` re-exports.
-No logic, no structs, no impls.
+`mod.rs` files should primarily contain `mod` declarations and `pub use`
+re-exports. Shared types that are tightly coupled to a module's children
+(e.g. `DispatchConfig` in `dispatch/mod.rs`) may live in the parent
+`mod.rs` when splitting them out would add indirection without value.
 
 ### Lint directives on every crate root
 
@@ -72,6 +74,7 @@ Before adding a dependency:
 |---|---|---|
 | Unit tests | `#[cfg(test)]` modules in source files | `cargo test --workspace` |
 | Integration tests | `crates/*/tests/` | included in workspace test |
+| TCK conformance | `crates/a2a-types/tests/tck_wire_format.rs` | `cargo test -p a2a-protocol-types --test tck_wire_format` |
 | Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
@@ -84,10 +87,14 @@ Before adding a dependency:
 # Run all tests
 cargo test --workspace
 
+# Run all tests including feature-gated code (sqlite, otel, axum, etc.)
+cargo test --workspace --features "a2a-protocol-server/axum"
+
 # Run tests for a specific crate
 cargo test -p a2a-protocol-types
 cargo test -p a2a-protocol-client
 cargo test -p a2a-protocol-server
+cargo test -p a2a-protocol-sdk
 
 # Run tests with signing feature
 cargo test --workspace --features signing
@@ -211,7 +218,7 @@ cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # 5. With signing feature (if changes touch signing code)
-cargo clippy --workspace --all-targets --features signing
+cargo clippy --workspace --all-targets --features signing -- -D warnings
 cargo test --workspace --features signing
 
 # 6. With tracing feature (if changes touch tracing code)
@@ -220,7 +227,11 @@ cargo test --workspace --features tracing
 # 7. With TLS feature (if changes touch TLS code)
 cargo test -p a2a-protocol-client --features tls-rustls
 
-# 8. Mutation testing (zero surviving mutants in changed files)
+# 8. With axum feature (if changes touch dispatch/axum code)
+cargo clippy -p a2a-protocol-server --features axum -- -D warnings
+cargo test -p a2a-protocol-server --features axum
+
+# 9. Mutation testing (zero surviving mutants in changed files)
 cargo mutants --workspace
 ```
 
@@ -231,7 +242,7 @@ cargo mutants --workspace
 - [ ] SPDX header on every new file
 - [ ] No file exceeds 500 lines
 - [ ] `cargo fmt --all` passes
-- [ ] `cargo clippy --all-targets -- -D warnings` passes
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments

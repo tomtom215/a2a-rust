@@ -38,10 +38,14 @@ This ensures each crate's dependencies are available before it publishes.
 
 ## Latest (Unreleased)
 
+- **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
+  Axum servers. All 11 REST methods, composable with other Axum routes/middleware.
+- **TCK wire format conformance tests** — 44 tests validating wire format
+  compatibility against the A2A v1.0 specification.
 - **Wave 2 inline unit tests** — 110 new `#[cfg(test)]` tests added directly
   to 9 critical `a2a-protocol-server` source files (messaging, event_processing,
   push_config, lifecycle, handler/mod, REST/JSON-RPC/gRPC/WebSocket dispatchers).
-  Total workspace test count: 1,750+ passing tests.
+  Total workspace test count: 1,750+ passing tests (with feature flags).
 
 ### Beyond-Spec Enhancements
 

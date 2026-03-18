@@ -67,6 +67,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `axum` | Axum framework integration (`A2aRouter`) |
 
 ### `a2a-protocol-sdk` (umbrella)
 
@@ -77,6 +78,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `tls-rustls` | Enables HTTPS in the client |
 | `grpc` | Enables gRPC across client and server |
 | `otel` | Enables OpenTelemetry metrics in the server |
+| `axum` | Enables Axum integration in the server |
 
 Enable features in your `Cargo.toml`:
 

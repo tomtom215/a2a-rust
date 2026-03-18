@@ -109,4 +109,12 @@ Rejected. `reqwest` is excellent for application code but wrong for SDK infrastr
 
 ### Use `axum` for Server
 
-Rejected. Framework lock-in. Users who have chosen `actix-web`, `warp`, or raw `hyper` would be forced to add `axum` as a dep. The server is implemented directly on `hyper` and exposes a transport-agnostic `RequestHandler` trait that any framework can wrap.
+Rejected as a **mandatory** dependency. Framework lock-in would force users who
+have chosen `actix-web`, `warp`, or raw `hyper` to add `axum` as a dep. The
+server core is implemented directly on `hyper` and exposes a transport-agnostic
+`RequestHandler` that any framework can wrap.
+
+**Update (ADR 0007):** An optional `axum` feature flag was later added, providing
+`A2aRouter` for idiomatic Axum integration. This is additive — the raw hyper
+`serve()` API and `Dispatcher` trait remain the primary path. The `axum` dep is
+only pulled in when the feature is enabled.

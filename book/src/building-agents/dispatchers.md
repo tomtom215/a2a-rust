@@ -1,6 +1,6 @@
-# Dispatchers (JSON-RPC, REST & gRPC)
+# Dispatchers (JSON-RPC, REST, Axum & gRPC)
 
-Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides four built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature).
+Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides five built-in dispatchers: `JsonRpcDispatcher`, `RestDispatcher`, `A2aRouter` (`axum` feature), `WebSocketDispatcher` (`websocket` feature), and `GrpcDispatcher` (`grpc` feature).
 
 ## JsonRpcDispatcher
 
@@ -195,6 +195,48 @@ tonic::transport::Server::builder()
     .serve(addr)
     .await?;
 ```
+
+## A2aRouter (Axum)
+
+For projects already using Axum, the `axum` feature provides `A2aRouter` — an
+idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
+
+```toml
+a2a-protocol-server = { version = "0.2", features = ["axum"] }
+```
+
+```rust
+use a2a_protocol_server::A2aRouter;
+use std::sync::Arc;
+
+let handler = Arc::new(
+    RequestHandlerBuilder::new(MyExecutor)
+        .with_agent_card(card)
+        .build()
+        .unwrap(),
+);
+
+let app = A2aRouter::new(handler).into_router();
+
+let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+axum::serve(listener, app).await?;
+```
+
+### Composability
+
+The returned `Router` can be merged with other Axum routes and middleware:
+
+```rust
+let app = axum::Router::new()
+    .merge(A2aRouter::new(handler).into_router())
+    .route("/custom", axum::routing::get(custom_handler));
+```
+
+### Routes
+
+All 11 A2A REST methods are mapped, plus health check and agent card discovery.
+Streaming methods return SSE responses. The router delegates entirely to
+`RequestHandler` — zero business logic duplication.
 
 ## Running Multiple Transports
 

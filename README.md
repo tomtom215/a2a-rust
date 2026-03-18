@@ -53,7 +53,8 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 |---|---|
 | **Retry policy** | Configurable `RetryPolicy` with exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency (`tls-rustls` feature) |
-| **Zero framework lock-in** | Built on raw `hyper` 1.x; bring your own web framework |
+| **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
+| **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
 
 ### Observability & Operations
 
@@ -178,7 +179,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 71 E2E tests (78 with optional WebSocket, gRPC, signing, and OTel features) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, and agent card signing:
+A comprehensive 4-agent team that exercises every SDK feature — 72 E2E tests (79 with optional WebSocket, gRPC, signing, and OTel features) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, and agent card signing:
 
 ```bash
 cargo run -p agent-team
@@ -211,6 +212,7 @@ cargo run -p echo-agent
 ┌─────────────────────▼──────────────────────┐
 │  Transport Layer                           │
 │  JsonRpcDispatcher · RestDispatcher        │
+│  A2aRouter (axum, feature-gated)           │
 │  WebSocketDispatcher (feature-gated)       │
 │  GrpcDispatcher (feature-gated)            │
 │  JsonRpcTransport · RestTransport          │
@@ -226,7 +228,7 @@ cargo run -p echo-agent
 The server uses a 3-layer architecture:
 1. **You implement `AgentExecutor`** — your agent logic, produces events via `EventQueueWriter`
 2. **`RequestHandler` orchestrates** — manages tasks, stores, push notifications, interceptors
-3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic to the handler
+3. **Dispatchers handle HTTP/gRPC** — `JsonRpcDispatcher` (JSON-RPC 2.0), `RestDispatcher` (REST), `A2aRouter` (Axum), `WebSocketDispatcher` (WebSocket), and `GrpcDispatcher` (gRPC) wire hyper/tonic/axum to the handler
 
 ## Supported Methods
 
@@ -247,7 +249,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (1,750+ tests across 4 crates)
+# Run all tests (1,750+ with feature flags; ~1,600 with defaults only)
 cargo test --workspace
 
 # Run the end-to-end example

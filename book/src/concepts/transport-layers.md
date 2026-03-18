@@ -15,7 +15,7 @@ The JSON-RPC transport sends all requests to a single endpoint as POST requests 
     "message": {
       "messageId": "msg-1",
       "role": "ROLE_USER",
-      "parts": [{"text": "Hello, agent!"}]
+      "parts": [{"type": "text", "text": "Hello, agent!"}]
     }
   }
 }

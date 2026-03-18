@@ -77,12 +77,11 @@ pub struct TaskStatusUpdateEvent {
 {"kind": "data", "data": {...}}
 ```
 
-**v1.0.0 (target)** — flat Part with populated field as discriminator:
+**v1.0.0 (actual)** — internally tagged with `"type"` discriminator:
 ```json
-{"text": "hello"}
-{"raw": "base64...", "filename": "foo.png", "mediaType": "image/png"}
-{"url": "https://...", "filename": "foo.png", "mediaType": "image/png"}
-{"data": {...}}
+{"type": "text", "text": "hello"}
+{"type": "file", "file": {"name": "foo.png", "mimeType": "image/png", "bytes": "base64..."}}
+{"type": "data", "data": {...}}
 ```
 
 **Proto definition**:

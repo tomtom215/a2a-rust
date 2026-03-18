@@ -98,6 +98,7 @@ a2a-rust/
 │   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
 │   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
 │   │       │   │   └── response.rs     # JSON-RPC response serialization
+│   │       │   ├── axum_adapter.rs  # A2aRouter (axum feature-gated)
 │   │       │   ├── websocket.rs    # WebSocketDispatcher (feature-gated)
 │   │       │   ├── cors.rs         # CorsConfig
 │   │       │   └── grpc/           # gRPC dispatcher (feature-gated)

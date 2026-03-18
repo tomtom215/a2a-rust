@@ -12,9 +12,9 @@ Content-Type: text/event-stream
 
 data: {"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}
 
-data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"partial..."}]},"lastChunk":false}
+data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"partial..."}]},"lastChunk":false}
 
-data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"complete result"}]},"lastChunk":true}
+data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"complete result"}]},"lastChunk":true}
 
 data: {"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}}
 
@@ -51,7 +51,7 @@ Delivers artifact content (potentially in chunks):
   "contextId": "ctx-123",
   "artifact": {
     "artifactId": "result-1",
-    "parts": [{"text": "The answer is..."}]
+    "parts": [{"type": "text", "text": "The answer is..."}]
   },
   "lastChunk": false,
   "append": false
@@ -79,7 +79,7 @@ A direct message response (for simple request/reply patterns):
 {
   "messageId": "msg-456",
   "role": "ROLE_AGENT",
-  "parts": [{"text": "Quick answer"}]
+  "parts": [{"type": "text", "text": "Quick answer"}]
 }
 ```
 
