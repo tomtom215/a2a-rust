@@ -110,7 +110,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path traversal (Bug #35), exhaustive retryable classification.
 - **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
   cancel stress test (10 parallel), stale page token graceful handling.
-- **Total E2E tests: 72** (79 with optional gRPC+WebSocket+signing+OTel).
+- **Total E2E tests: 82** (98 with optional gRPC+WebSocket+Axum+SQLite+signing+OTel).
+
+### Fixed (Pass 9 — Scale Probing)
+
+- **Bug #37: SSE parser unbounded error queue** — `SseParser` internal frame
+  queue could grow without bound from malicious streams. Added `max_queued_frames`
+  limit (default 4096) with `with_max_queued_frames()` builder method.
+- **Bug #39: Retry backoff float overflow** — `cap_backoff()` could panic on
+  `f64::INFINITY` or `NaN` from extreme multiplier values. Now checks for
+  non-finite results before `Duration` conversion.
+- **Bug #38: Background event processor race** (documented) — In streaming mode,
+  the background processor subscribes after the executor starts, so fast executors
+  may complete before the subscription is active. Documented as known limitation.
+
+### Added (Pass 9)
+
+- **10 new deep dogfood E2E tests (81-90)** — state transition ordering, executor
+  error propagation, streaming completeness, oversized metadata rejection, artifact
+  content correctness, GetTask history, rapid sequential throughput, cancel terminal
+  task, agent card semantic validation, GetTask-after-stream sync.
+- **6 new Axum + SQLite E2E tests (93-98)** — Axum send/stream/card discovery,
+  SQLite task store lifecycle, SQLite push config CRUD, combined Axum+SQLite stack.
 
 ### Fixed (Pass 7 — Deep Dogfood)
 
