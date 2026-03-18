@@ -152,7 +152,7 @@ Expected output:
 
 ```
 ╔══════════════════════════════════════════════════════════════╗
-║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite     ║
+║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite       ║
 ╚══════════════════════════════════════════════════════════════╝
 
 Agent [CodeAnalyzer]  JSON-RPC on http://127.0.0.1:XXXXX
