@@ -311,4 +311,65 @@ mod tests {
         ctx.cancellation_token.cancel();
         assert!(emit.is_cancelled());
     }
+
+    #[tokio::test]
+    async fn emit_status_writes_to_queue() {
+        let ctx = make_request_context();
+        let emit = EventEmitter::new(&ctx, &DummyWriter);
+        emit.status(TaskState::Working).await.unwrap();
+        emit.status(TaskState::Completed).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn emit_artifact_writes_to_queue() {
+        let ctx = make_request_context();
+        let emit = EventEmitter::new(&ctx, &DummyWriter);
+        emit.artifact("result-1", vec![Part::text("hello")], None, Some(true))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn emit_artifact_with_append() {
+        let ctx = make_request_context();
+        let emit = EventEmitter::new(&ctx, &DummyWriter);
+        emit.artifact(
+            "chunk-1",
+            vec![Part::text("part1")],
+            Some(false),
+            Some(false),
+        )
+        .await
+        .unwrap();
+        emit.artifact("chunk-1", vec![Part::text("part2")], Some(true), Some(true))
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn boxed_future_wraps_async_block() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let result = rt.block_on(boxed_future(async { 42 }));
+        assert_eq!(result, 42);
+    }
+
+    // ── Test the macro with cancel form ──────────────────────────────────
+
+    struct CancelableTestExecutor;
+    agent_executor!(CancelableTestExecutor,
+        execute: |_ctx, _queue| async { Ok(()) },
+        cancel: |_ctx, _queue| async { Ok(()) }
+    );
+
+    #[tokio::test]
+    async fn macro_cancel_form_compiles_and_runs() {
+        use crate::executor::AgentExecutor;
+        let executor = CancelableTestExecutor;
+        let ctx = make_request_context();
+        let writer = DummyWriter;
+        executor.execute(&ctx, &writer).await.unwrap();
+        executor.cancel(&ctx, &writer).await.unwrap();
+    }
 }

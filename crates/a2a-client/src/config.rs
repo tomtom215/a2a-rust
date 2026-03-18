@@ -161,4 +161,42 @@ mod tests {
         let cfg = ClientConfig::default_http();
         assert!(matches!(cfg.tls, TlsConfig::Disabled));
     }
+
+    #[test]
+    fn default_http_config_field_values() {
+        let cfg = ClientConfig::default_http();
+        assert_eq!(cfg.preferred_bindings, vec![BINDING_JSONRPC]);
+        assert_eq!(
+            cfg.accepted_output_modes,
+            vec!["text/plain", "application/json"]
+        );
+        assert!(cfg.history_length.is_none());
+        assert!(!cfg.return_immediately);
+        assert_eq!(cfg.request_timeout, Duration::from_secs(30));
+        assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
+        assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn default_config_field_values() {
+        let cfg = ClientConfig::default();
+        assert_eq!(cfg.preferred_bindings, vec![BINDING_JSONRPC]);
+        assert_eq!(
+            cfg.accepted_output_modes,
+            vec!["text/plain", "application/json"]
+        );
+        assert!(cfg.history_length.is_none());
+        assert!(!cfg.return_immediately);
+        assert_eq!(cfg.request_timeout, Duration::from_secs(30));
+        assert_eq!(cfg.stream_connect_timeout, Duration::from_secs(30));
+        assert_eq!(cfg.connection_timeout, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn binding_constants_values() {
+        assert_eq!(BINDING_JSONRPC, "JSONRPC");
+        assert_eq!(BINDING_HTTP_JSON, "HTTP+JSON");
+        assert_eq!(BINDING_REST, "REST");
+        assert_eq!(BINDING_GRPC, "GRPC");
+    }
 }

@@ -141,6 +141,115 @@ pub trait TaskStore: Send + Sync + 'static {
     }
 }
 
+/// Tests for the default `count` implementation on `TaskStore`.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A minimal `TaskStore` that only implements required methods.
+    struct MinimalStore;
+
+    impl TaskStore for MinimalStore {
+        fn save<'a>(
+            &'a self,
+            _task: Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+            Box::pin(async { Ok(None) })
+        }
+
+        fn list<'a>(
+            &'a self,
+            _params: &'a ListTasksParams,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+            Box::pin(async { Ok(TaskListResponse::new(vec![])) })
+        }
+
+        fn insert_if_absent<'a>(
+            &'a self,
+            _task: Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            Box::pin(async { Ok(true) })
+        }
+
+        fn delete<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+        // Note: count() is NOT overridden, so the default impl is used.
+    }
+
+    /// Covers lines 139-141: default `count()` returns 0.
+    #[tokio::test]
+    async fn default_count_returns_zero() {
+        let store = MinimalStore;
+        let count = store.count().await.unwrap();
+        assert_eq!(count, 0, "default count() should return 0");
+    }
+
+    /// Covers `TaskStoreConfig::default()` (lines 222-231).
+    #[test]
+    fn task_store_config_default_values() {
+        let config = super::TaskStoreConfig::default();
+        assert_eq!(config.max_capacity, Some(10_000));
+        assert_eq!(config.task_ttl, Some(Duration::from_secs(3600)));
+        assert_eq!(config.eviction_interval, 64);
+        assert_eq!(config.max_page_size, 1000);
+    }
+
+    /// Covers `TaskStoreConfig` Clone + Debug derives.
+    #[test]
+    fn task_store_config_clone_and_debug() {
+        let config = super::TaskStoreConfig {
+            max_capacity: Some(500),
+            task_ttl: None,
+            eviction_interval: 32,
+            max_page_size: 100,
+        };
+        let cloned = config;
+        assert_eq!(cloned.max_capacity, Some(500));
+        assert_eq!(cloned.task_ttl, None);
+        assert_eq!(cloned.eviction_interval, 32);
+        assert_eq!(cloned.max_page_size, 100);
+
+        let debug_str = format!("{cloned:?}");
+        assert!(
+            debug_str.contains("TaskStoreConfig"),
+            "Debug output should contain struct name: {debug_str}"
+        );
+    }
+
+    /// Covers `MinimalStore`'s required methods via trait object.
+    #[tokio::test]
+    async fn minimal_store_save_get_list_delete() {
+        let store = MinimalStore;
+        let task = Task {
+            id: TaskId::new("test"),
+            context_id: a2a_protocol_types::task::ContextId::new("ctx"),
+            status: a2a_protocol_types::task::TaskStatus::new(
+                a2a_protocol_types::task::TaskState::Submitted,
+            ),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        assert!(store.save(task.clone()).await.is_ok());
+        assert!(store.get(&TaskId::new("test")).await.unwrap().is_none());
+        let list_result = store.list(&ListTasksParams::default()).await.unwrap();
+        assert!(list_result.tasks.is_empty());
+        assert!(store.insert_if_absent(task).await.unwrap());
+        assert!(store.delete(&TaskId::new("test")).await.is_ok());
+    }
+}
+
 /// Configuration for [`InMemoryTaskStore`].
 #[derive(Debug, Clone)]
 pub struct TaskStoreConfig {

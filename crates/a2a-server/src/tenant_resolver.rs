@@ -379,6 +379,38 @@ mod tests {
         assert_eq!(resolver.resolve(&ctx).await, None);
     }
 
+    /// Covers lines 172-174 (`BearerTokenTenantResolver` Default impl).
+    #[tokio::test]
+    async fn bearer_resolver_default_same_as_new() {
+        let resolver = BearerTokenTenantResolver::default();
+        let ctx = make_ctx().with_http_header("authorization", "Bearer test-token");
+        assert_eq!(
+            resolver.resolve(&ctx).await,
+            Some("test-token".into()),
+            "default() should behave the same as new()"
+        );
+    }
+
+    /// Covers line 241 (`extract_from_path` with empty segment after filter).
+    #[tokio::test]
+    async fn path_resolver_uses_fallback_path_header() {
+        let resolver = PathSegmentTenantResolver::new(0);
+        // Only "path" header (no ":path") to test the fallback
+        let ctx = make_ctx().with_http_header("path", "/tenant-from-path/tasks");
+        assert_eq!(
+            resolver.resolve(&ctx).await,
+            Some("tenant-from-path".into())
+        );
+    }
+
+    /// Covers lowercase bearer prefix variant (line 186).
+    #[tokio::test]
+    async fn bearer_resolver_lowercase_bearer() {
+        let resolver = BearerTokenTenantResolver::new();
+        let ctx = make_ctx().with_http_header("authorization", "bearer lowercase_tok");
+        assert_eq!(resolver.resolve(&ctx).await, Some("lowercase_tok".into()));
+    }
+
     #[test]
     fn bearer_resolver_debug_shows_has_mapper() {
         let resolver = BearerTokenTenantResolver::new();

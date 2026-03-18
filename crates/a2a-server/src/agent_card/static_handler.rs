@@ -164,6 +164,21 @@ mod tests {
         assert_eq!(resp.status(), 200);
     }
 
+    /// Covers lines 75-77 (`handle_unconditional`).
+    #[test]
+    fn static_handler_unconditional_returns_200() {
+        let card = minimal_agent_card();
+        let handler = StaticAgentCardHandler::new(&card).unwrap();
+        let resp = handler.handle_unconditional();
+        assert_eq!(resp.status(), 200);
+        assert!(resp.headers().contains_key("etag"));
+        assert!(resp.headers().contains_key("content-type"));
+        assert_eq!(
+            resp.headers().get("access-control-allow-origin").unwrap(),
+            "*"
+        );
+    }
+
     #[test]
     fn static_handler_custom_max_age() {
         let card = minimal_agent_card();

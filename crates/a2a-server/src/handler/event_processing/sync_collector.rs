@@ -256,6 +256,352 @@ mod tests {
         assert_eq!(stored.status.state, TaskState::Working);
     }
 
+    // ── process_event: invalid state transition ──────────────────────────
+
+    #[tokio::test]
+    async fn process_event_invalid_state_transition_returns_error() {
+        // Covers lines 96-107: invalid state transition is rejected.
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-invalid-trans");
+
+        // Task is already Completed.
+        task_store
+            .save(make_task("t-invalid-trans", TaskState::Completed))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        // Try transitioning from Completed to Working (invalid).
+        writer
+            .write(make_status_event("t-invalid-trans", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::ServerError::InvalidStateTransition { .. })
+            ),
+            "expected InvalidStateTransition error, got: {result:?}"
+        );
+    }
+
+    // ── process_event: artifact update ──────────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_artifact_update_appends() {
+        // Covers lines 117-122: artifact update appends to the task.
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-art");
+
+        task_store
+            .save(make_task("t-art", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        let artifact_event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new("t-art"),
+            context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
+            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output data")]),
+            append: None,
+            last_chunk: Some(true),
+            metadata: None,
+        });
+        writer.write(artifact_event).await.unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(result.is_ok(), "collect_events should succeed");
+        let final_task = result.unwrap();
+        let artifacts = final_task.artifacts.expect("artifacts should be Some");
+        assert_eq!(artifacts.len(), 1);
+        assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
+    }
+
+    // ── process_event: task snapshot ────────────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_task_snapshot_replaces() {
+        // Covers lines 123-126: Task snapshot replaces the entire task.
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-snap");
+
+        task_store
+            .save(make_task("t-snap", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        let replacement = make_task("t-snap", TaskState::Completed);
+        writer
+            .write(StreamResponse::Task(replacement))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().status.state, TaskState::Completed);
+    }
+
+    // ── process_event: message event ────────────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_message_event_is_ignored() {
+        // Covers lines 127-129: Message events are silently skipped.
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-msg");
+
+        task_store
+            .save(make_task("t-msg", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        let msg_event = StreamResponse::Message(Message {
+            id: MessageId::new("m1"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("hello")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        });
+        writer.write(msg_event).await.unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(result.is_ok());
+        // Task state should remain Working (message events don't change state).
+        assert_eq!(result.unwrap().status.state, TaskState::Working);
+    }
+
+    // ── process_event: error event ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn process_event_error_marks_task_failed() {
+        // Covers lines 130-134: Err events mark the task as Failed.
+        use a2a_protocol_types::error::A2aError;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-err-evt");
+
+        task_store
+            .save(make_task("t-err-evt", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        // We need to send an Err through the broadcast channel directly.
+        let (tx, rx) = tokio::sync::broadcast::channel(8);
+        let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
+
+        let err = A2aError::internal("executor failure");
+        tx.send(Err(err)).expect("send should succeed");
+        drop(tx);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(
+            matches!(result, Err(crate::error::ServerError::Protocol(_))),
+            "expected Protocol error, got: {result:?}"
+        );
+
+        // Task should be marked as Failed in the store.
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_eq!(stored.status.state, TaskState::Failed);
+    }
+
+    // ── deliver_push coverage ─────────────────────────────────────────────
+
+    #[allow(clippy::too_many_lines)]
+    #[tokio::test]
+    async fn collect_events_with_push_sender_delivers_notifications() {
+        // Covers lines 144-176: deliver_push is called for status update events.
+        use std::future::Future;
+        use std::pin::Pin;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        use a2a_protocol_types::error::A2aResult;
+        use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+        struct CountingPushSender {
+            count: Arc<AtomicU64>,
+        }
+
+        impl crate::push::PushSender for CountingPushSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a a2a_protocol_types::events::StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                self.count.fetch_add(1, Ordering::Relaxed);
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-push");
+
+        task_store
+            .save(make_task("t-push", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let counter = Arc::new(AtomicU64::new(0));
+        let sender = CountingPushSender {
+            count: Arc::clone(&counter),
+        };
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .with_push_sender(sender)
+            .build()
+            .unwrap();
+
+        // Set a push config so deliver_push actually fires.
+        let config = TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-1".to_owned()),
+            task_id: "t-push".to_owned(),
+            url: "https://example.com/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        };
+        handler.push_config_store.set(config).await.unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-push", TaskState::Working))
+            .await
+            .unwrap();
+        writer
+            .write(make_status_event("t-push", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let executor_handle = tokio::spawn(async {});
+        let result = handler
+            .collect_events(reader, task_id, executor_handle)
+            .await;
+
+        assert!(result.is_ok());
+        // The push sender should have been called for each status update event.
+        assert!(
+            counter.load(Ordering::Relaxed) >= 2,
+            "push sender should have been called at least twice"
+        );
+    }
+
+    // ── collect_events: executor completes before drain ──────────────────
+
+    #[tokio::test]
+    async fn collect_events_executor_done_drains_remaining() {
+        // Covers lines 42-49: the executor_done drain loop.
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-drain");
+
+        task_store
+            .save(make_task("t-drain", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+
+        // Spawn an executor that writes events then completes.
+        let writer_clone = writer.clone();
+        let executor_handle = tokio::spawn(async move {
+            writer_clone
+                .write(make_status_event("t-drain", TaskState::Working))
+                .await
+                .unwrap();
+            writer_clone
+                .write(make_status_event("t-drain", TaskState::Completed))
+                .await
+                .unwrap();
+            // Drop the cloned writer; the original writer keeps channel open.
+            drop(writer_clone);
+        });
+
+        // Drop the original writer after a delay so the channel closes.
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            drop(writer);
+        });
+
+        let result = handler
+            .collect_events(reader, task_id.clone(), executor_handle)
+            .await;
+
+        assert!(result.is_ok());
+        let final_task = result.unwrap();
+        assert_eq!(
+            final_task.status.state,
+            TaskState::Completed,
+            "task should drain remaining events after executor completes"
+        );
+    }
+
     // ── collect_events tests ──────────────────────────────────────────────
 
     #[tokio::test]

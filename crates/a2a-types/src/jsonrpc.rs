@@ -318,4 +318,111 @@ mod tests {
             "notification must omit id: {json}"
         );
     }
+
+    // ── JsonRpcVersion edge cases ─────────────────────────────────────────
+
+    #[test]
+    fn version_display() {
+        assert_eq!(JsonRpcVersion.to_string(), "2.0");
+    }
+
+    #[test]
+    fn version_default() {
+        let v = JsonRpcVersion;
+        assert_eq!(v, JsonRpcVersion);
+    }
+
+    #[test]
+    fn version_rejects_non_string_types() {
+        // Number
+        assert!(serde_json::from_str::<JsonRpcVersion>("2.0").is_err());
+        // Null
+        assert!(serde_json::from_str::<JsonRpcVersion>("null").is_err());
+        // Boolean
+        assert!(serde_json::from_str::<JsonRpcVersion>("true").is_err());
+        // Empty string
+        assert!(serde_json::from_str::<JsonRpcVersion>("\"\"").is_err());
+        // Close but wrong
+        assert!(serde_json::from_str::<JsonRpcVersion>("\"2.1\"").is_err());
+        assert!(serde_json::from_str::<JsonRpcVersion>("\" 2.0\"").is_err());
+    }
+
+    // ── JsonRpcRequest::new ───────────────────────────────────────────────
+
+    #[test]
+    fn request_new_has_no_params() {
+        let req = JsonRpcRequest::new(serde_json::json!(1), "test/method");
+        assert_eq!(req.method, "test/method");
+        assert_eq!(req.id, Some(serde_json::json!(1)));
+        assert!(req.params.is_none());
+        assert_eq!(req.jsonrpc, JsonRpcVersion);
+    }
+
+    #[test]
+    fn request_with_params_has_params() {
+        let params = serde_json::json!({"key": "val"});
+        let req =
+            JsonRpcRequest::with_params(serde_json::json!("str-id"), "method", params.clone());
+        assert_eq!(req.params, Some(params));
+        assert_eq!(req.id, Some(serde_json::json!("str-id")));
+    }
+
+    #[test]
+    fn notification_has_method_and_params() {
+        let params = serde_json::json!({"task_id": "t1"});
+        let n = JsonRpcRequest::notification("task/cancel", Some(params.clone()));
+        assert!(n.id.is_none());
+        assert_eq!(n.method, "task/cancel");
+        assert_eq!(n.params, Some(params));
+    }
+
+    // ── JsonRpcError ──────────────────────────────────────────────────────
+
+    #[test]
+    fn jsonrpc_error_display() {
+        let e = JsonRpcError::new(-32600, "Invalid Request");
+        assert_eq!(e.to_string(), "[-32600] Invalid Request");
+    }
+
+    #[test]
+    fn jsonrpc_error_is_std_error() {
+        let e = JsonRpcError::new(-32600, "test");
+        let _: &dyn std::error::Error = &e;
+    }
+
+    #[test]
+    fn jsonrpc_error_new_has_no_data() {
+        let e = JsonRpcError::new(-32600, "test");
+        assert!(e.data.is_none());
+        assert_eq!(e.code, -32600);
+        assert_eq!(e.message, "test");
+    }
+
+    #[test]
+    fn jsonrpc_error_with_data_has_data() {
+        let data = serde_json::json!({"extra": true});
+        let e = JsonRpcError::with_data(-32601, "not found", data.clone());
+        assert_eq!(e.data, Some(data));
+        assert_eq!(e.code, -32601);
+        assert_eq!(e.message, "not found");
+    }
+
+    // ── JsonRpcResponse variants ──────────────────────────────────────────
+
+    #[test]
+    fn success_response_fields() {
+        let resp = JsonRpcSuccessResponse::new(Some(serde_json::json!(1)), "ok");
+        assert_eq!(resp.id, Some(serde_json::json!(1)));
+        assert_eq!(resp.result, "ok");
+        assert_eq!(resp.jsonrpc, JsonRpcVersion);
+    }
+
+    #[test]
+    fn error_response_fields() {
+        let err = JsonRpcError::new(-32600, "bad");
+        let resp = JsonRpcErrorResponse::new(Some(serde_json::json!(2)), err);
+        assert_eq!(resp.id, Some(serde_json::json!(2)));
+        assert_eq!(resp.error.code, -32600);
+        assert_eq!(resp.jsonrpc, JsonRpcVersion);
+    }
 }

@@ -536,4 +536,140 @@ mod tests {
         assert!(json.contains("\"type\":\"file\""));
         assert!(json.contains("\"uri\":\"https://example.com/file.pdf\""));
     }
+
+    // ── FileContent builder tests ─────────────────────────────────────────
+
+    #[test]
+    fn file_content_from_bytes_sets_bytes_only() {
+        let fc = FileContent::from_bytes("base64data");
+        assert_eq!(fc.bytes.as_deref(), Some("base64data"));
+        assert!(fc.uri.is_none());
+        assert!(fc.name.is_none());
+        assert!(fc.mime_type.is_none());
+    }
+
+    #[test]
+    fn file_content_from_uri_sets_uri_only() {
+        let fc = FileContent::from_uri("https://example.com/f.txt");
+        assert_eq!(fc.uri.as_deref(), Some("https://example.com/f.txt"));
+        assert!(fc.bytes.is_none());
+        assert!(fc.name.is_none());
+        assert!(fc.mime_type.is_none());
+    }
+
+    #[test]
+    fn file_content_with_name_sets_name() {
+        let fc = FileContent::from_bytes("data").with_name("report.pdf");
+        assert_eq!(fc.name.as_deref(), Some("report.pdf"));
+        // Original fields preserved
+        assert_eq!(fc.bytes.as_deref(), Some("data"));
+    }
+
+    #[test]
+    fn file_content_with_mime_type_sets_mime_type() {
+        let fc = FileContent::from_bytes("data").with_mime_type("application/pdf");
+        assert_eq!(fc.mime_type.as_deref(), Some("application/pdf"));
+        assert_eq!(fc.bytes.as_deref(), Some("data"));
+    }
+
+    #[test]
+    fn file_content_builder_chaining() {
+        let fc = FileContent::from_uri("https://example.com/img.png")
+            .with_name("img.png")
+            .with_mime_type("image/png");
+        assert_eq!(fc.uri.as_deref(), Some("https://example.com/img.png"));
+        assert_eq!(fc.name.as_deref(), Some("img.png"));
+        assert_eq!(fc.mime_type.as_deref(), Some("image/png"));
+        assert!(fc.bytes.is_none());
+    }
+
+    // ── MessageId tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn message_id_display() {
+        let id = MessageId::new("msg-42");
+        assert_eq!(id.to_string(), "msg-42");
+    }
+
+    #[test]
+    fn message_id_as_ref() {
+        let id = MessageId::new("ref-test");
+        assert_eq!(id.as_ref(), "ref-test");
+    }
+
+    #[test]
+    fn message_id_from_impls() {
+        let from_str: MessageId = "str-id".into();
+        assert_eq!(from_str, MessageId::new("str-id"));
+
+        let from_string: MessageId = String::from("string-id").into();
+        assert_eq!(from_string, MessageId::new("string-id"));
+    }
+
+    // ── Part constructor field tests ──────────────────────────────────────
+
+    #[test]
+    fn part_text_has_no_metadata() {
+        let p = Part::text("hi");
+        assert!(p.metadata.is_none());
+        assert!(matches!(p.content, PartContent::Text { text } if text == "hi"));
+    }
+
+    #[test]
+    fn part_file_bytes_sets_bytes_field() {
+        let p = Part::file_bytes("b64");
+        match &p.content {
+            PartContent::File { file } => {
+                assert_eq!(file.bytes.as_deref(), Some("b64"));
+                assert!(file.uri.is_none());
+                assert!(file.name.is_none());
+                assert!(file.mime_type.is_none());
+            }
+            _ => panic!("expected File variant"),
+        }
+        assert!(p.metadata.is_none());
+    }
+
+    #[test]
+    fn part_file_uri_sets_uri_field() {
+        let p = Part::file_uri("https://a.b/c");
+        match &p.content {
+            PartContent::File { file } => {
+                assert_eq!(file.uri.as_deref(), Some("https://a.b/c"));
+                assert!(file.bytes.is_none());
+            }
+            _ => panic!("expected File variant"),
+        }
+    }
+
+    #[test]
+    fn part_data_carries_value() {
+        let val = serde_json::json!({"key": 123});
+        let p = Part::data(val.clone());
+        match &p.content {
+            PartContent::Data { data } => assert_eq!(data, &val),
+            _ => panic!("expected Data variant"),
+        }
+        assert!(p.metadata.is_none());
+    }
+
+    #[test]
+    fn part_file_constructor_preserves_all_fields() {
+        let fc = FileContent {
+            name: Some("n".into()),
+            mime_type: Some("m".into()),
+            bytes: Some("b".into()),
+            uri: Some("u".into()),
+        };
+        let p = Part::file(fc);
+        match &p.content {
+            PartContent::File { file } => {
+                assert_eq!(file.name.as_deref(), Some("n"));
+                assert_eq!(file.mime_type.as_deref(), Some("m"));
+                assert_eq!(file.bytes.as_deref(), Some("b"));
+                assert_eq!(file.uri.as_deref(), Some("u"));
+            }
+            _ => panic!("expected File variant"),
+        }
+    }
 }

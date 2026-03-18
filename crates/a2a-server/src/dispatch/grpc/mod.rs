@@ -4,7 +4,7 @@
 //! gRPC dispatcher for the A2A server.
 //!
 //! [`GrpcDispatcher`] implements the tonic-generated `A2aService` trait,
-//! routing gRPC calls to the underlying [`RequestHandler`]. JSON payloads
+//! routing gRPC calls to the underlying [`crate::RequestHandler`]. JSON payloads
 //! are carried inside protobuf `bytes` fields, reusing the same serde types
 //! as the JSON-RPC and REST bindings.
 //!

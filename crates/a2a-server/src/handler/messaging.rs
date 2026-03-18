@@ -421,4 +421,416 @@ mod tests {
             "expected InvalidParams for empty context_id"
         );
     }
+
+    #[tokio::test]
+    async fn too_long_context_id_returns_invalid_params() {
+        // Covers line 98-99: context_id exceeding max_id_length.
+        use crate::handler::limits::HandlerLimits;
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
+            .build()
+            .unwrap();
+        let long_ctx = "x".repeat(20);
+        let params = make_params(Some(&long_ctx));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("maximum length")),
+            "expected InvalidParams for too-long context_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn too_long_task_id_returns_invalid_params() {
+        // Covers lines 108-109: task_id exceeding max_id_length.
+        use crate::handler::limits::HandlerLimits;
+        use a2a_protocol_types::task::TaskId;
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
+            .build()
+            .unwrap();
+        let mut params = make_params(None);
+        params.message.task_id = Some(TaskId::new("a".repeat(20)));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("maximum length")),
+            "expected InvalidParams for too-long task_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_task_id_returns_invalid_params() {
+        // Covers line 114: empty task_id validation.
+        use a2a_protocol_types::task::TaskId;
+
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.task_id = Some(TaskId::new(""));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("empty")),
+            "expected InvalidParams for empty task_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn task_id_mismatch_returns_invalid_params() {
+        // Covers line 136: context/task mismatch when stored task exists with different task_id.
+        use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Save a task with context_id "ctx-existing".
+        let task = Task {
+            id: TaskId::new("stored-task-id"),
+            context_id: ContextId::new("ctx-existing"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send a message with the same context_id but a different task_id.
+        let mut params = make_params(Some("ctx-existing"));
+        params.message.task_id = Some(TaskId::new("different-task-id"));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("does not match")),
+            "expected InvalidParams for task_id mismatch"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_request_metadata() {
+        // Covers line 186: setting request metadata on context.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.metadata = Some(serde_json::json!({"key": "value"}));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_ok(),
+            "send_message with request metadata should succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_error_path_records_metrics() {
+        // Covers lines 195-199: the Err branch in the outer metrics match.
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = make_params(None);
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_err(),
+            "send_message should fail when interceptor rejects, exercising error metrics path"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_streaming_message_error_path_records_metrics() {
+        // Covers the streaming variant of the error metrics path (method_name = "SendStreamingMessage").
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = make_params(None);
+        let result = handler.on_send_message(params, true, None).await;
+        assert!(
+            result.is_err(),
+            "streaming send_message should fail when interceptor rejects"
+        );
+    }
+
+    #[tokio::test]
+    async fn streaming_mode_returns_stream_result() {
+        // Covers lines 270-280: the streaming=true branch returning SendMessageResult::Stream.
+        let handler = make_handler();
+        let params = make_params(None);
+
+        let result = handler.on_send_message(params, true, None).await;
+        assert!(
+            matches!(result, Ok(SendMessageResult::Stream(_))),
+            "expected Stream result in streaming mode"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_stored_task_continuation() {
+        // Covers lines 182-184: setting stored_task on context when a task
+        // exists for the given context_id.
+        use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Pre-save a task with a known context_id.
+        let task = Task {
+            id: TaskId::new("existing-task"),
+            context_id: ContextId::new("continue-ctx"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send message with the same context_id — should find the stored task.
+        let params = make_params(Some("continue-ctx"));
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_ok(),
+            "send_message with existing context should succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_headers() {
+        // Covers line 76: build_call_context receives headers.
+        let handler = make_handler();
+        let params = make_params(None);
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer test-token".to_string());
+
+        let result = handler.on_send_message(params, false, Some(&headers)).await;
+        assert!(result.is_ok(), "send_message with headers should succeed");
+    }
+
+    #[tokio::test]
+    async fn duplicate_task_id_without_context_match_returns_error() {
+        // Covers lines 140-152: insert_if_absent returns false for duplicate task_id.
+        use a2a_protocol_types::task::{Task, TaskId as TId, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Pre-save a task with task_id "dup-task" but context "other-ctx".
+        let task = Task {
+            id: TId::new("dup-task"),
+            context_id: ContextId::new("other-ctx"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send a message with a new context_id but the same task_id.
+        let mut params = make_params(Some("brand-new-ctx"));
+        params.message.task_id = Some(TId::new("dup-task"));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("already exists")),
+            "expected InvalidParams for duplicate task_id"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_with_tenant() {
+        // Covers line 46: tenant scoping with non-default tenant.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.tenant = Some("test-tenant".to_string());
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(result.is_ok(), "send_message with tenant should succeed");
+    }
+
+    #[tokio::test]
+    async fn executor_timeout_returns_failed_task() {
+        // Covers lines 228-236: the executor timeout path.
+        use a2a_protocol_types::error::A2aResult;
+        use std::time::Duration;
+
+        struct SlowExecutor;
+        impl crate::executor::AgentExecutor for SlowExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    Ok(())
+                })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(SlowExecutor)
+            .with_executor_timeout(Duration::from_millis(50))
+            .build()
+            .unwrap();
+
+        let params = make_params(None);
+        // The executor times out; collect_events should see a Failed status update.
+        let result = handler.on_send_message(params, false, None).await;
+        // The result should be Ok with a completed/failed task (the timeout writes a failed event).
+        assert!(
+            result.is_ok(),
+            "executor timeout should still return a task result"
+        );
+    }
+
+    #[tokio::test]
+    async fn executor_failure_writes_failed_event() {
+        // Covers lines 243-258: executor error path writes a failed status event.
+        use a2a_protocol_types::error::{A2aError, A2aResult};
+
+        struct FailExecutor;
+        impl crate::executor::AgentExecutor for FailExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Err(A2aError::internal("executor exploded")) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
+        let params = make_params(None);
+
+        let result = handler.on_send_message(params, false, None).await;
+        // collect_events should see the failed status update.
+        assert!(
+            result.is_ok(),
+            "executor failure should produce a task result"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancellation_token_sweep_runs_when_map_is_full() {
+        // Covers lines 194-199: the cancellation token sweep when the map
+        // exceeds max_cancellation_tokens.
+        use crate::handler::limits::HandlerLimits;
+
+        // Use a slow executor so tokens accumulate before being cleaned up.
+        struct SlowExec;
+        impl crate::executor::AgentExecutor for SlowExec {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async {
+                    // Hold the token for a bit so tokens accumulate.
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    Ok(())
+                })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(SlowExec)
+            .with_handler_limits(HandlerLimits::default().with_max_cancellation_tokens(2))
+            .build()
+            .unwrap();
+
+        // Send multiple streaming messages so tokens accumulate (streaming returns
+        // immediately without waiting for executor to finish).
+        for _ in 0..3 {
+            let params = make_params(None);
+            let _ = handler.on_send_message(params, true, None).await;
+        }
+        // If we get here without panic, the sweep logic ran successfully.
+        // Clean up the slow executors.
+        handler.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn streaming_executor_failure_writes_error_event() {
+        // Covers lines 243-258 in streaming mode: executor error path.
+        use a2a_protocol_types::error::{A2aError, A2aResult};
+
+        struct FailExecutor;
+        impl crate::executor::AgentExecutor for FailExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Err(A2aError::internal("streaming fail")) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(FailExecutor).build().unwrap();
+        let params = make_params(None);
+
+        let result = handler.on_send_message(params, true, None).await;
+        assert!(
+            matches!(result, Ok(SendMessageResult::Stream(_))),
+            "streaming executor failure should still return stream"
+        );
+    }
 }

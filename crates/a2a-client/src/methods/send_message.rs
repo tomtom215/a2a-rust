@@ -271,6 +271,58 @@ mod tests {
         assert_eq!(cfg.history_length, None);
     }
 
+    #[tokio::test]
+    async fn stream_message_applies_config_and_calls_transport() {
+        use std::collections::HashMap;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        use crate::error::{ClientError, ClientResult};
+        use crate::streaming::EventStream;
+        use crate::transport::Transport;
+        use crate::ClientBuilder;
+
+        /// A mock transport that captures the streaming request and returns an error
+        /// (since we can't easily construct an `EventStream` in a unit test).
+        struct StreamCapture;
+
+        impl Transport for StreamCapture {
+            fn send_request<'a>(
+                &'a self,
+                _method: &'a str,
+                _params: serde_json::Value,
+                _extra_headers: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
+            {
+                Box::pin(async move { Ok(serde_json::Value::Null) })
+            }
+
+            fn send_streaming_request<'a>(
+                &'a self,
+                _method: &'a str,
+                _params: serde_json::Value,
+                _extra_headers: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+                Box::pin(
+                    async move { Err(ClientError::Transport("mock: streaming called".into())) },
+                )
+            }
+        }
+
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_custom_transport(StreamCapture)
+            .with_return_immediately(true)
+            .build()
+            .expect("build");
+
+        let params = make_params();
+        let err = client.stream_message(params).await.unwrap_err();
+        assert!(
+            matches!(err, ClientError::Transport(ref msg) if msg.contains("streaming called")),
+            "expected Transport error, got {err:?}"
+        );
+    }
+
     #[test]
     fn apply_config_does_not_set_modes_when_config_modes_empty() {
         let config = ClientConfig {

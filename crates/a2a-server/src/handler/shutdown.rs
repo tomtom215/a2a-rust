@@ -237,4 +237,76 @@ mod tests {
             .shutdown_with_timeout(Duration::from_millis(0))
             .await;
     }
+
+    #[tokio::test]
+    async fn shutdown_with_timeout_drains_active_queues() {
+        // Covers lines 62-64, 68-70: the drain loop that waits for active
+        // queues to reach zero before the timeout expires.
+        use a2a_protocol_types::task::TaskId;
+
+        let handler = make_handler();
+        let task_id = TaskId::new("t-drain");
+
+        // Create an active event queue so active_count() > 0.
+        let (_writer, _reader) = handler.event_queue_manager.get_or_create(&task_id).await;
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            1,
+            "should have 1 active queue before shutdown"
+        );
+
+        // Spawn a task that destroys the queue after a short delay, simulating
+        // an executor finishing before the timeout.
+        let eqm = handler.event_queue_manager.clone();
+        let tid = task_id.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            eqm.destroy(&tid).await;
+        });
+
+        let start = Instant::now();
+        handler.shutdown_with_timeout(Duration::from_secs(5)).await;
+        // The drain loop should have detected the queue was removed and exited
+        // well before the 5-second timeout.
+        assert!(
+            start.elapsed() < Duration::from_secs(2),
+            "shutdown should complete quickly once queues drain"
+        );
+    }
+
+    #[tokio::test]
+    async fn shutdown_with_timeout_force_destroys_on_timeout() {
+        // Covers lines 105-111: the timeout path where active queues remain
+        // when the timeout expires, triggering force-destroy.
+        use a2a_protocol_types::task::TaskId;
+
+        let handler = make_handler();
+        let task_id = TaskId::new("t-force");
+
+        // Create an active event queue that will NOT be drained.
+        let (_writer, _reader) = handler.event_queue_manager.get_or_create(&task_id).await;
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            1,
+            "should have 1 active queue before shutdown"
+        );
+
+        // Use a very short timeout so the drain loop times out.
+        let start = Instant::now();
+        handler
+            .shutdown_with_timeout(Duration::from_millis(100))
+            .await;
+
+        // Should complete around the timeout duration.
+        assert!(
+            start.elapsed() >= Duration::from_millis(100),
+            "shutdown should wait at least the timeout duration"
+        );
+        // After shutdown, queues should be force-destroyed.
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            0,
+            "all queues should be destroyed after shutdown timeout"
+        );
+    }
 }

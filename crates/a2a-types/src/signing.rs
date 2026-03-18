@@ -361,6 +361,50 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_string_control_chars() {
+        // Test \b (backspace), \f (form feed), \r (carriage return)
+        let json: serde_json::Value = serde_json::json!({"a": "x\x08y\x0cz\rw"});
+        let canonical = canonicalize(&json).unwrap();
+        let s = String::from_utf8(canonical).unwrap();
+        assert!(s.contains(r"\b"), "should escape backspace: {s}");
+        assert!(s.contains(r"\f"), "should escape form-feed: {s}");
+        assert!(s.contains(r"\r"), "should escape carriage-return: {s}");
+    }
+
+    #[test]
+    fn verify_rejects_unsupported_algorithm() {
+        let card = minimal_card();
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+
+        let key_pair = EcdsaKeyPair::from_pkcs8(
+            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+            pkcs8.as_ref(),
+            &rng,
+        )
+        .unwrap();
+        let pub_key = key_pair.public_key().as_ref();
+
+        // Craft a signature with an unsupported algorithm in the protected header
+        let header = serde_json::json!({"alg": "RS256"});
+        let header_b64 = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+
+        let fake_sig = AgentCardSignature {
+            protected: header_b64,
+            signature: URL_SAFE_NO_PAD.encode(b"fake-sig-data"),
+            header: None,
+        };
+
+        let err = verify_agent_card(&card, &fake_sig, pub_key).unwrap_err();
+        assert!(
+            err.message.contains("unsupported algorithm"),
+            "should reject unsupported algorithm: {}",
+            err.message
+        );
+    }
+
+    #[test]
     fn protected_header_contains_alg_and_kid() {
         let card = minimal_card();
         let rng = SystemRandom::new();

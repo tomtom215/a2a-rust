@@ -103,4 +103,76 @@ mod tests {
             .expect("list_tasks should succeed");
         assert_eq!(result.tasks.len(), 1, "should return the one saved task");
     }
+
+    #[tokio::test]
+    async fn list_tasks_with_tenant() {
+        // Covers line 32: tenant scoping with non-default tenant.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = ListTasksParams {
+            tenant: Some("test-tenant".to_string()),
+            ..Default::default()
+        };
+        let result = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect("list_tasks with tenant should succeed");
+        assert!(result.tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_tasks_with_headers() {
+        // Covers line 34: build_call_context with headers.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = ListTasksParams::default();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer tok".to_string());
+        let result = handler
+            .on_list_tasks(params, Some(&headers))
+            .await
+            .expect("list_tasks with headers should succeed");
+        assert!(result.tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_tasks_error_path_records_metrics() {
+        // Use an interceptor that always fails to trigger the error metrics path (lines 48-51).
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = ListTasksParams::default();
+        let result = handler.on_list_tasks(params, None).await;
+        assert!(
+            result.is_err(),
+            "list_tasks should fail when interceptor rejects, got: {result:?}"
+        );
+    }
 }

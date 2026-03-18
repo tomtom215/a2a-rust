@@ -111,6 +111,52 @@ mod tests {
         let back: TaskPushNotificationConfig = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.task_id, "task-1");
         assert_eq!(back.url, "https://example.com/webhook");
-        assert_eq!(back.authentication.unwrap().scheme, "bearer");
+        let auth = back.authentication.expect("authentication should be Some");
+        assert_eq!(auth.scheme, "bearer");
+        assert_eq!(auth.credentials, "my-token");
+        assert_eq!(back.tenant.as_deref(), Some("tenant-1"));
+        assert_eq!(back.id.as_deref(), Some("cfg-1"));
+        assert_eq!(back.token.as_deref(), Some("secret"));
+    }
+
+    /// Verifies that `new()` sets exactly `task_id` and url, with all optional
+    /// fields as None. A mutation setting any to Some(_) will be caught.
+    #[test]
+    fn push_config_new_optional_fields_are_none() {
+        let cfg = TaskPushNotificationConfig::new("t1", "https://hook.test");
+        assert_eq!(cfg.task_id, "t1");
+        assert_eq!(cfg.url, "https://hook.test");
+        assert!(cfg.tenant.is_none(), "tenant should be None");
+        assert!(cfg.id.is_none(), "id should be None");
+        assert!(cfg.token.is_none(), "token should be None");
+        assert!(
+            cfg.authentication.is_none(),
+            "authentication should be None"
+        );
+    }
+
+    #[test]
+    fn push_config_optional_fields_omitted_in_json() {
+        let cfg = TaskPushNotificationConfig::new("t1", "https://hook.test");
+        let json = serde_json::to_string(&cfg).expect("serialize");
+        assert!(!json.contains("\"tenant\""), "tenant should be omitted");
+        assert!(!json.contains("\"id\""), "id should be omitted");
+        assert!(!json.contains("\"token\""), "token should be omitted");
+        assert!(
+            !json.contains("\"authentication\""),
+            "authentication should be omitted"
+        );
+    }
+
+    #[test]
+    fn authentication_info_roundtrip() {
+        let auth = AuthenticationInfo {
+            scheme: "api-key".into(),
+            credentials: "secret-123".into(),
+        };
+        let json = serde_json::to_string(&auth).expect("serialize");
+        let back: AuthenticationInfo = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.scheme, "api-key");
+        assert_eq!(back.credentials, "secret-123");
     }
 }

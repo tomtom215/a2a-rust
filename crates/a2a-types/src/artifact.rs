@@ -135,6 +135,33 @@ mod tests {
     }
 
     #[test]
+    fn artifact_id_from_string() {
+        let id: ArtifactId = String::from("art-from-string").into();
+        assert_eq!(id, ArtifactId::new("art-from-string"));
+    }
+
+    #[test]
+    fn artifact_id_from_str() {
+        let id: ArtifactId = "art-from-str".into();
+        assert_eq!(id, ArtifactId::new("art-from-str"));
+    }
+
+    #[test]
+    fn artifact_id_as_ref() {
+        let id = ArtifactId::new("ref-test");
+        assert_eq!(id.as_ref(), "ref-test");
+    }
+
+    #[test]
+    fn artifact_new_optional_fields_are_none() {
+        let a = Artifact::new("id", vec![Part::text("x")]);
+        assert!(a.name.is_none());
+        assert!(a.description.is_none());
+        assert!(a.extensions.is_none());
+        assert!(a.metadata.is_none());
+    }
+
+    #[test]
     fn artifact_id_display() {
         let id = ArtifactId::new("my-artifact");
         assert_eq!(id.to_string(), "my-artifact");

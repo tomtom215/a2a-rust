@@ -129,7 +129,7 @@ pub struct InMemoryQueueReader {
 
 impl InMemoryQueueReader {
     /// Creates a new `InMemoryQueueReader`.
-    pub(super) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
+    pub(crate) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
         Self { rx }
     }
 }
@@ -374,6 +374,18 @@ mod tests {
             msg.contains("exceeds maximum"),
             "error message should mention size limit, got: {msg}"
         );
+    }
+
+    /// Covers lines 28-30 (`CountingWriter::flush`).
+    #[test]
+    fn counting_writer_flush_is_noop() {
+        use std::io::Write;
+        let mut cw = super::CountingWriter(0);
+        cw.write_all(b"hello").unwrap();
+        assert_eq!(cw.0, 5);
+        // flush should succeed as no-op
+        cw.flush().unwrap();
+        assert_eq!(cw.0, 5, "flush should not change the count");
     }
 
     #[tokio::test]

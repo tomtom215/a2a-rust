@@ -392,6 +392,15 @@ mod tests {
         );
     }
 
+    /// Covers line 89 (Default impl for `TenantAwareInMemoryPushConfigStore`).
+    /// This is already implicitly tested but let's make it explicit.
+    #[test]
+    fn default_impl_creates_empty_store() {
+        let store = TenantAwareInMemoryPushConfigStore::default();
+        assert_eq!(store.max_tenants, 1000);
+        assert_eq!(store.max_configs_per_task, 100);
+    }
+
     #[tokio::test]
     async fn default_is_same_as_new() {
         let store = TenantAwareInMemoryPushConfigStore::default();

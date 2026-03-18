@@ -354,4 +354,68 @@ mod tests {
             "stateTransitionHistory must not appear: {json}"
         );
     }
+
+    // ── AgentCapabilities builder tests ───────────────────────────────────
+
+    #[test]
+    fn capabilities_none_all_fields_unset() {
+        let caps = AgentCapabilities::none();
+        assert!(caps.streaming.is_none());
+        assert!(caps.push_notifications.is_none());
+        assert!(caps.extended_agent_card.is_none());
+        assert!(caps.extensions.is_none());
+    }
+
+    #[test]
+    fn capabilities_default_equals_none() {
+        let def = AgentCapabilities::default();
+        let none = AgentCapabilities::none();
+        assert_eq!(def.streaming, none.streaming);
+        assert_eq!(def.push_notifications, none.push_notifications);
+        assert_eq!(def.extended_agent_card, none.extended_agent_card);
+    }
+
+    #[test]
+    fn capabilities_with_streaming_sets_field() {
+        let caps = AgentCapabilities::none().with_streaming(true);
+        assert_eq!(caps.streaming, Some(true));
+        assert!(caps.push_notifications.is_none());
+        assert!(caps.extended_agent_card.is_none());
+
+        let caps = AgentCapabilities::none().with_streaming(false);
+        assert_eq!(caps.streaming, Some(false));
+    }
+
+    #[test]
+    fn capabilities_with_push_notifications_sets_field() {
+        let caps = AgentCapabilities::none().with_push_notifications(true);
+        assert_eq!(caps.push_notifications, Some(true));
+        assert!(caps.streaming.is_none());
+        assert!(caps.extended_agent_card.is_none());
+
+        let caps = AgentCapabilities::none().with_push_notifications(false);
+        assert_eq!(caps.push_notifications, Some(false));
+    }
+
+    #[test]
+    fn capabilities_with_extended_agent_card_sets_field() {
+        let caps = AgentCapabilities::none().with_extended_agent_card(true);
+        assert_eq!(caps.extended_agent_card, Some(true));
+        assert!(caps.streaming.is_none());
+        assert!(caps.push_notifications.is_none());
+
+        let caps = AgentCapabilities::none().with_extended_agent_card(false);
+        assert_eq!(caps.extended_agent_card, Some(false));
+    }
+
+    #[test]
+    fn capabilities_builder_chaining() {
+        let caps = AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(false)
+            .with_extended_agent_card(true);
+        assert_eq!(caps.streaming, Some(true));
+        assert_eq!(caps.push_notifications, Some(false));
+        assert_eq!(caps.extended_agent_card, Some(true));
+    }
 }

@@ -197,6 +197,31 @@ mod tests {
     }
 
     #[test]
+    fn builder_rest_with_retry_policy() {
+        use crate::retry::RetryPolicy;
+
+        // Covers lines 60 (REST Box::new) and 91 (retry wrapping).
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_protocol_binding(BINDING_REST)
+            .with_retry_policy(RetryPolicy::default())
+            .build()
+            .expect("build");
+        let _ = client;
+    }
+
+    #[test]
+    fn builder_jsonrpc_with_retry_policy() {
+        use crate::retry::RetryPolicy;
+
+        // Covers line 91 (retry wrapping with JSONRPC transport).
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_retry_policy(RetryPolicy::default())
+            .build()
+            .expect("build");
+        let _ = client;
+    }
+
+    #[test]
     fn builder_from_card_rejects_incompatible_binding() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 

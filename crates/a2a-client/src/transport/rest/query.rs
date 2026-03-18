@@ -115,4 +115,31 @@ mod tests {
         let qs = build_query_string(&params);
         assert_eq!(qs, "active=false");
     }
+
+    /// Covers line 12: non-object input returns empty string.
+    #[test]
+    fn build_query_string_non_object_returns_empty() {
+        assert_eq!(build_query_string(&serde_json::json!("string")), "");
+        assert_eq!(build_query_string(&serde_json::json!(42)), "");
+        assert_eq!(build_query_string(&serde_json::json!(null)), "");
+        assert_eq!(build_query_string(&serde_json::json!(true)), "");
+        assert_eq!(build_query_string(&serde_json::json!([1, 2, 3])), "");
+    }
+
+    /// Covers lines 21-23: nested object/array values are JSON-serialized.
+    #[test]
+    fn build_query_string_handles_nested_object() {
+        let params = serde_json::json!({"data": {"key": "val"}});
+        let qs = build_query_string(&params);
+        // The nested object should be serialized to JSON and percent-encoded
+        assert!(qs.starts_with("data="), "should have data key: {qs}");
+        assert!(qs.contains("%22key%22"), "should contain encoded key: {qs}");
+    }
+
+    #[test]
+    fn build_query_string_handles_array_value() {
+        let params = serde_json::json!({"ids": [1, 2, 3]});
+        let qs = build_query_string(&params);
+        assert!(qs.starts_with("ids="), "should have ids key: {qs}");
+    }
 }

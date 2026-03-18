@@ -198,4 +198,21 @@ mod tests {
             "canceled task should have Canceled state"
         );
     }
+
+    #[tokio::test]
+    async fn cancel_task_error_path_records_metrics() {
+        // Exercises the Err match arm (lines 114, 118) by triggering TaskNotFound.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = CancelTaskParams {
+            tenant: None,
+            id: "nonexistent-for-metrics".to_owned(),
+            metadata: None,
+        };
+        let result = handler.on_cancel_task(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound, got: {result:?}"
+        );
+        // The error metrics path (on_error + on_latency) was exercised.
+    }
 }

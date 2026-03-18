@@ -175,4 +175,45 @@ mod tests {
             "an empty map should result in empty headers"
         );
     }
+
+    // ── find_task_by_context ─────────────────────────────────────────────
+
+    mod find_task_by_context_tests {
+        use crate::agent_executor;
+        use crate::builder::RequestHandlerBuilder;
+        use crate::handler::limits::HandlerLimits;
+
+        struct DummyExecutor;
+        agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
+
+        #[tokio::test]
+        async fn context_id_too_long_returns_none() {
+            // Covers line 49: early return None when context_id exceeds max_id_length.
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
+                .build()
+                .unwrap();
+
+            let long_id = "a".repeat(11);
+            let result = handler.find_task_by_context(&long_id).await;
+            assert!(
+                result.is_none(),
+                "find_task_by_context should return None for context_id exceeding max length"
+            );
+        }
+
+        #[tokio::test]
+        async fn context_id_within_limit_returns_none_for_missing() {
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
+                .build()
+                .unwrap();
+
+            let result = handler.find_task_by_context("no-such-context").await;
+            assert!(
+                result.is_none(),
+                "find_task_by_context should return None when no task matches the context"
+            );
+        }
+    }
 }

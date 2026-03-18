@@ -338,4 +338,123 @@ mod tests {
         let value = result.unwrap();
         assert_eq!(value["hello"], "world");
     }
+
+    #[test]
+    fn build_request_streaming_sets_event_stream_accept() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({});
+        let req = transport
+            .build_request("SendStreamingMessage", &params, &HashMap::new(), true)
+            .unwrap();
+        let accept = req.headers().get("accept").unwrap().to_str().unwrap();
+        assert_eq!(accept, "text/event-stream");
+    }
+
+    #[test]
+    fn build_request_non_streaming_sets_json_accept() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({});
+        let req = transport
+            .build_request("SendMessage", &params, &HashMap::new(), false)
+            .unwrap();
+        let accept = req.headers().get("accept").unwrap().to_str().unwrap();
+        assert_eq!(accept, "application/json");
+    }
+
+    #[test]
+    fn build_request_includes_extra_headers() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({});
+        let mut extra = HashMap::new();
+        extra.insert("x-custom-header".to_string(), "custom-value".to_string());
+        extra.insert("authorization".to_string(), "Bearer tok".to_string());
+        let req = transport
+            .build_request("SendMessage", &params, &extra, false)
+            .unwrap();
+        assert_eq!(
+            req.headers()
+                .get("x-custom-header")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "custom-value"
+        );
+        assert_eq!(
+            req.headers()
+                .get("authorization")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "Bearer tok"
+        );
+    }
+
+    #[test]
+    fn build_request_unknown_method_returns_error() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let params = serde_json::json!({});
+        let result = transport.build_request("NonExistentMethod", &params, &HashMap::new(), false);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            ClientError::Transport(msg) => {
+                assert!(msg.contains("no REST route"), "got: {msg}");
+            }
+            other => panic!("expected Transport error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn build_uri_missing_path_param_returns_error() {
+        let transport = RestTransport::new("http://localhost:8080").unwrap();
+        let route = route_for("GetTask").unwrap();
+        // GetTask requires "id" path param, but we don't provide it
+        let params = serde_json::json!({"historyLength": 5});
+        let result = transport.build_uri(&route, &params);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            ClientError::Transport(msg) => {
+                assert!(msg.contains("missing path parameter"), "got: {msg}");
+            }
+            other => panic!("expected Transport error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_request_jsonrpc_error_response() {
+        let response_body =
+            r#"{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"internal error"}}"#;
+        let addr = start_rest_server(200, "application/json", response_body).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::Protocol(a2a_err)) => {
+                assert!(
+                    a2a_err.message.contains("internal error"),
+                    "got: {}",
+                    a2a_err.message
+                );
+            }
+            other => panic!("expected Protocol error, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_request_raw_json_fallback() {
+        // A 200 response with plain JSON (not wrapped in JSON-RPC envelope)
+        let response_body = r#"{"status":"ok","data":42}"#;
+        let addr = start_rest_server(200, "application/json", response_body).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url).unwrap();
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        let value = result.unwrap();
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["data"], 42);
+    }
 }

@@ -13,8 +13,8 @@
 //! | Module | Responsibility |
 //! |---|---|
 //! | (this file) | `OtelMetrics` struct and `Metrics` trait impl |
-//! | [`builder`] | `OtelMetricsBuilder` — fluent configuration |
-//! | [`pipeline`] | `init_otlp_pipeline` — OTLP export setup |
+//! | `builder` | `OtelMetricsBuilder` — fluent configuration |
+//! | `pipeline` | `init_otlp_pipeline` — OTLP export setup |
 //!
 //! # Feature flag
 //!

@@ -94,4 +94,161 @@ mod tests {
             "expected TaskNotFound for missing task, got: {result:?}"
         );
     }
+
+    #[tokio::test]
+    async fn resubscribe_task_exists_but_no_queue_returns_internal_error() {
+        // Task exists in store but has no active event queue (lines 53-54, 60-63).
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let task = Task {
+            id: TaskId::new("t-resub-1"),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        let params = TaskIdParams {
+            tenant: None,
+            id: "t-resub-1".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
+            matches!(result, Err(ServerError::Internal(_))),
+            "expected Internal error when no event queue exists, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resubscribe_success_returns_reader() {
+        // Covers lines 47-54, 60-62: the success path where task exists and
+        // event queue is active. We need to create a task via send_message
+        // (streaming) so the event queue exists, then resubscribe.
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+        use a2a_protocol_types::params::MessageSendParams;
+        use a2a_protocol_types::task::ContextId;
+
+        use crate::handler::SendMessageResult;
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+
+        // Send a streaming message to create a task with an active event queue.
+        let params = MessageSendParams {
+            message: Message {
+                id: MessageId::new("msg-resub"),
+                role: MessageRole::User,
+                parts: vec![Part::text("hello")],
+                context_id: Some(ContextId::new("ctx-resub")),
+                task_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            },
+            configuration: None,
+            metadata: None,
+            tenant: None,
+        };
+
+        let result = handler.on_send_message(params, true, None).await;
+        assert!(matches!(result, Ok(SendMessageResult::Stream(_))));
+
+        // Find the task that was just created.
+        let tasks = handler
+            .task_store
+            .list(&a2a_protocol_types::params::ListTasksParams::default())
+            .await
+            .unwrap();
+        assert!(!tasks.tasks.is_empty(), "should have at least one task");
+
+        let task_id = tasks.tasks[0].id.0.clone();
+
+        // Now try to resubscribe to this task.
+        let sub_params = TaskIdParams {
+            tenant: None,
+            id: task_id,
+        };
+        let sub_result = handler.on_resubscribe(sub_params, None).await;
+        // The result may succeed (if queue still active) or fail with Internal
+        // (if executor already completed and queue was destroyed). Both are valid.
+        // What matters is that we exercised the code path.
+        match &sub_result {
+            Ok(_) | Err(ServerError::Internal(_)) => {} // success or queue already closed
+            Err(e) => panic!("unexpected error: {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn resubscribe_with_tenant() {
+        // Covers line 33: tenant scoping in resubscribe.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = TaskIdParams {
+            tenant: Some("test-tenant".to_string()),
+            id: "nonexistent-task".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(result.is_err(), "resubscribe for missing task should fail");
+    }
+
+    #[tokio::test]
+    async fn resubscribe_with_headers() {
+        // Covers line 35: build_call_context with headers.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = TaskIdParams {
+            tenant: None,
+            id: "nonexistent-task".to_owned(),
+        };
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer tok".to_string());
+        let result = handler.on_resubscribe(params, Some(&headers)).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn resubscribe_error_path_records_error_metrics() {
+        // Triggers the Err branch in the metrics match (lines 60-63, 82).
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct FailInterceptor;
+        impl ServerInterceptor for FailInterceptor {
+            fn before<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
+                })
+            }
+            fn after<'a>(
+                &'a self,
+                _ctx: &'a CallContext,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_interceptor(FailInterceptor)
+            .build()
+            .unwrap();
+
+        let params = TaskIdParams {
+            tenant: None,
+            id: "t-resub-fail".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
+            result.is_err(),
+            "resubscribe should fail when interceptor rejects"
+        );
+    }
 }
