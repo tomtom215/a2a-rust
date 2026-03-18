@@ -287,11 +287,9 @@ impl GrpcTransport {
                     client.delete_task_push_notification_config(req).await
                 }
                 "GetExtendedAgentCard" => client.get_extended_agent_card(req).await,
-                other => {
-                    return Err(tonic::Status::unimplemented(format!(
-                        "unknown gRPC method: {other}"
-                    )));
-                }
+                other => Err(tonic::Status::unimplemented(format!(
+                    "unknown gRPC method: {other}"
+                ))),
             }
         })
         .await
@@ -330,6 +328,7 @@ impl GrpcTransport {
             let response = match method {
                 "SendStreamingMessage" => client.send_streaming_message(req).await,
                 "SubscribeToTask" => client.subscribe_to_task(req).await,
+                #[allow(clippy::needless_return)]
                 other => {
                     return Err(tonic::Status::unimplemented(format!(
                         "unknown streaming gRPC method: {other}"

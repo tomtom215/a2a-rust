@@ -86,6 +86,7 @@ pub fn build_https_client_with_connect_timeout(
     connection_timeout: Duration,
 ) -> HttpsClient {
     let mut http_connector = HttpConnector::new();
+    http_connector.enforce_http(false); // Allow https:// — TLS handled by HttpsConnector wrapper
     http_connector.set_connect_timeout(Some(connection_timeout));
 
     let https = hyper_rustls::HttpsConnectorBuilder::new()
