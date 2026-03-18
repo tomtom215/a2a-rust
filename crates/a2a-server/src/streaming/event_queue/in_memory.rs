@@ -129,7 +129,7 @@ pub struct InMemoryQueueReader {
 
 impl InMemoryQueueReader {
     /// Creates a new `InMemoryQueueReader`.
-    pub(super) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
+    pub(crate) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
         Self { rx }
     }
 }

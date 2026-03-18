@@ -129,7 +129,7 @@ mod tests {
         // (streaming) so the event queue exists, then resubscribe.
         use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
         use a2a_protocol_types::params::MessageSendParams;
-        use a2a_protocol_types::task::{ContextId, TaskId};
+        use a2a_protocol_types::task::ContextId;
 
         use crate::handler::SendMessageResult;
 

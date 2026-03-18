@@ -435,7 +435,6 @@ mod tests {
     #[tokio::test]
     async fn build_sse_response_ends_on_reader_close() {
         // Covers line 171: the None branch (reader exhausted).
-        use crate::streaming::event_queue::EventQueueWriter;
         use http_body_util::BodyExt;
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
@@ -456,6 +455,38 @@ mod tests {
                 "stream should eventually end"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn build_sse_response_streams_error_event() {
+        // Covers lines 164-169: the Some(Err(e)) branch sends an error SSE event.
+        use a2a_protocol_types::error::A2aError;
+        use http_body_util::BodyExt;
+
+        // Construct a broadcast channel directly and send an Err to exercise the
+        // error branch in the SSE loop.
+        let (tx, rx) = tokio::sync::broadcast::channel(8);
+        let reader = crate::streaming::event_queue::InMemoryQueueReader::new(rx);
+
+        let err = A2aError::internal("something broke");
+        tx.send(Err(err)).expect("send should succeed");
+        drop(tx);
+
+        let mut response = build_sse_response(reader, None, None);
+
+        let frame = response
+            .body_mut()
+            .frame()
+            .await
+            .expect("should have a frame")
+            .expect("frame should be Ok");
+        let data = frame.into_data().expect("should be a data frame");
+        let text = String::from_utf8_lossy(&data);
+
+        assert!(
+            text.starts_with("event: error\n"),
+            "error event frame should start with 'event: error\\n', got: {text}"
+        );
     }
 
     #[tokio::test]
