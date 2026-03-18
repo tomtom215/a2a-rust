@@ -23,6 +23,10 @@ use super::types::{SseFrame, SseParseError, DEFAULT_MAX_EVENT_SIZE};
 /// prevent unbounded memory growth from malicious or malformed streams. When
 /// the limit is exceeded, the current event is discarded and an error is
 /// queued. Use [`SseParser::with_max_event_size`] to configure the limit.
+///
+/// The internal frame queue is also bounded (default 4096 frames) to prevent
+/// OOM from streams that produce many oversized-event errors without the
+/// consumer draining them.
 #[derive(Debug)]
 pub struct SseParser {
     /// Bytes accumulated since the last newline.
@@ -33,6 +37,8 @@ pub struct SseParser {
     current_event_size: usize,
     /// Maximum allowed event size in bytes.
     max_event_size: usize,
+    /// Maximum number of frames (including errors) buffered in `ready`.
+    max_queued_frames: usize,
     /// Current `event:` field value.
     event_type: Option<String>,
     /// Current `id:` field value.
@@ -45,6 +51,9 @@ pub struct SseParser {
     bom_checked: bool,
 }
 
+/// Default maximum number of frames buffered before the oldest is dropped.
+const DEFAULT_MAX_QUEUED_FRAMES: usize = 4096;
+
 impl Default for SseParser {
     fn default() -> Self {
         Self {
@@ -52,6 +61,7 @@ impl Default for SseParser {
             data_lines: Vec::new(),
             current_event_size: 0,
             max_event_size: DEFAULT_MAX_EVENT_SIZE,
+            max_queued_frames: DEFAULT_MAX_QUEUED_FRAMES,
             event_type: None,
             id: None,
             retry: None,
@@ -77,6 +87,15 @@ impl SseParser {
             max_event_size,
             ..Self::default()
         }
+    }
+
+    /// Sets the maximum number of frames that can be buffered before the
+    /// oldest frame is dropped. Prevents unbounded memory growth if the
+    /// consumer is slower than the producer.
+    #[must_use]
+    pub const fn with_max_queued_frames(mut self, max: usize) -> Self {
+        self.max_queued_frames = max;
+        self
     }
 
     /// Returns the number of complete frames waiting to be consumed.
@@ -121,6 +140,15 @@ impl SseParser {
     }
 
     // ── internals ─────────────────────────────────────────────────────────────
+
+    /// Pushes a frame result onto the ready queue, dropping the oldest if
+    /// the queue exceeds the configured maximum.
+    fn enqueue(&mut self, item: Result<SseFrame, SseParseError>) {
+        if self.ready.len() >= self.max_queued_frames {
+            self.ready.pop_front();
+        }
+        self.ready.push_back(item);
+    }
 
     fn process_line(&mut self) {
         // Strip BOM if present at start of first line (handles fragmented BOM).
@@ -173,7 +201,7 @@ impl SseParser {
             self.data_lines.clear();
             self.event_type = None;
             self.current_event_size = 0;
-            self.ready.push_back(Err(error));
+            self.enqueue(Err(error));
             return;
         }
 
@@ -222,7 +250,7 @@ impl SseParser {
 
         self.data_lines.clear();
         self.current_event_size = 0;
-        self.ready.push_back(Ok(frame));
+        self.enqueue(Ok(frame));
     }
 }
 
@@ -654,5 +682,33 @@ mod tests {
         p.feed(b"ata: hello\n\n");
         let frame = p.next_frame().unwrap().unwrap();
         assert_eq!(frame.data, "hello");
+    }
+
+    #[test]
+    fn queue_bound_drops_oldest_when_full() {
+        let mut p = SseParser::new().with_max_queued_frames(3);
+        // Feed 5 events without consuming any.
+        for i in 0..5 {
+            let data = format!("data: event-{i}\n\n");
+            p.feed(data.as_bytes());
+        }
+        // Queue should be capped at 3 — the 2 oldest were dropped.
+        assert_eq!(p.pending_count(), 3);
+        let frame = p.next_frame().unwrap().unwrap();
+        assert_eq!(
+            frame.data, "event-2",
+            "oldest frames should have been dropped"
+        );
+    }
+
+    #[test]
+    fn queue_bound_drops_oldest_errors_too() {
+        let mut p = SseParser::with_max_event_size(5).with_max_queued_frames(2);
+        // Feed 3 oversized events to produce 3 errors.
+        for _ in 0..3 {
+            let data = format!("data: {}\n\n", "x".repeat(20));
+            p.feed(data.as_bytes());
+        }
+        assert_eq!(p.pending_count(), 2, "queue should be bounded at 2");
     }
 }

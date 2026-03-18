@@ -16,6 +16,13 @@ on:
   pull_request:
     branches: ["main"]
 
+# Cancel in-progress runs for the same branch/PR — saves CI minutes when
+# multiple commits are pushed in quick succession.  Main-branch pushes
+# are NOT cancelled so merge builds always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1

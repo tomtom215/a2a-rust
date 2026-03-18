@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **72 E2E tests** across 8 test modules (79 with optional WebSocket, gRPC, signing, and OTel features). All tests pass in ~2.5 seconds.
+The agent team runs **82 E2E tests** across 8 test modules (98 with optional WebSocket, gRPC, axum, sqlite, signing, and OTel features). All tests pass in ~3 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -162,10 +162,48 @@ The agent team runs **72 E2E tests** across 8 test modules (79 with optional Web
 | Concurrent cancel stress | 77 |
 | Stale page token handling | 78 |
 | Agent card signing (JWS/ES256) | 79 |
+| State transition validation | 81 |
+| Executor error propagation | 82 |
+| Streaming event completeness | 83 |
+| Oversized metadata rejection | 84 |
+| Artifact content correctness | 85 |
+| Rapid sequential throughput | 87 |
+| Cancel terminal-state task | 88 |
+| Agent card semantic validation | 89 |
+| `A2aRouter` (Axum adapter) | 93, 94, 95, 98 |
+| `SqliteTaskStore` | 96, 98 |
+| `SqlitePushConfigStore` | 97 |
+| Axum + SQLite combined stack | 98 |
+
+## Tests 81-90: Deep Dogfood Probes (`deep_dogfood.rs`)
+
+| # | Test | Transport | What it exercises |
+|---|------|-----------|-------------------|
+| 81 | state-transition-order | JSON-RPC | Validates streaming state transitions are monotonically forward |
+| 82 | executor-error-failed | REST | Executor error produces `Failed` state with error metadata |
+| 83 | stream-completeness | JSON-RPC | Working→Artifact→Completed event sequence verified completely |
+| 84 | oversized-metadata | JSON-RPC | Rejects messages with metadata exceeding 1 MiB limit |
+| 85 | artifact-content | JSON-RPC | Artifact text contains actual analysis, not just present |
+| 86 | get-task-history | JSON-RPC | GetTask with `history_length` returns history data |
+| 87 | rapid-sequential | JSON-RPC | 30 sequential requests without degradation |
+| 88 | cancel-already-failed | REST | Cancel on terminal-state task handled gracefully |
+| 89 | card-semantic-valid | JSON-RPC | Agent card fields (name, version, skills, interfaces) validated |
+| 90 | get-after-stream | JSON-RPC | GetTask reflects streaming state (documents Bug #38 race) |
+
+## Tests 93-98: Axum & SQLite (`axum_sqlite.rs`)
+
+| # | Test | Feature | What it exercises |
+|---|------|---------|-------------------|
+| 93 | axum-send-message | `axum` | `A2aRouter` → SendMessage → Completed task |
+| 94 | axum-streaming | `axum` | `A2aRouter` SSE streaming with event completeness |
+| 95 | axum-agent-card | `axum` | Agent card discovery via `/.well-known/agent.json` through Axum |
+| 96 | sqlite-task-store | `sqlite` | `SqliteTaskStore` full lifecycle: send→get→list persistence |
+| 97 | sqlite-push-config | `sqlite` | `SqlitePushConfigStore` CRUD: set→list→delete |
+| 98 | axum-sqlite-combo | `axum`+`sqlite` | Combined production stack: Axum server + SQLite stores |
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 72 agent-team E2E tests (79 with optional features), the SDK includes dedicated integration test suites:
+In addition to the 82 agent-team E2E tests (98 with optional features), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|

@@ -218,8 +218,16 @@ impl Transport for RetryTransport {
 }
 
 /// Computes the next backoff duration, capped at `max`.
+///
+/// Handles overflow gracefully: if the multiplication produces infinity or NaN
+/// (possible with extreme multipliers or near-`Duration::MAX` values), returns
+/// `max` instead of panicking.
 fn cap_backoff(current: Duration, multiplier: f64, max: Duration) -> Duration {
-    let next = Duration::from_secs_f64(current.as_secs_f64() * multiplier);
+    let next_secs = current.as_secs_f64() * multiplier;
+    if !next_secs.is_finite() || next_secs < 0.0 {
+        return max;
+    }
+    let next = Duration::from_secs_f64(next_secs);
     if next > max {
         max
     } else {
@@ -354,6 +362,21 @@ mod tests {
         // When next < max, should return next.
         let result = cap_backoff(Duration::from_millis(1), 2.0, Duration::from_secs(5));
         assert_eq!(result, Duration::from_millis(2));
+    }
+
+    #[test]
+    fn cap_backoff_infinity_returns_max() {
+        // Extreme multiplier that would produce infinity.
+        let max = Duration::from_secs(30);
+        let result = cap_backoff(Duration::from_secs(u64::MAX / 2), f64::MAX, max);
+        assert_eq!(result, max, "infinity should clamp to max");
+    }
+
+    #[test]
+    fn cap_backoff_nan_returns_max() {
+        let max = Duration::from_secs(30);
+        let result = cap_backoff(Duration::from_secs(0), f64::NAN, max);
+        assert_eq!(result, max, "NaN should clamp to max");
     }
 
     // ── Mock transport for retry tests ────────────────────────────────────

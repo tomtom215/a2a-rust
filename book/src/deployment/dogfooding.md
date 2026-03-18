@@ -2,7 +2,7 @@
 
 The best way to find bugs in an SDK is to use it yourself — under real conditions, with real complexity, exercising real interaction patterns. Unit tests verify individual functions. Integration tests verify pairwise contracts. But only dogfooding reveals the emergent issues that appear when all the pieces come together.
 
-The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **72 E2E tests** (79 with optional WebSocket, gRPC, signing, and OTel features) runs in ~2.5 seconds.
+The `agent-team` example (`examples/agent-team/`) is a full-stack dogfood of every a2a-rust capability. It deploys 4 specialized agents that discover each other, delegate work, stream results, and report health — all via the A2A protocol. A comprehensive test suite of **82 E2E tests** (98 with optional WebSocket, gRPC, Axum, SQLite, signing, and OTel features) runs in ~3 seconds.
 
 ## Why Dogfood?
 
@@ -17,7 +17,7 @@ Unit tests and integration tests are necessary but insufficient. **No single tes
 | **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 
-**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 72 E2E dogfood tests that caught 36 real bugs — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
+**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 82 E2E dogfood tests that caught 40 real bugs across 9 passes — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
 Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 
@@ -28,7 +28,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (72 tests, ~2500ms total)                      │
+│              (82 tests, ~3000ms total)                      │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -61,7 +61,7 @@ Each agent exercises different SDK capabilities:
 
 ## SDK Features Exercised
 
-The agent team exercises **35+ distinct SDK features** in a single run:
+The agent team exercises **45+ distinct SDK features** in a single run:
 
 - `AgentExecutor` trait (4 implementations)
 - `RequestHandlerBuilder` (all options: timeout, queue capacity, max streams, metrics, interceptors)
@@ -99,6 +99,16 @@ The agent team exercises **35+ distinct SDK features** in a single run:
 - `DynamicAgentCardHandler` (runtime-generated cards)
 - Agent card HTTP caching (ETag + 304 Not Modified)
 - Backpressure / lagged event queue (capacity=2)
+- State transition validation (streaming)
+- Executor error → Failed propagation
+- Streaming event completeness verification
+- Oversized metadata rejection
+- Artifact content correctness
+- Rapid sequential request throughput
+- `A2aRouter` (Axum framework integration) — with `axum` feature
+- `SqliteTaskStore` (persistent task store) — with `sqlite` feature
+- `SqlitePushConfigStore` (persistent push config) — with `sqlite` feature
+- Combined Axum + SQLite production stack — with `axum,sqlite` features
 
 ## Modular Example Structure
 
@@ -122,21 +132,26 @@ examples/agent-team/src/
     ├── stress.rs                # Tests 31-40: stress, durability, event ordering
     ├── dogfood.rs               # Tests 41-50: SDK gaps, regressions, edge cases
     ├── transport.rs             # Tests 51-58: WebSocket, gRPC, multi-tenancy
-    └── coverage_gaps/           # Tests 61-79: modular test suite
+    └── coverage_gaps/           # Tests 61-98: modular test suite
         ├── mod.rs                   # Re-exports
         ├── batch_jsonrpc.rs         # Batch JSON-RPC tests
         ├── auth_and_cards.rs        # Auth rejection, extended/dynamic cards, caching
         ├── streaming_backpressure.rs # Backpressure tests
         ├── push_config.rs           # Push config edge cases
         ├── resilience.rs            # Resilience and recovery
+        ├── deep_dogfood.rs          # Deep probes: state transitions, errors, scale
+        ├── axum_sqlite.rs           # Axum + SQLite integration (feature-gated)
         └── feature_gated.rs         # Signing, OTel (feature-gated)
 ```
 
 ## Running the Agent Team
 
 ```bash
-# Basic run (all output to stdout)
+# Basic run (82 tests)
 cargo run -p agent-team
+
+# With Axum + SQLite (tests 93-98)
+cargo run -p agent-team --features axum,sqlite
 
 # With WebSocket tests (tests 51-52)
 cargo run -p agent-team --features websocket
@@ -144,8 +159,8 @@ cargo run -p agent-team --features websocket
 # With structured logging
 RUST_LOG=debug cargo run -p agent-team --features tracing
 
-# With all optional features
-cargo run -p agent-team --features "websocket,tracing"
+# With all optional features (98 tests)
+cargo run -p agent-team --features "websocket,grpc,axum,sqlite,signing,otel,tracing"
 ```
 
 Expected output:
@@ -160,9 +175,9 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...72 tests...
+...82 tests...
 
-║ Total: 72 | Passed: 72 | Failed: 0 | Time: ~2500ms
+║ Total: 82 | Passed: 82 | Failed: 0 | Time: ~3000ms
 ```
 
 ## Lessons for Your Own Agents
@@ -177,7 +192,7 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Open Issues & Future Work — All Resolved
 
-All architecture, ergonomics, observability, performance, and durability issues from passes 1–8 have been resolved (36 bugs across 8 passes). All proposed beyond-spec features have been implemented:
+All architecture, ergonomics, observability, performance, and durability issues from passes 1–9 have been resolved (40 bugs across 9 passes, 39 fixed, 1 documented as known limitation). All proposed beyond-spec features have been implemented:
 
 | Feature | Location |
 |---|---|
@@ -191,8 +206,8 @@ All architecture, ergonomics, observability, performance, and durability issues 
 
 ## Sub-pages
 
-- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 36 bugs discovered across eight dogfooding passes
-- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 72-test E2E coverage map (79 with optional transports, signing, and OTel)
+- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 40 bugs discovered across nine dogfooding passes
+- **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 82-test E2E coverage map (98 with optional transports, Axum, SQLite, signing, and OTel)
 
 ## See Also
 
