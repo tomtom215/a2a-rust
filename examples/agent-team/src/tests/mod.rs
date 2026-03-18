@@ -9,9 +9,9 @@
 //! - [`edge_cases`]: Tests 21-30 — error paths, concurrency, metrics, CRUD
 //! - [`stress`]: Tests 31-40 — stress, durability, observability, event ordering
 //! - [`dogfood`]: Tests 41-50 — SDK gaps and regressions found during review
-//! - [`coverage_gaps`]: Tests 61-78 — E2E coverage gaps (batch JSON-RPC, auth,
+//! - [`coverage_gaps`]: Tests 61-90 — E2E coverage gaps (batch JSON-RPC, auth,
 //!   dynamic/extended cards, caching, backpressure, timeout retryability,
-//!   concurrent cancels, stale pagination)
+//!   concurrent cancels, stale pagination, deep dogfood probes)
 
 pub mod basic;
 pub mod coverage_gaps;

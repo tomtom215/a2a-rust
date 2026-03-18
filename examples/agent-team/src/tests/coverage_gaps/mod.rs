@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Tests 61-80: E2E coverage gaps identified during dogfooding.
+//! Tests 61-90: E2E coverage gaps identified during dogfooding.
 //!
 //! Split into submodules by responsibility:
 //! - [`batch_jsonrpc`]: Tests 61-66 — batch JSON-RPC (empty, single, mixed,
@@ -14,11 +14,15 @@
 //!   combined filters, metrics
 //! - [`resilience`]: Tests 76-78 — timeout retryability, concurrent cancel,
 //!   stale page token
-//! - [`feature_gated`]: Tests 79-80 — agent card signing (`signing` feature),
+//! - [`deep_dogfood`]: Tests 81-90 — deep probes: state transitions, executor
+//!   errors, streaming completeness, metadata limits, artifact correctness,
+//!   rapid throughput, terminal-state cancel, card validation, background sync
+//! - [`feature_gated`]: Tests 91-92 — agent card signing (`signing` feature),
 //!   `OtelMetrics` integration (`otel` feature)
 
 pub mod auth_and_cards;
 pub mod batch_jsonrpc;
+pub mod deep_dogfood;
 pub mod feature_gated;
 pub mod push_config;
 pub mod resilience;
@@ -27,6 +31,7 @@ pub mod streaming_backpressure;
 // Re-export all test functions so callers can use `coverage_gaps::test_*`.
 pub use auth_and_cards::*;
 pub use batch_jsonrpc::*;
+pub use deep_dogfood::*;
 #[cfg(any(feature = "signing", feature = "otel"))]
 pub use feature_gated::*;
 pub use push_config::*;

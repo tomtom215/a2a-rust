@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (72 tests, 80 with optional transports, signing, and OTel) that exercises every major SDK feature.
+//! suite (82 tests, 92 with optional transports, signing, and OTel) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -293,7 +293,19 @@ async fn main() {
     results.push(coverage_gaps::test_concurrent_cancels(&ctx).await);
     results.push(coverage_gaps::test_stale_page_token(&ctx).await);
 
-    // Test 79: Agent card signing (signing feature)
+    // Tests 81-89: Deep dogfood — scale-sensitive, completeness, correctness
+    results.push(coverage_gaps::test_state_transition_ordering(&ctx).await);
+    results.push(coverage_gaps::test_executor_error_produces_failed(&ctx).await);
+    results.push(coverage_gaps::test_streaming_event_completeness(&ctx).await);
+    results.push(coverage_gaps::test_oversized_metadata_rejected(&ctx).await);
+    results.push(coverage_gaps::test_artifact_content_correct(&ctx).await);
+    results.push(coverage_gaps::test_get_task_history_content(&ctx).await);
+    results.push(coverage_gaps::test_rapid_sequential_requests(&ctx).await);
+    results.push(coverage_gaps::test_cancel_already_failed(&ctx).await);
+    results.push(coverage_gaps::test_agent_card_semantic_validation(&ctx).await);
+    results.push(coverage_gaps::test_get_task_after_stream(&ctx).await);
+
+    // Test 91: Agent card signing (signing feature)
     #[cfg(feature = "signing")]
     results.push(coverage_gaps::test_agent_card_signing(&ctx).await);
 
@@ -392,6 +404,16 @@ async fn main() {
         "DynamicAgentCardHandler (runtime-generated cards)",
         "Agent card HTTP caching (ETag + 304 Not Modified)",
         "Backpressure / lagged event queue (capacity=2)",
+        "State transition validation (streaming)",
+        "Executor error → Failed propagation",
+        "Streaming event completeness verification",
+        "Oversized metadata rejection",
+        "Artifact content correctness",
+        "GetTask history content",
+        "Rapid sequential request throughput",
+        "Cancel terminal-state task",
+        "Agent card semantic validation",
+        "GetTask after streaming (background processor)",
         #[cfg(feature = "websocket")]
         "WebSocket transport (SendMessage + streaming)",
         #[cfg(feature = "grpc")]

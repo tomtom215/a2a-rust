@@ -231,6 +231,20 @@ Checking `path.contains("..")` is insufficient. Attackers can use `%2E%2E` (or m
 
 **Solution:** The REST dispatcher percent-decodes the path *before* checking for `..` sequences.
 
+## Scale & Durability Pitfalls
+
+### SSE parser queue can grow unbounded (fixed)
+
+A malicious SSE stream sending many oversized events could fill the parser's internal frame queue without bound. The fix caps the queue at 4096 frames (configurable via `with_max_queued_frames`), dropping the oldest when full.
+
+### Retry backoff can overflow to infinity (fixed)
+
+`cap_backoff()` computed `Duration::from_secs_f64(current * multiplier)`. With extreme multipliers, this produces `f64::INFINITY` which panics in `from_secs_f64`. The fix checks for non-finite results and clamps to `max_backoff`.
+
+### Background event processor can miss fast executor events (known limitation)
+
+In streaming mode, the background event processor subscribes to the broadcast channel *after* the executor starts. For very fast executors, events may be written before the subscription is active, meaning the task store is not updated. The SSE consumer always sees all events (it holds the reader from queue creation). See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
+
 ## Next Steps
 
 - **[Architecture Decision Records](./adrs.md)** — Design decisions behind these choices

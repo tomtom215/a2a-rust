@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 36 have been fixed.
+Nine dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **40 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 39 have been fixed; 1 is documented as a known limitation.
 
 ## Summary
 
@@ -14,6 +14,7 @@ Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** 
 | [Pass 6](#pass-6-architecture-audit-5-bugs) | Architecture | 5 | 1 Critical, 1 High, 3 Medium |
 | [Pass 7](#pass-7-deep-dogfood-9-bugs) | Deep dogfood | 9 | 1 Critical, 2 High, 4 Medium, 2 Low |
 | [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 3 Medium, 1 Low |
+| [Pass 9](#pass-9-scale-probing-4-bugs) | Scale probing | 4 | 1 High, 2 Medium, 1 Low |
 
 ### By Severity
 
@@ -385,3 +386,57 @@ Malformed UTF-8 lines were silently discarded (`return` on `from_utf8` failure).
 **Why tests missed it:** gRPC streaming tests check for successful completion, not error paths within the stream.
 
 **Fix:** Changed to use `ClientError::Protocol(A2aError::new(grpc_code_to_error_code(...), ...))` for proper error classification.
+
+---
+
+## Pass 9: Scale Probing (4 bugs)
+
+### Bug 37: SSE Parser Unbounded Error Queue (OOM Risk)
+
+**Severity:** Medium | **Component:** Client SSE parser
+
+`SseParser` queued errors into an unbounded `VecDeque`. A malicious or corrupted SSE stream producing many oversized events could fill the queue with error entries, causing OOM on the client side.
+
+**Why tests missed it:** Tests consume frames immediately after feeding. The bug only manifests when a consumer falls behind a producer generating many errors.
+
+**Fix:** Added `max_queued_frames` limit (default 4096) with `with_max_queued_frames()` builder. When the limit is reached, the oldest frame/error is dropped via `pop_front()` before pushing the new one.
+
+### Bug 38: Background Event Processor Misses Fast Executor Events (Known Limitation)
+
+**Severity:** High | **Component:** Server `RequestHandler` background event processor
+
+In streaming mode, `spawn_background_event_processor` subscribes to the broadcast channel *after* `yield_now()`. If the executor completes before the subscription is active, the background processor misses all events. This means the task store may not be updated to the terminal state for fast executors in streaming mode.
+
+The root cause is architectural: `tokio::sync::broadcast::subscribe()` only delivers events sent *after* the subscription. Events already in the channel are lost.
+
+**Why tests missed it:** Most test executors include artificial delays. The bug only manifests with very fast executors (e.g., pure computation without I/O).
+
+**Status:** Documented as known limitation. The SSE consumer (which has the reader from queue creation) sees all events correctly. Only the background store-update path is affected. A proper fix requires either: (1) subscribing before spawning the executor, or (2) replaying missed events from the channel's buffer.
+
+### Bug 39: Retry Backoff Float Overflow Can Panic
+
+**Severity:** Low | **Component:** Client retry policy
+
+`cap_backoff()` computed `Duration::from_secs_f64(current.as_secs_f64() * multiplier)` without checking for infinity or NaN. With extreme multiplier values or near-`Duration::MAX` durations, the multiplication could produce `f64::INFINITY`, causing `from_secs_f64` to panic.
+
+**Why tests missed it:** Default multiplier is 2.0 and backoffs are small. The overflow only occurs with adversarial configurations.
+
+**Fix:** Added `is_finite()` and negativity checks before the `Duration` conversion. Non-finite results clamp to `max_backoff`.
+
+### Bug 40: Agent-Team Test Suite Missing Coverage for 10 SDK Features
+
+**Severity:** Medium | **Component:** Agent-team example
+
+The agent-team E2E test suite (previously 71 tests) had gaps in:
+- State transition validation (no backwards-transition check)
+- Executor error → Failed state propagation (not verified in streaming)
+- Streaming event completeness (only checked first/last, not sequence)
+- Oversized metadata rejection (never tested E2E)
+- Artifact content correctness (only checked existence, not content)
+- GetTask after streaming (background processor sync not verified)
+- Rapid sequential throughput (no sustained load test)
+- Cancel terminal-state tasks (only cancel of active tasks tested)
+- Agent card semantic validation (only checked non-empty, not structure)
+- GetTask history content (API success checked, not response content)
+
+**Fix:** Added 10 new deep dogfood tests (tests 81-90) covering all gaps. Test suite now has 82 base tests (92 with optional features).

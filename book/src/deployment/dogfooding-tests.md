@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **72 E2E tests** across 8 test modules (79 with optional WebSocket, gRPC, signing, and OTel features). All tests pass in ~2.5 seconds.
+The agent team runs **82 E2E tests** across 8 test modules (92 with optional WebSocket, gRPC, signing, and OTel features). All tests pass in ~3 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 
@@ -163,9 +163,24 @@ The agent team runs **72 E2E tests** across 8 test modules (79 with optional Web
 | Stale page token handling | 78 |
 | Agent card signing (JWS/ES256) | 79 |
 
+## Tests 81-90: Deep Dogfood Probes (`deep_dogfood.rs`)
+
+| # | Test | Transport | What it exercises |
+|---|------|-----------|-------------------|
+| 81 | state-transition-order | JSON-RPC | Validates streaming state transitions are monotonically forward |
+| 82 | executor-error-failed | REST | Executor error produces `Failed` state with error metadata |
+| 83 | stream-completeness | JSON-RPC | Working→Artifact→Completed event sequence verified completely |
+| 84 | oversized-metadata | JSON-RPC | Rejects messages with metadata exceeding 1 MiB limit |
+| 85 | artifact-content | JSON-RPC | Artifact text contains actual analysis, not just present |
+| 86 | get-task-history | JSON-RPC | GetTask with `history_length` returns history data |
+| 87 | rapid-sequential | JSON-RPC | 30 sequential requests without degradation |
+| 88 | cancel-already-failed | REST | Cancel on terminal-state task handled gracefully |
+| 89 | card-semantic-valid | JSON-RPC | Agent card fields (name, version, skills, interfaces) validated |
+| 90 | get-after-stream | JSON-RPC | GetTask reflects streaming state (documents Bug #38 race) |
+
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 72 agent-team E2E tests (79 with optional features), the SDK includes dedicated integration test suites:
+In addition to the 82 agent-team E2E tests (92 with optional features), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
