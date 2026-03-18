@@ -306,9 +306,9 @@ mod tests {
         );
     }
 
-    /// Covers lines 32-34 (json_ok_response serialization error fallback path).
-    /// This is hard to trigger with normal types since serde_json rarely fails
-    /// on Serialize types. We can test the internal_error_response directly.
+    /// Covers lines 32-34 (`json_ok_response` serialization error fallback path).
+    /// This is hard to trigger with normal types since `serde_json` rarely fails
+    /// on Serialize types. We can test the `internal_error_response` directly.
     #[tokio::test]
     async fn internal_error_response_has_json_body() {
         let resp = internal_error_response();
@@ -321,9 +321,9 @@ mod tests {
         );
     }
 
-    /// Covers line 45 (error_json_response fallback — normally unreachable
-    /// since serde_json::json! always serializes).
-    /// Test that error_json_response always produces correct status and body.
+    /// Covers line 45 (`error_json_response` fallback — normally unreachable
+    /// since `serde_json::json`! always serializes).
+    /// Test that `error_json_response` always produces correct status and body.
     #[tokio::test]
     async fn error_json_response_various_statuses() {
         for status in [400, 403, 404, 422, 500, 503] {
@@ -332,8 +332,8 @@ mod tests {
         }
     }
 
-    /// Covers line 73 (server_error_to_response serialization — normally always succeeds).
-    /// Covers ServerError::Serialization variant mapping to 400.
+    /// Covers line 73 (`server_error_to_response` serialization — normally always succeeds).
+    /// Covers `ServerError::Serialization` variant mapping to 400.
     #[tokio::test]
     async fn server_error_serialization_maps_to_400() {
         let err = ServerError::Serialization(serde_json::from_str::<()>("bad").unwrap_err());
@@ -341,8 +341,8 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 400);
     }
 
-    /// Covers lines 100-103 (build_json_response fallback — should never trigger
-    /// with valid header names but covers the unwrap_or_else path).
+    /// Covers lines 100-103 (`build_json_response` fallback — should never trigger
+    /// with valid header names but covers the `unwrap_or_else` path).
     #[tokio::test]
     async fn build_json_response_various_statuses() {
         for status in [200, 201, 400, 404, 500] {
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(result, val);
     }
 
-    /// Covers server_error_to_response with Http, Transport, PayloadTooLarge variants (line 69).
+    /// Covers `server_error_to_response` with Http, Transport, `PayloadTooLarge` variants (line 69).
     #[tokio::test]
     async fn server_error_transport_maps_to_500() {
         let err = ServerError::Transport("transport broke".into());
@@ -386,7 +386,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 500);
     }
 
-    /// Covers the InvalidStateTransition variant through server_error_to_response.
+    /// Covers the `InvalidStateTransition` variant through `server_error_to_response`.
     #[tokio::test]
     async fn server_error_invalid_state_transition_maps_to_400_equiv() {
         use a2a_protocol_types::task::TaskState;
@@ -400,8 +400,8 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 500);
     }
 
-    /// Covers line 73: server_error_to_response serialization fallback.
-    /// Covers the Protocol variant through server_error_to_response.
+    /// Covers line 73: `server_error_to_response` serialization fallback.
+    /// Covers the Protocol variant through `server_error_to_response`.
     #[tokio::test]
     async fn server_error_protocol_maps_to_500() {
         let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::internal("proto err"));
@@ -412,7 +412,7 @@ mod tests {
         assert!(val["message"].as_str().unwrap_or("").contains("proto err"));
     }
 
-    /// Covers line 97: build_json_response unwrap_or_else fallback.
+    /// Covers line 97: `build_json_response` `unwrap_or_else` fallback.
     /// This path is unreachable with valid headers, but we verify the happy
     /// path produces correct output.
     #[tokio::test]

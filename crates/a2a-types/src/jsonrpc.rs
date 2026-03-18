@@ -328,7 +328,7 @@ mod tests {
 
     #[test]
     fn version_default() {
-        let v = JsonRpcVersion::default();
+        let v = JsonRpcVersion;
         assert_eq!(v, JsonRpcVersion);
     }
 

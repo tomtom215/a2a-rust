@@ -277,9 +277,10 @@ mod tests {
 
     // ── Exhaustive ErrorCode roundtrip tests ──────────────────────────────
 
-    /// Every error code must roundtrip through i32 → ErrorCode → i32.
+    /// Every error code must roundtrip through i32 → `ErrorCode` → i32.
     /// A mutation changing any discriminant value will be caught.
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn error_code_roundtrip_all_variants() {
         let cases: &[(ErrorCode, i32, &str)] = &[
             (ErrorCode::ParseError, -32700, "Parse error"),
@@ -358,7 +359,7 @@ mod tests {
         }
     }
 
-    /// Adjacent integer values must NOT convert to an ErrorCode.
+    /// Adjacent integer values must NOT convert to an `ErrorCode`.
     /// Catches mutations that widen match arms.
     #[test]
     fn error_code_rejects_adjacent_values() {

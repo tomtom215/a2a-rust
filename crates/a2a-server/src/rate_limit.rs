@@ -427,7 +427,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 63-68 (RateLimitConfig::default).
+    /// Covers lines 63-68 (`RateLimitConfig::default`).
     #[test]
     fn default_config_values() {
         let config = RateLimitConfig::default();
@@ -583,10 +583,15 @@ mod tests {
         );
 
         // The window should have been updated and count reset to 1.
-        let buckets = limiter.buckets.read().await;
-        let bucket = buckets.get(key).expect("bucket should exist");
         assert_eq!(
-            bucket.count.load(Ordering::Relaxed),
+            limiter
+                .buckets
+                .read()
+                .await
+                .get(key)
+                .expect("bucket should exist")
+                .count
+                .load(Ordering::Relaxed),
             1,
             "count should be reset to 1 after window advance"
         );
@@ -629,7 +634,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 179-183: fast-path rate limit exceeded (count > requests_per_window).
+    /// Covers lines 179-183: fast-path rate limit exceeded (count > `requests_per_window`).
     #[tokio::test]
     async fn fast_path_rate_limit_exceeded() {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
@@ -681,16 +686,21 @@ mod tests {
         let result = limiter.check(key).await;
         assert!(result.is_ok(), "fast-path window advance should succeed");
 
-        let buckets = limiter.buckets.read().await;
-        let bucket = buckets.get(key).expect("bucket should exist");
         assert_eq!(
-            bucket.count.load(Ordering::Relaxed),
+            limiter
+                .buckets
+                .read()
+                .await
+                .get(key)
+                .expect("bucket should exist")
+                .count
+                .load(Ordering::Relaxed),
             1,
             "count should be reset to 1 after window advance"
         );
     }
 
-    /// Covers the caller_key function with an empty x-forwarded-for (no commas).
+    /// Covers the `caller_key` function with an empty x-forwarded-for (no commas).
     #[tokio::test]
     async fn x_forwarded_for_single_ip() {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {

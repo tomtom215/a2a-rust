@@ -146,7 +146,7 @@ pub trait TaskStore: Send + Sync + 'static {
 mod tests {
     use super::*;
 
-    /// A minimal TaskStore that only implements required methods.
+    /// A minimal `TaskStore` that only implements required methods.
     struct MinimalStore;
 
     impl TaskStore for MinimalStore {
@@ -187,7 +187,7 @@ mod tests {
         // Note: count() is NOT overridden, so the default impl is used.
     }
 
-    /// Covers lines 139-141: default count() returns 0.
+    /// Covers lines 139-141: default `count()` returns 0.
     #[tokio::test]
     async fn default_count_returns_zero() {
         let store = MinimalStore;
@@ -195,7 +195,7 @@ mod tests {
         assert_eq!(count, 0, "default count() should return 0");
     }
 
-    /// Covers TaskStoreConfig::default() (lines 222-231).
+    /// Covers `TaskStoreConfig::default()` (lines 222-231).
     #[test]
     fn task_store_config_default_values() {
         let config = super::TaskStoreConfig::default();
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(config.max_page_size, 1000);
     }
 
-    /// Covers TaskStoreConfig Clone + Debug derives.
+    /// Covers `TaskStoreConfig` Clone + Debug derives.
     #[test]
     fn task_store_config_clone_and_debug() {
         let config = super::TaskStoreConfig {
@@ -214,20 +214,20 @@ mod tests {
             eviction_interval: 32,
             max_page_size: 100,
         };
-        let cloned = config.clone();
+        let cloned = config;
         assert_eq!(cloned.max_capacity, Some(500));
         assert_eq!(cloned.task_ttl, None);
         assert_eq!(cloned.eviction_interval, 32);
         assert_eq!(cloned.max_page_size, 100);
 
-        let debug_str = format!("{:?}", cloned);
+        let debug_str = format!("{cloned:?}");
         assert!(
             debug_str.contains("TaskStoreConfig"),
             "Debug output should contain struct name: {debug_str}"
         );
     }
 
-    /// Covers MinimalStore's required methods via trait object.
+    /// Covers `MinimalStore`'s required methods via trait object.
     #[tokio::test]
     async fn minimal_store_save_get_list_delete() {
         let store = MinimalStore;

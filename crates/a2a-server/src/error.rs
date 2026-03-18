@@ -407,7 +407,7 @@ mod tests {
         );
     }
 
-    /// Covers line 123: to_a2a_error for Http variant.
+    /// Covers line 123: `to_a2a_error` for Http variant.
     #[tokio::test]
     async fn to_a2a_error_http_variant() {
         use tokio::io::AsyncWriteExt;

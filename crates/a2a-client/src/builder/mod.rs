@@ -343,7 +343,7 @@ mod tests {
         );
     }
 
-    /// Covers line 107 (version mismatch warning branch in from_card with tracing).
+    /// Covers line 107 (version mismatch warning branch in `from_card` with tracing).
     /// Even without tracing feature, this exercises the code path.
     #[test]
     fn builder_from_card_mismatched_version() {
@@ -375,7 +375,7 @@ mod tests {
         assert_eq!(builder.endpoint, "http://localhost:9091");
     }
 
-    /// Covers lines 150-153 (with_connection_timeout) and 221-224 (with_retry_policy).
+    /// Covers lines 150-153 (`with_connection_timeout`) and 221-224 (`with_retry_policy`).
     #[test]
     fn builder_with_connection_timeout_and_retry_policy() {
         use crate::retry::RetryPolicy;
@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(client.config().connection_timeout, Duration::from_secs(5));
     }
 
-    /// Covers with_stream_connect_timeout (line ~140).
+    /// Covers `with_stream_connect_timeout` (line ~140).
     #[test]
     fn builder_with_stream_connect_timeout() {
         let client = ClientBuilder::new("http://localhost:8080")

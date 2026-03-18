@@ -392,7 +392,7 @@ mod tests {
         );
     }
 
-    /// Covers line 89 (Default impl for TenantAwareInMemoryPushConfigStore).
+    /// Covers line 89 (Default impl for `TenantAwareInMemoryPushConfigStore`).
     /// This is already implicitly tested but let's make it explicit.
     #[test]
     fn default_impl_creates_empty_store() {

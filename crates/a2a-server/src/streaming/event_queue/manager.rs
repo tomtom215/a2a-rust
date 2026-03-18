@@ -370,7 +370,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 99-102 (with_write_timeout builder method).
+    /// Covers lines 99-102 (`with_write_timeout` builder method).
     #[tokio::test]
     async fn manager_with_write_timeout() {
         let manager =

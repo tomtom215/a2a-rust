@@ -283,7 +283,7 @@ mod tests {
         use crate::ClientBuilder;
 
         /// A mock transport that captures the streaming request and returns an error
-        /// (since we can't easily construct an EventStream in a unit test).
+        /// (since we can't easily construct an `EventStream` in a unit test).
         struct StreamCapture;
 
         impl Transport for StreamCapture {

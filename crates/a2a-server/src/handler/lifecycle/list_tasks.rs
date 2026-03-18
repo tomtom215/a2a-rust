@@ -108,8 +108,10 @@ mod tests {
     async fn list_tasks_with_tenant() {
         // Covers line 32: tenant scoping with non-default tenant.
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
-        let mut params = ListTasksParams::default();
-        params.tenant = Some("test-tenant".to_string());
+        let params = ListTasksParams {
+            tenant: Some("test-tenant".to_string()),
+            ..Default::default()
+        };
         let result = handler
             .on_list_tasks(params, None)
             .await

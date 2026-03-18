@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(resolver.resolve(&ctx).await, None);
     }
 
-    /// Covers lines 172-174 (BearerTokenTenantResolver Default impl).
+    /// Covers lines 172-174 (`BearerTokenTenantResolver` Default impl).
     #[tokio::test]
     async fn bearer_resolver_default_same_as_new() {
         let resolver = BearerTokenTenantResolver::default();
@@ -391,7 +391,7 @@ mod tests {
         );
     }
 
-    /// Covers line 241 (extract_from_path with empty segment after filter).
+    /// Covers line 241 (`extract_from_path` with empty segment after filter).
     #[tokio::test]
     async fn path_resolver_uses_fallback_path_header() {
         let resolver = PathSegmentTenantResolver::new(0);

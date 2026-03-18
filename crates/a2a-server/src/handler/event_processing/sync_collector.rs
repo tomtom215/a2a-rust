@@ -467,6 +467,7 @@ mod tests {
 
     // ── deliver_push coverage ─────────────────────────────────────────────
 
+    #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn collect_events_with_push_sender_delivers_notifications() {
         // Covers lines 144-176: deliver_push is called for status update events.

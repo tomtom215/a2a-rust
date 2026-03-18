@@ -119,7 +119,7 @@ mod tests {
         assert_eq!(back.token.as_deref(), Some("secret"));
     }
 
-    /// Verifies that `new()` sets exactly task_id and url, with all optional
+    /// Verifies that `new()` sets exactly `task_id` and url, with all optional
     /// fields as None. A mutation setting any to Some(_) will be caught.
     #[test]
     fn push_config_new_optional_fields_are_none() {

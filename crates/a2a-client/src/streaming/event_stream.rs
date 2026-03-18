@@ -359,7 +359,7 @@ mod tests {
     }
 
     /// Tests that an SSE frame containing a JSON-RPC error response
-    /// is decoded as a ClientError::Protocol. Covers lines 164-171.
+    /// is decoded as a `ClientError::Protocol`. Covers lines 164-171.
     #[tokio::test]
     async fn stream_decodes_jsonrpc_error_as_protocol_error() {
         use a2a_protocol_types::{JsonRpcErrorResponse, JsonRpcVersion};
@@ -405,7 +405,7 @@ mod tests {
     }
 
     /// Tests that invalid JSON in an SSE frame produces a serialization error.
-    /// Covers the decode_frame path for malformed data.
+    /// Covers the `decode_frame` path for malformed data.
     #[tokio::test]
     async fn stream_invalid_json_returns_serialization_error() {
         let (tx, rx) = mpsc::channel(8);

@@ -365,10 +365,10 @@ mod tests {
 
     #[tokio::test]
     async fn macro_cancel_form_compiles_and_runs() {
+        use crate::executor::AgentExecutor;
         let executor = CancelableTestExecutor;
         let ctx = make_request_context();
         let writer = DummyWriter;
-        use crate::executor::AgentExecutor;
         executor.execute(&ctx, &writer).await.unwrap();
         executor.cancel(&ctx, &writer).await.unwrap();
     }

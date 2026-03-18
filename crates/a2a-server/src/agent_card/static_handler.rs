@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(resp.status(), 200);
     }
 
-    /// Covers lines 75-77 (handle_unconditional).
+    /// Covers lines 75-77 (`handle_unconditional`).
     #[test]
     fn static_handler_unconditional_returns_200() {
         let card = minimal_agent_card();

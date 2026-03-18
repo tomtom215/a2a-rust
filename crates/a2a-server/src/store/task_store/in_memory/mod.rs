@@ -720,7 +720,7 @@ mod tests {
 
     // ── Config defaults ──────────────────────────────────────────────────
 
-    /// Covers lines 74-76 (InMemoryTaskStore Default impl).
+    /// Covers lines 74-76 (`InMemoryTaskStore` Default impl).
     #[test]
     fn default_creates_new_store() {
         let store = InMemoryTaskStore::default();

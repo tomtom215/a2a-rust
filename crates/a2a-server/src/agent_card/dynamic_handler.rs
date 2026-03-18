@@ -400,7 +400,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 190-194 (fallback_error_response).
+    /// Covers lines 190-194 (`fallback_error_response`).
     #[test]
     fn fallback_error_response_returns_internal_error_json() {
         let resp = fallback_error_response();
@@ -408,9 +408,9 @@ mod tests {
                                         // Body should contain error JSON
     }
 
-    /// Covers line 113 (serialization error in handle) and line 136 (in handle_unconditional).
-    /// These are hard to trigger with real AgentCard (which always serializes).
-    /// Instead we test the error_response helper directly.
+    /// Covers line 113 (serialization error in handle) and line 136 (in `handle_unconditional`).
+    /// These are hard to trigger with real `AgentCard` (which always serializes).
+    /// Instead we test the `error_response` helper directly.
     #[tokio::test]
     async fn error_response_returns_correct_status() {
         let resp = error_response(503, "service unavailable");

@@ -364,7 +364,7 @@ impl PushSender for HttpPushSender {
 mod tests {
     use super::*;
 
-    /// Covers lines 89-92 (PushRetryPolicy::with_max_attempts).
+    /// Covers lines 89-92 (`PushRetryPolicy::with_max_attempts`).
     #[test]
     fn push_retry_policy_with_max_attempts() {
         let policy = PushRetryPolicy::default().with_max_attempts(5);
@@ -373,7 +373,7 @@ mod tests {
         assert_eq!(policy.backoff.len(), 2);
     }
 
-    /// Covers lines 96-99 (PushRetryPolicy::with_backoff).
+    /// Covers lines 96-99 (`PushRetryPolicy::with_backoff`).
     #[test]
     fn push_retry_policy_with_backoff() {
         let backoff = vec![
@@ -387,7 +387,7 @@ mod tests {
         assert_eq!(policy.max_attempts, 3);
     }
 
-    /// Covers lines 149-152 (HttpPushSender::with_retry_policy).
+    /// Covers lines 149-152 (`HttpPushSender::with_retry_policy`).
     #[test]
     fn http_push_sender_with_retry_policy() {
         let policy = PushRetryPolicy::default().with_max_attempts(10);
@@ -395,20 +395,20 @@ mod tests {
         assert_eq!(sender.retry_policy.max_attempts, 10);
     }
 
-    /// Covers lines 206-208 (validate_webhook_url missing host).
+    /// Covers lines 206-208 (`validate_webhook_url` missing host).
     #[test]
     fn rejects_url_without_host() {
         assert!(validate_webhook_url("http:///path").is_err());
     }
 
-    /// Covers lines 265 and related (HttpPushSender::allow_private_urls).
+    /// Covers lines 265 and related (`HttpPushSender::allow_private_urls`).
     #[test]
     fn http_push_sender_allow_private_urls() {
         let sender = HttpPushSender::new().allow_private_urls();
         assert!(sender.allow_private_urls);
     }
 
-    /// Covers Default impl for HttpPushSender (line 122-124).
+    /// Covers Default impl for `HttpPushSender` (line 122-124).
     #[test]
     fn http_push_sender_default() {
         let sender = HttpPushSender::default();
@@ -416,7 +416,7 @@ mod tests {
         assert!(!sender.allow_private_urls);
     }
 
-    /// Covers PushRetryPolicy::default() (lines 74-84).
+    /// Covers `PushRetryPolicy::default()` (lines 74-84).
     #[test]
     fn push_retry_policy_default() {
         let policy = PushRetryPolicy::default();

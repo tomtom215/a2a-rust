@@ -762,7 +762,7 @@ async fn send_streaming_message_returns_sse() {
         .get("content-type")
         .map(|v| v.to_str().unwrap_or(""));
     assert!(
-        ct.map_or(false, |c| c.contains("text/event-stream")),
+        ct.is_some_and(|c| c.contains("text/event-stream")),
         "SendStreamingMessage should return SSE, got content-type: {:?}, body: {}",
         ct,
         &resp[..resp.len().min(200)]
@@ -972,7 +972,7 @@ async fn no_content_type_header_still_processes_request() {
     let (status, resp, _) = http_request(addr, "POST", "/", Some(&body.to_string()), None).await;
 
     assert_eq!(status, 200);
-    let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+    let _v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     // Should process fine (content-type check only applies if header is present).
     assert!(
         !resp.contains("unsupported Content-Type"),
@@ -1163,7 +1163,7 @@ async fn dispatcher_trait_impl_works() {
         "id": "trait-test",
         "params": { "id": "nonexistent" }
     });
-    let req = hyper::Request::builder()
+    let _req = hyper::Request::builder()
         .method("POST")
         .uri("/")
         .header("content-type", "application/json")

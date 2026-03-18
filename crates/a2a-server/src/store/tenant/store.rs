@@ -599,7 +599,7 @@ mod tests {
 
     // ── Config defaults ──────────────────────────────────────────────────
 
-    /// Covers lines 85-87 (TenantAwareInMemoryTaskStore Default impl).
+    /// Covers lines 85-87 (`TenantAwareInMemoryTaskStore` Default impl).
     #[test]
     fn default_creates_new_tenant_store() {
         let store = TenantAwareInMemoryTaskStore::default();
@@ -611,7 +611,7 @@ mod tests {
         assert_eq!(count, 0, "default store should have no tenants");
     }
 
-    /// Covers lines 151-154 (run_eviction_all).
+    /// Covers lines 151-154 (`run_eviction_all`).
     #[tokio::test]
     async fn run_eviction_all_runs_without_error() {
         let store = TenantAwareInMemoryTaskStore::new();
@@ -636,7 +636,7 @@ mod tests {
         store.run_eviction_all().await;
     }
 
-    /// Covers line 125 (double-check in get_store slow path).
+    /// Covers line 125 (double-check in `get_store` slow path).
     /// When multiple tasks from the same tenant race, the second should
     /// find the store already created.
     #[tokio::test]

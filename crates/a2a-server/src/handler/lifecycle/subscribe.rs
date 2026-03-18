@@ -175,8 +175,7 @@ mod tests {
         // (if executor already completed and queue was destroyed). Both are valid.
         // What matters is that we exercised the code path.
         match &sub_result {
-            Ok(_) => {}                         // success path covered
-            Err(ServerError::Internal(_)) => {} // queue already closed
+            Ok(_) | Err(ServerError::Internal(_)) => {} // success or queue already closed
             Err(e) => panic!("unexpected error: {e:?}"),
         }
     }

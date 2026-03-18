@@ -303,7 +303,7 @@ mod tests {
     }
 
     /// Tests the `CallInterceptorBoxed` impl for `Box<dyn CallInterceptorBoxed>`.
-    /// Covers lines 152-157 (before_boxed delegation) and 159-164 (after_boxed delegation).
+    /// Covers lines 152-157 (`before_boxed` delegation) and 159-164 (`after_boxed` delegation).
     #[tokio::test]
     async fn boxed_interceptor_delegates_before_and_after() {
         let counter = Arc::new(AtomicUsize::new(0));

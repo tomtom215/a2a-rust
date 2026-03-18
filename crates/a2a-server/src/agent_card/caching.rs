@@ -324,7 +324,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// Covers lines 130-131: If-Modified-Since with non-matching value returns SendFull.
+    /// Covers lines 130-131: If-Modified-Since with non-matching value returns `SendFull`.
     #[test]
     fn check_conditional_if_modified_since_miss() {
         let req = hyper::Request::builder()

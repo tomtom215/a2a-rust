@@ -376,7 +376,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 28-30 (CountingWriter::flush).
+    /// Covers lines 28-30 (`CountingWriter::flush`).
     #[test]
     fn counting_writer_flush_is_noop() {
         use std::io::Write;

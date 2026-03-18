@@ -525,6 +525,7 @@ mod tests {
     }
 
     /// Test `CachingCardResolver::resolve` fetches, caches, and returns the card.
+    #[allow(clippy::too_many_lines)]
     #[tokio::test]
     async fn caching_resolver_resolve_fetches_and_caches() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
@@ -589,15 +590,16 @@ mod tests {
             "cache should start empty"
         );
 
-        let resolved = resolver.resolve().await.unwrap();
-        assert_eq!(resolved.name, "resolver-test");
+        let fetched = resolver.resolve().await.unwrap();
+        assert_eq!(fetched.name, "resolver-test");
 
         // Cache should now be populated.
         let cached = resolver.cache.read().await;
         assert!(cached.is_some(), "cache should be populated after resolve");
-        let cached = cached.as_ref().unwrap();
-        assert_eq!(cached.card.name, "resolver-test");
-        assert_eq!(cached.etag, Some("\"res-etag\"".into()));
+        let entry = cached.as_ref().unwrap();
+        assert_eq!(entry.card.name, "resolver-test");
+        assert_eq!(entry.etag, Some("\"res-etag\"".into()));
+        drop(cached);
     }
 
     /// Test `CachingCardResolver::resolve` returns error when server is unreachable.
@@ -745,7 +747,7 @@ mod tests {
         assert_eq!(fetched.name, "path-resolve-test");
     }
 
-    /// Test `fetch_card_with_metadata` with cached data including last_modified.
+    /// Test `fetch_card_with_metadata` with cached data including `last_modified`.
     #[tokio::test]
     async fn fetch_card_with_metadata_304_with_last_modified() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};

@@ -336,7 +336,7 @@ mod tests {
         assert_eq!(produced.name, card.name);
     }
 
-    /// Covers lines 167-171 (spawn_signal_watcher, unix only).
+    /// Covers lines 167-171 (`spawn_signal_watcher`, unix only).
     #[cfg(unix)]
     #[tokio::test]
     async fn signal_watcher_can_be_spawned_and_aborted() {
@@ -359,14 +359,14 @@ mod tests {
         let _ = std::fs::remove_dir(&dir);
     }
 
-    /// Covers file_mtime helper function (line 182-184).
+    /// Covers `file_mtime` helper function (line 182-184).
     #[test]
     fn file_mtime_returns_none_for_missing_file() {
         let result = file_mtime(Path::new("/tmp/nonexistent_a2a_mtime_test.json"));
         assert!(result.is_none(), "missing file should return None");
     }
 
-    /// Covers file_mtime for existing file.
+    /// Covers `file_mtime` for existing file.
     #[test]
     fn file_mtime_returns_some_for_existing_file() {
         let dir = std::env::temp_dir().join("a2a_mtime_test");
