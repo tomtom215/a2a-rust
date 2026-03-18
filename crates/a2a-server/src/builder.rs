@@ -507,4 +507,33 @@ mod tests {
             .build();
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn builder_zero_max_id_length_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_id_length(0))
+            .build();
+        assert!(result.is_err(), "zero max_id_length should be rejected");
+    }
+
+    #[test]
+    fn builder_zero_max_metadata_size_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_metadata_size(0))
+            .build();
+        assert!(result.is_err(), "zero max_metadata_size should be rejected");
+    }
+
+    #[test]
+    fn builder_zero_push_delivery_timeout_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(
+                HandlerLimits::default().with_push_delivery_timeout(Duration::ZERO),
+            )
+            .build();
+        assert!(
+            result.is_err(),
+            "zero push_delivery_timeout should be rejected"
+        );
+    }
 }

@@ -196,6 +196,14 @@ mod tests {
     }
 
     #[test]
+    fn builder_zero_connection_timeout_errors() {
+        let result = ClientBuilder::new("http://localhost:8080")
+            .with_connection_timeout(Duration::ZERO)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn builder_unknown_binding_errors() {
         let result = ClientBuilder::new("http://localhost:8080")
             .with_protocol_binding("UNKNOWN_PROTOCOL")

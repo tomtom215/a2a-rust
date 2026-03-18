@@ -162,6 +162,12 @@ mod tests {
     }
 
     #[test]
+    fn with_max_artifacts_per_task_sets_value() {
+        let limits = HandlerLimits::default().with_max_artifacts_per_task(500);
+        assert_eq!(limits.max_artifacts_per_task, 500);
+    }
+
+    #[test]
     fn debug_format() {
         let limits = HandlerLimits::default();
         let debug = format!("{limits:?}");

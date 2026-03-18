@@ -340,4 +340,242 @@ mod tests {
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Completed);
     }
+
+    // ── Failing task store for revert-path coverage ──────────────────────
+
+    use std::future::Future;
+    use std::pin::Pin;
+
+    /// A task store that succeeds on get but always fails on save.
+    struct FailingSaveStore {
+        inner: InMemoryTaskStore,
+    }
+
+    impl FailingSaveStore {
+        fn new() -> Self {
+            Self {
+                inner: InMemoryTaskStore::new(),
+            }
+        }
+    }
+
+    impl crate::store::TaskStore for FailingSaveStore {
+        fn save<'a>(
+            &'a self,
+            _task: Task,
+        ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+        {
+            Box::pin(async { Err(A2aError::internal("simulated save failure")) })
+        }
+        fn get<'a>(
+            &'a self,
+            id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+            self.inner.get(id)
+        }
+        fn list<'a>(
+            &'a self,
+            p: &'a a2a_protocol_types::params::ListTasksParams,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = A2aResult<a2a_protocol_types::responses::TaskListResponse>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            self.inner.list(p)
+        }
+        fn insert_if_absent<'a>(
+            &'a self,
+            task: Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            self.inner.insert_if_absent(task)
+        }
+        fn delete<'a>(
+            &'a self,
+            id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            self.inner.delete(id)
+        }
+    }
+
+    #[tokio::test]
+    async fn status_update_save_failure_reverts_in_memory_state() {
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-revert");
+
+        // Seed the inner store via insert_if_absent (which delegates to inner).
+        task_store
+            .inner
+            .save(make_task("t-revert", TaskState::Submitted))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-revert", TaskState::Submitted);
+
+        let event: A2aResult<StreamResponse> =
+            Ok(make_status_event("t-revert", TaskState::Working));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        // In-memory state should be reverted to Submitted since save failed.
+        assert_eq!(
+            last_task.status.state,
+            TaskState::Submitted,
+            "in-memory state should revert on save failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn artifact_update_save_failure_reverts_artifact_list() {
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-art-revert");
+
+        task_store
+            .inner
+            .save(make_task("t-art-revert", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-art-revert", TaskState::Working);
+
+        let event: A2aResult<StreamResponse> = Ok(make_artifact_event("t-art-revert"));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        // Artifact should be popped since save failed.
+        assert!(
+            last_task.artifacts.as_ref().is_none_or(Vec::is_empty),
+            "artifact should be reverted on save failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn task_snapshot_save_failure_reverts_to_previous() {
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-snap-revert");
+
+        task_store
+            .inner
+            .save(make_task("t-snap-revert", TaskState::Submitted))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-snap-revert", TaskState::Submitted);
+
+        let replacement = make_task("t-snap-revert", TaskState::Completed);
+        let event: A2aResult<StreamResponse> = Ok(StreamResponse::Task(replacement));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        assert_eq!(
+            last_task.status.state,
+            TaskState::Submitted,
+            "task snapshot should revert on save failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn error_event_save_failure_reverts_status() {
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-err-revert");
+
+        task_store
+            .inner
+            .save(make_task("t-err-revert", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-err-revert", TaskState::Working);
+
+        let event: A2aResult<StreamResponse> = Err(A2aError::internal("agent failure"));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        assert_eq!(
+            last_task.status.state,
+            TaskState::Working,
+            "error state should revert on save failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn artifact_limit_enforced() {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-limit");
+
+        task_store
+            .save(make_task("t-limit", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-limit", TaskState::Working);
+
+        // Set limit to 1 artifact.
+        let limits = HandlerLimits::default().with_max_artifacts_per_task(1);
+
+        // First artifact should succeed.
+        let event: A2aResult<StreamResponse> = Ok(make_artifact_event("t-limit"));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &limits,
+        )
+        .await;
+        assert_eq!(last_task.artifacts.as_ref().unwrap().len(), 1);
+
+        // Second should be dropped.
+        let event: A2aResult<StreamResponse> = Ok(make_artifact_event("t-limit"));
+        process_event_bg(
+            event,
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &limits,
+        )
+        .await;
+        assert_eq!(
+            last_task.artifacts.as_ref().unwrap().len(),
+            1,
+            "artifact count should not exceed limit"
+        );
+    }
 }

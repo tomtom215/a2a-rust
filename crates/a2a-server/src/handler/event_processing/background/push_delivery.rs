@@ -177,4 +177,69 @@ mod tests {
 
         deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
     }
+
+    #[tokio::test]
+    async fn deliver_push_bg_respects_total_deadline() {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        // A push sender that sleeps for 2 seconds per delivery.
+        struct SlowPushSender {
+            send_count: Arc<AtomicU64>,
+        }
+
+        impl crate::push::PushSender for SlowPushSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                self.send_count.fetch_add(1, Ordering::Relaxed);
+                Box::pin(async {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    Ok(())
+                })
+            }
+        }
+
+        let store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-deadline");
+        let event = make_status_event("t-deadline", TaskState::Working);
+
+        // Register many configs. With 2s per delivery and a 30s cap,
+        // at most ~15 can complete.
+        for i in 0..50 {
+            let config = TaskPushNotificationConfig {
+                tenant: None,
+                id: Some(format!("cfg-{i}")),
+                task_id: "t-deadline".to_owned(),
+                url: format!("https://example.com/hook{i}"),
+                token: None,
+                authentication: None,
+            };
+            store.set(config).await.unwrap();
+        }
+
+        let send_count = Arc::new(AtomicU64::new(0));
+        let sender = SlowPushSender {
+            send_count: Arc::clone(&send_count),
+        };
+        let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(3));
+
+        deliver_push_bg(&task_id, &event, &store, Some(&sender), &limits).await;
+
+        // With 30s total cap and 2s per send (bounded by 3s timeout), not all 50 should fire.
+        let count = send_count.load(Ordering::Relaxed);
+        assert!(
+            count < 50,
+            "deadline should prevent all 50 deliveries, got {count}"
+        );
+        assert!(
+            count > 0,
+            "at least some deliveries should have fired, got {count}"
+        );
+    }
 }
