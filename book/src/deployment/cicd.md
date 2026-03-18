@@ -14,6 +14,10 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --no-deps` — verifies documentation builds |
 
+The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and PRs:
+- Uses `cargo-llvm-cov` for source-based coverage instrumentation
+- Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
+
 The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separately:
 
 | Mode | Trigger | Scope |
