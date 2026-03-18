@@ -28,6 +28,8 @@ tls-rustls = ["a2a-protocol-client/tls-rustls"]
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## Enable OpenTelemetry integration.
 otel = ["a2a-protocol-server/otel"]
+## Enable Axum framework integration (Router, extractors, IntoResponse).
+axum = ["a2a-protocol-server/axum"]
 
 [package.metadata.docs.rs]
 all-features = true
