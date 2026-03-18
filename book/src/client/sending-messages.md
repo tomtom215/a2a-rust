@@ -11,6 +11,7 @@ use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams {
     tenant: None,
+    context_id: None,
     message: Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::User,
@@ -65,6 +66,7 @@ use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams {
     tenant: None,
+    context_id: None,
     message: make_message("Translate to French"),
     configuration: Some(SendMessageConfiguration {
         accepted_output_modes: vec!["text/plain".into()],

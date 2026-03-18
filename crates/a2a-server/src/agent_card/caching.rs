@@ -201,6 +201,7 @@ pub(crate) mod tests {
     /// Helper to build a minimal agent card for tests.
     pub fn minimal_agent_card() -> AgentCard {
         AgentCard {
+            url: None,
             name: "Test Agent".into(),
             description: "A test agent".into(),
             version: "1.0.0".into(),

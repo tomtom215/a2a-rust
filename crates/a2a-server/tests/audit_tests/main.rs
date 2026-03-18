@@ -137,6 +137,7 @@ fn make_message(text: &str) -> Message {
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: make_message(text),
         configuration: None,
         metadata: None,
@@ -156,6 +157,7 @@ fn unwrap_send_err(
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent".into(),
         version: "1.0.0".into(),

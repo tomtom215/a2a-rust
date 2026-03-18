@@ -129,6 +129,7 @@ mod tests {
     fn make_params() -> MessageSendParams {
         MessageSendParams {
             tenant: None,
+            context_id: None,
             message: Message {
                 id: MessageId::new("msg-1"),
                 role: MessageRole::User,

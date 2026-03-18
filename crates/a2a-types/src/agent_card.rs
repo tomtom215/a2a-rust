@@ -169,6 +169,13 @@ pub struct AgentCard {
     /// Display name of the agent.
     pub name: String,
 
+    /// Primary URL of the agent.
+    ///
+    /// Convenience field that typically matches the URL of the first
+    /// entry in `supported_interfaces`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+
     /// Human-readable description of the agent's purpose.
     pub description: String,
 
@@ -227,6 +234,7 @@ mod tests {
 
     fn minimal_card() -> AgentCard {
         AgentCard {
+            url: None,
             name: "Test Agent".into(),
             description: "A test agent".into(),
             version: "1.0.0".into(),

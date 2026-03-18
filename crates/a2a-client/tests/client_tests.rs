@@ -31,6 +31,7 @@ impl CallInterceptor for NoopInterceptor {
 /// Builds a minimal [`AgentCard`] with the given interfaces.
 fn agent_card_with_interfaces(interfaces: Vec<AgentInterface>) -> AgentCard {
     AgentCard {
+        url: None,
         name: "test-agent".into(),
         version: "1.0".into(),
         description: "A test agent".into(),

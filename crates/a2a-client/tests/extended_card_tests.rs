@@ -36,6 +36,7 @@ impl AgentExecutor for NoopExecutor {
 
 fn test_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Extended Test Agent".into(),
         description: "Agent for extended card test".into(),
         version: "1.0.0".into(),

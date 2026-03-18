@@ -52,6 +52,7 @@ impl AgentExecutor for EchoExecutor {
 
 fn make_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "test-agent".into(),
         version: "1.0".into(),
         description: "Test agent".into(),

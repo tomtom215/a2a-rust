@@ -332,6 +332,7 @@ mod tests {
             let mut guard = resolver.cache.write().await;
             *guard = Some(CachedCard {
                 card: AgentCard {
+                    url: None,
                     name: "cached".into(),
                     version: "1.0".into(),
                     description: "Cached agent".into(),
@@ -440,6 +441,7 @@ mod tests {
 
         let cached = CachedCard {
             card: AgentCard {
+                url: None,
                 name: "cached-agent".into(),
                 version: "2.0".into(),
                 description: "Cached".into(),
@@ -471,6 +473,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "test-agent".into(),
             version: "1.0".into(),
             description: "A test".into(),
@@ -539,6 +542,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "resolver-test".into(),
             version: "1.0".into(),
             description: "Resolver test agent".into(),
@@ -635,6 +639,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "url-fetch-test".into(),
             version: "1.0".into(),
             description: "URL fetch test".into(),
@@ -697,6 +702,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "path-resolve-test".into(),
             version: "2.0".into(),
             description: "Path resolve test".into(),
@@ -787,6 +793,7 @@ mod tests {
 
         let cached = CachedCard {
             card: AgentCard {
+                url: None,
                 name: "lm-cached".into(),
                 version: "1.0".into(),
                 description: "Last-modified cached".into(),

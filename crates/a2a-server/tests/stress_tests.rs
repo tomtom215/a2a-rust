@@ -89,6 +89,7 @@ impl PushSender for NoopPushSender {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Stress Test Agent".into(),
         description: "Handles load tests".into(),
         version: "1.0.0".into(),
@@ -123,6 +124,7 @@ fn minimal_agent_card() -> AgentCard {
 fn make_send_params(id: usize) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(format!("stress-msg-{id}")),
             role: MessageRole::User,

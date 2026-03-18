@@ -221,7 +221,7 @@ async fn rest_send_message_success() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(resp_body.contains("TASK_STATE_COMPLETED"));
+    assert!(resp_body.contains("\"completed\""));
 }
 
 #[tokio::test]

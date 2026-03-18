@@ -22,6 +22,7 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
 
     let metrics = Arc::new(TeamMetrics::new("BackpressureTest"));
     let card = AgentCard {
+        url: None,
         name: "BackpressureAgent".into(),
         description: "Agent with tiny event queue".into(),
         version: "1.0.0".into(),

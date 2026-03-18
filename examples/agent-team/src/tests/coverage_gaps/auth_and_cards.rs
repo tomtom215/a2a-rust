@@ -47,6 +47,7 @@ pub async fn test_real_auth_rejection(ctx: &TestContext) -> TestResult {
     let (listener, addr) = bind_listener().await;
     let url = format!("http://{addr}");
     let card = AgentCard {
+        url: None,
         name: "AuthTestAgent".into(),
         description: "Agent that rejects unauthenticated requests".into(),
         version: "1.0.0".into(),
@@ -172,6 +173,7 @@ impl AgentCardProducer for CountingProducer {
                 .counter
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(AgentCard {
+                url: None,
                 name: format!("DynamicAgent-v{n}"),
                 description: "Dynamically generated agent card".into(),
                 version: format!("1.0.{n}"),

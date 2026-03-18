@@ -118,6 +118,7 @@ use a2a_protocol_sdk::types::agent_card::*;
 
 fn make_agent_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Calculator Agent".into(),
         description: "Evaluates simple arithmetic expressions".into(),
         version: "1.0.0".into(),
@@ -201,6 +202,7 @@ async fn main() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

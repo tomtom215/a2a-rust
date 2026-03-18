@@ -241,6 +241,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "test".into(),
             version: "1.0".into(),
             description: "Test agent".into(),

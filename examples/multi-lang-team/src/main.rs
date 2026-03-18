@@ -128,6 +128,7 @@ impl AgentExecutor for CoordinatorExecutor {
 
                 let params = MessageSendParams {
                     tenant: None,
+                    context_id: None,
                     message: Message {
                         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
                         role: MessageRole::User,
@@ -197,6 +198,7 @@ impl AgentExecutor for CoordinatorExecutor {
 
 fn make_coordinator_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Multi-Language Coordinator".into(),
         description: "Coordinator that delegates to Python, JS, Go, and Java worker agents".into(),
         version: "1.0.0".into(),
@@ -290,6 +292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client = ClientBuilder::new(format!("http://{addr}")).build()?;
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

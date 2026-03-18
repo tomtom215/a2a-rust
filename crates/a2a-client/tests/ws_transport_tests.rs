@@ -80,6 +80,7 @@ impl PushSender for MockPushSender {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "WS Test Agent".into(),
         description: "A WebSocket test agent".into(),
         version: "1.0.0".into(),
@@ -114,6 +115,7 @@ fn minimal_agent_card() -> AgentCard {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-ws-transport-1"),
             role: MessageRole::User,

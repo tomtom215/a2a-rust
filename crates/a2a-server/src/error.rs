@@ -261,7 +261,7 @@ mod tests {
         let s = ist.to_string();
         assert!(s.contains("t3"), "missing task_id: {s}");
         assert!(
-            s.contains("WORKING") || s.contains("Working"),
+            s.contains("working") || s.contains("WORKING") || s.contains("Working"),
             "missing from state: {s}"
         );
     }

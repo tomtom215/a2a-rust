@@ -51,23 +51,20 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 // §1 — TaskState: ProtoJSON SCREAMING_SNAKE_CASE with prefix
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Validates that all TaskState variants serialize to ProtoJSON convention:
-/// `TASK_STATE_<VARIANT>` (not lowercase "working", not "Working", etc.).
-///
-/// This is the #1 interop risk: Python/JS SDKs using lowercase would silently
-/// fail if we serialize differently.
+/// Validates that all TaskState variants serialize to lowercase kebab-case.
+/// Also validates that legacy SCREAMING_SNAKE format is accepted via aliases.
 #[test]
 fn tck_task_state_proto_json_encoding() {
     let cases: &[(TaskState, &str)] = &[
-        (TaskState::Unspecified, "\"TASK_STATE_UNSPECIFIED\""),
-        (TaskState::Submitted, "\"TASK_STATE_SUBMITTED\""),
-        (TaskState::Working, "\"TASK_STATE_WORKING\""),
-        (TaskState::InputRequired, "\"TASK_STATE_INPUT_REQUIRED\""),
-        (TaskState::AuthRequired, "\"TASK_STATE_AUTH_REQUIRED\""),
-        (TaskState::Completed, "\"TASK_STATE_COMPLETED\""),
-        (TaskState::Failed, "\"TASK_STATE_FAILED\""),
-        (TaskState::Canceled, "\"TASK_STATE_CANCELED\""),
-        (TaskState::Rejected, "\"TASK_STATE_REJECTED\""),
+        (TaskState::Unspecified, "\"unspecified\""),
+        (TaskState::Submitted, "\"submitted\""),
+        (TaskState::Working, "\"working\""),
+        (TaskState::InputRequired, "\"input-required\""),
+        (TaskState::AuthRequired, "\"auth-required\""),
+        (TaskState::Completed, "\"completed\""),
+        (TaskState::Failed, "\"failed\""),
+        (TaskState::Canceled, "\"canceled\""),
+        (TaskState::Rejected, "\"rejected\""),
     ];
 
     for (state, expected_json) in cases {
@@ -85,26 +82,35 @@ fn tck_task_state_proto_json_encoding() {
     }
 }
 
-/// Validates that lowercase task state strings (as some SDKs might produce)
-/// are NOT accepted — strict ProtoJSON compliance requires the prefixed form.
+/// Validates that legacy SCREAMING_SNAKE format is accepted via aliases
+/// for backward compatibility with older implementations.
 #[test]
-fn tck_task_state_rejects_lowercase() {
+fn tck_task_state_accepts_legacy_format() {
+    let legacy_cases: &[(&str, TaskState)] = &[
+        ("\"TASK_STATE_WORKING\"", TaskState::Working),
+        ("\"TASK_STATE_COMPLETED\"", TaskState::Completed),
+        ("\"TASK_STATE_SUBMITTED\"", TaskState::Submitted),
+        ("\"TASK_STATE_INPUT_REQUIRED\"", TaskState::InputRequired),
+    ];
+    for (input, expected) in legacy_cases {
+        let result: TaskState = serde_json::from_str(input).unwrap();
+        assert_eq!(result, *expected, "legacy alias failed for {input}");
+    }
+}
+
+/// Validates that truly invalid formats are rejected.
+#[test]
+fn tck_task_state_rejects_invalid() {
     let invalid = &[
-        "\"working\"",
-        "\"completed\"",
-        "\"submitted\"",
-        "\"input_required\"",
-        "\"WORKING\"",           // missing prefix
-        "\"COMPLETED\"",         // missing prefix
+        "\"WORKING\"",           // missing prefix, not lowercase
+        "\"COMPLETED\"",         // missing prefix, not lowercase
         "\"TaskState_Working\"", // wrong format
+        "\"input_required\"",    // underscore instead of hyphen
     ];
 
     for &input in invalid {
         let result = serde_json::from_str::<TaskState>(input);
-        assert!(
-            result.is_err(),
-            "should reject non-ProtoJSON TaskState: {input}"
-        );
+        assert!(result.is_err(), "should reject invalid TaskState: {input}");
     }
 }
 
@@ -136,12 +142,26 @@ fn tck_message_role_proto_json_encoding() {
 }
 
 #[test]
-fn tck_message_role_rejects_lowercase() {
-    let invalid = &["\"user\"", "\"agent\"", "\"USER\"", "\"AGENT\""];
+fn tck_message_role_accepts_lowercase_alias() {
+    // Lowercase aliases are accepted for cross-SDK compatibility
+    let valid = &[
+        ("\"user\"", MessageRole::User),
+        ("\"agent\"", MessageRole::Agent),
+        ("\"unspecified\"", MessageRole::Unspecified),
+    ];
+    for (input, expected) in valid {
+        let result: MessageRole = serde_json::from_str(input).unwrap();
+        assert_eq!(result, *expected, "lowercase alias failed for {input}");
+    }
+}
+
+#[test]
+fn tck_message_role_rejects_invalid() {
+    let invalid = &["\"USER\"", "\"AGENT\"", "\"Admin\""];
     for &input in invalid {
         assert!(
             serde_json::from_str::<MessageRole>(input).is_err(),
-            "should reject non-ProtoJSON MessageRole: {input}"
+            "should reject invalid MessageRole: {input}"
         );
     }
 }
@@ -515,6 +535,7 @@ fn tck_agent_card_golden_format() {
 #[test]
 fn tck_agent_card_no_legacy_fields() {
     let card = AgentCard {
+        url: None,
         name: "Test".into(),
         description: "Test".into(),
         version: "1.0.0".into(),
@@ -873,12 +894,11 @@ fn tck_stream_response_message_variant() {
 
 #[test]
 fn tck_send_message_response_task_variant() {
+    // With untagged, the result is the task object directly.
     let golden = json!({
-        "task": {
-            "id": "t1",
-            "contextId": "c1",
-            "status": {"state": "TASK_STATE_COMPLETED"}
-        }
+        "id": "t1",
+        "contextId": "c1",
+        "status": {"state": "completed"}
     });
 
     let resp: SendMessageResponse = serde_json::from_value(golden).unwrap();
@@ -887,12 +907,11 @@ fn tck_send_message_response_task_variant() {
 
 #[test]
 fn tck_send_message_response_message_variant() {
+    // With untagged, the result is the message object directly.
     let golden = json!({
-        "message": {
-            "messageId": "msg-1",
-            "role": "ROLE_AGENT",
-            "parts": [{"type": "text", "text": "quick response"}]
-        }
+        "messageId": "msg-1",
+        "role": "ROLE_AGENT",
+        "parts": [{"type": "text", "text": "quick response"}]
     });
 
     let resp: SendMessageResponse = serde_json::from_value(golden).unwrap();
@@ -1001,37 +1020,35 @@ fn tck_artifact_golden_format() {
 /// This tests the complete deserialization pipeline including nested types.
 #[test]
 fn tck_cross_sdk_python_send_message_response() {
-    // JSON that a Python A2A SDK server would return
+    // JSON that a Python A2A SDK server would return (untagged — task directly in result)
     let python_sdk_response = json!({
         "jsonrpc": "2.0",
         "id": 42,
         "result": {
-            "task": {
-                "id": "py-task-001",
-                "contextId": "py-ctx-001",
-                "status": {
-                    "state": "TASK_STATE_COMPLETED",
-                    "timestamp": "2026-03-15T10:30:00Z"
+            "id": "py-task-001",
+            "contextId": "py-ctx-001",
+            "status": {
+                "state": "completed",
+                "timestamp": "2026-03-15T10:30:00Z"
+            },
+            "history": [
+                {
+                    "messageId": "py-msg-001",
+                    "role": "ROLE_USER",
+                    "parts": [{"type": "text", "text": "Translate to French: Hello"}]
                 },
-                "history": [
-                    {
-                        "messageId": "py-msg-001",
-                        "role": "ROLE_USER",
-                        "parts": [{"type": "text", "text": "Translate to French: Hello"}]
-                    },
-                    {
-                        "messageId": "py-msg-002",
-                        "role": "ROLE_AGENT",
-                        "parts": [{"type": "text", "text": "Bonjour"}]
-                    }
-                ],
-                "artifacts": [
-                    {
-                        "artifactId": "py-art-001",
-                        "parts": [{"type": "text", "text": "Bonjour"}]
-                    }
-                ]
-            }
+                {
+                    "messageId": "py-msg-002",
+                    "role": "ROLE_AGENT",
+                    "parts": [{"type": "text", "text": "Bonjour"}]
+                }
+            ],
+            "artifacts": [
+                {
+                    "artifactId": "py-art-001",
+                    "parts": [{"type": "text", "text": "Bonjour"}]
+                }
+            ]
         }
     });
 
@@ -1322,6 +1339,7 @@ fn tck_full_round_trip_complex_task() {
 #[test]
 fn tck_full_round_trip_agent_card_with_security() {
     let original = AgentCard {
+        url: None,
         name: "Secure Agent".into(),
         description: "Agent with full security config".into(),
         version: "1.0.0".into(),

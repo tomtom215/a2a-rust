@@ -115,12 +115,13 @@ impl RequestHandler {
         }
 
         // Generate task and context IDs.
+        // Params-level context_id takes precedence over message-level.
         let task_id = TaskId::new(uuid::Uuid::new_v4().to_string());
         let context_id = params
-            .message
             .context_id
-            .as_ref()
-            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |c| c.0.clone());
+            .as_deref()
+            .or_else(|| params.message.context_id.as_ref().map(|c| c.0.as_str()))
+            .map_or_else(|| uuid::Uuid::new_v4().to_string(), ToString::to_string);
 
         // Look up existing task for continuation.
         let stored_task = self.find_task_by_context(&context_id).await;
@@ -328,6 +329,7 @@ mod tests {
 
     fn make_params(context_id: Option<&str>) -> MessageSendParams {
         MessageSendParams {
+            context_id: None,
             message: Message {
                 id: MessageId::new("msg-1"),
                 role: MessageRole::User,

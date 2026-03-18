@@ -17,6 +17,7 @@
 //!
 //! let params = MessageSendParams {
 //!     tenant: None,
+//!     context_id: None,
 //!     message: Message {
 //!         id: MessageId::new("msg-1"),
 //!         role: MessageRole::User,
@@ -45,7 +46,7 @@
 //! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! # let client = ClientBuilder::new("http://localhost:8080").build()?;
 //! # let params = MessageSendParams {
-//! #     tenant: None,
+//! #     tenant: None, context_id: None,
 //! #     message: Message { id: MessageId::new("m"), role: MessageRole::User,
 //! #         parts: vec![], task_id: None, context_id: None,
 //! #         reference_task_ids: None, extensions: None, metadata: None },

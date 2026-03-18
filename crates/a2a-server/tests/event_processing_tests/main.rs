@@ -247,6 +247,7 @@ impl PushSender for SleepForeverPushSender {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,

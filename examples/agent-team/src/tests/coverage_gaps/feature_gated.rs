@@ -119,6 +119,7 @@ pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
 
     // 2. Build a handler that uses OtelMetrics as its metrics observer.
     let card = AgentCard {
+        url: None,
         name: "OtelTestAgent".into(),
         version: "1.0".into(),
         description: "Agent for OtelMetrics integration test".into(),

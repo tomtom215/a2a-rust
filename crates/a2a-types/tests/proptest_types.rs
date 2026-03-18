@@ -47,12 +47,14 @@ proptest! {
         prop_assert_eq!(state.is_terminal(), expected_terminal);
     }
 
-    /// All TaskState JSON representations start with "TASK_STATE_".
+    /// All TaskState JSON representations are lowercase kebab-case.
     #[test]
-    fn task_state_wire_prefix(state in arb_task_state()) {
+    fn task_state_wire_format(state in arb_task_state()) {
         let json = serde_json::to_string(&state).unwrap();
         let inner = json.trim_matches('"');
-        prop_assert!(inner.starts_with("TASK_STATE_"), "got: {}", inner);
+        let valid = ["unspecified", "submitted", "working", "input-required",
+                     "auth-required", "completed", "failed", "canceled", "rejected"];
+        prop_assert!(valid.contains(&inner), "got: {}", inner);
     }
 }
 

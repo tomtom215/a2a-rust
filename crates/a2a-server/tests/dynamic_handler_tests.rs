@@ -20,6 +20,7 @@ use a2a_protocol_server::agent_card::dynamic_handler::{
 /// Minimal agent card for tests.
 fn test_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Dynamic Agent".into(),
         description: "A dynamically produced card".into(),
         version: "1.0.0".into(),

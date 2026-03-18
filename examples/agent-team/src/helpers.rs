@@ -10,6 +10,7 @@ use a2a_protocol_types::params::MessageSendParams;
 pub fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

@@ -79,6 +79,7 @@ async fn test_end_to_end() {
     // Send a message
     let response = client.send_message(MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("test-msg"),
             role: MessageRole::User,

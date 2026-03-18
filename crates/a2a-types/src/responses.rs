@@ -27,7 +27,7 @@ use crate::task::Task;
 /// `{"message": {...}}`.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum SendMessageResponse {
     /// The agent accepted the message and created (or updated) a task.
     Task(Task),

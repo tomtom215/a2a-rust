@@ -22,6 +22,7 @@ async fn context_id_exactly_max_length_passes() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -45,6 +46,7 @@ async fn context_id_over_max_length_fails() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -70,6 +72,7 @@ async fn task_id_exactly_max_length_passes() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -100,6 +103,7 @@ async fn task_id_over_max_length_fails() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -126,6 +130,7 @@ async fn empty_context_id_rejected() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -150,6 +155,7 @@ async fn empty_task_id_rejected() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -176,6 +182,7 @@ async fn whitespace_only_context_id_rejected() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -200,6 +207,7 @@ async fn whitespace_only_task_id_rejected() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,

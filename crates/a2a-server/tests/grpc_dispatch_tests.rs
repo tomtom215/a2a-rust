@@ -36,6 +36,7 @@ impl AgentExecutor for NoopExecutor {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "gRPC Test Agent".into(),
         description: "A gRPC test agent".into(),
         version: "1.0.0".into(),

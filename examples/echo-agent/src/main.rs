@@ -106,6 +106,7 @@ impl AgentExecutor for EchoExecutor {
 
 fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Echo Agent".into(),
         description: "A simple echo agent that mirrors your input".into(),
         version: "1.0.0".into(),
@@ -137,7 +138,7 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
         }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(false),
+            .with_push_notifications(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -294,6 +295,7 @@ async fn start_combined_server(
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -330,9 +332,15 @@ async fn main() {
     // that address and block forever.  No client demos are run.
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let url = format!("http://{bind_addr}");
+        let mut card = make_agent_card(&url, &url);
+        card.url = Some(url.clone());
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExecutor)
-                .with_agent_card(make_agent_card(&url, &url))
+                .with_agent_card(card)
+                .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+                .with_push_sender(
+                    a2a_protocol_server::push::HttpPushSender::new().allow_private_urls(),
+                )
                 .build()
                 .expect("build handler"),
         );

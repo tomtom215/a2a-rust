@@ -71,6 +71,13 @@ pub struct MessageSendParams {
     /// The message to send to the agent.
     pub message: Message,
 
+    /// Optional context ID for multi-turn conversations.
+    ///
+    /// When provided at the params level, takes precedence over
+    /// `message.context_id`. The server reuses this context across turns.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_id: Option<String>,
+
     /// Optional send configuration.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub configuration: Option<SendMessageConfiguration>,
@@ -265,6 +272,7 @@ mod tests {
     fn message_send_params_roundtrip() {
         let params = MessageSendParams {
             tenant: None,
+            context_id: None,
             message: make_message(),
             configuration: Some(SendMessageConfiguration {
                 accepted_output_modes: vec!["text/plain".into()],

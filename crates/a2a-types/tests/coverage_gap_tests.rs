@@ -54,6 +54,7 @@ fn deeply_nested_metadata_roundtrip() {
 #[test]
 fn agent_card_full_roundtrip() {
     let card = AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent for validation".into(),
         version: "1.0.0".into(),

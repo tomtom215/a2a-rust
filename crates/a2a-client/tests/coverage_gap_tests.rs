@@ -186,6 +186,7 @@ fn client_from_card_with_valid_interface() {
     use a2a_protocol_types::*;
 
     let card = AgentCard {
+        url: None,
         name: "Test".into(),
         description: "Test agent".into(),
         version: "1.0.0".into(),

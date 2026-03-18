@@ -247,6 +247,7 @@ mod tests {
 
     fn minimal_card() -> AgentCard {
         AgentCard {
+            url: None,
             name: "Test Agent".into(),
             description: "A test agent".into(),
             version: "1.0.0".into(),
