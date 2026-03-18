@@ -27,14 +27,8 @@ responsibly. **Do not open a public GitHub issue.**
 
 ### PGP Key
 
-You may encrypt sensitive reports using our PGP key:
-
-```
-Fingerprint: <TO BE PUBLISHED>
-```
-
-The full public key will be published at
-`https://a2a-rust.dev/.well-known/security-pgp-key.asc`.
+PGP encryption for security reports is not yet available. For now, please
+send reports in plain text to the email address above.
 
 ### What to Include
 

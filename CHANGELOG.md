@@ -403,7 +403,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (23 files) with 50 E2E
+  best-practice modular structure (25 files) with 50 E2E
   tests across 5 categories (basic, lifecycle, edge cases, stress, dogfood).
 - Client `send_message()` and `stream_message()` now merge client-level config
   (`return_immediately`, `history_length`, `accepted_output_modes`) into
