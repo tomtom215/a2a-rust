@@ -158,8 +158,7 @@ impl RequestHandler {
         };
 
         // FIX(#4): Cap total push delivery time to prevent amplification.
-        let deadline =
-            tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
 
         for config in &configs {
             if tokio::time::Instant::now() >= deadline {

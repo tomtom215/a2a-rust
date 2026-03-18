@@ -107,9 +107,8 @@ impl TenantAwareSqliteTaskStore {
     }
 }
 
-/// Creates a `SqlitePool` with production-ready defaults (WAL, busy_timeout, etc.).
+/// Creates a `SqlitePool` with production-ready defaults (WAL, `busy_timeout`, etc.).
 async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
-    use sqlx::ConnectOptions;
     use sqlx::sqlite::SqliteConnectOptions;
     use std::str::FromStr;
 

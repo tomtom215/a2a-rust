@@ -10,6 +10,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (v0.3.0 Hardening — Pass 11)
+
+- **Retry jitter** — backoff now applies full jitter (0.5–1.0× randomization)
+  using `std::hash::RandomState`, preventing thundering-herd retry storms when
+  multiple clients experience the same transient failure. No `rand` dependency.
+- **gRPC timeout retryability** — `tonic::Code::DeadlineExceeded` and `Cancelled`
+  now map to `ClientError::Timeout` (retryable) instead of `ClientError::Protocol`
+  (non-retryable). `Unavailable` maps to `HttpClient` (retryable). Fixes silent
+  failure-to-retry when switching from REST to gRPC transport.
+- **SSRF validation at config creation** — push webhook URLs are validated for
+  private/loopback addresses when the config is created, not just at delivery
+  time. Closes the window where malicious URLs could be stored.
+- **Push delivery amplification cap** — total push delivery time per event is
+  capped at 30 seconds in both sync and background processors, preventing DoS
+  via 100 slow webhook endpoints (previously unbounded: up to 25 minutes).
+- **`connection_timeout` validation** — `ClientBuilder::build()` now rejects
+  `Duration::ZERO` for `connection_timeout`, matching existing validation for
+  `request_timeout` and `stream_connect_timeout`.
+- **Streaming interceptor lifecycle** — `stream_message()` and
+  `subscribe_to_task()` now call `run_after()` with a synthetic 200 response
+  after stream establishment. Previously only non-streaming methods called the
+  after-hook, leaving interceptors without cleanup/logging opportunities.
+- **gRPC per-request timeouts** — `execute_unary` and `execute_streaming` are
+  now wrapped in `tokio::time::timeout()` for per-request enforcement, matching
+  REST/JSON-RPC behavior. Also sets `tonic::Request::set_timeout()`.
+
+### Changed (v0.3.0 Hardening — Pass 11)
+
+- **Breaking:** `ClientBuilder::from_card()` now returns `ClientResult<Self>`
+  instead of `Self`. Agent cards with no `supported_interfaces` return
+  `ClientError::InvalidEndpoint`, matching server-side validation.
+- **Breaking:** `CallContext` fields are now private. Use accessor methods:
+  `method()`, `caller_identity()`, `extensions()`, `request_id()`,
+  `http_headers()`. Prevents interceptors from mutating security-critical
+  context mid-request.
+- **Breaking:** `HandlerLimits` zero values (`max_id_length=0`,
+  `max_metadata_size=0`, `push_delivery_timeout=0`) are now rejected at
+  `RequestHandlerBuilder::build()` time instead of failing at runtime.
+- `with_task_store_config()` now triggers `debug_assert!` if called after
+  `with_task_store()`, catching the silent-ignore footgun in development.
+
+### Fixed (v0.3.0 Hardening — Pass 10.5)
+
+- **Client timeout enforcement** — `connection_timeout` is now applied to the
+  underlying `HttpConnector` via `set_connect_timeout()`. Previously configured
+  but never enforced, causing TCP connections to hang for the OS default (~2 min)
+  when servers were unreachable. Response body collection is now wrapped in
+  `tokio::time::timeout()` to prevent slow-body hangs.
+- **Multi-tenant data leak** — `find_task_by_context()` now uses
+  `TenantContext::current()` instead of hardcoded `tenant: None`, preventing
+  cross-tenant context lookups in multi-tenant deployments.
+- **Bug #38 race condition** — background event processor now subscribes to the
+  broadcast channel BEFORE the executor is spawned, eliminating the window where
+  fast-completing executors (<1ms) finish before the subscription is active.
+- **SQLite production readiness** — all 4 SQLite stores now configure WAL
+  journal mode, `busy_timeout=5000ms`, `synchronous=NORMAL`, and
+  `foreign_keys=ON` via `SqliteConnectOptions::pragma()`. Default pool size
+  increased from 4 to 8.
+- **Background event processor error handling** — in-memory task state is now
+  reverted when `task_store.save()` fails, preventing phantom state divergence
+  between memory and persistence.
+- **Sync/streaming behavioral consistency** — invalid state transitions in
+  streaming mode now mark the task as `Failed` (matching sync-mode behavior)
+  instead of being silently ignored.
+- **Unbounded artifact accumulation** — added `max_artifacts_per_task` (default:
+  1000) to `HandlerLimits`, enforced in both sync and streaming paths.
+- **Cancellation token race** — cancellation token is now inserted BEFORE
+  `task_store.save()`, eliminating the window where `CancelTask` silently fails.
+- **Connection pool idle timeout** — configured 90-second `pool_idle_timeout`
+  on all hyper clients to prevent idle connection accumulation.
+
+### Added (v0.3.0 Hardening)
+
+- `HandlerLimits::max_artifacts_per_task` — configurable limit (default 1000)
+  preventing O(n²) serialization cost and unbounded memory growth.
+- `HandlerLimits::with_max_artifacts_per_task()` builder method.
+- `CallContext::method()`, `caller_identity()`, `extensions()`, `request_id()`,
+  `http_headers()` read-only accessor methods.
+
 ### Added (Framework Integration)
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` builds an idiomatic

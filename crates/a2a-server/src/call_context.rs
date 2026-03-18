@@ -78,7 +78,7 @@ impl CallContext {
 
     /// Returns the HTTP request headers (read-only).
     #[must_use]
-    pub fn http_headers(&self) -> &HashMap<String, String> {
+    pub const fn http_headers(&self) -> &HashMap<String, String> {
         &self.http_headers
     }
 }

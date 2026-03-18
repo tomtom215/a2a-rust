@@ -90,9 +90,7 @@ impl ClientBuilder {
     /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
     pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
         let first = card.supported_interfaces.first().ok_or_else(|| {
-            ClientError::InvalidEndpoint(
-                "agent card has no supported interfaces".into(),
-            )
+            ClientError::InvalidEndpoint("agent card has no supported interfaces".into())
         })?;
         let (endpoint, binding) = (first.url.clone(), first.protocol_binding.clone());
 
@@ -278,7 +276,10 @@ mod tests {
             signatures: None,
         };
 
-        let client = ClientBuilder::from_card(&card).unwrap().build().expect("build");
+        let client = ClientBuilder::from_card(&card)
+            .unwrap()
+            .build()
+            .expect("build");
         let _ = client;
     }
 

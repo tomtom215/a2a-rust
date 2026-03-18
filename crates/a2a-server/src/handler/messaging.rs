@@ -289,11 +289,7 @@ impl RequestHandler {
             //
             // FIX(#38): The background reader was subscribed BEFORE the executor
             // was spawned, so it sees every event even from fast executors.
-            self.spawn_background_event_processor(
-                task_id.clone(),
-                executor_handle,
-                bg_reader,
-            );
+            self.spawn_background_event_processor(task_id.clone(), executor_handle, bg_reader);
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.

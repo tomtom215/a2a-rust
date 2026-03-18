@@ -111,7 +111,7 @@ impl SqliteTaskStore {
 
 /// Creates a `SqlitePool` with production-ready defaults:
 /// - WAL journal mode for better concurrency
-/// - 5-second busy timeout to avoid SQLITE_BUSY errors
+/// - 5-second busy timeout to avoid `SQLITE_BUSY` errors
 /// - Configurable pool size (default: 8)
 async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
     sqlite_pool_with_size(url, 8).await
@@ -119,7 +119,6 @@ async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
 
 /// Creates a `SqlitePool` with a specific max connection count.
 async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<SqlitePool, sqlx::Error> {
-    use sqlx::ConnectOptions;
     use sqlx::sqlite::SqliteConnectOptions;
     use std::str::FromStr;
 

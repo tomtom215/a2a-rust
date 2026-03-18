@@ -353,8 +353,8 @@ mod tests {
         for _ in 0..200 {
             let lim = Arc::clone(&limiter);
             handles.push(tokio::spawn(async move {
-                let ctx = CallContext::new("message/send")
-                    .with_caller_identity("concurrent-user".into());
+                let ctx =
+                    CallContext::new("message/send").with_caller_identity("concurrent-user".into());
                 lim.before(&ctx).await
             }));
         }

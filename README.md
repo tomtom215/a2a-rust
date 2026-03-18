@@ -51,7 +51,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Retry policy** | Configurable `RetryPolicy` with exponential backoff (connection errors, timeouts, 429/502/503/504) |
+| **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency (`tls-rustls` feature) |
 | **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |

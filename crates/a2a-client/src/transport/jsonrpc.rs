@@ -135,11 +135,10 @@ impl JsonRpcTransport {
         };
 
         #[cfg(feature = "tls-rustls")]
-        let client =
-            crate::tls::build_https_client_with_connect_timeout(
-                crate::tls::default_tls_config(),
-                connection_timeout,
-            );
+        let client = crate::tls::build_https_client_with_connect_timeout(
+            crate::tls::default_tls_config(),
+            connection_timeout,
+        );
 
         Ok(Self {
             inner: Arc::new(Inner {

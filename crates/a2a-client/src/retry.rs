@@ -191,7 +191,12 @@ impl Transport for RetryTransport {
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
                     let jittered_backoff = jittered(backoff);
-                    trace_info!(method, attempt, ?jittered_backoff, "retrying stream connect after backoff");
+                    trace_info!(
+                        method,
+                        attempt,
+                        ?jittered_backoff,
+                        "retrying stream connect after backoff"
+                    );
                     tokio::time::sleep(jittered_backoff).await;
                     backoff = cap_backoff(
                         backoff,
@@ -250,6 +255,7 @@ fn jittered(backoff: Duration) -> Duration {
     hasher.write_u128(backoff.as_nanos());
     let random_bits = hasher.finish();
     // Map to [0.5, 1.0) range.
+    #[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
     let factor = 0.5 + (random_bits as f64 / u64::MAX as f64) * 0.5;
     let jittered_secs = backoff.as_secs_f64() * factor;
     if !jittered_secs.is_finite() || jittered_secs < 0.0 {

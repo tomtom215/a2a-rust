@@ -148,7 +148,9 @@ impl ServerInterceptor for AuditInterceptor {
         Box::pin(async move {
             println!(
                 "  [{:>15}] INTERCEPTOR before: method={} caller={:?}",
-                self.agent_name, ctx.method(), ctx.caller_identity(),
+                self.agent_name,
+                ctx.method(),
+                ctx.caller_identity(),
             );
             // If we have a required token and caller doesn't match, reject.
             if let Some(ref expected) = self.expected_token {
@@ -156,7 +158,8 @@ impl ServerInterceptor for AuditInterceptor {
                     // For this demo we allow through but log a warning.
                     println!(
                         "  [{:>15}] INTERCEPTOR auth warning: expected token, got {:?}",
-                        self.agent_name, ctx.caller_identity(),
+                        self.agent_name,
+                        ctx.caller_identity(),
                     );
                 }
             }
@@ -171,7 +174,8 @@ impl ServerInterceptor for AuditInterceptor {
         Box::pin(async move {
             println!(
                 "  [{:>15}] INTERCEPTOR after:  method={}",
-                self.agent_name, ctx.method(),
+                self.agent_name,
+                ctx.method(),
             );
             Ok(())
         })

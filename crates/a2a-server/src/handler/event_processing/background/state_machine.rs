@@ -25,6 +25,7 @@ use super::push_delivery::deliver_push_bg;
 /// When a save fails, the in-memory `last_task` is reverted to its previous
 /// state so it stays consistent with what's actually persisted. This prevents
 /// a cascade of phantom state that was never written to the store.
+#[allow(clippy::too_many_lines)]
 pub(super) async fn process_event_bg(
     event: a2a_protocol_types::error::A2aResult<StreamResponse>,
     task_id: &TaskId,

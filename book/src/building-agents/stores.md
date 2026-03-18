@@ -78,6 +78,8 @@ Features:
 - Cursor-based pagination via `id > ?` ordering
 - Atomic `insert_if_absent` via `INSERT OR IGNORE`
 - Upsert via `ON CONFLICT DO UPDATE`
+- **Production-ready defaults:** WAL journal mode, `busy_timeout=5000ms`,
+  `synchronous=NORMAL`, `foreign_keys=ON`, pool size of 8
 
 ### TenantAwareInMemoryTaskStore
 
