@@ -160,7 +160,7 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   └── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
+│   └── agent-team/         # Comprehensive 4-agent dogfood suite (78 E2E tests)
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records
