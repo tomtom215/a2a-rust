@@ -251,6 +251,7 @@ impl RequestHandlerBuilder {
     /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams) if the configuration is invalid:
     /// - Agent card with empty `supported_interfaces`
     /// - Zero executor timeout (would cause immediate timeouts)
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         // Validate agent card if provided.
         if let Some(ref card) = self.agent_card {

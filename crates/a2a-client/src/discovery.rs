@@ -182,6 +182,7 @@ async fn fetch_card(url: &str, cached: Option<&CachedCard>) -> ClientResult<Agen
     Ok(card)
 }
 
+#[allow(clippy::too_many_lines)]
 async fn fetch_card_with_metadata(
     url: &str,
     cached: Option<&CachedCard>,

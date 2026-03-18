@@ -256,7 +256,7 @@ fn jittered(backoff: Duration) -> Duration {
     let random_bits = hasher.finish();
     // Map to [0.5, 1.0) range.
     #[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
-    let factor = 0.5 + (random_bits as f64 / u64::MAX as f64) * 0.5;
+    let factor = (random_bits as f64 / u64::MAX as f64).mul_add(0.5, 0.5);
     let jittered_secs = backoff.as_secs_f64() * factor;
     if !jittered_secs.is_finite() || jittered_secs < 0.0 {
         backoff
