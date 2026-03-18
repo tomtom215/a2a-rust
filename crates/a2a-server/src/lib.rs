@@ -91,13 +91,13 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
+#[cfg(feature = "axum")]
+pub use dispatch::axum_adapter::A2aRouter;
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
-#[cfg(feature = "axum")]
-pub use dispatch::axum_adapter::A2aRouter;
 pub use error::{ServerError, ServerResult};
 pub use executor::AgentExecutor;
 pub use executor_helpers::{boxed_future, EventEmitter};

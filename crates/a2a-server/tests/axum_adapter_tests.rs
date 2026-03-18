@@ -170,8 +170,7 @@ async fn http_get(url: &str) -> (u16, Bytes) {
 
 /// Helper: HTTP POST with JSON body.
 async fn http_post_json(url: &str, body: &str) -> (u16, Bytes) {
-    let client =
-        Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+    let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
     let req = hyper::Request::builder()
         .method("POST")
         .uri(url)
@@ -310,8 +309,5 @@ async fn axum_router_is_composable() {
     // This should compile — proves composability
     let _combined = axum::Router::new()
         .merge(a2a_router)
-        .route(
-            "/custom",
-            axum::routing::get(|| async { "custom route" }),
-        );
+        .route("/custom", axum::routing::get(|| async { "custom route" }));
 }

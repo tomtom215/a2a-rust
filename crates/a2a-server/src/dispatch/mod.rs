@@ -3,6 +3,8 @@
 
 //! HTTP dispatch layer — JSON-RPC and REST routing.
 
+#[cfg(feature = "axum")]
+pub mod axum_adapter;
 pub mod cors;
 #[cfg(feature = "grpc")]
 pub mod grpc;
@@ -10,8 +12,6 @@ pub mod jsonrpc;
 pub mod rest;
 #[cfg(feature = "websocket")]
 pub mod websocket;
-#[cfg(feature = "axum")]
-pub mod axum_adapter;
 
 pub use cors::CorsConfig;
 #[cfg(feature = "grpc")]

@@ -163,7 +163,8 @@ fn extract_headers(headers: &axum::http::HeaderMap) -> HashMap<String, String> {
 fn a2a_error_to_response(err: &dyn std::fmt::Display, status: u16) -> axum::response::Response {
     let body = serde_json::json!({ "error": err.to_string() });
     (
-        axum::http::StatusCode::from_u16(status).unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
+        axum::http::StatusCode::from_u16(status)
+            .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
         axum::Json(body),
     )
         .into_response()
@@ -222,9 +223,7 @@ async fn handle_tasks_catchall(
 
     match (method.as_str(), segments.as_slice()) {
         // GET /tasks/{id} (no colon action)
-        ("GET", [id]) if !id.contains(':') => {
-            handle_get_task_inner(&state, id, &hdrs).await
-        }
+        ("GET", [id]) if !id.contains(':') => handle_get_task_inner(&state, id, &hdrs).await,
 
         // POST /tasks/{id}:cancel
         ("POST", [id_action]) if id_action.ends_with(":cancel") => {
@@ -316,14 +315,10 @@ async fn handle_extended_card(
 }
 
 async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Response {
-    state
-        .handler
-        .agent_card
-        .as_ref()
-        .map_or_else(
-            || a2a_error_to_response(&"agent card not configured", 404),
-            |card| axum::Json(card).into_response(),
-        )
+    state.handler.agent_card.as_ref().map_or_else(
+        || a2a_error_to_response(&"agent card not configured", 404),
+        |card| axum::Json(card).into_response(),
+    )
 }
 
 async fn handle_health() -> axum::response::Response {

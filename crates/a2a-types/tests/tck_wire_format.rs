@@ -35,7 +35,9 @@ use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::extensions::AgentExtension;
 use a2a_protocol_types::jsonrpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcVersion};
-use a2a_protocol_types::message::{FileContent, Message, MessageId, MessageRole, Part, PartContent};
+use a2a_protocol_types::message::{
+    FileContent, Message, MessageId, MessageRole, Part, PartContent,
+};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::{SendMessageResponse, TaskListResponse};
@@ -92,8 +94,8 @@ fn tck_task_state_rejects_lowercase() {
         "\"completed\"",
         "\"submitted\"",
         "\"input_required\"",
-        "\"WORKING\"",       // missing prefix
-        "\"COMPLETED\"",     // missing prefix
+        "\"WORKING\"",           // missing prefix
+        "\"COMPLETED\"",         // missing prefix
         "\"TaskState_Working\"", // wrong format
     ];
 
@@ -320,7 +322,10 @@ fn tck_task_golden_deserialization() {
     );
     assert_eq!(task.history.as_ref().unwrap().len(), 1);
     assert_eq!(task.artifacts.as_ref().unwrap().len(), 1);
-    assert_eq!(task.metadata.as_ref().unwrap()["custom_key"], "custom_value");
+    assert_eq!(
+        task.metadata.as_ref().unwrap()["custom_key"],
+        "custom_value"
+    );
 }
 
 /// Validates Task serialization uses camelCase field names.
@@ -337,7 +342,10 @@ fn tck_task_camel_case_fields() {
     let v = serde_json::to_value(&task).unwrap();
 
     // Must use camelCase
-    assert!(v.get("contextId").is_some(), "must use 'contextId' not 'context_id'");
+    assert!(
+        v.get("contextId").is_some(),
+        "must use 'contextId' not 'context_id'"
+    );
     assert!(v.get("id").is_some());
     assert!(v.get("status").is_some());
 
@@ -358,9 +366,18 @@ fn tck_task_optional_fields_absent_not_null() {
     };
     let json_str = serde_json::to_string(&task).unwrap();
 
-    assert!(!json_str.contains("\"history\""), "None history must be absent");
-    assert!(!json_str.contains("\"artifacts\""), "None artifacts must be absent");
-    assert!(!json_str.contains("\"metadata\""), "None metadata must be absent");
+    assert!(
+        !json_str.contains("\"history\""),
+        "None history must be absent"
+    );
+    assert!(
+        !json_str.contains("\"artifacts\""),
+        "None artifacts must be absent"
+    );
+    assert!(
+        !json_str.contains("\"metadata\""),
+        "None metadata must be absent"
+    );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -386,18 +403,24 @@ fn tck_message_golden_format() {
     assert_eq!(msg.role, MessageRole::Agent);
     assert_eq!(msg.parts.len(), 2);
     assert_eq!(msg.task_id.as_ref().unwrap(), &TaskId::new("task-123"));
-    assert_eq!(
-        msg.context_id.as_ref().unwrap(),
-        &ContextId::new("ctx-456")
-    );
+    assert_eq!(msg.context_id.as_ref().unwrap(), &ContextId::new("ctx-456"));
     assert_eq!(msg.reference_task_ids.as_ref().unwrap().len(), 2);
 
     // Verify the message ID field name is "messageId" (not "id" or "message_id")
     let serialized = serde_json::to_value(&msg).unwrap();
-    assert!(serialized.get("messageId").is_some(), "must use 'messageId'");
+    assert!(
+        serialized.get("messageId").is_some(),
+        "must use 'messageId'"
+    );
     assert!(serialized.get("id").is_none(), "must not use bare 'id'");
-    assert!(serialized.get("message_id").is_none(), "must not use snake_case");
-    assert!(serialized.get("referenceTaskIds").is_some(), "must use camelCase");
+    assert!(
+        serialized.get("message_id").is_none(),
+        "must not use snake_case"
+    );
+    assert!(
+        serialized.get("referenceTaskIds").is_some(),
+        "must use camelCase"
+    );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -464,12 +487,8 @@ fn tck_agent_card_golden_format() {
     let card: AgentCard = serde_json::from_value(golden.clone()).unwrap();
     assert_eq!(card.name, "Weather Agent");
     assert_eq!(card.supported_interfaces.len(), 2);
-    assert_eq!(
-        card.supported_interfaces[0].protocol_binding, "JSONRPC"
-    );
-    assert_eq!(
-        card.supported_interfaces[1].protocol_binding, "REST"
-    );
+    assert_eq!(card.supported_interfaces[0].protocol_binding, "JSONRPC");
+    assert_eq!(card.supported_interfaces[1].protocol_binding, "REST");
     assert_eq!(card.capabilities.streaming, Some(true));
     assert_eq!(card.capabilities.push_notifications, Some(false));
     assert_eq!(card.capabilities.extended_agent_card, Some(true));
@@ -485,7 +504,10 @@ fn tck_agent_card_golden_format() {
     assert!(ser.get("defaultOutputModes").is_some());
     assert!(ser.get("securitySchemes").is_some());
     assert!(ser.get("securityRequirements").is_some());
-    assert!(ser.get("pushNotifications").is_none(), "pushNotifications is inside capabilities");
+    assert!(
+        ser.get("pushNotifications").is_none(),
+        "pushNotifications is inside capabilities"
+    );
     assert_eq!(ser["capabilities"]["pushNotifications"], false);
 }
 
@@ -527,9 +549,15 @@ fn tck_agent_card_no_legacy_fields() {
     // v1.0 removed fields — parse as JSON to check top-level keys only
     let v: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     let obj = v.as_object().unwrap();
-    assert!(!obj.contains_key("url"), "top-level 'url' removed in v1.0 — use supportedInterfaces");
+    assert!(
+        !obj.contains_key("url"),
+        "top-level 'url' removed in v1.0 — use supportedInterfaces"
+    );
     assert!(!obj.contains_key("preferredTransport"), "removed in v1.0");
-    assert!(!obj.contains_key("protocolVersion"), "moved to AgentInterface in v1.0");
+    assert!(
+        !obj.contains_key("protocolVersion"),
+        "moved to AgentInterface in v1.0"
+    );
     assert!(!obj.contains_key("additionalInterfaces"), "removed in v1.0");
 }
 
@@ -1124,7 +1152,10 @@ fn tck_file_content_camel_case() {
     assert_eq!(fc.mime_type.as_deref(), Some("image/png"));
 
     let ser = serde_json::to_value(&fc).unwrap();
-    assert!(ser.get("mimeType").is_some(), "must use 'mimeType' not 'mime_type'");
+    assert!(
+        ser.get("mimeType").is_some(),
+        "must use 'mimeType' not 'mime_type'"
+    );
     assert!(ser.get("mime_type").is_none());
 }
 
@@ -1174,7 +1205,10 @@ fn tck_agent_extension_wire_format() {
 
     let ext: AgentExtension = serde_json::from_value(golden).unwrap();
     assert_eq!(ext.uri, "https://a2a.example.com/extensions/memory");
-    assert_eq!(ext.description.as_deref(), Some("Persistent memory extension"));
+    assert_eq!(
+        ext.description.as_deref(),
+        Some("Persistent memory extension")
+    );
     assert_eq!(ext.required, Some(true));
 
     let ser = serde_json::to_value(&ext).unwrap();
@@ -1291,14 +1325,12 @@ fn tck_full_round_trip_agent_card_with_security() {
         name: "Secure Agent".into(),
         description: "Agent with full security config".into(),
         version: "1.0.0".into(),
-        supported_interfaces: vec![
-            AgentInterface {
-                url: "https://secure.example.com/rpc".into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
-                tenant: Some("tenant-1".into()),
-            },
-        ],
+        supported_interfaces: vec![AgentInterface {
+            url: "https://secure.example.com/rpc".into(),
+            protocol_binding: "JSONRPC".into(),
+            protocol_version: "1.0.0".into(),
+            tenant: Some("tenant-1".into()),
+        }],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
         skills: vec![AgentSkill {
@@ -1347,10 +1379,7 @@ fn tck_full_round_trip_agent_card_with_security() {
             ),
         ])),
         security_requirements: Some(vec![SecurityRequirement {
-            schemes: HashMap::from([(
-                "bearer".into(),
-                StringList { list: vec![] },
-            )]),
+            schemes: HashMap::from([("bearer".into(), StringList { list: vec![] })]),
         }]),
         signatures: None,
     };
