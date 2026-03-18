@@ -193,13 +193,8 @@ A file may have inline `bytes`, a `uri` reference, or both.
 |---|---|---|---|
 | `taskId` | `task_id` | `TaskId` | Yes |
 | `contextId` | `context_id` | `ContextId` | Yes |
-| `state` | `state` | `TaskState` | Yes |
-| `message` | `message` | `Option<Message>` | No |
+| `status` | `status` | `TaskStatus` | Yes |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `"status-update"` | Yes |
-| `final` | `r#final` | `bool` | Yes |
-
-Note: `final` is a Rust keyword; use raw identifier `r#final`. In serde, use `#[serde(rename = "final")]`.
 
 ### `TaskArtifactUpdateEvent`
 
@@ -211,45 +206,35 @@ Note: `final` is a Rust keyword; use raw identifier `r#final`. In serde, use `#[
 | `append` | `append` | `Option<bool>` | No |
 | `lastChunk` | `last_chunk` | `Option<bool>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `"artifact-update"` | Yes |
 
-### `StreamResponse` (discriminated union, tag = `"kind"`)
+### `StreamResponse` (discriminated by field presence)
 
 ```rust
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 pub enum StreamResponse {
-    Task(Task),                                    // "task"
-    Message(Message),                              // "message"
-    #[serde(rename = "status-update")]
+    Task(Task),
+    Message(Message),
     StatusUpdate(TaskStatusUpdateEvent),
-    #[serde(rename = "artifact-update")]
     ArtifactUpdate(TaskArtifactUpdateEvent),
 }
 ```
 
+Deserialization checks which field (`task`, `message`, `statusUpdate`, `artifactUpdate`) is present.
+
 ---
 
 ## `agent_card.rs`
-
-### `TransportProtocol`
-
-```rust
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TransportProtocol {
-    JsonRpc,   // "JSONRPC"
-    Grpc,      // "GRPC"
-    Rest,      // "REST"
-}
-```
 
 ### `AgentInterface`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
 | `url` | `url` | `String` | Yes |
-| `transport` | `transport` | `TransportProtocol` | Yes |
+| `protocolBinding` | `protocol_binding` | `String` | Yes (e.g. `"JSONRPC"`, `"REST"`, `"GRPC"`) |
+| `protocolVersion` | `protocol_version` | `String` | Yes (e.g. `"1.0.0"`) |
+| `tenant` | `tenant` | `Option<String>` | No |
 
 ### `AgentCapabilities`
 
@@ -257,7 +242,7 @@ pub enum TransportProtocol {
 |---|---|---|---|
 | `streaming` | `streaming` | `Option<bool>` | No |
 | `pushNotifications` | `push_notifications` | `Option<bool>` | No |
-| `stateTransitionHistory` | `state_transition_history` | `Option<bool>` | No |
+| `extendedAgentCard` | `extended_agent_card` | `Option<bool>` | No |
 | `extensions` | `extensions` | `Option<Vec<AgentExtension>>` | No |
 
 ### `AgentProvider`
@@ -278,19 +263,16 @@ pub enum TransportProtocol {
 | `examples` | `examples` | `Option<Vec<String>>` | No |
 | `inputModes` | `input_modes` | `Option<Vec<String>>` | No (MIME types) |
 | `outputModes` | `output_modes` | `Option<Vec<String>>` | No (MIME types) |
-| `security` | `security` | `Option<SecurityRequirements>` | No |
+| `securityRequirements` | `security_requirements` | `Option<Vec<SecurityRequirement>>` | No |
 
 ### `AgentCard`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `protocolVersion` | `protocol_version` | `String` | Yes |
 | `name` | `name` | `String` | Yes |
 | `description` | `description` | `String` | Yes |
 | `version` | `version` | `String` | Yes |
-| `url` | `url` | `String` | Yes (base RPC endpoint) |
-| `preferredTransport` | `preferred_transport` | `TransportProtocol` | Yes |
-| `additionalInterfaces` | `additional_interfaces` | `Option<Vec<AgentInterface>>` | No |
+| `supportedInterfaces` | `supported_interfaces` | `Vec<AgentInterface>` | Yes |
 | `defaultInputModes` | `default_input_modes` | `Vec<String>` | Yes (MIME types) |
 | `defaultOutputModes` | `default_output_modes` | `Vec<String>` | Yes (MIME types) |
 | `skills` | `skills` | `Vec<AgentSkill>` | Yes |
@@ -299,12 +281,11 @@ pub enum TransportProtocol {
 | `iconUrl` | `icon_url` | `Option<String>` | No |
 | `documentationUrl` | `documentation_url` | `Option<String>` | No |
 | `securitySchemes` | `security_schemes` | `Option<NamedSecuritySchemes>` | No |
-| `security` | `security` | `Option<SecurityRequirements>` | No |
-| `supportsAuthenticatedExtendedCard` | `supports_authenticated_extended_card` | `Option<bool>` | No |
+| `securityRequirements` | `security_requirements` | `Option<Vec<SecurityRequirement>>` | No |
 | `signatures` | `signatures` | `Option<Vec<AgentCardSignature>>` | No |
 
 `NamedSecuritySchemes` = `HashMap<String, SecurityScheme>`.
-`SecurityRequirements` = `Vec<HashMap<String, Vec<String>>>` (OpenAPI style).
+`SecurityRequirement` = struct with `schemes: HashMap<String, StringList>`.
 
 ---
 

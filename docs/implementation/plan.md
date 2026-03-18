@@ -73,12 +73,12 @@ See the book's [Configuration Reference](../../book/src/reference/configuration.
 - **Complete test coverage** — unit tests, integration tests with real TCP servers, end-to-end examples.
 - **Zero `unsafe`** — unless crossing true FFI or raw pointer boundaries, with mandatory `// SAFETY:` comments.
 
-### Non-Goals
+### Original Non-Goals (subsequently implemented as optional features)
 
-- gRPC binding in the initial release (tracked post-v1.0, separate crate `a2a-grpc`).
-- WebSocket transport (not in the v1.0 spec).
-- Built-in persistence (`TaskStore` and `PushConfigStore` ship as in-memory defaults only; users plug in their own).
-- Opinionated web framework integration (Axum, Actix adapters are examples, not core).
+- ~~gRPC binding~~ — implemented as `grpc` feature flag on client and server.
+- ~~WebSocket transport~~ — implemented as `websocket` feature flag on client and server.
+- ~~Built-in persistence~~ — `SqliteTaskStore` and `SqlitePushConfigStore` implemented behind `sqlite` feature flag.
+- Opinionated web framework integration (Axum, Actix adapters are examples, not core) — still a non-goal.
 
 ---
 

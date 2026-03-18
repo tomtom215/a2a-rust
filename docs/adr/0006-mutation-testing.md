@@ -43,8 +43,8 @@ orchestration flows.
 3. **Scope**: All source files in `crates/*/src/**/*.rs`, excluding:
    - Thin `mod.rs` re-export files (false positives)
    - Generated protobuf code (`proto/`)
-   - `Display`/`Debug` formatting implementations (unproductive mutations)
    - Tracing/logging instrumentation
+   - Note: `Display`/`Debug` impls are NOT excluded — we have tests for them
 
 4. **CI integration**:
    - **On-demand full sweep**: Triggered via `workflow_dispatch` in

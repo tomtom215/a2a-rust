@@ -19,24 +19,32 @@ Tokio features are pinned to the minimum needed:
 | Crate | Tokio features |
 |---|---|
 | `a2a-protocol-types` | none (no async) |
-| `a2a-protocol-client` | `rt, net, io-util, sync, time` |
-| `a2a-protocol-server` | `rt, net, io-util, sync, time` |
+| `a2a-protocol-client` | `rt, net, io-util, sync, time, macros` |
+| `a2a-protocol-server` | `rt, net, io-util, sync, time, macros, signal` |
 
 `rt-multi-thread` is **not** forced. Users who run single-threaded runtimes (`#[tokio::main(flavor = "current_thread")]`) are supported without modification.
 
-### async fn in Traits
+### Object-Safe Async Traits via `Pin<Box<dyn Future>>`
 
-Rust 1.75 stabilized `async fn` in traits (RPITIT). This SDK targets Rust 1.93+ and uses `async fn` in all trait definitions without boxing:
+Key traits (`AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`) use
+`Pin<Box<dyn Future<Output = T> + Send + 'a>>` return types instead of native
+`async fn` in traits. This ensures **object safety** — these traits can be stored
+as `Arc<dyn AgentExecutor>` and shared across threads without generic parameters
+on `RequestHandler`, `JsonRpcDispatcher`, or `RestDispatcher`:
 
 ```rust
-// Preferred — zero overhead, no Pin<Box<dyn Future>>
 pub trait AgentExecutor: Send + Sync + 'static {
-    async fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()>;
-    async fn cancel(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> A2aResult<()>;
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 ```
 
-This requires the trait to be `Send + Sync + 'static` (enforced by bounds) so that futures returned by `async fn` are `Send`, allowing them to be spawned on tokio's multi-thread scheduler.
+The `agent_executor!` macro and `boxed_future` helper eliminate the boilerplate
+for implementors. The `Send + Sync + 'static` bound ensures futures can be
+spawned on tokio's multi-thread scheduler.
 
 ### No Blocking I/O in Async Contexts
 
@@ -52,7 +60,7 @@ All async tests use the `#[tokio::test]` macro. No manual `tokio::runtime::Runti
 
 - No runtime abstraction layer to maintain.
 - `hyper` integration is direct and correct.
-- `async fn` in traits gives clean, readable interfaces with zero runtime cost.
+- Object-safe async traits via `Pin<Box<dyn Future>>` enable dynamic dispatch without generics.
 - All spawned tasks are `Send`, enabling multi-threaded runtimes.
 
 ### Negative
@@ -65,9 +73,8 @@ All async tests use the `#[tokio::test]` macro. No manual `tokio::runtime::Runti
 ### Runtime-Agnostic via `async-trait` Crate
 
 The `async-trait` proc-macro desugars `async fn` in traits to `Pin<Box<dyn Future + Send>>`. Rejected because:
-- Adds an extra dep.
-- Boxes every future, adding allocation overhead.
-- Rust 1.75+ makes this approach obsolete.
+- Adds an extra proc-macro dep.
+- The same boxing is achieved manually with `Box::pin(async move { ... })` or the `boxed_future` helper, without the dep.
 
 ### Runtime-Agnostic via `futures` Traits
 
