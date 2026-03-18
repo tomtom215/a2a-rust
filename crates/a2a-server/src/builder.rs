@@ -104,9 +104,18 @@ impl RequestHandlerBuilder {
 
     /// Configures the default [`InMemoryTaskStore`] with custom TTL and capacity settings.
     ///
-    /// This is ignored if a custom task store is set via [`with_task_store`](Self::with_task_store).
+    /// # Panics
+    ///
+    /// Panics in debug builds if a custom task store has already been set via
+    /// [`with_task_store`](Self::with_task_store), since the config would be
+    /// silently ignored.
     #[must_use]
-    pub const fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+    pub fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+        debug_assert!(
+            self.task_store.is_none(),
+            "with_task_store_config() called after with_task_store(); \
+             the config will be ignored because a custom store was already set"
+        );
         self.task_store_config = config;
         self
     }
@@ -259,6 +268,23 @@ impl RequestHandlerBuilder {
                     "executor timeout must be greater than zero".into(),
                 ));
             }
+        }
+
+        // Validate handler limits are sensible (zero values cause all requests to fail).
+        if self.handler_limits.max_id_length == 0 {
+            return Err(crate::error::ServerError::InvalidParams(
+                "max_id_length must be greater than zero".into(),
+            ));
+        }
+        if self.handler_limits.max_metadata_size == 0 {
+            return Err(crate::error::ServerError::InvalidParams(
+                "max_metadata_size must be greater than zero".into(),
+            ));
+        }
+        if self.handler_limits.push_delivery_timeout.is_zero() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "push_delivery_timeout must be greater than zero".into(),
+            ));
         }
 
         Ok(RequestHandler {

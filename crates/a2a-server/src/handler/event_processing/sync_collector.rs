@@ -156,7 +156,19 @@ impl RequestHandler {
         let Ok(configs) = self.push_config_store.list(task_id.as_ref()).await else {
             return;
         };
+
+        // FIX(#4): Cap total push delivery time to prevent amplification.
+        let deadline =
+            tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+
         for config in &configs {
+            if tokio::time::Instant::now() >= deadline {
+                trace_warn!(
+                    task_id = %task_id,
+                    "push delivery deadline exceeded; skipping remaining configs"
+                );
+                break;
+            }
             let result = tokio::time::timeout(
                 self.limits.push_delivery_timeout,
                 sender.send(&config.url, event, config),

@@ -30,7 +30,24 @@ pub(super) async fn deliver_push_bg(
     let Ok(configs) = push_config_store.list(task_id.as_ref()).await else {
         return;
     };
+
+    // FIX(#4): Cap total push delivery time per event to prevent amplification
+    // attacks. With 100 configs × 5s timeout × 3 retries, unbounded delivery
+    // could take 25+ minutes. Cap at 30 seconds total per event.
+    let max_total_push_time = std::time::Duration::from_secs(30);
+    let deadline = tokio::time::Instant::now() + max_total_push_time;
+
     for config in &configs {
+        // Check if we've exceeded the total push delivery budget.
+        if tokio::time::Instant::now() >= deadline {
+            trace_warn!(
+                task_id = %task_id,
+                remaining_configs = configs.len(),
+                "push delivery deadline exceeded; skipping remaining configs"
+            );
+            break;
+        }
+
         let result = tokio::time::timeout(
             limits.push_delivery_timeout,
             sender.send(&config.url, event, config),

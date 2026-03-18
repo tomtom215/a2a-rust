@@ -62,7 +62,7 @@ impl A2aClient {
     /// Returns [`crate::error::ClientError::InvalidEndpoint`] if the agent
     /// card URL is malformed or the transport cannot be constructed.
     pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
-        ClientBuilder::from_card(card).build()
+        ClientBuilder::from_card(card)?.build()
     }
 
     /// Returns a reference to the active client configuration.

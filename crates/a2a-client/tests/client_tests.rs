@@ -53,10 +53,9 @@ fn agent_card_with_interfaces(interfaces: Vec<AgentInterface>) -> AgentCard {
 #[test]
 fn builder_from_card_empty_interfaces_falls_back_to_defaults() {
     let card = agent_card_with_interfaces(vec![]);
-    // `from_card` with no interfaces should produce a builder with an empty
-    // endpoint. Building should fail because an empty URL is invalid.
-    let result = ClientBuilder::from_card(&card).build();
-    assert!(result.is_err(), "empty endpoint should fail validation");
+    // `from_card` with no interfaces should now fail immediately.
+    let result = ClientBuilder::from_card(&card);
+    assert!(result.is_err(), "empty interfaces should fail validation");
 }
 
 #[test]

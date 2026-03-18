@@ -100,9 +100,22 @@ impl A2aClient {
         let mut req = ClientRequest::new(METHOD, params_value);
         self.interceptors.run_before(&mut req).await?;
 
-        self.transport
+        let stream = self
+            .transport
             .send_streaming_request(METHOD, req.params, &req.extra_headers)
-            .await
+            .await?;
+
+        // FIX(#6): Call run_after() for streaming requests so interceptors
+        // get their cleanup/logging hook. The response body is empty since
+        // the actual data arrives via the EventStream.
+        let resp = ClientResponse {
+            method: METHOD.to_owned(),
+            result: serde_json::Value::Null,
+            status_code: 200,
+        };
+        self.interceptors.run_after(&resp).await?;
+
+        Ok(stream)
     }
 }
 

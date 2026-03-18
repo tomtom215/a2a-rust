@@ -104,7 +104,7 @@ impl TenantResolver for HeaderTenantResolver {
         &'a self,
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>> {
-        Box::pin(async move { ctx.http_headers.get(&self.header_name).cloned() })
+        Box::pin(async move { ctx.http_headers().get(&self.header_name).cloned() })
     }
 }
 
@@ -180,7 +180,7 @@ impl TenantResolver for BearerTokenTenantResolver {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = Option<String>> + Send + 'a>> {
         Box::pin(async move {
-            let auth = ctx.http_headers.get("authorization")?;
+            let auth = ctx.http_headers().get("authorization")?;
             let token = auth
                 .strip_prefix("Bearer ")
                 .or_else(|| auth.strip_prefix("bearer "))?;
@@ -253,9 +253,9 @@ impl TenantResolver for PathSegmentTenantResolver {
         Box::pin(async move {
             // Try :path pseudo-header first (HTTP/2), then "path".
             let path = ctx
-                .http_headers
+                .http_headers()
                 .get(":path")
-                .or_else(|| ctx.http_headers.get("path"))?;
+                .or_else(|| ctx.http_headers().get("path"))?;
             self.extract_from_path(path)
         })
     }

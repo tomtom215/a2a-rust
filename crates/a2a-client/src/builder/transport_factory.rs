@@ -35,6 +35,11 @@ impl ClientBuilder {
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
+        if self.config.connection_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "connection_timeout must be non-zero".into(),
+            ));
+        }
 
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
@@ -249,7 +254,7 @@ mod tests {
             signatures: None,
         };
 
-        let result = ClientBuilder::from_card(&card).build();
+        let result = ClientBuilder::from_card(&card).unwrap().build();
         assert!(result.is_err(), "unknown binding should fail");
     }
 }
