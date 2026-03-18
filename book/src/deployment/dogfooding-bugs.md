@@ -13,16 +13,16 @@ Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** 
 | [Pass 5](#pass-5-hardening--concurrency-audit-4-bugs) | Concurrency | 4 | 2 High, 1 Medium, 1 Low |
 | [Pass 6](#pass-6-architecture-audit-5-bugs) | Architecture | 5 | 1 Critical, 1 High, 3 Medium |
 | [Pass 7](#pass-7-deep-dogfood-9-bugs) | Deep dogfood | 9 | 1 Critical, 2 High, 4 Medium, 2 Low |
-| [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 2 Medium, 1 Medium, 1 Low |
+| [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 3 Medium, 1 Low |
 
 ### By Severity
 
 | Severity | Count | Examples |
 |----------|-------|---------|
 | **Critical** | 5 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18) |
-| **High** | 6 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25) |
-| **Medium** | 16 | REST field stripping (#1), query encoding (#19), path traversal (#35) |
-| **Low** | 9 | Metrics hooks (#2, #6, #7), gRPC error context (#36) |
+| **High** | 8 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21) |
+| **Medium** | 15 | REST field stripping (#1), path traversal (#35), stale pagination (#30) |
+| **Low** | 8 | Metrics hooks (#2, #6, #7), gRPC error context (#36) |
 
 ### Configuration Hardening
 

@@ -323,9 +323,10 @@ examine_globs = [
     "crates/a2a-sdk/src/**/*.rs",
 ]
 
-# Skip unproductive mutations (re-exports, generated code, formatting)
-exclude_globs = ["**/mod.rs", "crates/*/src/proto/**"]
-exclude_re = ["fmt$", "^tracing::", "^log::"]
+# Skip unproductive mutations (re-exports, generated code)
+# Note: Display/Debug impls are NOT excluded — we have tests for them.
+exclude_globs = ["**/mod.rs", "crates/*/src/proto/**", "crates/a2a-sdk/src/lib.rs"]
+exclude_re = ["^tracing::", "^log::"]
 ```
 
 ### CI Integration

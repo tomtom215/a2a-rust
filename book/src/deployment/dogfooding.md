@@ -28,7 +28,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
-│              (71 tests, ~2500ms total)                      │
+│              (72 tests, ~2500ms total)                      │
 └─────┬───────────┬───────────┬───────────┬───────────────────┘
       │           │           │           │
       ▼           ▼           ▼           ▼
@@ -160,7 +160,7 @@ Agent [BuildMonitor]  REST     on http://127.0.0.1:XXXXX
 Agent [HealthMonitor] JSON-RPC on http://127.0.0.1:XXXXX
 Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
-...71 tests...
+...72 tests...
 
 ║ Total: 72 | Passed: 72 | Failed: 0 | Time: ~2500ms
 ```
@@ -187,7 +187,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 | **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` — `MigrationRunner`, V1–V3 migrations |
 | **Per-tenant configuration** | `crates/a2a-server/src/tenant_config.rs` — `PerTenantConfig`, `TenantLimits` |
 | **TenantResolver trait** | `crates/a2a-server/src/tenant_resolver.rs` — header, bearer token, path segment strategies |
-| **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps.rs` — test 79 (`signing` feature) |
+| **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps/feature_gated.rs` — test 79 (`signing` feature) |
 
 ## Sub-pages
 
