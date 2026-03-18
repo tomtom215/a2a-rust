@@ -507,9 +507,191 @@ mod tests {
     }
 
     #[test]
+    fn extract_headers_skips_non_utf8_values() {
+        let mut map = axum::http::HeaderMap::new();
+        map.insert("good", "valid".parse().unwrap());
+        // Non-UTF8 values are filtered out by to_str().ok()
+        let result = extract_headers(&map);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("good").unwrap(), "valid");
+    }
+
+    #[test]
+    fn extract_headers_empty_map() {
+        let map = axum::http::HeaderMap::new();
+        let result = extract_headers(&map);
+        assert!(result.is_empty());
+    }
+
+    #[test]
     fn a2a_state_is_clone() {
-        // A2aState must be Clone for Axum's State extractor.
         fn assert_clone<T: Clone>() {}
         assert_clone::<A2aState>();
+    }
+
+    #[test]
+    fn server_error_status_task_not_found() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::TaskNotFound("t".into())),
+            404
+        );
+    }
+
+    #[test]
+    fn server_error_status_method_not_found() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::MethodNotFound("m".into())),
+            404
+        );
+    }
+
+    #[test]
+    fn server_error_status_invalid_params() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::InvalidParams("p".into())),
+            400
+        );
+    }
+
+    #[test]
+    fn server_error_status_serialization() {
+        use crate::error::ServerError;
+        let err = ServerError::Serialization(serde_json::from_str::<String>("bad").unwrap_err());
+        assert_eq!(server_error_status(&err), 400);
+    }
+
+    #[test]
+    fn server_error_status_task_not_cancelable() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::TaskNotCancelable("t".into())),
+            409
+        );
+    }
+
+    #[test]
+    fn server_error_status_invalid_state_transition() {
+        use crate::error::ServerError;
+        let err = ServerError::InvalidStateTransition {
+            task_id: "t".into(),
+            from: a2a_protocol_types::task::TaskState::Working,
+            to: a2a_protocol_types::task::TaskState::Submitted,
+        };
+        assert_eq!(server_error_status(&err), 409);
+    }
+
+    #[test]
+    fn server_error_status_push_not_supported() {
+        use crate::error::ServerError;
+        assert_eq!(server_error_status(&ServerError::PushNotSupported), 501);
+    }
+
+    #[test]
+    fn server_error_status_payload_too_large() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::PayloadTooLarge("big".into())),
+            413
+        );
+    }
+
+    #[test]
+    fn server_error_status_internal() {
+        use crate::error::ServerError;
+        assert_eq!(
+            server_error_status(&ServerError::Internal("oops".into())),
+            500
+        );
+    }
+
+    #[test]
+    fn a2a_error_to_response_returns_correct_status() {
+        let resp = a2a_error_to_response(&"test error", 400);
+        assert_eq!(resp.status().as_u16(), 400);
+    }
+
+    #[test]
+    fn a2a_error_to_response_returns_json_body() {
+        let resp = a2a_error_to_response(&"not found", 404);
+        assert_eq!(resp.status().as_u16(), 404);
+    }
+
+    #[test]
+    fn a2a_error_to_response_invalid_status_falls_back_to_500() {
+        // HTTP status codes are valid 100-999; 1000+ is invalid
+        let resp = a2a_error_to_response(&"bad status", 1000);
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn handler_error_to_response_maps_correctly() {
+        use crate::error::ServerError;
+        let resp = handler_error_to_response(&ServerError::TaskNotFound("t1".into()));
+        assert_eq!(resp.status().as_u16(), 404);
+
+        let resp = handler_error_to_response(&ServerError::InvalidParams("bad".into()));
+        assert_eq!(resp.status().as_u16(), 400);
+
+        let resp = handler_error_to_response(&ServerError::Internal("oops".into()));
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[test]
+    fn a2a_router_new_creates_with_defaults() {
+        // Verify A2aRouter::new doesn't panic and uses default DispatchConfig
+        use crate::builder::RequestHandlerBuilder;
+
+        struct NoopExecutor;
+        impl crate::executor::AgentExecutor for NoopExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let router = A2aRouter::new(handler);
+        // Should not panic when building the router
+        let _axum_router = router.into_router();
+    }
+
+    #[test]
+    fn a2a_router_with_config() {
+        use crate::builder::RequestHandlerBuilder;
+
+        struct NoopExecutor;
+        impl crate::executor::AgentExecutor for NoopExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = Arc::new(RequestHandlerBuilder::new(NoopExecutor).build().unwrap());
+        let config =
+            super::super::DispatchConfig::default().with_max_request_body_size(8 * 1024 * 1024);
+        let router = A2aRouter::with_config(handler, config);
+        let _axum_router = router.into_router();
     }
 }

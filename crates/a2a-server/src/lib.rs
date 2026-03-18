@@ -38,8 +38,8 @@
 //!
 //! # Axum integration
 //!
-//! Enable the `axum` feature flag to use [`A2aRouter`] for idiomatic Axum
-//! integration. See the [`dispatch::axum_adapter`] module for details.
+//! Enable the `axum` feature flag to use `A2aRouter` for idiomatic Axum
+//! integration. See the `dispatch::axum_adapter` module for details.
 //!
 //! # gRPC transport
 //!
