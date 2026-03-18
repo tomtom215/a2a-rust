@@ -116,7 +116,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `get_push_config(task_id, id)` | `TaskPushNotificationConfig` | Get push config |
 | `list_push_configs(params)` | `ListPushConfigsResponse` | List push configs |
 | `delete_push_config(task_id, id)` | `()` | Delete push config |
-| `get_authenticated_extended_card(params)` | `AgentCard` | Get extended card |
+| `get_extended_agent_card()` | `AuthenticatedExtendedCardResponse` | Get extended card |
 
 ### Interceptors
 
@@ -132,6 +132,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `Transport` | Pluggable transport trait |
 | `JsonRpcTransport` | JSON-RPC 2.0 transport |
 | `RestTransport` | REST/HTTP transport |
+| `WebSocketTransport` | WebSocket transport (`websocket` feature) |
+| `GrpcTransport` | gRPC transport (`grpc` feature) |
 
 ## Server (`a2a-protocol-server`)
 
@@ -161,6 +163,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 |------|-------------|
 | `JsonRpcDispatcher` | JSON-RPC 2.0 HTTP dispatcher (implements `Dispatcher`) |
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
+| `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
+| `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
 
 ### Server Startup
 
@@ -176,8 +180,16 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `InMemoryTaskStore` | In-memory task store with TTL |
 | `InMemoryPushConfigStore` | In-memory push config store |
 | `HttpPushSender` | HTTP webhook delivery with SSRF protection |
+| `SqliteTaskStore` | SQLite task store (`sqlite` feature) |
+| `SqlitePushConfigStore` | SQLite push config store (`sqlite` feature) |
+| `TenantAwareInMemoryTaskStore` | Multi-tenant in-memory task store |
+| `TenantAwareInMemoryPushConfigStore` | Multi-tenant in-memory push config store |
+| `TenantAwareSqliteTaskStore` | Multi-tenant SQLite task store (`sqlite` feature) |
+| `TenantAwareSqlitePushConfigStore` | Multi-tenant SQLite push config store (`sqlite` feature) |
 | `StaticAgentCardHandler` | Static agent card with HTTP caching |
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
+| `HotReloadAgentCardHandler` | Agent card with live reloading |
+| `RateLimitInterceptor` | Per-caller rate limiting interceptor |
 
 ### Streaming
 
@@ -225,7 +237,8 @@ TaskStatus::with_timestamp(TaskState::Completed)
 Part::text("hello")
 Part::file_bytes(base64_string)
 Part::file_uri("https://...")
-Part::data(json_value)
+Part::raw(base64_string)   // backward-compat alias for file_bytes
+Part::url("https://...")   // backward-compat alias for file_uri
 
 // Artifacts
 Artifact::new("artifact-id", vec![Part::text("content")])

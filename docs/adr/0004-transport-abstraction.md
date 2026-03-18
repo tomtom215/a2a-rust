@@ -8,12 +8,13 @@
 
 ## Context
 
-The A2A 0.3.0 specification defines three transport bindings:
+The A2A v1.0 specification defines transport bindings including:
 1. **JSON-RPC 2.0** — HTTP POST to a single endpoint; primary binding.
 2. **HTTP+JSON (REST)** — RESTful paths and verbs.
-3. **gRPC** — protobuf, HTTP/2 streaming.
+3. **WebSocket** — persistent connections with JSON-RPC frames.
+4. **gRPC** — protobuf, HTTP/2 streaming.
 
-For the client, the `AgentCard` declares a `preferredTransport` and an `additionalInterfaces` list. A complete client implementation must be able to select the best transport for a given agent.
+For the client, the `AgentCard` declares `supported_interfaces` — a list of `AgentInterface` entries, each with a `protocol_binding` and `url`. A complete client implementation must be able to select the best transport for a given agent.
 
 For the server, operators must be able to expose one or more transports without re-implementing protocol logic.
 

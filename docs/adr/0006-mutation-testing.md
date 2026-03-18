@@ -47,10 +47,10 @@ orchestration flows.
    - Tracing/logging instrumentation
 
 4. **CI integration**:
-   - **Nightly full sweep**: Runs against all library crates daily. Any surviving
-     mutant fails the build and is reported as an artifact.
-   - **PR incremental sweep**: Runs only on changed `.rs` files. Provides fast
-     feedback without blocking PRs on unrelated mutations.
+   - **On-demand full sweep**: Triggered via `workflow_dispatch` in
+     `.github/workflows/mutants.yml`. Any surviving mutant fails the build.
+   - Nightly schedule and PR-gate triggers are currently disabled to save CI time.
+     Re-enable when iteration stabilises.
 
 5. **Configuration**: Centralized in `mutants.toml` at the workspace root.
 
@@ -73,8 +73,7 @@ code review, coverage metrics, and even property-based testing cannot guarantee.
 The cost is compute time (mutation testing is inherently O(mutants × test-time)),
 which is managed through:
 
-- Incremental mode on PRs (only changed files)
-- Full sweep in off-peak nightly runs
+- On-demand sweeps via `workflow_dispatch`
 - Exclusion of unproductive mutation targets
 - Timeout tuning in `mutants.toml`
 

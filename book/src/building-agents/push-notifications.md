@@ -115,8 +115,9 @@ struct SqsPushSender {
 impl PushSender for SqsPushSender {
     fn send<'a>(
         &'a self,
-        config: &'a TaskPushNotificationConfig,
+        url: &'a str,
         event: &'a StreamResponse,
+        config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             // Send event to SQS instead of HTTP webhook

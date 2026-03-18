@@ -49,7 +49,7 @@ let store = InMemoryTaskStore::with_config(TaskStoreConfig {
 ```
 
 Features:
-- Thread-safe (`DashMap`-based or `RwLock<HashMap>`)
+- Thread-safe (`RwLock<HashMap>` with fine-grained locking)
 - Automatic TTL eviction on access
 - Capacity eviction (oldest first) when limit exceeded
 - Pagination support with cursor tokens

@@ -208,7 +208,7 @@ The `fuzz/` directory contains fuzz targets for JSON parsing:
 ```bash
 # Requires nightly Rust
 cd fuzz
-cargo +nightly fuzz run fuzz_target
+cargo +nightly fuzz run json_deser
 ```
 
 Fuzz testing helps find edge cases in JSON deserialization that unit tests miss.
@@ -228,7 +228,7 @@ class of bug, and the gaps between layers are where production incidents hide:
 | **E2E dogfooding** | The full stack works under realistic conditions | That your *assertions* actually detect regressions |
 | **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
 
-**The a2a-rust experience:** After building 1,200+ unit/integration/property/fuzz
+**The a2a-rust experience:** After building 1,750+ unit/integration/property/fuzz
 tests, an exhaustive 72-test E2E dogfood suite that caught 36 real bugs across 8
 passes, and achieving full green CI — **mutation testing still found gaps.** Tests
 that looked comprehensive were silently missing assertions on return values,
@@ -268,7 +268,7 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with 1,255 passing tests, 72 E2E dogfood tests, property tests, and fuzz targets —
+Even with 1,750+ passing tests, 72 E2E dogfood tests, property tests, and fuzz targets —
 all green — the first mutation testing run surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,
@@ -330,10 +330,9 @@ exclude_re = ["fmt$", "^tracing::", "^log::"]
 
 ### CI Integration
 
-- **Nightly**: A full mutation sweep runs every night. Any surviving mutant fails
-  the build and is reported as a CI artifact.
-- **PR gate**: An incremental sweep runs on changed files only, so PR feedback is
-  fast while still enforcing zero surviving mutants on new/modified code.
+- **On-demand**: A full mutation sweep can be triggered via `workflow_dispatch` in
+  `.github/workflows/mutants.yml`. Any surviving mutant fails the build.
+- Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 
 ### Interpreting Results
 
@@ -365,7 +364,7 @@ returns `true` for terminal states.
 
 ## Running the Test Suite
 
-> **Current status:** The workspace has **1,255 passing tests** across all crates
+> **Current status:** The workspace has **1,750+ passing tests** across all crates
 > (unit, integration, property, fuzz, and E2E dogfood).
 
 ```bash

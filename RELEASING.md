@@ -44,7 +44,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging
-cargo package --workspace --exclude echo-agent
+cargo package --workspace --exclude echo-agent --exclude agent-team
 ```
 
 ### 2. Merge to main
@@ -64,11 +64,12 @@ git push origin vX.Y.Z
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
-1. **Validates** that all 4 crate versions match the tag
-2. **Runs CI** (fmt, clippy, test, doc) and **security audit** (cargo-deny)
-3. **Packages** all crates and runs a **publish dry run**
-4. **Creates a GitHub Release** with notes extracted from CHANGELOG.md
-5. **Publishes to crates.io** in dependency order with index propagation delays
+1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry exists
+2. **Runs CI** (fmt, clippy, test, doc, MSRV check) and **security audit** (cargo-deny)
+3. **Packages** all crates with SLSA build provenance attestation
+4. **Runs a publish dry run** to verify packages are publishable
+5. **Creates a GitHub Release** with notes extracted from CHANGELOG.md and attached `.crate` artifacts
+6. **Publishes to crates.io** in dependency order with index propagation delays (requires `crates-io` environment approval)
 
 ### 4. Post-release
 
@@ -81,7 +82,7 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 All four workspace crates share the same version number and are always released
-together. The `echo-agent` example is `0.0.0` and is never published.
+together. The `echo-agent` and `agent-team` examples are `0.0.0` (`publish = false`) and are never published.
 
 ## Troubleshooting
 

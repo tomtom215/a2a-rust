@@ -122,7 +122,7 @@ Every dependency is a maintenance liability and a supply chain risk. The followi
 - `axum`/`actix-web` — framework lock-in; users choose their own
 - `anyhow`/`thiserror` — we define our own error types (see `a2a-protocol-types/src/error.rs`)
 - `openssl-sys` — prefer `rustls` for zero system deps
-- `wiremock` — tests use real TCP servers instead of mocking
+- Tests use real TCP servers instead of mocking (no `wiremock` dep needed)
 
 ---
 

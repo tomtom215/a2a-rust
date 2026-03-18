@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Mutation testing** — adopted `cargo-mutants` as a required quality gate with
   zero surviving mutants across all library crates. Configuration in `mutants.toml`.
-- **Mutation testing CI** — nightly full sweep and incremental PR gate via
+- **Mutation testing CI** — on-demand via `workflow_dispatch` in
   `.github/workflows/mutants.yml`. Surviving mutants fail the build.
+  Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 - **ADR 0006** — documents the rationale for mutation testing as a required quality
   gate, including alternatives considered and consequences.
 - **60+ new tests** to kill surviving mutants across all crates, covering:
@@ -33,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error mapping), `dispatch/jsonrpc` (13 tests: header extraction, param parsing,
   batch handling), `dispatch/grpc` (12 tests: config builders, encode/decode,
   error-to-status mapping), `dispatch/websocket` (5 tests: param parsing, error
-  display). Total workspace test count: **1,255 passing tests**.
+  display). Total workspace test count: **1,750+ passing tests**.
 
 ### Added (Beyond-Spec Enhancements)
 
@@ -346,8 +347,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,200+ tests).
-- `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,750+ tests).
+- `#[non_exhaustive]` on 9 protocol types (7 enums, 2 structs) for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.
 - SSE parser memory limits (16 MiB default) to prevent OOM from malicious streams.
@@ -362,7 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Separate `stream_connect_timeout` configuration for SSE connections.
 - Server benchmarks for task store and event queue operations.
 - Cargo-fuzz target for JSON deserialization of all major protocol types.
-- `docs/ROADMAP.md` documenting planned beyond-spec extensions (request IDs,
+- `docs/implementation/plan.md` documenting planned beyond-spec extensions (request IDs,
   metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
 - Pitfalls catalog (`book/src/reference/pitfalls.md`) with entries for serde,
   hyper, SSE, push notifications, async/tokio, workspace, and testing gotchas.
