@@ -14,10 +14,15 @@
 //!
 //! Run with: `cargo run -p echo-agent`
 
+use std::convert::Infallible;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+
+use bytes::Bytes;
+use http_body_util::combinators::BoxBody;
+use hyper::body::Incoming;
 
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::artifact::Artifact;
@@ -214,6 +219,76 @@ async fn start_rest_server(
     addr
 }
 
+// ── Combined dispatcher ─────────────────────────────────────────────────────
+
+/// Routes requests to JsonRpc or REST dispatcher based on the request path.
+/// JSON-RPC receives POSTs to "/" (root); everything else goes to REST.
+struct CombinedDispatcher {
+    jsonrpc: Arc<JsonRpcDispatcher>,
+    rest: Arc<RestDispatcher>,
+}
+
+impl CombinedDispatcher {
+    async fn dispatch(
+        &self,
+        req: hyper::Request<Incoming>,
+    ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+        let path = req.uri().path();
+        // JSON-RPC POSTs to root; agent card GET works on both; REST uses specific paths.
+        let use_jsonrpc = path == "/" || path.is_empty();
+        if use_jsonrpc && req.method() == hyper::Method::POST {
+            self.jsonrpc.dispatch(req).await
+        } else if path == "/.well-known/agent.json" {
+            // Either dispatcher handles agent card; use JSON-RPC.
+            self.jsonrpc.dispatch(req).await
+        } else if req.method() == hyper::Method::OPTIONS {
+            self.jsonrpc.dispatch(req).await
+        } else {
+            self.rest.dispatch(req).await
+        }
+    }
+}
+
+/// Start a combined server serving both JSON-RPC and REST on a single address.
+async fn start_combined_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+    bind_addr: &str,
+) -> SocketAddr {
+    let combined = Arc::new(CombinedDispatcher {
+        jsonrpc: Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler))),
+        rest: Arc::new(RestDispatcher::new(handler)),
+    });
+
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .unwrap_or_else(|e| panic!("bind {bind_addr}: {e}"));
+    let addr = listener.local_addr().expect("local addr");
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let combined = Arc::clone(&combined);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&combined);
+                    async move { Ok::<_, Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+
+    addr
+}
+
 // ── Client helpers ───────────────────────────────────────────────────────────
 
 fn make_send_params(text: &str) -> MessageSendParams {
@@ -249,6 +324,28 @@ async fn main() {
             )
             .init();
     }
+
+    // ── Server-only mode (for TCK / CI) ────────────────────────────────────
+    // When A2A_BIND_ADDR is set, start a combined JSON-RPC + REST server on
+    // that address and block forever.  No client demos are run.
+    if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
+        let url = format!("http://{bind_addr}");
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExecutor)
+                .with_agent_card(make_agent_card(&url, &url))
+                .build()
+                .expect("build handler"),
+        );
+
+        let addr = start_combined_server(handler, &bind_addr).await;
+        println!("Echo agent listening on http://{addr} (combined JSON-RPC + REST)");
+
+        // Block forever — the server runs in background tasks.
+        std::future::pending::<()>().await;
+        return;
+    }
+
+    // ── Demo mode (default) ──────────────────────────────────────────────
 
     println!("=== A2A Echo Agent Example ===\n");
 
