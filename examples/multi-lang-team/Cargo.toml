@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "multi-lang-team"
+version     = "0.0.0"
+description = "Multi-language agent team: Rust coordinator + Python/JS/Go/Java worker agents"
+publish     = false
+
+edition.workspace    = true
+rust-version.workspace = true
+license.workspace    = true
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-types" }
+a2a-protocol-client = { path = "../../crates/a2a-client" }
+a2a-protocol-server = { path = "../../crates/a2a-server" }
+
+serde_json     = { workspace = true }
+tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }
+uuid           = { workspace = true }

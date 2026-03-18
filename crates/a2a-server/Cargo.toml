@@ -24,6 +24,8 @@ signing = ["a2a-protocol-types/signing"]
 tracing = ["dep:tracing"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx"]
+## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`.

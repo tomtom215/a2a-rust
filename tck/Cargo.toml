@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+
+[package]
+name        = "a2a-tck"
+version     = "0.2.0"
+description = "A2A protocol v1.0 Technology Compatibility Kit (TCK) — tests any A2A server for conformance"
+publish     = false
+
+edition.workspace    = true
+rust-version.workspace = true
+license.workspace    = true
+
+[[bin]]
+name = "a2a-tck"
+path = "src/main.rs"
+
+[dependencies]
+a2a-protocol-types  = { path = "../crates/a2a-types" }
+a2a-protocol-client = { path = "../crates/a2a-client" }
+
+serde_json     = { workspace = true }
+serde          = { workspace = true }
+tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["client", "client-legacy", "http1", "http2", "tokio"] }
+http-body-util = { workspace = true }
+uuid           = { workspace = true }

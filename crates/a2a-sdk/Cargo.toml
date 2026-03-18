@@ -32,6 +32,8 @@ otel = ["a2a-protocol-server/otel"]
 websocket = ["a2a-protocol-client/websocket", "a2a-protocol-server/websocket"]
 ## Enable SQLite-backed task and push config stores via sqlx.
 sqlite = ["a2a-protocol-server/sqlite"]
+## Enable PostgreSQL-backed task and push config stores via sqlx.
+postgres = ["a2a-protocol-server/postgres"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["a2a-protocol-server/axum"]
 

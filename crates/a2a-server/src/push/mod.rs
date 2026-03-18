@@ -12,6 +12,11 @@ pub mod sqlite_config_store;
 #[cfg(feature = "sqlite")]
 pub mod tenant_sqlite_config_store;
 
+#[cfg(feature = "postgres")]
+pub mod postgres_config_store;
+#[cfg(feature = "postgres")]
+pub mod tenant_postgres_config_store;
+
 pub use config_store::{InMemoryPushConfigStore, PushConfigStore};
 pub use sender::{HttpPushSender, PushRetryPolicy, PushSender};
 pub use tenant_config_store::TenantAwareInMemoryPushConfigStore;
@@ -20,3 +25,8 @@ pub use tenant_config_store::TenantAwareInMemoryPushConfigStore;
 pub use sqlite_config_store::SqlitePushConfigStore;
 #[cfg(feature = "sqlite")]
 pub use tenant_sqlite_config_store::TenantAwareSqlitePushConfigStore;
+
+#[cfg(feature = "postgres")]
+pub use postgres_config_store::PostgresPushConfigStore;
+#[cfg(feature = "postgres")]
+pub use tenant_postgres_config_store::TenantAwarePostgresPushConfigStore;

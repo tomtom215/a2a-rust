@@ -10,6 +10,10 @@ members = [
     "crates/a2a-sdk",
     "examples/echo-agent",
     "examples/agent-team",
+    "examples/multi-lang-team",
+    "examples/rig-agent",
+    "examples/genai-agent",
+    "tck",
 ]
 
 [workspace.package]

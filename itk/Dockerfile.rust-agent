@@ -1,0 +1,11 @@
+FROM rust:1.93-alpine AS build
+RUN apk add --no-cache musl-dev protoc
+WORKDIR /src
+COPY . .
+RUN cargo build --release -p echo-agent
+
+FROM alpine:3.19
+COPY --from=build /src/target/release/echo-agent /agent
+ENV A2A_BIND_ADDR=0.0.0.0:9104
+EXPOSE 9104
+CMD ["/agent"]

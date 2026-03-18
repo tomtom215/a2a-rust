@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+# A2A Integration Test Kit — Docker Compose
+#
+# Runs all cross-language agents and the Rust TCK against them.
+#
+# Usage:
+#   docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
+
+services:
+  # ── Language Agents ──────────────────────────────────────────────────────
+
+  python-agent:
+    build: agents/python
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/.well-known/agent.json')"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  js-agent:
+    build: agents/js-agent
+    ports:
+      - "9101:9101"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9101/.well-known/agent.json || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  go-agent:
+    build: agents/go-agent
+    ports:
+      - "9102:9102"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9102/.well-known/agent.json || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  java-agent:
+    build: agents/java-agent
+    ports:
+      - "9103:9103"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9103/.well-known/agent.json || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # ── Rust Echo Agent (for self-test) ──────────────────────────────────────
+
+  rust-agent:
+    build:
+      context: ..
+      dockerfile: itk/Dockerfile.rust-agent
+    ports:
+      - "9104:9104"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9104/.well-known/agent.json || exit 1"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  # ── TCK Runner ───────────────────────────────────────────────────────────
+
+  tck-runner:
+    build:
+      context: ..
+      dockerfile: itk/Dockerfile.tck
+    depends_on:
+      python-agent:
+        condition: service_healthy
+      js-agent:
+        condition: service_healthy
+      go-agent:
+        condition: service_healthy
+      java-agent:
+        condition: service_healthy
+      rust-agent:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "=== TCK vs Python Agent (JSON-RPC) ===" &&
+        /tck --url http://python-agent:9100 --binding jsonrpc &&
+        echo "" &&
+        echo "=== TCK vs Python Agent (REST) ===" &&
+        /tck --url http://python-agent:9100 --binding rest &&
+        echo "" &&
+        echo "=== TCK vs JavaScript Agent (JSON-RPC) ===" &&
+        /tck --url http://js-agent:9101 --binding jsonrpc &&
+        echo "" &&
+        echo "=== TCK vs JavaScript Agent (REST) ===" &&
+        /tck --url http://js-agent:9101 --binding rest &&
+        echo "" &&
+        echo "=== TCK vs Go Agent (JSON-RPC) ===" &&
+        /tck --url http://go-agent:9102 --binding jsonrpc &&
+        echo "" &&
+        echo "=== TCK vs Go Agent (REST) ===" &&
+        /tck --url http://go-agent:9102 --binding rest &&
+        echo "" &&
+        echo "=== TCK vs Java Agent (JSON-RPC) ===" &&
+        /tck --url http://java-agent:9103 --binding jsonrpc &&
+        echo "" &&
+        echo "=== TCK vs Java Agent (REST) ===" &&
+        /tck --url http://java-agent:9103 --binding rest &&
+        echo "" &&
+        echo "=== TCK vs Rust Agent (JSON-RPC) ===" &&
+        /tck --url http://rust-agent:9104 --binding jsonrpc &&
+        echo "" &&
+        echo "=== TCK vs Rust Agent (REST) ===" &&
+        /tck --url http://rust-agent:9104 --binding rest &&
+        echo "" &&
+        echo "=== All cross-language conformance tests passed ==="

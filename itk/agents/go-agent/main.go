@@ -1,0 +1,325 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Tom F.
+
+// A2A ITK — Go Echo Agent
+//
+// A minimal A2A agent in Go that echoes incoming messages.
+// Used for cross-language interoperability testing with the Rust A2A SDK.
+//
+// Usage:
+//
+//	go run . [--port 9102]
+package main
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"net/http"
+	"strings"
+	"sync"
+
+	"github.com/google/uuid"
+)
+
+var (
+	port       = flag.Int("port", 9102, "Port to listen on")
+	tasks      = sync.Map{}
+	pushCfgs   = sync.Map{}
+)
+
+// --- Types ---
+
+type Part struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+type Message struct {
+	Role      string `json:"role"`
+	Parts     []Part `json:"parts"`
+	MessageID string `json:"messageId"`
+}
+
+type TaskStatus struct {
+	State string `json:"state"`
+}
+
+type Artifact struct {
+	ArtifactID string `json:"artifactId"`
+	Parts      []Part `json:"parts"`
+}
+
+type Task struct {
+	ID        string     `json:"id"`
+	ContextID string     `json:"contextId"`
+	Status    TaskStatus `json:"status"`
+	History   []Message  `json:"history,omitempty"`
+	Artifacts []Artifact `json:"artifacts,omitempty"`
+}
+
+type SendParams struct {
+	Message   Message `json:"message"`
+	ContextID string  `json:"contextId,omitempty"`
+}
+
+type PushConfig struct {
+	ID     string `json:"id"`
+	TaskID string `json:"taskId"`
+	URL    string `json:"url"`
+}
+
+type JsonRpcRequest struct {
+	Jsonrpc string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Method  string          `json:"method"`
+	Params  json.RawMessage `json:"params"`
+}
+
+type JsonRpcResponse struct {
+	Jsonrpc string      `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  interface{} `json:"result,omitempty"`
+	Error   *RpcError   `json:"error,omitempty"`
+}
+
+type RpcError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+type TaskListResponse struct {
+	Tasks []Task `json:"tasks"`
+}
+
+// Agent Card
+type AgentCard struct {
+	Name               string      `json:"name"`
+	Description        string      `json:"description"`
+	URL                string      `json:"url"`
+	Version            string      `json:"version"`
+	Capabilities       interface{} `json:"capabilities"`
+	DefaultInputModes  []string    `json:"defaultInputModes"`
+	DefaultOutputModes []string    `json:"defaultOutputModes"`
+	Skills             []Skill     `json:"skills"`
+}
+
+type Skill struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+}
+
+func extractText(msg Message) string {
+	var texts []string
+	for _, p := range msg.Parts {
+		if p.Type == "text" {
+			texts = append(texts, p.Text)
+		}
+	}
+	return strings.Join(texts, "")
+}
+
+func processMessage(params SendParams) Task {
+	text := extractText(params.Message)
+	taskID := uuid.New().String()
+	contextID := params.ContextID
+	if contextID == "" {
+		contextID = uuid.New().String()
+	}
+
+	task := Task{
+		ID:        taskID,
+		ContextID: contextID,
+		Status:    TaskStatus{State: "completed"},
+		History:   []Message{params.Message},
+		Artifacts: []Artifact{{
+			ArtifactID: uuid.New().String(),
+			Parts:      []Part{{Type: "text", Text: fmt.Sprintf("[Go Echo] %s", text)}},
+		}},
+	}
+
+	tasks.Store(taskID, task)
+	return task
+}
+
+func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
+	var req JsonRpcRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32700, Message: "Parse error"})
+		return
+	}
+
+	switch req.Method {
+	case "message/send", "message/stream":
+		var params SendParams
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32602, Message: "Invalid params"})
+			return
+		}
+		task := processMessage(params)
+		writeJsonRpc(w, req.ID, task, nil)
+
+	case "tasks/get":
+		var params struct{ ID string `json:"id"` }
+		json.Unmarshal(req.Params, &params)
+		if val, ok := tasks.Load(params.ID); ok {
+			writeJsonRpc(w, req.ID, val, nil)
+		} else {
+			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
+		}
+
+	case "tasks/list":
+		var allTasks []Task
+		tasks.Range(func(_, v interface{}) bool {
+			allTasks = append(allTasks, v.(Task))
+			return true
+		})
+		if allTasks == nil {
+			allTasks = []Task{}
+		}
+		writeJsonRpc(w, req.ID, TaskListResponse{Tasks: allTasks}, nil)
+
+	case "tasks/cancel":
+		var params struct{ ID string `json:"id"` }
+		json.Unmarshal(req.Params, &params)
+		if val, ok := tasks.Load(params.ID); ok {
+			task := val.(Task)
+			task.Status = TaskStatus{State: "canceled"}
+			tasks.Store(params.ID, task)
+			writeJsonRpc(w, req.ID, task, nil)
+		} else {
+			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
+		}
+
+	case "tasks/pushNotificationConfig/set":
+		var cfg PushConfig
+		json.Unmarshal(req.Params, &cfg)
+		if cfg.ID == "" {
+			cfg.ID = uuid.New().String()
+		}
+		key := cfg.TaskID + ":" + cfg.ID
+		pushCfgs.Store(key, cfg)
+		writeJsonRpc(w, req.ID, cfg, nil)
+
+	case "tasks/pushNotificationConfig/get":
+		var params struct {
+			TaskID string `json:"taskId"`
+			ID     string `json:"id"`
+		}
+		json.Unmarshal(req.Params, &params)
+		key := params.TaskID + ":" + params.ID
+		if val, ok := pushCfgs.Load(key); ok {
+			writeJsonRpc(w, req.ID, val, nil)
+		} else {
+			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Config not found"})
+		}
+
+	case "tasks/pushNotificationConfig/list":
+		var params struct{ TaskID string `json:"taskId"` }
+		json.Unmarshal(req.Params, &params)
+		var configs []PushConfig
+		pushCfgs.Range(func(_, v interface{}) bool {
+			cfg := v.(PushConfig)
+			if cfg.TaskID == params.TaskID {
+				configs = append(configs, cfg)
+			}
+			return true
+		})
+		if configs == nil {
+			configs = []PushConfig{}
+		}
+		writeJsonRpc(w, req.ID, configs, nil)
+
+	case "tasks/pushNotificationConfig/delete":
+		var params struct {
+			TaskID string `json:"taskId"`
+			ID     string `json:"id"`
+		}
+		json.Unmarshal(req.Params, &params)
+		key := params.TaskID + ":" + params.ID
+		pushCfgs.Delete(key)
+		writeJsonRpc(w, req.ID, map[string]string{}, nil)
+
+	default:
+		writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32601, Message: fmt.Sprintf("Method not found: %s", req.Method)})
+	}
+}
+
+func writeJsonRpc(w http.ResponseWriter, id json.RawMessage, result interface{}, err *RpcError) {
+	resp := JsonRpcResponse{Jsonrpc: "2.0", ID: id}
+	if err != nil {
+		resp.Error = err
+	} else {
+		resp.Result = result
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func main() {
+	flag.Parse()
+
+	agentCard := AgentCard{
+		Name:               "ITK Go Echo Agent",
+		Description:        "A2A ITK echo agent implemented in Go",
+		URL:                fmt.Sprintf("http://0.0.0.0:%d", *port),
+		Version:            "1.0.0",
+		Capabilities:       map[string]bool{"streaming": true, "pushNotifications": true},
+		DefaultInputModes:  []string{"text"},
+		DefaultOutputModes: []string{"text"},
+		Skills: []Skill{{
+			ID:          "echo",
+			Name:        "Echo",
+			Description: "Echoes the input message back",
+			Tags:        []string{"echo", "test"},
+		}},
+	}
+
+	mux := http.NewServeMux()
+
+	// Agent card
+	mux.HandleFunc("GET /.well-known/agent.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(agentCard)
+	})
+
+	// JSON-RPC endpoint
+	mux.HandleFunc("POST /", handleJsonRpc)
+
+	// REST endpoints
+	mux.HandleFunc("POST /message/send", func(w http.ResponseWriter, r *http.Request) {
+		var params SendParams
+		json.NewDecoder(r.Body).Decode(&params)
+		task := processMessage(params)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+	})
+
+	mux.HandleFunc("POST /message/stream", func(w http.ResponseWriter, r *http.Request) {
+		var params SendParams
+		json.NewDecoder(r.Body).Decode(&params)
+		task := processMessage(params)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(task)
+	})
+
+	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, _ *http.Request) {
+		var allTasks []Task
+		tasks.Range(func(_, v interface{}) bool {
+			allTasks = append(allTasks, v.(Task))
+			return true
+		})
+		if allTasks == nil {
+			allTasks = []Task{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(TaskListResponse{Tasks: allTasks})
+	})
+
+	addr := fmt.Sprintf("0.0.0.0:%d", *port)
+	log.Printf("[ITK] Go Echo Agent listening on port %d", *port)
+	log.Fatal(http.ListenAndServe(addr, mux))
+}
