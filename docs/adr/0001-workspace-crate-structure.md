@@ -38,7 +38,7 @@ a2a-protocol-sdk     (re-exports all three)
 - An agent implementor adds `a2a-protocol-server` only; they do not compile client code.
 - An orchestrator adds `a2a-protocol-client` only; they do not compile server code.
 - Type-only users (downstream SDKs, protocol validators) add `a2a-protocol-types` only.
-- Future `a2a-grpc` crate can depend on `a2a-protocol-types` without disturbing existing users.
+- Optional transports (gRPC, WebSocket, Axum) are feature-gated within existing crates rather than separate crates.
 - `a2a-protocol-sdk` gives quick-start users a single dep.
 
 ### Negative

@@ -38,7 +38,7 @@ Only dependencies with no viable in-tree alternative:
 | `reqwest` | 30+ transitive deps; includes native-tls, cookie jar, redirect, multipart — none needed here. |
 | `anyhow` | Erases error types; downstream crates lose the ability to pattern-match on specific errors. We define `A2aError` with typed variants. |
 | `thiserror` | Macro sugar that adds a proc-macro dep. `std::fmt::Display` + `std::error::Error` manual impls are 10 lines and fully explicit. |
-| `tokio-util` | Originally excluded. Later added for the server crate (`rt` feature for `CancellationToken`). |
+| `tokio-util` | Originally excluded; later added for the server crate only (`rt` feature for `CancellationToken`). Now a mandatory server dep. |
 | `futures` | We need only `std::future::Future` and `tokio` combinators. The `futures` crate adds 12+ sub-crates. |
 | `openssl-sys` | System dep; builds fail on musl/alpine without extra packages. `rustls` is pure Rust with no system dep. |
 | `log` | Older logging API; superseded by `tracing`. Made optional via feature flag. |

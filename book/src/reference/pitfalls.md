@@ -6,7 +6,7 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` on `SendMessageResponse` and `StreamResponse` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message.
+`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` and `StreamResponse` use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clearer errors.)
 
 **Workaround:** When debugging, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
 

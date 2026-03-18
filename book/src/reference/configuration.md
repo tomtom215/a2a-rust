@@ -145,7 +145,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 
 | Header | Default | Description |
 |--------|---------|-------------|
-| `Cache-Control` | `public, max-age=60` | Configurable max-age |
+| `Cache-Control` | `public, max-age=3600` | Configurable max-age (default 1 hour) |
 | `ETag` | Auto-computed | Content hash |
 | `Last-Modified` | Auto-set | Timestamp of last change |
 
