@@ -166,7 +166,7 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
+│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (95 E2E tests)
 │   ├── multi-lang-team/    # Multi-language team example
 │   ├── rig-agent/          # Integration with the Rig framework
 │   └── genai-agent/        # Integration with the GenAI framework
@@ -241,7 +241,7 @@ a2a-rust keeps its dependency tree lean:
 | `uuid` | Task and message ID generation |
 | `bytes` | Efficient byte buffers |
 
-No web framework (axum, actix, warp) is required — the dispatchers work directly with hyper.
+No web framework is required by default — the dispatchers work directly with hyper. However, the optional `axum` feature provides an `A2aRouter` for projects that already use Axum.
 
 ## Next Steps
 
