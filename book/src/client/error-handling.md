@@ -118,7 +118,7 @@ a2a-rust never panics in library code. All fallible operations return `Result`. 
 
 ```rust
 // Good: return an error
-return Err(A2aError::internal("processing failed".into()));
+return Err(A2aError::internal("processing failed"));
 
 // Bad: panic
 panic!("processing failed");

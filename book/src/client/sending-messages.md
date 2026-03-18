@@ -53,7 +53,6 @@ match response {
         // Some agents respond with a direct message instead of a task
         println!("Direct message: {:?}", msg);
     }
-    _ => {}
 }
 ```
 
@@ -112,7 +111,7 @@ let follow_up = client.send_message(MessageSendParams {
         role: MessageRole::User,
         parts: vec![Part::text("What about error handling?")],
         task_id: None,
-        context_id: context_id.map(|c| ContextId::new(c.to_string())),
+        context_id: context_id,
         reference_task_ids: None,
         extensions: None,
         metadata: None,
@@ -133,7 +132,7 @@ let message = Message {
     role: MessageRole::User,
     parts: vec![
         Part::text("Analyze this image:"),
-        Part::url("https://example.com/chart.png"),
+        Part::file_uri("https://example.com/chart.png"),
         Part::data(serde_json::json!({
             "analysis_type": "detailed",
             "language": "en"

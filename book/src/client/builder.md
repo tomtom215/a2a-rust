@@ -7,7 +7,7 @@ The `ClientBuilder` creates an `A2aClient` configured for your target agent. It 
 ```rust
 use a2a_protocol_sdk::client::ClientBuilder;
 
-let client = ClientBuilder::new("http://agent.example.com".to_string())
+let client = ClientBuilder::new("http://agent.example.com")
     .build()
     .expect("build client");
 ```
@@ -16,13 +16,13 @@ The builder auto-selects the transport based on the URL. To explicitly choose:
 
 ```rust
 // Force JSON-RPC transport
-let client = ClientBuilder::new("http://agent.example.com".to_string())
+let client = ClientBuilder::new("http://agent.example.com")
     .with_protocol_binding("JSONRPC")
     .build()
     .unwrap();
 
 // Force REST transport
-let client = ClientBuilder::new("http://agent.example.com".to_string())
+let client = ClientBuilder::new("http://agent.example.com")
     .with_protocol_binding("REST")
     .build()
     .unwrap();
@@ -124,6 +124,7 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
+| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL and transport) |
 | `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
@@ -177,6 +178,8 @@ async fn bad_pattern(url: &str) {
 ```
 
 ## gRPC Client
+
+> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.2", features = ["grpc"] }`
 
 For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
 
