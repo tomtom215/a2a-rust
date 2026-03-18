@@ -86,11 +86,12 @@ let service = service_fn(move |req| {
 
 ### Transport Selection Logic (Client)
 
-`ClientBuilder` selects transport based on `AgentCard`:
-1. If `AgentCard.preferredTransport == JsonRpc` → use `JsonRpcTransport`.
-2. If `preferredTransport == Rest` → use `RestTransport`.
-3. If user config has `preferred_transports` list → try in order, use first supported.
-4. Default: `JsonRpcTransport` (simplest, most universally supported).
+`ClientBuilder` selects transport based on `AgentCard.supported_interfaces`:
+1. If interface has `protocol_binding == "JSONRPC"` → use `JsonRpcTransport`.
+2. If `protocol_binding == "REST"` → use `RestTransport`.
+3. If `protocol_binding == "GRPC"` → use `GrpcTransport` (requires `grpc` feature).
+4. User can override with `with_protocol_binding()`.
+5. Default: `JsonRpcTransport` (simplest, most universally supported).
 
 ## Consequences
 
@@ -98,7 +99,7 @@ let service = service_fn(move |req| {
 
 - Protocol logic is written once in `RequestHandler` / `A2aClient`; transport adapters are thin.
 - Users can implement custom `Transport` impls (WebSocket, unix socket, in-process) without modifying library code.
-- Adding gRPC transport in Phase 8 requires only a new crate; no changes to existing code.
+- Adding gRPC transport requires only a new feature-gated module; no changes to existing code.
 - Server adapters work with any HTTP framework (hyper directly, actix, axum, etc.).
 
 ### Negative

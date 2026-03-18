@@ -165,7 +165,8 @@ A file may have inline `bytes`, a `uri` reference, or both.
 |---|---|---|---|
 | `name` | `name` | `Option<String>` | No |
 | `mimeType` | `mime_type` | `Option<String>` | No |
-| `uri` | `uri` | `Option<String>` | No |
+| `bytes` | `bytes` | `Option<String>` | No (at least one of `bytes`/`uri`) |
+| `uri` | `uri` | `Option<String>` | No (at least one of `bytes`/`uri`) |
 
 ### `DataPart`
 
@@ -489,6 +490,8 @@ pub enum SendMessageResponse {
 |---|---|---|
 | `tasks` | `Vec<Task>` | Paginated results |
 | `next_page_token` | `Option<String>` | Absent on last page |
+| `page_size` | `Option<u32>` | Number of results in this page |
+| `total_size` | `Option<u32>` | Total number of matching tasks |
 
 ### `AuthenticatedExtendedCardResponse`
 
@@ -567,7 +570,6 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 
 | Pattern | Usage |
 |---|---|
-| `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
 | `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
 | `#[serde(rename = "TASK_STATE_...")]` | `TaskState` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
 | `#[serde(rename = "ROLE_...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
