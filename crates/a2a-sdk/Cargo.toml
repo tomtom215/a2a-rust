@@ -28,6 +28,10 @@ tls-rustls = ["a2a-protocol-client/tls-rustls"]
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## Enable OpenTelemetry integration.
 otel = ["a2a-protocol-server/otel"]
+## Enable WebSocket transport via tokio-tungstenite.
+websocket = ["a2a-protocol-client/websocket", "a2a-protocol-server/websocket"]
+## Enable SQLite-backed task and push config stores via sqlx.
+sqlite = ["a2a-protocol-server/sqlite"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["a2a-protocol-server/axum"]
 

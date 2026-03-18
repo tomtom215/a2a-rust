@@ -187,6 +187,8 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `tracing` | Off | Enables `tracing` in client and server |
 | `tls-rustls` | Off | Enables `tls-rustls` in client |
 | `grpc` | Off | Enables `grpc` in client and server |
+| `websocket` | Off | Enables `websocket` in client and server |
+| `sqlite` | Off | Enables `sqlite` in the server |
 | `otel` | Off | Enables `otel` in the server |
 | `axum` | Off | Enables `axum` in the server |
 

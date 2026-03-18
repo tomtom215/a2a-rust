@@ -77,6 +77,8 @@ All features are off by default to minimize compile times and dependency trees.
 | `tracing` | Enables tracing across client and server |
 | `tls-rustls` | Enables HTTPS in the client |
 | `grpc` | Enables gRPC across client and server |
+| `websocket` | Enables WebSocket across client and server |
+| `sqlite` | Enables SQLite stores in the server |
 | `otel` | Enables OpenTelemetry metrics in the server |
 | `axum` | Enables Axum integration in the server |
 
