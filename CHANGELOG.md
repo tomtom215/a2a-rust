@@ -131,6 +131,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error-to-status mapping), `dispatch/websocket` (5 tests: param parsing, error
   display). Total workspace test count: **1,750+ passing tests**.
 
+### Added (PostgreSQL Support)
+
+- **PostgreSQL-backed stores** (`postgres` feature) — `PostgresTaskStore` and
+  `PostgresPushConfigStore` provide persistent store implementations using `sqlx`
+  with the PostgreSQL driver. Multi-tenant variants `TenantAwarePostgresTaskStore`
+  and `TenantAwarePostgresPushConfigStore` partition by `tenant_id` column.
+  `PgMigration` and `PgMigrationRunner` provide forward-only schema versioning.
+  Feature-gated behind `postgres` in both `a2a-protocol-server` and
+  `a2a-protocol-sdk`.
+
 ### Added (Beyond-Spec Enhancements)
 
 - **OpenTelemetry metrics integration** (`otel` feature) — `OtelMetrics` implements the
