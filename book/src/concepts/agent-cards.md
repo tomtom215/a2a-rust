@@ -177,7 +177,7 @@ let signal_watcher = handler.spawn_signal_watcher(
 );
 ```
 
-`HotReloadAgentCardHandler` implements `AgentCardProducer`, so it plugs directly into `DynamicAgentCardHandler` for full HTTP caching support. The internal `Arc<RwLock<AgentCard>>` ensures updates are atomic and lock-free for readers.
+`HotReloadAgentCardHandler` implements `AgentCardProducer`, so it plugs directly into `DynamicAgentCardHandler` for full HTTP caching support. The internal `Arc<RwLock<AgentCard>>` ensures updates are atomic with low contention for concurrent readers.
 
 ## HTTP Caching
 

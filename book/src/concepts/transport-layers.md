@@ -80,7 +80,7 @@ The REST transport uses standard HTTP methods and URL paths:
 | Get task | `GET` | `/tasks/{id}` |
 | List tasks | `GET` | `/tasks` |
 | Cancel task | `POST` | `/tasks/{id}:cancel` |
-| Subscribe | `GET` | `/tasks/{id}:subscribe` |
+| Subscribe | `GET\|POST` | `/tasks/{id}:subscribe` |
 | Create push config | `POST` | `/tasks/{id}/pushNotificationConfigs` |
 | Get push config | `GET` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 | List push configs | `GET` | `/tasks/{id}/pushNotificationConfigs` |

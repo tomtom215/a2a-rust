@@ -9,7 +9,7 @@ An A2A interaction follows this flow:
 ```
   Client Agent                Agent (Server)
        │                           │
-       │  1. GET /agent.json       │
+       │  1. GET /.well-known/agent.json │
        │ ─────────────────────────►│
        │          AgentCard        │
        │ ◄─────────────────────────│
@@ -37,28 +37,31 @@ An A2A interaction follows this flow:
 A **Task** is the central unit of work. When a client sends a message, the server creates a task that progresses through well-defined states:
 
 ```
-                     ┌───────────┐
-              ┌──────│ Submitted │──────┐
-              │      └─────┬─────┘      │
-              │            │            │
-              ▼            ▼            ▼
-         ┌────────┐   ┌────────┐   ┌──────────┐
-    ┌───►│Working │   │Failed *│   │Rejected *│
-    │    └───┬────┘   └────────┘   └──────────┘
-    │        │
-    │   ┌────┼──────────┬───────────┐
-    │   │    │          │           │
-    │   ▼    ▼          ▼           ▼
-    │ ┌───────────┐ ┌─────────┐ ┌──────────┐
-    │ │Completed *│ │ Input   │ │  Auth    │
-    │ └───────────┘ │Required │ │ Required │
+                      ┌───────────┐
+              ┌───────│ Submitted │──────────┐
+              │       └─────┬─────┘          │
+              │             │                │
+              ▼             ▼                ▼
+         ┌────────┐   ┌────────┐   ┌──────────┐  ┌──────────┐
+    ┌───►│Working │   │Failed *│   │Rejected *│  │Canceled *│
+    │    └───┬────┘   └────────┘   └──────────┘  └──────────┘
+    │        │                           ▲             ▲
+    │   ┌────┼───────────┬───────────┐   │             │
+    │   │    │           │           │   │             │
+    │   ▼    ▼           ▼           ▼   │             │
+    │ ┌───────────┐ ┌─────────┐ ┌──────────┐          │
+    │ │Completed *│ │ Input   │ │  Auth    │          │
+    │ └───────────┘ │Required │ │ Required │──────────┘
     │               └────┬────┘ └────┬─────┘
     │                    │           │
     └────────────────────┴───────────┘
-      (InputRequired and AuthRequired
-       also transition to Failed/Canceled)
 
     * = terminal state (no further transitions)
+
+    Valid transitions:
+    Submitted  → Working, Failed, Canceled, Rejected
+    Working    → Completed, Failed, Canceled, InputRequired, AuthRequired
+    InputRequired / AuthRequired → Working, Failed, Canceled
 ```
 
 Terminal states (Completed, Failed, Canceled, Rejected) are final — no further transitions are allowed.
