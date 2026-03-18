@@ -78,7 +78,7 @@ Before adding a dependency:
 | Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
-| End-to-end examples | `examples/echo-agent`, `examples/agent-team` | `cargo run -p echo-agent` |
+| End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
 ### Running Tests
