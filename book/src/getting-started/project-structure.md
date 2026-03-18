@@ -161,7 +161,7 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   └── agent-team/         # Comprehensive 4-agent dogfood suite (78 E2E tests)
+│   └── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records
@@ -206,8 +206,8 @@ use a2a_protocol_sdk::prelude::*;
 ```
 
 This gives you:
-- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`, `Artifact`, `ArtifactId`
-- ID types: `TaskId`, `ContextId`, `MessageId`, `MessageRole`
+- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `MessageRole`, `Part`, `Artifact`, `ArtifactId`
+- ID types: `TaskId`, `ContextId`, `MessageId`
 - Events: `StreamResponse`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
 - Agent card: `AgentCard`, `AgentInterface`, `AgentCapabilities`, `AgentSkill`
 - Params: `MessageSendParams`, `TaskQueryParams`
