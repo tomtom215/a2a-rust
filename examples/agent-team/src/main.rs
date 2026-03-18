@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (82 tests, 92 with optional transports, signing, and OTel) that exercises every major SDK feature.
+//! suite (82 tests, 98 with optional transports, axum, sqlite, signing, and OTel) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
@@ -305,7 +305,26 @@ async fn main() {
     results.push(coverage_gaps::test_agent_card_semantic_validation(&ctx).await);
     results.push(coverage_gaps::test_get_task_after_stream(&ctx).await);
 
-    // Test 91: Agent card signing (signing feature)
+    // Tests 93-95: Axum framework integration (axum feature)
+    #[cfg(feature = "axum")]
+    {
+        results.push(coverage_gaps::test_axum_send_message(&ctx).await);
+        results.push(coverage_gaps::test_axum_streaming(&ctx).await);
+        results.push(coverage_gaps::test_axum_agent_card(&ctx).await);
+    }
+
+    // Tests 96-97: SQLite-backed stores (sqlite feature)
+    #[cfg(feature = "sqlite")]
+    {
+        results.push(coverage_gaps::test_sqlite_task_store(&ctx).await);
+        results.push(coverage_gaps::test_sqlite_push_config(&ctx).await);
+    }
+
+    // Test 98: Combined Axum + SQLite (both features)
+    #[cfg(all(feature = "axum", feature = "sqlite"))]
+    results.push(coverage_gaps::test_axum_with_sqlite(&ctx).await);
+
+    // Test 99: Agent card signing (signing feature)
     #[cfg(feature = "signing")]
     results.push(coverage_gaps::test_agent_card_signing(&ctx).await);
 
@@ -329,8 +348,9 @@ async fn main() {
             "║ [{icon}] {:30} {:>6}ms  {}",
             r.name,
             r.duration_ms,
-            if r.details.len() > 30 {
-                format!("{}...", &r.details[..27])
+            if r.details.chars().count() > 30 {
+                let truncated: String = r.details.chars().take(27).collect();
+                format!("{truncated}...")
             } else {
                 r.details.clone()
             }
@@ -414,6 +434,14 @@ async fn main() {
         "Cancel terminal-state task",
         "Agent card semantic validation",
         "GetTask after streaming (background processor)",
+        #[cfg(feature = "axum")]
+        "Axum A2aRouter (send + stream + card discovery)",
+        #[cfg(feature = "sqlite")]
+        "SqliteTaskStore (send→get→list persistence)",
+        #[cfg(feature = "sqlite")]
+        "SqlitePushConfigStore (set→list→delete lifecycle)",
+        #[cfg(all(feature = "axum", feature = "sqlite"))]
+        "Axum + SQLite combined production stack",
         #[cfg(feature = "websocket")]
         "WebSocket transport (SendMessage + streaming)",
         #[cfg(feature = "grpc")]

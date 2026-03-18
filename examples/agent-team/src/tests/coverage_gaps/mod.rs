@@ -21,6 +21,8 @@
 //!   `OtelMetrics` integration (`otel` feature)
 
 pub mod auth_and_cards;
+#[cfg(any(feature = "axum", feature = "sqlite"))]
+pub mod axum_sqlite;
 pub mod batch_jsonrpc;
 pub mod deep_dogfood;
 pub mod feature_gated;
@@ -30,6 +32,8 @@ pub mod streaming_backpressure;
 
 // Re-export all test functions so callers can use `coverage_gaps::test_*`.
 pub use auth_and_cards::*;
+#[cfg(any(feature = "axum", feature = "sqlite"))]
+pub use axum_sqlite::*;
 pub use batch_jsonrpc::*;
 pub use deep_dogfood::*;
 #[cfg(any(feature = "signing", feature = "otel"))]

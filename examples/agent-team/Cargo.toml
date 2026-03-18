@@ -37,6 +37,10 @@ grpc = [
 signing = ["a2a-protocol-types/signing", "dep:ring", "dep:base64"]
 ## Enable OpenTelemetry metrics (noop provider for testing).
 otel = ["a2a-protocol-server/otel"]
+## Enable Axum framework integration tests.
+axum = ["a2a-protocol-server/axum", "dep:axum"]
+## Enable SQLite-backed stores tests.
+sqlite = ["a2a-protocol-server/sqlite"]
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-types" }
@@ -52,6 +56,7 @@ tonic        = { workspace = true, optional = true }
 tokio-stream = { workspace = true, optional = true }
 ring       = { version = "0.17", optional = true }
 base64     = { version = "0.22", optional = true }
+axum       = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio", "http1"] }
 serde_json = { workspace = true }
 tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper      = { workspace = true }
