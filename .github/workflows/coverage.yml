@@ -40,9 +40,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@735e5933943122c5ac182670a935f54a949265c3 # v2
-        with:
-          tool: cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
 
       - name: Generate coverage report
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
