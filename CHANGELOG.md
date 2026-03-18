@@ -10,8 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (Framework Integration)
+
+- **Axum framework integration** (`axum` feature) — `A2aRouter` builds an idiomatic
+  `axum::Router` that wraps the existing `RequestHandler`. All 11 A2A v1.0 REST
+  methods are mapped, including SSE streaming. The router is composable with other
+  Axum routes, middleware, and layers. Zero business logic duplication — delegates
+  entirely to the existing handler. Feature-gated behind `axum` in both
+  `a2a-protocol-server` and `a2a-protocol-sdk`. 9 integration tests.
+
 ### Added (Testing)
 
+- **TCK wire format conformance tests** — 44 tests in
+  `crates/a2a-types/tests/tck_wire_format.rs` validating wire format compatibility
+  against the A2A v1.0 specification. Covers ProtoJSON SCREAMING_SNAKE_CASE for
+  `TaskState` and `MessageRole`, `SecurityRequirement`/`StringList` wrapper format,
+  `Part` type discriminator, all `SecurityScheme` variants, cross-SDK interop
+  fixtures (Python, JS, Go payloads), JSON-RPC 2.0 envelope, error codes, and
+  full round-trip serialization of complex objects.
 - **Mutation testing** — adopted `cargo-mutants` as a required quality gate with
   zero surviving mutants across all library crates. Configuration in `mutants.toml`.
 - **Mutation testing CI** — on-demand via `workflow_dispatch` in
@@ -94,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path traversal (Bug #35), exhaustive retryable classification.
 - **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
   cancel stress test (10 parallel), stale page token graceful handling.
-- **Total E2E tests: 71** (78 with optional gRPC+WebSocket+signing+OTel).
+- **Total E2E tests: 72** (79 with optional gRPC+WebSocket+signing+OTel).
 
 ### Fixed (Pass 7 — Deep Dogfood)
 
@@ -298,7 +314,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `handler.rs` (1,357 lines) split into 8 top-level modules under
   `handler/`: `mod.rs`, `limits.rs`, `helpers.rs`, `messaging.rs`,
   `lifecycle/` (5 sub-modules), `push_config.rs`, `event_processing/`
-  (3 sub-modules), `shutdown.rs`. No public API changes.
+  (2 sub-modules), `shutdown.rs`. No public API changes.
 - **Breaking:** `EventQueueManager` internals redesigned from `mpsc` to
   `tokio::sync::broadcast` channels. This enables multiple concurrent
   subscribers per task. Slow readers receive `Lagged` notifications instead

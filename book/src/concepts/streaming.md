@@ -10,13 +10,13 @@ When a client calls `SendStreamingMessage`, the server holds the HTTP connection
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
 
-data: {"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}
 
-data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"partial..."}]},"lastChunk":false}
+data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"partial..."}]},"lastChunk":false}}
 
-data: {"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"complete result"}]},"lastChunk":true}
+data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"complete result"}]},"lastChunk":true}}
 
-data: {"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}}}
 
 ```
 
@@ -32,11 +32,13 @@ Reports a task state transition:
 
 ```json
 {
-  "taskId": "task-abc",
-  "contextId": "ctx-123",
-  "status": {
-    "state": "TASK_STATE_WORKING",
-    "timestamp": "2026-03-15T10:30:00Z"
+  "statusUpdate": {
+    "taskId": "task-abc",
+    "contextId": "ctx-123",
+    "status": {
+      "state": "TASK_STATE_WORKING",
+      "timestamp": "2026-03-15T10:30:00Z"
+    }
   }
 }
 ```
@@ -47,14 +49,16 @@ Delivers artifact content (potentially in chunks):
 
 ```json
 {
-  "taskId": "task-abc",
-  "contextId": "ctx-123",
-  "artifact": {
-    "artifactId": "result-1",
-    "parts": [{"text": "The answer is..."}]
-  },
-  "lastChunk": false,
-  "append": false
+  "artifactUpdate": {
+    "taskId": "task-abc",
+    "contextId": "ctx-123",
+    "artifact": {
+      "artifactId": "result-1",
+      "parts": [{"type": "text", "text": "The answer is..."}]
+    },
+    "lastChunk": false,
+    "append": false
+  }
 }
 ```
 
@@ -64,10 +68,12 @@ A complete task snapshot (usually the final event):
 
 ```json
 {
-  "id": "task-abc",
-  "contextId": "ctx-123",
-  "status": {"state": "TASK_STATE_COMPLETED"},
-  "artifacts": [...]
+  "task": {
+    "id": "task-abc",
+    "contextId": "ctx-123",
+    "status": {"state": "TASK_STATE_COMPLETED"},
+    "artifacts": [...]
+  }
 }
 ```
 
@@ -77,9 +83,11 @@ A direct message response (for simple request/reply patterns):
 
 ```json
 {
-  "messageId": "msg-456",
-  "role": "ROLE_AGENT",
-  "parts": [{"text": "Quick answer"}]
+  "message": {
+    "messageId": "msg-456",
+    "role": "ROLE_AGENT",
+    "parts": [{"type": "text", "text": "Quick answer"}]
+  }
 }
 ```
 

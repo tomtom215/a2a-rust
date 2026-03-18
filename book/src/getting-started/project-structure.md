@@ -98,6 +98,7 @@ a2a-rust/
 │   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
 │   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
 │   │       │   │   └── response.rs     # JSON-RPC response serialization
+│   │       │   ├── axum_adapter.rs  # A2aRouter (axum feature-gated)
 │   │       │   ├── websocket.rs    # WebSocketDispatcher (feature-gated)
 │   │       │   ├── cors.rs         # CorsConfig
 │   │       │   └── grpc/           # gRPC dispatcher (feature-gated)
@@ -160,7 +161,7 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   └── agent-team/         # Comprehensive 4-agent dogfood suite (78 E2E tests)
+│   └── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records
@@ -205,8 +206,8 @@ use a2a_protocol_sdk::prelude::*;
 ```
 
 This gives you:
-- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`, `Artifact`, `ArtifactId`
-- ID types: `TaskId`, `ContextId`, `MessageId`, `MessageRole`
+- Core types: `Task`, `TaskState`, `TaskStatus`, `Message`, `MessageRole`, `Part`, `Artifact`, `ArtifactId`
+- ID types: `TaskId`, `ContextId`, `MessageId`
 - Events: `StreamResponse`, `TaskStatusUpdateEvent`, `TaskArtifactUpdateEvent`
 - Agent card: `AgentCard`, `AgentInterface`, `AgentCapabilities`, `AgentSkill`
 - Params: `MessageSendParams`, `TaskQueryParams`

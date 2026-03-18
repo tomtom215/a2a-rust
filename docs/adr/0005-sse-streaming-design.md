@@ -67,16 +67,16 @@ The `mpsc` channel between `AgentExecutor` and the SSE writer is bounded (defaul
 
 ### Stream Termination
 
-The A2A spec uses `TaskStatusUpdateEvent.final: true` to signal end-of-stream. The server SSE writer inspects each event: when it sees `final: true`, it drains remaining buffered events, writes them, then closes the response body. The client `EventStream` treats the `final: true` event as the last item and returns `None` from `next()` after yielding it.
+In v1.0, stream termination is signaled by a terminal `TaskState` (Completed, Failed, Canceled, Rejected) rather than a `final` field (which was removed in v1.0). The server SSE writer inspects each event: when it sees a terminal state, it drains remaining buffered events, writes them, then closes the response body. The client `EventStream` treats the terminal-state event as the last item and returns `None` from `next()` after yielding it.
 
 ### Resubscription
 
-`tasks/resubscribe` allows a client to reconnect to an in-progress SSE stream after a disconnect. The `EventQueueManager::get(task_id)` returns the existing queue if the task is still `working` or `input-required`. The new SSE response writer subscribes to the same queue. Events already consumed by the previous subscriber are not replayed (clients must handle potential gaps using `TaskVersion`).
+`SubscribeToTask` allows a client to reconnect to an in-progress SSE stream after a disconnect. The `EventQueueManager` returns the existing queue if the task is still in a non-terminal state. The new SSE response writer subscribes to the same queue.
 
 ### Error During Streaming
 
 If `AgentExecutor::execute` returns an `A2aError`, the server:
-1. Converts the error to a `TaskStatusUpdateEvent { state: Failed, ... }` with `final: true`.
+1. Converts the error to a `TaskStatusUpdateEvent` with `state: Failed`.
 2. Writes this terminal event to the queue.
 3. Closes the queue.
 

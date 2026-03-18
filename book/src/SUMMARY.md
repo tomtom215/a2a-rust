@@ -21,7 +21,7 @@
 
 - [The AgentExecutor Trait](./building-agents/executor.md)
 - [Request Handler & Builder](./building-agents/handler.md)
-- [Dispatchers (JSON-RPC, REST & gRPC)](./building-agents/dispatchers.md)
+- [Dispatchers (JSON-RPC, REST, Axum & gRPC)](./building-agents/dispatchers.md)
 - [Push Notifications](./building-agents/push-notifications.md)
 - [Interceptors & Middleware](./building-agents/interceptors.md)
 - [Task & Config Stores](./building-agents/stores.md)

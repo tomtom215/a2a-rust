@@ -64,6 +64,8 @@ jobs:
         run: cargo clippy -p a2a-protocol-client --all-targets --features tls-rustls -- -D warnings
       - name: Clippy (sqlite)
         run: cargo clippy -p a2a-protocol-server --all-targets --features sqlite -- -D warnings
+      - name: Clippy (axum)
+        run: cargo clippy -p a2a-protocol-server --all-targets --features axum -- -D warnings
       - name: Clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -95,6 +97,8 @@ jobs:
         run: cargo test -p a2a-protocol-client --features tls-rustls
       - name: Test (sqlite feature)
         run: cargo test -p a2a-protocol-server --features sqlite
+      - name: Test (axum feature)
+        run: cargo test -p a2a-protocol-server --features axum
       - name: Test (all features)
         run: cargo test --workspace --all-features
       - name: Test (no default features)

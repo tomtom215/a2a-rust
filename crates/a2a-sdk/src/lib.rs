@@ -83,4 +83,8 @@ pub mod prelude {
         JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext, RequestHandler,
         RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
     };
+
+    // ── Axum integration (feature-gated) ────────────────────────────────
+    #[cfg(feature = "axum")]
+    pub use a2a_protocol_server::A2aRouter;
 }

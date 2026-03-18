@@ -1,5 +1,19 @@
 # A2A Protocol → Rust Type Mapping
 
+> **⚠ Partially Outdated** — This document was created during the v0.3.0→v1.0.0
+> migration and some sections still reflect v0.3.0 types (e.g. serde annotations,
+> field types in params structs, push notification types). For the authoritative
+> wire format, see:
+> - The actual serde attributes in `crates/a2a-types/src/*.rs`
+> - The TCK conformance tests in `crates/a2a-types/tests/tck_wire_format.rs`
+> - The spec compliance verification in `docs/implementation/spec-compliance-gaps.md`
+>
+> Known stale sections: Serde annotation summary table (TaskState/MessageRole use
+> SCREAMING_SNAKE_CASE, not kebab-case/lowercase), StreamResponse/SendMessageResponse
+> use externally-tagged enums (not `kind` tag), AuthenticationInfo has `scheme`
+> (singular, required) not `schemes` (plural, optional), params structs use `String`
+> not `TaskId` for ID fields, all params have `tenant` field.
+
 Complete field-by-field mapping from A2A v1.0.0 JSON schema to Rust types.
 All structs use `#[serde(rename_all = "camelCase")]` unless noted.
 All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.

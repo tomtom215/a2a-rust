@@ -38,7 +38,7 @@ Only dependencies with no viable in-tree alternative:
 | `reqwest` | 30+ transitive deps; includes native-tls, cookie jar, redirect, multipart — none needed here. |
 | `anyhow` | Erases error types; downstream crates lose the ability to pattern-match on specific errors. We define `A2aError` with typed variants. |
 | `thiserror` | Macro sugar that adds a proc-macro dep. `std::fmt::Display` + `std::error::Error` manual impls are 10 lines and fully explicit. |
-| `tokio-util` | Originally excluded. Later added for the server crate (`rt` feature for `CancellationToken`). |
+| `tokio-util` | Originally excluded; later added for the server crate only (`rt` feature for `CancellationToken`). Now a mandatory server dep. |
 | `futures` | We need only `std::future::Future` and `tokio` combinators. The `futures` crate adds 12+ sub-crates. |
 | `openssl-sys` | System dep; builds fail on musl/alpine without extra packages. `rustls` is pure Rust with no system dep. |
 | `log` | Older logging API; superseded by `tracing`. Made optional via feature flag. |
@@ -109,4 +109,12 @@ Rejected. `reqwest` is excellent for application code but wrong for SDK infrastr
 
 ### Use `axum` for Server
 
-Rejected. Framework lock-in. Users who have chosen `actix-web`, `warp`, or raw `hyper` would be forced to add `axum` as a dep. The server is implemented directly on `hyper` and exposes a transport-agnostic `RequestHandler` trait that any framework can wrap.
+Rejected as a **mandatory** dependency. Framework lock-in would force users who
+have chosen `actix-web`, `warp`, or raw `hyper` to add `axum` as a dep. The
+server core is implemented directly on `hyper` and exposes a transport-agnostic
+`RequestHandler` that any framework can wrap.
+
+**Update (ADR 0007):** An optional `axum` feature flag was later added, providing
+`A2aRouter` for idiomatic Axum integration. This is additive — the raw hyper
+`serve()` API and `Dispatcher` trait remain the primary path. The `axum` dep is
+only pulled in when the feature is enabled.

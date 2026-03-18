@@ -50,8 +50,9 @@ Complete reference of all configuration options across a2a-rust crates.
 
 ### DispatchConfig
 
-Shared configuration for both JSON-RPC and REST dispatchers. Pass to
-`JsonRpcDispatcher::with_config()` or `RestDispatcher::with_config()`.
+Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
+`JsonRpcDispatcher::with_config()`, `RestDispatcher::with_config()`, or
+`A2aRouter::with_config()`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -144,7 +145,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 
 | Header | Default | Description |
 |--------|---------|-------------|
-| `Cache-Control` | `public, max-age=60` | Configurable max-age |
+| `Cache-Control` | `public, max-age=3600` | Configurable max-age (default 1 hour) |
 | `ETag` | Auto-computed | Content hash |
 | `Last-Modified` | Auto-set | Timestamp of last change |
 
@@ -160,6 +161,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
+| `axum` | Off | Axum framework integration (`A2aRouter`) |
 
 ### `a2a-protocol-client`
 
@@ -185,7 +187,10 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `tracing` | Off | Enables `tracing` in client and server |
 | `tls-rustls` | Off | Enables `tls-rustls` in client |
 | `grpc` | Off | Enables `grpc` in client and server |
+| `websocket` | Off | Enables `websocket` in client and server |
+| `sqlite` | Off | Enables `sqlite` in the server |
 | `otel` | Off | Enables `otel` in the server |
+| `axum` | Off | Enables `axum` in the server |
 
 ## Environment Variables
 

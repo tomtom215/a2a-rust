@@ -161,11 +161,11 @@ fn make_agent_card(url: &str) -> AgentCard {
 Build the request handler and start an HTTP server:
 
 ```rust
-use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
+use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> std::io::Result<()> {
     // Build the handler with our executor and agent card
     let handler = Arc::new(
         RequestHandlerBuilder::new(CalcExecutor)
@@ -174,33 +174,16 @@ async fn main() {
             .expect("build handler"),
     );
 
-    // Create the JSON-RPC dispatcher
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
-
-    // Start the HTTP server
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .expect("bind");
     println!("Calculator agent listening on http://127.0.0.1:3000");
 
-    loop {
-        let (stream, _) = listener.accept().await.expect("accept");
-        let io = hyper_util::rt::TokioIo::new(stream);
-        let dispatcher = Arc::clone(&dispatcher);
-        tokio::spawn(async move {
-            let service = hyper::service::service_fn(move |req| {
-                let d = Arc::clone(&dispatcher);
-                async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-            });
-            let _ = hyper_util::server::conn::auto::Builder::new(
-                hyper_util::rt::TokioExecutor::new(),
-            )
-            .serve_connection(io, service)
-            .await;
-        });
-    }
+    // One-liner server startup (replaces ~25 lines of hyper boilerplate)
+    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
 }
 ```
+
+> **Note:** `serve()` is re-exported from the prelude. It binds a TCP listener
+> and runs the accept loop internally. For production use cases needing the bound
+> address (e.g. port `0`), use `serve_with_addr()` instead.
 
 ## Step 4: Test with a Client
 

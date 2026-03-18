@@ -36,6 +36,11 @@
 //! | [`tenant_config`] | [`PerTenantConfig`], [`TenantLimits`] |
 //! | `otel` | `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
 //!
+//! # Axum integration
+//!
+//! Enable the `axum` feature flag to use `A2aRouter` for idiomatic Axum
+//! integration. See the `dispatch::axum_adapter` module for details.
+//!
 //! # gRPC transport
 //!
 //! Enable the `grpc` feature flag to use `GrpcDispatcher` for gRPC
@@ -86,6 +91,8 @@ pub use agent_card::{
 };
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
+#[cfg(feature = "axum")]
+pub use dispatch::axum_adapter::A2aRouter;
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
 pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};

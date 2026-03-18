@@ -26,27 +26,29 @@ Both sides share the same protocol logic (`RequestHandler`/`A2aClient`). The pro
 
 ```rust
 pub trait Transport: Send + Sync + 'static {
-    async fn send_request(
-        &self,
-        method: &str,
+    fn send_request<'a>(
+        &'a self,
+        method: &'a str,
         params: serde_json::Value,
-    ) -> ClientResult<serde_json::Value>;
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>;
 
-    async fn send_streaming_request(
-        &self,
-        method: &str,
+    fn send_streaming_request<'a>(
+        &'a self,
+        method: &'a str,
         params: serde_json::Value,
-    ) -> ClientResult<SseFrameStream>;
+        extra_headers: &'a HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>>;
 }
 ```
 
-`A2aClient` holds a `Box<dyn Transport>` (or concrete generic `A2aClient<T: Transport>`). The client API methods (`send_message`, `get_task`, etc.) are transport-agnostic — they build typed params, call `transport.send_request()`, and deserialize the result.
+`A2aClient` holds a `Box<dyn Transport>`. The client API methods (`send_message`, `get_task`, etc.) are transport-agnostic — they build typed params, call `transport.send_request()`, and deserialize the result.
 
-Two concrete implementations ship in `a2a-protocol-client`:
+Four concrete implementations ship in `a2a-protocol-client`:
 - `JsonRpcTransport` — HTTP POST to agent's `url` field.
 - `RestTransport` — HTTP verbs to REST paths.
-
-gRPC transport is out of scope for Phase 1 (see ADR 0001).
+- `WebSocketTransport` — JSON-RPC over WebSocket (`websocket` feature).
+- `GrpcTransport` — JSON-over-gRPC (`grpc` feature).
 
 ### Server-Side Transport Adapters
 
@@ -75,7 +77,7 @@ Users integrate these into their HTTP framework of choice:
 
 ```rust
 // Direct hyper integration
-let json_rpc = Arc::new(JsonRpcHandler::new(request_handler));
+let json_rpc = Arc::new(JsonRpcDispatcher::new(request_handler));
 let service = service_fn(move |req| {
     let h = Arc::clone(&json_rpc);
     async move { h.handle(req).await }

@@ -268,7 +268,7 @@ conditions that are hardest to reproduce in staging.
 
 ### What Mutation Testing Found in a2a-rust
 
-Even with 1,750+ passing tests, 71 E2E dogfood tests, property tests, and fuzz targets —
+Even with 1,750+ passing tests, 72 E2E dogfood tests, property tests, and fuzz targets —
 all green — the first mutation testing run surfaced gaps across every crate:
 
 - **Delegation methods** returning `()` instead of forwarding calls (e.g.,
@@ -323,9 +323,10 @@ examine_globs = [
     "crates/a2a-sdk/src/**/*.rs",
 ]
 
-# Skip unproductive mutations (re-exports, generated code, formatting)
-exclude_globs = ["**/mod.rs", "crates/*/src/proto/**"]
-exclude_re = ["fmt$", "^tracing::", "^log::"]
+# Skip unproductive mutations (re-exports, generated code)
+# Note: Display/Debug impls are NOT excluded — we have tests for them.
+exclude_globs = ["**/mod.rs", "crates/*/src/proto/**", "crates/a2a-sdk/src/lib.rs"]
+exclude_re = ["^tracing::", "^log::"]
 ```
 
 ### CI Integration
@@ -364,8 +365,8 @@ returns `true` for terminal states.
 
 ## Running the Test Suite
 
-> **Current status:** The workspace has **1,750+ passing tests** across all crates
-> (unit, integration, property, fuzz, and E2E dogfood).
+> **Current status:** The workspace has **1,750+ passing tests** (with feature flags)
+> across all crates (unit, integration, property, TCK conformance, and E2E dogfood).
 
 ```bash
 # All tests

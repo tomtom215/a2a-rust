@@ -26,11 +26,11 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 **Context:** Rust SDK quality is inversely correlated with transitive dependency count. Each dependency adds compile time, supply chain attack surface, version conflicts, and potential license issues.
 
 **Decision:** Minimal dependency footprint:
-- No web frameworks (axum, actix, warp)
+- No web frameworks required (optional Axum integration via `axum` feature)
 - No TLS bundled (bring your own or use a proxy)
 - No logging framework forced (optional `tracing` feature)
 - In-tree SSE parser instead of third-party crate
-- `serde` + `hyper` as the only heavyweight deps
+- `serde` + `hyper` as the only mandatory heavyweight deps
 
 **Rationale:** A production-grade SDK must work in corporate environments with strict dependency audits, embedded/constrained environments, and without forcing users into specific TLS or logging frameworks.
 
@@ -87,16 +87,29 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The compute cost is managed through on-demand scheduling and exclusion of unproductive targets.
 
+## ADR 0007: Axum Integration and TCK Wire Format Tests
+
+**Status:** Accepted
+
+**Context:** The SDK lacked formal wire format conformance tests and required raw hyper for HTTP serving. Other SDKs integrate with their ecosystem's dominant web framework.
+
+**Decision:** Two additions:
+1. **TCK conformance tests** — 44 golden-fixture tests in `crates/a2a-types/tests/tck_wire_format.rs` validating ProtoJSON serialization, SecurityRequirement/StringList format, Part discriminators, cross-SDK interop fixtures, and full round-trip.
+2. **Axum integration** — Feature-gated `A2aRouter` (`axum` feature) wrapping `RequestHandler` as an idiomatic `axum::Router`. Zero business logic duplication.
+
+**Rationale:** TCK tests catch interop regressions before release. Axum integration reduces server setup from ~25 lines to 3 while remaining optional (the raw hyper `serve()` API is unchanged).
+
 ## Summary
 
 | ADR | Key Decision |
 |-----|-------------|
 | 0001 | Four-crate workspace (types, client, server, sdk) |
-| 0002 | Minimal dependencies, no bundled framework |
+| 0002 | Minimal mandatory dependencies, optional framework integration |
 | 0003 | Tokio as mandatory runtime |
 | 0004 | Three-layer architecture (dispatcher → handler → executor) |
 | 0005 | In-tree SSE parser/emitter, zero additional deps |
 | 0006 | `cargo-mutants` as mandatory quality gate, zero surviving mutants |
+| 0007 | Axum integration + TCK wire format conformance tests |
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 

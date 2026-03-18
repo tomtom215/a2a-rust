@@ -30,6 +30,8 @@ websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 grpc = ["dep:tonic", "dep:prost", "dep:tokio-stream", "dep:tonic-build"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
+## Enable Axum framework integration (Router, extractors, IntoResponse).
+axum = ["dep:axum"]
 
 [dependencies]
 a2a-protocol-types      = { version = "0.2.0", path = "../a2a-types" }
@@ -52,6 +54,7 @@ tokio-stream      = { workspace = true, optional = true }
 opentelemetry     = { version = "0.28", optional = true }
 opentelemetry_sdk = { version = "0.28", optional = true, features = ["rt-tokio", "metrics"] }
 opentelemetry-otlp = { version = "0.28", optional = true, default-features = false, features = ["grpc-tonic", "metrics"] }
+axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]
 tonic-build = { workspace = true, optional = true }
@@ -70,6 +73,7 @@ serde_json = { workspace = true }
 a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
+axum      = { version = "0.8", features = ["json", "query", "tokio"] }
 
 [[bench]]
 name = "handler_bench"

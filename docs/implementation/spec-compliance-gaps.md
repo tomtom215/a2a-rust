@@ -306,3 +306,4 @@ After all fixes, verify against these spec artifacts:
 - [x] `AgentCapabilities` does NOT include `stateTransitionHistory`
 - [x] All 11 RPC methods work end-to-end with corrected types
 - [x] Echo agent example still runs successfully
+- [x] TCK wire format conformance tests validate all fixes (ADR 0007, `tck_wire_format.rs`)

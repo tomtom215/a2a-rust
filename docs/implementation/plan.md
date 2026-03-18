@@ -78,7 +78,7 @@ See the book's [Configuration Reference](../../book/src/reference/configuration.
 - ~~gRPC binding~~ — implemented as `grpc` feature flag on client and server.
 - ~~WebSocket transport~~ — implemented as `websocket` feature flag on client and server.
 - ~~Built-in persistence~~ — `SqliteTaskStore` and `SqlitePushConfigStore` implemented behind `sqlite` feature flag.
-- Opinionated web framework integration (Axum, Actix adapters are examples, not core) — still a non-goal.
+- ~~Opinionated web framework integration~~ — optional `A2aRouter` for Axum added behind `axum` feature flag (ADR 0007). Core remains raw hyper.
 
 ---
 
