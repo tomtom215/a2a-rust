@@ -700,6 +700,46 @@ mod tests {
         );
     }
 
+    /// Kills mutations on line 164: `&& → ||` and `> → >=`.
+    ///
+    /// With `&&`: `0 > 0 && 0.is_multiple_of(256)` = `false && true` = `false` → no cleanup.
+    /// With `||`: `0 > 0 || 0.is_multiple_of(256)` = `false || true` = `true` → cleanup (wrong!).
+    /// With `>=`: `0 >= 0 && 0.is_multiple_of(256)` = `true && true` = `true` → cleanup (wrong!).
+    #[tokio::test]
+    async fn cleanup_does_not_run_on_first_call() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10000,
+            window_secs: 60,
+        });
+
+        // Insert a stale bucket before any calls.
+        {
+            let mut buckets = limiter.buckets.write().await;
+            buckets.insert(
+                "stale-first-call".to_string(),
+                CallerBucket {
+                    window_start: AtomicU64::new(0),
+                    count: AtomicU64::new(1),
+                },
+            );
+        }
+
+        // Make one call. check_count starts at 0; fetch_add returns 0.
+        // With correct code: count(0) > 0 is false → no cleanup.
+        let ctx = make_ctx(Some("first-caller"));
+        assert!(limiter.before(&ctx).await.is_ok());
+
+        // The stale bucket should still exist (no cleanup on first call).
+        assert!(
+            limiter
+                .buckets
+                .read()
+                .await
+                .contains_key("stale-first-call"),
+            "stale bucket should not be cleaned up on the very first call"
+        );
+    }
+
     /// Covers the `caller_key` function with an empty x-forwarded-for (no commas).
     #[tokio::test]
     async fn x_forwarded_for_single_ip() {

@@ -421,7 +421,17 @@ mod tests {
     }
 
     /// A transport that always fails with a non-retryable error.
-    struct NonRetryableErrorTransport;
+    struct NonRetryableErrorTransport {
+        call_count: Arc<AtomicUsize>,
+    }
+
+    impl NonRetryableErrorTransport {
+        fn new() -> Self {
+            Self {
+                call_count: Arc::new(AtomicUsize::new(0)),
+            }
+        }
+    }
 
     impl crate::transport::Transport for NonRetryableErrorTransport {
         fn send_request<'a>(
@@ -430,6 +440,7 @@ mod tests {
             _params: serde_json::Value,
             _extra_headers: &'a HashMap<String, String>,
         ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
         }
 
@@ -439,6 +450,7 @@ mod tests {
             _params: serde_json::Value,
             _extra_headers: &'a HashMap<String, String>,
         ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+            self.call_count.fetch_add(1, Ordering::SeqCst);
             Box::pin(async move { Err(ClientError::InvalidEndpoint("bad url".into())) })
         }
     }
@@ -492,8 +504,10 @@ mod tests {
 
     #[tokio::test]
     async fn retry_transport_no_retry_on_non_retryable() {
+        let inner = NonRetryableErrorTransport::new();
+        let call_count = Arc::clone(&inner.call_count);
         let transport = RetryTransport::new(
-            Box::new(NonRetryableErrorTransport),
+            Box::new(inner),
             RetryPolicy::default()
                 .with_initial_backoff(Duration::from_millis(1))
                 .with_max_retries(3),
@@ -508,6 +522,11 @@ mod tests {
             result.unwrap_err(),
             ClientError::InvalidEndpoint(_)
         ));
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "non-retryable error should not be retried"
+        );
     }
 
     #[tokio::test]
@@ -537,8 +556,10 @@ mod tests {
 
     #[tokio::test]
     async fn retry_transport_streaming_no_retry_on_non_retryable() {
+        let inner = NonRetryableErrorTransport::new();
+        let call_count = Arc::clone(&inner.call_count);
         let transport = RetryTransport::new(
-            Box::new(NonRetryableErrorTransport),
+            Box::new(inner),
             RetryPolicy::default()
                 .with_initial_backoff(Duration::from_millis(1))
                 .with_max_retries(3),
@@ -552,6 +573,11 @@ mod tests {
             result.unwrap_err(),
             ClientError::InvalidEndpoint(_)
         ));
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "non-retryable streaming error should not be retried"
+        );
     }
 
     #[tokio::test]
