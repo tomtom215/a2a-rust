@@ -426,6 +426,21 @@ mod tests {
     }
 
     #[test]
+    fn default_max_event_size_accepts_over_one_mib() {
+        // Kills mutation: first `*` → `+` in `16 * 1024 * 1024`
+        // which gives 16 + 1024 * 1024 = 1_048_592 (~1 MiB).
+        // A 1.1 MiB event should pass the real 16 MiB limit but fail the mutated ~1 MiB limit.
+        let data = format!("data: {}\n\n", "x".repeat(1_100_000));
+        let mut parser = SseParser::new();
+        parser.feed(data.as_bytes());
+        let frame = parser.next_frame().expect("should have a frame");
+        assert!(
+            frame.is_ok(),
+            "1.1 MiB event should be within default 16 MiB limit"
+        );
+    }
+
+    #[test]
     fn bom_at_stream_start_is_stripped() {
         // Tests BOM stripping in feed() — covers mutations on lines 157 and 163.
         let mut p = SseParser::new();
