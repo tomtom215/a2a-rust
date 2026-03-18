@@ -117,6 +117,9 @@ a2a-rust/
 │   │       │   ├── sqlite_store.rs     # SqliteTaskStore (feature-gated)
 │   │       │   ├── migration.rs        # Schema migration runner
 │   │       │   ├── tenant_sqlite_store.rs # TenantAwareSqliteTaskStore
+│   │       │   ├── postgres_store.rs   # PostgresTaskStore (feature-gated)
+│   │       │   ├── pg_migration.rs     # PostgreSQL migration runner
+│   │       │   ├── tenant_postgres_store.rs # TenantAwarePostgresTaskStore
 │   │       │   └── tenant/         # Multi-tenant isolation
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── context.rs      # TenantContext (task-local)
@@ -127,7 +130,9 @@ a2a-rust/
 │   │       │   ├── sender.rs       # PushSender trait, HttpPushSender
 │   │       │   ├── sqlite_config_store.rs      # SqlitePushConfigStore
 │   │       │   ├── tenant_config_store.rs      # TenantAwareInMemoryPushConfigStore
-│   │       │   └── tenant_sqlite_config_store.rs # TenantAwareSqlitePushConfigStore
+│   │       │   ├── tenant_sqlite_config_store.rs # TenantAwareSqlitePushConfigStore
+│   │       │   ├── postgres_config_store.rs    # PostgresPushConfigStore
+│   │       │   └── tenant_postgres_config_store.rs # TenantAwarePostgresPushConfigStore
 │   │       ├── streaming/      # Event streaming
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── sse.rs          # SSE response builder
@@ -161,7 +166,12 @@ a2a-rust/
 │
 ├── examples/
 │   ├── echo-agent/         # Minimal echo agent example
-│   └── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
+│   ├── agent-team/         # Comprehensive 4-agent dogfood suite (79 E2E tests)
+│   ├── multi-lang-team/    # Multi-language team example
+│   ├── rig-agent/          # Integration with the Rig framework
+│   └── genai-agent/        # Integration with the GenAI framework
+│
+├── tck/                    # Technology Compatibility Kit
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records

@@ -59,9 +59,7 @@ pub async fn test_list_tasks_basic(url: &str, binding: &str) -> Result<(), Strin
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
-            resp.get("result")
-                .cloned()
-                .ok_or("missing 'result'")?
+            resp.get("result").cloned().ok_or("missing 'result'")?
         }
         "rest" => {
             let (status, body) = helpers::rest_get(url, "/tasks").await?;

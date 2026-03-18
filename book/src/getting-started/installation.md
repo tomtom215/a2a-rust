@@ -64,6 +64,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `signing` | Agent card signing |
 | `tracing` | Structured logging via the `tracing` crate |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
+| `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
@@ -79,6 +80,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `grpc` | Enables gRPC across client and server |
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
+| `postgres` | Enables PostgreSQL stores in the server |
 | `otel` | Enables OpenTelemetry metrics in the server |
 | `axum` | Enables Axum integration in the server |
 

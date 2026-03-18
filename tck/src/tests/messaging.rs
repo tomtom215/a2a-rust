@@ -32,9 +32,7 @@ pub async fn test_send_message_returns_task(url: &str, binding: &str) -> Result<
     let status = result
         .get("status")
         .ok_or("response missing 'status' field")?;
-    let state = status
-        .get("state")
-        .ok_or("status missing 'state' field")?;
+    let state = status.get("state").ok_or("status missing 'state' field")?;
     if !state.is_string() {
         return Err("'state' must be a string".to_string());
     }

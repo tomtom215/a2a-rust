@@ -40,7 +40,9 @@ async fn http_post(url: &str, body: &Value) -> Result<Value, String> {
         .method(hyper::Method::POST)
         .uri(url)
         .header("content-type", "application/json")
-        .body(http_body_util::Full::new(hyper::body::Bytes::from(body_bytes)))
+        .body(http_body_util::Full::new(hyper::body::Bytes::from(
+            body_bytes,
+        )))
         .map_err(|e| format!("build request: {e}"))?;
 
     let resp = client
@@ -53,7 +55,12 @@ async fn http_post(url: &str, body: &Value) -> Result<Value, String> {
         .map_err(|e| format!("read body: {e}"))?
         .to_bytes();
 
-    serde_json::from_slice(&body).map_err(|e| format!("parse response: {e} (body: {})", String::from_utf8_lossy(&body)))
+    serde_json::from_slice(&body).map_err(|e| {
+        format!(
+            "parse response: {e} (body: {})",
+            String::from_utf8_lossy(&body)
+        )
+    })
 }
 
 /// Low-level HTTP GET that returns status code and parsed JSON.
@@ -79,8 +86,12 @@ async fn http_get(url: &str) -> Result<(u16, Value), String> {
         .map_err(|e| format!("read body: {e}"))?
         .to_bytes();
 
-    let json: Value = serde_json::from_slice(&body)
-        .map_err(|e| format!("parse response: {e} (body: {})", String::from_utf8_lossy(&body)))?;
+    let json: Value = serde_json::from_slice(&body).map_err(|e| {
+        format!(
+            "parse response: {e} (body: {})",
+            String::from_utf8_lossy(&body)
+        )
+    })?;
 
     Ok((status, json))
 }

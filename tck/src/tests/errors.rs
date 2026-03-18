@@ -28,9 +28,7 @@ pub async fn test_invalid_method_returns_error(url: &str, binding: &str) -> Resu
         "rest" => {
             let (status, _) = helpers::rest_get(url, "/nonexistent/path").await?;
             if status < 400 {
-                return Err(format!(
-                    "expected 4xx for invalid path, got {status}"
-                ));
+                return Err(format!("expected 4xx for invalid path, got {status}"));
             }
             Ok(())
         }

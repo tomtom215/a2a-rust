@@ -172,10 +172,7 @@ impl AgentExecutor for RigAgentExecutor {
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new(
-                        "rig-response",
-                        vec![Part::text(&response)],
-                    ),
+                    artifact: Artifact::new("rig-response", vec![Part::text(&response)]),
                     append: None,
                     last_chunk: Some(true),
                     metadata: None,
@@ -277,9 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let executor = RigAgentExecutor::new("rig-demo-agent");
 
     // Build and start the server
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(executor).build()?,
-    );
+    let handler = Arc::new(RequestHandlerBuilder::new(executor).build()?);
     let addr = start_server(handler).await;
 
     println!("Rig A2A agent listening on http://{addr}");

@@ -226,9 +226,8 @@ impl TaskStore for PostgresTaskStore {
 
             // Fetch one extra to detect next page.
             let limit = page_size + 1;
-            let sql = format!(
-                "SELECT data FROM tasks {where_clause} ORDER BY id ASC LIMIT {limit}"
-            );
+            let sql =
+                format!("SELECT data FROM tasks {where_clause} ORDER BY id ASC LIMIT {limit}");
 
             let mut query = sqlx::query_as::<_, (serde_json::Value,)>(&sql);
             for val in &bind_values {

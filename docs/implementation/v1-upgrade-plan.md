@@ -283,7 +283,7 @@ For multi-tenancy support on gRPC, all request types gain an optional `tenant: S
 | `GET /tasks/{taskId}/push-config` | `GET /tasks/{id}/pushNotificationConfigs` |
 | `DELETE /tasks/{taskId}/push-config/{id}` | `DELETE /tasks/{id}/pushNotificationConfigs/{configId}` |
 | `GET /agent/authenticatedExtendedCard` | `GET /extendedAgentCard` |
-| `GET /.well-known/agent-card.json` | `GET /.well-known/agent.json` (likely, verify) |
+| `GET /.well-known/agent-card.json` | `GET /.well-known/agent.json` (verified) |
 
 ### A22. ListTasksResponse gains `total_size` and `page_size`
 

@@ -204,7 +204,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================");
     println!();
     println!("Model: {model}");
-    println!("Set GENAI_MODEL env var to change (e.g., claude-sonnet-4-20250514, gemini-1.5-flash)");
+    println!(
+        "Set GENAI_MODEL env var to change (e.g., claude-sonnet-4-20250514, gemini-1.5-flash)"
+    );
     println!();
 
     let executor = GenaiAgentExecutor::new(&model);

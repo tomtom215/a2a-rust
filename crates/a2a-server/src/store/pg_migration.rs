@@ -178,10 +178,9 @@ impl PgMigrationRunner {
                 .await?;
 
             // Re-check the version inside the transaction (double-check locking).
-            let row =
-                sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
-                    .fetch_one(&mut *tx)
-                    .await?;
+            let row = sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
+                .fetch_one(&mut *tx)
+                .await?;
             let current_in_tx: i32 = row.get("v");
             #[allow(clippy::cast_sign_loss)]
             if migration.version <= current_in_tx as u32 {

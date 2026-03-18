@@ -64,10 +64,22 @@ struct Worker {
 }
 
 const WORKERS: &[Worker] = &[
-    Worker { language: "Python", url: "http://127.0.0.1:9100" },
-    Worker { language: "JavaScript", url: "http://127.0.0.1:9101" },
-    Worker { language: "Go", url: "http://127.0.0.1:9102" },
-    Worker { language: "Java", url: "http://127.0.0.1:9103" },
+    Worker {
+        language: "Python",
+        url: "http://127.0.0.1:9100",
+    },
+    Worker {
+        language: "JavaScript",
+        url: "http://127.0.0.1:9101",
+    },
+    Worker {
+        language: "Go",
+        url: "http://127.0.0.1:9102",
+    },
+    Worker {
+        language: "Java",
+        url: "http://127.0.0.1:9103",
+    },
 ];
 
 fn extract_text(parts: &[Part]) -> String {
@@ -135,15 +147,12 @@ impl AgentExecutor for CoordinatorExecutor {
                 {
                     Ok(Ok(response)) => {
                         let text = match response {
-                            SendMessageResponse::Task(task) => {
-                                task.artifacts
-                                    .as_ref()
-                                    .and_then(|arts| arts.first())
-                                    .map(|a| extract_text(&a.parts))
-                                    .unwrap_or_else(|| {
-                                        format!("[{}] (no artifact)", worker.language)
-                                    })
-                            }
+                            SendMessageResponse::Task(task) => task
+                                .artifacts
+                                .as_ref()
+                                .and_then(|arts| arts.first())
+                                .map(|a| extract_text(&a.parts))
+                                .unwrap_or_else(|| format!("[{}] (no artifact)", worker.language)),
                             SendMessageResponse::Message(msg) => extract_text(&msg.parts),
                             _ => format!("[{}] (unknown response type)", worker.language),
                         };
@@ -259,9 +268,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=================================");
     println!();
 
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(CoordinatorExecutor).build()?,
-    );
+    let handler = Arc::new(RequestHandlerBuilder::new(CoordinatorExecutor).build()?);
 
     let addr = start_server(Arc::clone(&handler)).await;
     println!("Coordinator listening on {addr}");

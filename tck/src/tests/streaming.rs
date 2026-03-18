@@ -28,12 +28,10 @@ pub async fn test_streaming_send_message(url: &str, binding: &str) -> Result<(),
         _ => unreachable!(),
     };
 
-    let body_bytes =
-        serde_json::to_vec(&body).map_err(|e| format!("serialize: {e}"))?;
+    let body_bytes = serde_json::to_vec(&body).map_err(|e| format!("serialize: {e}"))?;
 
-    let client =
-        hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build_http();
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http();
 
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)

@@ -85,6 +85,7 @@ The REST transport uses standard HTTP methods and URL paths:
 | Get push config | `GET` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 | List push configs | `GET` | `/tasks/{id}/pushNotificationConfigs` |
 | Delete push config | `DELETE` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
+| Extended card | `GET` | `/extendedAgentCard` |
 | Agent card | `GET` | `/.well-known/agent.json` |
 
 ### Multi-Tenant Paths

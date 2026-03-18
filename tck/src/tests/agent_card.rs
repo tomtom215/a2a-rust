@@ -9,9 +9,7 @@ use super::helpers;
 pub async fn test_agent_card_discovery(url: &str) -> Result<(), String> {
     let (status, body) = helpers::rest_get(url, "/.well-known/agent.json").await?;
     if status != 200 {
-        return Err(format!(
-            "expected 200 for agent card, got {status}: {body}"
-        ));
+        return Err(format!("expected 200 for agent card, got {status}: {body}"));
     }
     if body.get("name").is_none() {
         return Err("agent card missing 'name' field".to_string());
@@ -23,7 +21,15 @@ pub async fn test_agent_card_discovery(url: &str) -> Result<(), String> {
 pub async fn test_agent_card_required_fields(url: &str) -> Result<(), String> {
     let (_, card) = helpers::rest_get(url, "/.well-known/agent.json").await?;
 
-    let required = ["name", "url", "version", "capabilities", "defaultInputModes", "defaultOutputModes", "skills"];
+    let required = [
+        "name",
+        "url",
+        "version",
+        "capabilities",
+        "defaultInputModes",
+        "defaultOutputModes",
+        "skills",
+    ];
     for field in required {
         if card.get(field).is_none() {
             return Err(format!("agent card missing required field '{field}'"));

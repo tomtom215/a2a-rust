@@ -126,9 +126,7 @@ pub use store::{Migration, MigrationRunner, SqliteTaskStore, TenantAwareSqliteTa
 #[cfg(feature = "postgres")]
 pub use push::{PostgresPushConfigStore, TenantAwarePostgresPushConfigStore};
 #[cfg(feature = "postgres")]
-pub use store::{
-    PgMigration, PgMigrationRunner, PostgresTaskStore, TenantAwarePostgresTaskStore,
-};
+pub use store::{PgMigration, PgMigrationRunner, PostgresTaskStore, TenantAwarePostgresTaskStore};
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };

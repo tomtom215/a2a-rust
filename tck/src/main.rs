@@ -82,11 +82,7 @@ fn parse_args(args: &[String]) -> Result<(String, String), String> {
         match args[i].as_str() {
             "--url" => {
                 i += 1;
-                url = Some(
-                    args.get(i)
-                        .ok_or("--url requires a value")?
-                        .clone(),
-                );
+                url = Some(args.get(i).ok_or("--url requires a value")?.clone());
             }
             "--binding" => {
                 i += 1;
@@ -95,7 +91,9 @@ fn parse_args(args: &[String]) -> Result<(String, String), String> {
                     .ok_or("--binding requires a value")?
                     .to_lowercase();
                 if b != "jsonrpc" && b != "rest" {
-                    return Err(format!("invalid binding '{b}', expected 'jsonrpc' or 'rest'"));
+                    return Err(format!(
+                        "invalid binding '{b}', expected 'jsonrpc' or 'rest'"
+                    ));
                 }
                 binding = b;
             }

@@ -28,9 +28,7 @@ pub async fn test_create_push_config(url: &str, binding: &str) -> Result<(), Str
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
-            resp.get("result")
-                .cloned()
-                .ok_or("missing 'result'")?
+            resp.get("result").cloned().ok_or("missing 'result'")?
         }
         "rest" => {
             helpers::rest_post(
@@ -162,11 +160,8 @@ pub async fn test_list_push_configs(url: &str, binding: &str) -> Result<(), Stri
             resp.get("result").cloned().ok_or("missing 'result'")?
         }
         "rest" => {
-            let (status, body) = helpers::rest_get(
-                url,
-                &format!("/tasks/{task_id}/pushNotificationConfig"),
-            )
-            .await?;
+            let (status, body) =
+                helpers::rest_get(url, &format!("/tasks/{task_id}/pushNotificationConfig")).await?;
             if status >= 400 {
                 return Err(format!("HTTP {status}: {body}"));
             }
@@ -229,9 +224,8 @@ pub async fn test_delete_push_config(url: &str, binding: &str) -> Result<(), Str
     match binding {
         "jsonrpc" => {
             let params = serde_json::json!({"taskId": task_id, "id": config_id});
-            let resp =
-                helpers::jsonrpc_request(url, "tasks/pushNotificationConfig/delete", params)
-                    .await?;
+            let resp = helpers::jsonrpc_request(url, "tasks/pushNotificationConfig/delete", params)
+                .await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }

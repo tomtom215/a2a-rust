@@ -10,7 +10,7 @@ all official SDK languages: Python, JavaScript/TypeScript, Go, and Java.
 Each language implements a simple "echo" agent that:
 1. Accepts a `message/send` request
 2. Returns a completed task with the echoed message as an artifact
-3. Supports all 11 A2A v1.0 protocol methods
+3. Supports all 9 A2A v1.0 JSON-RPC methods
 
 ## Architecture
 
@@ -21,8 +21,7 @@ itk/
 │   ├── js-agent/        # Node.js agent (a2a-js SDK)
 │   ├── go-agent/        # Go agent (a2a-go SDK)
 │   └── java-agent/      # Java agent (a2a-java SDK)
-├── tests/
-│   └── integration.rs   # Rust integration tests using a2a-client
+├── tests/               # (placeholder for future integration tests)
 ├── docker-compose.yml   # Runs all agents + tests
 └── README.md
 ```
@@ -51,7 +50,3 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
    cargo run -p a2a-tck -- --url http://localhost:9103
    ```
 
-3. Run the Rust integration tests:
-   ```bash
-   cargo test -p a2a-tck --test integration
-   ```

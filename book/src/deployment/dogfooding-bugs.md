@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **42 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 41 have been fixed; 1 is documented as a known limitation.
+Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **43 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 42 have been fixed; 1 is documented as a known limitation.
 
 ## Summary
 
@@ -22,9 +22,9 @@ Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **42 bugs** that 1,
 | Severity | Count | Examples |
 |----------|-------|---------|
 | **Critical** | 5 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18) |
-| **High** | 9 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21), serialization error swallowed (#40) |
-| **Medium** | 16 | REST field stripping (#1), path traversal (#35), stale pagination (#30), capacity eviction fails (#41) |
-| **Low** | 8 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#42) |
+| **High** | 9 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21), serialization error swallowed (#41) |
+| **Medium** | 19 | REST field stripping (#1), path traversal (#35), stale pagination (#30), capacity eviction fails (#42), test coverage gaps (#40) |
+| **Low** | 10 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43) |
 
 ### Configuration Hardening
 
@@ -440,13 +440,13 @@ The agent-team E2E test suite (previously 71 tests) had gaps in:
 - Agent card semantic validation (only checked non-empty, not structure)
 - GetTask history content (API success checked, not response content)
 
-**Fix:** Added 10 new deep dogfood tests (tests 81-90) covering all gaps. Test suite now has 82 base tests (92 with optional features).
+**Fix:** Added 10 new deep dogfood tests (tests 81-90) covering all gaps. Test suite now has 81 base tests (94 with all optional features).
 
 ---
 
 ## Pass 10: Exhaustive Audit (3 bugs)
 
-### Bug 40: Event Queue Serialization Error Silently Swallowed
+### Bug 41: Event Queue Serialization Error Silently Swallowed
 
 **Severity:** High | **Component:** Server `InMemoryQueueWriter`
 
@@ -456,7 +456,7 @@ The agent-team E2E test suite (previously 71 tests) had gaps in:
 
 **Fix:** Replaced `unwrap_or(0)` with `map_err(|e| A2aError::internal(...))` followed by `?` operator, propagating the serialization error to the caller.
 
-### Bug 41: Capacity Eviction Fails When Insufficient Terminal Tasks
+### Bug 42: Capacity Eviction Fails When Insufficient Terminal Tasks
 
 **Severity:** Medium | **Component:** Server `InMemoryTaskStore` eviction
 
@@ -466,7 +466,7 @@ The agent-team E2E test suite (previously 71 tests) had gaps in:
 
 **Fix:** Added a fallback eviction path that removes the oldest non-terminal tasks when there aren't enough terminal tasks to bring the store under capacity. Added a new unit test `capacity_eviction_falls_back_to_non_terminal_when_needed`.
 
-### Bug 42: Lagged Event Count Not Exposed in Warning
+### Bug 43: Lagged Event Count Not Exposed in Warning
 
 **Severity:** Low | **Component:** Server `InMemoryQueueReader`
 

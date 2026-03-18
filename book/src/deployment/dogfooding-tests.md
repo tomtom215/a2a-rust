@@ -203,7 +203,7 @@ The agent team runs **81 base E2E tests** across 8 test modules (94 with all opt
 
 ## Dedicated Integration Tests (Outside Agent-Team)
 
-In addition to the 82 agent-team E2E tests (98 with optional features), the SDK includes dedicated integration test suites:
+In addition to the 81 agent-team E2E tests (94 with optional features), the SDK includes dedicated integration test suites:
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
