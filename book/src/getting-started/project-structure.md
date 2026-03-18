@@ -48,7 +48,12 @@ a2a-rust/
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── types.rs        # SseFrame, SseParseError
 │   │       │       └── parser.rs       # SseParser state machine
-│   │       ├── methods/        # send_message, tasks, push_config
+│   │       ├── methods/        # A2A client methods
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── send_message.rs # send_message, stream_message
+│   │       │   ├── tasks.rs        # get_task, list_tasks, cancel_task, subscribe_to_task
+│   │       │   ├── push_config.rs  # set/get/list/delete push configs
+│   │       │   └── extended_card.rs # get_extended_agent_card
 │   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
 │   │       ├── interceptor.rs  # CallInterceptor, InterceptorChain
 │   │       ├── retry.rs        # RetryPolicy, RetryTransport
@@ -116,6 +121,12 @@ a2a-rust/
 │   │       │       ├── context.rs      # TenantContext (task-local)
 │   │       │       └── store.rs        # TenantAwareInMemoryTaskStore
 │   │       ├── push/           # PushConfigStore, PushSender
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── config_store.rs # InMemoryPushConfigStore
+│   │       │   ├── sender.rs       # PushSender trait, HttpPushSender
+│   │       │   ├── sqlite_config_store.rs      # SqlitePushConfigStore
+│   │       │   ├── tenant_config_store.rs      # TenantAwareInMemoryPushConfigStore
+│   │       │   └── tenant_sqlite_config_store.rs # TenantAwareSqlitePushConfigStore
 │   │       ├── streaming/      # Event streaming
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── sse.rs          # SSE response builder
@@ -124,6 +135,15 @@ a2a-rust/
 │   │       │       ├── in_memory.rs    # Broadcast-backed queue impl
 │   │       │       └── manager.rs      # EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── static_handler.rs  # StaticAgentCardHandler
+│   │       │   ├── dynamic_handler.rs # DynamicAgentCardHandler, AgentCardProducer
+│   │       │   ├── hot_reload.rs   # HotReloadAgentCardHandler
+│   │       │   └── caching.rs      # ETag/Last-Modified caching
+│   │       ├── otel/           # OpenTelemetry (feature-gated)
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── pipeline.rs     # OTLP pipeline setup
+│   │       │   └── builder.rs      # OtelMetrics builder
 │   │       ├── call_context.rs # CallContext with HTTP headers
 │   │       ├── metrics.rs      # Metrics trait
 │   │       ├── rate_limit.rs   # RateLimitInterceptor, RateLimitConfig
