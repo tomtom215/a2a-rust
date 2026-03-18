@@ -105,6 +105,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn list_tasks_with_tenant() {
+        // Covers line 32: tenant scoping with non-default tenant.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let mut params = ListTasksParams::default();
+        params.tenant = Some("test-tenant".to_string());
+        let result = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect("list_tasks with tenant should succeed");
+        assert!(result.tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_tasks_with_headers() {
+        // Covers line 34: build_call_context with headers.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = ListTasksParams::default();
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer tok".to_string());
+        let result = handler
+            .on_list_tasks(params, Some(&headers))
+            .await
+            .expect("list_tasks with headers should succeed");
+        assert!(result.tasks.is_empty());
+    }
+
+    #[tokio::test]
     async fn list_tasks_error_path_records_metrics() {
         // Use an interceptor that always fails to trigger the error metrics path (lines 48-51).
         use std::future::Future;

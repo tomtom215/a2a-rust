@@ -523,4 +523,274 @@ mod tests {
         assert_eq!(etag, Some("\"xyz\"".into()));
         assert!(last_modified.is_some());
     }
+
+    /// Test `CachingCardResolver::resolve` fetches, caches, and returns the card.
+    #[tokio::test]
+    async fn caching_resolver_resolve_fetches_and_caches() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            name: "resolver-test".into(),
+            version: "1.0".into(),
+            description: "Resolver test agent".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9090".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+        let card_json = serde_json::to_string(&card).unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = card_json.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(200)
+                                    .header("etag", "\"res-etag\"")
+                                    .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let base_url = format!("http://127.0.0.1:{}", addr.port());
+        let resolver = CachingCardResolver::with_path(&base_url, "/agent.json");
+        assert!(resolver.cache.read().await.is_none(), "cache should start empty");
+
+        let resolved = resolver.resolve().await.unwrap();
+        assert_eq!(resolved.name, "resolver-test");
+
+        // Cache should now be populated.
+        let cached = resolver.cache.read().await;
+        assert!(cached.is_some(), "cache should be populated after resolve");
+        let cached = cached.as_ref().unwrap();
+        assert_eq!(cached.card.name, "resolver-test");
+        assert_eq!(cached.etag, Some("\"res-etag\"".into()));
+    }
+
+    /// Test `CachingCardResolver::resolve` returns error when server is unreachable.
+    #[tokio::test]
+    async fn caching_resolver_resolve_returns_error_on_failure() {
+        // Use an invalid URL that won't connect.
+        let resolver = CachingCardResolver::with_path("http://127.0.0.1:1", "/agent.json");
+        let result = resolver.resolve().await;
+        assert!(result.is_err(), "resolve should fail with unreachable server");
+    }
+
+    /// Test `build_card_url` with a path that doesn't start with '/'.
+    #[test]
+    fn build_card_url_path_without_leading_slash() {
+        let url = build_card_url("http://localhost:8080", "custom/card.json").unwrap();
+        assert_eq!(url, "http://localhost:8080/custom/card.json");
+    }
+
+    /// Test `fetch_card_from_url` with a running server.
+    #[tokio::test]
+    async fn fetch_card_from_url_success() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            name: "url-fetch-test".into(),
+            version: "1.0".into(),
+            description: "URL fetch test".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9090".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+        let card_json = serde_json::to_string(&card).unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = card_json.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(200)
+                                    .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
+        let fetched = fetch_card_from_url(&url).await.unwrap();
+        assert_eq!(fetched.name, "url-fetch-test");
+    }
+
+    /// Test `resolve_agent_card_with_path` with a running server.
+    #[tokio::test]
+    async fn resolve_agent_card_with_path_success() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            name: "path-resolve-test".into(),
+            version: "2.0".into(),
+            description: "Path resolve test".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9090".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+        let card_json = serde_json::to_string(&card).unwrap();
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let body = card_json.clone();
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(200)
+                                    .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let base_url = format!("http://127.0.0.1:{}", addr.port());
+        let fetched = resolve_agent_card_with_path(&base_url, "/custom.json").await.unwrap();
+        assert_eq!(fetched.name, "path-resolve-test");
+    }
+
+    /// Test `fetch_card_with_metadata` with cached data including last_modified.
+    #[tokio::test]
+    async fn fetch_card_with_metadata_304_with_last_modified() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(|_req| async {
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(304)
+                                .body(http_body_util::Full::new(hyper::body::Bytes::new()))
+                                .unwrap(),
+                        )
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let cached = CachedCard {
+            card: AgentCard {
+                name: "lm-cached".into(),
+                version: "1.0".into(),
+                description: "Last-modified cached".into(),
+                supported_interfaces: vec![],
+                provider: None,
+                icon_url: None,
+                documentation_url: None,
+                capabilities: AgentCapabilities::none(),
+                security_schemes: None,
+                security_requirements: None,
+                default_input_modes: vec![],
+                default_output_modes: vec![],
+                skills: vec![],
+                signatures: None,
+            },
+            etag: None,
+            last_modified: Some("Mon, 01 Jan 2026 00:00:00 GMT".into()),
+        };
+
+        let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
+        let (card, _, last_modified) = fetch_card_with_metadata(&url, Some(&cached)).await.unwrap();
+        assert_eq!(card.name, "lm-cached");
+        assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
+    }
 }

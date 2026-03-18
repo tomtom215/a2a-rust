@@ -174,4 +174,32 @@ mod tests {
             "expected Transport error, got {err:?}"
         );
     }
+
+    /// Exercises the `send_streaming_request` path on `MockTransport` (lines 87-94).
+    #[tokio::test]
+    async fn mock_transport_streaming_returns_not_supported() {
+        let transport = MockTransport::new(serde_json::json!({}));
+        let client = make_client(transport);
+
+        let err = client.subscribe_to_task("task-1").await.unwrap_err();
+        assert!(
+            matches!(err, ClientError::Transport(ref msg) if msg.contains("not supported")),
+            "expected Transport error from MockTransport streaming, got {err:?}"
+        );
+    }
+
+    /// Exercises the `send_streaming_request` path on `ErrorTransport` (lines 112-120).
+    #[tokio::test]
+    async fn error_transport_streaming_returns_error() {
+        let transport = ErrorTransport {
+            error_msg: "stream refused".into(),
+        };
+        let client = make_client(transport);
+
+        let err = client.subscribe_to_task("task-2").await.unwrap_err();
+        assert!(
+            matches!(err, ClientError::Transport(ref msg) if msg.contains("stream refused")),
+            "expected Transport error from ErrorTransport streaming, got {err:?}"
+        );
+    }
 }

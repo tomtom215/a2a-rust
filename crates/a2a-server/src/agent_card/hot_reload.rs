@@ -382,6 +382,69 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn poll_watcher_handles_missing_file_gracefully() {
+        // Covers lines 200-209: the error branch in poll_watcher_loop when
+        // reload_from_file fails (file temporarily missing during deploy).
+        let card = minimal_agent_card();
+        let handler = HotReloadAgentCardHandler::new(card);
+
+        let dir = std::env::temp_dir().join("a2a_poll_missing_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+
+        // Write initial file.
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let handle = handler.spawn_poll_watcher(&file, Duration::from_millis(50));
+
+        // Wait for poller to start.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Delete the file to trigger the reload error path.
+        std::fs::remove_file(&file).unwrap();
+
+        // Wait for the poller to detect the change and hit the error.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // The handler should still have the original card (reload failed).
+        assert_eq!(handler.current().name, "Test Agent");
+
+        handle.abort();
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn poll_watcher_handles_invalid_json_gracefully() {
+        // Covers lines 200-209: reload fails due to invalid JSON.
+        let card = minimal_agent_card();
+        let handler = HotReloadAgentCardHandler::new(card);
+
+        let dir = std::env::temp_dir().join("a2a_poll_invalid_json_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let handle = handler.spawn_poll_watcher(&file, Duration::from_millis(50));
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Write invalid JSON to trigger the reload error path.
+        std::fs::write(&file, "not valid json {{{").unwrap();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // The handler should still have the original card.
+        assert_eq!(handler.current().name, "Test Agent");
+
+        handle.abort();
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[tokio::test]
     async fn poll_watcher_detects_change() {
         let dir = std::env::temp_dir().join("a2a_poll_watcher_test");
         std::fs::create_dir_all(&dir).unwrap();

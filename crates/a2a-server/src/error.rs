@@ -320,4 +320,95 @@ mod tests {
         let e: ServerError = serde_json::from_str::<String>("bad").unwrap_err().into();
         assert!(matches!(e, ServerError::Serialization(_)));
     }
+
+    /// Covers lines 65: Display for Http variant.
+    #[tokio::test]
+    async fn display_http_variant() {
+        use tokio::io::AsyncWriteExt;
+        let (mut client, server) = tokio::io::duplex(256);
+        let client_task = tokio::spawn(async move {
+            client.write_all(b"NOT VALID HTTP\r\n\r\n").await.unwrap();
+            client.shutdown().await.unwrap();
+        });
+        let hyper_err = hyper::server::conn::http1::Builder::new()
+            .serve_connection(
+                hyper_util::rt::TokioIo::new(server),
+                hyper::service::service_fn(|_req: hyper::Request<hyper::body::Incoming>| async {
+                    Ok::<_, hyper::Error>(hyper::Response::new(http_body_util::Full::new(
+                        hyper::body::Bytes::new(),
+                    )))
+                }),
+            )
+            .await
+            .unwrap_err();
+        client_task.await.unwrap();
+        let err = ServerError::Http(hyper_err);
+        let display = err.to_string();
+        assert!(
+            display.contains("HTTP error"),
+            "Display for Http variant should contain 'HTTP error', got: {display}"
+        );
+    }
+
+    /// Covers line 150-152: From<hyper::Error> impl.
+    #[tokio::test]
+    async fn from_hyper_error() {
+        use tokio::io::AsyncWriteExt;
+        let (mut client, server) = tokio::io::duplex(256);
+        let client_task = tokio::spawn(async move {
+            client.write_all(b"NOT VALID HTTP\r\n\r\n").await.unwrap();
+            client.shutdown().await.unwrap();
+        });
+        let hyper_err = hyper::server::conn::http1::Builder::new()
+            .serve_connection(
+                hyper_util::rt::TokioIo::new(server),
+                hyper::service::service_fn(|_req: hyper::Request<hyper::body::Incoming>| async {
+                    Ok::<_, hyper::Error>(hyper::Response::new(http_body_util::Full::new(
+                        hyper::body::Bytes::new(),
+                    )))
+                }),
+            )
+            .await
+            .unwrap_err();
+        client_task.await.unwrap();
+        let e: ServerError = hyper_err.into();
+        assert!(matches!(e, ServerError::Http(_)));
+    }
+
+    /// Covers line 64: Display for Serialization variant.
+    #[test]
+    fn display_serialization_variant() {
+        let err = ServerError::Serialization(serde_json::from_str::<String>("x").unwrap_err());
+        let display = err.to_string();
+        assert!(
+            display.contains("serialization error"),
+            "Display for Serialization should contain 'serialization error', got: {display}"
+        );
+    }
+
+    /// Covers line 123: to_a2a_error for Http variant.
+    #[tokio::test]
+    async fn to_a2a_error_http_variant() {
+        use tokio::io::AsyncWriteExt;
+        let (mut client, server) = tokio::io::duplex(256);
+        let client_task = tokio::spawn(async move {
+            client.write_all(b"NOT VALID HTTP\r\n\r\n").await.unwrap();
+            client.shutdown().await.unwrap();
+        });
+        let hyper_err = hyper::server::conn::http1::Builder::new()
+            .serve_connection(
+                hyper_util::rt::TokioIo::new(server),
+                hyper::service::service_fn(|_req: hyper::Request<hyper::body::Incoming>| async {
+                    Ok::<_, hyper::Error>(hyper::Response::new(http_body_util::Full::new(
+                        hyper::body::Bytes::new(),
+                    )))
+                }),
+            )
+            .await
+            .unwrap_err();
+        client_task.await.unwrap();
+        let err = ServerError::Http(hyper_err);
+        let a2a_err = err.to_a2a_error();
+        assert_eq!(a2a_err.code, ErrorCode::InternalError);
+    }
 }

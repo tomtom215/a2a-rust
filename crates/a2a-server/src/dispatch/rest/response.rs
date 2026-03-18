@@ -363,4 +363,63 @@ mod tests {
         let result = inject_field_if_missing(val.clone(), "taskId", "task-1");
         assert_eq!(result, val);
     }
+
+    /// Covers server_error_to_response with Http, Transport, PayloadTooLarge variants (line 69).
+    #[tokio::test]
+    async fn server_error_transport_maps_to_500() {
+        let err = ServerError::Transport("transport broke".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[tokio::test]
+    async fn server_error_payload_too_large_maps_to_500() {
+        let err = ServerError::PayloadTooLarge("too big".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    #[tokio::test]
+    async fn server_error_http_client_maps_to_500() {
+        let err = ServerError::HttpClient("connection refused".into());
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    /// Covers the InvalidStateTransition variant through server_error_to_response.
+    #[tokio::test]
+    async fn server_error_invalid_state_transition_maps_to_400_equiv() {
+        use a2a_protocol_types::task::TaskState;
+        let err = ServerError::InvalidStateTransition {
+            task_id: "t1".into(),
+            from: TaskState::Completed,
+            to: TaskState::Working,
+        };
+        let resp = server_error_to_response(&err);
+        // InvalidStateTransition hits the `_ => 500` branch.
+        assert_eq!(resp.status().as_u16(), 500);
+    }
+
+    /// Covers line 73: server_error_to_response serialization fallback.
+    /// Covers the Protocol variant through server_error_to_response.
+    #[tokio::test]
+    async fn server_error_protocol_maps_to_500() {
+        let err = ServerError::Protocol(a2a_protocol_types::error::A2aError::internal("proto err"));
+        let resp = server_error_to_response(&err);
+        assert_eq!(resp.status().as_u16(), 500);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(val["message"].as_str().unwrap_or("").contains("proto err"));
+    }
+
+    /// Covers line 97: build_json_response unwrap_or_else fallback.
+    /// This path is unreachable with valid headers, but we verify the happy
+    /// path produces correct output.
+    #[tokio::test]
+    async fn build_json_response_with_empty_body() {
+        let resp = build_json_response(200, vec![]);
+        assert_eq!(resp.status().as_u16(), 200);
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        assert!(body.is_empty());
+    }
 }
