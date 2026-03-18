@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(remaining[0].id.as_deref(), Some("c2"));
     }
 
-    /// Covers lines 38-40 (to_a2a_error conversion).
+    /// Covers lines 38-40 (`to_a2a_error` conversion).
     #[test]
     fn to_a2a_error_formats_message() {
         let sqlite_err = sqlx::Error::RowNotFound;

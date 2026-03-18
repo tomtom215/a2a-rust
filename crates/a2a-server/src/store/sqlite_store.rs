@@ -590,7 +590,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 120-122 (to_a2a_error conversion).
+    /// Covers lines 120-122 (`to_a2a_error` conversion).
     #[test]
     fn to_a2a_error_formats_message() {
         let sqlite_err = sqlx::Error::RowNotFound;
@@ -602,7 +602,7 @@ mod tests {
         );
     }
 
-    /// Covers lines 76-86 (with_migrations constructor).
+    /// Covers lines 76-86 (`with_migrations` constructor).
     #[tokio::test]
     async fn with_migrations_creates_store() {
         // with_migrations should work with an in-memory database

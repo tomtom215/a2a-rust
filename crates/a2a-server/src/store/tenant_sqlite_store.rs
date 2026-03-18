@@ -565,7 +565,7 @@ mod tests {
         .await;
     }
 
-    /// Covers lines 113-115 (to_a2a_error conversion).
+    /// Covers lines 113-115 (`to_a2a_error` conversion).
     #[test]
     fn to_a2a_error_formats_message() {
         let sqlite_err = sqlx::Error::RowNotFound;

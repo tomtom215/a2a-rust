@@ -366,9 +366,9 @@ mod tests {
         let json: serde_json::Value = serde_json::json!({"a": "x\x08y\x0cz\rw"});
         let canonical = canonicalize(&json).unwrap();
         let s = String::from_utf8(canonical).unwrap();
-        assert!(s.contains(r#"\b"#), "should escape backspace: {s}");
-        assert!(s.contains(r#"\f"#), "should escape form-feed: {s}");
-        assert!(s.contains(r#"\r"#), "should escape carriage-return: {s}");
+        assert!(s.contains(r"\b"), "should escape backspace: {s}");
+        assert!(s.contains(r"\f"), "should escape form-feed: {s}");
+        assert!(s.contains(r"\r"), "should escape carriage-return: {s}");
     }
 
     #[test]
