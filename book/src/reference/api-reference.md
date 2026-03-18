@@ -10,7 +10,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 |------|-------------|
 | `Task` | Unit of work with ID, status, history, artifacts |
 | `TaskId` | Newtype wrapper for task identifiers |
-| `TaskState` | Enum: Submitted, Working, InputRequired, AuthRequired, Completed, Failed, Canceled, Rejected |
+| `TaskState` | Enum: Unspecified, Submitted, Working, InputRequired, AuthRequired, Completed, Failed, Canceled, Rejected |
 | `TaskStatus` | State + optional message + timestamp |
 | `TaskVersion` | Monotonically increasing version number |
 | `ContextId` | Conversation context identifier |
@@ -21,7 +21,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 |------|-------------|
 | `Message` | Structured payload with ID, role, parts |
 | `MessageId` | Newtype wrapper for message identifiers |
-| `MessageRole` | Enum: User, Agent |
+| `MessageRole` | Enum: Unspecified, User, Agent |
 | `Part` | Content unit: text, file, or data |
 | `PartContent` | Enum: Text, File, Data |
 
@@ -143,9 +143,18 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 |------|-------------|
 | `RequestHandler` | Central protocol orchestrator |
 | `RequestHandlerBuilder` | Fluent builder for handler configuration |
-| `RequestContext` | Information about the incoming request |
+| `RequestContext` | Per-execution context (task ID, message, etc.) |
+| `CallContext` | Per-request metadata (request ID, headers, tenant) |
+| `HandlerLimits` | Configurable validation limits |
 
 ### Traits
+
+| Trait | Description |
+|-------|-------------|
+| `Metrics` | Pluggable metrics observer (requests, latency, errors) |
+| `TenantResolver` | Extracts tenant from request context |
+
+### Core Traits
 
 | Trait | Description |
 |-------|-------------|
@@ -165,6 +174,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `RestDispatcher` | RESTful HTTP dispatcher (implements `Dispatcher`) |
 | `WebSocketDispatcher` | WebSocket dispatcher (`websocket` feature) |
 | `GrpcDispatcher` | gRPC dispatcher (`grpc` feature) |
+| `A2aRouter` | Axum framework adapter (`axum` feature) |
 
 ### Server Startup
 
@@ -190,6 +200,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |
 | `RateLimitInterceptor` | Per-caller rate limiting interceptor |
+| `NoopMetrics` | No-op metrics implementation (default) |
+| `OtelMetrics` | OpenTelemetry metrics (`otel` feature) |
 
 ### Streaming
 
