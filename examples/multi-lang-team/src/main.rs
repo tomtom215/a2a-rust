@@ -287,7 +287,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("Sending request to coordinator...");
 
-    let client = ClientBuilder::new(&format!("http://{addr}")).build()?;
+    let client = ClientBuilder::new(format!("http://{addr}")).build()?;
     let params = MessageSendParams {
         tenant: None,
         message: Message {
