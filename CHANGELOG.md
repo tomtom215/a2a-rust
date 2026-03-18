@@ -25,10 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OTel instrument recording, cancellation tokens, and more.
 - **Wave 2 inline unit tests** — added `#[cfg(test)]` modules directly to 9 critical
   `a2a-protocol-server` source files covering the full request pipeline:
-  `handler/messaging` (6 tests: ID validation, empty parts, metadata size limits,
-  happy path, `return_immediately`), `handler/event_processing` (9 tests: state
+  `handler/messaging` (22 tests: ID validation, empty parts, metadata size limits,
+  happy path, `return_immediately`), `handler/event_processing` (16 tests: state
   transitions, artifact updates, push delivery, `collect_events`),
-  `handler/push_config` (4 tests: push CRUD), `handler/lifecycle` (10 tests:
+  `handler/push_config` (8 tests: push CRUD), `handler/lifecycle` (21 tests:
   get/list/cancel/resubscribe/agent card), `handler/mod` (11 tests: builder
   accessors, Debug), `dispatch/rest` (40 tests: path parsing, response helpers,
   error mapping), `dispatch/jsonrpc` (13 tests: header extraction, param parsing,
@@ -249,7 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (19 files, all under 500 lines) with 50 E2E
+  best-practice modular structure (23 files) with 50 E2E
   tests across 5 categories (basic, lifecycle, edge cases, stress, dogfood).
 - Client `send_message()` and `stream_message()` now merge client-level config
   (`return_immediately`, `history_length`, `accepted_output_modes`) into
@@ -295,10 +295,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** All `RequestHandler::on_*` methods now accept an additional
   `headers: Option<&HashMap<String, String>>` parameter for HTTP header
   forwarding to interceptors. Pass `None` if headers are not available.
-- `handler.rs` (1,357 lines) split into 8 single-responsibility modules under
+- `handler.rs` (1,357 lines) split into 8 top-level modules under
   `handler/`: `mod.rs`, `limits.rs`, `helpers.rs`, `messaging.rs`,
-  `lifecycle.rs`, `push_config.rs`, `event_processing.rs`, `shutdown.rs`.
-  No public API changes.
+  `lifecycle/` (5 sub-modules), `push_config.rs`, `event_processing/`
+  (3 sub-modules), `shutdown.rs`. No public API changes.
 - **Breaking:** `EventQueueManager` internals redesigned from `mpsc` to
   `tokio::sync::broadcast` channels. This enables multiple concurrent
   subscribers per task. Slow readers receive `Lagged` notifications instead
