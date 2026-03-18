@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** that 1,255 unit tests, integration tests, property tests, and fuzz tests did not catch. All 36 have been fixed.
+Eight dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **36 real bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All 36 have been fixed.
 
 ## Summary
 

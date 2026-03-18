@@ -13,14 +13,18 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | **Test** | `cargo test --workspace` — runs all tests |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --no-deps` — verifies documentation builds |
-| **Mutants** | `cargo mutants --workspace` — zero surviving mutants required |
+
+The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and PRs:
+- Uses `cargo-llvm-cov` for source-based coverage instrumentation
+- Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
 
 The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separately:
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
-| **Full sweep** | Nightly (03:00 UTC) + manual | All library crates |
-| **Incremental** | Pull requests to `main` | Changed `.rs` files only |
+| **Full sweep** | On-demand (`workflow_dispatch`) | All library crates |
+
+Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 
 The full sweep produces a mutation report artifact with caught/missed/unviable
 counts and a mutation score. Zero missed mutants is required — any surviving

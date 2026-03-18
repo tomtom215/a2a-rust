@@ -51,7 +51,8 @@ let dispatcher = Arc::new(RestDispatcher::new(handler));
 | `GET` | `/tasks` | ListTasks |
 | `GET` | `/tasks/{id}` | GetTask |
 | `POST` | `/tasks/{id}:cancel` | CancelTask |
-| `GET` | `/tasks/{id}:subscribe` | SubscribeToTask |
+| `GET\|POST` | `/tasks/{id}:subscribe` | SubscribeToTask |
+| `GET` | `/extendedAgentCard` | GetExtendedAgentCard |
 | `POST` | `/tasks/{id}/pushNotificationConfigs` | CreatePushConfig |
 | `GET` | `/tasks/{id}/pushNotificationConfigs` | ListPushConfigs |
 | `GET` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | GetPushConfig |

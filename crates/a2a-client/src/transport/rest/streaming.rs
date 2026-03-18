@@ -7,7 +7,6 @@
 //! that feeds incoming HTTP chunks into the SSE event stream.
 
 use std::collections::HashMap;
-use std::pin::Pin;
 
 use http_body_util::BodyExt;
 use tokio::sync::mpsc;
@@ -71,20 +70,11 @@ impl RestTransport {
 /// Runs as a background task spawned by [`RestTransport::execute_streaming_request`].
 /// Shared pattern with the JSON-RPC transport's body reader.
 async fn body_reader_task(
-    body: hyper::body::Incoming,
+    mut body: hyper::body::Incoming,
     tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
 ) {
-    tokio::pin!(body);
     loop {
-        let frame = std::future::poll_fn(|cx| {
-            use hyper::body::Body;
-            // SAFETY: `body` is pinned by `tokio::pin!` and not moved.
-            let pinned = unsafe { Pin::new_unchecked(&mut *body) };
-            pinned.poll_frame(cx)
-        })
-        .await;
-
-        match frame {
+        match body.frame().await {
             None => break,
             Some(Err(e)) => {
                 let _ = tx.send(Err(ClientError::Http(e))).await;

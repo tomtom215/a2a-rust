@@ -34,7 +34,7 @@ No logic, no structs, no impls.
 Each crate's `lib.rs` must include:
 
 ```rust
-#![warn(missing_docs)]
+#![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
@@ -58,7 +58,7 @@ exactly why the invariants required by the unsafe operation are upheld.
 Before adding a dependency:
 
 1. Check `deny.toml` — `openssl-sys` and `reqwest` are banned.
-2. Verify the license is in the allowlist (`Apache-2.0 | MIT | BSD-*`).
+2. Verify the license is in the allowlist (`Apache-2.0 | MIT | BSD-2-Clause | BSD-3-Clause | ISC | Unicode-DFS-2016 | Unicode-3.0 | Zlib | CC0-1.0 | CDLA-Permissive-2.0`).
 3. Ask: can this be implemented in-tree in ≤ 100 lines? If yes, do that instead.
 4. Use bounded version ranges: `>= x.y, < z` — no open-ended `>=`.
 
@@ -75,7 +75,7 @@ Before adding a dependency:
 | Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
-| End-to-end example | `examples/echo-agent` | `cargo run -p echo-agent` |
+| End-to-end examples | `examples/echo-agent`, `examples/agent-team` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
 ### Running Tests
@@ -98,6 +98,7 @@ cargo test -p a2a-protocol-types task_state_roundtrip
 # Run benchmarks
 cargo bench -p a2a-protocol-types
 cargo bench -p a2a-protocol-client
+cargo bench -p a2a-protocol-server
 ```
 
 ### Mutation Testing
@@ -128,9 +129,9 @@ cargo mutants --list --workspace
 files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
 and timeout settings.
 
-**Zero surviving mutants is required.** The nightly CI job runs a full mutation
-sweep and fails if any mutant survives. PR checks run an incremental sweep on
-changed files only.
+**Zero surviving mutants is required.** The mutation CI job
+(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`.
+Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 
 When a mutant survives, the output shows the exact mutation and the file/line.
 Add or strengthen tests to cover the gap, then re-run to confirm the mutant is
@@ -173,8 +174,9 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 |---|---|---|
 | `json_serde` | `a2a-protocol-types` | Serialize/deserialize AgentCard, Task, Message |
 | `sse_parse` | `a2a-protocol-client` | SSE frame parsing (single, batch, fragmented) |
+| `handler_bench` | `a2a-protocol-server` | Request handler throughput |
 
-Run with `cargo bench -p a2a-protocol-types` or `cargo bench -p a2a-protocol-client`.
+Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-client`, or `cargo bench -p a2a-protocol-server`.
 
 ---
 
@@ -187,7 +189,7 @@ Run with `cargo bench -p a2a-protocol-types` or `cargo bench -p a2a-protocol-cli
 | Integration | `tests/` directory | Each crate |
 | Property | `proptest` | Serde round-trips for all types |
 | Mutation | `cargo-mutants` | Zero surviving mutants across all library crates |
-| E2E | real HTTP, `wiremock` | Client ↔ server interaction |
+| E2E | real HTTP | Client ↔ server interaction |
 
 ---
 
@@ -200,7 +202,7 @@ All gates must pass before merging:
 cargo fmt --all -- --check
 
 # 2. Lint (zero warnings required)
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 
 # 3. All tests pass
 cargo test --workspace

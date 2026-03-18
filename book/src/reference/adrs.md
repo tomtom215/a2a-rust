@@ -83,9 +83,9 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
 
-**Decision:** Adopt `cargo-mutants` as a mandatory quality gate with zero surviving mutants required across all library crates. CI runs a full nightly sweep and incremental PR checks on changed files. Configuration is centralized in `mutants.toml`.
+**Decision:** Adopt `cargo-mutants` as a mandatory quality gate with zero surviving mutants required across all library crates. CI runs on-demand via `workflow_dispatch` (nightly schedule and PR-gate triggers are currently disabled to save CI time). Configuration is centralized in `mutants.toml`.
 
-**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The compute cost is managed through incremental mode, nightly scheduling, and exclusion of unproductive targets.
+**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The compute cost is managed through on-demand scheduling and exclusion of unproductive targets.
 
 ## Summary
 

@@ -16,7 +16,7 @@ All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 | `ContextID` (string) | `struct ContextId(String)` | Newtype |
 | `TaskVersion` (u64) | `struct TaskVersion(u64)` | Newtype; monotonic counter for optimistic concurrency |
 | `Metadata` (any JSON) | `serde_json::Value` | Untyped per spec |
-| Protocol version string | `struct ProtocolVersion(String)` | Validates `"0.3.0"` format |
+| Protocol version string | `String` | Stored as plain string in `AgentCard::version` |
 
 ---
 
@@ -25,18 +25,27 @@ All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 ### `TaskState`
 
 ```rust
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum TaskState {
-    Submitted,      // "submitted"
-    Working,        // "working"
-    InputRequired,  // "input-required"
-    AuthRequired,   // "auth-required"
-    Completed,      // "completed"
-    Failed,         // "failed"
-    Canceled,       // "canceled"
-    Rejected,       // "rejected"
-    Unknown,        // "unknown"
+    #[serde(rename = "TASK_STATE_UNSPECIFIED")]
+    Unspecified,       // proto default (0-value)
+    #[serde(rename = "TASK_STATE_SUBMITTED")]
+    Submitted,
+    #[serde(rename = "TASK_STATE_WORKING")]
+    Working,
+    #[serde(rename = "TASK_STATE_INPUT_REQUIRED")]
+    InputRequired,
+    #[serde(rename = "TASK_STATE_AUTH_REQUIRED")]
+    AuthRequired,
+    #[serde(rename = "TASK_STATE_COMPLETED")]
+    Completed,
+    #[serde(rename = "TASK_STATE_FAILED")]
+    Failed,
+    #[serde(rename = "TASK_STATE_CANCELED")]
+    Canceled,
+    #[serde(rename = "TASK_STATE_REJECTED")]
+    Rejected,
 }
 ```
 
@@ -60,19 +69,9 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `history` | `history` | `Option<Vec<Message>>` | No |
 | `artifacts` | `artifacts` | `Option<Vec<Artifact>>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `TaskKind` | Yes (always `"task"`) |
 
-```rust
-// Phantom discriminator — always serializes as "task"
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TaskKind;
-impl TaskKind {
-    const VALUE: &'static str = "task";
-}
-// OR simpler:
-#[serde(rename = "kind")]
-pub kind: &'static str,  // hardcoded "task"
-```
+
+The `kind` field (`"task"`) is injected by enclosing discriminated union serialization, not as a struct field on `Task` itself.
 
 ---
 
@@ -81,11 +80,15 @@ pub kind: &'static str,  // hardcoded "task"
 ### `MessageRole`
 
 ```rust
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
-    User,   // "user"
-    Agent,  // "agent"
+    #[serde(rename = "ROLE_UNSPECIFIED")]
+    Unspecified,  // proto default (0-value)
+    #[serde(rename = "ROLE_USER")]
+    User,
+    #[serde(rename = "ROLE_AGENT")]
+    Agent,
 }
 ```
 
@@ -101,19 +104,27 @@ pub enum MessageRole {
 | `referenceTaskIds` | `reference_task_ids` | `Option<Vec<TaskId>>` | No |
 | `extensions` | `extensions` | `Option<Vec<String>>` | No (URIs) |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `MessageKind` | Yes (always `"message"`) |
 
-### `Part` (discriminated union, tag = `"kind"`)
+
+The `kind` field (`"message"`) is injected by enclosing discriminated union serialization.
+
+### `PartContent` (discriminated union, tag = `"type"`)
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum Part {
-    Text(TextPart),
-    File(FilePart),
-    Data(DataPart),
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PartContent {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "file")]
+    File { file: FileContent },
+    #[serde(rename = "data")]
+    Data { data: serde_json::Value },
 }
 ```
+
+`Part` is a wrapper struct containing `PartContent` plus optional `metadata`.
 
 ### `TextPart`
 
@@ -129,28 +140,20 @@ pub enum Part {
 | `file` | `file` | `FileContent` | Yes |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
-### `FileContent` (untagged union — presence of `bytes` vs `uri` field)
+### `FileContent` (struct with optional `bytes` and `uri`)
 
 ```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum FileContent {
-    Bytes(FileWithBytes),  // deserializes when `bytes` key present
-    Uri(FileWithUri),      // deserializes when `uri` key present
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileContent {
+    pub name: Option<String>,
+    pub mime_type: Option<String>,
+    pub bytes: Option<String>,   // base64-encoded
+    pub uri: Option<String>,
 }
 ```
 
-### `FileWithBytes`
-
-| Spec field | Rust field | Type | Required |
-|---|---|---|---|
-| `name` | `name` | `Option<String>` | No |
-| `mimeType` | `mime_type` | `Option<String>` | No |
-| `bytes` | `bytes` | `String` | Yes (base64-encoded) |
-
-Note: base64 encode/decode implemented in-tree in `a2a-protocol-types/src/base64.rs` (~40 lines). No `base64` crate dep.
-
-### `FileWithUri`
+A file may have inline `bytes`, a `uri` reference, or both.
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
@@ -190,13 +193,8 @@ Note: base64 encode/decode implemented in-tree in `a2a-protocol-types/src/base64
 |---|---|---|---|
 | `taskId` | `task_id` | `TaskId` | Yes |
 | `contextId` | `context_id` | `ContextId` | Yes |
-| `state` | `state` | `TaskState` | Yes |
-| `message` | `message` | `Option<Message>` | No |
+| `status` | `status` | `TaskStatus` | Yes |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `"status-update"` | Yes |
-| `final` | `r#final` | `bool` | Yes |
-
-Note: `final` is a Rust keyword; use raw identifier `r#final`. In serde, use `#[serde(rename = "final")]`.
 
 ### `TaskArtifactUpdateEvent`
 
@@ -208,45 +206,35 @@ Note: `final` is a Rust keyword; use raw identifier `r#final`. In serde, use `#[
 | `append` | `append` | `Option<bool>` | No |
 | `lastChunk` | `last_chunk` | `Option<bool>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
-| `kind` | `kind` | `"artifact-update"` | Yes |
 
-### `StreamResponse` (discriminated union, tag = `"kind"`)
+### `StreamResponse` (discriminated by field presence)
 
 ```rust
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case")]
+#[serde(rename_all = "camelCase")]
 pub enum StreamResponse {
-    Task(Task),                                    // "task"
-    Message(Message),                              // "message"
-    #[serde(rename = "status-update")]
+    Task(Task),
+    Message(Message),
     StatusUpdate(TaskStatusUpdateEvent),
-    #[serde(rename = "artifact-update")]
     ArtifactUpdate(TaskArtifactUpdateEvent),
 }
 ```
 
+Deserialization checks which field (`task`, `message`, `statusUpdate`, `artifactUpdate`) is present.
+
 ---
 
 ## `agent_card.rs`
-
-### `TransportProtocol`
-
-```rust
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TransportProtocol {
-    JsonRpc,   // "JSONRPC"
-    Grpc,      // "GRPC"
-    Rest,      // "REST"
-}
-```
 
 ### `AgentInterface`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
 | `url` | `url` | `String` | Yes |
-| `transport` | `transport` | `TransportProtocol` | Yes |
+| `protocolBinding` | `protocol_binding` | `String` | Yes (e.g. `"JSONRPC"`, `"REST"`, `"GRPC"`) |
+| `protocolVersion` | `protocol_version` | `String` | Yes (e.g. `"1.0.0"`) |
+| `tenant` | `tenant` | `Option<String>` | No |
 
 ### `AgentCapabilities`
 
@@ -254,7 +242,7 @@ pub enum TransportProtocol {
 |---|---|---|---|
 | `streaming` | `streaming` | `Option<bool>` | No |
 | `pushNotifications` | `push_notifications` | `Option<bool>` | No |
-| `stateTransitionHistory` | `state_transition_history` | `Option<bool>` | No |
+| `extendedAgentCard` | `extended_agent_card` | `Option<bool>` | No |
 | `extensions` | `extensions` | `Option<Vec<AgentExtension>>` | No |
 
 ### `AgentProvider`
@@ -275,19 +263,16 @@ pub enum TransportProtocol {
 | `examples` | `examples` | `Option<Vec<String>>` | No |
 | `inputModes` | `input_modes` | `Option<Vec<String>>` | No (MIME types) |
 | `outputModes` | `output_modes` | `Option<Vec<String>>` | No (MIME types) |
-| `security` | `security` | `Option<SecurityRequirements>` | No |
+| `securityRequirements` | `security_requirements` | `Option<Vec<SecurityRequirement>>` | No |
 
 ### `AgentCard`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `protocolVersion` | `protocol_version` | `String` | Yes |
 | `name` | `name` | `String` | Yes |
 | `description` | `description` | `String` | Yes |
 | `version` | `version` | `String` | Yes |
-| `url` | `url` | `String` | Yes (base RPC endpoint) |
-| `preferredTransport` | `preferred_transport` | `TransportProtocol` | Yes |
-| `additionalInterfaces` | `additional_interfaces` | `Option<Vec<AgentInterface>>` | No |
+| `supportedInterfaces` | `supported_interfaces` | `Vec<AgentInterface>` | Yes |
 | `defaultInputModes` | `default_input_modes` | `Vec<String>` | Yes (MIME types) |
 | `defaultOutputModes` | `default_output_modes` | `Vec<String>` | Yes (MIME types) |
 | `skills` | `skills` | `Vec<AgentSkill>` | Yes |
@@ -296,12 +281,11 @@ pub enum TransportProtocol {
 | `iconUrl` | `icon_url` | `Option<String>` | No |
 | `documentationUrl` | `documentation_url` | `Option<String>` | No |
 | `securitySchemes` | `security_schemes` | `Option<NamedSecuritySchemes>` | No |
-| `security` | `security` | `Option<SecurityRequirements>` | No |
-| `supportsAuthenticatedExtendedCard` | `supports_authenticated_extended_card` | `Option<bool>` | No |
+| `securityRequirements` | `security_requirements` | `Option<Vec<SecurityRequirement>>` | No |
 | `signatures` | `signatures` | `Option<Vec<AgentCardSignature>>` | No |
 
 `NamedSecuritySchemes` = `HashMap<String, SecurityScheme>`.
-`SecurityRequirements` = `Vec<HashMap<String, Vec<String>>>` (OpenAPI style).
+`SecurityRequirement` = struct with `schemes: HashMap<String, StringList>`.
 
 ---
 

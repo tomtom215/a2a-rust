@@ -3,9 +3,12 @@
 
 # a2a-rust
 
-![CI](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/license-Apache--2.0-blue)
-![Rust](https://img.shields.io/badge/rust-1.93%2B-orange)
+[![CI](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/tomtom215/a2a-rust/graph/badge.svg)](https://codecov.io/gh/tomtom215/a2a-rust)
+[![Crates.io](https://img.shields.io/crates/v/a2a-protocol-sdk.svg)](https://crates.io/crates/a2a-protocol-sdk)
+[![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![MSRV](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org)
 
 Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) v1.0.0.
 
@@ -14,11 +17,6 @@ Build, connect, and orchestrate AI agents using a type-safe, async-first SDK wit
 ## Motivation
 
 The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
-
-Community Rust efforts exist but target older protocol versions:
-
-- [a2a-rs](https://github.com/EmilLindfors/a2a-rs) — active, full v0.3.0 coverage, hexagonal architecture (not yet v1.0)
-- [A2A](https://github.com/robert-at-pretension-io/A2A) — testing framework and validator (GPL-3.0)
 
 This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
 
@@ -81,7 +79,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 | | |
 |---|---|
 | **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` CI gate |
-| **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate |
+| **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; zero `unsafe` blocks |
 
 ## Crate Structure
 
@@ -180,7 +178,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 72 E2E tests (79 with optional transports and signing) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, and agent card signing:
+A comprehensive 4-agent team that exercises every SDK feature — 71 E2E tests (78 with optional WebSocket, gRPC, signing, and OTel features) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, and agent card signing:
 
 ```bash
 cargo run -p agent-team
@@ -207,7 +205,7 @@ cargo run -p echo-agent
                       │
 ┌─────────────────────▼──────────────────────┐
 │  a2a-protocol-server / a2a-protocol-client │
-│  RequestHandler · AgentExecutor · Client   │
+│  RequestHandler · AgentExecutor · A2aClient │
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
@@ -249,14 +247,14 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (1,200+ tests across 4 crates)
+# Run all tests (1,750+ tests across 4 crates)
 cargo test --workspace
 
 # Run the end-to-end example
 cargo run -p echo-agent
 
 # Lint and format checks
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
 
 # Build documentation
@@ -292,7 +290,7 @@ All phases are complete. The SDK is production-ready with all 11 A2A methods, qu
 
 ## Stability
 
-All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases.
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases.
 
 ## Minimum Supported Rust Version
 

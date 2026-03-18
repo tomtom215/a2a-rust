@@ -8,7 +8,7 @@ a2a-rust is organized as a Cargo workspace with four crates, each with a clear r
 a2a-rust/
 ├── Cargo.toml              # Workspace root
 ├── crates/
-│   ├── a2a-protocol-types/          # Wire types (serde, no I/O)
+│   ├── a2a-types/                   # Wire types (serde, no I/O) — publishes as a2a-protocol-types
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── task.rs         # Task, TaskState, TaskStatus, TaskId
@@ -22,9 +22,10 @@ a2a-rust/
 │   │       ├── push.rs         # Push notification config types
 │   │       ├── error.rs        # A2aError, ErrorCode, A2aResult
 │   │       ├── security.rs     # Security schemes and requirements
-│   │       └── extensions.rs   # Extension and signing types
+│   │       ├── signing.rs      # Agent card signing (JWS/ES256)
+│   │       └── extensions.rs   # Extension types
 │   │
-│   ├── a2a-protocol-client/         # HTTP client
+│   ├── a2a-client/                  # HTTP client — publishes as a2a-protocol-client
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
 │   │       ├── builder/        # ClientBuilder (fluent config)
@@ -38,18 +39,30 @@ a2a-rust/
 │   │       │   │   ├── streaming.rs    # SSE streaming, body reader
 │   │       │   │   ├── routing.rs      # Route definitions, method mapping
 │   │       │   │   └── query.rs        # Query string building, encoding
-│   │       │   └── jsonrpc.rs      # JsonRpcTransport
+│   │       │   ├── jsonrpc.rs      # JsonRpcTransport
+│   │       │   ├── websocket.rs   # WebSocketTransport (feature-gated)
+│   │       │   └── grpc.rs        # GrpcTransport (feature-gated)
 │   │       ├── streaming/      # SSE parser, EventStream
 │   │       │   ├── event_stream.rs # EventStream for consuming SSE
 │   │       │   └── sse_parser/     # SSE frame parser
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── types.rs        # SseFrame, SseParseError
 │   │       │       └── parser.rs       # SseParser state machine
-│   │       ├── methods/        # send_message, tasks, push_config
+│   │       ├── methods/        # A2A client methods
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── send_message.rs # send_message, stream_message
+│   │       │   ├── tasks.rs        # get_task, list_tasks, cancel_task, subscribe_to_task
+│   │       │   ├── push_config.rs  # set/get/list/delete push configs
+│   │       │   └── extended_card.rs # get_extended_agent_card
 │   │       ├── auth.rs         # CredentialsStore, AuthInterceptor
-│   │       └── interceptor.rs  # CallInterceptor, InterceptorChain
+│   │       ├── interceptor.rs  # CallInterceptor, InterceptorChain
+│   │       ├── retry.rs        # RetryPolicy, RetryTransport
+│   │       ├── error.rs        # ClientError, ClientResult
+│   │       ├── config.rs       # ClientConfig
+│   │       ├── discovery.rs    # Agent card discovery
+│   │       └── tls.rs          # TLS configuration helpers
 │   │
-│   ├── a2a-protocol-server/         # Server framework
+│   ├── a2a-server/                  # Server framework — publishes as a2a-protocol-server
 │   │   └── src/
 │   │       ├── lib.rs          # Public re-exports
 │   │       ├── handler/        # RequestHandler (core orchestration)
@@ -85,6 +98,8 @@ a2a-rust/
 │   │       │   ├── jsonrpc/        # JSON-RPC 2.0 dispatcher
 │   │       │   │   ├── mod.rs          # JsonRpcDispatcher, dispatch logic
 │   │       │   │   └── response.rs     # JSON-RPC response serialization
+│   │       │   ├── websocket.rs    # WebSocketDispatcher (feature-gated)
+│   │       │   ├── cors.rs         # CorsConfig
 │   │       │   └── grpc/           # gRPC dispatcher (feature-gated)
 │   │       │       ├── mod.rs          # Proto includes, re-exports
 │   │       │       ├── config.rs       # GrpcConfig
@@ -98,11 +113,20 @@ a2a-rust/
 │   │       │   │   └── in_memory/      # InMemoryTaskStore
 │   │       │   │       ├── mod.rs          # Core CRUD, TaskStore impl
 │   │       │   │       └── eviction.rs     # TTL + capacity eviction
+│   │       │   ├── sqlite_store.rs     # SqliteTaskStore (feature-gated)
+│   │       │   ├── migration.rs        # Schema migration runner
+│   │       │   ├── tenant_sqlite_store.rs # TenantAwareSqliteTaskStore
 │   │       │   └── tenant/         # Multi-tenant isolation
 │   │       │       ├── mod.rs          # Re-exports
 │   │       │       ├── context.rs      # TenantContext (task-local)
 │   │       │       └── store.rs        # TenantAwareInMemoryTaskStore
 │   │       ├── push/           # PushConfigStore, PushSender
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── config_store.rs # InMemoryPushConfigStore
+│   │       │   ├── sender.rs       # PushSender trait, HttpPushSender
+│   │       │   ├── sqlite_config_store.rs      # SqlitePushConfigStore
+│   │       │   ├── tenant_config_store.rs      # TenantAwareInMemoryPushConfigStore
+│   │       │   └── tenant_sqlite_config_store.rs # TenantAwareSqlitePushConfigStore
 │   │       ├── streaming/      # Event streaming
 │   │       │   ├── mod.rs          # Re-exports
 │   │       │   ├── sse.rs          # SSE response builder
@@ -111,18 +135,32 @@ a2a-rust/
 │   │       │       ├── in_memory.rs    # Broadcast-backed queue impl
 │   │       │       └── manager.rs      # EventQueueManager
 │   │       ├── agent_card/     # Static/Dynamic card handlers
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── static_handler.rs  # StaticAgentCardHandler
+│   │       │   ├── dynamic_handler.rs # DynamicAgentCardHandler, AgentCardProducer
+│   │       │   ├── hot_reload.rs   # HotReloadAgentCardHandler
+│   │       │   └── caching.rs      # ETag/Last-Modified caching
+│   │       ├── otel/           # OpenTelemetry (feature-gated)
+│   │       │   ├── mod.rs          # Re-exports
+│   │       │   ├── pipeline.rs     # OTLP pipeline setup
+│   │       │   └── builder.rs      # OtelMetrics builder
 │   │       ├── call_context.rs # CallContext with HTTP headers
 │   │       ├── metrics.rs      # Metrics trait
 │   │       ├── rate_limit.rs   # RateLimitInterceptor, RateLimitConfig
 │   │       ├── serve.rs        # serve(), serve_with_addr() helpers
-│   │       └── request_context.rs  # RequestContext
+│   │       ├── request_context.rs  # RequestContext
+│   │       ├── interceptor.rs  # ServerInterceptor trait
+│   │       ├── error.rs        # ServerError, ServerResult
+│   │       ├── tenant_config.rs   # PerTenantConfig, TenantLimits
+│   │       └── tenant_resolver.rs # TenantResolver trait + impls
 │   │
-│   └── a2a-protocol-sdk/            # Umbrella crate
+│   └── a2a-sdk/                     # Umbrella crate — publishes as a2a-protocol-sdk
 │       └── src/
 │           └── lib.rs          # Re-exports + prelude
 │
 ├── examples/
-│   └── echo-agent/         # Working example agent
+│   ├── echo-agent/         # Minimal echo agent example
+│   └── agent-team/         # Comprehensive 4-agent dogfood suite (78 E2E tests)
 │
 ├── docs/
 │   └── adr/                # Architecture Decision Records

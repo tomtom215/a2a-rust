@@ -53,9 +53,8 @@ If consensus cannot be reached:
 
 ## Code of Conduct
 
-All participants are expected to follow the project's
-[Code of Conduct](CODE_OF_CONDUCT.md). Violations may be reported to the
-maintainers or to the email listed in that document.
+All participants are expected to behave respectfully and professionally.
+Violations may be reported to the maintainers at security@a2a-rust.dev.
 
 ## Release Process
 

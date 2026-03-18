@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Mutation testing** — adopted `cargo-mutants` as a required quality gate with
   zero surviving mutants across all library crates. Configuration in `mutants.toml`.
-- **Mutation testing CI** — nightly full sweep and incremental PR gate via
+- **Mutation testing CI** — on-demand via `workflow_dispatch` in
   `.github/workflows/mutants.yml`. Surviving mutants fail the build.
+  Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 - **ADR 0006** — documents the rationale for mutation testing as a required quality
   gate, including alternatives considered and consequences.
 - **60+ new tests** to kill surviving mutants across all crates, covering:
@@ -24,16 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   OTel instrument recording, cancellation tokens, and more.
 - **Wave 2 inline unit tests** — added `#[cfg(test)]` modules directly to 9 critical
   `a2a-protocol-server` source files covering the full request pipeline:
-  `handler/messaging` (6 tests: ID validation, empty parts, metadata size limits,
-  happy path, `return_immediately`), `handler/event_processing` (9 tests: state
+  `handler/messaging` (22 tests: ID validation, empty parts, metadata size limits,
+  happy path, `return_immediately`), `handler/event_processing` (16 tests: state
   transitions, artifact updates, push delivery, `collect_events`),
-  `handler/push_config` (4 tests: push CRUD), `handler/lifecycle` (10 tests:
+  `handler/push_config` (8 tests: push CRUD), `handler/lifecycle` (21 tests:
   get/list/cancel/resubscribe/agent card), `handler/mod` (11 tests: builder
   accessors, Debug), `dispatch/rest` (40 tests: path parsing, response helpers,
   error mapping), `dispatch/jsonrpc` (13 tests: header extraction, param parsing,
   batch handling), `dispatch/grpc` (12 tests: config builders, encode/decode,
   error-to-status mapping), `dispatch/websocket` (5 tests: param parsing, error
-  display). Total workspace test count: **1,255 passing tests**.
+  display). Total workspace test count: **1,750+ passing tests**.
 
 ### Added (Beyond-Spec Enhancements)
 
@@ -93,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path traversal (Bug #35), exhaustive retryable classification.
 - **3 new E2E tests (76-78)** — timeout retryable verification, concurrent
   cancel stress test (10 parallel), stale page token graceful handling.
-- **Total E2E tests: 72** (79 with optional gRPC+WebSocket+signing).
+- **Total E2E tests: 71** (78 with optional gRPC+WebSocket+signing+OTel).
 
 ### Fixed (Pass 7 — Deep Dogfood)
 
@@ -248,7 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   task's event stream, enabling `SubscribeToTask` (resubscribe) when another
   SSE stream is already active.
 - Agent-team example refactored from monolithic 2800-line `main.rs` into
-  best-practice modular structure (19 files, all under 500 lines) with 50 E2E
+  best-practice modular structure (23 files) with 50 E2E
   tests across 5 categories (basic, lifecycle, edge cases, stress, dogfood).
 - Client `send_message()` and `stream_message()` now merge client-level config
   (`return_immediately`, `history_length`, `accepted_output_modes`) into
@@ -294,10 +295,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** All `RequestHandler::on_*` methods now accept an additional
   `headers: Option<&HashMap<String, String>>` parameter for HTTP header
   forwarding to interceptors. Pass `None` if headers are not available.
-- `handler.rs` (1,357 lines) split into 8 single-responsibility modules under
+- `handler.rs` (1,357 lines) split into 8 top-level modules under
   `handler/`: `mod.rs`, `limits.rs`, `helpers.rs`, `messaging.rs`,
-  `lifecycle.rs`, `push_config.rs`, `event_processing.rs`, `shutdown.rs`.
-  No public API changes.
+  `lifecycle/` (5 sub-modules), `push_config.rs`, `event_processing/`
+  (3 sub-modules), `shutdown.rs`. No public API changes.
 - **Breaking:** `EventQueueManager` internals redesigned from `mpsc` to
   `tokio::sync::broadcast` channels. This enables multiple concurrent
   subscribers per task. Slow readers receive `Lagged` notifications instead
@@ -346,8 +347,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,200+ tests).
-- `#[non_exhaustive]` on 6 protocol enums for forward-compatible evolution.
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,750+ tests).
+- `#[non_exhaustive]` on 9 protocol types (7 enums, 2 structs) for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.
 - SSE parser memory limits (16 MiB default) to prevent OOM from malicious streams.
@@ -362,7 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Separate `stream_connect_timeout` configuration for SSE connections.
 - Server benchmarks for task store and event queue operations.
 - Cargo-fuzz target for JSON deserialization of all major protocol types.
-- `docs/ROADMAP.md` documenting planned beyond-spec extensions (request IDs,
+- `docs/implementation/plan.md` documenting planned beyond-spec extensions (request IDs,
   metrics, rate limiting, WebSocket, multi-tenancy, persistent store).
 - Pitfalls catalog (`book/src/reference/pitfalls.md`) with entries for serde,
   hyper, SSE, push notifications, async/tokio, workspace, and testing gotchas.

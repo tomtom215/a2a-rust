@@ -25,7 +25,7 @@ Only dependencies with no viable in-tree alternative:
 | Dep | Rationale |
 |---|---|
 | `serde` + `serde_json` | A2A is a JSON-RPC protocol. There is no reasonable alternative to serde in the Rust ecosystem for correct, zero-copy JSON at this level. |
-| `tokio` (minimal features) | Async I/O is essential; tokio is the de-facto standard. Features pinned to: `rt, net, io-util, sync, time`. Not `full`. |
+| `tokio` (minimal features) | Async I/O is essential; tokio is the de-facto standard. Features pinned to: `rt, net, io-util, sync, time, macros`. Not `full`. |
 | `hyper` 1.x | Lowest-level HTTP library in common Rust use. Brings no cookie jar, no redirect policy, no multipart support. The API is explicit about what it does. |
 | `http-body-util` | Required adapter for hyper 1.x body types. No alternative within hyper 1.x. |
 | `hyper-util` | Connection pooling for the client; client-legacy for compatibility. |
@@ -38,11 +38,11 @@ Only dependencies with no viable in-tree alternative:
 | `reqwest` | 30+ transitive deps; includes native-tls, cookie jar, redirect, multipart — none needed here. |
 | `anyhow` | Erases error types; downstream crates lose the ability to pattern-match on specific errors. We define `A2aError` with typed variants. |
 | `thiserror` | Macro sugar that adds a proc-macro dep. `std::fmt::Display` + `std::error::Error` manual impls are 10 lines and fully explicit. |
-| `tokio-util` | Use `http-body-util` for hyper body adapters; `tokio-util` codec is not needed. |
+| `tokio-util` | Originally excluded. Later added for the server crate (`rt` feature for `CancellationToken`). |
 | `futures` | We need only `std::future::Future` and `tokio` combinators. The `futures` crate adds 12+ sub-crates. |
 | `openssl-sys` | System dep; builds fail on musl/alpine without extra packages. `rustls` is pure Rust with no system dep. |
 | `log` | Older logging API; superseded by `tracing`. Made optional via feature flag. |
-| `base64` | Used only for `FileWithBytes.bytes` field. Implemented inline (~40 lines) using `std` primitives rather than adding a dep. |
+| `base64` | Used only for agent card signing. Optional dep behind the `signing` feature flag. |
 
 ### Feature Flags for Optional Deps
 
@@ -50,7 +50,7 @@ Only dependencies with no viable in-tree alternative:
 [features]
 default = []
 tracing = ["dep:tracing"]
-tls-rustls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots"]
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ```
 
 ### Version Bounding
@@ -58,7 +58,7 @@ tls-rustls = ["dep:rustls", "dep:tokio-rustls", "dep:webpki-roots"]
 All versions use bounded ranges (no open-ended `>=`):
 ```toml
 serde      = { version = ">=1.0.200, <2", features = ["derive"] }
-tokio      = { version = ">=1.38, <2",    features = ["rt", "net", "io-util", "sync", "time"] }
+tokio      = { version = ">=1.38, <2",    features = ["rt", "net", "io-util", "sync", "time", "macros"] }
 hyper      = { version = ">=1.4, <2",     features = ["client", "server", "http1", "http2"] }
 ```
 
@@ -68,7 +68,7 @@ Upper bounds prevent silent adoption of breaking changes between SemVer majors t
 
 ```toml
 [licenses]
-allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-DFS-2016"]
+allow = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC", "Unicode-DFS-2016", "Unicode-3.0", "Zlib", "CC0-1.0", "CDLA-Permissive-2.0"]
 
 [bans]
 multiple-versions = "warn"
@@ -94,7 +94,7 @@ unknown-registry = "deny"
 
 ### Negative
 
-- Base64 encoding must be maintained in-tree (~40 lines).
+- Base64 is an optional dep behind the `signing` feature flag.
 - TLS requires a feature flag; users must opt in for HTTPS.
 - No built-in retry logic (users bring their own or use the interceptor API).
 
