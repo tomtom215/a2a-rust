@@ -11,8 +11,10 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | **Format** | `cargo fmt --check` — enforces consistent formatting |
 | **Clippy** | `cargo clippy -- -D warnings` — catches common mistakes |
 | **Test** | `cargo test --workspace` — runs all tests |
+| **Nightly** | Tests on nightly Rust toolchain for early compatibility checks |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --no-deps` — verifies documentation builds |
+| **Package** | `cargo package` — validates crate packaging for publish |
 
 The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and PRs:
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
@@ -30,6 +32,8 @@ The full sweep produces a mutation report artifact with caught/missed/unviable
 counts and a mutation score. Zero missed mutants is required — any surviving
 mutant fails the build.
 
+The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit against the echo-agent on pushes to `main` and PRs.
+
 All actions are **SHA-pinned** for supply chain security:
 
 ```yaml
@@ -41,7 +45,7 @@ All actions are **SHA-pinned** for supply chain security:
 The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 
 ```
-v0.2.0 tag → validate → ci + security → package → publish → github-release
+v0.2.0 tag → validate → ci + security → package + publish-dry-run → github-release → publish
 ```
 
 Crates are published in dependency order:

@@ -114,7 +114,7 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 
 ```
 examples/agent-team/src/
-├── main.rs                      # Thin orchestrator (~400 lines)
+├── main.rs                      # Thin orchestrator (~470 lines)
 ├── executors/
 │   ├── mod.rs                   # Re-exports
 │   ├── code_analyzer.rs         # CodeAnalyzer executor
