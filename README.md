@@ -81,7 +81,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 | | |
 |---|---|
 | **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` CI gate |
-| **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate |
+| **Minimal `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; only 2 pinning operations in the client |
 
 ## Crate Structure
 
@@ -207,7 +207,7 @@ cargo run -p echo-agent
                       │
 ┌─────────────────────▼──────────────────────┐
 │  a2a-protocol-server / a2a-protocol-client │
-│  RequestHandler · AgentExecutor · Client   │
+│  RequestHandler · AgentExecutor · A2aClient │
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐
