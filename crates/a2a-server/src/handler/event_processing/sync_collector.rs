@@ -116,9 +116,17 @@ impl RequestHandler {
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
                 let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
-                artifacts.push(update.artifact.clone());
-                self.task_store.save(last_task.clone()).await?;
-                self.deliver_push(task_id, stream_resp).await;
+                if artifacts.len() >= self.limits.max_artifacts_per_task {
+                    trace_warn!(
+                        task_id = %task_id,
+                        max = self.limits.max_artifacts_per_task,
+                        "artifact limit reached; dropping artifact update"
+                    );
+                } else {
+                    artifacts.push(update.artifact.clone());
+                    self.task_store.save(last_task.clone()).await?;
+                    self.deliver_push(task_id, stream_resp).await;
+                }
             }
             Ok(StreamResponse::Task(task)) => {
                 *last_task = task;

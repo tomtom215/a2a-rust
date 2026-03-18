@@ -57,10 +57,7 @@ impl SqliteTaskStore {
     ///
     /// Returns an error if the database cannot be opened or the schema migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(4)
-            .connect(url)
-            .await?;
+        let pool = sqlite_pool(url).await?;
         Self::from_pool(pool).await
     }
 
@@ -74,10 +71,7 @@ impl SqliteTaskStore {
     ///
     /// Returns an error if the database cannot be opened or any migration fails.
     pub async fn with_migrations(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(4)
-            .connect(url)
-            .await?;
+        let pool = sqlite_pool(url).await?;
 
         let runner = super::migration::MigrationRunner::new(pool.clone());
         runner.run_pending().await?;
@@ -113,6 +107,33 @@ impl SqliteTaskStore {
 
         Ok(Self { pool })
     }
+}
+
+/// Creates a `SqlitePool` with production-ready defaults:
+/// - WAL journal mode for better concurrency
+/// - 5-second busy timeout to avoid SQLITE_BUSY errors
+/// - Configurable pool size (default: 8)
+async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
+    sqlite_pool_with_size(url, 8).await
+}
+
+/// Creates a `SqlitePool` with a specific max connection count.
+async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<SqlitePool, sqlx::Error> {
+    use sqlx::ConnectOptions;
+    use sqlx::sqlite::SqliteConnectOptions;
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str(url)?
+        .pragma("journal_mode", "WAL")
+        .pragma("busy_timeout", "5000")
+        .pragma("synchronous", "NORMAL")
+        .pragma("foreign_keys", "ON")
+        .create_if_missing(true);
+
+    SqlitePoolOptions::new()
+        .max_connections(max_connections)
+        .connect_with(opts)
+        .await
 }
 
 /// Converts a `sqlx::Error` to an `A2aError`.

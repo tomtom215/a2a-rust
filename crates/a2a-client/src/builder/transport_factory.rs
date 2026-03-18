@@ -45,18 +45,20 @@ impl ClientBuilder {
 
             match binding.as_str() {
                 BINDING_JSONRPC => {
-                    let t = JsonRpcTransport::with_timeouts(
+                    let t = JsonRpcTransport::with_all_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
+                        self.config.connection_timeout,
                     )?;
                     Box::new(t)
                 }
                 BINDING_REST => {
-                    let t = RestTransport::with_timeouts(
+                    let t = RestTransport::with_all_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
+                        self.config.connection_timeout,
                     )?;
                     Box::new(t)
                 }

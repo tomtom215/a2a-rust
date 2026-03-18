@@ -43,13 +43,23 @@ pub(super) fn build_call_context(
 }
 
 impl RequestHandler {
-    /// Finds a task by context ID (linear scan for in-memory store).
+    /// Finds a task by context ID, scoped to the current tenant.
+    ///
+    /// Uses [`crate::store::tenant::TenantContext::current()`] so that
+    /// multi-tenant deployments only search within the caller's tenant.
     pub(crate) async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
         if context_id.len() > self.limits.max_id_length {
             return None;
         }
+        // Use the current tenant context so multi-tenant stores scope correctly.
+        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant_param = if tenant.is_empty() {
+            None
+        } else {
+            Some(tenant)
+        };
         let params = ListTasksParams {
-            tenant: None,
+            tenant: tenant_param,
             context_id: Some(context_id.to_owned()),
             status: None,
             page_size: Some(1),
@@ -58,11 +68,13 @@ impl RequestHandler {
             include_artifacts: None,
             history_length: None,
         };
-        self.task_store
-            .list(&params)
-            .await
-            .ok()
-            .and_then(|resp| resp.tasks.into_iter().next())
+        match self.task_store.list(&params).await {
+            Ok(resp) => resp.tasks.into_iter().next(),
+            Err(_e) => {
+                trace_error!(context_id, error = %_e, "find_task_by_context: store query failed");
+                None
+            }
+        }
     }
 }
 

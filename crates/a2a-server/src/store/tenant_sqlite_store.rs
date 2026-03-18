@@ -67,10 +67,7 @@ impl TenantAwareSqliteTaskStore {
     ///
     /// Returns an error if the database cannot be opened or migration fails.
     pub async fn new(url: &str) -> Result<Self, sqlx::Error> {
-        let pool = SqlitePoolOptions::new()
-            .max_connections(4)
-            .connect(url)
-            .await?;
+        let pool = sqlite_pool(url).await?;
         Self::from_pool(pool).await
     }
 
@@ -108,6 +105,25 @@ impl TenantAwareSqliteTaskStore {
 
         Ok(Self { pool })
     }
+}
+
+/// Creates a `SqlitePool` with production-ready defaults (WAL, busy_timeout, etc.).
+async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
+    use sqlx::ConnectOptions;
+    use sqlx::sqlite::SqliteConnectOptions;
+    use std::str::FromStr;
+
+    let opts = SqliteConnectOptions::from_str(url)?
+        .pragma("journal_mode", "WAL")
+        .pragma("busy_timeout", "5000")
+        .pragma("synchronous", "NORMAL")
+        .pragma("foreign_keys", "ON")
+        .create_if_missing(true);
+
+    SqlitePoolOptions::new()
+        .max_connections(8)
+        .connect_with(opts)
+        .await
 }
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {

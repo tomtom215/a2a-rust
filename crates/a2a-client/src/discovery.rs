@@ -187,8 +187,11 @@ async fn fetch_card_with_metadata(
     cached: Option<&CachedCard>,
 ) -> ClientResult<(AgentCard, Option<String>, Option<String>)> {
     #[cfg(not(feature = "tls-rustls"))]
-    let client: Client<HttpConnector, Full<Bytes>> =
-        Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+    let client: Client<HttpConnector, Full<Bytes>> = {
+        let mut connector = HttpConnector::new();
+        connector.set_connect_timeout(Some(Duration::from_secs(10)));
+        Client::builder(TokioExecutor::new()).build(connector)
+    };
 
     #[cfg(feature = "tls-rustls")]
     let client = crate::tls::build_https_client();
@@ -243,7 +246,11 @@ async fn fetch_card_with_metadata(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
 
-    let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
+    let body_bytes = tokio::time::timeout(Duration::from_secs(30), resp.collect())
+        .await
+        .map_err(|_| ClientError::Transport("agent card body read timed out".into()))?
+        .map_err(ClientError::Http)?
+        .to_bytes();
 
     if !status.is_success() {
         let body_str = String::from_utf8_lossy(&body_bytes).into_owned();

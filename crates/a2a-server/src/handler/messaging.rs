@@ -175,9 +175,8 @@ impl RequestHandler {
             metadata: None,
         };
 
-        self.task_store.save(task.clone()).await?;
-
-        // Build request context.
+        // Build request context BEFORE saving to store so we can insert the
+        // cancellation token atomically with the task save.
         let mut ctx = RequestContext::new(params.message, task_id.clone(), context_id);
         if let Some(stored) = stored_task {
             ctx = ctx.with_stored_task(stored);
@@ -186,7 +185,10 @@ impl RequestHandler {
             ctx = ctx.with_metadata(meta);
         }
 
-        // Store the cancellation token so CancelTask can signal it.
+        // FIX(#8): Insert the cancellation token BEFORE saving the task to
+        // the store. This eliminates the race window where a task exists in
+        // the store but has no cancellation token — a concurrent CancelTask
+        // during that window would silently fail to cancel.
         {
             let mut tokens = self.cancellation_tokens.write().await;
             // Sweep stale tokens if the map is getting large (prevent unbounded growth
@@ -207,10 +209,21 @@ impl RequestHandler {
             );
         }
 
+        self.task_store.save(task.clone()).await?;
+
         // Create event queue.
         let (writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
         let reader = reader
             .ok_or_else(|| ServerError::Internal("event queue already exists for task".into()))?;
+
+        // FIX(#38): Subscribe the background reader BEFORE spawning the
+        // executor. This guarantees the background processor sees every event,
+        // even from executors that complete in <1ms.
+        let bg_reader = if streaming {
+            self.event_queue_manager.subscribe(&task_id).await
+        } else {
+            None
+        };
 
         // Spawn executor task. The spawned task owns the only writer clone
         // needed; drop the local reference and the manager's reference so the
@@ -274,9 +287,13 @@ impl RequestHandler {
             // 2. Push notifications fire for every event regardless of consumer mode
             // 3. State transition validation occurs for streaming events
             //
-            // The background processor subscribes to the same broadcast channel
-            // as the SSE reader, so both consumers see every event.
-            self.spawn_background_event_processor(task_id.clone(), executor_handle);
+            // FIX(#38): The background reader was subscribed BEFORE the executor
+            // was spawned, so it sees every event even from fast executors.
+            self.spawn_background_event_processor(
+                task_id.clone(),
+                executor_handle,
+                bg_reader,
+            );
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.

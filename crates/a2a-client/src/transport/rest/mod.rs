@@ -109,6 +109,8 @@ impl RestTransport {
 
     /// Creates a new transport with separate request and stream connect timeouts.
     ///
+    /// Uses the default TCP connection timeout (10 seconds).
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
@@ -116,6 +118,28 @@ impl RestTransport {
         base_url: impl Into<String>,
         request_timeout: Duration,
         stream_connect_timeout: Duration,
+    ) -> ClientResult<Self> {
+        Self::with_all_timeouts(
+            base_url,
+            request_timeout,
+            stream_connect_timeout,
+            Duration::from_secs(10),
+        )
+    }
+
+    /// Creates a new transport with all timeout parameters.
+    ///
+    /// `connection_timeout` is applied to the underlying TCP connector (DNS +
+    /// handshake), preventing indefinite hangs when the server is unreachable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
+    pub fn with_all_timeouts(
+        base_url: impl Into<String>,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+        connection_timeout: Duration,
     ) -> ClientResult<Self> {
         let base_url = base_url.into();
         if base_url.is_empty()
@@ -127,10 +151,20 @@ impl RestTransport {
         }
 
         #[cfg(not(feature = "tls-rustls"))]
-        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+        let client = {
+            let mut connector = HttpConnector::new();
+            connector.set_connect_timeout(Some(connection_timeout));
+            Client::builder(TokioExecutor::new())
+                .pool_idle_timeout(Duration::from_secs(90))
+                .build(connector)
+        };
 
         #[cfg(feature = "tls-rustls")]
-        let client = crate::tls::build_https_client();
+        let client =
+            crate::tls::build_https_client_with_connect_timeout(
+                crate::tls::default_tls_config(),
+                connection_timeout,
+            );
 
         Ok(Self {
             inner: Arc::new(Inner {
