@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-18
+
 ### Fixed (v0.3.0 Hardening — Pass 11)
 
 - **Retry jitter** — backoff now applies full jitter (0.5–1.0× randomization)
@@ -129,7 +131,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error mapping), `dispatch/jsonrpc` (13 tests: header extraction, param parsing,
   batch handling), `dispatch/grpc` (12 tests: config builders, encode/decode,
   error-to-status mapping), `dispatch/websocket` (5 tests: param parsing, error
-  display). Total workspace test count: **1,750+ passing tests**.
+  display). Total workspace test count: **~1,630 passing tests** (~1,850 with all feature flags).
 
 ### Added (PostgreSQL Support)
 
