@@ -190,7 +190,11 @@ mod tests {
             _params: serde_json::Value,
             _extra_headers: &'a HashMap<String, String>,
         ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-            Box::pin(async move { Err(ClientError::Transport("mock: streaming not supported".into())) })
+            Box::pin(async move {
+                Err(ClientError::Transport(
+                    "mock: streaming not supported".into(),
+                ))
+            })
         }
     }
 

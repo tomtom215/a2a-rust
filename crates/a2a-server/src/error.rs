@@ -222,21 +222,37 @@ mod tests {
 
     #[test]
     fn display_all_variants() {
-        assert!(ServerError::TaskNotFound("t1".into()).to_string().contains("t1"));
-        assert!(ServerError::TaskNotCancelable("t2".into()).to_string().contains("t2"));
-        assert!(ServerError::InvalidParams("bad".into()).to_string().contains("bad"));
-        assert!(ServerError::HttpClient("conn".into()).to_string().contains("conn"));
-        assert!(ServerError::Transport("tcp".into()).to_string().contains("tcp"));
+        assert!(ServerError::TaskNotFound("t1".into())
+            .to_string()
+            .contains("t1"));
+        assert!(ServerError::TaskNotCancelable("t2".into())
+            .to_string()
+            .contains("t2"));
+        assert!(ServerError::InvalidParams("bad".into())
+            .to_string()
+            .contains("bad"));
+        assert!(ServerError::HttpClient("conn".into())
+            .to_string()
+            .contains("conn"));
+        assert!(ServerError::Transport("tcp".into())
+            .to_string()
+            .contains("tcp"));
         assert_eq!(
             ServerError::PushNotSupported.to_string(),
             "push notifications not supported"
         );
-        assert!(ServerError::Internal("oops".into()).to_string().contains("oops"));
-        assert!(ServerError::MethodNotFound("foo/bar".into()).to_string().contains("foo/bar"));
-        assert!(
-            ServerError::Protocol(A2aError::task_not_found("t")).to_string().contains("protocol error")
-        );
-        assert!(ServerError::PayloadTooLarge("too big".into()).to_string().contains("too big"));
+        assert!(ServerError::Internal("oops".into())
+            .to_string()
+            .contains("oops"));
+        assert!(ServerError::MethodNotFound("foo/bar".into())
+            .to_string()
+            .contains("foo/bar"));
+        assert!(ServerError::Protocol(A2aError::task_not_found("t"))
+            .to_string()
+            .contains("protocol error"));
+        assert!(ServerError::PayloadTooLarge("too big".into())
+            .to_string()
+            .contains("too big"));
         let ist = ServerError::InvalidStateTransition {
             task_id: "t3".into(),
             from: a2a_protocol_types::task::TaskState::Working,
@@ -244,7 +260,10 @@ mod tests {
         };
         let s = ist.to_string();
         assert!(s.contains("t3"), "missing task_id: {s}");
-        assert!(s.contains("WORKING") || s.contains("Working"), "missing from state: {s}");
+        assert!(
+            s.contains("WORKING") || s.contains("Working"),
+            "missing from state: {s}"
+        );
     }
 
     // ── to_a2a_error mapping tests ────────────────────────────────────────
@@ -256,7 +275,9 @@ mod tests {
             ErrorCode::TaskNotFound
         );
         assert_eq!(
-            ServerError::TaskNotCancelable("t".into()).to_a2a_error().code,
+            ServerError::TaskNotCancelable("t".into())
+                .to_a2a_error()
+                .code,
             ErrorCode::TaskNotCancelable
         );
         assert_eq!(

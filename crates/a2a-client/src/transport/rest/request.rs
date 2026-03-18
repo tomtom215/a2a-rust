@@ -372,11 +372,19 @@ mod tests {
             .build_request("SendMessage", &params, &extra, false)
             .unwrap();
         assert_eq!(
-            req.headers().get("x-custom-header").unwrap().to_str().unwrap(),
+            req.headers()
+                .get("x-custom-header")
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "custom-value"
         );
         assert_eq!(
-            req.headers().get("authorization").unwrap().to_str().unwrap(),
+            req.headers()
+                .get("authorization")
+                .unwrap()
+                .to_str()
+                .unwrap(),
             "Bearer tok"
         );
     }
@@ -415,7 +423,8 @@ mod tests {
 
     #[tokio::test]
     async fn execute_request_jsonrpc_error_response() {
-        let response_body = r#"{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"internal error"}}"#;
+        let response_body =
+            r#"{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"internal error"}}"#;
         let addr = start_rest_server(200, "application/json", response_body).await;
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = RestTransport::new(&url).unwrap();

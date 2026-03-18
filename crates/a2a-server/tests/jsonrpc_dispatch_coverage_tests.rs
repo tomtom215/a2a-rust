@@ -225,8 +225,7 @@ async fn options_without_cors_returns_204_no_cors_headers() {
 #[tokio::test]
 async fn agent_card_get_returns_card_when_configured() {
     let addr = start_server(make_dispatcher_with_agent_card()).await;
-    let (status, body, _) =
-        http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
 
     assert_eq!(status, 200, "agent card GET should return 200");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -236,10 +235,12 @@ async fn agent_card_get_returns_card_when_configured() {
 #[tokio::test]
 async fn agent_card_get_returns_404_when_not_configured() {
     let addr = start_server(make_plain_dispatcher()).await;
-    let (status, body, _) =
-        http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
 
-    assert_eq!(status, 404, "agent card GET should return 404 when not configured");
+    assert_eq!(
+        status, 404,
+        "agent card GET should return 404 when not configured"
+    );
     assert!(body.contains("agent card not configured"));
 }
 
@@ -285,11 +286,13 @@ async fn regular_dispatch_with_cors_has_cors_headers() {
 #[tokio::test]
 async fn unsupported_content_type_returns_parse_error() {
     let addr = start_server(make_plain_dispatcher()).await;
-    let (status, body, _) =
-        http_request(addr, "POST", "/", Some("{}"), Some("text/xml")).await;
+    let (status, body, _) = http_request(addr, "POST", "/", Some("{}"), Some("text/xml")).await;
 
     assert_eq!(status, 200);
-    assert!(body.contains("Parse error"), "should return parse error for unsupported content type");
+    assert!(
+        body.contains("Parse error"),
+        "should return parse error for unsupported content type"
+    );
     assert!(body.contains("unsupported Content-Type"));
 }
 
@@ -324,8 +327,14 @@ async fn a2a_content_type_is_accepted() {
 #[tokio::test]
 async fn invalid_json_body_returns_parse_error() {
     let addr = start_server(make_plain_dispatcher()).await;
-    let (status, body, _) =
-        http_request(addr, "POST", "/", Some("not json at all"), Some("application/json")).await;
+    let (status, body, _) = http_request(
+        addr,
+        "POST",
+        "/",
+        Some("not json at all"),
+        Some("application/json"),
+    )
+    .await;
 
     assert_eq!(status, 200);
     assert!(body.contains("Parse error"));
@@ -383,7 +392,10 @@ async fn send_message_missing_params_returns_error() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "SendMessage without params should error");
+    assert!(
+        v.get("error").is_some(),
+        "SendMessage without params should error"
+    );
 }
 
 #[tokio::test]
@@ -399,7 +411,10 @@ async fn send_message_invalid_params_returns_error() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "SendMessage with invalid params should error");
+    assert!(
+        v.get("error").is_some(),
+        "SendMessage with invalid params should error"
+    );
 }
 
 // ── SendMessage in batch (lines 253-258, error path) ─────────────────────────
@@ -447,7 +462,10 @@ async fn get_task_not_found() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "GetTask for nonexistent should error");
+    assert!(
+        v.get("error").is_some(),
+        "GetTask for nonexistent should error"
+    );
 }
 
 #[tokio::test]
@@ -514,7 +532,10 @@ async fn cancel_task_not_found() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "CancelTask for nonexistent should error");
+    assert!(
+        v.get("error").is_some(),
+        "CancelTask for nonexistent should error"
+    );
 }
 
 #[tokio::test]
@@ -693,7 +714,10 @@ async fn get_extended_agent_card_returns_error_when_not_configured() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "GetExtendedAgentCard should error when not configured");
+    assert!(
+        v.get("error").is_some(),
+        "GetExtendedAgentCard should error when not configured"
+    );
 }
 
 // ── Method not found (line 356) ──────────────────────────────────────────────
@@ -734,7 +758,9 @@ async fn send_streaming_message_returns_sse() {
 
     assert_eq!(status, 200);
     // SSE responses have text/event-stream content type.
-    let ct = headers.get("content-type").map(|v| v.to_str().unwrap_or(""));
+    let ct = headers
+        .get("content-type")
+        .map(|v| v.to_str().unwrap_or(""));
     assert!(
         ct.map_or(false, |c| c.contains("text/event-stream")),
         "SendStreamingMessage should return SSE, got content-type: {:?}, body: {}",
@@ -755,7 +781,10 @@ async fn send_streaming_message_missing_params_returns_error() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "SendStreamingMessage without params should error");
+    assert!(
+        v.get("error").is_some(),
+        "SendStreamingMessage without params should error"
+    );
 }
 
 // ── SubscribeToTask dispatch (lines 221-230) ─────────────────────────────────
@@ -772,7 +801,10 @@ async fn subscribe_to_task_missing_params_returns_error() {
 
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-    assert!(v.get("error").is_some(), "SubscribeToTask without params should error");
+    assert!(
+        v.get("error").is_some(),
+        "SubscribeToTask without params should error"
+    );
 }
 
 #[tokio::test]
@@ -798,7 +830,10 @@ async fn subscribe_to_task_nonexistent_returns_error() {
     } else {
         // JSON error response.
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
-        assert!(v.get("error").is_some(), "SubscribeToTask for nonexistent task should error");
+        assert!(
+            v.get("error").is_some(),
+            "SubscribeToTask for nonexistent task should error"
+        );
     }
 }
 
@@ -1100,9 +1135,16 @@ async fn batch_with_invalid_item_returns_individual_error() {
     assert_eq!(status, 200);
     let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
     let arr = v.as_array().unwrap();
-    assert_eq!(arr.len(), 2, "should return 2 responses (one error, one real)");
+    assert_eq!(
+        arr.len(),
+        2,
+        "should return 2 responses (one error, one real)"
+    );
     // First item should be a parse error.
-    assert!(arr[0].get("error").is_some(), "invalid batch item should produce error");
+    assert!(
+        arr[0].get("error").is_some(),
+        "invalid batch item should produce error"
+    );
 }
 
 // ── Dispatcher trait impl (lines 436-444) ────────────────────────────────────

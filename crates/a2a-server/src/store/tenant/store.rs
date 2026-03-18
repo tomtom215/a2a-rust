@@ -660,7 +660,11 @@ mod tests {
         })
         .await;
 
-        assert_eq!(store.tenant_count().await, 1, "should have exactly 1 tenant");
+        assert_eq!(
+            store.tenant_count().await,
+            1,
+            "should have exactly 1 tenant"
+        );
     }
 
     #[test]

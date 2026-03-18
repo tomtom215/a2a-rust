@@ -134,10 +134,10 @@ mod tests {
     #[tokio::test]
     async fn list_tasks_error_path_records_metrics() {
         // Use an interceptor that always fails to trigger the error metrics path (lines 48-51).
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -147,7 +147,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(

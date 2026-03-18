@@ -363,8 +363,7 @@ mod tests {
     #[test]
     fn canonicalize_string_control_chars() {
         // Test \b (backspace), \f (form feed), \r (carriage return)
-        let json: serde_json::Value =
-            serde_json::json!({"a": "x\x08y\x0cz\rw"});
+        let json: serde_json::Value = serde_json::json!({"a": "x\x08y\x0cz\rw"});
         let canonical = canonicalize(&json).unwrap();
         let s = String::from_utf8(canonical).unwrap();
         assert!(s.contains(r#"\b"#), "should escape backspace: {s}");

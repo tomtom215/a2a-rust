@@ -265,9 +265,7 @@ mod tests {
         });
 
         let start = Instant::now();
-        handler
-            .shutdown_with_timeout(Duration::from_secs(5))
-            .await;
+        handler.shutdown_with_timeout(Duration::from_secs(5)).await;
         // The drain loop should have detected the queue was removed and exited
         // well before the 5-second timeout.
         assert!(

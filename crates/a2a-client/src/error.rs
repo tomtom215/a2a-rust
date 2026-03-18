@@ -246,10 +246,7 @@ mod tests {
             "missing prefix: {s}"
         );
         assert!(s.contains("expected REST"), "missing message: {s}");
-        assert!(
-            s.contains("supported_interfaces"),
-            "missing advice: {s}"
-        );
+        assert!(s.contains("supported_interfaces"), "missing advice: {s}");
     }
 
     #[test]
@@ -267,10 +264,7 @@ mod tests {
         };
         let s = e.to_string();
         assert!(s.contains("500"), "missing status code: {s}");
-        assert!(
-            s.contains("Internal Server Error"),
-            "missing body: {s}"
-        );
+        assert!(s.contains("Internal Server Error"), "missing body: {s}");
     }
 
     // ── Error::source coverage ────────────────────────────────────────────

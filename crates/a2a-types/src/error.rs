@@ -294,7 +294,11 @@ mod tests {
                 -32003,
                 "Push notification not supported",
             ),
-            (ErrorCode::UnsupportedOperation, -32004, "Unsupported operation"),
+            (
+                ErrorCode::UnsupportedOperation,
+                -32004,
+                "Unsupported operation",
+            ),
             (
                 ErrorCode::ContentTypeNotSupported,
                 -32005,
@@ -315,7 +319,11 @@ mod tests {
                 -32008,
                 "Extension support required",
             ),
-            (ErrorCode::VersionNotSupported, -32009, "Version not supported"),
+            (
+                ErrorCode::VersionNotSupported,
+                -32009,
+                "Version not supported",
+            ),
         ];
 
         for &(code, expected_i32, expected_msg) in cases {
@@ -355,10 +363,17 @@ mod tests {
     #[test]
     fn error_code_rejects_adjacent_values() {
         let invalid: &[i32] = &[
-            -32701, -32699, // around ParseError
-            -32599, -32601 + 1, // around InvalidRequest (avoid MethodNotFound)
-            -32000, -32010, // around A2A range boundaries
-            0, 1, -1, i32::MIN, i32::MAX,
+            -32701,
+            -32699, // around ParseError
+            -32599,
+            -32601 + 1, // around InvalidRequest (avoid MethodNotFound)
+            -32000,
+            -32010, // around A2A range boundaries
+            0,
+            1,
+            -1,
+            i32::MIN,
+            i32::MAX,
         ];
         for &v in invalid {
             // Skip values that are actually valid codes
@@ -377,10 +392,7 @@ mod tests {
 
     #[test]
     fn named_constructors_use_correct_codes() {
-        assert_eq!(
-            A2aError::task_not_found("t1").code,
-            ErrorCode::TaskNotFound
-        );
+        assert_eq!(A2aError::task_not_found("t1").code, ErrorCode::TaskNotFound);
         assert_eq!(
             A2aError::task_not_cancelable("t1").code,
             ErrorCode::TaskNotCancelable

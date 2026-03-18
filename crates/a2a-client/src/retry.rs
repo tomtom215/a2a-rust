@@ -328,10 +328,7 @@ mod tests {
                 status,
                 body: String::new(),
             };
-            assert!(
-                !e.is_retryable(),
-                "status {status} should not be retryable"
-            );
+            assert!(!e.is_retryable(), "status {status} should not be retryable");
         }
     }
 

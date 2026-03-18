@@ -405,7 +405,7 @@ mod tests {
     fn fallback_error_response_returns_internal_error_json() {
         let resp = fallback_error_response();
         assert_eq!(resp.status(), 200); // default status for Response::new
-        // Body should contain error JSON
+                                        // Body should contain error JSON
     }
 
     /// Covers line 113 (serialization error in handle) and line 136 (in handle_unconditional).

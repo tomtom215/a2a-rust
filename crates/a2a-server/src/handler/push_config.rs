@@ -292,10 +292,10 @@ mod tests {
     async fn list_push_configs_error_path_records_metrics() {
         // Exercise the Err branch in on_list_push_configs (lines 144-149)
         // by using a failing interceptor.
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -305,7 +305,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(
@@ -333,11 +335,11 @@ mod tests {
     async fn delete_push_config_error_path_records_metrics() {
         // Exercise the Err branch in on_delete_push_config (lines 186-191, 204)
         // by using a failing interceptor.
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
+        use a2a_protocol_types::params::DeletePushConfigParams;
         use std::future::Future;
         use std::pin::Pin;
-        use a2a_protocol_types::params::DeletePushConfigParams;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -347,7 +349,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(

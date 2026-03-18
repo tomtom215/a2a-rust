@@ -313,7 +313,11 @@ mod tests {
 
         let mut req = ClientRequest::new("test", serde_json::Value::Null);
         boxed.before_boxed(&mut req).await.unwrap();
-        assert_eq!(counter.load(Ordering::SeqCst), 1, "before_boxed should delegate");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            1,
+            "before_boxed should delegate"
+        );
 
         let resp = ClientResponse {
             method: "test".into(),
@@ -321,13 +325,25 @@ mod tests {
             status_code: 200,
         };
         boxed.after_boxed(&resp).await.unwrap();
-        assert_eq!(counter.load(Ordering::SeqCst), 11, "after_boxed should delegate");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            11,
+            "after_boxed should delegate"
+        );
 
         // Now test the impl for Box<dyn CallInterceptorBoxed> itself (double indirection)
         let double_boxed: Box<dyn CallInterceptorBoxed> = Box::new(boxed);
         double_boxed.before_boxed(&mut req).await.unwrap();
-        assert_eq!(counter.load(Ordering::SeqCst), 12, "double-boxed before should delegate");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            12,
+            "double-boxed before should delegate"
+        );
         double_boxed.after_boxed(&resp).await.unwrap();
-        assert_eq!(counter.load(Ordering::SeqCst), 22, "double-boxed after should delegate");
+        assert_eq!(
+            counter.load(Ordering::SeqCst),
+            22,
+            "double-boxed after should delegate"
+        );
     }
 }

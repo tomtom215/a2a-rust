@@ -577,7 +577,10 @@ mod tests {
         // briefly; the check method will fall through to the slow path where
         // the bucket exists but has an old window. We call check() directly.
         let result = limiter.check(key).await;
-        assert!(result.is_ok(), "slow-path stale-window reset should succeed");
+        assert!(
+            result.is_ok(),
+            "slow-path stale-window reset should succeed"
+        );
 
         // The window should have been updated and count reset to 1.
         let buckets = limiter.buckets.read().await;
@@ -640,7 +643,10 @@ mod tests {
         assert!(limiter.before(&ctx).await.is_ok());
         // Third request should hit the fast-path count > limit check.
         let result = limiter.before(&ctx).await;
-        assert!(result.is_err(), "fast-path should reject when count exceeds limit");
+        assert!(
+            result.is_err(),
+            "fast-path should reject when count exceeds limit"
+        );
         let err = result.unwrap_err();
         assert!(
             err.to_string().contains("rate limit exceeded"),

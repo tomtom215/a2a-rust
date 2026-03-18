@@ -439,8 +439,12 @@ mod tests {
         let sse_bytes = sse_frame(&event);
         let (first_half, second_half) = sse_bytes.split_at(sse_bytes.len() / 2);
 
-        tx.send(Ok(Bytes::from(first_half.to_owned()))).await.unwrap();
-        tx.send(Ok(Bytes::from(second_half.to_owned()))).await.unwrap();
+        tx.send(Ok(Bytes::from(first_half.to_owned())))
+            .await
+            .unwrap();
+        tx.send(Ok(Bytes::from(second_half.to_owned())))
+            .await
+            .unwrap();
         drop(tx);
 
         let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())

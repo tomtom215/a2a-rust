@@ -129,7 +129,10 @@ mod tests {
         assert!(cfg.tenant.is_none(), "tenant should be None");
         assert!(cfg.id.is_none(), "id should be None");
         assert!(cfg.token.is_none(), "token should be None");
-        assert!(cfg.authentication.is_none(), "authentication should be None");
+        assert!(
+            cfg.authentication.is_none(),
+            "authentication should be None"
+        );
     }
 
     #[test]

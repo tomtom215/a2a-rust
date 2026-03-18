@@ -175,7 +175,7 @@ mod tests {
         // (if executor already completed and queue was destroyed). Both are valid.
         // What matters is that we exercised the code path.
         match &sub_result {
-            Ok(_) => {} // success path covered
+            Ok(_) => {}                         // success path covered
             Err(ServerError::Internal(_)) => {} // queue already closed
             Err(e) => panic!("unexpected error: {e:?}"),
         }
@@ -210,10 +210,10 @@ mod tests {
     #[tokio::test]
     async fn resubscribe_error_path_records_error_metrics() {
         // Triggers the Err branch in the metrics match (lines 60-63, 82).
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -223,7 +223,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(

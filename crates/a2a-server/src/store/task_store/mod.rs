@@ -194,6 +194,60 @@ mod tests {
         let count = store.count().await.unwrap();
         assert_eq!(count, 0, "default count() should return 0");
     }
+
+    /// Covers TaskStoreConfig::default() (lines 222-231).
+    #[test]
+    fn task_store_config_default_values() {
+        let config = super::TaskStoreConfig::default();
+        assert_eq!(config.max_capacity, Some(10_000));
+        assert_eq!(config.task_ttl, Some(Duration::from_secs(3600)));
+        assert_eq!(config.eviction_interval, 64);
+        assert_eq!(config.max_page_size, 1000);
+    }
+
+    /// Covers TaskStoreConfig Clone + Debug derives.
+    #[test]
+    fn task_store_config_clone_and_debug() {
+        let config = super::TaskStoreConfig {
+            max_capacity: Some(500),
+            task_ttl: None,
+            eviction_interval: 32,
+            max_page_size: 100,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.max_capacity, Some(500));
+        assert_eq!(cloned.task_ttl, None);
+        assert_eq!(cloned.eviction_interval, 32);
+        assert_eq!(cloned.max_page_size, 100);
+
+        let debug_str = format!("{:?}", cloned);
+        assert!(
+            debug_str.contains("TaskStoreConfig"),
+            "Debug output should contain struct name: {debug_str}"
+        );
+    }
+
+    /// Covers MinimalStore's required methods via trait object.
+    #[tokio::test]
+    async fn minimal_store_save_get_list_delete() {
+        let store = MinimalStore;
+        let task = Task {
+            id: TaskId::new("test"),
+            context_id: a2a_protocol_types::task::ContextId::new("ctx"),
+            status: a2a_protocol_types::task::TaskStatus::new(
+                a2a_protocol_types::task::TaskState::Submitted,
+            ),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        assert!(store.save(task.clone()).await.is_ok());
+        assert!(store.get(&TaskId::new("test")).await.unwrap().is_none());
+        let list_result = store.list(&ListTasksParams::default()).await.unwrap();
+        assert!(list_result.tasks.is_empty());
+        assert!(store.insert_if_absent(task).await.unwrap());
+        assert!(store.delete(&TaskId::new("test")).await.is_ok());
+    }
 }
 
 /// Configuration for [`InMemoryTaskStore`].

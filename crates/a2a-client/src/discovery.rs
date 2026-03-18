@@ -584,7 +584,10 @@ mod tests {
 
         let base_url = format!("http://127.0.0.1:{}", addr.port());
         let resolver = CachingCardResolver::with_path(&base_url, "/agent.json");
-        assert!(resolver.cache.read().await.is_none(), "cache should start empty");
+        assert!(
+            resolver.cache.read().await.is_none(),
+            "cache should start empty"
+        );
 
         let resolved = resolver.resolve().await.unwrap();
         assert_eq!(resolved.name, "resolver-test");
@@ -603,7 +606,10 @@ mod tests {
         // Use an invalid URL that won't connect.
         let resolver = CachingCardResolver::with_path("http://127.0.0.1:1", "/agent.json");
         let result = resolver.resolve().await;
-        assert!(result.is_err(), "resolve should fail with unreachable server");
+        assert!(
+            result.is_err(),
+            "resolve should fail with unreachable server"
+        );
     }
 
     /// Test `build_card_url` with a path that doesn't start with '/'.
@@ -733,7 +739,9 @@ mod tests {
         });
 
         let base_url = format!("http://127.0.0.1:{}", addr.port());
-        let fetched = resolve_agent_card_with_path(&base_url, "/custom.json").await.unwrap();
+        let fetched = resolve_agent_card_with_path(&base_url, "/custom.json")
+            .await
+            .unwrap();
         assert_eq!(fetched.name, "path-resolve-test");
     }
 

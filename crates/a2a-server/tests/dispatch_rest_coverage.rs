@@ -273,7 +273,10 @@ async fn options_without_cors_returns_health() {
 
     let (status, body) = http_request(addr, "OPTIONS", "/anything", None, None).await;
     assert_eq!(status, 200);
-    assert!(body.contains("ok"), "OPTIONS without CORS should return health response");
+    assert!(
+        body.contains("ok"),
+        "OPTIONS without CORS should return health response"
+    );
 }
 
 #[tokio::test]
@@ -282,8 +285,7 @@ async fn cors_headers_on_oversized_query_string() {
     let (addr, _handle) = start_rest_server_with_cors(make_handler(), Some(cors)).await;
 
     let long_query = format!("/tasks?q={}", "a".repeat(5000));
-    let (status, headers, _body) =
-        http_request_full(addr, "GET", &long_query, None, None).await;
+    let (status, headers, _body) = http_request_full(addr, "GET", &long_query, None, None).await;
 
     assert_eq!(status, 414);
     assert_eq!(
@@ -298,8 +300,7 @@ async fn cors_headers_on_health_check() {
     let cors = CorsConfig::new("https://health-cors.example.com");
     let (addr, _handle) = start_rest_server_with_cors(make_handler(), Some(cors)).await;
 
-    let (status, headers, _body) =
-        http_request_full(addr, "GET", "/health", None, None).await;
+    let (status, headers, _body) = http_request_full(addr, "GET", "/health", None, None).await;
 
     assert_eq!(status, 200);
     assert_eq!(
@@ -314,8 +315,7 @@ async fn cors_headers_on_normal_response() {
     let cors = CorsConfig::new("https://normal-cors.example.com");
     let (addr, _handle) = start_rest_server_with_cors(make_handler(), Some(cors)).await;
 
-    let (status, headers, _body) =
-        http_request_full(addr, "GET", "/tasks", None, None).await;
+    let (status, headers, _body) = http_request_full(addr, "GET", "/tasks", None, None).await;
 
     assert_eq!(status, 200);
     assert_eq!(
@@ -344,8 +344,7 @@ async fn get_on_cancel_action_returns_404() {
     let (addr, _handle) = start_rest_server().await;
 
     // GET /tasks/{id}:cancel should not match (cancel requires POST).
-    let (status, _body) =
-        http_request(addr, "GET", "/tasks/some-task:cancel", None, None).await;
+    let (status, _body) = http_request(addr, "GET", "/tasks/some-task:cancel", None, None).await;
     assert_eq!(status, 404, "GET on :cancel should return 404");
 }
 
@@ -354,8 +353,7 @@ async fn empty_task_id_with_action_returns_404() {
     let (addr, _handle) = start_rest_server().await;
 
     // /tasks/:cancel has empty id, should fall through.
-    let (status, _body) =
-        http_request(addr, "POST", "/tasks/:cancel", None, None).await;
+    let (status, _body) = http_request(addr, "POST", "/tasks/:cancel", None, None).await;
     assert_eq!(status, 404, "empty task id with action should return 404");
 }
 
@@ -421,8 +419,14 @@ async fn cancel_task_nonexistent_returns_error() {
 async fn subscribe_nonexistent_task_returns_error() {
     let (addr, _handle) = start_rest_server().await;
 
-    let (status, _body) =
-        http_request(addr, "POST", "/tasks/nonexistent-task:subscribe", None, None).await;
+    let (status, _body) = http_request(
+        addr,
+        "POST",
+        "/tasks/nonexistent-task:subscribe",
+        None,
+        None,
+    )
+    .await;
     // Task not found should return error status.
     assert_eq!(status, 404);
 }
@@ -523,7 +527,10 @@ async fn list_push_configs_empty_returns_200() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(body.contains("configs"), "response should contain configs field");
+    assert!(
+        body.contains("configs"),
+        "response should contain configs field"
+    );
 }
 
 #[tokio::test]
@@ -556,7 +563,10 @@ async fn list_push_configs_no_push_sender_still_works() {
         None,
     )
     .await;
-    assert_eq!(status, 200, "list push configs should succeed even without push sender");
+    assert_eq!(
+        status, 200,
+        "list push configs should succeed even without push sender"
+    );
     assert!(body.contains("configs"));
 }
 
@@ -648,11 +658,9 @@ async fn dispatcher_trait_dispatch_via_real_server() {
             let d = Arc::clone(&d);
             async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
         });
-        let _ = hyper_util::server::conn::auto::Builder::new(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-        .serve_connection(io, service)
-        .await;
+        let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service)
+            .await;
     });
 
     let client = http_client();
@@ -800,7 +808,11 @@ async fn subscribe_existing_task_returns_sse() {
     let resp = client.request(req).await.expect("subscribe");
     // Should not be 404 — the route should match. It may be 200 (SSE) or other status
     // depending on whether the task supports resubscription.
-    assert_ne!(resp.status(), 404, "subscribe to existing task should be routed");
+    assert_ne!(
+        resp.status(),
+        404,
+        "subscribe to existing task should be routed"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

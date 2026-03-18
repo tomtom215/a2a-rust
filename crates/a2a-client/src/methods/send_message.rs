@@ -292,7 +292,8 @@ mod tests {
                 _method: &'a str,
                 _params: serde_json::Value,
                 _extra_headers: &'a HashMap<String, String>,
-            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
+            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
+            {
                 Box::pin(async move { Ok(serde_json::Value::Null) })
             }
 
@@ -302,9 +303,9 @@ mod tests {
                 _params: serde_json::Value,
                 _extra_headers: &'a HashMap<String, String>,
             ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-                Box::pin(async move {
-                    Err(ClientError::Transport("mock: streaming called".into()))
-                })
+                Box::pin(
+                    async move { Err(ClientError::Transport("mock: streaming called".into())) },
+                )
             }
         }
 

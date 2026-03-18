@@ -444,8 +444,8 @@ mod tests {
     #[tokio::test]
     async fn too_long_task_id_returns_invalid_params() {
         // Covers lines 108-109: task_id exceeding max_id_length.
-        use a2a_protocol_types::task::TaskId;
         use crate::handler::limits::HandlerLimits;
+        use a2a_protocol_types::task::TaskId;
 
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
@@ -523,10 +523,10 @@ mod tests {
     #[tokio::test]
     async fn send_message_error_path_records_metrics() {
         // Covers lines 195-199: the Err branch in the outer metrics match.
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -536,7 +536,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(
@@ -564,10 +566,10 @@ mod tests {
     #[tokio::test]
     async fn send_streaming_message_error_path_records_metrics() {
         // Covers the streaming variant of the error metrics path (method_name = "SendStreamingMessage").
+        use crate::call_context::CallContext;
+        use crate::interceptor::ServerInterceptor;
         use std::future::Future;
         use std::pin::Pin;
-        use crate::interceptor::ServerInterceptor;
-        use crate::call_context::CallContext;
 
         struct FailInterceptor;
         impl ServerInterceptor for FailInterceptor {
@@ -577,7 +579,9 @@ mod tests {
             ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
             {
                 Box::pin(async {
-                    Err(a2a_protocol_types::error::A2aError::internal("forced failure"))
+                    Err(a2a_protocol_types::error::A2aError::internal(
+                        "forced failure",
+                    ))
                 })
             }
             fn after<'a>(
@@ -652,10 +656,7 @@ mod tests {
         headers.insert("authorization".to_string(), "Bearer test-token".to_string());
 
         let result = handler.on_send_message(params, false, Some(&headers)).await;
-        assert!(
-            result.is_ok(),
-            "send_message with headers should succeed"
-        );
+        assert!(result.is_ok(), "send_message with headers should succeed");
     }
 
     #[tokio::test]
@@ -695,10 +696,7 @@ mod tests {
         params.tenant = Some("test-tenant".to_string());
 
         let result = handler.on_send_message(params, false, None).await;
-        assert!(
-            result.is_ok(),
-            "send_message with tenant should succeed"
-        );
+        assert!(result.is_ok(), "send_message with tenant should succeed");
     }
 
     #[tokio::test]
@@ -771,20 +769,42 @@ mod tests {
         // exceeds max_cancellation_tokens.
         use crate::handler::limits::HandlerLimits;
 
-        let handler = RequestHandlerBuilder::new(DummyExecutor)
-            .with_handler_limits(
-                HandlerLimits::default()
-                    .with_max_cancellation_tokens(2)
-            )
+        // Use a slow executor so tokens accumulate before being cleaned up.
+        struct SlowExec;
+        impl crate::executor::AgentExecutor for SlowExec {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async {
+                    // Hold the token for a bit so tokens accumulate.
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    Ok(())
+                })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(SlowExec)
+            .with_handler_limits(HandlerLimits::default().with_max_cancellation_tokens(2))
             .build()
             .unwrap();
 
-        // Send multiple messages to fill up the cancellation tokens map.
+        // Send multiple streaming messages so tokens accumulate (streaming returns
+        // immediately without waiting for executor to finish).
         for _ in 0..3 {
             let params = make_params(None);
-            let _ = handler.on_send_message(params, false, None).await;
+            let _ = handler.on_send_message(params, true, None).await;
         }
         // If we get here without panic, the sweep logic ran successfully.
+        // Clean up the slow executors.
+        handler.shutdown().await;
     }
 
     #[tokio::test]

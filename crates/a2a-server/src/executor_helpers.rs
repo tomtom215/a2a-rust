@@ -324,23 +324,23 @@ mod tests {
     async fn emit_artifact_writes_to_queue() {
         let ctx = make_request_context();
         let emit = EventEmitter::new(&ctx, &DummyWriter);
-        emit.artifact(
-            "result-1",
-            vec![Part::text("hello")],
-            None,
-            Some(true),
-        )
-        .await
-        .unwrap();
+        emit.artifact("result-1", vec![Part::text("hello")], None, Some(true))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn emit_artifact_with_append() {
         let ctx = make_request_context();
         let emit = EventEmitter::new(&ctx, &DummyWriter);
-        emit.artifact("chunk-1", vec![Part::text("part1")], Some(false), Some(false))
-            .await
-            .unwrap();
+        emit.artifact(
+            "chunk-1",
+            vec![Part::text("part1")],
+            Some(false),
+            Some(false),
+        )
+        .await
+        .unwrap();
         emit.artifact("chunk-1", vec![Part::text("part2")], Some(true), Some(true))
             .await
             .unwrap();

@@ -382,11 +382,7 @@ mod tests {
         // Covers lines 128-129: custom keep_alive_interval and channel_capacity.
         let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(
-            reader,
-            Some(Duration::from_secs(5)),
-            Some(16),
-        );
+        let response = build_sse_response(reader, Some(Duration::from_secs(5)), Some(16));
 
         assert_eq!(response.status(), 200);
         assert_eq!(

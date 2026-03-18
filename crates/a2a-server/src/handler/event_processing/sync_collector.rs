@@ -320,18 +320,14 @@ mod tests {
             .unwrap();
 
         let (writer, reader) = new_in_memory_queue();
-        let artifact_event =
-            StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: TaskId::new("t-art"),
-                context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
-                artifact: Artifact::new(
-                    ArtifactId::new("art-1"),
-                    vec![Part::text("output data")],
-                ),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            });
+        let artifact_event = StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new("t-art"),
+            context_id: a2a_protocol_types::task::ContextId::new("ctx-1"),
+            artifact: Artifact::new(ArtifactId::new("art-1"), vec![Part::text("output data")]),
+            append: None,
+            last_chunk: Some(true),
+            metadata: None,
+        });
         writer.write(artifact_event).await.unwrap();
         drop(writer);
 

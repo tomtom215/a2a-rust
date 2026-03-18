@@ -184,8 +184,7 @@ mod tests {
 
     #[test]
     fn with_extensions_sets_field() {
-        let ctx = CallContext::new("test")
-            .with_extensions(vec!["ext1".into(), "ext2".into()]);
+        let ctx = CallContext::new("test").with_extensions(vec!["ext1".into(), "ext2".into()]);
         assert_eq!(ctx.extensions, vec!["ext1", "ext2"]);
     }
 
