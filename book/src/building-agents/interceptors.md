@@ -115,8 +115,14 @@ RequestHandlerBuilder::new(my_executor)
     .build()
 ```
 
-Caller keys are derived from `CallContext::caller_identity` (set by auth
-interceptors), the `X-Forwarded-For` header, or `"anonymous"`. For advanced
+Caller keys are derived from `CallContext::caller_identity()` (set by auth
+interceptors), the `X-Forwarded-For` header, or `"anonymous"`.
+
+> **Note:** `CallContext` fields are read-only (accessed via methods like
+> `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`). This
+> prevents interceptors from mutating security-critical context mid-request.
+
+For advanced
 use cases (sliding windows, distributed counters), implement a custom
 `ServerInterceptor` or use a reverse proxy.
 

@@ -150,8 +150,9 @@ impl Transport for RetryTransport {
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    trace_info!(method, attempt, "retrying after backoff");
-                    tokio::time::sleep(backoff).await;
+                    let jittered_backoff = jittered(backoff);
+                    trace_info!(method, attempt, ?jittered_backoff, "retrying after backoff");
+                    tokio::time::sleep(jittered_backoff).await;
                     backoff = cap_backoff(
                         backoff,
                         self.policy.backoff_multiplier,
@@ -189,8 +190,14 @@ impl Transport for RetryTransport {
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    trace_info!(method, attempt, "retrying stream connect after backoff");
-                    tokio::time::sleep(backoff).await;
+                    let jittered_backoff = jittered(backoff);
+                    trace_info!(
+                        method,
+                        attempt,
+                        ?jittered_backoff,
+                        "retrying stream connect after backoff"
+                    );
+                    tokio::time::sleep(jittered_backoff).await;
                     backoff = cap_backoff(
                         backoff,
                         self.policy.backoff_multiplier,
@@ -232,6 +239,29 @@ fn cap_backoff(current: Duration, multiplier: f64, max: Duration) -> Duration {
         max
     } else {
         next
+    }
+}
+
+/// Applies full jitter to a backoff duration: returns a random duration in
+/// `[backoff/2, backoff)`.
+///
+/// Uses `std::hash::RandomState` for cheap, no-dependency randomness. This
+/// prevents thundering-herd retry storms where all clients experiencing the
+/// same transient failure retry at identical intervals.
+fn jittered(backoff: Duration) -> Duration {
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+    // Mix in the backoff value for extra entropy.
+    hasher.write_u128(backoff.as_nanos());
+    let random_bits = hasher.finish();
+    // Map to [0.5, 1.0) range.
+    #[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
+    let factor = (random_bits as f64 / u64::MAX as f64).mul_add(0.5, 0.5);
+    let jittered_secs = backoff.as_secs_f64() * factor;
+    if !jittered_secs.is_finite() || jittered_secs < 0.0 {
+        backoff
+    } else {
+        Duration::from_secs_f64(jittered_secs)
     }
 }
 

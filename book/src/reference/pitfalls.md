@@ -245,6 +245,18 @@ A malicious SSE stream sending many oversized events could fill the parser's int
 
 In streaming mode, the background event processor subscribes to the broadcast channel *after* the executor starts. For very fast executors, events may be written before the subscription is active, meaning the task store is not updated. The SSE consumer always sees all events (it holds the reader from queue creation). See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
 
+### Event queue writer silently swallows serialization errors (fixed)
+
+`InMemoryQueueWriter::write()` used `unwrap_or(0)` when measuring event size via `CountingWriter`. If serialization failed, the size was reported as 0 and the event was sent through the channel without error. The fix propagates the serialization error via `?` operator, returning `A2aError::internal("event serialization failed: ...")`.
+
+### Capacity eviction cannot evict non-terminal tasks (fixed)
+
+`InMemoryTaskStore` capacity eviction only targeted terminal tasks. If the store was full of non-terminal (Working/Submitted) tasks, eviction found nothing to remove and silently gave up — leaving the store permanently over capacity. The fix adds a fallback path that evicts the oldest non-terminal tasks when there aren't enough terminal tasks.
+
+### Lagged event queue reader drops diagnostic count (fixed)
+
+The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events skipped"`.
+
 ## Next Steps
 
 - **[Architecture Decision Records](./adrs.md)** — Design decisions behind these choices

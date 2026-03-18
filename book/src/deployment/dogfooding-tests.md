@@ -1,6 +1,6 @@
 # Dogfooding: Test Coverage Matrix
 
-The agent team runs **82 E2E tests** across 8 test modules (98 with optional WebSocket, gRPC, axum, sqlite, signing, and OTel features). All tests pass in ~3 seconds.
+The agent team runs **81 base E2E tests** across 8 test modules (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel). All tests pass in ~6 seconds.
 
 ## Tests 1-10: Core Paths (`basic.rs`)
 

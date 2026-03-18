@@ -131,7 +131,14 @@ impl RestTransport {
 
         let status = resp.status();
         trace_debug!(method, %status, "received response");
-        let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
+        let body_bytes = tokio::time::timeout(self.inner.request_timeout, resp.collect())
+            .await
+            .map_err(|_| {
+                trace_error!(method, "response body read timed out");
+                ClientError::Timeout("response body read timed out".into())
+            })?
+            .map_err(ClientError::Http)?
+            .to_bytes();
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);

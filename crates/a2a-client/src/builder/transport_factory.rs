@@ -35,6 +35,11 @@ impl ClientBuilder {
                 "stream_connect_timeout must be non-zero".into(),
             ));
         }
+        if self.config.connection_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "connection_timeout must be non-zero".into(),
+            ));
+        }
 
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
@@ -45,18 +50,20 @@ impl ClientBuilder {
 
             match binding.as_str() {
                 BINDING_JSONRPC => {
-                    let t = JsonRpcTransport::with_timeouts(
+                    let t = JsonRpcTransport::with_all_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
+                        self.config.connection_timeout,
                     )?;
                     Box::new(t)
                 }
                 BINDING_REST => {
-                    let t = RestTransport::with_timeouts(
+                    let t = RestTransport::with_all_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
+                        self.config.connection_timeout,
                     )?;
                     Box::new(t)
                 }
@@ -189,6 +196,14 @@ mod tests {
     }
 
     #[test]
+    fn builder_zero_connection_timeout_errors() {
+        let result = ClientBuilder::new("http://localhost:8080")
+            .with_connection_timeout(Duration::ZERO)
+            .build();
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn builder_unknown_binding_errors() {
         let result = ClientBuilder::new("http://localhost:8080")
             .with_protocol_binding("UNKNOWN_PROTOCOL")
@@ -247,7 +262,7 @@ mod tests {
             signatures: None,
         };
 
-        let result = ClientBuilder::from_card(&card).build();
+        let result = ClientBuilder::from_card(&card).unwrap().build();
         assert!(result.is_err(), "unknown binding should fail");
     }
 }

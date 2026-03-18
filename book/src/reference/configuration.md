@@ -31,6 +31,11 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_cancellation_tokens` | `usize` | 10,000 | Cleanup sweep threshold |
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
+| `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
+
+> **Build-time validation:** `max_id_length`, `max_metadata_size`, and
+> `push_delivery_timeout` must be non-zero. Zero values are rejected by
+> `RequestHandlerBuilder::build()`.
 
 ### TaskStoreConfig
 
@@ -108,7 +113,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_timeout` | `Duration` | 30s | Per-request timeout |
 | `with_connection_timeout` | `Duration` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout` | `Duration` | 30s | SSE connect timeout |
-| `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors |
+| `with_retry_policy` | `RetryPolicy` | None | Retry on transient errors with jittered backoff |
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |
 | `with_return_immediately` | `bool` | false | Don't wait for completion |

@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Nine dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **40 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 39 have been fixed; 1 is documented as a known limitation.
+Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **42 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 41 have been fixed; 1 is documented as a known limitation.
 
 ## Summary
 
@@ -15,15 +15,16 @@ Nine dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **40 bugs** that 1
 | [Pass 7](#pass-7-deep-dogfood-9-bugs) | Deep dogfood | 9 | 1 Critical, 2 High, 4 Medium, 2 Low |
 | [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 3 Medium, 1 Low |
 | [Pass 9](#pass-9-scale-probing-4-bugs) | Scale probing | 4 | 1 High, 2 Medium, 1 Low |
+| [Pass 10](#pass-10-exhaustive-audit-3-bugs) | Exhaustive audit | 3 | 1 High, 1 Medium, 1 Low |
 
 ### By Severity
 
 | Severity | Count | Examples |
 |----------|-------|---------|
 | **Critical** | 5 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18) |
-| **High** | 8 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21) |
-| **Medium** | 15 | REST field stripping (#1), path traversal (#35), stale pagination (#30) |
-| **Low** | 8 | Metrics hooks (#2, #6, #7), gRPC error context (#36) |
+| **High** | 9 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21), serialization error swallowed (#40) |
+| **Medium** | 16 | REST field stripping (#1), path traversal (#35), stale pagination (#30), capacity eviction fails (#41) |
+| **Low** | 8 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#42) |
 
 ### Configuration Hardening
 
@@ -440,3 +441,37 @@ The agent-team E2E test suite (previously 71 tests) had gaps in:
 - GetTask history content (API success checked, not response content)
 
 **Fix:** Added 10 new deep dogfood tests (tests 81-90) covering all gaps. Test suite now has 82 base tests (92 with optional features).
+
+---
+
+## Pass 10: Exhaustive Audit (3 bugs)
+
+### Bug 40: Event Queue Serialization Error Silently Swallowed
+
+**Severity:** High | **Component:** Server `InMemoryQueueWriter`
+
+`InMemoryQueueWriter::write()` used `unwrap_or(0)` when measuring serialized event size via `CountingWriter`. If `serde_json::to_writer` failed during size measurement, the error was silently masked — the serialized size was reported as 0, the size check passed, and the potentially unserializable event was sent through the broadcast channel.
+
+**Why tests missed it:** All test events are valid `StreamResponse` variants that serialize successfully. The failure path was unreachable with well-formed types, but could be triggered by future enum variants or custom serialization implementations.
+
+**Fix:** Replaced `unwrap_or(0)` with `map_err(|e| A2aError::internal(...))` followed by `?` operator, propagating the serialization error to the caller.
+
+### Bug 41: Capacity Eviction Fails When Insufficient Terminal Tasks
+
+**Severity:** Medium | **Component:** Server `InMemoryTaskStore` eviction
+
+`InMemoryTaskStore` capacity eviction only removed terminal (Completed/Failed/Canceled) tasks when the store exceeded `max_capacity`. If the store was over capacity but all tasks were non-terminal (Working/Submitted), the eviction loop found zero terminal tasks to remove and silently returned — leaving the store permanently over capacity.
+
+**Why tests missed it:** Existing eviction tests always included at least one terminal task. The edge case of an all-non-terminal store was never exercised.
+
+**Fix:** Added a fallback eviction path that removes the oldest non-terminal tasks when there aren't enough terminal tasks to bring the store under capacity. Added a new unit test `capacity_eviction_falls_back_to_non_terminal_when_needed`.
+
+### Bug 42: Lagged Event Count Not Exposed in Warning
+
+**Severity:** Low | **Component:** Server `InMemoryQueueReader`
+
+The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix) which discarded the value. The `trace_warn!` message said "skipping missed events" without saying how many.
+
+**Why tests missed it:** Observability quality isn't tested by functional tests. The behavior was correct (events were skipped), but the diagnostic information was incomplete.
+
+**Fix:** Changed `_n` to `n` and included it in the warning: `"event queue reader lagged, {n} events skipped"`.

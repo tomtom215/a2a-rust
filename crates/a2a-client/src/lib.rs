@@ -91,7 +91,7 @@
 //!
 //! # async fn example() -> Result<(), a2a_protocol_client::error::ClientError> {
 //! let card = resolve_agent_card("http://localhost:8080").await?;
-//! let client = ClientBuilder::from_card(&card).build()?;
+//! let client = ClientBuilder::from_card(&card)?.build()?;
 //! # Ok(())
 //! # }
 //! ```

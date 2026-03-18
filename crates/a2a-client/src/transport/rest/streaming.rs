@@ -43,7 +43,12 @@ impl RestTransport {
 
         let status = resp.status();
         if !status.is_success() {
-            let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
+            let body_bytes =
+                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
+                    .await
+                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
+                    .map_err(ClientError::Http)?
+                    .to_bytes();
             let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),

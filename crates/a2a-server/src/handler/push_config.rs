@@ -33,6 +33,11 @@ impl RequestHandler {
             if self.push_sender.is_none() {
                 return Err(ServerError::PushNotSupported);
             }
+            // FIX(#3): Validate webhook URL at config creation time to prevent
+            // SSRF attacks. Previously validation only happened at delivery time,
+            // leaving a window where malicious URLs could be stored.
+            crate::push::sender::validate_webhook_url(&config.url)?;
+
             let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
             let result = self.push_config_store.set(config).await?;

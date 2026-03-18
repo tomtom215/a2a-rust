@@ -51,7 +51,7 @@ let store = InMemoryTaskStore::with_config(TaskStoreConfig {
 Features:
 - Thread-safe (`RwLock<HashMap>` — concurrent readers, exclusive writers)
 - Automatic TTL eviction on access
-- Capacity eviction (oldest first) when limit exceeded
+- Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — hard capacity guarantee
 - Pagination support with cursor tokens
 - Filtering by `context_id`, `status`, and `timestamp`
 
@@ -78,6 +78,8 @@ Features:
 - Cursor-based pagination via `id > ?` ordering
 - Atomic `insert_if_absent` via `INSERT OR IGNORE`
 - Upsert via `ON CONFLICT DO UPDATE`
+- **Production-ready defaults:** WAL journal mode, `busy_timeout=5000ms`,
+  `synchronous=NORMAL`, `foreign_keys=ON`, pool size of 8
 
 ### TenantAwareInMemoryTaskStore
 

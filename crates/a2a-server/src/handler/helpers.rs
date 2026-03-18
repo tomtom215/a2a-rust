@@ -37,19 +37,29 @@ pub(super) fn build_call_context(
 ) -> CallContext {
     let mut ctx = CallContext::new(method);
     if let Some(h) = headers {
-        ctx.http_headers.clone_from(h);
+        ctx = ctx.with_http_headers(h.clone());
     }
     ctx
 }
 
 impl RequestHandler {
-    /// Finds a task by context ID (linear scan for in-memory store).
+    /// Finds a task by context ID, scoped to the current tenant.
+    ///
+    /// Uses [`crate::store::tenant::TenantContext::current()`] so that
+    /// multi-tenant deployments only search within the caller's tenant.
     pub(crate) async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
         if context_id.len() > self.limits.max_id_length {
             return None;
         }
+        // Use the current tenant context so multi-tenant stores scope correctly.
+        let tenant = crate::store::tenant::TenantContext::current();
+        let tenant_param = if tenant.is_empty() {
+            None
+        } else {
+            Some(tenant)
+        };
         let params = ListTasksParams {
-            tenant: None,
+            tenant: tenant_param,
             context_id: Some(context_id.to_owned()),
             status: None,
             page_size: Some(1),
@@ -58,11 +68,13 @@ impl RequestHandler {
             include_artifacts: None,
             history_length: None,
         };
-        self.task_store
-            .list(&params)
-            .await
-            .ok()
-            .and_then(|resp| resp.tasks.into_iter().next())
+        match self.task_store.list(&params).await {
+            Ok(resp) => resp.tasks.into_iter().next(),
+            Err(_e) => {
+                trace_error!(context_id, error = %_e, "find_task_by_context: store query failed");
+                None
+            }
+        }
     }
 }
 
@@ -140,9 +152,9 @@ mod tests {
     #[test]
     fn build_call_context_without_headers() {
         let ctx = build_call_context("message/send", None);
-        assert_eq!(ctx.method, "message/send", "method should be set");
+        assert_eq!(ctx.method(), "message/send", "method should be set");
         assert!(
-            ctx.http_headers.is_empty(),
+            ctx.http_headers().is_empty(),
             "headers should be empty when None is passed"
         );
     }
@@ -154,14 +166,14 @@ mod tests {
         headers.insert("x-request-id".to_owned(), "req-99".to_owned());
 
         let ctx = build_call_context("tasks/get", Some(&headers));
-        assert_eq!(ctx.method, "tasks/get");
+        assert_eq!(ctx.method(), "tasks/get");
         assert_eq!(
-            ctx.http_headers.get("authorization").map(String::as_str),
+            ctx.http_headers().get("authorization").map(String::as_str),
             Some("Bearer tok"),
             "headers should be cloned into the context"
         );
         assert_eq!(
-            ctx.http_headers.get("x-request-id").map(String::as_str),
+            ctx.http_headers().get("x-request-id").map(String::as_str),
             Some("req-99"),
         );
     }
@@ -171,7 +183,7 @@ mod tests {
         let headers = HashMap::new();
         let ctx = build_call_context("test", Some(&headers));
         assert!(
-            ctx.http_headers.is_empty(),
+            ctx.http_headers().is_empty(),
             "an empty map should result in empty headers"
         );
     }

@@ -187,8 +187,9 @@ fn is_private_ip(ip: IpAddr) -> bool {
 /// Validates a webhook URL to prevent SSRF attacks.
 ///
 /// Rejects URLs targeting private/loopback/link-local addresses.
+/// Called both at config creation time and at delivery time for defense-in-depth.
 #[allow(clippy::case_sensitive_file_extension_comparisons)] // host_lower is already lowercased
-fn validate_webhook_url(url: &str) -> A2aResult<()> {
+pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
     // Parse the URL to extract the host.
     let uri: hyper::Uri = url
         .parse()

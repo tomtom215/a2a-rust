@@ -104,9 +104,18 @@ impl RequestHandlerBuilder {
 
     /// Configures the default [`InMemoryTaskStore`] with custom TTL and capacity settings.
     ///
-    /// This is ignored if a custom task store is set via [`with_task_store`](Self::with_task_store).
+    /// # Panics
+    ///
+    /// Panics in debug builds if a custom task store has already been set via
+    /// [`with_task_store`](Self::with_task_store), since the config would be
+    /// silently ignored.
     #[must_use]
-    pub const fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+    pub fn with_task_store_config(mut self, config: TaskStoreConfig) -> Self {
+        debug_assert!(
+            self.task_store.is_none(),
+            "with_task_store_config() called after with_task_store(); \
+             the config will be ignored because a custom store was already set"
+        );
         self.task_store_config = config;
         self
     }
@@ -242,6 +251,7 @@ impl RequestHandlerBuilder {
     /// Returns [`ServerError::InvalidParams`](crate::error::ServerError::InvalidParams) if the configuration is invalid:
     /// - Agent card with empty `supported_interfaces`
     /// - Zero executor timeout (would cause immediate timeouts)
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> ServerResult<RequestHandler> {
         // Validate agent card if provided.
         if let Some(ref card) = self.agent_card {
@@ -259,6 +269,23 @@ impl RequestHandlerBuilder {
                     "executor timeout must be greater than zero".into(),
                 ));
             }
+        }
+
+        // Validate handler limits are sensible (zero values cause all requests to fail).
+        if self.handler_limits.max_id_length == 0 {
+            return Err(crate::error::ServerError::InvalidParams(
+                "max_id_length must be greater than zero".into(),
+            ));
+        }
+        if self.handler_limits.max_metadata_size == 0 {
+            return Err(crate::error::ServerError::InvalidParams(
+                "max_metadata_size must be greater than zero".into(),
+            ));
+        }
+        if self.handler_limits.push_delivery_timeout.is_zero() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "push_delivery_timeout must be greater than zero".into(),
+            ));
         }
 
         Ok(RequestHandler {
@@ -479,5 +506,34 @@ mod tests {
             .with_event_queue_write_timeout(Duration::from_secs(10))
             .build();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn builder_zero_max_id_length_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_id_length(0))
+            .build();
+        assert!(result.is_err(), "zero max_id_length should be rejected");
+    }
+
+    #[test]
+    fn builder_zero_max_metadata_size_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(HandlerLimits::default().with_max_metadata_size(0))
+            .build();
+        assert!(result.is_err(), "zero max_metadata_size should be rejected");
+    }
+
+    #[test]
+    fn builder_zero_push_delivery_timeout_errors() {
+        let result = RequestHandlerBuilder::new(TestExecutor)
+            .with_handler_limits(
+                HandlerLimits::default().with_push_delivery_timeout(Duration::ZERO),
+            )
+            .build();
+        assert!(
+            result.is_err(),
+            "zero push_delivery_timeout should be rejected"
+        );
     }
 }

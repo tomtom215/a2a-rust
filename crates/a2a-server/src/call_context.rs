@@ -21,7 +21,7 @@
 //!     .with_http_header("authorization", "Bearer tok_abc123")
 //!     .with_http_header("x-request-id", "req-42");
 //!
-//! assert_eq!(ctx.http_headers.get("authorization").map(String::as_str),
+//! assert_eq!(ctx.http_headers().get("authorization").map(String::as_str),
 //!            Some("Bearer tok_abc123"));
 //! ```
 
@@ -34,31 +34,53 @@ use std::collections::HashMap;
 #[derive(Debug, Clone)]
 pub struct CallContext {
     /// The JSON-RPC method name (e.g. `"message/send"`).
-    pub method: String,
+    method: String,
 
     /// Optional caller identity extracted from authentication headers.
-    pub caller_identity: Option<String>,
+    caller_identity: Option<String>,
 
     /// Extension URIs active for this request.
-    pub extensions: Vec<String>,
+    extensions: Vec<String>,
 
     /// First-class request/trace identifier for observability.
-    ///
-    /// Automatically populated from the `x-request-id` HTTP header when
-    /// present. Interceptors and handlers can use this for distributed
-    /// tracing without manually fishing through `http_headers`.
-    ///
-    /// If no header is present the field is `None`; callers can set it
-    /// explicitly via [`with_request_id`](Self::with_request_id).
-    pub request_id: Option<String>,
+    request_id: Option<String>,
 
     /// HTTP request headers from the incoming request.
     ///
-    /// Keys are lowercased for case-insensitive matching. For headers with
-    /// multiple values, only the last value is stored. Interceptors can use
-    /// this to inspect `Authorization`, `X-Forwarded-For`, `X-Request-ID`,
-    /// and any other HTTP headers for access control or auditing.
-    pub http_headers: HashMap<String, String>,
+    /// Keys are lowercased for case-insensitive matching.
+    http_headers: HashMap<String, String>,
+}
+
+impl CallContext {
+    /// Returns the JSON-RPC method name.
+    #[must_use]
+    pub fn method(&self) -> &str {
+        &self.method
+    }
+
+    /// Returns the optional caller identity.
+    #[must_use]
+    pub fn caller_identity(&self) -> Option<&str> {
+        self.caller_identity.as_deref()
+    }
+
+    /// Returns the active extension URIs.
+    #[must_use]
+    pub fn extensions(&self) -> &[String] {
+        &self.extensions
+    }
+
+    /// Returns the request/trace ID if set.
+    #[must_use]
+    pub fn request_id(&self) -> Option<&str> {
+        self.request_id.as_deref()
+    }
+
+    /// Returns the HTTP request headers (read-only).
+    #[must_use]
+    pub const fn http_headers(&self) -> &HashMap<String, String> {
+        &self.http_headers
+    }
 }
 
 impl CallContext {
@@ -130,9 +152,9 @@ mod tests {
     #[test]
     fn with_http_header_x_request_id_populates_request_id() {
         let ctx = CallContext::new("test").with_http_header("x-request-id", "req-42");
-        assert_eq!(ctx.request_id.as_deref(), Some("req-42"));
+        assert_eq!(ctx.request_id(), Some("req-42"));
         assert_eq!(
-            ctx.http_headers.get("x-request-id").map(String::as_str),
+            ctx.http_headers().get("x-request-id").map(String::as_str),
             Some("req-42")
         );
     }
@@ -140,9 +162,9 @@ mod tests {
     #[test]
     fn with_http_header_other_key_does_not_populate_request_id() {
         let ctx = CallContext::new("test").with_http_header("authorization", "Bearer tok");
-        assert!(ctx.request_id.is_none());
+        assert!(ctx.request_id().is_none());
         assert_eq!(
-            ctx.http_headers.get("authorization").map(String::as_str),
+            ctx.http_headers().get("authorization").map(String::as_str),
             Some("Bearer tok")
         );
     }
@@ -150,7 +172,7 @@ mod tests {
     #[test]
     fn with_request_id_sets_field() {
         let ctx = CallContext::new("test").with_request_id("req-99");
-        assert_eq!(ctx.request_id.as_deref(), Some("req-99"));
+        assert_eq!(ctx.request_id(), Some("req-99"));
     }
 
     #[test]
@@ -160,9 +182,9 @@ mod tests {
         headers.insert("content-type".to_owned(), "application/json".to_owned());
 
         let ctx = CallContext::new("test").with_http_headers(headers);
-        assert_eq!(ctx.request_id.as_deref(), Some("trace-123"));
+        assert_eq!(ctx.request_id(), Some("trace-123"));
         assert_eq!(
-            ctx.http_headers.get("content-type").map(String::as_str),
+            ctx.http_headers().get("content-type").map(String::as_str),
             Some("application/json")
         );
     }
@@ -173,28 +195,28 @@ mod tests {
         headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
 
         let ctx = CallContext::new("test").with_http_headers(headers);
-        assert!(ctx.request_id.is_none());
+        assert!(ctx.request_id().is_none());
     }
 
     #[test]
     fn with_caller_identity_sets_field() {
         let ctx = CallContext::new("test").with_caller_identity("user@example.com".into());
-        assert_eq!(ctx.caller_identity.as_deref(), Some("user@example.com"));
+        assert_eq!(ctx.caller_identity(), Some("user@example.com"));
     }
 
     #[test]
     fn with_extensions_sets_field() {
         let ctx = CallContext::new("test").with_extensions(vec!["ext1".into(), "ext2".into()]);
-        assert_eq!(ctx.extensions, vec!["ext1", "ext2"]);
+        assert_eq!(ctx.extensions(), &["ext1", "ext2"]);
     }
 
     #[test]
     fn new_defaults_are_empty() {
         let ctx = CallContext::new("method");
-        assert_eq!(ctx.method, "method");
-        assert!(ctx.caller_identity.is_none());
-        assert!(ctx.extensions.is_empty());
-        assert!(ctx.request_id.is_none());
-        assert!(ctx.http_headers.is_empty());
+        assert_eq!(ctx.method(), "method");
+        assert!(ctx.caller_identity().is_none());
+        assert!(ctx.extensions().is_empty());
+        assert!(ctx.request_id().is_none());
+        assert!(ctx.http_headers().is_empty());
     }
 }

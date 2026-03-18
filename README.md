@@ -51,7 +51,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Retry policy** | Configurable `RetryPolicy` with exponential backoff (connection errors, timeouts, 429/502/503/504) |
+| **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
 | **TLS support** | HTTPS via `rustls`, no OpenSSL dependency (`tls-rustls` feature) |
 | **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
@@ -179,7 +179,7 @@ while let Some(event) = stream.next().await {
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 82 E2E tests (98 with optional WebSocket, gRPC, Axum, SQLite, signing, and OTel features) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
+A comprehensive 4-agent team that exercises every SDK feature — 81 base E2E tests (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
 
 ```bash
 cargo run -p agent-team

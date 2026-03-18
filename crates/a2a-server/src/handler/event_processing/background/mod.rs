@@ -27,28 +27,22 @@ use state_machine::process_event_bg;
 // ── Background event processor (streaming mode) ─────────────────────────────
 
 impl RequestHandler {
-    /// Spawns a background task that subscribes to the event queue and
-    /// processes events (state transitions, task store updates, push delivery).
+    /// Spawns a background task that processes events (state transitions,
+    /// task store updates, push delivery) from a pre-subscribed reader.
     ///
-    /// This is the architectural fix for push delivery in streaming mode:
-    /// previously, `deliver_push()` was only called from `collect_events()`
-    /// which only runs for sync (non-streaming) mode. This background
-    /// processor ensures push notifications fire for every event regardless
-    /// of whether the consumer is streaming or synchronous.
+    /// The `bg_reader` is subscribed BEFORE the executor is spawned, so even
+    /// fast-completing executors (<1ms) cannot race past the subscription.
     #[allow(clippy::too_many_lines)]
     pub(crate) fn spawn_background_event_processor(
         &self,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
+        bg_reader: Option<crate::streaming::event_queue::InMemoryQueueReader>,
     ) {
         let task_store = Arc::clone(&self.task_store);
         let push_config_store = Arc::clone(&self.push_config_store);
         let push_sender = self.push_sender.clone();
         let limits = self.limits.clone();
-
-        // Subscribe a second reader from the broadcast channel.
-        // The SSE reader and this background reader both see every event.
-        let event_queue_mgr = self.event_queue_manager.clone();
 
         // Capture the current tenant context so background store operations
         // are scoped to the correct tenant (task_local doesn't propagate
@@ -58,13 +52,13 @@ impl RequestHandler {
         tokio::spawn(crate::store::tenant::TenantContext::scope(
             tenant,
             async move {
-                // Small yield to let the event queue be registered before subscribing.
-                tokio::task::yield_now().await;
-
-                let Some(mut bg_reader) = event_queue_mgr.subscribe(&task_id).await else {
+                // FIX(#38): Use the pre-subscribed reader instead of subscribing
+                // after spawn. This eliminates the race where fast executors
+                // complete before the background processor subscribes.
+                let Some(mut bg_reader) = bg_reader else {
                     trace_warn!(
                         task_id = %task_id,
-                        "background event processor: no queue to subscribe to"
+                        "background event processor: no reader provided"
                     );
                     return;
                 };

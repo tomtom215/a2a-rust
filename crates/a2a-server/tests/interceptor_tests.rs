@@ -236,7 +236,7 @@ async fn call_context_builder() {
         .with_caller_identity("user-123".into())
         .with_extensions(vec!["ext-1".into()]);
 
-    assert_eq!(ctx.method, "SendMessage");
-    assert_eq!(ctx.caller_identity, Some("user-123".into()));
-    assert_eq!(ctx.extensions, vec!["ext-1".to_owned()]);
+    assert_eq!(ctx.method(), "SendMessage");
+    assert_eq!(ctx.caller_identity(), Some("user-123"));
+    assert_eq!(ctx.extensions(), &["ext-1"]);
 }

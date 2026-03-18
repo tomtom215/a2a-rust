@@ -80,12 +80,16 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_event_queue_capacity(usize)` | 64 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | Unbounded | Limit concurrent SSE streams |
+| `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (ID length, metadata size, artifact count, etc.) |
 
 ### Build-Time Validation
 
 `build()` validates:
 - If an agent card is provided, it must have at least one `supported_interfaces` entry
 - Executor timeout (if set) must not be zero
+- `max_id_length` must be greater than zero
+- `max_metadata_size` must be greater than zero
+- `push_delivery_timeout` must be non-zero
 
 ## Sharing the Handler
 

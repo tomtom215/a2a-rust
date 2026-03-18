@@ -385,25 +385,25 @@ fn request_context_with_metadata() {
 fn call_context_with_extensions() {
     let ctx = CallContext::new("test/method");
     assert!(
-        ctx.extensions.is_empty(),
+        ctx.extensions().is_empty(),
         "extensions should initially be empty"
     );
 
     let ctx = ctx.with_extensions(vec!["urn:a2a:ext:foo".into(), "urn:a2a:ext:bar".into()]);
     assert_eq!(
-        ctx.extensions.len(),
+        ctx.extensions().len(),
         2,
         "expected exactly 2 extensions after with_extensions"
     );
-    assert_eq!(ctx.extensions[0], "urn:a2a:ext:foo");
-    assert_eq!(ctx.extensions[1], "urn:a2a:ext:bar");
+    assert_eq!(ctx.extensions()[0], "urn:a2a:ext:foo");
+    assert_eq!(ctx.extensions()[1], "urn:a2a:ext:bar");
 }
 
 #[test]
 fn call_context_with_caller_identity() {
     let ctx = CallContext::new("SendMessage").with_caller_identity("user@example.com".into());
     assert_eq!(
-        ctx.caller_identity.as_deref(),
+        ctx.caller_identity(),
         Some("user@example.com"),
         "caller_identity should match after with_caller_identity"
     );

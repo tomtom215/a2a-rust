@@ -19,7 +19,7 @@ impl a2a_protocol_server::interceptor::ServerInterceptor for RejectingAuthInterc
         ctx: &'a a2a_protocol_server::CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            if ctx.caller_identity.as_deref() != Some(&self.required_token) {
+            if ctx.caller_identity() != Some(&self.required_token) {
                 Err(A2aError::new(
                     ErrorCode::UnsupportedOperation,
                     "auth rejected",

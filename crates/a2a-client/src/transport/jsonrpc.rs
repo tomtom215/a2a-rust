@@ -90,6 +90,8 @@ impl JsonRpcTransport {
 
     /// Creates a new transport with separate request and stream connect timeouts.
     ///
+    /// Uses the default TCP connection timeout (10 seconds).
+    ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
@@ -98,14 +100,45 @@ impl JsonRpcTransport {
         request_timeout: Duration,
         stream_connect_timeout: Duration,
     ) -> ClientResult<Self> {
+        Self::with_all_timeouts(
+            endpoint,
+            request_timeout,
+            stream_connect_timeout,
+            Duration::from_secs(10),
+        )
+    }
+
+    /// Creates a new transport with all timeout parameters.
+    ///
+    /// `connection_timeout` is applied to the underlying TCP connector (DNS +
+    /// handshake), preventing indefinite hangs when the server is unreachable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the URL is malformed.
+    pub fn with_all_timeouts(
+        endpoint: impl Into<String>,
+        request_timeout: Duration,
+        stream_connect_timeout: Duration,
+        connection_timeout: Duration,
+    ) -> ClientResult<Self> {
         let endpoint = endpoint.into();
         validate_url(&endpoint)?;
 
         #[cfg(not(feature = "tls-rustls"))]
-        let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+        let client = {
+            let mut connector = HttpConnector::new();
+            connector.set_connect_timeout(Some(connection_timeout));
+            Client::builder(TokioExecutor::new())
+                .pool_idle_timeout(Duration::from_secs(90))
+                .build(connector)
+        };
 
         #[cfg(feature = "tls-rustls")]
-        let client = crate::tls::build_https_client();
+        let client = crate::tls::build_https_client_with_connect_timeout(
+            crate::tls::default_tls_config(),
+            connection_timeout,
+        );
 
         Ok(Self {
             inner: Arc::new(Inner {
@@ -185,7 +218,14 @@ impl JsonRpcTransport {
         let status = resp.status();
         trace_debug!(method, %status, "received response");
 
-        let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
+        let body_bytes = tokio::time::timeout(self.inner.request_timeout, resp.collect())
+            .await
+            .map_err(|_| {
+                trace_error!(method, "response body read timed out");
+                ClientError::Timeout("response body read timed out".into())
+            })?
+            .map_err(ClientError::Http)?
+            .to_bytes();
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -253,7 +293,12 @@ impl JsonRpcTransport {
 
         let status = resp.status();
         if !status.is_success() {
-            let body_bytes = resp.collect().await.map_err(ClientError::Http)?.to_bytes();
+            let body_bytes =
+                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
+                    .await
+                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
+                    .map_err(ClientError::Http)?
+                    .to_bytes();
             let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),

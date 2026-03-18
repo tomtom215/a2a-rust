@@ -35,6 +35,12 @@ pub struct HandlerLimits {
     /// to complete, preventing one slow webhook from blocking all subsequent
     /// deliveries.
     pub push_delivery_timeout: Duration,
+    /// Maximum number of artifacts per task. Default: 1000.
+    ///
+    /// Prevents unbounded memory growth and O(n²) serialization cost when
+    /// executors emit many artifacts. Once the limit is reached, new artifact
+    /// updates are rejected.
+    pub max_artifacts_per_task: usize,
 }
 
 impl Default for HandlerLimits {
@@ -45,6 +51,7 @@ impl Default for HandlerLimits {
             max_cancellation_tokens: 10_000,
             max_token_age: Duration::from_secs(3600),
             push_delivery_timeout: Duration::from_secs(5),
+            max_artifacts_per_task: 1000,
         }
     }
 }
@@ -84,6 +91,13 @@ impl HandlerLimits {
         self.push_delivery_timeout = timeout;
         self
     }
+
+    /// Sets the maximum number of artifacts per task.
+    #[must_use]
+    pub const fn with_max_artifacts_per_task(mut self, max: usize) -> Self {
+        self.max_artifacts_per_task = max;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -98,6 +112,7 @@ mod tests {
         assert_eq!(limits.max_cancellation_tokens, 10_000);
         assert_eq!(limits.max_token_age, Duration::from_secs(3600));
         assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
+        assert_eq!(limits.max_artifacts_per_task, 1000);
     }
 
     #[test]
@@ -147,6 +162,12 @@ mod tests {
     }
 
     #[test]
+    fn with_max_artifacts_per_task_sets_value() {
+        let limits = HandlerLimits::default().with_max_artifacts_per_task(500);
+        assert_eq!(limits.max_artifacts_per_task, 500);
+    }
+
+    #[test]
     fn debug_format() {
         let limits = HandlerLimits::default();
         let debug = format!("{limits:?}");
@@ -156,5 +177,6 @@ mod tests {
         assert!(debug.contains("max_cancellation_tokens"));
         assert!(debug.contains("max_token_age"));
         assert!(debug.contains("push_delivery_timeout"));
+        assert!(debug.contains("max_artifacts_per_task"));
     }
 }

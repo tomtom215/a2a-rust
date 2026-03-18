@@ -225,11 +225,26 @@ impl GrpcTransport {
     }
 
     fn status_to_error(status: &tonic::Status) -> ClientError {
-        let a2a = a2a_protocol_types::A2aError::new(
-            grpc_code_to_error_code(status.code()),
-            status.message().to_owned(),
-        );
-        ClientError::Protocol(a2a)
+        // FIX(#2): Map deadline/cancellation codes to ClientError::Timeout so
+        // they are retryable, matching REST/JSON-RPC timeout behavior.
+        match status.code() {
+            tonic::Code::DeadlineExceeded => {
+                ClientError::Timeout(format!("gRPC deadline exceeded: {}", status.message()))
+            }
+            tonic::Code::Cancelled => {
+                ClientError::Timeout(format!("gRPC request cancelled: {}", status.message()))
+            }
+            tonic::Code::Unavailable => {
+                ClientError::HttpClient(format!("gRPC unavailable: {}", status.message()))
+            }
+            _ => {
+                let a2a = a2a_protocol_types::A2aError::new(
+                    grpc_code_to_error_code(status.code()),
+                    status.message().to_owned(),
+                );
+                ClientError::Protocol(a2a)
+            }
+        }
     }
 
     #[allow(clippy::significant_drop_tightening)]
@@ -247,9 +262,12 @@ impl GrpcTransport {
 
         let payload = Self::encode_params(&params)?;
         let mut req = tonic::Request::new(payload);
+        req.set_timeout(self.inner.config.timeout);
         Self::add_metadata(&mut req, extra_headers);
 
-        let response = {
+        // FIX(#11): Wrap the entire gRPC call in tokio::time::timeout for
+        // per-request timeout enforcement, matching REST/JSON-RPC behavior.
+        let response = tokio::time::timeout(self.inner.config.timeout, async {
             let mut client = self.inner.client.lock().await;
             match method {
                 "SendMessage" => client.send_message(req).await,
@@ -269,13 +287,16 @@ impl GrpcTransport {
                     client.delete_task_push_notification_config(req).await
                 }
                 "GetExtendedAgentCard" => client.get_extended_agent_card(req).await,
-                other => {
-                    return Err(ClientError::Transport(format!(
-                        "unknown gRPC method: {other}"
-                    )));
-                }
+                other => Err(tonic::Status::unimplemented(format!(
+                    "unknown gRPC method: {other}"
+                ))),
             }
-        };
+        })
+        .await
+        .map_err(|_| {
+            trace_error!(method, "gRPC request timed out");
+            ClientError::Timeout("gRPC request timed out".into())
+        })?;
 
         match response {
             Ok(resp) => Self::decode_response(&resp.into_inner()),
@@ -300,22 +321,31 @@ impl GrpcTransport {
         let mut req = tonic::Request::new(payload);
         Self::add_metadata(&mut req, extra_headers);
 
-        let stream = {
+        // FIX(#11): Per-request timeout for stream establishment, matching
+        // REST/JSON-RPC stream_connect_timeout behavior.
+        let stream = tokio::time::timeout(self.inner.config.timeout, async {
             let mut client = self.inner.client.lock().await;
             let response = match method {
                 "SendStreamingMessage" => client.send_streaming_message(req).await,
                 "SubscribeToTask" => client.subscribe_to_task(req).await,
+                #[allow(clippy::needless_return)]
                 other => {
-                    return Err(ClientError::Transport(format!(
+                    return Err(tonic::Status::unimplemented(format!(
                         "unknown streaming gRPC method: {other}"
                     )));
                 }
             };
             match response {
-                Ok(resp) => resp.into_inner(),
-                Err(status) => return Err(Self::status_to_error(&status)),
+                Ok(resp) => Ok(resp.into_inner()),
+                Err(status) => Err(status),
             }
-        };
+        })
+        .await
+        .map_err(|_| {
+            trace_error!(method, "gRPC stream connect timed out");
+            ClientError::Timeout("gRPC stream connect timed out".into())
+        })?
+        .map_err(|status| Self::status_to_error(&status))?;
 
         let cap = self.inner.config.stream_channel_capacity;
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(cap);

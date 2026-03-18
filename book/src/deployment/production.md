@@ -27,9 +27,10 @@ use a2a_protocol_sdk::server::CorsConfig;
 
 The built-in `HttpPushSender` includes:
 
-- **SSRF protection** — Rejects private/loopback IPs after DNS resolution
+- **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth)
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
 - **HTTPS enforcement** — Optionally require HTTPS webhook URLs
+- **Delivery amplification cap** — Total push delivery time per event is capped at 30 seconds
 
 ### Path Traversal Protection
 

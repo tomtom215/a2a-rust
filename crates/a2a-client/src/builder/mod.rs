@@ -36,6 +36,7 @@ use std::time::Duration;
 use a2a_protocol_types::AgentCard;
 
 use crate::config::{ClientConfig, TlsConfig};
+use crate::error::{ClientError, ClientResult};
 use crate::interceptor::{CallInterceptor, InterceptorChain};
 use crate::retry::RetryPolicy;
 use crate::transport::Transport;
@@ -83,13 +84,15 @@ impl ClientBuilder {
     /// Selects the first supported interface from the card. Logs a warning
     /// (via `tracing`, if enabled) if the agent's protocol version is not
     /// in the supported range.
-    #[must_use]
-    pub fn from_card(card: &AgentCard) -> Self {
-        let (endpoint, binding) = card
-            .supported_interfaces
-            .first()
-            .map(|i| (i.url.clone(), i.protocol_binding.clone()))
-            .unwrap_or_default();
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
+    pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
+        let first = card.supported_interfaces.first().ok_or_else(|| {
+            ClientError::InvalidEndpoint("agent card has no supported interfaces".into())
+        })?;
+        let (endpoint, binding) = (first.url.clone(), first.protocol_binding.clone());
 
         // Warn if agent advertises a different major version than we support.
         #[cfg(feature = "tracing")]
@@ -113,14 +116,14 @@ impl ClientBuilder {
             }
         }
 
-        Self {
+        Ok(Self {
             endpoint,
             transport_override: None,
             interceptors: InterceptorChain::new(),
             config: ClientConfig::default(),
             preferred_binding: Some(binding),
             retry_policy: None,
-        }
+        })
     }
 
     // ── Configuration ─────────────────────────────────────────────────────────
@@ -273,7 +276,10 @@ mod tests {
             signatures: None,
         };
 
-        let client = ClientBuilder::from_card(&card).build().expect("build");
+        let client = ClientBuilder::from_card(&card)
+            .unwrap()
+            .build()
+            .expect("build");
         let _ = client;
     }
 
@@ -287,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn builder_from_card_empty_interfaces_uses_defaults() {
+    fn builder_from_card_empty_interfaces_returns_error() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
 
         let card = AgentCard {
@@ -307,8 +313,8 @@ mod tests {
             signatures: None,
         };
 
-        let builder = ClientBuilder::from_card(&card);
-        let _ = format!("{builder:?}");
+        let result = ClientBuilder::from_card(&card);
+        assert!(result.is_err(), "empty interfaces should return error");
     }
 
     #[test]
@@ -371,7 +377,7 @@ mod tests {
             signatures: None,
         };
 
-        let builder = ClientBuilder::from_card(&card);
+        let builder = ClientBuilder::from_card(&card).unwrap();
         assert_eq!(builder.endpoint, "http://localhost:9091");
     }
 

@@ -13,7 +13,7 @@
 //! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
 //!
 //! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (82 tests, 98 with optional transports, axum, sqlite, signing, and OTel) that exercises every major SDK feature.
+//! suite (81 base tests, 94 with all optional features) that exercises every major SDK feature.
 //!
 //! Run with: `cargo run -p agent-team`
 //! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`

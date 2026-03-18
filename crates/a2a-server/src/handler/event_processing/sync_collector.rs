@@ -116,9 +116,17 @@ impl RequestHandler {
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
                 let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
-                artifacts.push(update.artifact.clone());
-                self.task_store.save(last_task.clone()).await?;
-                self.deliver_push(task_id, stream_resp).await;
+                if artifacts.len() >= self.limits.max_artifacts_per_task {
+                    trace_warn!(
+                        task_id = %task_id,
+                        max = self.limits.max_artifacts_per_task,
+                        "artifact limit reached; dropping artifact update"
+                    );
+                } else {
+                    artifacts.push(update.artifact.clone());
+                    self.task_store.save(last_task.clone()).await?;
+                    self.deliver_push(task_id, stream_resp).await;
+                }
             }
             Ok(StreamResponse::Task(task)) => {
                 *last_task = task;
@@ -148,7 +156,18 @@ impl RequestHandler {
         let Ok(configs) = self.push_config_store.list(task_id.as_ref()).await else {
             return;
         };
+
+        // FIX(#4): Cap total push delivery time to prevent amplification.
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+
         for config in &configs {
+            if tokio::time::Instant::now() >= deadline {
+                trace_warn!(
+                    task_id = %task_id,
+                    "push delivery deadline exceeded; skipping remaining configs"
+                );
+                break;
+            }
             let result = tokio::time::timeout(
                 self.limits.push_delivery_timeout,
                 sender.send(&config.url, event, config),

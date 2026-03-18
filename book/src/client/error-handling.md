@@ -95,7 +95,9 @@ match client.send_message(params).await {
 }
 ```
 
-Retryable errors include: `Http`, `HttpClient`, `Timeout`, and `UnexpectedStatus` with codes 429, 502, 503, or 504.
+Retryable errors include: `Http`, `HttpClient`, `Timeout`, and `UnexpectedStatus` with codes 429, 502, 503, or 504. gRPC `DeadlineExceeded` and `Cancelled` errors also map to `Timeout` (retryable), and `Unavailable` maps to `HttpClient` (retryable).
+
+Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering-herd storms when multiple clients experience the same failure simultaneously.
 
 ## Server Errors
 

@@ -13,6 +13,8 @@
 //! a [`rustls::ClientConfig`] with additional trust anchors, then pass it to
 //! the client builder.
 
+use std::time::Duration;
+
 use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper_util::client::legacy::connect::HttpConnector;
@@ -60,21 +62,42 @@ fn root_cert_store() -> rustls::RootCertStore {
     store
 }
 
-/// Builds an HTTPS-capable hyper client using the default TLS configuration.
+/// Default connection timeout used when none is specified (10 seconds).
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Builds an HTTPS-capable hyper client using the default TLS configuration
+/// and the default connection timeout.
 pub(crate) fn build_https_client() -> HttpsClient {
-    build_https_client_with_config(default_tls_config())
+    build_https_client_with_connect_timeout(default_tls_config(), DEFAULT_CONNECT_TIMEOUT)
 }
 
-/// Builds an HTTPS-capable hyper client using a custom TLS configuration.
+/// Builds an HTTPS-capable hyper client using a custom TLS configuration
+/// and the default connection timeout.
 #[must_use]
 pub fn build_https_client_with_config(tls_config: ClientConfig) -> HttpsClient {
+    build_https_client_with_connect_timeout(tls_config, DEFAULT_CONNECT_TIMEOUT)
+}
+
+/// Builds an HTTPS-capable hyper client with a custom TLS configuration and
+/// connection timeout applied to the underlying TCP connector.
+#[must_use]
+pub fn build_https_client_with_connect_timeout(
+    tls_config: ClientConfig,
+    connection_timeout: Duration,
+) -> HttpsClient {
+    let mut http_connector = HttpConnector::new();
+    http_connector.enforce_http(false); // Allow https:// — TLS handled by HttpsConnector wrapper
+    http_connector.set_connect_timeout(Some(connection_timeout));
+
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_tls_config(tls_config)
         .https_or_http()
         .enable_all_versions()
-        .build();
+        .wrap_connector(http_connector);
 
-    Client::builder(TokioExecutor::new()).build(https)
+    Client::builder(TokioExecutor::new())
+        .pool_idle_timeout(Duration::from_secs(90))
+        .build(https)
 }
 
 #[cfg(test)]

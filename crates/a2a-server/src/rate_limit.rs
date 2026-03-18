@@ -116,10 +116,10 @@ impl RateLimitInterceptor {
 
     /// Extracts the caller key from the call context.
     fn caller_key(ctx: &CallContext) -> String {
-        if let Some(ref identity) = ctx.caller_identity {
-            return identity.clone();
+        if let Some(identity) = ctx.caller_identity() {
+            return identity.to_owned();
         }
-        if let Some(xff) = ctx.http_headers.get("x-forwarded-for") {
+        if let Some(xff) = ctx.http_headers().get("x-forwarded-for") {
             // Use the first IP in the chain (client IP).
             if let Some(ip) = xff.split(',').next() {
                 return ip.trim().to_string();
@@ -261,13 +261,11 @@ mod tests {
     use std::collections::HashMap;
 
     fn make_ctx(identity: Option<&str>) -> CallContext {
-        CallContext {
-            method: "message/send".to_string(),
-            caller_identity: identity.map(String::from),
-            extensions: vec![],
-            request_id: None,
-            http_headers: HashMap::new(),
+        let mut ctx = CallContext::new("message/send");
+        if let Some(id) = identity {
+            ctx = ctx.with_caller_identity(id.to_owned());
         }
+        ctx
     }
 
     #[tokio::test]
@@ -336,13 +334,7 @@ mod tests {
             "x-forwarded-for".to_string(),
             "10.0.0.1, 10.0.0.2".to_string(),
         );
-        let ctx = CallContext {
-            method: "message/send".to_string(),
-            caller_identity: None,
-            extensions: vec![],
-            request_id: None,
-            http_headers: headers,
-        };
+        let ctx = CallContext::new("message/send").with_http_headers(headers);
         assert!(limiter.before(&ctx).await.is_ok());
         assert!(limiter.before(&ctx).await.is_err());
     }
@@ -361,13 +353,8 @@ mod tests {
         for _ in 0..200 {
             let lim = Arc::clone(&limiter);
             handles.push(tokio::spawn(async move {
-                let ctx = CallContext {
-                    method: "message/send".to_string(),
-                    caller_identity: Some("concurrent-user".into()),
-                    extensions: vec![],
-                    request_id: None,
-                    http_headers: HashMap::new(),
-                };
+                let ctx =
+                    CallContext::new("message/send").with_caller_identity("concurrent-user".into());
                 lim.before(&ctx).await
             }));
         }
@@ -749,13 +736,7 @@ mod tests {
         });
         let mut headers = HashMap::new();
         headers.insert("x-forwarded-for".to_string(), "192.168.1.1".to_string());
-        let ctx = CallContext {
-            method: "message/send".to_string(),
-            caller_identity: None,
-            extensions: vec![],
-            request_id: None,
-            http_headers: headers,
-        };
+        let ctx = CallContext::new("message/send").with_http_headers(headers);
         assert!(limiter.before(&ctx).await.is_ok());
         // Second request should be rejected (limit is 1).
         assert!(limiter.before(&ctx).await.is_err());

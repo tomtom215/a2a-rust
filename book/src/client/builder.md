@@ -129,7 +129,7 @@ let client = ClientBuilder::new(url)
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |
 | `with_stream_connect_timeout(Duration)` | 30s | SSE stream connect timeout |
-| `with_retry_policy(RetryPolicy)` | None | Retry on transient errors |
+| `with_retry_policy(RetryPolicy)` | None | Retry on transient errors with jittered exponential backoff |
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
