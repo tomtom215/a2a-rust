@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! Tenant-scoped PostgreSQL-backed [`PushConfigStore`] implementation.
+//! Tenant-scoped `PostgreSQL`-backed [`PushConfigStore`] implementation.
 //!
 //! Adds a `tenant_id` column to the `push_configs` table for full tenant
 //! isolation. Uses [`TenantContext`] to scope all operations.
@@ -18,7 +18,7 @@ use sqlx::postgres::PgPool;
 use super::config_store::PushConfigStore;
 use crate::store::tenant::TenantContext;
 
-/// Tenant-scoped PostgreSQL-backed [`PushConfigStore`].
+/// Tenant-scoped `PostgreSQL`-backed [`PushConfigStore`].
 ///
 /// Each operation is scoped to the tenant from [`TenantContext`].
 ///
@@ -43,7 +43,7 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
 }
 
 impl TenantAwarePostgresPushConfigStore {
-    /// Opens a PostgreSQL connection pool and initializes the schema.
+    /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
     ///

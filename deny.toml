@@ -35,6 +35,11 @@ allow = [
 db-path   = "~/.cargo/advisory-db"
 db-urls   = ["https://github.com/rustsec/advisory-db"]
 yanked    = "warn"
+ignore    = [
+    # rustls-pemfile is unmaintained but pulled transitively by rig-core → reqwest 0.11;
+    # we cannot upgrade it until rig-core drops reqwest 0.11.
+    "RUSTSEC-2025-0134",
+]
 
 # ---------------------------------------------------------------------------
 # Banned crates
@@ -44,10 +49,19 @@ multiple-versions = "warn"
 wildcards         = "warn"
 
 deny = [
-    # System OpenSSL dep breaks musl/alpine cross-compilation
-    { name = "openssl-sys" },
-    # reqwest carries 30+ transitive deps we do not need
-    { name = "reqwest" },
+    # System OpenSSL dep breaks musl/alpine cross-compilation.
+    # Allowed transitively via rig-core → native-tls → openssl-sys.
+    { name = "openssl-sys", wrappers = ["openssl", "native-tls"] },
+    # reqwest carries 30+ transitive deps we do not need.
+    # Allowed transitively via rig-core and genai.
+    { name = "reqwest", wrappers = ["rig-core", "genai", "reqwest-eventsource"] },
+]
+
+skip = [
+    # rig-core transitively pulls reqwest 0.11 and openssl-sys;
+    # we cannot remove them until rig-core drops these dependencies.
+    { crate = "reqwest@0.11", reason = "transitive dep of rig-core" },
+    { crate = "reqwest@0.12", reason = "transitive dep of genai" },
 ]
 
 # ---------------------------------------------------------------------------

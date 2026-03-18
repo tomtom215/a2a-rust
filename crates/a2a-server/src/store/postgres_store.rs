@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F.
 
-//! PostgreSQL-backed [`TaskStore`] implementation.
+//! `PostgreSQL`-backed [`TaskStore`] implementation.
 //!
-//! Requires the `postgres` feature flag. Uses `sqlx` for async PostgreSQL access.
+//! Requires the `postgres` feature flag. Uses `sqlx` for async `PostgreSQL` access.
 //!
 //! # Example
 //!
@@ -27,7 +27,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 
 use super::task_store::TaskStore;
 
-/// PostgreSQL-backed [`TaskStore`].
+/// `PostgreSQL`-backed [`TaskStore`].
 ///
 /// Stores tasks as JSONB blobs in a `tasks` table. Suitable for multi-node
 /// production deployments that need shared persistence and horizontal scaling.
@@ -52,7 +52,7 @@ pub struct PostgresTaskStore {
 }
 
 impl PostgresTaskStore {
-    /// Opens a PostgreSQL connection pool and initializes the schema.
+    /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
     ///
@@ -62,7 +62,7 @@ impl PostgresTaskStore {
         Self::from_pool(pool).await
     }
 
-    /// Opens a PostgreSQL database with automatic schema migration.
+    /// Opens a `PostgreSQL` database with automatic schema migration.
     ///
     /// Runs all pending migrations before returning the store. This is the
     /// recommended constructor for production deployments because it ensures

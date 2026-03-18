@@ -9,7 +9,7 @@
 ## Context
 
 The a2a-rust test suite includes unit tests, integration tests, property-based
-tests (proptest), fuzz tests, and a 72-test E2E dogfood harness. Together these
+tests (proptest), fuzz tests, and a 95-test E2E dogfood harness. Together these
 provide strong coverage of correctness and edge cases.
 
 However, none of these techniques answer the question: **do the tests actually

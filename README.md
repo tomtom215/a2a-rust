@@ -81,7 +81,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` CI gate |
+| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` (on-demand CI workflow) |
 | **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; zero `unsafe` blocks |
 
 ## Crate Structure
@@ -101,7 +101,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.2"
+a2a-protocol-sdk = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -284,7 +284,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (1,750+ with feature flags; ~1,600 with defaults only)
+# Run all tests (~1,630 with defaults only; more with optional feature flags)
 cargo test --workspace
 
 # Run the end-to-end example

@@ -20,9 +20,10 @@ Markdown / TOML / YAML files use the appropriate comment syntax.
 
 ### 500-line maximum per file
 
-No source file (`.rs`) may exceed 500 lines. If your implementation is growing
-beyond this limit, split it into focused sub-modules with a thin `mod.rs` that
-only re-exports.
+Source files (`.rs`) should generally stay under 500 lines. If your implementation
+is growing beyond this limit, consider splitting it into focused sub-modules with
+a thin `mod.rs` that only re-exports. Some files exceed this guideline where
+splitting would harm cohesion.
 
 ### Thin `mod.rs` files
 
@@ -97,7 +98,7 @@ cargo test -p a2a-protocol-server
 cargo test -p a2a-protocol-sdk
 
 # Run tests with signing feature
-cargo test --workspace --features signing
+cargo test --workspace --features a2a-protocol-sdk/signing
 
 # Run a specific test
 cargo test -p a2a-protocol-types task_state_roundtrip
@@ -170,7 +171,7 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 
 - Tasks (submitted, working, completed, failed)
 - Messages (user, agent, multi-part)
-- Parts (text, raw, url, data)
+- Parts (text, file, data)
 - Agent cards (minimal, with security)
 - JSON-RPC requests and responses
 - Stream events (status update, artifact update)
@@ -218,11 +219,11 @@ cargo test --workspace
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # 5. With signing feature (if changes touch signing code)
-cargo clippy --workspace --all-targets --features signing -- -D warnings
-cargo test --workspace --features signing
+cargo clippy --workspace --all-targets --features a2a-protocol-sdk/signing -- -D warnings
+cargo test --workspace --features a2a-protocol-sdk/signing
 
 # 6. With tracing feature (if changes touch tracing code)
-cargo test --workspace --features tracing
+cargo test --workspace --features a2a-protocol-sdk/tracing
 
 # 7. With TLS feature (if changes touch TLS code)
 cargo test -p a2a-protocol-client --features tls-rustls
