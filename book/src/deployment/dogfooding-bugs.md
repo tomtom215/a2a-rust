@@ -27,8 +27,8 @@ Twelve documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **65 bu
 |----------|-------|---------|
 | **Critical** | 6 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44) |
 | **High** | 14 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), shutdown hangs (#23), event ordering (#21), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
-| **Medium** | 32 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47) |
-| **Low** | 13 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
+| **Medium** | 31 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47) |
+| **Low** | 14 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
 
 ### Configuration Hardening
 
