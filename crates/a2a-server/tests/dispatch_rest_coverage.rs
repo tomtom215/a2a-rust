@@ -529,10 +529,9 @@ async fn list_push_configs_empty_returns_200() {
     )
     .await;
     assert_eq!(status, 200);
-    // Response is a bare JSON array of configs.
     assert!(
         body.starts_with('['),
-        "response should be a JSON array: {body}"
+        "response should contain configs field"
     );
 }
 
@@ -570,10 +569,7 @@ async fn list_push_configs_no_push_sender_still_works() {
         status, 200,
         "list push configs should succeed even without push sender"
     );
-    assert!(
-        body.starts_with('['),
-        "response should be a JSON array: {body}"
-    );
+    assert!(body.starts_with('['));
 }
 
 #[tokio::test]

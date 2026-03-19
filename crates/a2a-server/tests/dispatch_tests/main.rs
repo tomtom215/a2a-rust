@@ -29,7 +29,7 @@ use a2a_protocol_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcS
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::responses::{ListPushConfigsResponse, SendMessageResponse};
+use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;

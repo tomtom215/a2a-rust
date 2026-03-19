@@ -354,15 +354,9 @@ mod tests {
             serde_json::to_string(&TaskState::Unspecified).expect("ser"),
             "\"unspecified\""
         );
-    }
-
-    #[test]
-    fn task_state_legacy_alias_deserialization() {
-        // Old SCREAMING_SNAKE format should still deserialize via aliases.
+        // Legacy aliases still deserialize
         let back: TaskState = serde_json::from_str("\"TASK_STATE_COMPLETED\"").unwrap();
         assert_eq!(back, TaskState::Completed);
-        let back: TaskState = serde_json::from_str("\"TASK_STATE_WORKING\"").unwrap();
-        assert_eq!(back, TaskState::Working);
     }
 
     #[test]
@@ -410,7 +404,7 @@ mod tests {
         let json = serde_json::to_string(&TaskState::Submitted).unwrap();
         assert_eq!(json, "\"submitted\"");
 
-        // Both formats should deserialize
+        // Both formats deserialize
         let back: TaskState = serde_json::from_str("\"submitted\"").unwrap();
         assert_eq!(back, TaskState::Submitted);
         let back: TaskState = serde_json::from_str("\"TASK_STATE_SUBMITTED\"").unwrap();

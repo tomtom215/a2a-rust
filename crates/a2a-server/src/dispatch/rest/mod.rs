@@ -213,8 +213,7 @@ impl RestDispatcher {
             // Task cancel (slash-separated variant: /tasks/{id}/cancel).
             ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id, headers).await,
 
-            // Push notification configs.
-            // Accept both plural and singular path segments.
+            // Push notification configs (accept both plural and singular path segments).
             ("POST", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
                 self.handle_set_push_config(req, task_id, headers).await
             }

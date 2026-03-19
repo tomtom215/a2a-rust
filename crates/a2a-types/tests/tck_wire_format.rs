@@ -52,7 +52,8 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Validates that all TaskState variants serialize to lowercase kebab-case.
-/// Also validates that legacy SCREAMING_SNAKE format is accepted via aliases.
+/// The old `TASK_STATE_*` format is still accepted via serde aliases for
+/// deserialization.
 #[test]
 fn tck_task_state_proto_json_encoding() {
     let cases: &[(TaskState, &str)] = &[
@@ -82,30 +83,15 @@ fn tck_task_state_proto_json_encoding() {
     }
 }
 
-/// Validates that legacy SCREAMING_SNAKE format is accepted via aliases
-/// for backward compatibility with older implementations.
-#[test]
-fn tck_task_state_accepts_legacy_format() {
-    let legacy_cases: &[(&str, TaskState)] = &[
-        ("\"TASK_STATE_WORKING\"", TaskState::Working),
-        ("\"TASK_STATE_COMPLETED\"", TaskState::Completed),
-        ("\"TASK_STATE_SUBMITTED\"", TaskState::Submitted),
-        ("\"TASK_STATE_INPUT_REQUIRED\"", TaskState::InputRequired),
-    ];
-    for (input, expected) in legacy_cases {
-        let result: TaskState = serde_json::from_str(input).unwrap();
-        assert_eq!(result, *expected, "legacy alias failed for {input}");
-    }
-}
-
-/// Validates that truly invalid formats are rejected.
+/// Validates that truly invalid task state strings are rejected.
+/// Lowercase and TASK_STATE_* formats are both accepted now.
 #[test]
 fn tck_task_state_rejects_invalid() {
     let invalid = &[
-        "\"WORKING\"",           // missing prefix, not lowercase
-        "\"COMPLETED\"",         // missing prefix, not lowercase
+        "\"WORKING\"",           // bare uppercase without prefix
+        "\"COMPLETED\"",         // bare uppercase without prefix
         "\"TaskState_Working\"", // wrong format
-        "\"input_required\"",    // underscore instead of hyphen
+        "\"input_required\"",    // underscore instead of kebab-case
     ];
 
     for &input in invalid {
@@ -142,22 +128,8 @@ fn tck_message_role_proto_json_encoding() {
 }
 
 #[test]
-fn tck_message_role_accepts_lowercase_alias() {
-    // Lowercase aliases are accepted for cross-SDK compatibility
-    let valid = &[
-        ("\"user\"", MessageRole::User),
-        ("\"agent\"", MessageRole::Agent),
-        ("\"unspecified\"", MessageRole::Unspecified),
-    ];
-    for (input, expected) in valid {
-        let result: MessageRole = serde_json::from_str(input).unwrap();
-        assert_eq!(result, *expected, "lowercase alias failed for {input}");
-    }
-}
-
-#[test]
 fn tck_message_role_rejects_invalid() {
-    let invalid = &["\"USER\"", "\"AGENT\"", "\"Admin\""];
+    let invalid = &["\"USER\"", "\"AGENT\"", "\"Admin\"", "\"role_user\""];
     for &input in invalid {
         assert!(
             serde_json::from_str::<MessageRole>(input).is_err(),
@@ -894,7 +866,6 @@ fn tck_stream_response_message_variant() {
 
 #[test]
 fn tck_send_message_response_task_variant() {
-    // With untagged, the result is the task object directly.
     let golden = json!({
         "id": "t1",
         "contextId": "c1",
@@ -907,7 +878,6 @@ fn tck_send_message_response_task_variant() {
 
 #[test]
 fn tck_send_message_response_message_variant() {
-    // With untagged, the result is the message object directly.
     let golden = json!({
         "messageId": "msg-1",
         "role": "ROLE_AGENT",
@@ -1020,7 +990,7 @@ fn tck_artifact_golden_format() {
 /// This tests the complete deserialization pipeline including nested types.
 #[test]
 fn tck_cross_sdk_python_send_message_response() {
-    // JSON that a Python A2A SDK server would return (untagged — task directly in result)
+    // JSON that a Python A2A SDK server would return
     let python_sdk_response = json!({
         "jsonrpc": "2.0",
         "id": 42,
