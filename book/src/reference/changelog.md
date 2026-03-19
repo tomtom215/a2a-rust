@@ -17,8 +17,8 @@ All four workspace crates share the same version number and are released togethe
 Releases are triggered by pushing a version tag:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
@@ -36,16 +36,15 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
-## Latest (Unreleased)
+## v0.3.0 (2026-03-19)
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
   Axum servers. All 11 REST methods, composable with other Axum routes/middleware.
 - **TCK wire format conformance tests** — 44 tests validating wire format
   compatibility against the A2A v1.0 specification.
-- **Wave 2 inline unit tests** — 110 new `#[cfg(test)]` tests added directly
-  to 9 critical `a2a-protocol-server` source files (messaging, event_processing,
-  push_config, lifecycle, handler/mod, REST/JSON-RPC/gRPC/WebSocket dispatchers).
-  Total workspace test count: 1,750+ passing tests (with feature flags).
+- **Mutation testing** — zero surviving mutants across all library crates.
+- **Comprehensive inline unit tests** — 1,769 tests across all crates covering
+  the full request pipeline, dispatchers, push delivery, streaming, and more.
 
 ### Beyond-Spec Enhancements
 
@@ -106,6 +105,6 @@ This ensures each crate's dependencies are available before it publishes.
 
 ### v0.2.0 (2026-03-15)
 
-Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests (workspace total now 1,750+ after subsequent waves).
+Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests.
 
 For the complete version history, see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md).

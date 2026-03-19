@@ -7,7 +7,7 @@
 
 //! Shared helpers for the a2a-benchmarks criterion suite.
 //!
-//! This module provides reusable fixtures, a trivial [`EchoExecutor`], and
+//! This module provides reusable fixtures, a trivial [`executor::EchoExecutor`], and
 //! server startup helpers so that every benchmark file stays focused on
 //! measuring a single dimension of SDK performance.
 

@@ -802,11 +802,11 @@ mod tests {
 
     /// Kills mutant: `replace < with <= in SseParser::feed` (line 136).
     ///
-    /// The line_buf growth guard is `line_buf.len() < max_event_size * 2`.
-    /// With max_event_size=6, the limit is 12 bytes.
+    /// The `line_buf` growth guard is `line_buf.len() < max_event_size * 2`.
+    /// With `max_event_size=6`, the limit is 12 bytes.
     ///
     /// Feed "data: ABCDEF" (exactly 12 bytes) — all accepted (len 0..11, each < 12).
-    /// Then feed "X" — line_buf.len() == 12, and `12 < 12` is false → dropped.
+    /// Then feed "X" — `line_buf.len()` == 12, and `12 < 12` is false → dropped.
     /// Then "\n\n" to complete the event.
     ///
     /// With `<`: data = "ABCDEF" (6 bytes == max), accepted.

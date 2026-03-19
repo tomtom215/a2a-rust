@@ -917,7 +917,7 @@ mod tests {
     // ── Mutation-killing: cap_backoff boundary (line 250) ────────────────
 
     /// Kills mutant: `next_secs < 0.0` → `next_secs <= 0.0` or `== 0.0`.
-    /// With multiplier=0, next_secs=0.0. The guard should NOT trigger (0 is valid).
+    /// With `multiplier=0`, `next_secs=0.0`. The guard should NOT trigger (0 is valid).
     #[test]
     fn cap_backoff_zero_multiplier_returns_zero() {
         let max = Duration::from_secs(30);
