@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F.
+#
+# Benchmark suite — runs criterion benchmarks and archives reports.
+#
+# Trigger: on-demand (workflow_dispatch) and pushes to main.
+# Benchmarks run on dedicated runners for more consistent results.
+
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "benches/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  bench:
+    name: Run Benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build benchmarks
+        run: cargo bench -p a2a-benchmarks --no-run
+
+      - name: Run protocol_overhead
+        run: cargo bench -p a2a-benchmarks --bench protocol_overhead
+
+      - name: Run task_lifecycle
+        run: cargo bench -p a2a-benchmarks --bench task_lifecycle
+
+      - name: Run transport_throughput
+        run: cargo bench -p a2a-benchmarks --bench transport_throughput
+
+      - name: Run concurrent_agents
+        run: cargo bench -p a2a-benchmarks --bench concurrent_agents
+
+      - name: Run cross_language (Rust only)
+        run: cargo bench -p a2a-benchmarks --bench cross_language
+
+      - name: Upload criterion reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: criterion-reports
+          path: target/criterion/
+          retention-days: 30

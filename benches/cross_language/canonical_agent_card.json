@@ -1,0 +1,26 @@
+{
+  "url": "https://bench.example.com/a2a",
+  "name": "Bench Agent",
+  "description": "Benchmark agent — trivial echo for SDK perf tests",
+  "version": "1.0.0",
+  "supportedInterfaces": [
+    {
+      "url": "https://bench.example.com/a2a",
+      "protocolBinding": "JSONRPC",
+      "protocolVersion": "1.0.0"
+    }
+  ],
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["text/plain"],
+  "skills": [
+    {
+      "id": "echo",
+      "name": "Echo",
+      "description": "Echoes input",
+      "tags": ["echo", "benchmark"]
+    }
+  ],
+  "capabilities": {
+    "streaming": true
+  }
+}

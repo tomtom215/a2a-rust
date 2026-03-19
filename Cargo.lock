@@ -3,6 +3,24 @@
 version = 4
 
 [[package]]
+name = "a2a-benchmarks"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-client",
+ "a2a-protocol-server",
+ "a2a-protocol-types",
+ "bytes",
+ "criterion",
+ "http-body-util",
+ "hyper 1.8.1",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "a2a-protocol-client"
 version = "0.3.0"
 dependencies = [
@@ -568,6 +586,7 @@ dependencies = [
  "ciborium",
  "clap",
  "criterion-plot",
+ "futures",
  "is-terminal",
  "itertools",
  "num-traits",
@@ -580,6 +599,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tinytemplate",
+ "tokio",
  "walkdir",
 ]
 

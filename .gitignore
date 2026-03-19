@@ -19,6 +19,11 @@
 *.swp
 *.swo
 
+# Benchmark results (keep .gitkeep)
+benches/results/*.json
+benches/results/*.md
+!benches/results/.gitkeep
+
 # ITK agent build artifacts
 node_modules/
 itk/agents/go-agent/go-agent

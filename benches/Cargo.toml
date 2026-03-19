@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-benchmarks"
+version     = "0.0.0"
+publish     = false
+description = "Criterion benchmarks for the a2a-protocol-sdk — transport, protocol, lifecycle, concurrency"
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+
+[dependencies]
+# SDK crates under test
+a2a-protocol-types  = { path = "../crates/a2a-types" }
+a2a-protocol-client = { path = "../crates/a2a-client" }
+a2a-protocol-server = { path = "../crates/a2a-server" }
+
+# Benchmark harness
+criterion = { workspace = true, features = ["html_reports", "async_tokio"] }
+
+# Async runtime
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+
+# HTTP client for transport benchmarks
+hyper          = { workspace = true }
+http-body-util = { workspace = true }
+hyper-util     = { workspace = true, features = ["server", "server-auto"] }
+bytes          = "1"
+
+# Serialization
+serde      = { workspace = true }
+serde_json = { workspace = true }
+
+# UUID for unique IDs
+uuid = { workspace = true }
+
+[[bench]]
+name    = "transport_throughput"
+harness = false
+
+[[bench]]
+name    = "protocol_overhead"
+harness = false
+
+[[bench]]
+name    = "task_lifecycle"
+harness = false
+
+[[bench]]
+name    = "concurrent_agents"
+harness = false
+
+[[bench]]
+name    = "cross_language"
+harness = false
