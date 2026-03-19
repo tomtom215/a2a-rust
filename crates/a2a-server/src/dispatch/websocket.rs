@@ -340,7 +340,14 @@ async fn stream_events(
     while let Some(event) = reader.read().await {
         match event {
             Ok(stream_resp) => {
-                let json = serde_json::to_string(&stream_resp).unwrap_or_default();
+                // Wrap each event in a JSON-RPC success envelope so the client
+                // can route it by `id` and deserialize as `JsonRpcResponse<StreamResponse>`.
+                let envelope = JsonRpcSuccessResponse {
+                    jsonrpc: JsonRpcVersion,
+                    id: id.clone(),
+                    result: stream_resp,
+                };
+                let json = serde_json::to_string(&envelope).unwrap_or_default();
                 let mut w = writer.lock().await;
                 if w.send(WsMessage::Text(json)).await.is_err() {
                     return; // Client disconnected
