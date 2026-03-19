@@ -11,7 +11,7 @@ Demonstrates a Rust coordinator agent that delegates work to worker agents imple
         ┌─────────────────────────┐
         │   Rust Coordinator      │  ← accepts user requests via A2A
         │   (a2a-protocol-sdk)    │
-        └──────┬──┬──┬──┬────────┘
+        └──────┬──┬──┬──┬─────────┘
                │  │  │  │
           ┌────┘  │  │  └────┐
           ▼       ▼  ▼       ▼
