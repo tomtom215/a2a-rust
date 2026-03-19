@@ -10,13 +10,13 @@ When a client calls `SendStreamingMessage`, the server holds the HTTP connection
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
 
-data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"working"}}}
 
 data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"partial..."}]},"lastChunk":false}}
 
 data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"complete result"}]},"lastChunk":true}}
 
-data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"completed"}}}
 
 ```
 
@@ -36,7 +36,7 @@ Reports a task state transition:
     "taskId": "task-abc",
     "contextId": "ctx-123",
     "status": {
-      "state": "TASK_STATE_WORKING",
+      "state": "working",
       "timestamp": "2026-03-15T10:30:00Z"
     }
   }
@@ -71,7 +71,7 @@ A complete task snapshot (usually the final event):
   "task": {
     "id": "task-abc",
     "contextId": "ctx-123",
-    "status": {"state": "TASK_STATE_COMPLETED"},
+    "status": {"state": "completed"},
     "artifacts": [...]
   }
 }

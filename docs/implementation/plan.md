@@ -1,6 +1,8 @@
 # a2a-rust: Implementation Plan & Roadmap
 
 > **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
+>
+> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). In particular, `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. Similarly, `SendMessageResponse` uses `#[serde(untagged)]`, not externally tagged. See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)

@@ -30,7 +30,7 @@ The built-in `HttpPushSender` includes:
 - **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth)
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
 - **HTTPS enforcement** — Optionally require HTTPS webhook URLs
-- **Delivery amplification cap** — Total push delivery time per event is capped at 30 seconds
+- **Per-request timeout** — Each push delivery HTTP request is capped at 30 seconds
 
 ### Path Traversal Protection
 
@@ -45,7 +45,7 @@ The REST dispatcher automatically rejects:
 |-------|-------|-----------|
 | Request body | 4 MiB | REST |
 | Query string | 4 KiB | REST |
-| Event size | 16 MiB (configurable) | SSE streaming |
+| Event size | 16 MiB (configurable) | All SSE transports |
 
 ## Reliability
 

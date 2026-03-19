@@ -125,8 +125,8 @@ The pattern is always: write status updates and artifacts to the event queue, th
 Enable structured logging to see the protocol internals:
 
 ```bash
-cargo run -p echo-agent --features tracing
-RUST_LOG=debug cargo run -p echo-agent --features tracing
+cargo run -p echo-agent --features echo-agent/tracing
+RUST_LOG=debug cargo run -p echo-agent --features echo-agent/tracing
 ```
 
 ## Next Steps

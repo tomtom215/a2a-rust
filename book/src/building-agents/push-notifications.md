@@ -137,7 +137,7 @@ use a2a_protocol_sdk::server::PushConfigStore;
 struct PostgresPushConfigStore { /* ... */ }
 
 impl PushConfigStore for PostgresPushConfigStore {
-    // Implement create, get, list, delete...
+    // Implement set, get, list, delete...
 }
 
 RequestHandlerBuilder::new(executor)

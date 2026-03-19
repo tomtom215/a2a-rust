@@ -70,14 +70,14 @@ let status = TaskStatus::with_timestamp(TaskState::Completed);
 
 ### Wire Format
 
-On the wire, task states use the `TASK_STATE_` prefix:
+On the wire, task states use lowercase kebab-case:
 
 ```json
 {
   "id": "task-abc",
   "contextId": "ctx-123",
   "status": {
-    "state": "TASK_STATE_COMPLETED",
+    "state": "completed",
     "timestamp": "2026-03-15T10:30:00Z"
   },
   "artifacts": [...]

@@ -49,8 +49,8 @@ Our variant `Pending` serializes as `"TASK_STATE_PENDING"`. The proto and JSON s
 #[serde(rename = "TASK_STATE_PENDING")]
 Pending,
 
-// CORRECT:
-#[serde(rename = "TASK_STATE_SUBMITTED")]
+// CORRECT (lowercase primary, SCREAMING_SNAKE alias for backward compat):
+#[serde(rename = "submitted", alias = "TASK_STATE_SUBMITTED")]
 Submitted,
 ```
 
@@ -250,7 +250,7 @@ These were reviewed and are correct for the HTTP+JSON protocol binding.
 Recommended implementation order (each step is independently testable):
 
 **Step 1: Fix `TaskState` naming (C1)**
-- Rename `Pending` → `Submitted`, update serde rename to `TASK_STATE_SUBMITTED`
+- Rename `Pending` → `Submitted`, update serde rename to `"submitted"` (with `TASK_STATE_SUBMITTED` as alias)
 - Update all references in handler, tests, echo-agent
 - Run tests — several will need updating
 

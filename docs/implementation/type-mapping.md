@@ -34,23 +34,23 @@ All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskState {
-    #[serde(rename = "TASK_STATE_UNSPECIFIED")]
+    #[serde(rename = "unspecified", alias = "TASK_STATE_UNSPECIFIED")]
     Unspecified,       // proto default (0-value)
-    #[serde(rename = "TASK_STATE_SUBMITTED")]
+    #[serde(rename = "submitted", alias = "TASK_STATE_SUBMITTED")]
     Submitted,
-    #[serde(rename = "TASK_STATE_WORKING")]
+    #[serde(rename = "working", alias = "TASK_STATE_WORKING")]
     Working,
-    #[serde(rename = "TASK_STATE_INPUT_REQUIRED")]
+    #[serde(rename = "input-required", alias = "TASK_STATE_INPUT_REQUIRED")]
     InputRequired,
-    #[serde(rename = "TASK_STATE_AUTH_REQUIRED")]
+    #[serde(rename = "auth-required", alias = "TASK_STATE_AUTH_REQUIRED")]
     AuthRequired,
-    #[serde(rename = "TASK_STATE_COMPLETED")]
+    #[serde(rename = "completed", alias = "TASK_STATE_COMPLETED")]
     Completed,
-    #[serde(rename = "TASK_STATE_FAILED")]
+    #[serde(rename = "failed", alias = "TASK_STATE_FAILED")]
     Failed,
-    #[serde(rename = "TASK_STATE_CANCELED")]
+    #[serde(rename = "canceled", alias = "TASK_STATE_CANCELED")]
     Canceled,
-    #[serde(rename = "TASK_STATE_REJECTED")]
+    #[serde(rename = "rejected", alias = "TASK_STATE_REJECTED")]
     Rejected,
 }
 ```
@@ -77,7 +77,7 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-In v1.0, enclosing enums (`StreamResponse`, `SendMessageResponse`) use externally-tagged serialization: `{"task": {...}}`. There is no explicit `kind` field.
+In v1.0, `StreamResponse` uses externally-tagged serialization: `{"task": {...}}`. `SendMessageResponse` uses `#[serde(untagged)]` — it is either a `Task` or `Message`, discriminated by field presence.
 
 ---
 
@@ -214,7 +214,7 @@ A file may have inline `bytes`, a `uri` reference, or both.
 | `lastChunk` | `last_chunk` | `Option<bool>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
-### `StreamResponse` (discriminated by field presence)
+### `StreamResponse` (externally tagged with camelCase variant names)
 
 ```rust
 #[non_exhaustive]
@@ -228,7 +228,7 @@ pub enum StreamResponse {
 }
 ```
 
-Deserialization checks which field (`task`, `message`, `statusUpdate`, `artifactUpdate`) is present.
+Externally tagged: each JSON object has a single key (`task`, `message`, `statusUpdate`, or `artifactUpdate`) wrapping the variant value.
 
 ---
 
@@ -277,6 +277,7 @@ Deserialization checks which field (`task`, `message`, `statusUpdate`, `artifact
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
 | `name` | `name` | `String` | Yes |
+| `url` | `url` | `Option<String>` | No |
 | `description` | `description` | `String` | Yes |
 | `version` | `version` | `String` | Yes |
 | `supportedInterfaces` | `supported_interfaces` | `Vec<AgentInterface>` | Yes |
@@ -417,6 +418,7 @@ Single flat type in v1.0 (combines the previous `PushNotificationConfig` and `Ta
 |---|---|---|---|
 | `tenant` | `tenant` | `Option<String>` | No |
 | `message` | `message` | `Message` | Yes |
+| `contextId` | `context_id` | `Option<String>` | No |
 | `configuration` | `configuration` | `Option<SendMessageConfiguration>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
@@ -472,12 +474,12 @@ Same fields as `GetPushConfigParams`.
 
 ## `responses.rs`
 
-### `SendMessageResponse` (externally tagged — either Task or Message, discriminated by field presence)
+### `SendMessageResponse` (untagged — either Task or Message, discriminated by field presence)
 
 ```rust
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum SendMessageResponse {
     Task(Task),
     Message(Message),
@@ -575,8 +577,8 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 | `#[serde(rename = "ROLE_...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
 | `#[serde(rename_all = "lowercase")]` | `ApiKeyLocation` |
 | `#[serde(tag = "type")]` | `PartContent`, `SecurityScheme` |
-| `#[serde(rename_all = "camelCase")]` | `StreamResponse`, `SendMessageResponse` (externally tagged) |
-| `#[serde(untagged)]` | `JsonRpcResponse<T>` |
+| `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged) |
+| `#[serde(untagged)]` | `JsonRpcResponse<T>`, `SendMessageResponse` |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All `Option<T>` fields |
 | `#[serde(rename = "in")]` | `ApiKeySecurityScheme.location` (`in` is a keyword) |
 | `#[serde(default)]` | Boolean fields defaulting to `false` |
