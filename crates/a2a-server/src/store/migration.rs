@@ -7,6 +7,14 @@
 //! applied schema versions in a `schema_versions` table. Migrations are defined
 //! as plain SQL strings and are executed inside transactions for atomicity.
 //!
+//! # Concurrency (L8)
+//!
+//! `SQLite` migrations do not use explicit table locking (unlike the `Postgres`
+//! migration runner which uses `LOCK TABLE`). `SQLite`'s `WAL` mode provides
+//! serialized writes at the database level, so concurrent migration runners
+//! are safe but may retry on `SQLITE_BUSY`. For multi-process deployments,
+//! run migrations from a single process during startup.
+//!
 //! # Built-in migrations
 //!
 //! | Version | Description |

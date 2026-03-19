@@ -65,6 +65,14 @@ impl RequestHandler {
 
     /// Inner implementation of `on_send_message`, extracted so that the outer
     /// method can uniformly track success/error metrics.
+    //
+    // NOTE(M2): There is a TOCTOU race between find_task_by_context and the
+    // task save below. Two concurrent SendMessage requests with the same
+    // context_id can both create tasks. This is mitigated by the insert_if_absent
+    // path for explicit task_ids, but the auto-generated UUID path cannot race
+    // on task_id (UUIDs are unique). The context_id duplication is harmless
+    // because subsequent lookups by context_id will find one of the tasks.
+    // For strict deduplication, use a SQL store with INSERT ... ON CONFLICT.
     #[allow(clippy::too_many_lines)]
     async fn send_message_inner(
         &self,
@@ -124,7 +132,7 @@ impl RequestHandler {
             .map_or_else(|| uuid::Uuid::new_v4().to_string(), ToString::to_string);
 
         // Look up existing task for continuation.
-        let stored_task = self.find_task_by_context(&context_id).await;
+        let stored_task = self.find_task_by_context(&context_id).await?;
 
         // Context/task mismatch rejection: if message.task_id is set but
         // doesn't match the stored task found by context_id, reject.
@@ -194,6 +202,11 @@ impl RequestHandler {
             let mut tokens = self.cancellation_tokens.write().await;
             // Sweep stale tokens if the map is getting large (prevent unbounded growth
             // if executors panic and never clean up their tokens).
+            //
+            // NOTE(L1): This sweep is O(n) under a write lock. This is acceptable
+            // because it only triggers when len >= max_cancellation_tokens (default
+            // 10,000), is amortized across many requests, and the retain() call is
+            // a cheap check (is_cancelled + duration_since) per entry.
             if tokens.len() >= self.limits.max_cancellation_tokens {
                 let now = Instant::now();
                 tokens.retain(|_, entry| {
@@ -229,6 +242,12 @@ impl RequestHandler {
         // Spawn executor task. The spawned task owns the only writer clone
         // needed; drop the local reference and the manager's reference so the
         // channel closes when the executor finishes.
+        //
+        // NOTE(L5): If tokio::spawn panics (e.g. runtime shutting down), the
+        // writer reference stored in the EventQueueManager will leak since
+        // the spawned cleanup code never runs. This is acceptable because a
+        // spawn panic during shutdown is non-recoverable; the manager is
+        // dropped shortly after anyway.
         let executor = Arc::clone(&self.executor);
         let task_id_for_cleanup = task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();

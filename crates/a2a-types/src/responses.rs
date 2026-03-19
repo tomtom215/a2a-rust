@@ -23,8 +23,11 @@ use crate::task::Task;
 /// The result of a `SendMessage` call: either a completed [`Task`] or an
 /// immediate [`Message`] response.
 ///
-/// Discriminated by field presence (untagged oneof): `{"task": {...}}` or
-/// `{"message": {...}}`.
+/// Uses `#[serde(untagged)]` per the A2A spec. serde attempts `Task` first,
+/// then `Message`. In rare cases where a `Message` has fields that happen to
+/// match the `Task` schema (e.g. `id`, `contextId`, `status`), it could
+/// mis-deserialize as a `Task`. Callers should check `Task::status.state` for
+/// a valid `TaskState` to confirm the variant is correct.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]

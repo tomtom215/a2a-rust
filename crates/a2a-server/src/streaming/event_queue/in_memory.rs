@@ -2,6 +2,16 @@
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! In-memory event queue backed by a `tokio::sync::broadcast` channel.
+//!
+//! # Known limitations (H5, M4)
+//!
+//! The broadcast channel has a fixed capacity. When a slow SSE consumer falls
+//! behind, `Lagged(n)` events are lost for both the SSE reader AND the
+//! background event processor. This means missed state transitions may not be
+//! persisted to the task store. For production deployments under high load,
+//! consider using separate channels for SSE delivery vs. state persistence,
+//! with the background processor using an unbounded or much larger channel
+//! since it is critical-path for consistency.
 
 use std::future::Future;
 use std::pin::Pin;

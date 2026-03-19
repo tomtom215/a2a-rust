@@ -126,13 +126,40 @@ impl WebSocketDispatcher {
         let (writer, mut reader) = ws_stream.split();
         let writer = Arc::new(tokio::sync::Mutex::new(writer));
 
+        // FIX(M9): Limit concurrent tasks per connection to prevent unbounded spawning.
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
+
         while let Some(msg) = reader.next().await {
             match msg {
                 Ok(WsMessage::Text(text)) => {
+                    // FIX(M10): Reject oversized WebSocket messages to prevent OOM.
+                    if text.len() > 4 * 1024 * 1024 {
+                        let err_resp = JsonRpcErrorResponse::new(
+                            None,
+                            JsonRpcError::new(-32000, "message too large".to_string()),
+                        );
+                        send_json(&writer, &err_resp).await;
+                        continue;
+                    }
+
+                    // FIX(M9): Acquire permit before spawning; back-pressure if at capacity.
+                    let Ok(permit) = semaphore.clone().try_acquire_owned() else {
+                        let err_resp = JsonRpcErrorResponse::new(
+                            None,
+                            JsonRpcError::new(
+                                -32000,
+                                "server busy: too many concurrent requests".to_string(),
+                            ),
+                        );
+                        send_json(&writer, &err_resp).await;
+                        continue;
+                    };
+
                     let writer = Arc::clone(&writer);
                     let handler = Arc::clone(&self.handler);
                     tokio::spawn(async move {
                         process_ws_message(&handler, &text, writer).await;
+                        drop(permit); // Release when done
                     });
                 }
                 Ok(WsMessage::Ping(data)) => {

@@ -240,6 +240,69 @@ pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
     Ok(())
 }
 
+/// Validates a webhook URL with DNS resolution to prevent SSRF DNS rebinding.
+///
+/// First runs synchronous [`validate_webhook_url`] checks, then resolves the
+/// hostname via DNS and checks ALL resolved IP addresses against private/loopback
+/// ranges. This prevents DNS rebinding attacks where a hostname initially resolves
+/// to a public IP but later resolves to a private IP.
+pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<()> {
+    // Run synchronous checks first.
+    validate_webhook_url(url)?;
+
+    // Parse URL to extract host and port for DNS resolution.
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
+
+    let host = uri
+        .host()
+        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
+
+    // Strip brackets from IPv6 addresses.
+    let host_bare = host.trim_start_matches('[').trim_end_matches(']');
+
+    // If the host is already a literal IP, validate_webhook_url already checked it.
+    if host_bare.parse::<IpAddr>().is_ok() {
+        return Ok(());
+    }
+
+    // Resolve the hostname and check all resulting IPs.
+    let port = uri.port_u16().unwrap_or_else(|| {
+        if uri.scheme_str() == Some("https") {
+            443
+        } else {
+            80
+        }
+    });
+
+    let addr = format!("{host_bare}:{port}");
+    let resolved = tokio::net::lookup_host(&addr).await.map_err(|e| {
+        A2aError::invalid_params(format!(
+            "webhook URL hostname could not be resolved: {host_bare}: {e}"
+        ))
+    })?;
+
+    let mut found_any = false;
+    for socket_addr in resolved {
+        found_any = true;
+        let ip = socket_addr.ip();
+        if is_private_ip(ip) {
+            return Err(A2aError::invalid_params(format!(
+                "webhook URL hostname {host_bare} resolves to private/loopback address: {ip}"
+            )));
+        }
+    }
+
+    if !found_any {
+        return Err(A2aError::invalid_params(format!(
+            "webhook URL hostname {host_bare} did not resolve to any addresses"
+        )));
+    }
+
+    Ok(())
+}
+
 /// Validates that a header value contains no CR/LF characters.
 fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
     if value.contains('\r') || value.contains('\n') {
@@ -261,9 +324,9 @@ impl PushSender for HttpPushSender {
         Box::pin(async move {
             trace_info!(url, "delivering push notification");
 
-            // SSRF protection: reject private/loopback addresses.
+            // SSRF protection: reject private/loopback addresses (with DNS resolution).
             if !self.allow_private_urls {
-                validate_webhook_url(url)?;
+                validate_webhook_url_with_dns(url).await?;
             }
 
             // Header injection protection: validate credentials.
@@ -540,5 +603,56 @@ mod tests {
     #[test]
     fn rejects_ipv6_link_local() {
         assert!(validate_webhook_url("http://[fe80::1]:8080/webhook").is_err());
+    }
+
+    // ── validate_webhook_url_with_dns ────────────────────────────────────
+
+    #[tokio::test]
+    async fn dns_rejects_loopback_ip_literal() {
+        // IP literals skip DNS resolution but still get checked by validate_webhook_url.
+        let result = validate_webhook_url_with_dns("http://127.0.0.1:8080/webhook").await;
+        assert!(result.is_err(), "loopback IP should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_rejects_private_ip_literal() {
+        let result = validate_webhook_url_with_dns("http://10.0.0.1/webhook").await;
+        assert!(result.is_err(), "private IP should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_rejects_localhost_hostname() {
+        // localhost is rejected by the synchronous check before DNS resolution.
+        let result = validate_webhook_url_with_dns("http://localhost:8080/webhook").await;
+        assert!(result.is_err(), "localhost should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_rejects_invalid_scheme() {
+        let result = validate_webhook_url_with_dns("ftp://example.com/webhook").await;
+        assert!(result.is_err(), "ftp scheme should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_rejects_missing_host() {
+        let result = validate_webhook_url_with_dns("http:///path").await;
+        assert!(result.is_err(), "missing host should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_rejects_unresolvable_hostname() {
+        // A hostname that cannot be resolved should be rejected.
+        let result = validate_webhook_url_with_dns(
+            "https://this-hostname-definitely-does-not-exist-a2a-test.invalid/webhook",
+        )
+        .await;
+        assert!(result.is_err(), "unresolvable hostname should be rejected");
+    }
+
+    #[tokio::test]
+    async fn dns_accepts_ip_literal_public() {
+        // A public IP literal should pass (no DNS needed).
+        let result = validate_webhook_url_with_dns("https://203.0.113.1/webhook").await;
+        assert!(result.is_ok(), "public IP literal should be accepted");
     }
 }

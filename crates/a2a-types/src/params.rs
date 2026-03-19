@@ -160,7 +160,9 @@ pub struct ListTasksParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskState>,
 
-    /// Maximum number of tasks to return per page (1–100, default 50).
+    /// Maximum number of tasks to return per page. Clamped by the server
+    /// to `max_page_size` (default 1000). Clients may request any `u32` value
+    /// but the server will cap it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page_size: Option<u32>,
 

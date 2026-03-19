@@ -83,6 +83,10 @@ pub struct ClientResponse {
     pub result: serde_json::Value,
 
     /// The HTTP status code.
+    ///
+    /// **Note (M15):** For streaming responses, this is hardcoded to `200`
+    /// because the actual HTTP status is consumed when the SSE stream is
+    /// established. The stream setup succeeding implies HTTP 200.
     pub status_code: u16,
 }
 

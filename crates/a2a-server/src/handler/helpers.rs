@@ -47,9 +47,12 @@ impl RequestHandler {
     ///
     /// Uses [`crate::store::tenant::TenantContext::current()`] so that
     /// multi-tenant deployments only search within the caller's tenant.
-    pub(crate) async fn find_task_by_context(&self, context_id: &str) -> Option<Task> {
+    pub(crate) async fn find_task_by_context(
+        &self,
+        context_id: &str,
+    ) -> ServerResult<Option<Task>> {
         if context_id.len() > self.limits.max_id_length {
-            return None;
+            return Ok(None);
         }
         // Use the current tenant context so multi-tenant stores scope correctly.
         let tenant = crate::store::tenant::TenantContext::current();
@@ -68,13 +71,8 @@ impl RequestHandler {
             include_artifacts: None,
             history_length: None,
         };
-        match self.task_store.list(&params).await {
-            Ok(resp) => resp.tasks.into_iter().next(),
-            Err(_e) => {
-                trace_error!(context_id, error = %_e, "find_task_by_context: store query failed");
-                None
-            }
-        }
+        let resp = self.task_store.list(&params).await?;
+        Ok(resp.tasks.into_iter().next())
     }
 }
 
@@ -207,7 +205,7 @@ mod tests {
                 .unwrap();
 
             let long_id = "a".repeat(11);
-            let result = handler.find_task_by_context(&long_id).await;
+            let result = handler.find_task_by_context(&long_id).await.unwrap();
             assert!(
                 result.is_none(),
                 "find_task_by_context should return None for context_id exceeding max length"
@@ -221,7 +219,10 @@ mod tests {
                 .build()
                 .unwrap();
 
-            let result = handler.find_task_by_context("no-such-context").await;
+            let result = handler
+                .find_task_by_context("no-such-context")
+                .await
+                .unwrap();
             assert!(
                 result.is_none(),
                 "find_task_by_context should return None when no task matches the context"

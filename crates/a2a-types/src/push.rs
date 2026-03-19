@@ -73,6 +73,32 @@ impl TaskPushNotificationConfig {
             authentication: None,
         }
     }
+
+    /// Validates this configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if:
+    /// - The URL is empty or uses an unsupported scheme
+    /// - The task ID is empty
+    ///
+    /// Note: `http` URLs are accepted for development/testing environments.
+    /// Production deployments should enforce HTTPS.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.url.is_empty() {
+            return Err("push notification URL must not be empty".into());
+        }
+        if !self.url.starts_with("https://") && !self.url.starts_with("http://") {
+            return Err(format!(
+                "push notification URL must use http:// or https:// scheme: {}",
+                self.url
+            ));
+        }
+        if self.task_id.is_empty() {
+            return Err("push notification task_id must not be empty".into());
+        }
+        Ok(())
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -146,6 +172,48 @@ mod tests {
             !json.contains("\"authentication\""),
             "authentication should be omitted"
         );
+    }
+
+    // ── validate tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn validate_accepts_https_url() {
+        let cfg = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_http_url() {
+        let cfg = TaskPushNotificationConfig::new("task-1", "http://localhost:8080/webhook");
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_empty_url() {
+        let cfg = TaskPushNotificationConfig::new("task-1", "");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("must not be empty"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_non_http_scheme() {
+        let cfg = TaskPushNotificationConfig::new("task-1", "ftp://example.com/webhook");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("http:// or https://"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_bare_string() {
+        let cfg = TaskPushNotificationConfig::new("task-1", "example.com/webhook");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("http:// or https://"), "got: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_empty_task_id() {
+        let cfg = TaskPushNotificationConfig::new("", "https://example.com/webhook");
+        let err = cfg.validate().unwrap_err();
+        assert!(err.contains("task_id must not be empty"), "got: {err}");
     }
 
     #[test]

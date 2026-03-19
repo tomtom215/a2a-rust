@@ -69,6 +69,38 @@ This ensures each crate's dependencies are available before it publishes.
 - Rate limiter TOCTOU race fixed with CAS loop
 - Push config store now enforces global limits (DoS prevention)
 
+### Concurrency, Security & Robustness Fixes (Session 2026-03-19, Pass 15)
+
+**Transport concurrency fixes:**
+- **C1: gRPC Mutex removed** — gRPC transport no longer serializes concurrent requests through a Mutex. The tonic `Channel` (internally multiplexed, cheap to clone) is now cloned per request, enabling full concurrent throughput.
+- **C2: WebSocket transport redesigned** — Replaced reader Mutex with a dedicated background reader task and `HashMap<RequestId, PendingRequest>` message routing, eliminating the deadlock where holding the reader lock blocked all other requests.
+- **C3: WebSocket auth headers** — Extra headers (including auth interceptor headers) are now applied to the WebSocket upgrade HTTP request via the tungstenite `IntoClientRequest` trait.
+
+**Security hardening:**
+- **H6: SSRF DNS rebinding prevention** — Added `validate_webhook_url_with_dns()` that resolves DNS before IP validation, preventing DNS rebinding attacks where a hostname resolves to a public IP during validation but a private IP during the actual request.
+- **H8: Agent card body size limit** — Added a 2 MiB body size limit on agent card fetch responses to prevent OOM from malicious or misconfigured card endpoints.
+
+**Performance:**
+- **H7: Retry transport optimization** — Params are now serialized to bytes once before the retry loop, then deserialized for each attempt, avoiding deep-clone of the `serde_json::Value` tree on every retry.
+- **L4: Shutdown polling improvement** — Reduced shutdown polling interval from 50ms to 10ms with deadline-aware sleep for faster graceful shutdown.
+
+**Error handling & validation:**
+- **M3: `find_task_by_context` error propagation** — Changed from silently swallowing errors to propagating them via `?`.
+- **M13: TaskId/ContextId TryFrom** — Added `TryFrom<String>` and `TryFrom<&str>` impls that reject empty and whitespace-only strings.
+- **M14: CachingCardResolver error handling** — `new()` and `with_path()` now return `ClientResult<Self>` instead of silently producing empty URLs on invalid input.
+- **M16: REST tenant passthrough** — Fixed REST dispatch handlers to pass the extracted tenant from the URL path through to all handler methods.
+- **M17: FileContent validation** — Added `validate()` method that checks at least one of `bytes`/`uri` is set.
+- **M19: Push URL validation** — Added `validate()` method on `TaskPushNotificationConfig` for URL format validation.
+- **L14: Timestamp validation** — Added `has_valid_timestamp()` method to `TaskStatus` for RFC 3339 timestamp validation.
+
+**Resource limits:**
+- **M9: WebSocket concurrency limit** — Added per-connection `Semaphore(64)` to limit concurrent spawned tasks per WebSocket connection, preventing resource exhaustion from a single client.
+- **M10: WebSocket message size limit** — Added 4 MiB message size check for incoming WebSocket frames.
+- **M8: JSON-RPC batch size limit** — Confirmed existing `max_batch_size` in `DispatchConfig`.
+
+**Database safety:**
+- **L7: SQLite parameterized queries** — Changed `LIMIT` from `format!` string interpolation to parameterized queries, preventing potential SQL injection.
+
 ### v0.2.0 (2026-03-15)
 
 Initial implementation of A2A v1.0.0 with all 11 protocol methods, dual transport (JSON-RPC + REST), SSE streaming, push notifications, agent card discovery, HTTP caching, enterprise hardening, and 600+ tests (workspace total now 1,750+ after subsequent waves).

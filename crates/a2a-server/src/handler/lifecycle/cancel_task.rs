@@ -47,6 +47,11 @@ impl RequestHandler {
                 return Err(ServerError::TaskNotCancelable(task_id));
             }
 
+            // NOTE(L2): There is a TOCTOU race between the terminal state check above
+            // and the cancellation below. A concurrent task completion could complete
+            // the task between these two operations. This is harmless — the cancel
+            // signal arrives at an already-completed executor, which ignores it.
+
             // Signal the cancellation token so the executor can observe the cancellation.
             {
                 let tokens = self.cancellation_tokens.read().await;

@@ -136,7 +136,10 @@ pub struct GrpcTransport {
 
 #[derive(Debug)]
 struct Inner {
-    client: tokio::sync::Mutex<A2aServiceClient<Channel>>,
+    /// The underlying tonic channel. Tonic channels are internally multiplexed
+    /// and cheaply cloneable — no Mutex is needed. Each request clones the
+    /// channel to create a fresh client, enabling full concurrent throughput.
+    channel: Channel,
     endpoint: String,
     config: GrpcTransportConfig,
 }
@@ -173,13 +176,9 @@ impl GrpcTransport {
             .await
             .map_err(|e| ClientError::Transport(format!("gRPC connect failed: {e}")))?;
 
-        let client = A2aServiceClient::new(channel)
-            .max_decoding_message_size(config.max_message_size)
-            .max_encoding_message_size(config.max_message_size);
-
         Ok(Self {
             inner: Arc::new(Inner {
-                client: tokio::sync::Mutex::new(client),
+                channel,
                 endpoint: endpoint_str,
                 config,
             }),
@@ -247,7 +246,6 @@ impl GrpcTransport {
         }
     }
 
-    #[allow(clippy::significant_drop_tightening)]
     async fn execute_unary(
         &self,
         method: &str,
@@ -265,10 +263,14 @@ impl GrpcTransport {
         req.set_timeout(self.inner.config.timeout);
         Self::add_metadata(&mut req, extra_headers);
 
-        // FIX(#11): Wrap the entire gRPC call in tokio::time::timeout for
-        // per-request timeout enforcement, matching REST/JSON-RPC behavior.
+        // FIX(C1): Clone the tonic channel instead of locking a Mutex. Tonic
+        // channels are internally multiplexed and cheaply cloneable, so this
+        // enables full concurrent throughput without serialization.
+        let mut client = A2aServiceClient::new(self.inner.channel.clone())
+            .max_decoding_message_size(self.inner.config.max_message_size)
+            .max_encoding_message_size(self.inner.config.max_message_size);
+
         let response = tokio::time::timeout(self.inner.config.timeout, async {
-            let mut client = self.inner.client.lock().await;
             match method {
                 "SendMessage" => client.send_message(req).await,
                 "GetTask" => client.get_task(req).await,
@@ -304,7 +306,6 @@ impl GrpcTransport {
         }
     }
 
-    #[allow(clippy::significant_drop_tightening)]
     async fn execute_streaming(
         &self,
         method: &str,
@@ -321,10 +322,12 @@ impl GrpcTransport {
         let mut req = tonic::Request::new(payload);
         Self::add_metadata(&mut req, extra_headers);
 
-        // FIX(#11): Per-request timeout for stream establishment, matching
-        // REST/JSON-RPC stream_connect_timeout behavior.
+        // FIX(C1): Clone the tonic channel for concurrent access.
+        let mut client = A2aServiceClient::new(self.inner.channel.clone())
+            .max_decoding_message_size(self.inner.config.max_message_size)
+            .max_encoding_message_size(self.inner.config.max_message_size);
+
         let stream = tokio::time::timeout(self.inner.config.timeout, async {
-            let mut client = self.inner.client.lock().await;
             let response = match method {
                 "SendStreamingMessage" => client.send_streaming_message(req).await,
                 "SubscribeToTask" => client.subscribe_to_task(req).await,

@@ -85,7 +85,7 @@ A malicious server can send an infinite SSE event (no `\n\n` terminator). The cl
 
 Push notification `url` fields can point to internal services (e.g., `http://169.254.169.254/` — the cloud metadata endpoint).
 
-**Solution:** The `HttpPushSender` resolves the URL and rejects private/loopback IP addresses *after DNS resolution*, not on the URL string alone. This prevents DNS rebinding attacks.
+**Solution:** The `HttpPushSender` resolves the URL and rejects private/loopback IP addresses *after DNS resolution*, not on the URL string alone. The `validate_webhook_url_with_dns()` function performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname resolves to a public IP during validation but a private IP during the actual HTTP request.
 
 ### Header injection via credentials
 
@@ -149,6 +149,24 @@ Detecting stream completion by checking `text.contains("stream_complete")` is fr
 
 **Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`completed`, `failed`, `canceled`, `rejected`) or the `stream_complete` sentinel.
 
+### gRPC transport must not serialize requests through a Mutex
+
+Wrapping the tonic `Channel` in a `Mutex` serializes all concurrent gRPC requests, destroying throughput. Since tonic `Channel` is internally multiplexed over HTTP/2 and cheap to clone, the correct approach is to clone the channel for each request.
+
+**Solution:** Clone the `Channel` per request instead of holding a `Mutex` guard. This enables full concurrent throughput.
+
+### WebSocket transport must not hold a reader lock across the stream
+
+Holding a `Mutex` on the WebSocket reader for the entire duration of reading a response deadlocks when multiple requests are in flight — each request waits for the reader lock while the reader is blocked waiting for a response that may not be the one needed.
+
+**Solution:** Use a dedicated background reader task that reads all incoming messages and routes them to the correct pending request via a `HashMap<RequestId, PendingRequest>`. This eliminates the deadlock and enables true concurrent request/response multiplexing.
+
+### WebSocket upgrade requests must include auth headers
+
+Auth interceptor headers were applied to JSON-RPC/REST HTTP requests but not to the WebSocket upgrade request. This caused authentication failures when connecting to WebSocket endpoints that require authentication.
+
+**Solution:** Apply extra headers (including auth interceptor headers) to the WebSocket upgrade HTTP request via the tungstenite `IntoClientRequest` trait.
+
 ### Pre-bind listeners for all server types when building agent cards
 
 The gRPC dispatcher had the same placeholder-URL bug as the HTTP dispatchers: the agent card was built before the server bound to a port, so the card contained `"http://placeholder"`. This applied to any transport that binds its own port.
@@ -177,11 +195,23 @@ Checking for private IPs and hostnames in webhook URLs is insufficient. URLs lik
 
 Cloning a `Vec<u8>` inside a retry loop allocates a full heap copy each time. Use `bytes::Bytes` (reference-counted) so that `.clone()` is just an atomic reference count increment. This matters for push notification delivery where large payloads may be retried 3+ times.
 
+### Serialize once before retry loops
+
+Deep-cloning a `serde_json::Value` tree on every retry attempt is expensive. Serialize the params to bytes once before the retry loop, then deserialize from bytes for each attempt. Deserialization from bytes is cheaper than a recursive deep-clone of the `Value` tree.
+
+### Agent card fetch responses need a body size limit
+
+Fetching an agent card from an untrusted URL without a body size limit allows a malicious endpoint to send an arbitrarily large response, causing OOM. Always enforce a body size limit (e.g., 2 MiB) on agent card fetch responses.
+
 ## Graceful Shutdown Pitfalls
 
 ### Bound executor cleanup with a timeout
 
 `executor.on_shutdown().await` can hang indefinitely if the executor's cleanup routine blocks. Always wrap with `tokio::time::timeout()` — the default is 10 seconds. Users can override via `shutdown_with_timeout(duration)`.
+
+### Shutdown polling interval matters
+
+A 50ms polling interval in the shutdown loop wastes up to 50ms per cycle. Using a 10ms interval with deadline-aware sleep (sleeping the minimum of the remaining deadline and the interval) gives faster shutdown response without busy-waiting.
 
 ## gRPC Pitfalls
 
@@ -274,6 +304,56 @@ Path parameters (task IDs, config IDs) were interpolated into REST URLs without 
 ### `GetExtendedAgentCard` discards interceptor params (fixed)
 
 The `get_extended_agent_card` method created an empty params object after running interceptors, discarding any modifications made by `before` interceptors. The fix forwards `req.params` instead.
+
+## Validation Pitfalls
+
+### Empty/whitespace-only IDs must be rejected
+
+`TaskId` and `ContextId` should not accept empty or whitespace-only strings. Use `TryFrom` impls that validate input, rejecting values that are empty or contain only whitespace.
+
+### `FileContent` must have at least one data source
+
+A `FileContent` with neither `bytes` nor `uri` set is semantically invalid. Always validate that at least one of the two fields is present via a `validate()` method.
+
+### Push notification URLs need validation
+
+`TaskPushNotificationConfig` URLs should be validated for correct format. A `validate()` method on the config struct catches malformed URLs before they reach the push sender.
+
+### Timestamps should be RFC 3339
+
+`TaskStatus` timestamps should conform to RFC 3339. The `has_valid_timestamp()` method validates this at the type level.
+
+### `CachingCardResolver` must not silently produce empty URLs
+
+If `CachingCardResolver::new()` or `with_path()` receives an invalid base URL, silently producing an empty URL leads to confusing errors later. These constructors should return `ClientResult<Self>` so callers can handle the error immediately.
+
+## Database Pitfalls
+
+### Always use parameterized queries for user-controlled values
+
+Using `format!` to interpolate values into SQL queries (e.g., `LIMIT`) allows SQL injection. Always use parameterized queries, even for values that appear safe like numeric limits.
+
+## WebSocket Server Pitfalls
+
+### Limit concurrent tasks per connection
+
+Without a concurrency limit, a single WebSocket client can spawn unbounded tasks on the server by sending many requests in rapid succession. A per-connection `Semaphore` (e.g., 64 permits) bounds resource usage per client.
+
+### Limit incoming message size
+
+Without a message size check, a client can send arbitrarily large WebSocket frames, causing OOM on the server. Enforce a size limit (e.g., 4 MiB) on incoming WebSocket messages and reject oversized frames with a close code.
+
+## REST Dispatch Pitfalls
+
+### Tenant must be passed through all handler calls
+
+When extracting a tenant from the URL path (e.g., `/tenants/{tenant}/tasks/{taskId}`), the extracted tenant must be forwarded to every handler method call. Missing the tenant on any method causes requests to be processed in the wrong tenant context or with no tenant at all.
+
+## Error Handling Pitfalls
+
+### Never silently swallow store lookup errors
+
+`find_task_by_context` (or similar store lookups) should propagate errors via `?` rather than using patterns like `.ok()` or `unwrap_or(None)` that silently convert store failures into "not found" results.
 
 ## Next Steps
 

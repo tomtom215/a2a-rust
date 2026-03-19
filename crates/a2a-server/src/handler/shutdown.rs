@@ -3,7 +3,10 @@
 
 //! Graceful shutdown methods for [`super::RequestHandler`].
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+#[cfg(test)]
+use std::time::Instant;
 
 use super::RequestHandler;
 
@@ -54,20 +57,22 @@ impl RequestHandler {
         }
 
         // Wait for event queues to drain (executors to finish), with timeout.
-        let drain_start = Instant::now();
+        let drain_deadline = tokio::time::Instant::now() + timeout;
         loop {
             let active = self.event_queue_manager.active_count().await;
             if active == 0 {
                 break;
             }
-            if drain_start.elapsed() >= timeout {
+            if tokio::time::Instant::now() >= drain_deadline {
                 trace_warn!(
                     active_queues = active,
                     "shutdown timeout reached, force-destroying remaining queues"
                 );
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(50)).await;
+            // Use a short sleep that won't exceed the deadline.
+            let remaining = drain_deadline - tokio::time::Instant::now();
+            tokio::time::sleep(remaining.min(tokio::time::Duration::from_millis(10))).await;
         }
 
         // Destroy all remaining event queues.
