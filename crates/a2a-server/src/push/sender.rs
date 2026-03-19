@@ -39,6 +39,15 @@ pub trait PushSender: Send + Sync + 'static {
         event: &'a StreamResponse,
         config: &'a TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    /// Returns `true` if this sender allows webhook URLs targeting
+    /// private/loopback addresses. Used by the handler to skip SSRF
+    /// validation at push config creation time in testing environments.
+    ///
+    /// Default: `false` (SSRF protection enabled).
+    fn allows_private_urls(&self) -> bool {
+        false
+    }
 }
 
 /// Default per-request timeout for push notification delivery.
@@ -315,6 +324,10 @@ fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
 
 #[allow(clippy::manual_async_fn, clippy::too_many_lines)]
 impl PushSender for HttpPushSender {
+    fn allows_private_urls(&self) -> bool {
+        self.allow_private_urls
+    }
+
     fn send<'a>(
         &'a self,
         url: &'a str,

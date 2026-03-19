@@ -10,6 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Dogfooding — Pass 16)
+
+- **`ListPushConfigs` response format mismatch** — Both REST and JSON-RPC
+  dispatchers now correctly wrap push config list results in
+  `ListPushConfigsResponse { configs, next_page_token }` instead of serializing
+  a bare `Vec`. Previously, every `list_push_configs` call via REST or JSON-RPC
+  failed with a deserialization error. The Axum adapter and gRPC service were
+  already correct.
+- **Push config URL validation ignores `allow_private_urls`** — The handler now
+  consults the push sender's `allows_private_urls()` method before rejecting
+  loopback/private webhook URLs at config creation time. Previously,
+  `allow_private_urls()` on `HttpPushSender` only affected delivery-time
+  validation, not config-creation validation, causing all private-URL configs
+  to be rejected even in testing environments.
+- **Background processor silent exit on store failure** — The streaming
+  background event processor now logs distinct error messages when the task
+  store read fails or returns `None`, instead of silently returning.
+
+### Added
+
+- **`PushSender::allows_private_urls()`** — New trait method (default: `false`)
+  that lets the handler query whether the push sender allows private/loopback
+  webhook URLs. `HttpPushSender` implements it based on its
+  `allow_private_urls` field.
+
 ### Fixed (Dogfooding — Pass 12)
 
 - **`truncate_body` UTF-8 panic** — Response body truncation for error messages

@@ -66,8 +66,22 @@ impl RequestHandler {
                 };
 
                 // Get the current task from the store.
-                let Ok(Some(mut last_task)) = task_store.get(&task_id).await else {
-                    return;
+                let mut last_task = match task_store.get(&task_id).await {
+                    Ok(Some(task)) => task,
+                    Ok(None) => {
+                        trace_error!(
+                            task_id = %task_id,
+                            "background processor: task not found in store, cannot process events"
+                        );
+                        return;
+                    }
+                    Err(_e) => {
+                        trace_error!(
+                            task_id = %task_id,
+                            "background processor: failed to read task from store"
+                        );
+                        return;
+                    }
                 };
 
                 let mut executor_done = false;
