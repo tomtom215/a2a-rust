@@ -48,6 +48,8 @@ The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 vX.Y.Z tag → validate → ci + security → package + publish-dry-run → github-release → publish
 ```
 
+All build jobs install `protoc` via `arduino/setup-protoc` because the `grpc` feature (enabled by `--all-features` and `cargo package`) requires proto compilation via `tonic-build`.
+
 Crates are published in dependency order:
 1. `a2a-protocol-types` (no internal deps)
 2. `a2a-protocol-client` + `a2a-protocol-server` (depend on types)

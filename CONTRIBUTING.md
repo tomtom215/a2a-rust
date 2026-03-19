@@ -183,8 +183,20 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 | `json_serde` | `a2a-protocol-types` | Serialize/deserialize AgentCard, Task, Message |
 | `sse_parse` | `a2a-protocol-client` | SSE frame parsing (single, batch, fragmented) |
 | `handler_bench` | `a2a-protocol-server` | Request handler throughput |
+| `protocol_overhead` | `a2a-benchmarks` | JSON-RPC envelope serialization/deserialization |
+| `cross_language` | `a2a-benchmarks` | Standardized workloads for cross-SDK comparison |
+| `transport_throughput` | `a2a-benchmarks` | End-to-end HTTP round-trip latency |
+| `concurrent_agents` | `a2a-benchmarks` | Scaling behavior under parallel load |
+| `realistic_workloads` | `a2a-benchmarks` | Production-like usage patterns |
+| `error_paths` | `a2a-benchmarks` | Error handling performance |
+| `backpressure` | `a2a-benchmarks` | Stream throughput under varying loads |
+| `data_volume` | `a2a-benchmarks` | Store performance at scale (1K–100K tasks) |
+| `memory_overhead` | `a2a-benchmarks` | Heap allocation counts per operation |
+| `task_lifecycle` | `a2a-benchmarks` | TaskStore and EventQueue operations |
 
-Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-client`, or `cargo bench -p a2a-protocol-server`.
+Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-client`, `cargo bench -p a2a-protocol-server`, or `cargo bench -p a2a-benchmarks`.
+
+> **Note:** The `grpc` feature requires `protoc` to be installed. See the [Installation](book/src/getting-started/installation.md) page for details.
 
 ---
 

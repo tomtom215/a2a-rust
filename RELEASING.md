@@ -10,6 +10,7 @@ This document describes the release process for the `a2a-rust` workspace.
 - Commit access to `main`
 - `CARGO_REGISTRY_TOKEN` secret configured in the `crates-io` GitHub environment
 - All CI checks passing on `main`
+- **`protoc`** installed locally (required for `--all-features` builds that enable the `grpc` feature). Install via `apt-get install protobuf-compiler` (Debian/Ubuntu), `brew install protobuf` (macOS), or download from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases)
 
 ## Workspace crate dependency order
 

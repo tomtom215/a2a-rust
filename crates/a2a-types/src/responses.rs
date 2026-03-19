@@ -57,7 +57,7 @@ impl<'de> Deserialize<'de> for SendMessageResponse {
 
         // Discriminate: Message always has a "role" field; Task does not.
         if value.get("role").is_some() {
-            // Has role field -> try Message first.
+            // Has role field -> try Message first, fall back to Task.
             serde_json::from_value::<Message>(value.clone())
                 .map(SendMessageResponse::Message)
                 .or_else(|_| {
@@ -66,14 +66,10 @@ impl<'de> Deserialize<'de> for SendMessageResponse {
                         .map_err(serde::de::Error::custom)
                 })
         } else {
-            // No role field -> try Task first.
-            serde_json::from_value::<Task>(value.clone())
+            // No role field -> must be Task (Message requires role).
+            serde_json::from_value::<Task>(value)
                 .map(SendMessageResponse::Task)
-                .or_else(|_| {
-                    serde_json::from_value::<Message>(value)
-                        .map(SendMessageResponse::Message)
-                        .map_err(serde::de::Error::custom)
-                })
+                .map_err(serde::de::Error::custom)
         }
     }
 }
