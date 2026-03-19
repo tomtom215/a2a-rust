@@ -31,11 +31,7 @@ impl A2aClient {
 
         let result = self
             .transport
-            .send_request(
-                METHOD,
-                serde_json::Value::Object(serde_json::Map::new()),
-                &req.extra_headers,
-            )
+            .send_request(METHOD, req.params, &req.extra_headers)
             .await?;
 
         let resp = ClientResponse {

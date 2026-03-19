@@ -80,7 +80,12 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_event_queue_capacity(usize)` | 64 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | Unbounded | Limit concurrent SSE streams |
+| `with_event_queue_write_timeout(Duration)` | 5 seconds | Prevents executor blocking on slow clients |
 | `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (ID length, metadata size, artifact count, etc.) |
+| `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
+| `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |
+| `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
+| `with_tenant_config(PerTenantConfig)` | None | Per-tenant differentiated limits |
 
 ### Build-Time Validation
 

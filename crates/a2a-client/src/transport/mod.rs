@@ -37,11 +37,19 @@ pub use websocket::WebSocketTransport;
 const MAX_ERROR_BODY_LEN: usize = 512;
 
 /// Truncates a response body for inclusion in error messages.
+///
+/// Uses a char-boundary-safe truncation to avoid panics on multi-byte UTF-8.
 pub(crate) fn truncate_body(body: &str) -> String {
     if body.len() <= MAX_ERROR_BODY_LEN {
         body.to_owned()
     } else {
-        format!("{}...(truncated)", &body[..MAX_ERROR_BODY_LEN])
+        // Find the last char boundary at or before MAX_ERROR_BODY_LEN to avoid
+        // slicing in the middle of a multi-byte UTF-8 character.
+        let mut end = MAX_ERROR_BODY_LEN;
+        while end > 0 && !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...(truncated)", &body[..end])
     }
 }
 
@@ -135,5 +143,25 @@ mod tests {
     fn truncate_body_empty_string() {
         let result = truncate_body("");
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn truncate_body_multibyte_utf8_no_panic() {
+        // Build a string where byte offset MAX_ERROR_BODY_LEN falls inside a
+        // multi-byte character (é is 2 bytes in UTF-8).
+        let base = "é".repeat(MAX_ERROR_BODY_LEN); // 2 * 512 = 1024 bytes
+        assert!(base.len() > MAX_ERROR_BODY_LEN);
+        // This must not panic — the old code would slice mid-character.
+        let result = truncate_body(&base);
+        assert!(
+            result.ends_with("...(truncated)"),
+            "should be truncated: {result}"
+        );
+        // The truncated prefix must be valid UTF-8 (it is, because we return a String).
+        let prefix = result.trim_end_matches("...(truncated)");
+        assert!(
+            prefix.len() <= MAX_ERROR_BODY_LEN,
+            "prefix should not exceed limit"
+        );
     }
 }

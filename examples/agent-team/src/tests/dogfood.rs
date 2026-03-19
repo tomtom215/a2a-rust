@@ -355,7 +355,13 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
         configuration: None,
         metadata: None,
     };
-    let _ = client.send_message(params).await;
+    if let Err(e) = client.send_message(params).await {
+        return TestResult::fail(
+            "list-context-filter",
+            start.elapsed().as_millis(),
+            &format!("send_message failed: {e}"),
+        );
+    }
     match client
         .list_tasks(ListTasksParams {
             tenant: None,
@@ -377,10 +383,13 @@ pub async fn test_list_tasks_context_filter(ctx: &TestContext) -> TestResult {
                     "1 task found for unique context",
                 )
             } else {
-                TestResult::pass(
+                TestResult::fail(
                     "list-context-filter",
                     start.elapsed().as_millis(),
-                    &format!("{} tasks found", resp.tasks.len()),
+                    &format!(
+                        "expected 1 task for unique context, got {}",
+                        resp.tasks.len()
+                    ),
                 )
             }
         }

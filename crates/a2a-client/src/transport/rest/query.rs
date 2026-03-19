@@ -36,7 +36,7 @@ pub(super) fn build_query_string(params: &serde_json::Value) -> String {
 ///
 /// Encodes all characters except unreserved characters (RFC 3986 §2.3):
 /// `A-Z a-z 0-9 - . _ ~`
-pub(super) fn encode_query_value(s: &str) -> String {
+pub(in crate::transport::rest) fn encode_query_value(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
@@ -141,5 +141,16 @@ mod tests {
         let params = serde_json::json!({"ids": [1, 2, 3]});
         let qs = build_query_string(&params);
         assert!(qs.starts_with("ids="), "should have ids key: {qs}");
+    }
+
+    #[test]
+    fn encode_query_value_encodes_path_traversal_chars() {
+        // Slashes and dots used in path traversal must be encoded
+        assert_eq!(encode_query_value("../admin"), "..%2Fadmin");
+        assert_eq!(encode_query_value("foo/bar"), "foo%2Fbar");
+        assert_eq!(
+            encode_query_value("task id with spaces"),
+            "task%20id%20with%20spaces"
+        );
     }
 }

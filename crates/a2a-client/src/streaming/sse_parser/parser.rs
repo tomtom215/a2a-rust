@@ -127,7 +127,16 @@ impl SseParser {
                 self.line_buf.clear();
             } else if byte != b'\r' {
                 // Ignore bare \r (Windows-style \r\n handled by ignoring \r).
-                self.line_buf.push(byte);
+                // Guard against unbounded line_buf growth from lines without
+                // newlines (e.g., a malicious server sending a single very long
+                // line). We use 2x max_event_size as the limit since a single
+                // line can never legitimately exceed the event size.
+                if self.line_buf.len() < self.max_event_size.saturating_mul(2) {
+                    self.line_buf.push(byte);
+                }
+                // Bytes beyond the limit are silently dropped; the event will
+                // eventually be rejected by the max_event_size check when the
+                // line is processed.
             }
         }
     }

@@ -159,6 +159,10 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32602, Message: "Invalid params"})
 			return
 		}
+		if params.Message.Parts == nil && params.Message.Role == "" {
+			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32602, Message: "Invalid params: missing message"})
+			return
+		}
 		task := processMessage(params)
 		writeJsonRpc(w, req.ID, task, nil)
 

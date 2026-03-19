@@ -6,7 +6,7 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` and `StreamResponse` use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clearer errors.)
+`#[serde(untagged)]` on `JsonRpcResponse<T>` and `SendMessageResponse` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `StreamResponse` uses `#[serde(rename_all = "camelCase")]` — externally tagged — so it produces clearer errors.)
 
 **Workaround:** When debugging, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
 
@@ -256,6 +256,24 @@ In streaming mode, the background event processor subscribes to the broadcast ch
 ### Lagged event queue reader drops diagnostic count (fixed)
 
 The broadcast channel `Lagged(n)` error provides the exact count of dropped events, but the reader used `_n` (underscore prefix), discarding the count. The warning message said "skipping missed events" without saying how many. The fix exposes the count in the log: `"event queue reader lagged, {n} events skipped"`.
+
+## Client Pitfalls
+
+### `truncate_body` panics on multi-byte UTF-8 (fixed)
+
+The error body truncation helper sliced at a fixed byte offset (`body[..512]`). For non-ASCII responses (common with international error messages), the offset could fall inside a multi-byte UTF-8 character, causing a panic. The fix uses `is_char_boundary()` to find the nearest safe truncation point.
+
+### SSE parser `line_buf` can grow without bound (fixed)
+
+The SSE parser's internal line buffer grew without limit for lines without newlines. A malicious server sending a single very long line could cause OOM. The fix caps `line_buf` at 2× `max_event_size`.
+
+### REST path parameters are not percent-encoded (fixed)
+
+Path parameters (task IDs, config IDs) were interpolated into REST URLs without encoding. An ID containing `/` or `..` could cause path traversal. The fix percent-encodes all path parameters using the same encoder as query parameters.
+
+### `GetExtendedAgentCard` discards interceptor params (fixed)
+
+The `get_extended_agent_card` method created an empty params object after running interceptors, discarding any modifications made by `before` interceptors. The fix forwards `req.params` instead.
 
 ## Next Steps
 

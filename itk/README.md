@@ -45,9 +45,16 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
 
 2. Run the Rust TCK against each:
    ```bash
-   cargo run -p a2a-tck -- --url http://localhost:9100
-   cargo run -p a2a-tck -- --url http://localhost:9101
-   cargo run -p a2a-tck -- --url http://localhost:9102
-   cargo run -p a2a-tck -- --url http://localhost:9103
+   # Test JSON-RPC binding
+   cargo run -p a2a-tck -- --url http://localhost:9100 --binding jsonrpc
+   cargo run -p a2a-tck -- --url http://localhost:9101 --binding jsonrpc
+   cargo run -p a2a-tck -- --url http://localhost:9102 --binding jsonrpc
+   cargo run -p a2a-tck -- --url http://localhost:9103 --binding jsonrpc
+
+   # Test REST binding
+   cargo run -p a2a-tck -- --url http://localhost:9100 --binding rest
+   cargo run -p a2a-tck -- --url http://localhost:9101 --binding rest
+   cargo run -p a2a-tck -- --url http://localhost:9102 --binding rest
+   cargo run -p a2a-tck -- --url http://localhost:9103 --binding rest
    ```
 

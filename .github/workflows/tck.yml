@@ -51,8 +51,8 @@ jobs:
         include:
           - sdk: python
             setup: |
-              pip install a2a-sdk
-              python itk/agents/python_agent.py &
+              pip install -r itk/agents/python/requirements.txt
+              python itk/agents/python/agent.py &
               sleep 3
             port: 9100
           - sdk: javascript
@@ -62,7 +62,7 @@ jobs:
             port: 9101
           - sdk: go
             setup: |
-              cd itk/agents/go-agent && go run . &
+              cd itk/agents/go-agent && go mod tidy && go run . &
               sleep 3
             port: 9102
           - sdk: java
@@ -75,11 +75,48 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
+      - name: Setup Python
+        if: matrix.sdk == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node.js
+        if: matrix.sdk == 'javascript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Go
+        if: matrix.sdk == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Setup Java
+        if: matrix.sdk == 'java'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Build TCK
         run: cargo build --release -p a2a-tck
 
       - name: Setup ${{ matrix.sdk }} agent
         run: ${{ matrix.setup }}
+
+      - name: Wait for agent to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:${{ matrix.port }}/.well-known/agent.json > /dev/null 2>&1; then
+              echo "Agent ready on port ${{ matrix.port }}"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Agent failed to start on port ${{ matrix.port }}"
+          exit 1
 
       - name: TCK — ${{ matrix.sdk }} (JSON-RPC)
         run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding jsonrpc

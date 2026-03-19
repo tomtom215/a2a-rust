@@ -30,7 +30,7 @@ Response:
   "result": {
     "id": "task-abc",
     "contextId": "ctx-123",
-    "status": { "state": "TASK_STATE_COMPLETED" },
+    "status": { "state": "completed" },
     "artifacts": [...]
   }
 }

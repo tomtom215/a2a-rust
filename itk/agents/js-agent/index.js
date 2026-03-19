@@ -89,11 +89,16 @@ app.post('/', (req, res) => {
 
     switch (method) {
       case 'message/send':
+        if (!params || !params.message) {
+          return res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params: missing message field' } });
+        }
         result = processMessage(params);
         break;
 
       case 'message/stream': {
-        // For simplicity, return the same as send (non-streaming)
+        if (!params || !params.message) {
+          return res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params: missing message field' } });
+        }
         result = processMessage(params);
         break;
       }

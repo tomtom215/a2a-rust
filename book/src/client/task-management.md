@@ -64,7 +64,7 @@ if let Some(token) = &response.next_page_token {
 | `context_id` | Tasks in a specific conversation |
 | `status` | Tasks in a specific state |
 | `status_timestamp_after` | Tasks updated after a timestamp (ISO 8601) |
-| `page_size` | Results per page (capped by server's `max_page_size`, default 1,000) |
+| `page_size` | Results per page (1-100, default 50; capped by server's `max_page_size`) |
 | `page_token` | Cursor for the next page |
 | `include_artifacts` | Include artifact data in results |
 | `history_length` | Number of messages per task |

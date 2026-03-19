@@ -12,7 +12,25 @@ use a2a_protocol_sdk::server::ServerInterceptor;
 struct LoggingInterceptor;
 
 impl ServerInterceptor for LoggingInterceptor {
-    // Intercept incoming requests and outgoing responses
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            println!("Request: {}", ctx.method());
+            Ok(())
+        })
+    }
+
+    fn after<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            println!("Response: {}", ctx.method());
+            Ok(())
+        })
+    }
 }
 ```
 
@@ -40,8 +58,23 @@ struct BearerAuthInterceptor {
 }
 
 impl ServerInterceptor for BearerAuthInterceptor {
-    // Check Authorization header before passing to handler
-    // Return 401 if token is missing or invalid
+    fn before<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Check Authorization header before passing to handler
+            // Return error if token is missing or invalid
+            Ok(())
+        })
+    }
+
+    fn after<'a>(
+        &'a self,
+        ctx: &'a CallContext,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move { Ok(()) })
+    }
 }
 ```
 
@@ -55,8 +88,25 @@ use a2a_protocol_sdk::client::CallInterceptor;
 struct RequestIdInterceptor;
 
 impl CallInterceptor for RequestIdInterceptor {
-    // Add X-Request-Id header to outgoing requests
-    // Log the response status
+    fn before<'a>(
+        &'a self,
+        req: &'a mut ClientRequest,
+    ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
+        async move {
+            // Add X-Request-Id header to outgoing requests
+            Ok(())
+        }
+    }
+
+    fn after<'a>(
+        &'a self,
+        resp: &'a ClientResponse,
+    ) -> impl Future<Output = ClientResult<()>> + Send + 'a {
+        async move {
+            // Log the response status
+            Ok(())
+        }
+    }
 }
 ```
 

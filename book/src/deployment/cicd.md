@@ -8,13 +8,13 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 
 | Job | Description |
 |-----|-------------|
-| **Format** | `cargo fmt --check` — enforces consistent formatting |
-| **Clippy** | `cargo clippy -- -D warnings` — catches common mistakes |
-| **Test** | `cargo test --workspace` — runs all tests |
-| **Nightly** | Tests on nightly Rust toolchain for early compatibility checks |
+| **Format** | `cargo fmt --all -- --check` — enforces consistent formatting |
+| **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features) across 3 OSes (ubuntu, macOS, Windows) and 2 Rust versions (stable, MSRV 1.93) |
+| **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features, no-default-features) across 3 OSes and 2 Rust versions |
+| **Nightly** | Tests on nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking) |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
-| **Doc** | `cargo doc --no-deps` — verifies documentation builds |
-| **Package** | `cargo package` — validates crate packaging for publish |
+| **Doc** | `cargo doc --workspace --no-deps` — verifies documentation builds |
+| **Package** | `cargo package --workspace` (excluding example and tool crates) — validates crate packaging for publish |
 
 The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `main` and PRs:
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
@@ -32,7 +32,7 @@ The full sweep produces a mutation report artifact with caught/missed/unviable
 counts and a mutation score. Zero missed mutants is required — any surviving
 mutant fails the build.
 
-The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit against the echo-agent on pushes to `main` and PRs.
+The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit against the echo-agent on pushes to `main` and PRs. On pushes to `main`, it also runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations.
 
 All actions are **SHA-pinned** for supply chain security:
 
@@ -45,7 +45,7 @@ All actions are **SHA-pinned** for supply chain security:
 The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 
 ```
-v0.2.0 tag → validate → ci + security → package + publish-dry-run → github-release → publish
+vX.Y.Z tag → validate → ci + security → package + publish-dry-run → github-release → publish
 ```
 
 Crates are published in dependency order:
