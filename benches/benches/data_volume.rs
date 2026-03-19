@@ -134,13 +134,16 @@ fn bench_save_at_scale(c: &mut Criterion) {
         let store = InMemoryTaskStore::new();
         populate_store(&rt, &store, pre_fill);
 
-        let mut counter = pre_fill;
+        // Use a Cell to track the counter across iterations without
+        // shared-mutable-state issues across benchmark groups.
+        let counter = std::cell::Cell::new(pre_fill);
 
         group.bench_with_input(BenchmarkId::new("after_prefill", pre_fill), &(), |b, _| {
             b.iter(|| {
-                let task = fixtures::completed_task(counter);
+                let i = counter.get();
+                let task = fixtures::completed_task(i);
                 rt.block_on(store.save(criterion::black_box(task))).unwrap();
-                counter += 1;
+                counter.set(i + 1);
             });
         });
     }
