@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Tom F. -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
 # Contributing to a2a-rust
 
@@ -13,7 +13,7 @@ Thank you for contributing! Please read this document before opening a PR.
 
 ```rust
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 ```
 
 Markdown / TOML / YAML files use the appropriate comment syntax.

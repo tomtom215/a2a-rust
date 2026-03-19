@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! T-10 concurrency tests: concurrent saves, queue creation, message sends,
 //! and `insert_if_absent` atomicity.

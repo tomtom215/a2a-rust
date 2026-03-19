@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests for task retrieval (`get_task`), listing (`list_tasks`), and
 //! cancellation (`cancel_task`) operations.
