@@ -193,7 +193,7 @@ mod tests {
         deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn deliver_push_bg_respects_total_deadline() {
         use std::sync::atomic::{AtomicU64, Ordering};
         use std::sync::Arc;
