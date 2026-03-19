@@ -98,3 +98,92 @@ impl AgentExecutor for NoopExecutor {
         })
     }
 }
+
+// ── MultiEventExecutor ──────────────────────────────────────────────────────
+
+/// An executor that emits N status/artifact events before completing.
+///
+/// Useful for streaming throughput and backpressure benchmarks where the
+/// number of events matters more than the content.
+pub struct MultiEventExecutor {
+    /// Number of intermediate (Working + Artifact) event pairs to emit.
+    pub event_pairs: usize,
+}
+
+impl AgentExecutor for MultiEventExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            // Emit N event pairs (status + artifact)
+            for i in 0..self.event_pairs {
+                queue
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        status: TaskStatus::new(TaskState::Working),
+                        metadata: None,
+                    }))
+                    .await?;
+
+                queue
+                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        artifact: Artifact::new(
+                            format!("chunk-{i}"),
+                            vec![Part::text(format!("Streaming chunk {i}"))],
+                        ),
+                        append: Some(true),
+                        last_chunk: Some(i == self.event_pairs - 1),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+
+            // Final completed status
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+
+            Ok(())
+        })
+    }
+}
+
+// ── FailingExecutor ─────────────────────────────────────────────────────────
+
+/// An executor that always returns an error after emitting a Working status.
+///
+/// Useful for benchmarking error path overhead.
+pub struct FailingExecutor;
+
+impl AgentExecutor for FailingExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Failed),
+                    metadata: None,
+                }))
+                .await?;
+
+            Err(a2a_protocol_types::error::A2aError::internal(
+                "Benchmark: simulated executor failure",
+            ))
+        })
+    }
+}

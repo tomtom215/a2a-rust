@@ -32,6 +32,11 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 | **Task Lifecycle** | `task_lifecycle.rs` | TaskStore save/get/list latency; EventQueue write→read throughput; end-to-end create→working→completed via HTTP |
 | **Concurrent Agents** | `concurrent_agents.rs` | N simultaneous sends/streams (1, 4, 16, 64); store contention; mixed send+get workloads |
 | **Cross-Language** | `cross_language.rs` | Standardized workloads reproducible across all A2A SDK languages (Python, Go, JS, Java, C#/.NET) |
+| **Realistic Workloads** | `realistic_workloads.rs` | Multi-turn conversations (1–10 turns); mixed payload complexity (text, file refs, nested metadata); connection reuse vs per-request clients; interceptor chain overhead (0–10 interceptors); complex agent card ser/de (1–100 skills); conversation history scaling |
+| **Error Paths** | `error_paths.rs` | Happy path vs error path latency ratio; task-not-found lookup cost; malformed JSON rejection throughput; wrong content-type rejection |
+| **Backpressure** | `backpressure.rs` | Stream event volume scaling (3–101 events); slow consumer simulation (1ms/5ms read delays); concurrent stream fan-out under load (1–16 streams) |
+| **Data Volume** | `data_volume.rs` | TaskStore get/list/save at 1K–100K pre-populated tasks; context_id filtering at scale; concurrent read contention at 10K tasks; history depth impact on store operations |
+| **Memory Overhead** | `memory_overhead.rs` | Heap allocations per serialize/deserialize via counting allocator; allocation scaling with conversation history depth; allocation bytes per payload size (64B–16KB) |
 
 ## Architecture
 
@@ -41,15 +46,20 @@ benches/
 ├── README.md                       # This file
 ├── src/
 │   ├── lib.rs                      # Shared helpers entry point
-│   ├── executor.rs                 # EchoExecutor, NoopExecutor
-│   ├── fixtures.rs                 # Deterministic test data
+│   ├── executor.rs                 # EchoExecutor, NoopExecutor, MultiEventExecutor, FailingExecutor
+│   ├── fixtures.rs                 # Deterministic test data + realistic payload generators
 │   └── server.rs                   # In-process HTTP server startup
 ├── benches/
 │   ├── transport_throughput.rs     # criterion benchmarks
 │   ├── protocol_overhead.rs
 │   ├── task_lifecycle.rs
 │   ├── concurrent_agents.rs
-│   └── cross_language.rs
+│   ├── cross_language.rs
+│   ├── realistic_workloads.rs      # real-world usage patterns
+│   ├── error_paths.rs              # failure handling cost
+│   ├── backpressure.rs             # streaming under load
+│   ├── data_volume.rs              # store ops at scale
+│   └── memory_overhead.rs          # heap allocation profiling
 ├── cross_language/
 │   ├── canonical_agent_card.json   # Reference AgentCard for all SDKs
 │   └── canonical_send_params.json  # Reference payload (256 bytes)
@@ -75,6 +85,11 @@ efficiency**, not the agent logic itself. We benchmark what the SDK owns:
 | **Task lifecycle** | Store and queue operations are the backbone of task management; contention here limits vertical scaling |
 | **Concurrency** | Agent orchestration is inherently concurrent; degradation curves predict capacity planning |
 | **Cross-language** | Hard numbers for deployment decisions — not for competition, but for engineering planning where overhead savings become exponential |
+| **Realistic workloads** | Multi-turn conversations, mixed payloads, interceptor chains — the patterns real applications actually use, not synthetic micro-benchmarks |
+| **Error paths** | Production systems spend significant time on error handling; benchmarking only the happy path gives an incomplete picture |
+| **Backpressure** | Slow consumers and high event volume expose buffering and flow-control overhead that synthetic tests miss |
+| **Data volume** | Store operations must scale gracefully from empty to 100K+ tasks; degradation curves predict production capacity |
+| **Memory overhead** | Allocation counts and bytes per operation reveal hidden costs that latency benchmarks alone cannot capture |
 
 ### What We Do NOT Benchmark
 
@@ -145,7 +160,7 @@ output and in the HTML reports.
 The `benchmarks.yml` workflow runs on-demand (`workflow_dispatch`) and on
 pushes to `main`. It:
 
-1. Runs all 5 benchmark suites
+1. Runs all 10 benchmark suites
 2. Archives criterion HTML reports as artifacts
 3. Comments summary on PRs (when applicable)
 

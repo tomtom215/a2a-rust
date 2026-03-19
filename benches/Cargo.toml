@@ -55,3 +55,23 @@ harness = false
 [[bench]]
 name    = "cross_language"
 harness = false
+
+[[bench]]
+name    = "realistic_workloads"
+harness = false
+
+[[bench]]
+name    = "error_paths"
+harness = false
+
+[[bench]]
+name    = "backpressure"
+harness = false
+
+[[bench]]
+name    = "data_volume"
+harness = false
+
+[[bench]]
+name    = "memory_overhead"
+harness = false

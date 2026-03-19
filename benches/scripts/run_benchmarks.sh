@@ -66,6 +66,11 @@ BENCHMARKS=(
     task_lifecycle
     concurrent_agents
     cross_language
+    realistic_workloads
+    error_paths
+    backpressure
+    data_volume
+    memory_overhead
 )
 
 if [[ -n "$SPECIFIC_BENCH" ]]; then
