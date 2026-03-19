@@ -1,8 +1,8 @@
 # Dogfooding: Bugs Found & Fixed
 
-Fifteen dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **83 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
+Twelve documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **65 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
 
-> **Note:** Passes 11, 13, and 14 are documented in internal audit reports. Pass 15 was added in the 2026-03-19 session.
+> **Note:** Passes 11, 13, and 14 are documented in internal audit reports and are not included in the count below.
 
 ## Summary
 
@@ -25,10 +25,10 @@ Fifteen dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **83 bugs** that 
 
 | Severity | Count | Examples |
 |----------|-------|---------|
-| **Critical** | 5 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18) |
-| **High** | 12 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21), serialization error swallowed (#41), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
-| **Medium** | 30 | REST field stripping (#1), path traversal (#35), stale pagination (#30), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19) |
-| **Low** | 14 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
+| **Critical** | 6 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44) |
+| **High** | 14 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), shutdown hangs (#23), event ordering (#21), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
+| **Medium** | 32 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47) |
+| **Low** | 13 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
 
 ### Configuration Hardening
 
@@ -36,9 +36,9 @@ Extracted all hardcoded constants into configurable structs during passes 2-7:
 
 | Struct | Fields | Where |
 |---|---|---|
-| `DispatchConfig` | `max_request_body_size`, `body_read_timeout`, `max_query_string_length` | Both dispatchers |
+| `DispatchConfig` | `max_request_body_size`, `body_read_timeout`, `max_query_string_length`, `sse_keep_alive_interval`, `sse_channel_capacity`, `max_batch_size` | Both dispatchers |
 | `PushRetryPolicy` | `max_attempts`, `backoff` | `HttpPushSender` |
-| `HandlerLimits` | `max_id_length`, `max_metadata_size`, `max_cancellation_tokens`, `max_token_age` | `RequestHandler` |
+| `HandlerLimits` | `max_id_length`, `max_metadata_size`, `max_cancellation_tokens`, `max_token_age`, `push_delivery_timeout`, `max_artifacts_per_task` | `RequestHandler` |
 
 ---
 

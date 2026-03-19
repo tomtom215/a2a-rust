@@ -71,6 +71,9 @@ This ensures each crate's dependencies are available before it publishes.
 
 ### Concurrency, Security & Robustness Fixes (Session 2026-03-19, Pass 15)
 
+**Streaming reliability:**
+- **H5: Separate persistence channel** — The background event processor now uses a dedicated mpsc persistence channel instead of subscribing to the broadcast channel after executor start. This eliminates the race where fast executors could emit events before the subscription was active, causing the task store to miss updates.
+
 **Transport concurrency fixes:**
 - **C1: gRPC Mutex removed** — gRPC transport no longer serializes concurrent requests through a Mutex. The tonic `Channel` (internally multiplexed, cheap to clone) is now cloned per request, enabling full concurrent throughput.
 - **C2: WebSocket transport redesigned** — Replaced reader Mutex with a dedicated background reader task and `HashMap<RequestId, PendingRequest>` message routing, eliminating the deadlock where holding the reader lock blocked all other requests.

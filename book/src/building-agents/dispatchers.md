@@ -33,6 +33,19 @@ An empty batch `[]` returns a parse error.
 
 Batch size is limited by `DispatchConfig::max_batch_size` (default 100). Batches exceeding this limit are rejected with a parse error before any individual request is dispatched.
 
+### DispatchConfig
+
+Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level limits:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_request_body_size` | `usize` | 4 MiB | Maximum request body size in bytes |
+| `body_read_timeout` | `Duration` | 30 seconds | Timeout for reading the full request body |
+| `max_query_string_length` | `usize` | 4096 | Maximum query string length (REST only) |
+| `sse_keep_alive_interval` | `Duration` | 30 seconds | Periodic `: keep-alive` comment interval for SSE |
+| `sse_channel_capacity` | `usize` | 64 | Backpressure channel between event reader and HTTP response |
+| `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
+
 ## RestDispatcher
 
 Routes RESTful HTTP requests to the handler:
@@ -138,6 +151,40 @@ async fn start_server(
 ```
 
 No web framework required — the dispatchers work directly with hyper's service layer.
+
+## WebSocketDispatcher
+
+Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
+
+```toml
+a2a-protocol-server = { version = "0.3", features = ["websocket"] }
+```
+
+```rust
+use a2a_protocol_server::WebSocketDispatcher;
+use std::sync::Arc;
+
+let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+
+// Blocking server
+dispatcher.clone().serve("0.0.0.0:3000").await?;
+
+// Non-blocking (returns bound address)
+let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
+```
+
+### Protocol
+
+- Client sends JSON-RPC 2.0 requests as WebSocket text frames
+- Server responds with JSON-RPC 2.0 responses as text frames
+- Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event, followed by a final JSON-RPC success response
+
+### Built-in Limits
+
+| Limit | Value | Description |
+|-------|-------|-------------|
+| **Concurrent tasks per connection** | 64 | Per-connection `Semaphore(64)` prevents unbounded task spawning |
+| **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected with an error response |
 
 ## GrpcDispatcher
 

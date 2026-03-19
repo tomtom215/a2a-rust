@@ -211,6 +211,15 @@ Both traits use `Pin<Box<dyn Future>>` return types for object safety. This allo
 
 Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not method parameters. For in-memory stores, `TenantAwareInMemoryTaskStore` automatically partitions data by tenant. For SQL stores, `TenantAwareSqliteTaskStore` partitions by a `tenant_id` column. If you implement a custom store, use `TenantContext::current()` to retrieve the active tenant within the async call stack.
 
+### TaskStoreConfig Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
+| `task_ttl` | `Option<Duration>` | `Some(1 hour)` | TTL for terminal-state tasks; `None` disables eviction |
+| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes O(n) cost) |
+| `max_page_size` | `u32` | 1000 | Maximum allowed page size for list queries |
+
 ### Pagination
 
 The `list` method receives `ListTasksParams` with:

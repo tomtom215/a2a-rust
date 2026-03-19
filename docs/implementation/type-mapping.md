@@ -89,11 +89,11 @@ In v1.0, `StreamResponse` uses externally-tagged serialization: `{"task": {...}}
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
-    #[serde(rename = "ROLE_UNSPECIFIED")]
+    #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
     Unspecified,  // proto default (0-value)
-    #[serde(rename = "ROLE_USER")]
+    #[serde(rename = "ROLE_USER", alias = "user")]
     User,
-    #[serde(rename = "ROLE_AGENT")]
+    #[serde(rename = "ROLE_AGENT", alias = "agent")]
     Agent,
 }
 ```
@@ -576,7 +576,7 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 |---|---|
 | `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
 | `#[serde(rename = "...", alias = "TASK_STATE_...")]` | `TaskState` enum (lowercase primary, SCREAMING_SNAKE_CASE alias) |
-| `#[serde(rename = "ROLE_...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
+| `#[serde(rename = "ROLE_...", alias = "...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE primary, lowercase alias) |
 | `#[serde(rename_all = "lowercase")]` | `ApiKeyLocation` |
 | `#[serde(tag = "type")]` | `PartContent`, `SecurityScheme` |
 | `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged) |
