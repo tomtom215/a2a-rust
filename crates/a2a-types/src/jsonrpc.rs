@@ -49,14 +49,27 @@ impl Serialize for JsonRpcVersion {
 
 impl<'de> Deserialize<'de> for JsonRpcVersion {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let s = String::deserialize(deserializer)?;
-        if s == "2.0" {
-            Ok(Self)
-        } else {
-            Err(serde::de::Error::custom(format!(
-                "expected JSON-RPC version \"2.0\", got \"{s}\""
-            )))
+        struct VersionVisitor;
+
+        impl serde::de::Visitor<'_> for VersionVisitor {
+            type Value = JsonRpcVersion;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("the string \"2.0\"")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<JsonRpcVersion, E> {
+                if v == "2.0" {
+                    Ok(JsonRpcVersion)
+                } else {
+                    Err(E::custom(format!(
+                        "expected JSON-RPC version \"2.0\", got \"{v}\""
+                    )))
+                }
+            }
         }
+
+        deserializer.deserialize_str(VersionVisitor)
     }
 }
 

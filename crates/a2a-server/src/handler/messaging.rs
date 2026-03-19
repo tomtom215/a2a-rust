@@ -21,6 +21,23 @@ use crate::streaming::EventQueueWriter;
 use super::helpers::{build_call_context, validate_id};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
+/// Returns the JSON-serialized byte length of a value without allocating a `String`.
+fn json_byte_len(value: &serde_json::Value) -> serde_json::Result<usize> {
+    struct CountWriter(usize);
+    impl std::io::Write for CountWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut w = CountWriter(0);
+    serde_json::to_writer(&mut w, value)?;
+    Ok(w.0)
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -94,9 +111,10 @@ impl RequestHandler {
         }
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
+        // Use a byte-counting writer to avoid allocating a throwaway String.
         let max_meta = self.limits.max_metadata_size;
         if let Some(ref meta) = params.message.metadata {
-            let meta_size = serde_json::to_string(meta).map(|s| s.len()).map_err(|_| {
+            let meta_size = json_byte_len(meta).map_err(|_| {
                 ServerError::InvalidParams("message metadata is not serializable".into())
             })?;
             if meta_size > max_meta {
@@ -106,7 +124,7 @@ impl RequestHandler {
             }
         }
         if let Some(ref meta) = params.metadata {
-            let meta_size = serde_json::to_string(meta).map(|s| s.len()).map_err(|_| {
+            let meta_size = json_byte_len(meta).map_err(|_| {
                 ServerError::InvalidParams("request metadata is not serializable".into())
             })?;
             if meta_size > max_meta {
