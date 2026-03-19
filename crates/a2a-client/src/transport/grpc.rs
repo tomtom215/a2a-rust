@@ -618,4 +618,46 @@ mod tests {
         let md = req.metadata();
         assert_eq!(md.get("x-custom").unwrap().to_str().unwrap(), "value123",);
     }
+
+    // ── Mutation-killing: status_to_error match arms (lines 232, 235, 238) ──
+
+    #[test]
+    fn status_to_error_deadline_exceeded_is_timeout() {
+        let status = tonic::Status::deadline_exceeded("test deadline");
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(err, ClientError::Timeout(_)),
+            "DeadlineExceeded should map to Timeout, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn status_to_error_cancelled_is_timeout() {
+        let status = tonic::Status::cancelled("test cancel");
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(err, ClientError::Timeout(_)),
+            "Cancelled should map to Timeout, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn status_to_error_unavailable_is_http_client() {
+        let status = tonic::Status::unavailable("test unavailable");
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(err, ClientError::HttpClient(_)),
+            "Unavailable should map to HttpClient, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn status_to_error_other_is_protocol() {
+        let status = tonic::Status::internal("test internal");
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(err, ClientError::Protocol(_)),
+            "other codes should map to Protocol, got: {err:?}"
+        );
+    }
 }

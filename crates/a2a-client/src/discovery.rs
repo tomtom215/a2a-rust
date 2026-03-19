@@ -846,6 +846,101 @@ mod tests {
         }
     }
 
+    /// Kills mutants on line 262 (`* → +`) and line 265 (`> → >=`).
+    ///
+    /// Sends Content-Length exactly at the 2 MiB limit (2,097,152).
+    /// With correct code (`>`), this passes the size check.
+    /// With `>=` mutant, it would be rejected.
+    /// With `* → +` mutant (limit shrinks), it would also be rejected.
+    #[tokio::test]
+    async fn fetch_card_accepts_content_length_at_exact_limit() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let max_size: u64 = 2 * 1024 * 1024; // 2,097,152
+
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    // Send response with Content-Length exactly at limit but invalid JSON body.
+                    // The Content-Length check happens BEFORE body parsing, so we only need
+                    // the size check to pass — the JSON parse error is a different failure mode.
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {max_size}\r\n\r\nsmall"
+                    );
+                    let _ = stream.write_all(response.as_bytes()).await;
+                    drop(stream);
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
+        let result = fetch_card_with_metadata(&url, None).await;
+
+        // Should NOT get a "too large" error. Any other error (HTTP, parse) is fine.
+        match &result {
+            Err(ClientError::Transport(msg)) if msg.contains("too large") => {
+                panic!("Content-Length at exact limit should not be rejected: {msg}");
+            }
+            _ => {} // Any other result is acceptable (e.g., body read failure, parse error)
+        }
+    }
+
+    /// Kills mutants on line 281 (`> → ==` and `> → >=`).
+    ///
+    /// Sends a response WITHOUT Content-Length but with a body exceeding
+    /// the 2 MiB limit. Uses HTTP/1.0 so the body ends at connection close.
+    #[tokio::test]
+    async fn fetch_card_rejects_oversized_body_without_content_length() {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let max_size = 2 * 1024 * 1024_usize; // 2,097,152
+
+        tokio::spawn(async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let body_size = max_size + 1;
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 4096];
+                    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                    // HTTP/1.0 response without Content-Length — body ends at close.
+                    let header = "HTTP/1.0 200 OK\r\ncontent-type: application/json\r\n\r\n";
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    // Write body in chunks to avoid huge single allocation
+                    let chunk = vec![b'x'; 64 * 1024];
+                    let mut remaining = body_size;
+                    while remaining > 0 {
+                        let n = remaining.min(chunk.len());
+                        if stream.write_all(&chunk[..n]).await.is_err() {
+                            break;
+                        }
+                        remaining -= n;
+                    }
+                    drop(stream);
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}/agent.json", addr.port());
+        let result = fetch_card_with_metadata(&url, None).await;
+
+        match result {
+            Err(ClientError::Transport(msg)) => {
+                assert!(
+                    msg.contains("too large"),
+                    "should mention size limit: {msg}"
+                );
+            }
+            other => panic!("expected Transport error about size for body > limit, got {other:?}"),
+        }
+    }
+
     /// Test `fetch_card_with_metadata` with cached data including `last_modified`.
     #[tokio::test]
     async fn fetch_card_with_metadata_304_with_last_modified() {

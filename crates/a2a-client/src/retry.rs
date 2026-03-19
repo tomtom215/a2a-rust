@@ -784,4 +784,148 @@ mod tests {
             "should succeed on first try"
         );
     }
+
+    // ── Mutation-killing: attempt > 0 boundary (lines 158, 205) ──────────
+
+    /// Kills mutant: `attempt > 0` → `attempt >= 0` or `attempt == 0`.
+    /// With paused time, any sleep advances the clock. The first attempt
+    /// must NOT sleep, so elapsed should be zero.
+    #[tokio::test(start_paused = true)]
+    async fn no_backoff_before_first_attempt() {
+        let inner = FailNTransport::new(0, serde_json::json!({"ok": true}));
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_secs(100))
+                .with_max_retries(1),
+        );
+
+        let start = tokio::time::Instant::now();
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok());
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "first attempt must not sleep, elapsed: {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// Kills mutant: `attempt > 0` → `attempt < 0` (never sleeps).
+    /// Verifies that a retry DOES sleep by checking that elapsed time is
+    /// at least half the initial backoff (due to jitter).
+    #[tokio::test(start_paused = true)]
+    async fn backoff_applied_on_retry() {
+        let inner = FailNTransport::new(1, serde_json::json!({"ok": true}));
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_secs(100))
+                .with_max_retries(2),
+        );
+
+        let start = tokio::time::Instant::now();
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok());
+        assert!(
+            start.elapsed() >= Duration::from_secs(50),
+            "retry should sleep (jittered backoff), elapsed: {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// Same as `no_backoff_before_first_attempt` but for streaming requests.
+    #[tokio::test(start_paused = true)]
+    async fn no_backoff_before_first_streaming_attempt() {
+        use tokio::sync::mpsc;
+
+        struct ImmediateStreamTransport;
+        impl crate::transport::Transport for ImmediateStreamTransport {
+            fn send_request<'a>(
+                &'a self,
+                _method: &'a str,
+                _params: serde_json::Value,
+                _extra_headers: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(serde_json::Value::Null) })
+            }
+            fn send_streaming_request<'a>(
+                &'a self,
+                _method: &'a str,
+                _params: serde_json::Value,
+                _extra_headers: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+                Box::pin(async {
+                    let (tx, rx) = mpsc::channel(1);
+                    drop(tx);
+                    Ok(EventStream::new(rx))
+                })
+            }
+        }
+
+        let transport = RetryTransport::new(
+            Box::new(ImmediateStreamTransport),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_secs(100))
+                .with_max_retries(1),
+        );
+
+        let start = tokio::time::Instant::now();
+        let headers = HashMap::new();
+        let result = transport
+            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok());
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "first streaming attempt must not sleep, elapsed: {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// Same as `backoff_applied_on_retry` but for streaming requests.
+    #[tokio::test(start_paused = true)]
+    async fn backoff_applied_on_streaming_retry() {
+        let inner = FailNTransport::new(1, serde_json::json!(null));
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_secs(100))
+                .with_max_retries(2),
+        );
+
+        let start = tokio::time::Instant::now();
+        let headers = HashMap::new();
+        let _result = transport
+            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .await;
+        // After 1 transient failure, the mock returns a different error on "success".
+        // The important thing is that the retry slept.
+        assert!(
+            start.elapsed() >= Duration::from_secs(50),
+            "streaming retry should sleep, elapsed: {:?}",
+            start.elapsed()
+        );
+    }
+
+    // ── Mutation-killing: cap_backoff boundary (line 250) ────────────────
+
+    /// Kills mutant: `next_secs < 0.0` → `next_secs <= 0.0` or `== 0.0`.
+    /// With multiplier=0, next_secs=0.0. The guard should NOT trigger (0 is valid).
+    #[test]
+    fn cap_backoff_zero_multiplier_returns_zero() {
+        let max = Duration::from_secs(30);
+        let result = cap_backoff(Duration::from_secs(5), 0.0, max);
+        assert_eq!(
+            result,
+            Duration::ZERO,
+            "0 * any = 0, should not clamp to max"
+        );
+    }
 }
