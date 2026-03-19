@@ -80,7 +80,7 @@ REST server listening on http://127.0.0.1:<port>
 │  2. Build AgentCard with real URLs      │
 │  3. Build RequestHandler                │
 │  4. Start JSON-RPC + REST servers       │
-│  5. Run client demos 1-6               │
+│  5. Run client demos 1-6                │
 └─────────┬──────────────┬────────────────┘
           │              │
     ┌─────▼─────┐  ┌─────▼─────┐
