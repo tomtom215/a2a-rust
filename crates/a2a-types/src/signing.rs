@@ -421,4 +421,31 @@ mod tests {
         assert_eq!(header["alg"], "ES256");
         assert_eq!(header["kid"], "my-key-id");
     }
+
+    // ── Canonicalization boundary tests ──────────────────────────────────
+
+    #[test]
+    fn canonical_space_is_not_escaped() {
+        // Space (0x20) must pass through literally, NOT be escaped as \u0020.
+        // This kills the mutant: replace < with <= in write_canonical_string.
+        let value = serde_json::Value::String("hello world".into());
+        let bytes = canonicalize(&value).unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "\"hello world\"",
+            "space (0x20) must not be escaped"
+        );
+    }
+
+    #[test]
+    fn canonical_control_char_0x1f_is_escaped() {
+        // 0x1F (Unit Separator) is the last control char — must be escaped.
+        let value = serde_json::Value::String("\x1f".into());
+        let bytes = canonicalize(&value).unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "\"\\u001f\"",
+            "0x1F must be escaped as \\u001f"
+        );
+    }
 }
