@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **43 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. 42 have been fixed; 1 is documented as a known limitation.
+Twelve dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **47 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
 
 ## Summary
 
@@ -16,6 +16,7 @@ Ten dogfooding passes across `v0.1.0` and `v0.2.0` uncovered **43 bugs** that 1,
 | [Pass 8](#pass-8-deep-dogfood-5-bugs) | Performance & security | 5 | 1 Critical, 3 Medium, 1 Low |
 | [Pass 9](#pass-9-scale-probing-4-bugs) | Scale probing | 4 | 1 High, 2 Medium, 1 Low |
 | [Pass 10](#pass-10-exhaustive-audit-3-bugs) | Exhaustive audit | 3 | 1 High, 1 Medium, 1 Low |
+| [Pass 12](#pass-12-pre-release-hardening-4-bugs) | Pre-release hardening | 4 | 1 Critical, 2 High, 1 Medium |
 
 ### By Severity
 
@@ -475,3 +476,45 @@ The broadcast channel `Lagged(n)` error provides the exact count of dropped even
 **Why tests missed it:** Observability quality isn't tested by functional tests. The behavior was correct (events were skipped), but the diagnostic information was incomplete.
 
 **Fix:** Changed `_n` to `n` and included it in the warning: `"event queue reader lagged, {n} events skipped"`.
+
+## Pass 12: Pre-Release Hardening (4 bugs)
+
+### Bug 44: `truncate_body` Panics on Multi-Byte UTF-8
+
+**Severity:** Critical | **Component:** Client transport error formatting
+
+`truncate_body` sliced the response body at a fixed byte offset (`body[..512]`). For non-ASCII responses (common with international error messages, or JSON containing Unicode), the offset could fall inside a multi-byte UTF-8 character, causing a panic: Rust's `&str` indexing requires byte offsets to land on char boundaries.
+
+**Why tests missed it:** All test error bodies used ASCII-only content.
+
+**Fix:** Replaced `&body[..MAX_ERROR_BODY_LEN]` with a loop that finds the nearest char boundary at or before the limit using `is_char_boundary()`. Added a multi-byte UTF-8 regression test.
+
+### Bug 45: SSE Parser `line_buf` Grows Without Bound
+
+**Severity:** High | **Component:** Client SSE parser
+
+The SSE parser's internal `line_buf` appended every non-newline byte without any size check. The `max_event_size` guard only triggered when a complete line was processed (after a newline). A malicious server sending a single very long line without newlines could grow `line_buf` until OOM.
+
+**Why tests missed it:** All test SSE streams used well-formed lines with newlines.
+
+**Fix:** Capped `line_buf` growth at 2× `max_event_size`. Bytes beyond the limit are silently dropped; the event will be rejected by the normal `max_event_size` check when the line is eventually processed.
+
+### Bug 46: `GetExtendedAgentCard` Discards Interceptor Params
+
+**Severity:** High | **Component:** Client `extended_card` method
+
+The method ran `before` interceptors (which could modify `req.params`), but then sent `serde_json::Value::Object(Map::new())` — an empty object — instead of the potentially-modified `req.params`. Any interceptor modifications to the request params were silently discarded.
+
+**Why tests missed it:** The test `MockTransport` ignores params. No test verified that interceptor-modified params were forwarded.
+
+**Fix:** Changed `serde_json::Value::Object(serde_json::Map::new())` to `req.params`.
+
+### Bug 47: REST Path Parameters Not Percent-Encoded
+
+**Severity:** Medium | **Component:** Client REST transport
+
+Path parameters (task IDs, push config IDs) were interpolated into REST URLs via `String::replace` without any encoding. A task ID containing `/` or `..` (e.g., `"../admin"`) would be interpolated literally, causing path traversal: `/tasks/../admin`. Query values were already properly percent-encoded.
+
+**Why tests missed it:** All test IDs used simple alphanumeric strings.
+
+**Fix:** Applied `encode_query_value()` to path parameters before interpolation, ensuring `/`, `..`, and other special characters are percent-encoded.

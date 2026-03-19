@@ -101,6 +101,9 @@ pub struct CachingCardResolver {
 
 impl CachingCardResolver {
     /// Creates a new resolver for the given agent card URL.
+    ///
+    /// If `base_url` is invalid, the resolver stores an empty URL and
+    /// [`resolve`](Self::resolve) will return an error on first call.
     #[must_use]
     pub fn new(base_url: &str) -> Self {
         let url = build_card_url(base_url, AGENT_CARD_PATH).unwrap_or_default();

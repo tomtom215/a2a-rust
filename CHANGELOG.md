@@ -10,6 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Dogfooding — Pass 12)
+
+- **`truncate_body` UTF-8 panic** — Response body truncation for error messages
+  now uses char-boundary-safe slicing instead of byte-offset slicing. Previously,
+  non-ASCII error responses (common with international error messages) could panic
+  when the truncation point fell inside a multi-byte UTF-8 character.
+- **SSE parser line buffer OOM** — The SSE parser now caps `line_buf` growth at
+  2× `max_event_size` to prevent a malicious server from causing OOM by sending a
+  single very long line without newlines.
+- **`get_extended_agent_card` ignoring interceptor params** — The
+  `GetExtendedAgentCard` method now forwards interceptor-modified params instead
+  of discarding them and sending an empty object.
+- **REST path parameter injection** — Path parameters (task IDs, config IDs) are
+  now percent-encoded before interpolation into REST URLs, preventing path
+  traversal via IDs containing `/` or `..`.
+
 ## [0.3.0] - 2026-03-18
 
 ### Fixed (v0.3.0 Hardening — Pass 11)

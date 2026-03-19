@@ -16,7 +16,7 @@ use a2a_protocol_types::JsonRpcResponse;
 
 use crate::error::{ClientError, ClientResult};
 
-use super::query::build_query_string;
+use super::query::{build_query_string, encode_query_value};
 use super::routing::{route_for, HttpMethod, Route};
 use super::RestTransport;
 
@@ -36,7 +36,9 @@ impl RestTransport {
                 .ok_or_else(|| ClientError::Transport(format!("missing path parameter: {param}")))?
                 .to_owned();
 
-            path = path.replace(&format!("{{{param}}}"), &value);
+            // Percent-encode path parameters to prevent path traversal and
+            // injection (e.g., IDs containing "/" or "..").
+            path = path.replace(&format!("{{{param}}}"), &encode_query_value(&value));
 
             if let Some(obj) = remaining.as_object_mut() {
                 obj.remove(param);
