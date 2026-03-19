@@ -12,6 +12,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.0] - 2026-03-19
 
+### Fixed (CI / Release Pipeline)
+
+- **Release workflow missing `protoc`** — The release workflow uses
+  `--all-features` which enables the `grpc` feature, requiring `protoc` for
+  proto compilation via `tonic-build`. Added `arduino/setup-protoc` (same
+  action used in `ci.yml`) to all four release jobs that build crates: CI
+  matrix, package, publish-dry-run, and publish.
+- **Benchmark `NoopExecutor` invalid state transition** — The `NoopExecutor`
+  used by the `minimal_overhead` benchmark attempted a direct
+  `Submitted → Completed` transition, which the state machine rejects. Added
+  the required intermediate `Working` state update.
+
+### Improved (Performance)
+
+- **`JsonRpcVersion` deserialization** — Replaced `String::deserialize` with a
+  zero-allocation `visit_str` visitor, eliminating a heap allocation on every
+  JSON-RPC envelope (2× per request/response cycle).
+- **`SendMessageResponse` deserialization** — Removed unnecessary
+  `Value::clone()` in the no-`role` branch. When `"role"` is absent the value
+  must be a `Task`, so the fallback path was dead code with a wasted clone.
+- **Metadata size validation** — Replaced `serde_json::to_string` (allocates a
+  throwaway `String`) with a zero-allocation byte-counting writer via
+  `serde_json::to_writer` for the metadata size check on every `SendMessage`.
+
 ### Fixed (Dogfooding — Pass 16)
 
 - **`ListPushConfigs` response format mismatch** — Both REST and JSON-RPC

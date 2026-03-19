@@ -4,6 +4,7 @@
 
 - **Rust 1.93+** (stable; also tested on 1.94)
 - A working internet connection for downloading crates
+- **`protoc`** (Protocol Buffers compiler) — required only when enabling the `grpc` feature. Install via `apt-get install protobuf-compiler` (Debian/Ubuntu), `brew install protobuf` (macOS), or download from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases). Not needed for default features.
 
 ## Adding to Your Project
 

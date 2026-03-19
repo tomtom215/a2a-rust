@@ -215,6 +215,12 @@ A 50ms polling interval in the shutdown loop wastes up to 50ms per cycle. Using 
 
 ## gRPC Pitfalls
 
+### CI/release workflows must install `protoc` when building with `--all-features`
+
+The `grpc` feature enables proto compilation via `tonic-build` in `build.rs`. Standard CI runners do not include `protoc`. If your workflow uses `--all-features`, `cargo package`, or `cargo publish` for a crate with the `grpc` feature, you must install `protoc` first — otherwise the build fails with "Could not find `protoc`".
+
+**Solution:** Add the `arduino/setup-protoc` action (or `apt-get install protobuf-compiler`) before any Cargo build step that enables the `grpc` feature. The `ci.yml` and `release.yml` workflows both use `arduino/setup-protoc` with a SHA-pinned action ref.
+
 ### Map all tonic status codes, not just the common ones
 
 Only mapping 4 gRPC status codes to A2A error codes loses semantic information for `Unauthenticated`, `PermissionDenied`, `ResourceExhausted`, etc. Map all relevant codes explicitly so clients can distinguish between error categories.
