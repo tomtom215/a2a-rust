@@ -72,10 +72,7 @@ pub async fn start_rest_server(executor: impl AgentExecutor) -> BenchServer {
 
 // ── Internal helpers ────────────────────────────────────────────────────────
 
-async fn spawn_hyper_server(
-    listener: tokio::net::TcpListener,
-    dispatcher: Arc<dyn Dispatcher>,
-) {
+async fn spawn_hyper_server(listener: tokio::net::TcpListener, dispatcher: Arc<dyn Dispatcher>) {
     tokio::spawn(async move {
         loop {
             let Ok((stream, _)) = listener.accept().await else {
