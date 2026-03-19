@@ -83,16 +83,16 @@ The test suite exercises 40+ SDK features including:
 │  1. Start webhook receiver (for push notification tests)     │
 │  2. Pre-bind 4 TCP listeners (get real addresses)            │
 │  3. Build agent cards with correct URLs                      │
-│  4. Build RequestHandlers with interceptors + metrics         │
+│  4. Build RequestHandlers with interceptors + metrics        │
 │  5. Start 4 agent servers (JSON-RPC + REST)                  │
 │  6. Run 81-94 E2E tests against the live agents              │
 │  7. Print results + metrics summary                          │
 └──────────┬──────────┬──────────┬──────────┬──────────────────┘
            │          │          │          │
-    ┌──────▼──────┐ ┌─▼────┐ ┌──▼───┐ ┌───▼────────┐
-    │CodeAnalyzer │ │Build │ │Health│ │Coordinator │
+    ┌──────▼──────┐ ┌─▼────┐ ┌──▼────┐ ┌───▼────────┐
+    │CodeAnalyzer │ │Build │ │Health │ │Coordinator │
     │  JSON-RPC   │ │ REST │ │JSONRPC│ │    REST    │
-    └─────────────┘ └──────┘ └──────┘ └────────────┘
+    └─────────────┘ └──────┘ └───────┘ └────────────┘
 ```
 
 ## Prerequisites
