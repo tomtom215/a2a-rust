@@ -18,3 +18,8 @@
 # Editor swap files
 *.swp
 *.swo
+
+# ITK agent build artifacts
+node_modules/
+itk/agents/go-agent/go-agent
+itk/agents/js-agent/package-lock.json
