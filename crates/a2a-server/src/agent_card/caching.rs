@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! HTTP caching utilities for agent card responses (spec §8.3).
 //!
@@ -201,6 +201,7 @@ pub(crate) mod tests {
     /// Helper to build a minimal agent card for tests.
     pub fn minimal_agent_card() -> AgentCard {
         AgentCard {
+            url: None,
             name: "Test Agent".into(),
             description: "A test agent".into(),
             version: "1.0.0".into(),

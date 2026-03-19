@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Tom F. -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
 # Security Policy
 
@@ -7,6 +7,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.3.x   | :white_check_mark: |
 | 0.2.x   | :white_check_mark: |
 
 ## Scope
@@ -27,14 +28,8 @@ responsibly. **Do not open a public GitHub issue.**
 
 ### PGP Key
 
-You may encrypt sensitive reports using our PGP key:
-
-```
-Fingerprint: <TO BE PUBLISHED>
-```
-
-The full public key will be published at
-`https://a2a-rust.dev/.well-known/security-pgp-key.asc`.
+PGP encryption for security reports is not yet available. For now, please
+send reports in plain text to the email address above.
 
 ### What to Include
 

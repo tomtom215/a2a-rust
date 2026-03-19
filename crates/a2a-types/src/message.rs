@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Message types for the A2A protocol.
 //!
@@ -67,13 +67,13 @@ impl AsRef<str> for MessageId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
     /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "ROLE_UNSPECIFIED")]
+    #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
     Unspecified,
     /// Sent by the human/client side.
-    #[serde(rename = "ROLE_USER")]
+    #[serde(rename = "ROLE_USER", alias = "user")]
     User,
     /// Sent by the agent.
-    #[serde(rename = "ROLE_AGENT")]
+    #[serde(rename = "ROLE_AGENT", alias = "agent")]
     Agent,
 }
 

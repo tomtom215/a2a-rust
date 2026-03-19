@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration tests for the Axum adapter (`dispatch::axum_adapter`).
 //!
@@ -93,6 +93,7 @@ impl AgentExecutor for EchoExecutor {
 
 fn test_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Echo Agent".into(),
         description: "Echoes input for testing".into(),
         version: "1.0.0".into(),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Test 71: Backpressure — slow reader skips lagged events.
 //!
@@ -22,6 +22,7 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
 
     let metrics = Arc::new(TeamMetrics::new("BackpressureTest"));
     let card = AgentCard {
+        url: None,
         name: "BackpressureAgent".into(),
         description: "Agent with tiny event queue".into(),
         version: "1.0.0".into(),

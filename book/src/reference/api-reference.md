@@ -60,6 +60,10 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `ListTasksParams` | ListTasks input with filters and pagination |
 | `CancelTaskParams` | CancelTask input |
 | `TaskIdParams` | SubscribeToTask input |
+| `GetPushConfigParams` | GetTaskPushNotificationConfig input |
+| `DeletePushConfigParams` | DeleteTaskPushNotificationConfig input |
+| `ListPushConfigsParams` | ListTaskPushNotificationConfigs input |
+| `GetExtendedAgentCardParams` | GetExtendedAgentCard input |
 
 ### Push Notifications
 
@@ -74,6 +78,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 |------|-------------|
 | `SendMessageResponse` | Enum: Task or Message |
 | `TaskListResponse` | Paginated task list |
+| `ListPushConfigsResponse` | Paginated push config list |
+| `AuthenticatedExtendedCardResponse` | Type alias for `AgentCard` |
 
 ### Errors
 
@@ -196,6 +202,11 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `TenantAwareInMemoryPushConfigStore` | Multi-tenant in-memory push config store |
 | `TenantAwareSqliteTaskStore` | Multi-tenant SQLite task store (`sqlite` feature) |
 | `TenantAwareSqlitePushConfigStore` | Multi-tenant SQLite push config store (`sqlite` feature) |
+| `PostgresTaskStore` | PostgreSQL task store (`postgres` feature) |
+| `PostgresPushConfigStore` | PostgreSQL push config store (`postgres` feature) |
+| `TenantAwarePostgresTaskStore` | Multi-tenant PostgreSQL task store (`postgres` feature) |
+| `TenantAwarePostgresPushConfigStore` | Multi-tenant PostgreSQL push config store (`postgres` feature) |
+| `PgMigrationRunner` | PostgreSQL migration runner (`postgres` feature) |
 | `StaticAgentCardHandler` | Static agent card with HTTP caching |
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |

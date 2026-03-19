@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Comprehensive integration tests for the `a2a-client` crate.
 
@@ -31,6 +31,7 @@ impl CallInterceptor for NoopInterceptor {
 /// Builds a minimal [`AgentCard`] with the given interfaces.
 fn agent_card_with_interfaces(interfaces: Vec<AgentInterface>) -> AgentCard {
     AgentCard {
+        url: None,
         name: "test-agent".into(),
         version: "1.0".into(),
         description: "A test agent".into(),

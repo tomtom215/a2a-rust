@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Additional REST dispatcher coverage tests.
 //!
@@ -85,6 +85,7 @@ impl PushSender for MockPushSender {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent".into(),
         version: "1.0.0".into(),
@@ -138,6 +139,7 @@ fn make_handler_no_push() -> Arc<a2a_protocol_server::RequestHandler> {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,
@@ -528,7 +530,7 @@ async fn list_push_configs_empty_returns_200() {
     .await;
     assert_eq!(status, 200);
     assert!(
-        body.contains("configs"),
+        body.starts_with('['),
         "response should contain configs field"
     );
 }
@@ -567,7 +569,7 @@ async fn list_push_configs_no_push_sender_still_works() {
         status, 200,
         "list push configs should succeed even without push sender"
     );
-    assert!(body.contains("configs"));
+    assert!(body.starts_with('['));
 }
 
 #[tokio::test]

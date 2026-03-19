@@ -163,6 +163,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `signing` | Off | Agent card signing |
 | `tracing` | Off | Structured logging via `tracing` crate |
 | `sqlite` | Off | SQLite-backed task and push config stores via `sqlx` |
+| `postgres` | Off | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | Off | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | Off | gRPC transport via `tonic` |
 | `otel` | Off | OpenTelemetry metrics via `opentelemetry-otlp` |
@@ -194,6 +195,7 @@ Configuration for the gRPC client transport (requires `grpc` feature).
 | `grpc` | Off | Enables `grpc` in client and server |
 | `websocket` | Off | Enables `websocket` in client and server |
 | `sqlite` | Off | Enables `sqlite` in the server |
+| `postgres` | Off | Enables `postgres` in the server |
 | `otel` | Off | Enables `otel` in the server |
 | `axum` | Off | Enables `axum` in the server |
 

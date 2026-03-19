@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! REST dispatcher.
 //!
@@ -175,9 +175,14 @@ impl RestDispatcher {
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         // Colon-suffixed routes: /message:send, /message:stream.
+        // Also accept slash-separated variants: /message/send, /message/stream.
         match (method, path) {
-            ("POST", "/message:send") => return self.handle_send(req, false, headers).await,
-            ("POST", "/message:stream") => return self.handle_send(req, true, headers).await,
+            ("POST", "/message:send" | "/message/send") => {
+                return self.handle_send(req, false, headers).await;
+            }
+            ("POST", "/message:stream" | "/message/stream") => {
+                return self.handle_send(req, true, headers).await;
+            }
             _ => {}
         }
 
@@ -205,18 +210,31 @@ impl RestDispatcher {
             ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant, headers).await,
             ("GET", ["tasks", id]) => self.handle_get_task(id, query, headers).await,
 
-            // Push notification configs.
-            ("POST", ["tasks", task_id, "pushNotificationConfigs"]) => {
+            // Task cancel (slash-separated variant: /tasks/{id}/cancel).
+            ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id, headers).await,
+
+            // Push notification configs (accept both plural and singular path segments).
+            ("POST", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
                 self.handle_set_push_config(req, task_id, headers).await
             }
-            ("GET", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
+            (
+                "GET",
+                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id],
+            ) => {
                 self.handle_get_push_config(task_id, config_id, headers)
                     .await
             }
-            ("GET", ["tasks", task_id, "pushNotificationConfigs"]) => {
+            ("GET", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
                 self.handle_list_push_configs(task_id, headers).await
             }
-            ("DELETE", ["tasks", task_id, "pushNotificationConfigs", config_id]) => {
+            (
+                "DELETE",
+                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id],
+            )
+            | (
+                "POST",
+                ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id, "delete"],
+            ) => {
                 self.handle_delete_push_config(task_id, config_id, headers)
                     .await
             }
@@ -394,16 +412,7 @@ impl RestDispatcher {
             .on_list_push_configs(task_id, None, Some(headers))
             .await
         {
-            Ok(configs) => {
-                // Wrap in the response envelope so the client can deserialize
-                // as ListPushConfigsResponse (object with `configs` field)
-                // rather than a bare JSON array.
-                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                    configs,
-                    next_page_token: None,
-                };
-                json_ok_response(&resp)
-            }
+            Ok(configs) => json_ok_response(&configs),
             Err(e) => server_error_to_response(&e),
         }
     }

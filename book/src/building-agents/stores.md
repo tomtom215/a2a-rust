@@ -8,24 +8,24 @@ The `TaskStore` trait defines how tasks are persisted:
 
 ```rust
 pub trait TaskStore: Send + Sync + 'static {
-    fn save(&self, task: Task)
-        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+    fn save<'a>(&'a self, task: Task)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
-    fn get(&self, id: &TaskId)
-        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + '_>>;
+    fn get<'a>(&'a self, id: &'a TaskId)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>;
 
-    fn list(&self, params: &ListTasksParams)
-        -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + '_>>;
+    fn list<'a>(&'a self, params: &'a ListTasksParams)
+        -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>>;
 
-    fn insert_if_absent(&self, task: Task)
-        -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + '_>>;
+    fn insert_if_absent<'a>(&'a self, task: Task)
+        -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
 
-    fn delete(&self, id: &TaskId)
-        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+    fn delete<'a>(&'a self, id: &'a TaskId)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
     /// Returns the total number of tasks. Default returns 0.
-    fn count(&self)
-        -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + '_>>;
+    fn count<'a>(&'a self)
+        -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>>;
 }
 ```
 
@@ -53,7 +53,7 @@ Features:
 - Automatic TTL eviction on access
 - Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — hard capacity guarantee
 - Pagination support with cursor tokens
-- Filtering by `context_id`, `status`, and `timestamp`
+- Filtering by `context_id` and `status`
 
 ### SqliteTaskStore (feature-gated)
 
@@ -61,7 +61,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.2", features = ["sqlite"] }
+a2a-protocol-server = { version = "0.3", features = ["sqlite"] }
 ```
 
 ```rust
@@ -161,17 +161,17 @@ The `PushConfigStore` trait manages push notification configurations:
 
 ```rust
 pub trait PushConfigStore: Send + Sync + 'static {
-    fn set(&self, config: TaskPushNotificationConfig)
-        -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + '_>>;
+    fn set<'a>(&'a self, config: TaskPushNotificationConfig)
+        -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>>;
 
-    fn get(&self, task_id: &str, id: &str)
-        -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + '_>>;
+    fn get<'a>(&'a self, task_id: &'a str, id: &'a str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>>;
 
-    fn list(&self, task_id: &str)
-        -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + '_>>;
+    fn list<'a>(&'a self, task_id: &'a str)
+        -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>>;
 
-    fn delete(&self, task_id: &str, id: &str)
-        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + '_>>;
+    fn delete<'a>(&'a self, task_id: &'a str, id: &'a str)
+        -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 }
 ```
 

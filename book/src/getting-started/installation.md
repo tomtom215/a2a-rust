@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- **Rust 1.93+** (stable)
+- **Rust 1.93+** (stable; also tested on 1.94)
 - A working internet connection for downloading crates
 
 ## Adding to Your Project
@@ -11,7 +11,7 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.2"
+a2a-protocol-sdk = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -23,13 +23,13 @@ If you prefer fine-grained control, depend on individual crates:
 
 ```toml
 # Types only (no I/O, no async runtime)
-a2a-protocol-types = "0.2"
+a2a-protocol-types = "0.3"
 
 # Client only
-a2a-protocol-client = "0.2"
+a2a-protocol-client = "0.3"
 
 # Server only
-a2a-protocol-server = "0.2"
+a2a-protocol-server = "0.3"
 ```
 
 This is useful when:
@@ -64,6 +64,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `signing` | Agent card signing |
 | `tracing` | Structured logging via the `tracing` crate |
 | `sqlite` | SQLite-backed task and push config stores via `sqlx` |
+| `postgres` | PostgreSQL-backed task and push config stores via `sqlx` |
 | `websocket` | WebSocket transport via `tokio-tungstenite` |
 | `grpc` | gRPC transport via `tonic` |
 | `otel` | OpenTelemetry metrics via `opentelemetry-otlp` |
@@ -79,6 +80,7 @@ All features are off by default to minimize compile times and dependency trees.
 | `grpc` | Enables gRPC across client and server |
 | `websocket` | Enables WebSocket across client and server |
 | `sqlite` | Enables SQLite stores in the server |
+| `postgres` | Enables PostgreSQL stores in the server |
 | `otel` | Enables OpenTelemetry metrics in the server |
 | `axum` | Enables Axum integration in the server |
 
@@ -86,11 +88,11 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.2", features = ["tracing", "signing"] }
+a2a-protocol-sdk = { version = "0.3", features = ["tracing", "signing"] }
 
 # Or with individual crates:
-a2a-protocol-server = { version = "0.2", features = ["tracing", "sqlite"] }
-a2a-protocol-client = { version = "0.2", features = ["tls-rustls"] }
+a2a-protocol-server = { version = "0.3", features = ["tracing", "sqlite"] }
+a2a-protocol-client = { version = "0.3", features = ["tls-rustls"] }
 ```
 
 ## Verifying the Installation

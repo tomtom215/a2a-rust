@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! A2A protocol v1.0 — server framework.
 //!
@@ -122,6 +122,11 @@ pub use store::{
 pub use push::{SqlitePushConfigStore, TenantAwareSqlitePushConfigStore};
 #[cfg(feature = "sqlite")]
 pub use store::{Migration, MigrationRunner, SqliteTaskStore, TenantAwareSqliteTaskStore};
+
+#[cfg(feature = "postgres")]
+pub use push::{PostgresPushConfigStore, TenantAwarePostgresPushConfigStore};
+#[cfg(feature = "postgres")]
+pub use store::{PgMigration, PgMigrationRunner, PostgresTaskStore, TenantAwarePostgresTaskStore};
 pub use streaming::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader, InMemoryQueueWriter,
 };

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! `SubscribeToTask` handler — resubscribe to a task's event stream.
 
@@ -137,6 +137,7 @@ mod tests {
 
         // Send a streaming message to create a task with an active event queue.
         let params = MessageSendParams {
+            context_id: None,
             message: Message {
                 id: MessageId::new("msg-resub"),
                 role: MessageRole::User,

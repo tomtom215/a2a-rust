@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! End-to-end A2A echo agent example.
 //!
@@ -101,6 +101,7 @@ impl AgentExecutor for EchoExecutor {
 
 fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Echo Agent".into(),
         description: "A simple echo agent that mirrors your input".into(),
         version: "1.0.0".into(),
@@ -214,11 +215,61 @@ async fn start_rest_server(
     addr
 }
 
+/// Start a combined server serving both JSON-RPC and REST on a single address.
+async fn start_combined_server(
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+    bind_addr: &str,
+) -> SocketAddr {
+    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
+    let rest = Arc::new(RestDispatcher::new(handler));
+
+    let listener = tokio::net::TcpListener::bind(bind_addr)
+        .await
+        .unwrap_or_else(|e| panic!("bind {bind_addr}: {e}"));
+    let addr = listener.local_addr().expect("local addr");
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let jsonrpc = Arc::clone(&jsonrpc);
+            let rest = Arc::clone(&rest);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                    let jsonrpc = Arc::clone(&jsonrpc);
+                    let rest = Arc::clone(&rest);
+                    async move {
+                        // Route: POST with JSON to root → JSON-RPC; everything else → REST.
+                        let is_jsonrpc = req.method() == hyper::Method::POST
+                            && (req.uri().path() == "/" || req.uri().path().is_empty());
+                        if is_jsonrpc {
+                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
+                        } else {
+                            Ok::<_, std::convert::Infallible>(rest.dispatch(req).await)
+                        }
+                    }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+
+    addr
+}
+
 // ── Client helpers ───────────────────────────────────────────────────────────
 
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -248,6 +299,34 @@ async fn main() {
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
             )
             .init();
+    }
+
+    // ── Server-only mode (for TCK / CI) ────────────────────────────────────
+    // When A2A_BIND_ADDR is set, start a combined JSON-RPC + REST server on
+    // that address and block forever.  No client demos are run.
+    if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
+        let url = format!("http://{bind_addr}");
+        let mut card = make_agent_card(&url, &url);
+        card.url = Some(url);
+        card.capabilities = AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true);
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExecutor)
+                .with_agent_card(card)
+                .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+                .with_push_sender(
+                    a2a_protocol_server::push::HttpPushSender::new().allow_private_urls(),
+                )
+                .build()
+                .expect("build handler"),
+        );
+
+        let addr = start_combined_server(handler, &bind_addr).await;
+        println!("Echo agent listening on http://{addr} (combined JSON-RPC + REST)");
+
+        // Block forever — the server runs in background tasks.
+        std::future::pending::<()>().await;
     }
 
     println!("=== A2A Echo Agent Example ===\n");

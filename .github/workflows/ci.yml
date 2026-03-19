@@ -71,6 +71,8 @@ jobs:
         run: cargo clippy -p a2a-protocol-client --all-targets --features tls-rustls -- -D warnings
       - name: Clippy (sqlite)
         run: cargo clippy -p a2a-protocol-server --all-targets --features sqlite -- -D warnings
+      - name: Clippy (postgres)
+        run: cargo clippy -p a2a-protocol-server --all-targets --features postgres -- -D warnings
       - name: Clippy (axum)
         run: cargo clippy -p a2a-protocol-server --all-targets --features axum -- -D warnings
       - name: Clippy (all features)
@@ -104,6 +106,8 @@ jobs:
         run: cargo test -p a2a-protocol-client --features tls-rustls
       - name: Test (sqlite feature)
         run: cargo test -p a2a-protocol-server --features sqlite
+      - name: Test (postgres feature)
+        run: cargo test -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
         run: cargo test -p a2a-protocol-server --features axum
       - name: Test (all features)
@@ -165,4 +169,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent --exclude agent-team
+        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude a2a-tck

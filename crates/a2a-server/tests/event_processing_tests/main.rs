@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration tests for event processing in `RequestHandler`.
 //!
@@ -247,6 +247,7 @@ impl PushSender for SleepForeverPushSender {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,

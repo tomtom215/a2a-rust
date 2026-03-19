@@ -57,8 +57,8 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **SSE streaming** — Real-time `SendStreamingMessage` and `SubscribeToTask`
 - **Push notifications** — Pluggable `PushSender` with SSRF protection
 - **Agent card discovery** — Static and dynamic card handlers with HTTP caching (ETag, Last-Modified, 304)
-- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory, SQLite, and tenant-aware backends
-- **Multi-tenancy** — `TenantAwareInMemoryTaskStore` and `TenantAwareSqliteTaskStore` with full tenant isolation
+- **Pluggable stores** — `TaskStore` and `PushConfigStore` traits with in-memory, SQLite, PostgreSQL, and tenant-aware backends
+- **Multi-tenancy** — `TenantAwareInMemoryTaskStore`, `TenantAwareSqliteTaskStore`, and `TenantAwarePostgresTaskStore` with full tenant isolation
 - **Interceptor chains** — Client and server middleware for auth, logging, metrics, rate limiting
 - **Rate limiting** — Built-in `RateLimitInterceptor` with per-caller fixed-window limiting
 - **Client retry** — Configurable `RetryPolicy` with exponential backoff for transient failures

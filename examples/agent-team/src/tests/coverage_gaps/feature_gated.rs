@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests 79-80: Feature-gated tests.
 //!
@@ -119,6 +119,7 @@ pub async fn test_otel_metrics_integration(ctx: &TestContext) -> TestResult {
 
     // 2. Build a handler that uses OtelMetrics as its metrics observer.
     let card = AgentCard {
+        url: None,
         name: "OtelTestAgent".into(),
         version: "1.0".into(),
         description: "Agent for OtelMetrics integration test".into(),

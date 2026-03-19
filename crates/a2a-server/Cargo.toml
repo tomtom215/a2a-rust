@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Tom F.
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.2.0"
+version     = "0.3.0"
 description = "A2A protocol v1.0 — server framework (hyper-backed)"
 readme      = "../../README.md"
 
@@ -24,6 +24,8 @@ signing = ["a2a-protocol-types/signing"]
 tracing = ["dep:tracing"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx"]
+## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
+postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`.
@@ -34,7 +36,7 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 axum = ["dep:axum"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-types      = { version = "0.3.0", path = "../a2a-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -70,7 +72,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.2.0", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.3.0", path = "../a2a-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }

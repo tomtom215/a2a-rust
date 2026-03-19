@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Concurrency tests: multiple simultaneous `send_message` calls and
 //! concurrent reads interleaved with writes to the task store.

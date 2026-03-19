@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration tests for `DynamicAgentCardHandler`.
 
@@ -20,6 +20,7 @@ use a2a_protocol_server::agent_card::dynamic_handler::{
 /// Minimal agent card for tests.
 fn test_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Dynamic Agent".into(),
         description: "A dynamically produced card".into(),
         version: "1.0.0".into(),

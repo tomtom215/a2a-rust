@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests for the gRPC dispatcher (`dispatch::grpc`).
 
@@ -36,6 +36,7 @@ impl AgentExecutor for NoopExecutor {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "gRPC Test Agent".into(),
         description: "A gRPC test agent".into(),
         version: "1.0.0".into(),

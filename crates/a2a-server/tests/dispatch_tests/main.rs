@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! End-to-end dispatch tests using a real TCP server.
 //!
@@ -29,7 +29,7 @@ use a2a_protocol_types::jsonrpc::{JsonRpcErrorResponse, JsonRpcRequest, JsonRpcS
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
 use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::responses::{ListPushConfigsResponse, SendMessageResponse};
+use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -89,6 +89,7 @@ impl PushSender for MockPushSender {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent".into(),
         version: "1.0.0".into(),
@@ -123,6 +124,7 @@ fn minimal_agent_card() -> AgentCard {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,

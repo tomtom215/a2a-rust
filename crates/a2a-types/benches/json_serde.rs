@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Benchmarks for JSON serialization and deserialization of A2A types.
 
@@ -11,6 +11,7 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 fn minimal_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Bench Agent".into(),
         description: "Benchmark agent for perf tests".into(),
         version: "1.0.0".into(),

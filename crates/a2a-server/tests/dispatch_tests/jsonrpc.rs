@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! JSON-RPC dispatcher tests.
 //!
@@ -268,9 +268,9 @@ async fn jsonrpc_push_config_crud() {
     assert_eq!(resp.status(), 200);
 
     let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let result: JsonRpcSuccessResponse<ListPushConfigsResponse> =
+    let result: JsonRpcSuccessResponse<Vec<TaskPushNotificationConfig>> =
         serde_json::from_slice(&body).expect("parse list response");
-    assert_eq!(result.result.configs.len(), 1);
+    assert_eq!(result.result.len(), 1);
 
     // Delete push config.
     let rpc = JsonRpcRequest::with_params(

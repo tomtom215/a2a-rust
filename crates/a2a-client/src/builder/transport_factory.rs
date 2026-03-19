@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Transport assembly and client construction.
 //!
@@ -241,6 +241,7 @@ mod tests {
         use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
 
         let card = AgentCard {
+            url: None,
             name: "test".into(),
             version: "1.0".into(),
             description: "Test agent".into(),

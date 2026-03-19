@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration tests for `a2a_protocol_types::signing` — JSON canonicalization,
 //! agent card signing, and signature verification.
@@ -22,6 +22,7 @@ use ring::signature::{self, EcdsaKeyPair, KeyPair};
 /// Build a minimal valid `AgentCard` for testing.
 fn minimal_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent".into(),
         version: "1.0.0".into(),

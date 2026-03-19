@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests 21-30: Error paths, concurrency, metrics, CRUD, and resubscribe.
 
@@ -139,6 +139,7 @@ pub async fn test_empty_parts_rejected(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -421,6 +422,7 @@ pub async fn test_error_metrics_tracked(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

@@ -12,13 +12,13 @@ cd a2a-rust
 cargo run -p echo-agent
 ```
 
-You'll see output like:
+You'll see output like (ports are randomly assigned):
 
 ```
 === A2A Echo Agent Example ===
 
-JSON-RPC server listening on http://127.0.0.1:54321
-REST server listening on http://127.0.0.1:54322
+JSON-RPC server listening on http://127.0.0.1:<port>
+REST server listening on http://127.0.0.1:<port>
 
 --- Demo 1: Synchronous SendMessage (JSON-RPC) ---
   Task ID:    550e8400-e29b-41d4-a716-446655440000
@@ -60,7 +60,7 @@ The example exercised all major protocol operations:
 
 ## The Code in Brief
 
-The echo agent is about 100 lines of Rust. Here's the core executor:
+The echo agent's core executor is straightforward. Here's the key part:
 
 ```rust
 use a2a_protocol_sdk::prelude::*;

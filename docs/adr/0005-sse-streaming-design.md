@@ -8,7 +8,7 @@
 
 ## Context
 
-The A2A `message/stream` and `tasks/resubscribe` methods return Server-Sent Events (SSE) streams. SSE is a plain-text HTTP/1.1 streaming protocol defined in the HTML Living Standard (WHATWG). The A2A spec wraps each event's `data:` field in a `JSONRPCResponse<StreamResponse>`.
+The A2A `SendStreamingMessage` and `SubscribeToTask` methods return Server-Sent Events (SSE) streams. SSE is a plain-text HTTP/1.1 streaming protocol defined in the HTML Living Standard (WHATWG). The A2A spec wraps each event's `data:` field in a `JSONRPCResponse<StreamResponse>`.
 
 Rust does not have a battle-tested, zero-dep SSE server or client library that is hyper 1.x native. Third-party crates (`eventsource-client`, `sse-codec`) either use older hyper versions, carry additional deps, or lack proper backpressure.
 

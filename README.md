@@ -1,14 +1,16 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Tom F. -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
 # a2a-rust
 
 [![CI](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml)
+[![TCK](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/tck.yml)
 [![codecov](https://codecov.io/gh/tomtom215/a2a-rust/graph/badge.svg)](https://codecov.io/gh/tomtom215/a2a-rust)
 [![Crates.io](https://img.shields.io/crates/v/a2a-protocol-sdk.svg)](https://crates.io/crates/a2a-protocol-sdk)
 [![docs.rs](https://img.shields.io/docsrs/a2a-protocol-sdk)](https://docs.rs/a2a-protocol-sdk)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org)
+[![A2A Conformance](https://img.shields.io/badge/A2A%20v1.0-TCK%20conformant-brightgreen)](tck/)
 
 Pure Rust implementation of the [A2A (Agent-to-Agent) protocol](https://google.github.io/A2A/) v1.0.0.
 
@@ -38,7 +40,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Pluggable stores** | `TaskStore` / `PushConfigStore` traits; in-memory defaults + SQLite (`sqlite` feature) with migrations |
+| **Pluggable stores** | `TaskStore` / `PushConfigStore` traits; in-memory defaults + SQLite (`sqlite`) + PostgreSQL (`postgres`) with migrations |
 | **Multi-tenancy** | Tenant-aware stores, `PerTenantConfig` for per-tenant limits, `TenantResolver` strategies (header, bearer, path) |
 | **Executor ergonomics** | `agent_executor!` macro, `EventEmitter`, `boxed_future` — no manual `Pin<Box<dyn Future>>` |
 | **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc. |
@@ -79,7 +81,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` CI gate |
+| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` (on-demand CI workflow) |
 | **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; zero `unsafe` blocks |
 
 ## Crate Structure
@@ -99,7 +101,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.2"
+a2a-protocol-sdk = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -196,6 +198,39 @@ A minimal example demonstrating both JSON-RPC and REST transports with synchrono
 cargo run -p echo-agent
 ```
 
+### Multi-Language Agent Team
+
+A Rust coordinator agent that delegates to worker agents written in Python, JavaScript, Go, and Java — proving cross-language A2A interoperability:
+
+```bash
+# Start the ITK worker agents first (see itk/README.md), then:
+cargo run -p multi-lang-team
+```
+
+### AI Framework Integrations
+
+Examples showing how to wrap Rust AI frameworks behind the A2A protocol:
+
+```bash
+# rig AI framework (https://github.com/0xPlaygrounds/rig)
+cargo run -p rig-a2a-agent
+
+# genai multi-provider LLM client (https://crates.io/crates/genai)
+GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
+```
+
+### Technology Compatibility Kit (TCK)
+
+A standalone conformance test runner that validates any A2A server against the protocol spec:
+
+```bash
+# Test a local server
+cargo run -p a2a-tck -- --url http://localhost:8080 --binding jsonrpc
+
+# Run the full cross-language ITK (requires Docker)
+docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
+```
+
 ## Architecture
 
 ```
@@ -249,7 +284,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (1,750+ with feature flags; ~1,600 with defaults only)
+# Run all tests (~1,630 with defaults only; more with optional feature flags)
 cargo test --workspace
 
 # Run the end-to-end example

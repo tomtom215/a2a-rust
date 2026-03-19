@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Coordinator executor — orchestrates the team via A2A client calls.
 
@@ -192,6 +192,7 @@ impl CoordinatorExecutor {
         ];
         let params = MessageSendParams {
             tenant: None,
+            context_id: None,
             message: Message {
                 id: MessageId::new(uuid::Uuid::new_v4().to_string()),
                 role: MessageRole::User,

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration tests for [`RequestHandler`].
 //!
@@ -191,6 +191,7 @@ fn make_message(text: &str) -> Message {
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: make_message(text),
         configuration: None,
         metadata: None,
@@ -199,6 +200,7 @@ fn make_send_params(text: &str) -> MessageSendParams {
 
 fn minimal_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Test Agent".into(),
         description: "A test agent".into(),
         version: "1.0.0".into(),

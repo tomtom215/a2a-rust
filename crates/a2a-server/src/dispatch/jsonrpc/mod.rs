@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! JSON-RPC 2.0 dispatcher.
 //!
@@ -214,10 +214,10 @@ impl JsonRpcDispatcher {
 
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
-            "SendStreamingMessage" => {
+            "SendStreamingMessage" | "message/stream" => {
                 return self.dispatch_send_message(id, rpc_req, true, headers).await;
             }
-            "SubscribeToTask" => {
+            "SubscribeToTask" | "tasks/subscribe" => {
                 return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_resubscribe(p, Some(headers)).await {
                         Ok(reader) => build_sse_response(
@@ -249,7 +249,7 @@ impl JsonRpcDispatcher {
         let id = rpc_req.id.clone();
 
         match rpc_req.method.as_str() {
-            "SendMessage" => {
+            "SendMessage" | "message/send" => {
                 match self
                     .dispatch_send_message_inner(id.clone(), rpc_req, false, headers)
                     .await
@@ -258,7 +258,7 @@ impl JsonRpcDispatcher {
                     Err(body) => body,
                 }
             }
-            "SendStreamingMessage" => {
+            "SendStreamingMessage" | "message/stream" => {
                 // In batch context, streaming is not supported — return error.
                 let err = ServerError::InvalidParams(
                     "SendStreamingMessage not supported in batch requests".into(),
@@ -270,7 +270,7 @@ impl JsonRpcDispatcher {
                 );
                 serde_json::to_vec(&resp).unwrap_or_default()
             }
-            "GetTask" => {
+            "GetTask" | "tasks/get" => {
                 match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_task(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -279,7 +279,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "ListTasks" => {
+            "ListTasks" | "tasks/list" => {
                 match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
                     Ok(p) => match self.handler.on_list_tasks(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -288,7 +288,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "CancelTask" => {
+            "CancelTask" | "tasks/cancel" => {
                 match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
                     Ok(p) => match self.handler.on_cancel_task(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -297,13 +297,13 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "SubscribeToTask" => {
+            "SubscribeToTask" | "tasks/subscribe" => {
                 let err = ServerError::InvalidParams(
                     "SubscribeToTask not supported in batch requests".into(),
                 );
                 error_response_bytes(id, &err)
             }
-            "CreateTaskPushNotificationConfig" => {
+            "CreateTaskPushNotificationConfig" | "tasks/pushNotificationConfig/set" => {
                 match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
                 {
                     Ok(p) => match self.handler.on_set_push_config(p, Some(headers)).await {
@@ -313,7 +313,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "GetTaskPushNotificationConfig" => {
+            "GetTaskPushNotificationConfig" | "tasks/pushNotificationConfig/get" => {
                 match parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_push_config(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -322,26 +322,20 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "ListTaskPushNotificationConfigs" => {
+            "ListTaskPushNotificationConfigs" | "tasks/pushNotificationConfig/list" => {
                 match parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req) {
                     Ok(p) => match self
                         .handler
                         .on_list_push_configs(&p.task_id, p.tenant.as_deref(), Some(headers))
                         .await
                     {
-                        Ok(configs) => {
-                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
-                                configs,
-                                next_page_token: None,
-                            };
-                            success_response_bytes(id, &resp)
-                        }
+                        Ok(configs) => success_response_bytes(id, &configs),
                         Err(e) => error_response_bytes(id, &e),
                     },
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "DeleteTaskPushNotificationConfig" => {
+            "DeleteTaskPushNotificationConfig" | "tasks/pushNotificationConfig/delete" => {
                 match parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_delete_push_config(p, Some(headers)).await {
                         Ok(()) => success_response_bytes(id, &serde_json::json!({})),
@@ -350,7 +344,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "GetExtendedAgentCard" => {
+            "GetExtendedAgentCard" | "agent/authenticatedExtendedCard" => {
                 match self.handler.on_get_extended_agent_card(Some(headers)).await {
                     Ok(r) => success_response_bytes(id, &r),
                     Err(e) => error_response_bytes(id, &e),

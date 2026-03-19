@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Integration test: `A2aClient::get_extended_agent_card()` against a real
 //! JSON-RPC server.
@@ -36,6 +36,7 @@ impl AgentExecutor for NoopExecutor {
 
 fn test_agent_card() -> AgentCard {
     AgentCard {
+        url: None,
         name: "Extended Test Agent".into(),
         description: "Agent for extended card test".into(),
         version: "1.0.0".into(),

@@ -85,6 +85,7 @@ The REST transport uses standard HTTP methods and URL paths:
 | Get push config | `GET` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 | List push configs | `GET` | `/tasks/{id}/pushNotificationConfigs` |
 | Delete push config | `DELETE` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
+| Extended card | `GET` | `/extendedAgentCard` |
 | Agent card | `GET` | `/.well-known/agent.json` |
 
 ### Multi-Tenant Paths
@@ -109,10 +110,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.2", features = ["websocket"] }
+a2a-protocol-server = { version = "0.3", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.2", features = ["websocket"] }
+a2a-protocol-client = { version = "0.3", features = ["websocket"] }
 ```
 
 ### Server
@@ -159,10 +160,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.2", features = ["grpc"] }
+a2a-protocol-server = { version = "0.3", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.2", features = ["grpc"] }
+a2a-protocol-client = { version = "0.3", features = ["grpc"] }
 ```
 
 ### Server

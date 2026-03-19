@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! P2.4: Edge case tests.
 //!
@@ -49,6 +49,7 @@ async fn unicode_in_context_id() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,
@@ -129,6 +130,7 @@ async fn duplicate_task_id_rejected() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: msg,
         configuration: None,
         metadata: None,

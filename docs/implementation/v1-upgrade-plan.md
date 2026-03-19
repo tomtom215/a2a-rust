@@ -57,8 +57,8 @@ pub struct TaskStatusUpdateEvent {
 **v1.0.0 (target)**:
 ```rust
 pub struct TaskStatusUpdateEvent {
-    pub task_id: String,       // plain String, not TaskId newtype
-    pub context_id: String,    // plain String, not ContextId newtype
+    pub task_id: TaskId,       // TaskId newtype
+    pub context_id: ContextId, // ContextId newtype
     pub status: TaskStatus,    // wraps state+message+timestamp
     pub metadata: Option<Value>,
 }
@@ -99,8 +99,9 @@ message Part {
 }
 ```
 
-This eliminates `TextPart`, `FilePart`, `DataPart`, `FileContent`, `FileWithBytes`, `FileWithUri`.
-The `Part` becomes a single struct with an untagged content enum + common fields.
+This eliminates `TextPart`, `FilePart`, `DataPart`, `FileWithBytes`, `FileWithUri` as separate types.
+`FileContent` is retained as a nested struct inside `PartContent::File`.
+The `Part` becomes a single struct with a `PartContent` enum + common metadata field.
 
 **Files**: `message.rs`, `artifact.rs` (uses Part)
 
@@ -283,7 +284,7 @@ For multi-tenancy support on gRPC, all request types gain an optional `tenant: S
 | `GET /tasks/{taskId}/push-config` | `GET /tasks/{id}/pushNotificationConfigs` |
 | `DELETE /tasks/{taskId}/push-config/{id}` | `DELETE /tasks/{id}/pushNotificationConfigs/{configId}` |
 | `GET /agent/authenticatedExtendedCard` | `GET /extendedAgentCard` |
-| `GET /.well-known/agent-card.json` | `GET /.well-known/agent.json` (likely, verify) |
+| `GET /.well-known/agent-card.json` | `GET /.well-known/agent.json` (verified) |
 
 ### A22. ListTasksResponse gains `total_size` and `page_size`
 

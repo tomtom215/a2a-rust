@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 // "OpenAPI", "OpenID", and similar proper-noun initialisms are intentionally
 // not wrapped in backticks in this module's documentation.

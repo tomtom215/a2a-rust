@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Validation edge case tests: boundary conditions, malformed inputs,
 //! Unicode handling, concurrent race conditions, and resource management.
@@ -103,6 +103,7 @@ impl AgentExecutor for ArtifactExecutor {
 fn make_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -121,6 +122,7 @@ fn make_params(text: &str) -> MessageSendParams {
 fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -232,6 +234,7 @@ async fn reject_empty_parts() {
 
     let params = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,
@@ -371,6 +374,7 @@ async fn builder_rejects_zero_timeout() {
 #[tokio::test]
 async fn builder_rejects_empty_interfaces_in_card() {
     let card = a2a_protocol_types::AgentCard {
+        url: None,
         name: "test".into(),
         description: "test agent".into(),
         version: "1.0.0".into(),

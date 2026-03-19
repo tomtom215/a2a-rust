@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! JSON-RPC edge case tests: unusual id values, empty batch, huge batch,
 //! notification handling, and boundary conditions.

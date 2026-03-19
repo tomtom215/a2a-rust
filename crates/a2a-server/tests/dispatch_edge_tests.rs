@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Edge case tests for REST and JSON-RPC dispatch layers via real HTTP.
 
@@ -221,7 +221,7 @@ async fn rest_send_message_success() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(resp_body.contains("TASK_STATE_COMPLETED"));
+    assert!(resp_body.contains("\"completed\""));
 }
 
 #[tokio::test]

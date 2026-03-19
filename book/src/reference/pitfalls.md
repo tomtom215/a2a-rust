@@ -73,7 +73,7 @@ if let Some(upper) = body.size_hint().upper() {
 
 ### SSE parser must handle partial lines
 
-SSE events may arrive split across TCP frames. The parser must buffer partial lines and only process complete `\n`-terminated lines. The `EventBuffer` in `a2a-protocol-client` handles this correctly, but naive `lines()` iterators will break on partial frames.
+SSE events may arrive split across TCP frames. The parser must buffer partial lines and only process complete `\n`-terminated lines. The `SseParser` in `a2a-protocol-client` handles this correctly, but naive `lines()` iterators will break on partial frames.
 
 ### Memory limit on buffered SSE data
 

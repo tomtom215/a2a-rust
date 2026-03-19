@@ -850,7 +850,7 @@ cargo run -p echo-agent
 - **SPDX header on every file:**
   ```
   // SPDX-License-Identifier: Apache-2.0
-  // Copyright 2026 Tom F.
+  // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
   ```
 - **500-line maximum.** When a file approaches 400 lines, extract a submodule.
 - **Thin `mod.rs` files** (8–15 lines): module declarations + `pub use` re-exports only. No logic.

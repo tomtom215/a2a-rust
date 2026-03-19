@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright 2026 Tom F. -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
 # Releasing
 
@@ -44,7 +44,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging
-cargo package --workspace --exclude echo-agent --exclude agent-team
+cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude a2a-tck
 ```
 
 ### 2. Merge to main
@@ -82,7 +82,9 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 All four workspace crates share the same version number and are always released
-together. The `echo-agent` and `agent-team` examples are `0.0.0` (`publish = false`) and are never published.
+together. The example crates (`echo-agent`, `agent-team`, `multi-lang-team`,
+`rig-a2a-agent`, `genai-a2a-agent`) and the `a2a-tck` binary are `publish = false`
+and are never published.
 
 ## Troubleshooting
 

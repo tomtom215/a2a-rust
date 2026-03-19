@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! RPC method response types.
 //!
@@ -27,7 +27,7 @@ use crate::task::Task;
 /// `{"message": {...}}`.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(untagged)]
 pub enum SendMessageResponse {
     /// The agent accepted the message and created (or updated) a task.
     Task(Task),

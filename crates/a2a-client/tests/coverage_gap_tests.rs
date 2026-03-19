@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests covering client coverage gaps: builder edge cases, transport
 //! configuration, credential store, error types.
@@ -186,6 +186,7 @@ fn client_from_card_with_valid_interface() {
     use a2a_protocol_types::*;
 
     let card = AgentCard {
+        url: None,
         name: "Test".into(),
         description: "Test agent".into(),
         version: "1.0.0".into(),

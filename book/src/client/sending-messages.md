@@ -11,6 +11,7 @@ use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams {
     tenant: None,
+    context_id: None,
     message: Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::User,
@@ -53,7 +54,6 @@ match response {
         // Some agents respond with a direct message instead of a task
         println!("Direct message: {:?}", msg);
     }
-    _ => {}
 }
 ```
 
@@ -66,6 +66,7 @@ use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams {
     tenant: None,
+    context_id: None,
     message: make_message("Translate to French"),
     configuration: Some(SendMessageConfiguration {
         accepted_output_modes: vec!["text/plain".into()],
@@ -112,7 +113,7 @@ let follow_up = client.send_message(MessageSendParams {
         role: MessageRole::User,
         parts: vec![Part::text("What about error handling?")],
         task_id: None,
-        context_id: context_id.map(|c| ContextId::new(c.to_string())),
+        context_id: context_id,
         reference_task_ids: None,
         extensions: None,
         metadata: None,
@@ -133,7 +134,7 @@ let message = Message {
     role: MessageRole::User,
     parts: vec![
         Part::text("Analyze this image:"),
-        Part::url("https://example.com/chart.png"),
+        Part::file_uri("https://example.com/chart.png"),
         Part::data(serde_json::json!({
             "analysis_type": "detailed",
             "language": "en"

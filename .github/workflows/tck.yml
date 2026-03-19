@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: Apache-2.0
+# Technology Compatibility Kit (TCK) — conformance testing
+name: TCK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tck-self-test:
+    name: TCK self-test (echo-agent)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Build both the echo agent and TCK
+      - name: Build echo-agent and TCK
+        run: cargo build --release -p echo-agent -p a2a-tck
+
+      # Start the echo agent in the background
+      - name: Start echo-agent
+        run: |
+          ./target/release/echo-agent &
+          sleep 2
+        env:
+          A2A_BIND_ADDR: "127.0.0.1:9090"
+
+      # Run TCK against JSON-RPC binding
+      - name: TCK — JSON-RPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9090 --binding jsonrpc
+
+      # Run TCK against REST binding
+      - name: TCK — REST binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9090 --binding rest
+
+  tck-cross-language:
+    name: TCK cross-language (${{ matrix.sdk }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: python
+            setup: |
+              pip install a2a-sdk
+              python itk/agents/python_agent.py &
+              sleep 3
+            port: 9100
+          - sdk: javascript
+            setup: |
+              cd itk/agents/js-agent && npm install && node index.js &
+              sleep 3
+            port: 9101
+          - sdk: go
+            setup: |
+              cd itk/agents/go-agent && go run . &
+              sleep 3
+            port: 9102
+          - sdk: java
+            setup: |
+              cd itk/agents/java-agent && mvn -q compile exec:java &
+              sleep 5
+            port: 9103
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build TCK
+        run: cargo build --release -p a2a-tck
+
+      - name: Setup ${{ matrix.sdk }} agent
+        run: ${{ matrix.setup }}
+
+      - name: TCK — ${{ matrix.sdk }} (JSON-RPC)
+        run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding jsonrpc
+
+      - name: TCK — ${{ matrix.sdk }} (REST)
+        run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding rest

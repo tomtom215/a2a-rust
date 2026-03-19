@@ -142,7 +142,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.2", features = ["grpc"] }
+a2a-protocol-server = { version = "0.3", features = ["grpc"] }
 ```
 
 ```rust
@@ -202,7 +202,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.2", features = ["axum"] }
+a2a-protocol-server = { version = "0.3", features = ["axum"] }
 ```
 
 ```rust

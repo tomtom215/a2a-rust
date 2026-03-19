@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Agent card builders for each agent in the team.
 
@@ -7,6 +7,7 @@ use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterfac
 
 pub fn code_analyzer_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Code Analyzer".into(),
         description: "Analyzes code: LOC, complexity, metrics".into(),
         version: "1.0.0".into(),
@@ -42,6 +43,7 @@ pub fn code_analyzer_card(url: &str) -> AgentCard {
 
 pub fn build_monitor_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Build Monitor".into(),
         description: "Runs cargo builds and streams output".into(),
         version: "1.0.0".into(),
@@ -77,6 +79,7 @@ pub fn build_monitor_card(url: &str) -> AgentCard {
 
 pub fn health_monitor_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Health Monitor".into(),
         description: "Monitors agent team health and connectivity".into(),
         version: "1.0.0".into(),
@@ -114,6 +117,7 @@ pub fn health_monitor_card(url: &str) -> AgentCard {
 #[cfg(feature = "grpc")]
 pub fn grpc_analyzer_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Code Analyzer (gRPC)".into(),
         description: "Analyzes code via gRPC transport".into(),
         version: "1.0.0".into(),
@@ -149,6 +153,7 @@ pub fn grpc_analyzer_card(url: &str) -> AgentCard {
 
 pub fn coordinator_card(url: &str) -> AgentCard {
     AgentCard {
+        url: None,
         name: "Coordinator".into(),
         description: "Orchestrates the agent team via A2A calls".into(),
         version: "1.0.0".into(),

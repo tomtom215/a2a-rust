@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests 31-40: Stress, durability, observability, and SDK ergonomics gaps.
 
@@ -100,6 +100,7 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let context_id = ContextId::new(uuid::Uuid::new_v4().to_string());
     let params1 = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -117,6 +118,7 @@ pub async fn test_context_continuation(ctx: &TestContext) -> TestResult {
     let task1_ok = matches!(&resp1, Ok(SendMessageResponse::Task(t)) if t.status.state == TaskState::Completed);
     let params2 = MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

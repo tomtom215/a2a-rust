@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Tests for A2aClient method implementations using a mock transport.
 
@@ -123,6 +123,7 @@ fn make_client_with_interceptor(
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
+        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,
@@ -149,11 +150,9 @@ fn raw_task_json(id: &str, state: &str) -> serde_json::Value {
     })
 }
 
-/// Wraps a task in the SendMessageResponse enum format: `{"task": {...}}`.
+/// Returns a task as a SendMessageResponse (untagged — just the task object).
 fn send_message_response_json(id: &str, state: &str) -> serde_json::Value {
-    serde_json::json!({
-        "task": raw_task_json(id, state)
-    })
+    raw_task_json(id, state)
 }
 
 // ── send_message tests ──────────────────────────────────────────────────────

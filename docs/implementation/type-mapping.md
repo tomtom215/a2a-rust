@@ -1,18 +1,10 @@
 # A2A Protocol → Rust Type Mapping
 
-> **⚠ Partially Outdated** — This document was created during the v0.3.0→v1.0.0
-> migration and some sections still reflect v0.3.0 types (e.g. serde annotations,
-> field types in params structs, push notification types). For the authoritative
-> wire format, see:
+> **Updated** — This document has been updated to reflect A2A v1.0.0 types.
+> For the authoritative wire format, see:
 > - The actual serde attributes in `crates/a2a-types/src/*.rs`
 > - The TCK conformance tests in `crates/a2a-types/tests/tck_wire_format.rs`
 > - The spec compliance verification in `docs/implementation/spec-compliance-gaps.md`
->
-> Known stale sections: Serde annotation summary table (TaskState/MessageRole use
-> SCREAMING_SNAKE_CASE, not kebab-case/lowercase), StreamResponse/SendMessageResponse
-> use externally-tagged enums (not `kind` tag), AuthenticationInfo has `scheme`
-> (singular, required) not `schemes` (plural, optional), params structs use `String`
-> not `TaskId` for ID fields, all params have `tenant` field.
 
 Complete field-by-field mapping from A2A v1.0.0 JSON schema to Rust types.
 All structs use `#[serde(rename_all = "camelCase")]` unless noted.
@@ -30,7 +22,7 @@ All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 | `ContextID` (string) | `struct ContextId(String)` | Newtype |
 | `TaskVersion` (u64) | `struct TaskVersion(u64)` | Newtype; monotonic counter for optimistic concurrency |
 | `Metadata` (any JSON) | `serde_json::Value` | Untyped per spec |
-| Protocol version string | `String` | Stored as plain string in `AgentCard::version` |
+| Protocol version string | `String` | Stored as plain string in `AgentInterface::protocol_version` |
 
 ---
 
@@ -85,7 +77,7 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-The `kind` field (`"task"`) is injected by enclosing discriminated union serialization, not as a struct field on `Task` itself.
+In v1.0, enclosing enums (`StreamResponse`, `SendMessageResponse`) use externally-tagged serialization: `{"task": {...}}`. There is no explicit `kind` field.
 
 ---
 
@@ -120,7 +112,7 @@ pub enum MessageRole {
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-The `kind` field (`"message"`) is injected by enclosing discriminated union serialization.
+In v1.0, enclosing enums use externally-tagged serialization: `{"message": {...}}`. There is no explicit `kind` field.
 
 ### `PartContent` (discriminated union, tag = `"type"`)
 
@@ -173,7 +165,8 @@ A file may have inline `bytes`, a `uri` reference, or both.
 |---|---|---|---|
 | `name` | `name` | `Option<String>` | No |
 | `mimeType` | `mime_type` | `Option<String>` | No |
-| `uri` | `uri` | `String` | Yes (absolute URL preferred) |
+| `bytes` | `bytes` | `Option<String>` | No (at least one of `bytes`/`uri`) |
+| `uri` | `uri` | `Option<String>` | No (at least one of `bytes`/`uri`) |
 
 ### `DataPart`
 
@@ -308,15 +301,16 @@ Deserialization checks which field (`task`, `message`, `statusUpdate`, `artifact
 ### `SecurityScheme` (discriminated union, tag = `"type"`)
 
 ```rust
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type")]
 pub enum SecurityScheme {
     #[serde(rename = "apiKey")]
     ApiKey(ApiKeySecurityScheme),
     #[serde(rename = "http")]
     Http(HttpAuthSecurityScheme),
     #[serde(rename = "oauth2")]
-    OAuth2(OAuth2SecurityScheme),
+    OAuth2(Box<OAuth2SecurityScheme>),
     #[serde(rename = "openIdConnect")]
     OpenIdConnect(OpenIdConnectSecurityScheme),
     #[serde(rename = "mutualTLS")]
@@ -361,6 +355,7 @@ pub struct OAuthFlows {
     pub client_credentials: Option<ClientCredentialsFlow>,
     pub device_code:        Option<DeviceCodeFlow>,
     pub implicit:           Option<ImplicitFlow>,
+    pub password:           Option<PasswordOAuthFlow>,
 }
 ```
 
@@ -383,28 +378,25 @@ Each flow type mirrors the OpenAPI 3.x OAuth2 flow structure.
 
 ## `push.rs`
 
-### `PushNotificationAuthInfo`
+### `AuthenticationInfo`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `schemes` | `schemes` | `Vec<String>` | Yes (e.g., `["bearer"]`) |
-| `credentials` | `credentials` | `Option<String>` | No |
-
-### `PushNotificationConfig`
-
-| Spec field | Rust field | Type | Required |
-|---|---|---|---|
-| `id` | `id` | `Option<String>` | No (server-assigned) |
-| `url` | `url` | `String` | Yes (HTTPS webhook) |
-| `token` | `token` | `Option<String>` | No (shared secret) |
-| `authentication` | `authentication` | `Option<PushNotificationAuthInfo>` | No |
+| `scheme` | `scheme` | `String` | Yes (e.g., `"bearer"`) |
+| `credentials` | `credentials` | `String` | Yes |
 
 ### `TaskPushNotificationConfig`
 
+Single flat type in v1.0 (combines the previous `PushNotificationConfig` and `TaskPushNotificationConfig`).
+
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `taskId` | `task_id` | `TaskId` | Yes |
-| `pushNotificationConfig` | `push_notification_config` | `PushNotificationConfig` | Yes |
+| `tenant` | `tenant` | `Option<String>` | No |
+| `id` | `id` | `Option<String>` | No (server-assigned) |
+| `taskId` | `task_id` | `String` | Yes |
+| `url` | `url` | `String` | Yes (HTTPS webhook) |
+| `token` | `token` | `Option<String>` | No (shared secret) |
+| `authentication` | `authentication` | `Option<AuthenticationInfo>` | No |
 
 ---
 
@@ -423,6 +415,7 @@ Each flow type mirrors the OpenAPI 3.x OAuth2 flow structure.
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
+| `tenant` | `tenant` | `Option<String>` | No |
 | `message` | `message` | `Message` | Yes |
 | `configuration` | `configuration` | `Option<SendMessageConfiguration>` | No |
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
@@ -431,31 +424,44 @@ Each flow type mirrors the OpenAPI 3.x OAuth2 flow structure.
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `id` | `id` | `TaskId` | Yes |
+| `tenant` | `tenant` | `Option<String>` | No |
+| `id` | `id` | `String` | Yes |
 | `historyLength` | `history_length` | `Option<u32>` | No |
 
 ### `TaskIdParams`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `id` | `id` | `TaskId` | Yes |
+| `tenant` | `tenant` | `Option<String>` | No |
+| `id` | `id` | `String` | Yes |
+
+### `CancelTaskParams`
+
+| Spec field | Rust field | Type | Required |
+|---|---|---|---|
+| `tenant` | `tenant` | `Option<String>` | No |
+| `id` | `id` | `String` | Yes |
+| `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 ### `ListTasksParams`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `contextId` | `context_id` | `Option<ContextId>` | No |
+| `tenant` | `tenant` | `Option<String>` | No |
+| `contextId` | `context_id` | `Option<String>` | No |
 | `status` | `status` | `Option<TaskState>` | No (filter) |
 | `pageSize` | `page_size` | `Option<u32>` | No (1–100, default 50) |
 | `pageToken` | `page_token` | `Option<String>` | No (cursor) |
 | `statusTimestampAfter` | `status_timestamp_after` | `Option<String>` | No (ISO 8601) |
 | `includeArtifacts` | `include_artifacts` | `Option<bool>` | No |
+| `historyLength` | `history_length` | `Option<u32>` | No |
 
 ### `GetPushConfigParams`
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `taskId` | `task_id` | `TaskId` | Yes |
+| `tenant` | `tenant` | `Option<String>` | No |
+| `taskId` | `task_id` | `String` | Yes |
 | `id` | `id` | `String` | Yes (config ID) |
 
 ### `DeletePushConfigParams`
@@ -466,14 +472,15 @@ Same fields as `GetPushConfigParams`.
 
 ## `responses.rs`
 
-### `SendMessageResponse` (untagged union — either Task or Message, disambiguated by `kind` field)
+### `SendMessageResponse` (externally tagged — either Task or Message, discriminated by field presence)
 
 ```rust
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {
-    Task(Task),       // "task"
-    Message(Message), // "message"
+    Task(Task),
+    Message(Message),
 }
 ```
 
@@ -483,11 +490,13 @@ pub enum SendMessageResponse {
 |---|---|---|
 | `tasks` | `Vec<Task>` | Paginated results |
 | `next_page_token` | `Option<String>` | Absent on last page |
+| `page_size` | `Option<u32>` | Number of results in this page |
+| `total_size` | `Option<u32>` | Total number of matching tasks |
 
 ### `AuthenticatedExtendedCardResponse`
 
-The full (private) `AgentCard` returned only to authenticated callers via `agent/authenticatedExtendedCard`.
-Type alias: `AgentCard` (same structure; no additional fields in spec 0.3.0).
+The full (private) `AgentCard` returned only to authenticated callers via the `GetExtendedAgentCard` method.
+Type alias: `AgentCard` (same structure; no additional fields in spec v1.0).
 
 ---
 
@@ -504,7 +513,13 @@ Type alias: `AgentCard` (same structure; no additional fields in spec 0.3.0).
 
 ### `AgentCardSignature`
 
-Structure is spec-defined as an object; exact fields are extension-point. Initial implementation uses `serde_json::Value` until the spec firms up the format.
+In v1.0, this is a structured type with JWS-style fields:
+
+| Spec field | Rust field | Type | Required |
+|---|---|---|---|
+| `protected` | `protected` | `String` | Yes (base64url-encoded JWS protected header) |
+| `signature` | `signature` | `String` | Yes (base64url-encoded JWS signature) |
+| `header` | `header` | `Option<serde_json::Value>` | No (additional unprotected header params) |
 
 ---
 
@@ -556,13 +571,13 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 | Pattern | Usage |
 |---|---|
 | `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
-| `#[serde(rename_all = "kebab-case")]` | `TaskState` enum (spec uses `"kebab-case"`) |
-| `#[serde(rename_all = "lowercase")]` | `MessageRole`, `ApiKeyLocation` |
-| `#[serde(tag = "kind")]` | `Part`, `StreamResponse`, `SendMessageResponse` |
-| `#[serde(tag = "type")]` | `SecurityScheme` |
-| `#[serde(untagged)]` | `FileContent`, `JsonRpcResponse<T>` |
+| `#[serde(rename = "TASK_STATE_...")]` | `TaskState` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
+| `#[serde(rename = "ROLE_...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
+| `#[serde(rename_all = "lowercase")]` | `ApiKeyLocation` |
+| `#[serde(tag = "type")]` | `PartContent`, `SecurityScheme` |
+| `#[serde(rename_all = "camelCase")]` | `StreamResponse`, `SendMessageResponse` (externally tagged) |
+| `#[serde(untagged)]` | `JsonRpcResponse<T>` |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All `Option<T>` fields |
-| `#[serde(rename = "final")]` | `TaskStatusUpdateEvent.r#final` (keyword conflict) |
 | `#[serde(rename = "in")]` | `ApiKeySecurityScheme.location` (`in` is a keyword) |
 | `#[serde(default)]` | Boolean fields defaulting to `false` |
 
@@ -570,11 +585,12 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 
 ## Non-Obvious Rust-Specific Decisions
 
-### `final` and `in` as Keywords
+### `in` as a Keyword
 
-Two spec field names conflict with Rust keywords:
-- `final` (in `TaskStatusUpdateEvent`) → Rust field `r#final`, serde `#[serde(rename = "final")]`
+The `in` field in `ApiKeySecurityScheme` conflicts with a Rust keyword:
 - `in` (in `ApiKeySecurityScheme`) → Rust field `location`, serde `#[serde(rename = "in")]`
+
+Note: The v0.3.0 `final` field was removed in v1.0 (see `TaskStatusUpdateEvent` which now wraps `TaskStatus` directly).
 
 ### ID Newtypes vs. `String`
 
@@ -593,7 +609,7 @@ All protocol types derive `Clone`. This is necessary for server-side code that m
 
 ### `Copy` on Enums
 
-`TaskState`, `MessageRole`, `ApiKeyLocation`, `TransportProtocol` derive `Copy`. They are discriminants with no heap allocation.
+`TaskState`, `MessageRole`, `ApiKeyLocation` derive `Copy`. They are discriminants with no heap allocation.
 
 ---
 

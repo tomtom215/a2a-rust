@@ -1,0 +1,15 @@
+{
+  "name": "a2a-itk-js-agent",
+  "version": "1.0.0",
+  "description": "A2A ITK echo agent implemented in JavaScript/Node.js",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/a2a-sdk": "^0.1.0",
+    "express": "^4.21.0",
+    "uuid": "^10.0.0"
+  }
+}

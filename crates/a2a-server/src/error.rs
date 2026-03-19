@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Tom F.
+// Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 //! Server-specific error types.
 //!
@@ -261,7 +261,7 @@ mod tests {
         let s = ist.to_string();
         assert!(s.contains("t3"), "missing task_id: {s}");
         assert!(
-            s.contains("WORKING") || s.contains("Working"),
+            s.contains("working") || s.contains("WORKING") || s.contains("Working"),
             "missing from state: {s}"
         );
     }
