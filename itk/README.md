@@ -10,17 +10,17 @@ all official SDK languages: Python, JavaScript/TypeScript, Go, and Java.
 Each language implements a simple "echo" agent that:
 1. Accepts a `message/send` request
 2. Returns a completed task with the echoed message as an artifact
-3. Supports all 11 A2A v1.0 JSON-RPC methods
+3. Supports all A2A v1.0 methods via both JSON-RPC and REST bindings
 
 ## Architecture
 
 ```
 itk/
 ├── agents/
-│   ├── python/          # Python agent (a2a-python SDK)
-│   ├── js-agent/        # Node.js agent (a2a-js SDK)
-│   ├── go-agent/        # Go agent (a2a-go SDK)
-│   └── java-agent/      # Java agent (a2a-java SDK)
+│   ├── python/          # Python agent (Starlette + uvicorn)
+│   ├── js-agent/        # Node.js agent (Express)
+│   ├── go-agent/        # Go agent (net/http stdlib)
+│   └── java-agent/      # Java agent (com.sun.net.httpserver)
 ├── Dockerfile.rust-agent  # Builds the Rust echo agent image
 ├── Dockerfile.tck         # Builds the TCK runner image
 ├── docker-compose.yml     # Runs all agents + tests
