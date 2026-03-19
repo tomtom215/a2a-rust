@@ -77,6 +77,7 @@ impl EventStream {
     /// Prefer [`EventStream::with_abort_handle`] to ensure the background task
     /// is cancelled when the stream is dropped.
     #[must_use]
+    #[cfg(any(test, feature = "websocket"))]
     pub(crate) fn new(rx: mpsc::Receiver<BodyChunk>) -> Self {
         Self {
             rx,
