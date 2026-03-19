@@ -340,7 +340,13 @@ impl JsonRpcDispatcher {
                         .on_list_push_configs(&p.task_id, p.tenant.as_deref(), Some(headers))
                         .await
                     {
-                        Ok(configs) => success_response_bytes(id, &configs),
+                        Ok(configs) => {
+                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                                configs,
+                                next_page_token: None,
+                            };
+                            success_response_bytes(id, &resp)
+                        }
                         Err(e) => error_response_bytes(id, &e),
                     },
                     Err(e) => error_response_bytes(id, &e),

@@ -8,9 +8,9 @@
 //! 1. **Agent executor** — Implements [`AgentExecutor`] to echo incoming
 //!    messages back as artifacts with status updates.
 //! 2. **Server** — Starts a hyper HTTP server with both JSON-RPC and REST
-//!    dispatchers on separate ports.
+//!    dispatchers on separate ports (with correct URLs via pre-binding).
 //! 3. **Client** — Connects to the server and exercises synchronous send,
-//!    streaming send, task retrieval, and agent card discovery.
+//!    streaming send, agent card discovery, and task retrieval.
 //!
 //! Run with: `cargo run -p echo-agent`
 
@@ -28,7 +28,7 @@ use a2a_protocol_types::params::MessageSendParams;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
 use a2a_protocol_server::executor::AgentExecutor;
@@ -145,56 +145,28 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
 
 // ── Server startup ───────────────────────────────────────────────────────────
 
-async fn start_jsonrpc_server(
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) -> SocketAddr {
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
-
+/// Pre-binds a TCP listener to an ephemeral port. Returns the listener and
+/// address so agent cards can be built with the correct URL before the handler
+/// is constructed.
+async fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .expect("bind JSON-RPC listener");
+        .expect("bind listener");
     let addr = listener.local_addr().expect("local addr");
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => break,
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
-    });
-
-    addr
+    (listener, addr)
 }
 
-async fn start_rest_server(
+fn serve_jsonrpc(
+    listener: tokio::net::TcpListener,
     handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) -> SocketAddr {
-    let dispatcher = Arc::new(RestDispatcher::new(handler));
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind REST listener");
-    let addr = listener.local_addr().expect("local addr");
+) {
+    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
     tokio::spawn(async move {
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(_) => continue, // Transient errors should not kill the server
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
@@ -211,8 +183,35 @@ async fn start_rest_server(
             });
         }
     });
+}
 
-    addr
+fn serve_rest(
+    listener: tokio::net::TcpListener,
+    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
+) {
+    let dispatcher = Arc::new(RestDispatcher::new(handler));
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => continue, // Transient errors should not kill the server
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let dispatcher = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&dispatcher);
+                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
 }
 
 /// Start a combined server serving both JSON-RPC and REST on a single address.
@@ -232,7 +231,7 @@ async fn start_combined_server(
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(_) => continue, // Transient errors should not kill the server
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let jsonrpc = Arc::clone(&jsonrpc);
@@ -331,37 +330,43 @@ async fn main() {
 
     println!("=== A2A Echo Agent Example ===\n");
 
-    // Build the shared request handler.
+    // ── Pre-bind listeners to get addresses for agent cards ───────────────
+    // This ensures the agent card contains the correct URL *before* the
+    // handler is constructed (avoids placeholder URL bugs).
+    let (jsonrpc_listener, jsonrpc_addr) = bind_listener().await;
+    let (rest_listener, rest_addr) = bind_listener().await;
+
+    let jsonrpc_url = format!("http://{jsonrpc_addr}");
+    let rest_url = format!("http://{rest_addr}");
+
+    // Build the shared request handler with correct URLs.
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(make_agent_card(
-                "http://placeholder", // Updated after binding
-                "http://placeholder",
-            ))
+            .with_agent_card(make_agent_card(&jsonrpc_url, &rest_url))
             .build()
             .expect("build handler"),
     );
 
-    // Start servers on random ports.
-    let jsonrpc_addr = start_jsonrpc_server(Arc::clone(&handler)).await;
-    let rest_addr = start_rest_server(Arc::clone(&handler)).await;
+    // Start servers on pre-bound listeners.
+    serve_jsonrpc(jsonrpc_listener, Arc::clone(&handler));
+    serve_rest(rest_listener, Arc::clone(&handler));
 
-    println!("JSON-RPC server listening on http://{jsonrpc_addr}");
-    println!("REST server listening on http://{rest_addr}\n");
+    println!("JSON-RPC server listening on {jsonrpc_url}");
+    println!("REST server listening on {rest_url}\n");
 
     // ── Demo 1: Synchronous SendMessage via JSON-RPC ─────────────────────
 
     println!("--- Demo 1: Synchronous SendMessage (JSON-RPC) ---");
-    let client = ClientBuilder::new(format!("http://{jsonrpc_addr}"))
+    let client = ClientBuilder::new(&jsonrpc_url)
         .build()
         .expect("build client");
 
-    let response = client
+    let jsonrpc_response = client
         .send_message(make_send_params("Hello from JSON-RPC client!"))
         .await
         .expect("send_message");
 
-    match &response {
+    match &jsonrpc_response {
         SendMessageResponse::Task(task) => {
             println!("  Task ID:    {}", task.id);
             println!("  Status:     {:?}", task.status.state);
@@ -426,17 +431,17 @@ async fn main() {
     // ── Demo 3: Synchronous SendMessage via REST ─────────────────────────
 
     println!("--- Demo 3: Synchronous SendMessage (REST) ---");
-    let rest_client = ClientBuilder::new(format!("http://{rest_addr}"))
+    let rest_client = ClientBuilder::new(&rest_url)
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
 
-    let response = rest_client
+    let rest_response = rest_client
         .send_message(make_send_params("Hello from REST client!"))
         .await
         .expect("send_message REST");
 
-    match &response {
+    match &rest_response {
         SendMessageResponse::Task(task) => {
             println!("  Task ID:    {}", task.id);
             println!("  Status:     {:?}", task.status.state);
@@ -488,11 +493,36 @@ async fn main() {
     }
     println!();
 
-    // ── Demo 5: GetTask ──────────────────────────────────────────────────
+    // ── Demo 5: Agent Card Discovery ─────────────────────────────────────
+    // The server exposes /.well-known/agent.json — the client can discover
+    // the agent's capabilities without any prior configuration.
 
-    println!("--- Demo 5: GetTask ---");
-    // Use the task ID from Demo 1.
-    if let SendMessageResponse::Task(task) = &response {
+    println!("--- Demo 5: Agent Card Discovery ---");
+    match resolve_agent_card(&jsonrpc_url).await {
+        Ok(card) => {
+            println!("  Agent:      {}", card.name);
+            println!("  Version:    {}", card.version);
+            println!(
+                "  Skills:     {:?}",
+                card.skills.iter().map(|s| &s.name).collect::<Vec<_>>()
+            );
+            println!(
+                "  Streaming:  {}",
+                card.capabilities.streaming.unwrap_or(false)
+            );
+            println!("  Interfaces: {}", card.supported_interfaces.len());
+        }
+        Err(e) => {
+            println!("  Discovery failed: {e}");
+        }
+    }
+    println!();
+
+    // ── Demo 6: GetTask ──────────────────────────────────────────────────
+    // Retrieve the task created in Demo 1 by its ID.
+
+    println!("--- Demo 6: GetTask ---");
+    if let SendMessageResponse::Task(task) = &jsonrpc_response {
         let fetched = client
             .get_task(a2a_protocol_types::params::TaskQueryParams {
                 tenant: None,

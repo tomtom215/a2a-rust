@@ -1,6 +1,6 @@
 # Dogfooding: Bugs Found & Fixed
 
-Twelve documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **65 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
+Thirteen documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **68 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
 
 > **Note:** Passes 11, 13, and 14 are documented in internal audit reports and are not included in the count below.
 
@@ -20,14 +20,15 @@ Twelve documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **65 bu
 | [Pass 10](#pass-10-exhaustive-audit-3-bugs) | Exhaustive audit | 3 | 1 High, 1 Medium, 1 Low |
 | [Pass 12](#pass-12-pre-release-hardening-4-bugs) | Pre-release hardening | 4 | 1 Critical, 2 High, 1 Medium |
 | [Pass 15](#pass-15-concurrency-security--robustness-18-bugs) | Concurrency, security & robustness | 18 | 3 High, 11 Medium, 4 Low |
+| [Pass 16](#pass-16-deep-e2e-dogfood-3-bugs) | Deep E2E dogfood | 3 | 2 Critical, 1 Medium |
 
 ### By Severity
 
 | Severity | Count | Examples |
 |----------|-------|---------|
-| **Critical** | 6 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44) |
+| **Critical** | 8 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44), ListPushConfigs wrong format (P16-#1), push config URL validation bypass (P16-#2) |
 | **High** | 14 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), shutdown hangs (#23), event ordering (#21), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
-| **Medium** | 31 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47) |
+| **Medium** | 32 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47), background processor silent exit (P16-#3) |
 | **Low** | 14 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
 
 ### Configuration Hardening
@@ -695,3 +696,39 @@ The SQLite store used `format!` string interpolation for the `LIMIT` clause inst
 `TaskStatus` timestamps were not validated for RFC 3339 conformance. Invalid timestamps could propagate through the system without detection.
 
 **Fix:** Added `has_valid_timestamp()` method to `TaskStatus` for RFC 3339 timestamp validation.
+
+---
+
+## Pass 16: Deep E2E Dogfood (3 bugs)
+
+### Bug P16-1: ListPushConfigs Response Format Mismatch (CRITICAL)
+
+**Severity:** Critical | **Component:** REST + JSON-RPC dispatchers
+
+Both the REST and JSON-RPC dispatchers serialized `ListTaskPushNotificationConfigs` results as a bare `Vec<TaskPushNotificationConfig>`, but the client expected `ListPushConfigsResponse { configs, next_page_token }`. This caused deserialization failure (`"invalid type: map, expected a sequence"`) on every push config list operation via REST and JSON-RPC.
+
+The Axum adapter and gRPC service correctly wrapped results in `ListPushConfigsResponse`, so this bug only affected the two core dispatchers.
+
+**Why tests missed it:** Previous tests either (a) used mock transports that didn't go through dispatchers, (b) tested at the handler level (which returns `Vec`), or (c) asserted the response was "not an error" without parsing the typed response.
+
+**Fix:** Both `RestDispatcher::handle_list_push_configs` and `JsonRpcDispatcher` now wrap results in `ListPushConfigsResponse { configs, next_page_token: None }`, matching the Axum and gRPC implementations.
+
+### Bug P16-2: Push Config URL Validation Ignores allow_private_urls (CRITICAL)
+
+**Severity:** Critical | **Component:** Server handler push config
+
+`RequestHandler::on_set_push_config()` unconditionally called `validate_webhook_url()` which rejects loopback/private URLs. But the `HttpPushSender` has an `allow_private_urls` flag specifically for testing. The handler's validation did not consult this flag, so push configs targeting `127.0.0.1` were always rejected — even when the push sender explicitly allowed private URLs.
+
+**Why tests missed it:** The build monitor's push config tests happened to work because previous tests used REST transport. The JSON-RPC health monitor path hit the validation first. No test explicitly verified that `allow_private_urls` propagated from the push sender to config validation.
+
+**Fix:** Added `allows_private_urls()` method to the `PushSender` trait (default: `false`). `HttpPushSender` implements it returning its `allow_private_urls` field. `on_set_push_config()` now skips URL validation when the push sender allows private URLs.
+
+### Bug P16-3: Background Processor Silently Exits on Store Read Failure
+
+**Severity:** Medium | **Component:** Server background event processor
+
+The background event processor's `task_store.get()` call used `let Ok(Some(mut last_task)) = ... else { return; }`, silently exiting when the store read failed or returned `None`. This left no diagnostic information about why the processor stopped.
+
+**Why tests missed it:** In-memory stores don't fail. The bug only manifests with persistent backends under error conditions.
+
+**Fix:** Replaced with explicit match that logs distinct error messages for "task not found" and "store read error" cases.

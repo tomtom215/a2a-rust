@@ -235,9 +235,9 @@ async fn rest_push_config_crud() {
     assert_eq!(resp.status(), 200);
 
     let body = resp.into_body().collect().await.unwrap().to_bytes();
-    let list_resp: Vec<TaskPushNotificationConfig> =
+    let list_resp: a2a_protocol_types::responses::ListPushConfigsResponse =
         serde_json::from_slice(&body).expect("parse list");
-    assert_eq!(list_resp.len(), 1);
+    assert_eq!(list_resp.configs.len(), 1);
 
     // Delete push config.
     let req = hyper::Request::builder()

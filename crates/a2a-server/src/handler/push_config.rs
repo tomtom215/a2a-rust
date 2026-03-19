@@ -30,13 +30,16 @@ impl RequestHandler {
 
         let tenant = config.tenant.clone().unwrap_or_default();
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            if self.push_sender.is_none() {
+            let Some(ref sender) = self.push_sender else {
                 return Err(ServerError::PushNotSupported);
-            }
+            };
             // FIX(#3): Validate webhook URL at config creation time to prevent
             // SSRF attacks. Previously validation only happened at delivery time,
             // leaving a window where malicious URLs could be stored.
-            crate::push::sender::validate_webhook_url(&config.url)?;
+            // Respect the push sender's allow_private_urls setting for testing.
+            if !sender.allows_private_urls() {
+                crate::push::sender::validate_webhook_url(&config.url)?;
+            }
 
             let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;

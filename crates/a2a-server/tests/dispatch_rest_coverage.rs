@@ -530,8 +530,8 @@ async fn list_push_configs_empty_returns_200() {
     .await;
     assert_eq!(status, 200);
     assert!(
-        body.starts_with('['),
-        "response should contain configs field"
+        body.contains("\"configs\""),
+        "response should contain configs field, got: {body}"
     );
 }
 
@@ -569,7 +569,10 @@ async fn list_push_configs_no_push_sender_still_works() {
         status, 200,
         "list push configs should succeed even without push sender"
     );
-    assert!(body.starts_with('['));
+    assert!(
+        body.contains("\"configs\""),
+        "response should contain configs field, got: {body}"
+    );
 }
 
 #[tokio::test]

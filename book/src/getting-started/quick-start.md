@@ -42,7 +42,14 @@ REST server listening on http://127.0.0.1:<port>
   Content:    Echo: Hello from REST streaming!
   Status update: Completed
 
---- Demo 5: GetTask ---
+--- Demo 5: Agent Card Discovery ---
+  Agent:      Echo Agent
+  Version:    1.0.0
+  Skills:     ["Echo"]
+  Streaming:  true
+  Interfaces: 2
+
+--- Demo 6: GetTask ---
   Fetched task: ... (Completed)
 
 === All demos completed successfully! ===
@@ -56,7 +63,8 @@ The example exercised all major protocol operations:
 2. **Streaming send** (JSON-RPC) — Client receives real-time SSE events as the agent works
 3. **Synchronous send** (REST) — Same operation over the REST transport
 4. **Streaming send** (REST) — SSE streaming over REST
-5. **GetTask** — Retrieves a previously completed task by ID
+5. **Agent card discovery** — Fetches `/.well-known/agent.json` to discover the agent's capabilities
+6. **GetTask** — Retrieves a previously completed task by ID
 
 ## The Code in Brief
 
@@ -133,4 +141,5 @@ RUST_LOG=debug cargo run -p echo-agent --features echo-agent/tracing
 
 - **[Your First Agent](./first-agent.md)** — Build your own agent from scratch
 - **[Project Structure](./project-structure.md)** — Understand how the crates fit together
+- **[Examples](../examples/overview.md)** — Browse all examples with LLM integrations, multi-agent teams, and more
 - **[The AgentExecutor Trait](../building-agents/executor.md)** — Deep dive into the executor API

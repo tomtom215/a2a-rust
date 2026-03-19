@@ -6,6 +6,14 @@
 # Runs cargo-mutants on all library crates and fails if any mutant survives.
 # Scheduled nightly + on-demand; also runs on PRs to main (incremental).
 #
+# Architecture:
+#   - Full sweep splits into 4 parallel jobs (one per library crate) to avoid
+#     the 120-minute GitHub Actions timeout.  a2a-server alone can take 100+
+#     minutes when run sequentially.
+#   - A lightweight aggregation job merges per-crate reports and produces the
+#     combined score.
+#   - Incremental mode (PRs) tests only changed files in a single job.
+#
 # CI output is optimised for readability:
 #   - cargo-mutants raw output is captured to a file (not streamed to the log)
 #   - GitHub Actions log groups collapse noisy sections
@@ -26,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       package:
-        description: "Specific package to test (blank = all)"
+        description: "Specific package to test (blank = all 4 crates in parallel)"
         required: false
         type: string
 
@@ -35,58 +43,87 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # ── Full mutation sweep (nightly / manual) ────────────────────────────────
-  mutants-full:
-    name: "Mutation Testing (full)"
+  # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
+  #
+  # Splits the workspace into 4 parallel runners — one per library crate.
+  # This avoids the 120-minute timeout that the monolithic --workspace run hit,
+  # since a2a-server alone can generate 200-400 mutants at ~90s each.
+  #
+  # When a specific package is provided via workflow_dispatch, only that
+  # package's job runs (the others are skipped via the `if` condition).
+  mutants-crate:
+    name: "Mutants (${{ matrix.crate }})"
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false   # Don't cancel other crates if one fails
+      matrix:
+        include:
+          - crate: a2a-protocol-types
+            short: a2a-types
+          - crate: a2a-protocol-client
+            short: a2a-client
+          - crate: a2a-protocol-server
+            short: a2a-server
+          - crate: a2a-protocol-sdk
+            short: a2a-sdk
     steps:
+      # Skip this matrix entry if a specific package was requested and it
+      # doesn't match this crate.
+      - name: Check if this crate should run
+        id: check
+        run: |
+          INPUT_PKG="${{ inputs.package }}"
+          if [ -n "$INPUT_PKG" ] && [ "$INPUT_PKG" != "${{ matrix.crate }}" ] && [ "$INPUT_PKG" != "${{ matrix.short }}" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.crate }} — user requested '$INPUT_PKG'"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: steps.check.outputs.skip == 'false'
 
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.check.outputs.skip == 'false'
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        if: steps.check.outputs.skip == 'false'
 
       - name: Install protoc (for gRPC feature)
+        if: steps.check.outputs.skip == 'false'
         uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install cargo-mutants
+        if: steps.check.outputs.skip == 'false'
         run: cargo install cargo-mutants
 
-      # ── Run mutants with clean output ─────────────────────────────────────
-      # --output captures all raw test logs to mutants.out/ instead of stdout.
-      # Only the progress line and final summary appear in the CI log.
-      - name: Run mutation tests
+      # ── Run mutants for this crate ───────────────────────────────────────
+      - name: "Run mutation tests: ${{ matrix.crate }}"
         id: mutants
+        if: steps.check.outputs.skip == 'false'
         run: |
-          echo "::group::cargo-mutants execution log"
+          echo "::group::cargo-mutants execution log (${{ matrix.crate }})"
 
           set +e
-          if [ -n "${{ inputs.package }}" ]; then
-            cargo mutants -p ${{ inputs.package }} \
-              --output mutants.out \
-              --timeout 120 \
-              -- --all-features 2>&1 | tee /tmp/mutants-run.log
-          else
-            cargo mutants --workspace \
-              --output mutants.out \
-              --timeout 120 \
-              -- --all-features 2>&1 | tee /tmp/mutants-run.log
-          fi
+          cargo mutants -p ${{ matrix.crate }} \
+            --output mutants.out \
+            --timeout 120 \
+            --jobs 4 \
+            -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
           echo "::endgroup::"
           echo "exit_code=${MUTANTS_EXIT}" >> "$GITHUB_OUTPUT"
 
-      # ── Generate human-readable summary ───────────────────────────────────
-      - name: Generate mutation report
-        if: always()
+      # ── Per-crate report ─────────────────────────────────────────────────
+      - name: Generate per-crate report
+        if: always() && steps.check.outputs.skip == 'false'
         run: |
-          # ── Helper: count lines in a file, 0 if missing/empty ──
           count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
 
           CAUGHT=$(count mutants.out/caught.txt)
@@ -101,46 +138,21 @@ jobs:
             SCORE=100
           fi
 
-          # ── Job Summary (rendered as markdown in the Actions UI) ──
           {
-            echo "# Mutation Testing Report"
+            echo "# Mutation Testing: \`${{ matrix.short }}\`"
             echo ""
-            echo "## Overall Score: ${SCORE}%"
+            echo "## Score: ${SCORE}%"
             echo ""
-            echo "| Outcome | Count | Meaning |"
-            echo "|---------|------:|---------|"
-            echo "| Caught | ${CAUGHT} | Test suite detected the mutation |"
-            echo "| Missed | ${MISSED} | **Test gap** — a real bug here would go undetected |"
-            echo "| Timeout | ${TIMEOUT} | Mutant caused tests to hang (killed after limit) |"
-            echo "| Unviable | ${UNVIABLE} | Mutation caused a compile error (not a test gap) |"
-            echo ""
-
-            # ── Per-crate breakdown ──
-            echo "## Per-Crate Breakdown"
-            echo ""
-            echo "| Crate | Caught | Missed | Timeout | Score |"
-            echo "|-------|-------:|-------:|--------:|------:|"
-            for CRATE in a2a-types a2a-client a2a-server a2a-sdk; do
-              C=$(grep -c "crates/${CRATE}/" mutants.out/caught.txt 2>/dev/null || echo 0)
-              M=$(grep -c "crates/${CRATE}/" mutants.out/missed.txt 2>/dev/null || echo 0)
-              T=$(grep -c "crates/${CRATE}/" mutants.out/timeout.txt 2>/dev/null || echo 0)
-              CRATE_TOTAL=$((C + M))
-              if [ "$CRATE_TOTAL" -gt 0 ]; then
-                CS=$(( (C * 100) / CRATE_TOTAL ))
-              else
-                CS=100
-              fi
-              echo "| \`${CRATE}\` | ${C} | ${M} | ${T} | ${CS}% |"
-            done
+            echo "| Outcome | Count |"
+            echo "|---------|------:|"
+            echo "| Caught | ${CAUGHT} |"
+            echo "| Missed | ${MISSED} |"
+            echo "| Timeout | ${TIMEOUT} |"
+            echo "| Unviable | ${UNVIABLE} |"
             echo ""
 
-            # ── Surviving mutants (the actionable part) ──
             if [ "$MISSED" -gt 0 ]; then
               echo "## Surviving Mutants"
-              echo ""
-              echo "These mutations were **not detected** by the test suite."
-              echo "Each entry shows the file, line, and what was changed."
-              echo "Add or strengthen tests to cover these gaps."
               echo ""
               echo '```'
               cat mutants.out/missed.txt
@@ -148,53 +160,27 @@ jobs:
               echo ""
             fi
 
-            # ── Timed-out mutants ──
             if [ "$TIMEOUT" -gt 0 ]; then
               echo "## Timed-Out Mutants"
-              echo ""
-              echo "These mutations caused the test suite to **hang**."
-              echo "This usually means a mutation created an infinite loop or deadlock."
-              echo "Review these locations for missing loop bounds or timeout guards."
               echo ""
               echo '```'
               cat mutants.out/timeout.txt
               echo '```'
               echo ""
             fi
-
-            # ── How to reproduce locally ──
-            if [ "$MISSED" -gt 0 ] || [ "$TIMEOUT" -gt 0 ]; then
-              echo "## How to Fix"
-              echo ""
-              echo '```bash'
-              echo "# Reproduce locally:"
-              echo "cargo install cargo-mutants"
-              echo "cargo mutants --workspace -- --all-features"
-              echo ""
-              echo "# Test a specific file:"
-              echo "cargo mutants --file crates/a2a-types/src/task.rs"
-              echo ""
-              echo "# List mutants without running (dry-run):"
-              echo "cargo mutants --list --workspace"
-              echo '```'
-              echo ""
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # ── Console output (concise) ──
+          # Console summary
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo " MUTATION SCORE: ${SCORE}%"
+          echo " ${{ matrix.short }}: SCORE ${SCORE}%"
           echo " Caught: ${CAUGHT}  Missed: ${MISSED}  Timeout: ${TIMEOUT}  Unviable: ${UNVIABLE}"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
           if [ "$MISSED" -gt 0 ]; then
             echo ""
-            echo "::error::${MISSED} mutant(s) survived — tests do not detect these code changes:"
-            echo ""
-            # Print each missed mutant as a GitHub annotation on the correct file/line
+            echo "::error::${MISSED} mutant(s) survived in ${{ matrix.short }}:"
             while IFS= read -r line; do
-              # cargo-mutants format: "crates/a2a-types/src/task.rs:42: replace ..."
               FILE=$(echo "$line" | cut -d: -f1)
               LINE=$(echo "$line" | cut -d: -f2)
               MSG=$(echo "$line" | cut -d: -f3-)
@@ -204,38 +190,134 @@ jobs:
                 echo "  $line"
               fi
             done < mutants.out/missed.txt
-          fi
-
-          if [ "$TIMEOUT" -gt 0 ]; then
-            echo ""
-            echo "::warning::${TIMEOUT} mutant(s) timed out — possible infinite loop or deadlock:"
-            while IFS= read -r line; do
-              FILE=$(echo "$line" | cut -d: -f1)
-              LINE=$(echo "$line" | cut -d: -f2)
-              MSG=$(echo "$line" | cut -d: -f3-)
-              if [ -n "$FILE" ] && [ -n "$LINE" ]; then
-                echo "::warning file=${FILE},line=${LINE}::TIMEOUT:${MSG}"
-              else
-                echo "  $line"
-              fi
-            done < mutants.out/timeout.txt
-          fi
-
-          # ── Fail the job if any mutant survived ──
-          if [ "$MISSED" -gt 0 ]; then
             exit 1
           fi
 
-      # ── Upload full report for deep-dive debugging ────────────────────────
-      - name: Upload mutation report
-        if: always()
+      - name: Upload per-crate report
+        if: always() && steps.check.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutation-report-full
+          name: mutation-report-${{ matrix.short }}
           path: |
             mutants.out/
             /tmp/mutants-run.log
           retention-days: 30
+
+  # ── Aggregation job ──────────────────────────────────────────────────────────
+  #
+  # Merges all per-crate reports into a single combined summary.  Fails if any
+  # crate had surviving mutants.
+  mutants-summary:
+    name: "Mutants Summary"
+    needs: mutants-crate
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download all per-crate reports
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: mutation-report-*
+          path: reports/
+
+      - name: Aggregate results
+        run: |
+          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+
+          TOTAL_CAUGHT=0
+          TOTAL_MISSED=0
+          TOTAL_TIMEOUT=0
+          TOTAL_UNVIABLE=0
+
+          {
+            echo "# Mutation Testing Report (combined)"
+            echo ""
+            echo "| Crate | Caught | Missed | Timeout | Score |"
+            echo "|-------|-------:|-------:|--------:|------:|"
+          } > /tmp/summary.md
+
+          for CRATE_DIR in reports/mutation-report-*/; do
+            if [ ! -d "$CRATE_DIR" ]; then continue; fi
+            CRATE_NAME=$(basename "$CRATE_DIR" | sed 's/mutation-report-//')
+
+            C=$(count "${CRATE_DIR}mutants.out/caught.txt")
+            M=$(count "${CRATE_DIR}mutants.out/missed.txt")
+            T=$(count "${CRATE_DIR}mutants.out/timeout.txt")
+            U=$(count "${CRATE_DIR}mutants.out/unviable.txt")
+            CRATE_TOTAL=$((C + M))
+
+            if [ "$CRATE_TOTAL" -gt 0 ]; then
+              CS=$(( (C * 100) / CRATE_TOTAL ))
+            else
+              CS=100
+            fi
+
+            echo "| \`${CRATE_NAME}\` | ${C} | ${M} | ${T} | ${CS}% |" >> /tmp/summary.md
+
+            TOTAL_CAUGHT=$((TOTAL_CAUGHT + C))
+            TOTAL_MISSED=$((TOTAL_MISSED + M))
+            TOTAL_TIMEOUT=$((TOTAL_TIMEOUT + T))
+            TOTAL_UNVIABLE=$((TOTAL_UNVIABLE + U))
+          done
+
+          GRAND_TOTAL=$((TOTAL_CAUGHT + TOTAL_MISSED))
+          if [ "$GRAND_TOTAL" -gt 0 ]; then
+            SCORE=$(( (TOTAL_CAUGHT * 100) / GRAND_TOTAL ))
+          else
+            SCORE=100
+          fi
+
+          # Prepend overall score
+          {
+            head -2 /tmp/summary.md
+            echo "## Overall Score: ${SCORE}%"
+            echo ""
+            echo "| Outcome | Count |"
+            echo "|---------|------:|"
+            echo "| Caught | ${TOTAL_CAUGHT} |"
+            echo "| Missed | ${TOTAL_MISSED} |"
+            echo "| Timeout | ${TOTAL_TIMEOUT} |"
+            echo "| Unviable | ${TOTAL_UNVIABLE} |"
+            echo ""
+            tail -n +3 /tmp/summary.md
+          } > /tmp/final-summary.md
+
+          # Append surviving mutants from all crates
+          if [ "$TOTAL_MISSED" -gt 0 ]; then
+            {
+              echo ""
+              echo "## Surviving Mutants (all crates)"
+              echo ""
+              echo '```'
+              cat reports/mutation-report-*/mutants.out/missed.txt 2>/dev/null || true
+              echo '```'
+              echo ""
+              echo "## How to Fix"
+              echo ""
+              echo '```bash'
+              echo "cargo install cargo-mutants"
+              echo "cargo mutants -p <crate-name> -- --all-features"
+              echo '```'
+            } >> /tmp/final-summary.md
+          fi
+
+          cat /tmp/final-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+          # Console output
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo " COMBINED MUTATION SCORE: ${SCORE}%"
+          echo " Caught: ${TOTAL_CAUGHT}  Missed: ${TOTAL_MISSED}  Timeout: ${TOTAL_TIMEOUT}  Unviable: ${TOTAL_UNVIABLE}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if [ "$TOTAL_MISSED" -gt 0 ]; then
+            echo ""
+            echo "::error::${TOTAL_MISSED} mutant(s) survived across all crates"
+            exit 1
+          fi
+
+          echo ""
+          echo "All mutants caught across all crates."
 
   # ── Incremental mutation testing (PR only) ────────────────────────────────
   mutants-incremental:
@@ -296,6 +378,7 @@ jobs:
           cargo mutants $GLOB_ARGS \
             --output mutants.out \
             --timeout 120 \
+            --jobs 4 \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -313,7 +396,6 @@ jobs:
       - name: Generate mutation report
         if: always() && steps.changed.outputs.skip == 'false'
         run: |
-          # ── Helper: count lines in a file, 0 if missing/empty ──
           count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
 
           CAUGHT=$(count mutants.out/caught.txt)
@@ -328,7 +410,6 @@ jobs:
             SCORE=100
           fi
 
-          # ── Job Summary ──
           {
             echo "# Mutation Testing Report (incremental)"
             echo ""
@@ -382,7 +463,6 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          # ── Console output ──
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo " MUTATION SCORE: ${SCORE}%"

@@ -418,7 +418,13 @@ impl RestDispatcher {
             .on_list_push_configs(task_id, tenant, Some(headers))
             .await
         {
-            Ok(configs) => json_ok_response(&configs),
+            Ok(configs) => {
+                let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                    configs,
+                    next_page_token: None,
+                };
+                json_ok_response(&resp)
+            }
             Err(e) => server_error_to_response(&e),
         }
     }
