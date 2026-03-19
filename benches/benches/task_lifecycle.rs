@@ -149,7 +149,9 @@ fn bench_queue_throughput(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("write_read", n), &n, |b, &n| {
             b.iter(|| {
                 rt.block_on(async {
-                    let manager = EventQueueManager::new();
+                    // Use a capacity large enough for the event count to prevent
+                    // broadcast channel lag (DEFAULT_QUEUE_CAPACITY is 64).
+                    let manager = EventQueueManager::with_capacity(n);
                     let task_id = TaskId::new("task-queue-bench");
                     let (writer, reader) = manager.get_or_create(&task_id).await;
                     let mut reader = reader.expect("new queue");
