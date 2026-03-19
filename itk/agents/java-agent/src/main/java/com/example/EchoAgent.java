@@ -137,6 +137,10 @@ public class EchoAgent {
         switch (method) {
             case "message/send":
             case "message/stream":
+                if (!params.has("message")) {
+                    sendJsonRpc(exchange, id, null, errorJson(-32602, "Invalid params: missing 'message' field"));
+                    break;
+                }
                 result = processMessage(params);
                 sendJsonRpc(exchange, id, result, null);
                 break;
