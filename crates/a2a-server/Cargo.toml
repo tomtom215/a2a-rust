@@ -5,7 +5,7 @@
 name        = "a2a-protocol-server"
 version     = "0.3.0"
 description = "A2A protocol v1.0 — server framework (hyper-backed)"
-readme      = "../../README.md"
+readme      = "README.md"
 
 edition.workspace      = true
 rust-version.workspace = true
@@ -66,7 +66,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time", "test-util"] }
 hyper = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }

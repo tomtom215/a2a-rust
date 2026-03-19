@@ -241,7 +241,7 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
                       │
 ┌─────────────────────▼──────────────────────┐
 │  a2a-protocol-server / a2a-protocol-client │
-│  RequestHandler · AgentExecutor · A2aClient │
+│ RequestHandler · AgentExecutor · A2aClient │
 └─────────────────────┬──────────────────────┘
                       │
 ┌─────────────────────▼──────────────────────┐

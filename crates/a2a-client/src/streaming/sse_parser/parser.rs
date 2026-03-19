@@ -799,4 +799,34 @@ mod tests {
         }
         assert_eq!(p.pending_count(), 2, "queue should be bounded at 2");
     }
+
+    /// Kills mutant: `replace < with <= in SseParser::feed` (line 136).
+    ///
+    /// The `line_buf` growth guard is `line_buf.len() < max_event_size * 2`.
+    /// With `max_event_size=6`, the limit is 12 bytes.
+    ///
+    /// Feed "data: ABCDEF" (exactly 12 bytes) — all accepted (len 0..11, each < 12).
+    /// Then feed "X" — `line_buf.len()` == 12, and `12 < 12` is false → dropped.
+    /// Then "\n\n" to complete the event.
+    ///
+    /// With `<`: data = "ABCDEF" (6 bytes == max), accepted.
+    /// With `<=` (mutant): "X" is kept, data = "ABCDEFX" (7 > 6), rejected as too large.
+    #[test]
+    fn line_buf_growth_guard_exact_boundary() {
+        let max = 6;
+        let limit = max * 2; // 12
+
+        let mut p = SseParser::with_max_event_size(max);
+
+        let line = "data: ABCDEF"; // exactly 12 bytes
+        assert_eq!(line.len(), limit);
+
+        p.feed(line.as_bytes()); // 12 bytes buffered
+        p.feed(b"X"); // 13th byte: len==12, 12 < 12 is false → dropped
+        p.feed(b"\n\n"); // complete the event
+
+        let frame = p.next_frame().expect("should have a frame");
+        let frame = frame.expect("event should be accepted (data fits in max)");
+        assert_eq!(frame.data, "ABCDEF", "extra byte 'X' must be dropped");
+    }
 }

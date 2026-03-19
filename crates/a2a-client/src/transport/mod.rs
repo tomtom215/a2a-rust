@@ -166,4 +166,55 @@ mod tests {
             "prefix should not exceed limit"
         );
     }
+
+    /// Kills mutants on `end > 0`, `end -= 1` (lines 51-52).
+    ///
+    /// Constructs a string where byte `MAX_ERROR_BODY_LEN` falls INSIDE a
+    /// multi-byte character, forcing the while loop to actually execute.
+    /// "€" is 3 bytes (E2 82 AC). 511 ASCII bytes + "€" = 514 bytes.
+    /// Byte 512 is the second byte of "€" — not a char boundary.
+    /// The loop must decrement `end` from 512 to 511.
+    #[test]
+    fn truncate_body_mid_multibyte_boundary() {
+        // 511 ASCII 'a' bytes + "€" (3 bytes) = 514 bytes total.
+        let mut body = "a".repeat(MAX_ERROR_BODY_LEN - 1); // 511 bytes
+        body.push('€'); // 3 bytes → total 514
+        assert_eq!(body.len(), MAX_ERROR_BODY_LEN + 2);
+        assert!(
+            !body.is_char_boundary(MAX_ERROR_BODY_LEN),
+            "byte 512 should be mid-character"
+        );
+
+        let result = truncate_body(&body);
+        assert!(
+            result.ends_with("...(truncated)"),
+            "should be truncated: {result}"
+        );
+        let prefix = result.trim_end_matches("...(truncated)");
+        // The loop should back up to byte 511 (before the 3-byte "€").
+        assert_eq!(
+            prefix.len(),
+            MAX_ERROR_BODY_LEN - 1,
+            "should truncate to last valid char boundary before limit"
+        );
+        assert_eq!(prefix, "a".repeat(MAX_ERROR_BODY_LEN - 1));
+    }
+
+    /// Kills mutant: `> with ==` and `> with <` on the while loop condition.
+    /// With a 2-byte char spanning the boundary, `end` must step back exactly 1.
+    #[test]
+    fn truncate_body_two_byte_char_at_boundary() {
+        // 511 ASCII 'b' bytes + "é" (2 bytes: C3 A9) = 513 bytes total.
+        let mut body = "b".repeat(MAX_ERROR_BODY_LEN - 1); // 511 bytes
+        body.push('é'); // 2 bytes → total 513
+        assert_eq!(body.len(), MAX_ERROR_BODY_LEN + 1);
+        assert!(
+            !body.is_char_boundary(MAX_ERROR_BODY_LEN),
+            "byte 512 should be inside 'é'"
+        );
+
+        let result = truncate_body(&body);
+        let prefix = result.trim_end_matches("...(truncated)");
+        assert_eq!(prefix.len(), MAX_ERROR_BODY_LEN - 1);
+    }
 }

@@ -374,7 +374,7 @@ returns `true` for terminal states.
 
 ## Running the Test Suite
 
-> **Current status:** The workspace has **~1,630 passing tests** (~1,850 with all feature flags)
+> **Current status:** The workspace has **1,769 passing tests** (with websocket feature)
 > across all crates (unit, integration, property, TCK conformance, and E2E dogfood).
 
 ```bash

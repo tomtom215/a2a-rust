@@ -5,7 +5,7 @@
 name        = "a2a-protocol-client"
 version     = "0.3.0"
 description = "A2A protocol v1.0 — HTTP client (hyper-backed)"
-readme      = "../../README.md"
+readme      = "README.md"
 
 edition.workspace      = true
 rust-version.workspace = true
@@ -56,7 +56,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 criterion = { workspace = true }
 bytes = "1"
 rcgen = "0.13"

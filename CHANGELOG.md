@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-19
+
 ### Fixed (Dogfooding — Pass 16)
 
 - **`ListPushConfigs` response format mismatch** — Both REST and JSON-RPC
@@ -28,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   background event processor now logs distinct error messages when the task
   store read fails or returns `None`, instead of silently returning.
 
-### Added
+### Added (Dogfooding — Pass 16)
 
 - **`PushSender::allows_private_urls()`** — New trait method (default: `false`)
   that lets the handler query whether the push sender allows private/loopback
@@ -74,8 +76,6 @@ manifest at extreme scale or under adversarial conditions:
 - **SQL push config stores** — Unlike `InMemoryPushConfigStore`, the SQLite and
   Postgres push config stores do not enforce per-task or global config limits.
   Mitigation: implement application-level limits or periodic cleanup.
-
-## [0.3.0] - 2026-03-18
 
 ### Fixed (v0.3.0 Hardening — Pass 11)
 
@@ -568,7 +568,7 @@ manifest at extreme scale or under adversarial conditions:
 - Cursor-based pagination for `ListTasks` via `TaskStoreConfig`.
 - URL percent-decoding for REST dispatcher path parameters.
 - BOM (byte order mark) handling in JSON request bodies.
-- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,750+ tests).
+- Comprehensive hardening, dispatch, handler, push sender, and client test suites (1,769 tests).
 - `#[non_exhaustive]` on 9 protocol types (7 enums, 2 structs) for forward-compatible evolution.
 - SSRF protection for push notification webhook URLs (rejects private/loopback addresses).
 - HTTP header injection prevention for push notification credentials.

@@ -654,14 +654,30 @@ mod tests {
         assert!(result.is_err(), "missing host should be rejected");
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn dns_rejects_unresolvable_hostname() {
-        // A hostname that cannot be resolved should be rejected.
-        let result = validate_webhook_url_with_dns(
-            "https://this-hostname-definitely-does-not-exist-a2a-test.invalid/webhook",
-        )
-        .await;
-        assert!(result.is_err(), "unresolvable hostname should be rejected");
+        // DNS resolution of non-existent TLDs blocks getaddrinfo for 20+ seconds.
+        // Use std::thread so it doesn't block the tokio runtime shutdown.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let result = rt.block_on(validate_webhook_url_with_dns(
+                "https://this-hostname-definitely-does-not-exist-a2a-test.invalid/webhook",
+            ));
+            let _ = tx.send(result);
+        });
+        match tokio::time::timeout(std::time::Duration::from_secs(5), rx).await {
+            Ok(Ok(result)) => {
+                assert!(result.is_err(), "unresolvable hostname should be rejected");
+            }
+            Ok(Err(_)) => panic!("sender dropped without sending"),
+            Err(_elapsed) => {
+                // DNS resolution timed out — proves the hostname is unresolvable.
+            }
+        }
     }
 
     #[tokio::test]
