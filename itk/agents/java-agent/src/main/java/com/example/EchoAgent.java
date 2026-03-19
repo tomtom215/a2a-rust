@@ -114,6 +114,26 @@ public class EchoAgent {
             tasks.values().forEach(arr::add);
             result.add("tasks", arr);
             sendJson(exchange, 200, result);
+        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig/[^/]+")) {
+            // GET /tasks/{taskId}/pushNotificationConfig/{configId}
+            String[] parts = path.split("/");
+            String taskId = parts[2];
+            String configId = parts[4];
+            String key = taskId + ":" + configId;
+            JsonObject cfg = pushConfigs.get(key);
+            if (cfg != null) {
+                sendJson(exchange, 200, cfg);
+            } else {
+                sendJson(exchange, 404, errorJson(-32001, "Config not found"));
+            }
+        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig")) {
+            // GET /tasks/{taskId}/pushNotificationConfig — list
+            String taskId = path.split("/")[2];
+            JsonArray configs = new JsonArray();
+            pushConfigs.forEach((k, v) -> {
+                if (k.startsWith(taskId + ":")) configs.add(v);
+            });
+            sendJson(exchange, 200, configs);
         } else if (path.startsWith("/tasks/")) {
             String taskId = path.substring("/tasks/".length());
             JsonObject task = tasks.get(taskId);
@@ -226,6 +246,33 @@ public class EchoAgent {
     private static void handleRest(HttpExchange exchange, String path, JsonObject body) throws IOException {
         if ("/message/send".equals(path) || "/message/stream".equals(path)) {
             sendJson(exchange, 200, processMessage(body));
+        } else if (path.matches("/tasks/[^/]+/cancel")) {
+            // POST /tasks/{taskId}/cancel
+            String taskId = path.split("/")[2];
+            JsonObject task = tasks.get(taskId);
+            if (task != null) {
+                JsonObject status = new JsonObject();
+                status.addProperty("state", "canceled");
+                task.add("status", status);
+                sendJson(exchange, 200, task);
+            } else {
+                sendJson(exchange, 404, errorJson(-32001, "Task not found"));
+            }
+        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig/[^/]+/delete")) {
+            // POST /tasks/{taskId}/pushNotificationConfig/{configId}/delete
+            String[] parts = path.split("/");
+            String taskId = parts[2];
+            String configId = parts[4];
+            pushConfigs.remove(taskId + ":" + configId);
+            sendJson(exchange, 200, new JsonObject());
+        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig")) {
+            // POST /tasks/{taskId}/pushNotificationConfig — create
+            String taskId = path.split("/")[2];
+            String cfgId = body.has("id") ? body.get("id").getAsString() : UUID.randomUUID().toString();
+            body.addProperty("id", cfgId);
+            body.addProperty("taskId", taskId);
+            pushConfigs.put(taskId + ":" + cfgId, body);
+            sendJson(exchange, 200, body);
         } else {
             sendJson(exchange, 404, errorJson(-32601, "Not found"));
         }
