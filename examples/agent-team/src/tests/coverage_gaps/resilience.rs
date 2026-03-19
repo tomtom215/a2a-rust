@@ -114,25 +114,33 @@ pub async fn test_stale_page_token(ctx: &TestContext) -> TestResult {
         })
         .await;
 
+    // This is a resilience test: both Ok and Err are acceptable as long as
+    // the server doesn't crash.  We verify the response is well-formed in
+    // either case rather than blindly passing.
     match result {
-        Ok(resp) => {
-            // Empty page or valid response — both are acceptable.
-            TestResult::pass(
-                "stale-page-token",
-                start.elapsed().as_millis(),
-                &format!(
-                    "{} tasks returned, server handled stale token gracefully",
-                    resp.tasks.len()
-                ),
-            )
-        }
+        Ok(resp) => TestResult::pass(
+            "stale-page-token",
+            start.elapsed().as_millis(),
+            &format!(
+                "{} tasks returned, server handled stale token gracefully",
+                resp.tasks.len()
+            ),
+        ),
         Err(e) => {
-            // An error is also acceptable, as long as it didn't crash.
-            TestResult::pass(
-                "stale-page-token",
-                start.elapsed().as_millis(),
-                &format!("server returned error (no crash): {e}"),
-            )
+            let msg = format!("{e}");
+            if msg.is_empty() {
+                TestResult::fail(
+                    "stale-page-token",
+                    start.elapsed().as_millis(),
+                    "server returned empty error for stale page token",
+                )
+            } else {
+                TestResult::pass(
+                    "stale-page-token",
+                    start.elapsed().as_millis(),
+                    &format!("server returned error (no crash): {e}"),
+                )
+            }
         }
     }
 }
