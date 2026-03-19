@@ -21,9 +21,10 @@ minimum_test_timeout = 30
 cap_timeout = 120
 
 # ── Parallelism ──────────────────────────────────────────────────────────────
-# Run mutants in parallel.  Adjust to your CI runner's core count.
-# Default: number of logical CPUs.
-# jobs = 4
+# Run mutants in parallel within each CI job.  GitHub-hosted ubuntu-latest
+# runners have 4 vCPUs, so 4 concurrent mutants is the sweet spot.
+# The CI workflow also splits crates across parallel jobs (matrix strategy).
+jobs = 4
 
 # ── Packages to test ────────────────────────────────────────────────────────
 # Test the four library crates.  Examples are excluded — they are exercised
