@@ -170,12 +170,18 @@ pub async fn test_list_push_configs(url: &str, binding: &str) -> Result<(), Stri
         _ => return Err(format!("unknown binding: {binding}")),
     };
 
-    // Should be an array
-    if !result.is_array() {
-        return Err("list push configs should return an array".to_string());
-    }
+    // The result may be a bare array or a paginated object with a "configs" field.
+    let configs = if result.is_array() {
+        result.as_array().unwrap().clone()
+    } else if let Some(arr) = result.get("configs").and_then(|v| v.as_array()) {
+        arr.clone()
+    } else {
+        return Err(format!(
+            "list push configs should return an array or {{\"configs\": [...]}}, got: {}",
+            serde_json::to_string_pretty(&result).unwrap_or_default()
+        ));
+    };
 
-    let configs = result.as_array().unwrap();
     if configs.is_empty() {
         return Err("expected at least one push config after creation".to_string());
     }
