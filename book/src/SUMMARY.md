@@ -34,6 +34,15 @@
 - [Task Management](./client/task-management.md)
 - [Error Handling](./client/error-handling.md)
 
+# Examples
+
+- [Overview](./examples/overview.md)
+- [Echo Agent](./examples/echo-agent.md)
+- [Agent Team](./examples/agent-team.md)
+- [Genai Agent](./examples/genai-agent.md)
+- [Rig Agent](./examples/rig-agent.md)
+- [Multi-Language Team](./examples/multi-lang-team.md)
+
 # Testing & Deployment
 
 - [Testing Your Agent](./deployment/testing.md)
