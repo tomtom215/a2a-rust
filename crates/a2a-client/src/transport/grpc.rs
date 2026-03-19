@@ -357,9 +357,12 @@ impl GrpcTransport {
             grpc_stream_reader_task(stream, tx).await;
         });
 
-        Ok(EventStream::with_abort_handle(
+        // gRPC does not use HTTP status codes for application responses;
+        // a successful stream establishment is analogous to HTTP 200.
+        Ok(EventStream::with_status(
             rx,
             task_handle.abort_handle(),
+            200,
         ))
     }
 }

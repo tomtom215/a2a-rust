@@ -323,6 +323,7 @@ impl RequestHandlerBuilder {
             cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
             )),
+            context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
         })
     }
 }

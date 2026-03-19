@@ -7,13 +7,12 @@
 //! applied schema versions in a `schema_versions` table. Migrations are defined
 //! as plain SQL strings and are executed inside transactions for atomicity.
 //!
-//! # Concurrency (L8)
+//! # Concurrency
 //!
-//! `SQLite` migrations do not use explicit table locking (unlike the `Postgres`
-//! migration runner which uses `LOCK TABLE`). `SQLite`'s `WAL` mode provides
-//! serialized writes at the database level, so concurrent migration runners
-//! are safe but may retry on `SQLITE_BUSY`. For multi-process deployments,
-//! run migrations from a single process during startup.
+//! Each migration runs inside a `BEGIN EXCLUSIVE` transaction, which acquires
+//! a database-level write lock before reading. This prevents concurrent
+//! migration runners from both seeing the same version as unapplied and
+//! attempting to apply it simultaneously.
 //!
 //! # Built-in migrations
 //!
@@ -98,10 +97,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
 ///
 /// # Thread safety
 ///
-/// The runner is safe to use from multiple tasks, but concurrent calls to
-/// [`run_pending`](Self::run_pending) on the same database should be avoided
-/// as `SQLite` serializes writes anyway and the version table does not use
-/// advisory locks.
+/// The runner is safe to use from multiple tasks. Concurrent calls to
+/// [`run_pending`](Self::run_pending) are safe because each migration
+/// runs inside a `BEGIN EXCLUSIVE` transaction, which serializes access
+/// at the database level.
 #[derive(Debug, Clone)]
 pub struct MigrationRunner {
     pool: SqlitePool,
@@ -184,35 +183,50 @@ impl MigrationRunner {
     pub async fn run_pending(&self) -> Result<Vec<u32>, sqlx::Error> {
         self.ensure_version_table().await?;
 
-        let current = self.current_version().await?;
         let mut applied = Vec::new();
 
         for migration in self.migrations {
+            // Acquire a raw connection and use BEGIN EXCLUSIVE to prevent
+            // concurrent migration runners from both seeing the same version
+            // as unapplied. The exclusive lock serializes the version check +
+            // migration apply into a single atomic operation.
+            let mut conn = self.pool.acquire().await?;
+            sqlx::query("BEGIN EXCLUSIVE").execute(&mut *conn).await?;
+
+            // Re-check the current version inside the exclusive lock to
+            // prevent TOCTOU races with concurrent runners.
+            let row = sqlx::query("SELECT COALESCE(MAX(version), 0) AS v FROM schema_versions")
+                .fetch_one(&mut *conn)
+                .await?;
+            let current: i32 = row.get("v");
+            #[allow(clippy::cast_sign_loss)]
+            let current = current as u32;
+
             if migration.version <= current {
+                // Already applied by a concurrent runner; roll back and skip.
+                sqlx::query("ROLLBACK").execute(&mut *conn).await?;
                 continue;
             }
 
             // Execute each statement in the migration SQL separately inside
-            // a transaction. SQLite does not support multiple statements in a
-            // single `sqlx::query` call.
-            let mut tx = self.pool.begin().await?;
-
+            // the transaction. SQLite does not support multiple statements in
+            // a single `sqlx::query` call.
             for statement in migration.sql.split(';') {
                 let trimmed = statement.trim();
                 if trimmed.is_empty() {
                     continue;
                 }
-                sqlx::query(trimmed).execute(&mut *tx).await?;
+                sqlx::query(trimmed).execute(&mut *conn).await?;
             }
 
             // Record the migration as applied.
             sqlx::query("INSERT INTO schema_versions (version, description) VALUES (?1, ?2)")
                 .bind(migration.version)
                 .bind(migration.description)
-                .execute(&mut *tx)
+                .execute(&mut *conn)
                 .await?;
 
-            tx.commit().await?;
+            sqlx::query("COMMIT").execute(&mut *conn).await?;
             applied.push(migration.version);
         }
 

@@ -25,7 +25,7 @@ use std::pin::Pin;
 use a2a_protocol_types::error::A2aError;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 /// Default channel capacity for event queues.
 pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
@@ -111,6 +111,40 @@ pub fn new_in_memory_queue_with_options(
     (
         InMemoryQueueWriter::new(tx, max_event_size, write_timeout),
         InMemoryQueueReader::new(rx),
+    )
+}
+
+/// Creates a new in-memory event queue pair with a dedicated persistence
+/// channel.
+///
+/// Returns `(writer, sse_reader, persistence_rx)`. The writer sends every
+/// event to BOTH the broadcast channel (for SSE fan-out) and the mpsc
+/// channel (for the background persistence processor). The mpsc channel
+/// is not affected by slow SSE consumers and will never lose events.
+#[must_use]
+pub fn new_in_memory_queue_with_persistence(
+    capacity: usize,
+    max_event_size: usize,
+    write_timeout: std::time::Duration,
+) -> (
+    InMemoryQueueWriter,
+    InMemoryQueueReader,
+    mpsc::Receiver<A2aResult<StreamResponse>>,
+) {
+    let (tx, rx) = broadcast::channel(capacity);
+    // Use a large bounded mpsc channel for persistence — the background
+    // processor is fast and must never miss events. The capacity is much
+    // larger than the broadcast channel to provide ample headroom.
+    let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
+    (
+        InMemoryQueueWriter::new_with_persistence(
+            tx,
+            persistence_tx,
+            max_event_size,
+            write_timeout,
+        ),
+        InMemoryQueueReader::new(rx),
+        persistence_rx,
     )
 }
 

@@ -109,15 +109,13 @@ impl A2aClient {
         // get their cleanup/logging hook. The response body is empty since
         // the actual data arrives via the EventStream.
         //
-        // NOTE(M15): status_code is hardcoded to 200 here because the SSE
-        // transport does not expose the HTTP status code to this layer. The
-        // transport already rejects non-2xx responses before returning the
-        // stream, so 200 is a reasonable synthetic value. Interceptors that
-        // need the real status code should inspect the transport layer directly.
+        // The transport captures the actual HTTP status code in the EventStream
+        // during stream establishment. Non-2xx responses are rejected before
+        // the stream is returned, so this is typically 200.
         let resp = ClientResponse {
             method: METHOD.to_owned(),
             result: serde_json::Value::Null,
-            status_code: 200,
+            status_code: stream.status_code(),
         };
         self.interceptors.run_after(&resp).await?;
 

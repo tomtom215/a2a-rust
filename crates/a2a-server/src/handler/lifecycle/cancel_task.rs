@@ -47,11 +47,6 @@ impl RequestHandler {
                 return Err(ServerError::TaskNotCancelable(task_id));
             }
 
-            // NOTE(L2): There is a TOCTOU race between the terminal state check above
-            // and the cancellation below. A concurrent task completion could complete
-            // the task between these two operations. This is harmless — the cancel
-            // signal arrives at an already-completed executor, which ignores it.
-
             // Signal the cancellation token so the executor can observe the cancellation.
             {
                 let tokens = self.cancellation_tokens.read().await;
@@ -81,13 +76,21 @@ impl RequestHandler {
             let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
             self.executor.cancel(&ctx, writer.as_ref()).await?;
 
-            // Update task state.
+            // Update task state, then re-read to return the actual final state.
+            // This handles the TOCTOU race where a concurrent task completion
+            // could overwrite our Canceled state between the terminal check
+            // above and this save.
             let mut updated = task;
             updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
-            self.task_store.save(updated.clone()).await?;
+            self.task_store.save(updated).await?;
+            let final_task = self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
             self.interceptors.run_after(&call_ctx).await?;
-            Ok(updated)
+            Ok(final_task)
         })
         .await;
 

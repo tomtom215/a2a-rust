@@ -3,22 +3,22 @@
 
 //! In-memory event queue backed by a `tokio::sync::broadcast` channel.
 //!
-//! # Known limitations (H5, M4)
+//! The broadcast channel has a fixed capacity and is used for SSE fan-out.
+//! When a slow SSE consumer falls behind, it receives `Lagged(n)` and skips
+//! missed events — this is acceptable for SSE delivery.
 //!
-//! The broadcast channel has a fixed capacity. When a slow SSE consumer falls
-//! behind, `Lagged(n)` events are lost for both the SSE reader AND the
-//! background event processor. This means missed state transitions may not be
-//! persisted to the task store. For production deployments under high load,
-//! consider using separate channels for SSE delivery vs. state persistence,
-//! with the background processor using an unbounded or much larger channel
-//! since it is critical-path for consistency.
+//! For the background event processor (state persistence, push notifications),
+//! a separate `tokio::sync::mpsc` channel can be created via
+//! [`super::new_in_memory_queue_with_persistence`]. The mpsc channel is not
+//! affected by SSE consumer backpressure, ensuring that every state transition
+//! is persisted even when SSE consumers are slow.
 
 use std::future::Future;
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 use super::{EventQueueReader, EventQueueWriter};
 
@@ -54,6 +54,10 @@ impl std::io::Write for CountingWriter {
 #[derive(Debug, Clone)]
 pub struct InMemoryQueueWriter {
     tx: broadcast::Sender<A2aResult<StreamResponse>>,
+    /// Optional dedicated channel for the background persistence processor.
+    /// Unlike the broadcast channel, this mpsc channel is not affected by
+    /// slow SSE consumers and will never lag.
+    persistence_tx: Option<mpsc::Sender<A2aResult<StreamResponse>>>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
     /// Retained for API compatibility with `new_in_memory_queue_with_options`.
@@ -70,6 +74,22 @@ impl InMemoryQueueWriter {
     ) -> Self {
         Self {
             tx,
+            persistence_tx: None,
+            max_event_size,
+            write_timeout,
+        }
+    }
+
+    /// Creates a new `InMemoryQueueWriter` with a dedicated persistence channel.
+    pub(super) const fn new_with_persistence(
+        tx: broadcast::Sender<A2aResult<StreamResponse>>,
+        persistence_tx: mpsc::Sender<A2aResult<StreamResponse>>,
+        max_event_size: usize,
+        write_timeout: std::time::Duration,
+    ) -> Self {
+        Self {
+            tx,
+            persistence_tx: Some(persistence_tx),
             max_event_size,
             write_timeout,
         }
@@ -109,6 +129,13 @@ impl EventQueueWriter for InMemoryQueueWriter {
                     "event size {serialized_size} bytes exceeds maximum {} bytes",
                     self.max_event_size
                 )));
+            }
+            // Send to the persistence channel first (if configured) — this
+            // channel is independent of SSE consumer backpressure.
+            if let Some(ref persistence_tx) = self.persistence_tx {
+                if let Err(_e) = persistence_tx.send(Ok(event.clone())).await {
+                    trace_warn!("persistence channel closed, event not persisted");
+                }
             }
             self.tx
                 .send(Ok(event))

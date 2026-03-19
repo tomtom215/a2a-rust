@@ -306,6 +306,7 @@ impl JsonRpcTransport {
             });
         }
 
+        let actual_status = status.as_u16();
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let body = resp.into_body();
 
@@ -314,9 +315,10 @@ impl JsonRpcTransport {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::with_abort_handle(
+        Ok(EventStream::with_status(
             rx,
             task_handle.abort_handle(),
+            actual_status,
         ))
     }
 }
