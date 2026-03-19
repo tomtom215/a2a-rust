@@ -189,6 +189,50 @@ app.get('/tasks', (_, res) => {
   res.json({ tasks: Array.from(tasks.values()) });
 });
 
+// Cancel task
+app.post('/tasks/:id/cancel', (req, res) => {
+  const task = tasks.get(req.params.id);
+  if (!task) return res.status(404).json({ code: -32001, message: 'Task not found' });
+  task.status = { state: 'canceled' };
+  res.json(task);
+});
+
+// Push notification config — create
+app.post('/tasks/:taskId/pushNotificationConfig', (req, res) => {
+  const taskId = req.params.taskId;
+  const configId = req.body.id || uuidv4();
+  const config = { ...req.body, id: configId, taskId };
+  pushConfigs.set(`${taskId}:${configId}`, config);
+  res.json(config);
+});
+
+// Push notification config — get by id
+app.get('/tasks/:taskId/pushNotificationConfig/:configId', (req, res) => {
+  const key = `${req.params.taskId}:${req.params.configId}`;
+  const cfg = pushConfigs.get(key);
+  if (!cfg) return res.status(404).json({ code: -32001, message: 'Config not found' });
+  res.json(cfg);
+});
+
+// Push notification config — list
+app.get('/tasks/:taskId/pushNotificationConfig', (req, res) => {
+  const configs = Array.from(pushConfigs.values())
+    .filter(c => c.taskId === req.params.taskId);
+  res.json(configs);
+});
+
+// Push notification config — delete
+app.post('/tasks/:taskId/pushNotificationConfig/:configId/delete', (req, res) => {
+  const key = `${req.params.taskId}:${req.params.configId}`;
+  pushConfigs.delete(key);
+  res.json({});
+});
+
+// Catch-all for unknown routes — return JSON 404
+app.use((req, res) => {
+  res.status(404).json({ code: -32601, message: 'Not found' });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`[ITK] JavaScript Echo Agent listening on port ${PORT}`);
 });

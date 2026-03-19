@@ -5,8 +5,9 @@
 """
 A2A ITK — Python Echo Agent
 
-A minimal A2A agent using the official Python SDK that echoes incoming messages.
-Used for cross-language interoperability testing with the Rust A2A SDK.
+A minimal self-contained A2A agent that echoes incoming messages.
+Supports both JSON-RPC and REST bindings for cross-language interoperability
+testing with the Rust A2A SDK.
 
 Usage:
     python agent.py [--port 9100]
@@ -14,101 +15,242 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import uuid
 
-from a2a.server.apps.jsonrpc.starlette_app import A2AStarletteApplication
-from a2a.server.request_handlers import DefaultRequestHandler
-from a2a.server.agent_execution import AgentExecutor, RequestContext
-from a2a.server.events import EventQueue
-from a2a.server.tasks import InMemoryTaskStore
-from a2a.types import (
-    AgentCard,
-    AgentCapabilities,
-    AgentSkill,
-    Artifact,
-    Message,
-    Part,
-    TaskState,
-    TaskStatus,
-    TaskStatusUpdateEvent,
-    TaskArtifactUpdateEvent,
-)
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
+# In-memory stores
+tasks: dict[str, dict] = {}
+push_configs: dict[str, dict] = {}
+
+AGENT_CARD = {
+    "name": "ITK Python Echo Agent",
+    "description": "A2A ITK echo agent implemented in Python",
+    "url": "http://0.0.0.0:{port}",
+    "version": "1.0.0",
+    "capabilities": {"streaming": True, "pushNotifications": True},
+    "defaultInputModes": ["text"],
+    "defaultOutputModes": ["text"],
+    "skills": [
+        {
+            "id": "echo",
+            "name": "Echo",
+            "description": "Echoes the input message back",
+            "tags": ["echo", "test"],
+        }
+    ],
+}
 
 
-class EchoExecutor(AgentExecutor):
-    """Echoes the incoming message back as a completed task."""
-
-    async def execute(self, context: RequestContext, event_queue: EventQueue):
-        # Extract text from the incoming message
-        incoming_text = ""
-        if context.message and context.message.parts:
-            for part in context.message.parts:
-                if hasattr(part, "text") and part.text:
-                    incoming_text += part.text
-
-        echo_text = f"[Python Echo] {incoming_text}"
-
-        # Emit working status
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                status=TaskStatus(state=TaskState.working),
-                final=False,
-            )
-        )
-
-        # Emit artifact
-        await event_queue.enqueue_event(
-            TaskArtifactUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                artifact=Artifact(
-                    artifactId=str(uuid.uuid4()),
-                    parts=[Part(type="text", text=echo_text)],
-                ),
-            )
-        )
-
-        # Emit completed status
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                status=TaskStatus(state=TaskState.completed),
-                final=True,
-            )
-        )
-
-    async def cancel(self, context: RequestContext, event_queue: EventQueue):
-        await event_queue.enqueue_event(
-            TaskStatusUpdateEvent(
-                taskId=context.task_id,
-                contextId=context.context_id,
-                status=TaskStatus(state=TaskState.canceled),
-                final=True,
-            )
-        )
+def extract_text(message: dict) -> str:
+    parts = message.get("parts", [])
+    return "".join(p.get("text", "") for p in parts if p.get("type") == "text")
 
 
-def make_agent_card(port: int) -> AgentCard:
-    return AgentCard(
-        name="ITK Python Echo Agent",
-        description="A2A ITK echo agent implemented in Python",
-        url=f"http://0.0.0.0:{port}",
-        version="1.0.0",
-        capabilities=AgentCapabilities(streaming=True, pushNotifications=True),
-        defaultInputModes=["text"],
-        defaultOutputModes=["text"],
-        skills=[
-            AgentSkill(
-                id="echo",
-                name="Echo",
-                description="Echoes the input message back",
-                tags=["echo", "test"],
-            )
+def process_message(params: dict) -> dict:
+    text = extract_text(params.get("message", {}))
+    task_id = str(uuid.uuid4())
+    context_id = params.get("contextId") or str(uuid.uuid4())
+
+    task = {
+        "id": task_id,
+        "contextId": context_id,
+        "status": {"state": "completed"},
+        "history": [params.get("message", {})],
+        "artifacts": [
+            {
+                "artifactId": str(uuid.uuid4()),
+                "parts": [{"type": "text", "text": f"[Python Echo] {text}"}],
+            }
         ],
+    }
+    tasks[task_id] = task
+    return task
+
+
+def jsonrpc_error(req_id, code: int, message: str) -> dict:
+    return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+
+
+def jsonrpc_result(req_id, result) -> dict:
+    return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+
+# --- Route handlers ---
+
+
+async def agent_card(request: Request) -> JSONResponse:
+    return JSONResponse(AGENT_CARD)
+
+
+async def jsonrpc_handler(request: Request) -> JSONResponse:
+    body = await request.json()
+    req_id = body.get("id")
+    method = body.get("method", "")
+    params = body.get("params", {})
+
+    if body.get("jsonrpc") != "2.0":
+        return JSONResponse(jsonrpc_error(req_id, -32600, "Invalid Request"))
+
+    if method in ("message/send", "message/stream"):
+        if not params.get("message"):
+            return JSONResponse(
+                jsonrpc_error(req_id, -32602, "Invalid params: missing message field")
+            )
+        return JSONResponse(jsonrpc_result(req_id, process_message(params)))
+
+    elif method == "tasks/get":
+        task = tasks.get(params.get("id", ""))
+        if task:
+            return JSONResponse(jsonrpc_result(req_id, task))
+        return JSONResponse(jsonrpc_error(req_id, -32001, "Task not found"))
+
+    elif method == "tasks/list":
+        return JSONResponse(
+            jsonrpc_result(req_id, {"tasks": list(tasks.values())})
+        )
+
+    elif method == "tasks/cancel":
+        task = tasks.get(params.get("id", ""))
+        if not task:
+            return JSONResponse(jsonrpc_error(req_id, -32001, "Task not found"))
+        task["status"] = {"state": "canceled"}
+        return JSONResponse(jsonrpc_result(req_id, task))
+
+    elif method == "tasks/pushNotificationConfig/set":
+        cfg_id = params.get("id") or str(uuid.uuid4())
+        config = {**params, "id": cfg_id}
+        task_id = params.get("taskId", "")
+        push_configs[f"{task_id}:{cfg_id}"] = config
+        return JSONResponse(jsonrpc_result(req_id, config))
+
+    elif method == "tasks/pushNotificationConfig/get":
+        key = f"{params.get('taskId', '')}:{params.get('id', '')}"
+        cfg = push_configs.get(key)
+        if cfg:
+            return JSONResponse(jsonrpc_result(req_id, cfg))
+        return JSONResponse(jsonrpc_error(req_id, -32001, "Config not found"))
+
+    elif method == "tasks/pushNotificationConfig/list":
+        task_id = params.get("taskId", "")
+        configs = [c for c in push_configs.values() if c.get("taskId") == task_id]
+        return JSONResponse(jsonrpc_result(req_id, configs))
+
+    elif method == "tasks/pushNotificationConfig/delete":
+        key = f"{params.get('taskId', '')}:{params.get('id', '')}"
+        push_configs.pop(key, None)
+        return JSONResponse(jsonrpc_result(req_id, {}))
+
+    else:
+        return JSONResponse(
+            jsonrpc_error(req_id, -32601, f"Method not found: {method}")
+        )
+
+
+async def rest_send_message(request: Request) -> JSONResponse:
+    params = await request.json()
+    return JSONResponse(process_message(params))
+
+
+async def rest_list_tasks(request: Request) -> JSONResponse:
+    return JSONResponse({"tasks": list(tasks.values())})
+
+
+async def rest_get_task(request: Request) -> JSONResponse:
+    task_id = request.path_params["task_id"]
+    task = tasks.get(task_id)
+    if task:
+        return JSONResponse(task)
+    return JSONResponse({"code": -32001, "message": "Task not found"}, status_code=404)
+
+
+async def rest_cancel_task(request: Request) -> JSONResponse:
+    task_id = request.path_params["task_id"]
+    task = tasks.get(task_id)
+    if not task:
+        return JSONResponse(
+            {"code": -32001, "message": "Task not found"}, status_code=404
+        )
+    task["status"] = {"state": "canceled"}
+    return JSONResponse(task)
+
+
+async def rest_push_config_collection(request: Request) -> JSONResponse:
+    """Handles both POST (create) and GET (list) on /tasks/{task_id}/pushNotificationConfig."""
+    task_id = request.path_params["task_id"]
+    if request.method == "POST":
+        body = await request.json()
+        cfg_id = body.get("id") or str(uuid.uuid4())
+        config = {**body, "id": cfg_id, "taskId": task_id}
+        push_configs[f"{task_id}:{cfg_id}"] = config
+        return JSONResponse(config)
+    else:
+        configs = [c for c in push_configs.values() if c.get("taskId") == task_id]
+        return JSONResponse(configs)
+
+
+async def rest_get_push_config(request: Request) -> JSONResponse:
+    task_id = request.path_params["task_id"]
+    config_id = request.path_params["config_id"]
+    key = f"{task_id}:{config_id}"
+    cfg = push_configs.get(key)
+    if cfg:
+        return JSONResponse(cfg)
+    return JSONResponse(
+        {"code": -32001, "message": "Config not found"}, status_code=404
     )
+
+
+async def rest_delete_push_config(request: Request) -> JSONResponse:
+    task_id = request.path_params["task_id"]
+    config_id = request.path_params["config_id"]
+    push_configs.pop(f"{task_id}:{config_id}", None)
+    return JSONResponse({})
+
+
+async def catch_all(request: Request) -> JSONResponse:
+    return JSONResponse(
+        {"code": -32601, "message": "Not found"}, status_code=404
+    )
+
+
+def create_app(port: int) -> Starlette:
+    AGENT_CARD["url"] = f"http://0.0.0.0:{port}"
+
+    routes = [
+        Route("/.well-known/agent.json", agent_card, methods=["GET"]),
+        # JSON-RPC
+        Route("/", jsonrpc_handler, methods=["POST"]),
+        # REST endpoints
+        Route("/message/send", rest_send_message, methods=["POST"]),
+        Route("/message/stream", rest_send_message, methods=["POST"]),
+        Route("/tasks", rest_list_tasks, methods=["GET"]),
+        Route("/tasks/{task_id}", rest_get_task, methods=["GET"]),
+        Route("/tasks/{task_id}/cancel", rest_cancel_task, methods=["POST"]),
+        Route(
+            "/tasks/{task_id}/pushNotificationConfig/{config_id}",
+            rest_get_push_config,
+            methods=["GET"],
+        ),
+        Route(
+            "/tasks/{task_id}/pushNotificationConfig",
+            rest_push_config_collection,
+            methods=["GET", "POST"],
+        ),
+        Route(
+            "/tasks/{task_id}/pushNotificationConfig/{config_id}/delete",
+            rest_delete_push_config,
+            methods=["POST"],
+        ),
+        # Catch-all
+        Route("/{path:path}", catch_all),
+    ]
+
+    return Starlette(routes=routes)
 
 
 async def main():
@@ -116,22 +258,9 @@ async def main():
     parser.add_argument("--port", type=int, default=9100, help="Port to listen on")
     args = parser.parse_args()
 
-    agent_card = make_agent_card(args.port)
-    executor = EchoExecutor()
-    task_store = InMemoryTaskStore()
-
-    handler = DefaultRequestHandler(
-        agent_executor=executor,
-        task_store=task_store,
-    )
-
-    app = A2AStarletteApplication(
-        agent_card=agent_card,
-        http_handler=handler,
-    )
-
     import uvicorn
-    config = uvicorn.Config(app.build(), host="0.0.0.0", port=args.port)
+
+    config = uvicorn.Config(create_app(args.port), host="0.0.0.0", port=args.port)
     server = uvicorn.Server(config)
     print(f"[ITK] Python Echo Agent listening on port {args.port}")
     await server.serve()

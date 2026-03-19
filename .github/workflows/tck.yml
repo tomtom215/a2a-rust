@@ -44,7 +44,7 @@ jobs:
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Run on both PRs and pushes to main to prevent merging broken cross-language agents
     strategy:
       fail-fast: false
       matrix:

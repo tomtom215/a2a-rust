@@ -112,6 +112,42 @@ type Skill struct {
 	Tags        []string `json:"tags"`
 }
 
+// responseRecorder captures the status code and body from the inner handler.
+type responseRecorder struct {
+	http.ResponseWriter
+	statusCode int
+	body       []byte
+	written    bool
+}
+
+func (r *responseRecorder) WriteHeader(code int) {
+	r.statusCode = code
+	r.written = true
+}
+
+func (r *responseRecorder) Write(b []byte) (int, error) {
+	r.body = append(r.body, b...)
+	return len(b), nil
+}
+
+// jsonNotFoundHandler wraps an http.Handler and returns JSON for 404/405 responses.
+func jsonNotFoundHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &responseRecorder{ResponseWriter: w, statusCode: 200}
+		next.ServeHTTP(rec, r)
+		if rec.written && (rec.statusCode == 404 || rec.statusCode == 405) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(rec.statusCode)
+			json.NewEncoder(w).Encode(RpcError{Code: -32601, Message: "Not found"})
+			return
+		}
+		if rec.written {
+			w.WriteHeader(rec.statusCode)
+		}
+		w.Write(rec.body)
+	})
+}
+
 func extractText(msg Message) string {
 	var texts []string
 	for _, p := range msg.Parts {
@@ -323,7 +359,91 @@ func main() {
 		json.NewEncoder(w).Encode(TaskListResponse{Tasks: allTasks})
 	})
 
+	// REST: Get task by ID
+	mux.HandleFunc("GET /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("id")
+		if val, ok := tasks.Load(taskID); ok {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(val)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+		}
+	})
+
+	// REST: Cancel task
+	mux.HandleFunc("POST /tasks/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("id")
+		if val, ok := tasks.Load(taskID); ok {
+			task := val.(Task)
+			task.Status = TaskStatus{State: "canceled"}
+			tasks.Store(taskID, task)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(task)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+		}
+	})
+
+	// REST: Create push notification config
+	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("taskId")
+		var cfg PushConfig
+		json.NewDecoder(r.Body).Decode(&cfg)
+		cfg.TaskID = taskID
+		if cfg.ID == "" {
+			cfg.ID = uuid.New().String()
+		}
+		key := taskID + ":" + cfg.ID
+		pushCfgs.Store(key, cfg)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cfg)
+	})
+
+	// REST: Get push notification config by id
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig/{configId}", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
+		if val, ok := pushCfgs.Load(key); ok {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(val)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Config not found"})
+		}
+	})
+
+	// REST: List push notification configs for task
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
+		taskID := r.PathValue("taskId")
+		var configs []PushConfig
+		pushCfgs.Range(func(_, v interface{}) bool {
+			cfg := v.(PushConfig)
+			if cfg.TaskID == taskID {
+				configs = append(configs, cfg)
+			}
+			return true
+		})
+		if configs == nil {
+			configs = []PushConfig{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(configs)
+	})
+
+	// REST: Delete push notification config
+	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig/{configId}/delete", func(w http.ResponseWriter, r *http.Request) {
+		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
+		pushCfgs.Delete(key)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{})
+	})
+
 	addr := fmt.Sprintf("0.0.0.0:%d", *port)
 	log.Printf("[ITK] Go Echo Agent listening on port %d", *port)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	// Wrap mux to return JSON for unhandled routes instead of plain text
+	log.Fatal(http.ListenAndServe(addr, jsonNotFoundHandler(mux)))
 }

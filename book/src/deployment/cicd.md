@@ -32,7 +32,7 @@ The full sweep produces a mutation report artifact with caught/missed/unviable
 counts and a mutation score. Zero missed mutants is required — any surviving
 mutant fails the build.
 
-The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit against the echo-agent on pushes to `main` and PRs. On pushes to `main`, it also runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations.
+The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit on pushes to `main` and PRs. It tests the echo-agent (self-test) and runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations with both JSON-RPC and REST bindings.
 
 All actions are **SHA-pinned** for supply chain security:
 
