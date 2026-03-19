@@ -177,7 +177,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
 
 ### InMemoryPushConfigStore
 
-The default implementation stores configs in a `HashMap`:
+The default implementation stores configs in a `HashMap` with a secondary index for efficient per-task counting:
 
 ```rust
 use a2a_protocol_sdk::server::InMemoryPushConfigStore;
@@ -187,7 +187,8 @@ let store = InMemoryPushConfigStore::new();
 
 Features:
 - Server-assigned config IDs (UUIDs)
-- Per-task config limits (prevents abuse)
+- Per-task config limits (prevents abuse) — uses a secondary index (`task_counts`) for O(1) per-task count lookups instead of scanning all keys
+- Global config limit (`max_total_configs`, default 100,000) — prevents unbounded memory growth across all tasks
 - Thread-safe access
 
 ## Wiring Custom Stores
@@ -234,4 +235,4 @@ struct MyStore { conn: sqlx::PgConnection }
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist
-- **[Configuration Reference](../reference/configuration.md)** — All configuration options
+- **[Configuration Reference](../

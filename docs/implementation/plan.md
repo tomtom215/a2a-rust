@@ -2,7 +2,7 @@
 
 > **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
 >
-> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). In particular, `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. Similarly, `SendMessageResponse` uses `#[serde(untagged)]`, not externally tagged. See `type-mapping.md` for current wire format details.
+> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). In particular, `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)
@@ -468,7 +468,7 @@ All types implemented with v1.0.0 wire format:
 - **Enums**: `SCREAMING_SNAKE_CASE` serialization (e.g., `TASK_STATE_COMPLETED`, `ROLE_USER`)
 - **Methods**: `PascalCase` (e.g., `SendMessage`, `GetTask`)
 - **JSON fields**: `camelCase` via `#[serde(rename_all = "camelCase")]`
-- **Oneof unions**: Untagged serde (`#[serde(untagged)]`) for `Part`, `StreamResponse`, `SendMessageResponse`
+- **Oneof unions**: `Part` uses internally tagged (`#[serde(tag = "type")]`); `StreamResponse` uses externally tagged (`#[serde(rename_all = "camelCase")]`); `SendMessageResponse` uses a custom deserializer (discriminates on `role` field presence)
 - **Newtype IDs**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId` for type safety
 
 Key serde patterns:
@@ -884,7 +884,10 @@ This pattern applies to: `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushS
 | `#[serde(rename_all = "camelCase")]` | All structs |
 | `#[serde(rename = "SCREAMING_SNAKE")]` | Enum variants (v1.0 wire format) |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All optional fields |
-| `#[serde(untagged)]` | Oneof unions (Part, StreamResponse, SendMessageResponse) |
+| `#[serde(untagged)]` | `JsonRpcResponse<T>` (success vs error discrimination) |
+| `#[serde(tag = "type")]` | `PartContent` (internally tagged by `type` field) |
+| `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged with camelCase keys) |
+| Custom `Deserialize` impl | `SendMessageResponse` (discriminates on `role` field presence) |
 
 ### Unsafe
 
@@ -998,7 +1001,7 @@ CORS: Access-Control-Allow-Origin: *
 | Transport binding | `preferred_transport` enum | `protocol_binding` string |
 | Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent.json` |
 | Context ID | plain `String` | `ContextId` newtype |
-| Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` still present |
+| Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` removed (not in v1.0 spec) |
 
 ---
 

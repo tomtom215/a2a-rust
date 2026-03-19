@@ -77,7 +77,7 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-In v1.0, `StreamResponse` uses externally-tagged serialization: `{"task": {...}}`. `SendMessageResponse` uses `#[serde(untagged)]` — it is either a `Task` or `Message`, discriminated by field presence.
+In v1.0, `StreamResponse` uses externally-tagged serialization: `{"task": {...}}`. `SendMessageResponse` uses a custom `Deserialize` impl that discriminates on the presence of the `role` field (present on `Message`, absent on `Task`), avoiding the error-swallowing behavior of serde `untagged`.
 
 ---
 
@@ -474,16 +474,18 @@ Same fields as `GetPushConfigParams`.
 
 ## `responses.rs`
 
-### `SendMessageResponse` (untagged — either Task or Message, discriminated by field presence)
+### `SendMessageResponse` (custom deserializer — either Task or Message, discriminated by `role` field presence)
 
 ```rust
 #[non_exhaustive]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum SendMessageResponse {
     Task(Task),
     Message(Message),
 }
+// Custom Serialize: serializes the inner value directly (untagged wire format).
+// Custom Deserialize: checks for "role" field to distinguish Message from Task,
+// avoiding serde #[serde(untagged)] which swallows inner deserialization errors.
 ```
 
 ### `TaskListResponse`
@@ -573,12 +575,13 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 | Pattern | Usage |
 |---|---|
 | `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
-| `#[serde(rename = "TASK_STATE_...")]` | `TaskState` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
+| `#[serde(rename = "...", alias = "TASK_STATE_...")]` | `TaskState` enum (lowercase primary, SCREAMING_SNAKE_CASE alias) |
 | `#[serde(rename = "ROLE_...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE per ProtoJSON) |
 | `#[serde(rename_all = "lowercase")]` | `ApiKeyLocation` |
 | `#[serde(tag = "type")]` | `PartContent`, `SecurityScheme` |
 | `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged) |
-| `#[serde(untagged)]` | `JsonRpcResponse<T>`, `SendMessageResponse` |
+| `#[serde(untagged)]` | `JsonRpcResponse<T>` |
+| Custom `Deserialize` impl | `SendMessageResponse` (discriminates on `role` field presence, avoids `untagged` error swallowing) |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All `Option<T>` fields |
 | `#[serde(rename = "in")]` | `ApiKeySecurityScheme.location` (`in` is a keyword) |
 | `#[serde(default)]` | Boolean fields defaulting to `false` |

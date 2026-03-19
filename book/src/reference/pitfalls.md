@@ -6,9 +6,9 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` on `JsonRpcResponse<T>` and `SendMessageResponse` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `StreamResponse` uses `#[serde(rename_all = "camelCase")]` — externally tagged — so it produces clearer errors.)
+`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` now uses a custom deserializer that discriminates on the `role` field instead of serde `untagged`, avoiding this pitfall. `StreamResponse` uses `#[serde(rename_all = "camelCase")]` — externally tagged — so it also produces clearer errors.)
 
-**Workaround:** When debugging, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
+**Workaround:** When debugging `JsonRpcResponse`, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
 
 ### `#[serde(default)]` vs `Option<T>`
 
@@ -271,9 +271,9 @@ A malicious SSE stream sending many oversized events could fill the parser's int
 
 `cap_backoff()` computed `Duration::from_secs_f64(current * multiplier)`. With extreme multipliers, this produces `f64::INFINITY` which panics in `from_secs_f64`. The fix checks for non-finite results and clamps to `max_backoff`.
 
-### Background event processor can miss fast executor events (known limitation)
+### Background event processor can miss fast executor events (fixed)
 
-In streaming mode, the background event processor subscribes to the broadcast channel *after* the executor starts. For very fast executors, events may be written before the subscription is active, meaning the task store is not updated. The SSE consumer always sees all events (it holds the reader from queue creation). See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
+In streaming mode, the background event processor previously subscribed to the broadcast channel *after* the executor started. For very fast executors, events could be written before the subscription was active, meaning the task store was not updated. The fix introduces a dedicated persistence channel (mpsc) that is independent of the broadcast channel used for SSE delivery, ensuring the background processor never misses events regardless of executor speed. See Bug #38 in [dogfooding-bugs](../deployment/dogfooding-bugs.md).
 
 ### Event queue writer silently swallows serialization errors (fixed)
 

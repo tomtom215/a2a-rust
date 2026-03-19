@@ -31,6 +31,8 @@ Streaming methods cannot appear in batch requests:
 
 An empty batch `[]` returns a parse error.
 
+Batch size is limited by `DispatchConfig::max_batch_size` (default 100). Batches exceeding this limit are rejected with a parse error before any individual request is dispatched.
+
 ## RestDispatcher
 
 Routes RESTful HTTP requests to the handler:
