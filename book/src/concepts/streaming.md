@@ -157,6 +157,7 @@ RequestHandlerBuilder::new(executor)
     .with_event_queue_capacity(128)
     .with_max_event_size(8 * 1024 * 1024)  // 8 MiB
     .build()
+    .unwrap()
 ```
 
 ## Client-Side: Consuming Streams

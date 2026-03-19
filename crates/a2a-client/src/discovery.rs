@@ -102,25 +102,29 @@ pub struct CachingCardResolver {
 impl CachingCardResolver {
     /// Creates a new resolver for the given agent card URL.
     ///
-    /// If `base_url` is invalid, the resolver stores an empty URL and
-    /// [`resolve`](Self::resolve) will return an error on first call.
-    #[must_use]
-    pub fn new(base_url: &str) -> Self {
-        let url = build_card_url(base_url, AGENT_CARD_PATH).unwrap_or_default();
-        Self {
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if `base_url` is malformed
+    /// (empty, missing scheme, etc.).
+    pub fn new(base_url: &str) -> ClientResult<Self> {
+        let url = build_card_url(base_url, AGENT_CARD_PATH)?;
+        Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
-        }
+        })
     }
 
     /// Creates a new resolver with a custom path.
-    #[must_use]
-    pub fn with_path(base_url: &str, path: &str) -> Self {
-        let url = build_card_url(base_url, path).unwrap_or_default();
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if `base_url` is malformed.
+    pub fn with_path(base_url: &str, path: &str) -> ClientResult<Self> {
+        let url = build_card_url(base_url, path)?;
+        Ok(Self {
             url,
             cache: Arc::new(RwLock::new(None)),
-        }
+        })
     }
 
     /// Resolves the agent card, using a cached version if valid.
@@ -250,11 +254,34 @@ async fn fetch_card_with_metadata(
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
 
+    // FIX(H8): Check Content-Length before reading the body to prevent OOM
+    // from a compromised card endpoint sending an arbitrarily large response.
+    // 2 MiB — generous for agent cards
+    let max_card_body_size: u64 = 2 * 1024 * 1024;
+    if let Some(cl) = resp.headers().get(header::CONTENT_LENGTH) {
+        if let Ok(len) = cl.to_str().unwrap_or("0").parse::<u64>() {
+            if len > max_card_body_size {
+                return Err(ClientError::Transport(format!(
+                    "agent card response too large: {len} bytes exceeds {max_card_body_size} byte limit"
+                )));
+            }
+        }
+    }
+
     let body_bytes = tokio::time::timeout(Duration::from_secs(30), resp.collect())
         .await
         .map_err(|_| ClientError::Transport("agent card body read timed out".into()))?
         .map_err(ClientError::Http)?
         .to_bytes();
+
+    // FIX(H8): Also check after reading for chunked/streaming responses
+    // that don't include Content-Length.
+    if body_bytes.len() as u64 > max_card_body_size {
+        return Err(ClientError::Transport(format!(
+            "agent card response too large: {} bytes exceeds {max_card_body_size} byte limit",
+            body_bytes.len()
+        )));
+    }
 
     if !status.is_success() {
         let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
@@ -305,19 +332,26 @@ mod tests {
 
     #[test]
     fn caching_resolver_new() {
-        let resolver = CachingCardResolver::new("http://localhost:8080");
+        let resolver = CachingCardResolver::new("http://localhost:8080").unwrap();
         assert_eq!(resolver.url, "http://localhost:8080/.well-known/agent.json");
     }
 
     #[test]
+    fn caching_resolver_new_rejects_invalid_url() {
+        assert!(CachingCardResolver::new("").is_err());
+        assert!(CachingCardResolver::new("ftp://example.com").is_err());
+    }
+
+    #[test]
     fn caching_resolver_with_path() {
-        let resolver = CachingCardResolver::with_path("http://localhost:8080", "/custom/card.json");
+        let resolver =
+            CachingCardResolver::with_path("http://localhost:8080", "/custom/card.json").unwrap();
         assert_eq!(resolver.url, "http://localhost:8080/custom/card.json");
     }
 
     #[tokio::test]
     async fn caching_resolver_invalidate_empty() {
-        let resolver = CachingCardResolver::new("http://localhost:8080");
+        let resolver = CachingCardResolver::new("http://localhost:8080").unwrap();
         // Cache should start empty.
         assert!(resolver.cache.read().await.is_none());
         resolver.invalidate().await;
@@ -328,7 +362,7 @@ mod tests {
     async fn caching_resolver_invalidate_clears_populated_cache() {
         use a2a_protocol_types::{AgentCapabilities, AgentCard};
 
-        let resolver = CachingCardResolver::new("http://localhost:8080");
+        let resolver = CachingCardResolver::new("http://localhost:8080").unwrap();
 
         // Manually populate the cache.
         {
@@ -599,7 +633,7 @@ mod tests {
         });
 
         let base_url = format!("http://127.0.0.1:{}", addr.port());
-        let resolver = CachingCardResolver::with_path(&base_url, "/agent.json");
+        let resolver = CachingCardResolver::with_path(&base_url, "/agent.json").unwrap();
         assert!(
             resolver.cache.read().await.is_none(),
             "cache should start empty"
@@ -621,7 +655,7 @@ mod tests {
     #[tokio::test]
     async fn caching_resolver_resolve_returns_error_on_failure() {
         // Use an invalid URL that won't connect.
-        let resolver = CachingCardResolver::with_path("http://127.0.0.1:1", "/agent.json");
+        let resolver = CachingCardResolver::with_path("http://127.0.0.1:1", "/agent.json").unwrap();
         let result = resolver.resolve().await;
         assert!(
             result.is_err(),

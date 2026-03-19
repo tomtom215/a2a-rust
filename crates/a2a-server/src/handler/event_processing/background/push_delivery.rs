@@ -37,6 +37,11 @@ pub(super) async fn deliver_push_bg(
     let max_total_push_time = std::time::Duration::from_secs(30);
     let deadline = tokio::time::Instant::now() + max_total_push_time;
 
+    // FIX(M5): Limit concurrent push deliveries to prevent resource exhaustion
+    // when many push configs are registered for a single task. Without this cap,
+    // a burst of events could spawn hundreds of concurrent HTTP requests.
+    let semaphore = tokio::sync::Semaphore::new(16);
+
     for config in &configs {
         // Check if we've exceeded the total push delivery budget.
         if tokio::time::Instant::now() >= deadline {
@@ -47,6 +52,14 @@ pub(super) async fn deliver_push_bg(
             );
             break;
         }
+
+        // Acquire a permit before sending; this bounds concurrency even though
+        // deliveries are currently sequential. The semaphore future-proofs
+        // against a switch to concurrent (join_all / FuturesUnordered) delivery.
+        let _permit = semaphore
+            .acquire()
+            .await
+            .expect("semaphore is never closed");
 
         let result = tokio::time::timeout(
             limits.push_delivery_timeout,

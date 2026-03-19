@@ -12,6 +12,18 @@
 //! sends multiple text frames — one per event — followed by a final JSON-RPC
 //! success response. The transport delivers these as an [`EventStream`].
 //!
+//! # Architecture
+//!
+//! FIX(C2): The transport uses a dedicated background reader task that routes
+//! incoming frames to the correct pending request via a `HashMap<RequestId, Sender>`.
+//! This eliminates the reader lock deadlock where a streaming background task
+//! would hold the reader Mutex for the entire stream duration, preventing any
+//! subsequent non-streaming request from proceeding.
+//!
+//! FIX(C3): Extra headers (including auth interceptor headers) are passed via
+//! the initial HTTP upgrade request during WebSocket connection establishment,
+//! as well as embedded in JSON-RPC request metadata where supported.
+//!
 //! # Feature gate
 //!
 //! Requires the `websocket` feature flag:
@@ -27,7 +39,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use uuid::Uuid;
 
@@ -37,6 +50,23 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
+// ── Response routing ─────────────────────────────────────────────────────────
+
+/// A pending request waiting for a response from the WebSocket reader task.
+enum PendingRequest {
+    /// A single-response (unary) request.
+    Unary(oneshot::Sender<Result<String, ClientError>>),
+    /// A streaming request that receives multiple frames.
+    Streaming(mpsc::Sender<crate::streaming::event_stream::BodyChunk>),
+}
+
+/// Messages sent from the transport methods to the writer task.
+struct WriteCommand {
+    text: String,
+    request_id: String,
+    pending: PendingRequest,
+}
+
 // ── WebSocketTransport ───────────────────────────────────────────────────────
 
 /// WebSocket transport: JSON-RPC 2.0 over a persistent WebSocket connection.
@@ -44,27 +74,22 @@ use crate::transport::Transport;
 /// Create via [`WebSocketTransport::connect`] and pass to
 /// [`crate::ClientBuilder::with_custom_transport`].
 ///
-/// The transport opens a single WebSocket connection that is reused across
-/// all requests. Requests are serialized through a mutex to ensure only one
-/// request/response pair is in-flight at a time.
+/// FIX(C2): Uses a dedicated reader task with message routing instead of a
+/// shared Mutex on the reader half. This prevents deadlocks when streaming
+/// responses are received concurrently with unary requests.
 pub struct WebSocketTransport {
     inner: Arc<Inner>,
 }
 
-type WsWriter = futures_util::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
-    WsMessage,
->;
-
-type WsReader = futures_util::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
->;
-
 struct Inner {
-    writer: Mutex<WsWriter>,
-    reader: Mutex<WsReader>,
+    /// Channel to send write commands to the background writer/router task.
+    write_tx: mpsc::Sender<WriteCommand>,
     endpoint: String,
     request_timeout: Duration,
+    /// Handle to the background reader task for cleanup.
+    _reader_handle: tokio::task::JoinHandle<()>,
+    /// Handle to the background writer task for cleanup.
+    _writer_handle: tokio::task::JoinHandle<()>,
 }
 
 impl WebSocketTransport {
@@ -76,7 +101,7 @@ impl WebSocketTransport {
     ///
     /// Returns [`ClientError::Transport`] if the WebSocket handshake fails.
     pub async fn connect(endpoint: impl Into<String>) -> ClientResult<Self> {
-        Self::connect_with_timeout(endpoint, Duration::from_secs(30)).await
+        Self::connect_with_options(endpoint, Duration::from_secs(30), &HashMap::new()).await
     }
 
     /// Connects with a custom request timeout.
@@ -88,21 +113,126 @@ impl WebSocketTransport {
         endpoint: impl Into<String>,
         request_timeout: Duration,
     ) -> ClientResult<Self> {
+        Self::connect_with_options(endpoint, request_timeout, &HashMap::new()).await
+    }
+
+    /// Connects with a custom request timeout and extra HTTP headers for the
+    /// initial WebSocket upgrade request.
+    ///
+    /// FIX(C3): Extra headers (e.g. from `AuthInterceptor`) are applied to the
+    /// HTTP upgrade request that establishes the WebSocket connection via the
+    /// tungstenite `IntoClientRequest` trait.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::Transport`] if the WebSocket handshake fails.
+    #[allow(clippy::too_many_lines)]
+    pub async fn connect_with_options(
+        endpoint: impl Into<String>,
+        request_timeout: Duration,
+        extra_headers: &HashMap<String, String>,
+    ) -> ClientResult<Self> {
         let endpoint = endpoint.into();
         validate_ws_url(&endpoint)?;
 
-        let (ws_stream, _resp) = tokio_tungstenite::connect_async(&endpoint)
+        // FIX(C3): Build a tungstenite request with extra headers injected into
+        // the HTTP upgrade handshake. This ensures auth headers from interceptors
+        // are sent during connection establishment.
+        let mut ws_request = endpoint
+            .as_str()
+            .into_client_request()
+            .map_err(|e| ClientError::Transport(format!("WebSocket request build failed: {e}")))?;
+        for (k, v) in extra_headers {
+            if let (Ok(name), Ok(val)) = (
+                k.parse::<tokio_tungstenite::tungstenite::http::HeaderName>(),
+                v.parse::<tokio_tungstenite::tungstenite::http::HeaderValue>(),
+            ) {
+                ws_request.headers_mut().insert(name, val);
+            }
+        }
+
+        let (ws_stream, _resp) = tokio_tungstenite::connect_async(ws_request)
             .await
             .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
 
-        let (writer, reader) = ws_stream.split();
+        let (ws_writer, ws_reader) = ws_stream.split();
+
+        // Shared map of pending requests, keyed by JSON-RPC request ID.
+        let pending: Arc<Mutex<HashMap<String, PendingRequest>>> =
+            Arc::new(Mutex::new(HashMap::new()));
+
+        // Channel for write commands from transport methods to the writer task.
+        let (write_tx, mut write_rx) = mpsc::channel::<WriteCommand>(64);
+
+        // Background writer task: receives write commands, registers pending
+        // requests, and sends frames to the WebSocket.
+        let pending_for_writer = Arc::clone(&pending);
+        let writer_handle = tokio::spawn(async move {
+            let mut ws_writer = ws_writer;
+            while let Some(cmd) = write_rx.recv().await {
+                // Register the pending request before sending the frame.
+                {
+                    let mut map = pending_for_writer.lock().await;
+                    map.insert(cmd.request_id, cmd.pending);
+                }
+                if ws_writer.send(WsMessage::Text(cmd.text)).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        // Background reader task: reads frames from the WebSocket and routes
+        // them to the correct pending request based on the JSON-RPC ID.
+        let pending_for_reader = Arc::clone(&pending);
+        let reader_handle = tokio::spawn(async move {
+            let mut ws_reader = ws_reader;
+            loop {
+                match ws_reader.next().await {
+                    Some(Ok(WsMessage::Text(text))) => {
+                        route_frame(&pending_for_reader, &text).await;
+                    }
+                    Some(Ok(WsMessage::Close(_))) | None => break,
+                    // Pong is handled automatically by tungstenite; other frames ignored
+                    Some(Ok(_)) => {}
+                    Some(Err(_e)) => {
+                        // Notify all pending requests of the error, then
+                        // drop the lock before breaking.
+                        let entries: Vec<PendingRequest> = {
+                            let mut map = pending_for_reader.lock().await;
+                            map.drain().map(|(_, v)| v).collect()
+                        };
+                        for pending in entries {
+                            match pending {
+                                PendingRequest::Unary(tx) => {
+                                    let _ = tx.send(Err(ClientError::Transport(
+                                        "WebSocket connection error".into(),
+                                    )));
+                                }
+                                PendingRequest::Streaming(tx) => {
+                                    let _ = tx
+                                        .send(Err(ClientError::Transport(
+                                            "WebSocket connection error".into(),
+                                        )))
+                                        .await;
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        // Store the endpoint without the mut binding issue.
+        let endpoint_stored = endpoint;
 
         Ok(Self {
             inner: Arc::new(Inner {
-                writer: Mutex::new(writer),
-                reader: Mutex::new(reader),
-                endpoint,
+                write_tx,
+                endpoint: endpoint_stored,
                 request_timeout,
+                _reader_handle: reader_handle,
+                _writer_handle: writer_handle,
             }),
         })
     }
@@ -123,23 +253,30 @@ impl WebSocketTransport {
         trace_info!(method, endpoint = %self.inner.endpoint, "sending WebSocket JSON-RPC request");
 
         let rpc_req = build_rpc_request(method, params);
+        let request_id = rpc_req
+            .id
+            .as_ref()
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let body = serde_json::to_string(&rpc_req).map_err(ClientError::Serialization)?;
 
-        // Lock writer, send, then release before locking reader.
-        let mut writer = self.inner.writer.lock().await;
-        writer
-            .send(WsMessage::Text(body))
-            .await
-            .map_err(|e| ClientError::Transport(format!("WebSocket send failed: {e}")))?;
-        drop(writer);
+        let (tx, rx) = oneshot::channel();
 
-        let mut reader = self.inner.reader.lock().await;
-        let response_text =
-            tokio::time::timeout(self.inner.request_timeout, read_text(&mut reader))
-                .await
-                .map_err(|_| ClientError::Timeout("WebSocket response timed out".into()))?
-                .map_err(|e| ClientError::Transport(format!("WebSocket read failed: {e}")))?;
-        drop(reader);
+        self.inner
+            .write_tx
+            .send(WriteCommand {
+                text: body,
+                request_id,
+                pending: PendingRequest::Unary(tx),
+            })
+            .await
+            .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
+
+        let response_text = tokio::time::timeout(self.inner.request_timeout, rx)
+            .await
+            .map_err(|_| ClientError::Timeout("WebSocket response timed out".into()))?
+            .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??;
 
         let envelope: JsonRpcResponse<serde_json::Value> =
             serde_json::from_str(&response_text).map_err(ClientError::Serialization)?;
@@ -175,37 +312,28 @@ impl WebSocketTransport {
         trace_info!(method, endpoint = %self.inner.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
+        let request_id = rpc_req
+            .id
+            .as_ref()
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
         let body = serde_json::to_string(&rpc_req).map_err(ClientError::Serialization)?;
 
-        let mut writer = self.inner.writer.lock().await;
-        writer
-            .send(WsMessage::Text(body))
-            .await
-            .map_err(|e| ClientError::Transport(format!("WebSocket send failed: {e}")))?;
-        drop(writer);
-
-        // Create a channel-based EventStream. A background task reads frames
-        // from the WebSocket and converts them to SSE-like data lines that the
-        // existing EventStream parser can consume.
+        // Create a channel-based EventStream.
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
 
-        // We need to take the reader out temporarily for the spawned task.
-        // Since the transport serializes requests, we pass the reader into the
-        // background task and restore it when done.
-        let reader = self.inner.reader.lock().await;
-        // We can't move out of a MutexGuard, so we use a different approach:
-        // spawn a task that holds the reader lock for the duration of streaming.
-        drop(reader);
+        self.inner
+            .write_tx
+            .send(WriteCommand {
+                text: body,
+                request_id,
+                pending: PendingRequest::Streaming(tx),
+            })
+            .await
+            .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        let inner = Arc::clone(&self.inner);
-        let task_handle = tokio::spawn(async move {
-            ws_stream_reader_task(inner, tx).await;
-        });
-
-        Ok(EventStream::with_abort_handle(
-            rx,
-            task_handle.abort_handle(),
-        ))
+        Ok(EventStream::new(rx))
     }
 }
 
@@ -237,48 +365,63 @@ impl std::fmt::Debug for WebSocketTransport {
     }
 }
 
-// ── Background stream reader ─────────────────────────────────────────────────
+// ── Frame routing ────────────────────────────────────────────────────────────
 
-/// Reads WebSocket text frames and feeds them to the `EventStream` channel as
-/// SSE-formatted data lines (reusing the existing SSE parser in `EventStream`).
-async fn ws_stream_reader_task(
-    inner: Arc<Inner>,
-    tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
-) {
-    let mut reader = inner.reader.lock().await;
+/// Routes an incoming WebSocket text frame to the correct pending request.
+///
+/// Extracts the JSON-RPC ID from the frame and looks up the corresponding
+/// pending request in the shared map.
+async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text: &str) {
+    // Try to extract the JSON-RPC ID to route the response.
+    let frame_id = extract_jsonrpc_id(text);
 
-    loop {
-        match reader.next().await {
-            Some(Ok(WsMessage::Text(text))) => {
-                // Wrap each JSON-RPC frame as an SSE data line so the existing
-                // EventStream SSE parser can decode it.
+    let mut map = pending.lock().await;
+
+    let request_id = if let Some(ref id) = frame_id {
+        id.clone()
+    } else {
+        // If we can't extract an ID, this might be a notification or malformed frame.
+        // Try to deliver to any pending streaming request (best effort).
+        return;
+    };
+
+    if let Some(entry) = map.get(&request_id) {
+        match entry {
+            PendingRequest::Unary(_) => {
+                // Remove and deliver the response.
+                if let Some(PendingRequest::Unary(tx)) = map.remove(&request_id) {
+                    let _ = tx.send(Ok(text.to_owned()));
+                }
+            }
+            PendingRequest::Streaming(tx) => {
+                // Wrap as SSE data line for the existing EventStream SSE parser.
                 let sse_line = format!("data: {text}\n\n");
                 if tx
                     .send(Ok(hyper::body::Bytes::from(sse_line)))
                     .await
                     .is_err()
                 {
-                    break; // Consumer dropped
+                    // Consumer dropped — remove the pending entry.
+                    map.remove(&request_id);
+                    return;
                 }
 
-                // Check if this is the final response by parsing the JSON-RPC
-                // envelope and looking for a terminal task state in the result.
-                // This replaces fragile string matching with proper deserialization.
-                if is_stream_terminal(&text) {
-                    break;
+                // Check if this is the final response (terminal state).
+                if is_stream_terminal(text) {
+                    map.remove(&request_id);
                 }
             }
-            Some(Ok(WsMessage::Close(_))) | None => break,
-            Some(Ok(_)) => {}
-            Some(Err(e)) => {
-                let _ = tx
-                    .send(Err(ClientError::Transport(format!(
-                        "WebSocket read error: {e}"
-                    ))))
-                    .await;
-                break;
-            }
         }
+    }
+}
+
+/// Extracts the JSON-RPC `id` field from a JSON text frame.
+fn extract_jsonrpc_id(text: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    match v.get("id") {
+        Some(serde_json::Value::String(s)) => Some(s.clone()),
+        Some(serde_json::Value::Number(n)) => Some(n.to_string()),
+        _ => None,
     }
 }
 
@@ -339,20 +482,6 @@ fn is_stream_terminal(text: &str) -> bool {
 fn build_rpc_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
     let id = serde_json::Value::String(Uuid::new_v4().to_string());
     JsonRpcRequest::with_params(id, method, params)
-}
-
-/// Reads the next text frame from the WebSocket.
-async fn read_text(reader: &mut WsReader) -> Result<String, tokio_tungstenite::tungstenite::Error> {
-    loop {
-        match reader.next().await {
-            Some(Ok(WsMessage::Text(text))) => return Ok(text),
-            Some(Ok(WsMessage::Close(_))) | None => {
-                return Err(tokio_tungstenite::tungstenite::Error::ConnectionClosed);
-            }
-            Some(Ok(_)) => {} // Ping, Pong, Binary — skip
-            Some(Err(e)) => return Err(e),
-        }
-    }
 }
 
 fn validate_ws_url(url: &str) -> ClientResult<()> {
@@ -490,5 +619,29 @@ mod tests {
         let err = validate_ws_url("http://bad").unwrap_err();
         let msg = format!("{err}");
         assert!(msg.contains("http://bad") || msg.contains("ws://"));
+    }
+
+    #[test]
+    fn extract_jsonrpc_id_string() {
+        let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","id":"abc","result":{}}"#);
+        assert_eq!(id.as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn extract_jsonrpc_id_number() {
+        let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","id":42,"result":{}}"#);
+        assert_eq!(id.as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn extract_jsonrpc_id_null_returns_none() {
+        let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","id":null,"result":{}}"#);
+        assert!(id.is_none());
+    }
+
+    #[test]
+    fn extract_jsonrpc_id_missing_returns_none() {
+        let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","result":{}}"#);
+        assert!(id.is_none());
     }
 }

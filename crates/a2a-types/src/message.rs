@@ -297,6 +297,21 @@ impl FileContent {
         self.mime_type = Some(mime_type.into());
         self
     }
+
+    /// Validates that at least one of `bytes` or `uri` is set.
+    ///
+    /// The A2A spec requires at least one content source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if both `bytes` and `uri` are `None`.
+    pub const fn validate(&self) -> Result<(), &'static str> {
+        if self.bytes.is_none() && self.uri.is_none() {
+            Err("FileContent must have at least one of 'bytes' or 'uri' set")
+        } else {
+            Ok(())
+        }
+    }
 }
 
 // ── PartContent ──────────────────────────────────────────────────────────────
@@ -651,6 +666,44 @@ mod tests {
             _ => panic!("expected Data variant"),
         }
         assert!(p.metadata.is_none());
+    }
+
+    // ── FileContent::validate tests ────────────────────────────────────
+
+    #[test]
+    fn file_content_validate_ok_with_bytes() {
+        let fc = FileContent::from_bytes("data");
+        assert!(fc.validate().is_ok());
+    }
+
+    #[test]
+    fn file_content_validate_ok_with_uri() {
+        let fc = FileContent::from_uri("https://example.com/f.txt");
+        assert!(fc.validate().is_ok());
+    }
+
+    #[test]
+    fn file_content_validate_ok_with_both() {
+        let fc = FileContent {
+            name: None,
+            mime_type: None,
+            bytes: Some("data".into()),
+            uri: Some("https://example.com/f.txt".into()),
+        };
+        assert!(fc.validate().is_ok());
+    }
+
+    #[test]
+    fn file_content_validate_err_with_neither() {
+        let fc = FileContent {
+            name: Some("empty.txt".into()),
+            mime_type: Some("text/plain".into()),
+            bytes: None,
+            uri: None,
+        };
+        let err = fc.validate().unwrap_err();
+        assert!(err.contains("bytes"));
+        assert!(err.contains("uri"));
     }
 
     #[test]

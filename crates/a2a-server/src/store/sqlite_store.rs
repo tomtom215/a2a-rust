@@ -229,14 +229,19 @@ impl TaskStore for SqliteTaskStore {
             };
 
             // Fetch one extra to detect next page.
+            // FIX(L7): Use a parameterized bind for LIMIT instead of format!
+            // interpolation to follow best practices for query construction.
             let limit = page_size + 1;
-            let sql =
-                format!("SELECT data FROM tasks {where_clause} ORDER BY id ASC LIMIT {limit}");
+            let limit_param = bind_values.len() + 1;
+            let sql = format!(
+                "SELECT data FROM tasks {where_clause} ORDER BY id ASC LIMIT ?{limit_param}"
+            );
 
             let mut query = sqlx::query_as::<_, (String,)>(&sql);
             for val in &bind_values {
                 query = query.bind(val);
             }
+            query = query.bind(limit);
 
             let rows: Vec<(String,)> = query.fetch_all(&self.pool).await.map_err(to_a2a_error)?;
 

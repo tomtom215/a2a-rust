@@ -177,7 +177,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
 
 ### InMemoryPushConfigStore
 
-The default implementation stores configs in a `HashMap`:
+The default implementation stores configs in a `HashMap` with a secondary index for efficient per-task counting:
 
 ```rust
 use a2a_protocol_sdk::server::InMemoryPushConfigStore;
@@ -187,7 +187,8 @@ let store = InMemoryPushConfigStore::new();
 
 Features:
 - Server-assigned config IDs (UUIDs)
-- Per-task config limits (prevents abuse)
+- Per-task config limits (prevents abuse) — uses a secondary index (`task_counts`) for O(1) per-task count lookups instead of scanning all keys
+- Global config limit (`max_total_configs`, default 100,000) — prevents unbounded memory growth across all tasks
 - Thread-safe access
 
 ## Wiring Custom Stores
@@ -209,6 +210,15 @@ Both traits use `Pin<Box<dyn Future>>` return types for object safety. This allo
 ### Tenant Isolation
 
 Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not method parameters. For in-memory stores, `TenantAwareInMemoryTaskStore` automatically partitions data by tenant. For SQL stores, `TenantAwareSqliteTaskStore` partitions by a `tenant_id` column. If you implement a custom store, use `TenantContext::current()` to retrieve the active tenant within the async call stack.
+
+### TaskStoreConfig Fields
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
+| `task_ttl` | `Option<Duration>` | `Some(1 hour)` | TTL for terminal-state tasks; `None` disables eviction |
+| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes O(n) cost) |
+| `max_page_size` | `u32` | 1000 | Maximum allowed page size for list queries |
 
 ### Pagination
 
@@ -234,4 +244,4 @@ struct MyStore { conn: sqlx::PgConnection }
 ## Next Steps
 
 - **[Production Hardening](../deployment/production.md)** — Deployment checklist
-- **[Configuration Reference](../reference/configuration.md)** — All configuration options
+- **[Configuration Reference](../

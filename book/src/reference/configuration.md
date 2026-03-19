@@ -66,6 +66,7 @@ Shared configuration for JSON-RPC, REST, and Axum dispatchers. Pass to
 | `max_query_string_length` | `usize` | 4,096 | REST only; longer queries return 414 |
 | `sse_keep_alive_interval` | `Duration` | 30s | Periodic keep-alive comment interval for SSE streams |
 | `sse_channel_capacity` | `usize` | 64 | SSE response body channel buffer size |
+| `max_batch_size` | `usize` | 100 | Maximum requests in a JSON-RPC batch |
 
 ### GrpcConfig
 

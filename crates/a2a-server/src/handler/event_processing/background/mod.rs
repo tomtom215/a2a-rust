@@ -16,9 +16,10 @@ mod state_machine;
 
 use std::sync::Arc;
 
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{TaskId, TaskState, TaskStatus};
-
-use crate::streaming::EventQueueReader;
+use tokio::sync::mpsc;
 
 use super::super::RequestHandler;
 
@@ -28,16 +29,17 @@ use state_machine::process_event_bg;
 
 impl RequestHandler {
     /// Spawns a background task that processes events (state transitions,
-    /// task store updates, push delivery) from a pre-subscribed reader.
+    /// task store updates, push delivery) from a dedicated persistence channel.
     ///
-    /// The `bg_reader` is subscribed BEFORE the executor is spawned, so even
-    /// fast-completing executors (<1ms) cannot race past the subscription.
+    /// The `persistence_rx` is an mpsc receiver that is independent of the
+    /// broadcast channel used for SSE delivery. This means slow SSE consumers
+    /// cannot cause the background processor to miss events (H5 fix).
     #[allow(clippy::too_many_lines)]
     pub(crate) fn spawn_background_event_processor(
         &self,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
-        bg_reader: Option<crate::streaming::event_queue::InMemoryQueueReader>,
+        persistence_rx: Option<mpsc::Receiver<A2aResult<StreamResponse>>>,
     ) {
         let task_store = Arc::clone(&self.task_store);
         let push_config_store = Arc::clone(&self.push_config_store);
@@ -52,13 +54,13 @@ impl RequestHandler {
         tokio::spawn(crate::store::tenant::TenantContext::scope(
             tenant,
             async move {
-                // FIX(#38): Use the pre-subscribed reader instead of subscribing
-                // after spawn. This eliminates the race where fast executors
-                // complete before the background processor subscribes.
-                let Some(mut bg_reader) = bg_reader else {
+                // H5 FIX: Use the dedicated persistence mpsc channel instead
+                // of the broadcast channel. The mpsc channel is not affected
+                // by slow SSE consumers and will never lose events.
+                let Some(mut persistence_reader) = persistence_rx else {
                     trace_warn!(
                         task_id = %task_id,
-                        "background event processor: no reader provided"
+                        "background event processor: no persistence channel provided"
                     );
                     return;
                 };
@@ -73,7 +75,9 @@ impl RequestHandler {
 
                 loop {
                     if executor_done {
-                        match bg_reader.read().await {
+                        // Executor finished — drain remaining events from the
+                        // persistence channel.
+                        match persistence_reader.recv().await {
                             Some(event) => {
                                 process_event_bg(
                                     event,
@@ -91,7 +95,7 @@ impl RequestHandler {
                     } else {
                         tokio::select! {
                             biased;
-                            event = bg_reader.read() => {
+                            event = persistence_reader.recv() => {
                                 match event {
                                     Some(event) => {
                                         process_event_bg(

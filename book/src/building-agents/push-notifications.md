@@ -47,7 +47,7 @@ let handler = RequestHandlerBuilder::new(my_executor)
 
 The built-in `HttpPushSender` includes:
 
-- **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses
+- **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses. Uses `validate_webhook_url_with_dns()` which performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 - **HTTPS validation** — Optionally enforces HTTPS-only webhook URLs
 

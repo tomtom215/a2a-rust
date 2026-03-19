@@ -66,9 +66,14 @@ const DEFAULT_MAX_PUSH_CONFIGS_PER_TASK: usize = 100;
 const DEFAULT_MAX_TOTAL_PUSH_CONFIGS: usize = 100_000;
 
 /// In-memory [`PushConfigStore`] backed by a `HashMap`.
+///
+/// Uses a secondary index (`task_counts`) to track the number of configs per
+/// task, avoiding an O(n) scan of all keys when enforcing per-task limits.
 #[derive(Debug)]
 pub struct InMemoryPushConfigStore {
     configs: RwLock<HashMap<(String, String), TaskPushNotificationConfig>>,
+    /// Secondary index: per-task config count for O(1) limit checks.
+    task_counts: RwLock<HashMap<String, usize>>,
     /// Maximum number of push configs allowed per task.
     max_configs_per_task: usize,
     /// Global maximum number of push configs across all tasks.
@@ -79,6 +84,7 @@ impl Default for InMemoryPushConfigStore {
     fn default() -> Self {
         Self {
             configs: RwLock::new(HashMap::new()),
+            task_counts: RwLock::new(HashMap::new()),
             max_configs_per_task: DEFAULT_MAX_PUSH_CONFIGS_PER_TASK,
             max_total_configs: DEFAULT_MAX_TOTAL_PUSH_CONFIGS,
         }
@@ -97,6 +103,7 @@ impl InMemoryPushConfigStore {
     pub fn with_max_configs_per_task(max: usize) -> Self {
         Self {
             configs: RwLock::new(HashMap::new()),
+            task_counts: RwLock::new(HashMap::new()),
             max_configs_per_task: max,
             max_total_configs: DEFAULT_MAX_TOTAL_PUSH_CONFIGS,
         }
@@ -129,12 +136,15 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
             let key = (config.task_id.clone(), id);
             let mut store = self.configs.write().await;
+            let mut counts = self.task_counts.write().await;
 
             // Reject if this is a new config and limits are reached.
-            if !store.contains_key(&key) {
+            let is_new = !store.contains_key(&key);
+            if is_new {
                 // Global limit: prevent unbounded memory growth.
                 let total = store.len();
                 if total >= self.max_total_configs {
+                    drop(counts);
                     drop(store);
                     return Err(a2a_protocol_types::error::A2aError::invalid_params(
                         format!(
@@ -143,11 +153,13 @@ impl PushConfigStore for InMemoryPushConfigStore {
                         ),
                     ));
                 }
-                // Per-task limit.
+                // FIX(M11): Use secondary index for O(1) per-task count lookup
+                // instead of scanning all keys.
                 let task_id = &config.task_id;
-                let count = store.keys().filter(|(tid, _)| tid == task_id).count();
+                let count = counts.get(task_id).copied().unwrap_or(0);
                 let max = self.max_configs_per_task;
                 if count >= max {
+                    drop(counts);
                     drop(store);
                     return Err(a2a_protocol_types::error::A2aError::invalid_params(format!(
                         "push config limit exceeded: task {task_id} already has {count} configs (max {max})"
@@ -156,6 +168,10 @@ impl PushConfigStore for InMemoryPushConfigStore {
             }
 
             store.insert(key, config.clone());
+            if is_new {
+                *counts.entry(config.task_id.clone()).or_insert(0) += 1;
+            }
+            drop(counts);
             drop(store);
             Ok(config)
         })
@@ -199,8 +215,18 @@ impl PushConfigStore for InMemoryPushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let mut store = self.configs.write().await;
+            let mut counts = self.task_counts.write().await;
             let key = (task_id.to_owned(), id.to_owned());
-            store.remove(&key);
+            if store.remove(&key).is_some() {
+                // FIX(M11): Decrement the secondary index when a config is removed.
+                if let Some(count) = counts.get_mut(task_id) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        counts.remove(task_id);
+                    }
+                }
+            }
+            drop(counts);
             drop(store);
             Ok(())
         })

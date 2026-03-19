@@ -31,9 +31,26 @@ pub struct TaskId(pub String);
 
 impl TaskId {
     /// Creates a new [`TaskId`] from any string-like value.
+    ///
+    /// Note: This accepts empty strings. Prefer [`TaskId::try_new`] which
+    /// rejects empty/whitespace-only strings.
     #[must_use]
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
+    }
+
+    /// Creates a new [`TaskId`], rejecting empty or whitespace-only strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is empty or contains only whitespace.
+    pub fn try_new(s: impl Into<String>) -> Result<Self, &'static str> {
+        let s = s.into();
+        if s.trim().is_empty() {
+            Err("TaskId must not be empty or whitespace-only")
+        } else {
+            Ok(Self(s))
+        }
     }
 }
 
@@ -44,12 +61,16 @@ impl std::fmt::Display for TaskId {
     }
 }
 
+/// Note: This accepts empty strings for backward compatibility.
+/// Prefer [`TaskId::try_new`] which rejects empty/whitespace-only strings.
 impl From<String> for TaskId {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
+/// Note: This accepts empty strings for backward compatibility.
+/// Prefer [`TaskId::try_new`] which rejects empty/whitespace-only strings.
 impl From<&str> for TaskId {
     fn from(s: &str) -> Self {
         Self(s.to_owned())
@@ -76,9 +97,26 @@ pub struct ContextId(pub String);
 
 impl ContextId {
     /// Creates a new [`ContextId`] from any string-like value.
+    ///
+    /// Note: This accepts empty strings. Prefer [`ContextId::try_new`] which
+    /// rejects empty/whitespace-only strings.
     #[must_use]
     pub fn new(s: impl Into<String>) -> Self {
         Self(s.into())
+    }
+
+    /// Creates a new [`ContextId`], rejecting empty or whitespace-only strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is empty or contains only whitespace.
+    pub fn try_new(s: impl Into<String>) -> Result<Self, &'static str> {
+        let s = s.into();
+        if s.trim().is_empty() {
+            Err("ContextId must not be empty or whitespace-only")
+        } else {
+            Ok(Self(s))
+        }
     }
 }
 
@@ -89,12 +127,16 @@ impl std::fmt::Display for ContextId {
     }
 }
 
+/// Note: This accepts empty strings for backward compatibility.
+/// Prefer [`ContextId::try_new`] which rejects empty/whitespace-only strings.
 impl From<String> for ContextId {
     fn from(s: String) -> Self {
         Self(s)
     }
 }
 
+/// Note: This accepts empty strings for backward compatibility.
+/// Prefer [`ContextId::try_new`] which rejects empty/whitespace-only strings.
 impl From<&str> for ContextId {
     fn from(s: &str) -> Self {
         Self(s.to_owned())
@@ -282,6 +324,20 @@ impl TaskStatus {
             message: None,
             timestamp: Some(crate::utc_now_iso8601()),
         }
+    }
+
+    /// Validates the timestamp field if present.
+    ///
+    /// Returns `true` if the timestamp is absent or is a valid ISO 8601
+    /// formatted string. Returns `false` if the timestamp is present but
+    /// does not match the expected format.
+    #[must_use]
+    pub fn has_valid_timestamp(&self) -> bool {
+        // Basic ISO 8601 validation: must contain 'T' separator and
+        // be at least 19 chars (YYYY-MM-DDTHH:MM:SS).
+        self.timestamp
+            .as_ref()
+            .is_none_or(|ts| ts.len() >= 19 && ts.contains('T'))
     }
 }
 
@@ -658,5 +714,131 @@ mod tests {
         assert!(status.timestamp.is_none());
         assert!(status.message.is_none());
         assert_eq!(status.state, TaskState::Submitted);
+    }
+
+    // ── try_new tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn task_id_try_new_valid() {
+        let id = TaskId::try_new("task-1");
+        assert!(id.is_ok());
+        assert_eq!(id.unwrap(), TaskId::new("task-1"));
+    }
+
+    #[test]
+    fn task_id_try_new_valid_string() {
+        let id = TaskId::try_new("task-1".to_string());
+        assert!(id.is_ok());
+        assert_eq!(id.unwrap(), TaskId::new("task-1"));
+    }
+
+    #[test]
+    fn task_id_try_new_empty_rejected() {
+        let id = TaskId::try_new("");
+        assert!(id.is_err());
+        assert_eq!(
+            id.unwrap_err(),
+            "TaskId must not be empty or whitespace-only"
+        );
+    }
+
+    #[test]
+    fn task_id_try_new_whitespace_only_rejected() {
+        let id = TaskId::try_new("   ");
+        assert!(id.is_err());
+    }
+
+    #[test]
+    fn context_id_try_new_valid() {
+        let id = ContextId::try_new("ctx-1");
+        assert!(id.is_ok());
+        assert_eq!(id.unwrap(), ContextId::new("ctx-1"));
+    }
+
+    #[test]
+    fn context_id_try_new_valid_string() {
+        let id = ContextId::try_new("ctx-1".to_string());
+        assert!(id.is_ok());
+        assert_eq!(id.unwrap(), ContextId::new("ctx-1"));
+    }
+
+    #[test]
+    fn context_id_try_new_empty_rejected() {
+        let id = ContextId::try_new("");
+        assert!(id.is_err());
+        assert_eq!(
+            id.unwrap_err(),
+            "ContextId must not be empty or whitespace-only"
+        );
+    }
+
+    #[test]
+    fn context_id_try_new_whitespace_only_rejected() {
+        let id = ContextId::try_new("  \t ");
+        assert!(id.is_err());
+    }
+
+    // ── has_valid_timestamp tests ────────────────────────────────────────
+
+    #[test]
+    fn has_valid_timestamp_none_is_valid() {
+        let status = TaskStatus::new(TaskState::Working);
+        assert!(status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_valid_iso8601() {
+        let status = TaskStatus {
+            state: TaskState::Working,
+            message: None,
+            timestamp: Some("2026-03-19T12:00:00Z".into()),
+        };
+        assert!(status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_valid_with_offset() {
+        let status = TaskStatus {
+            state: TaskState::Working,
+            message: None,
+            timestamp: Some("2026-03-19T12:00:00+05:30".into()),
+        };
+        assert!(status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_too_short() {
+        let status = TaskStatus {
+            state: TaskState::Working,
+            message: None,
+            timestamp: Some("2026-03-19".into()),
+        };
+        assert!(!status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_missing_t_separator() {
+        let status = TaskStatus {
+            state: TaskState::Working,
+            message: None,
+            timestamp: Some("2026-03-19 12:00:00Z".into()),
+        };
+        assert!(!status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_empty_string() {
+        let status = TaskStatus {
+            state: TaskState::Working,
+            message: None,
+            timestamp: Some(String::new()),
+        };
+        assert!(!status.has_valid_timestamp());
+    }
+
+    #[test]
+    fn has_valid_timestamp_with_timestamp_constructor() {
+        let status = TaskStatus::with_timestamp(TaskState::Completed);
+        assert!(status.has_valid_timestamp());
     }
 }

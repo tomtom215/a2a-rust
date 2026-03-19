@@ -54,6 +54,11 @@ pub struct DispatchConfig {
     /// Controls backpressure between the event reader task and the HTTP
     /// response body. Higher values buffer more SSE frames in memory.
     pub sse_channel_capacity: usize,
+    /// Maximum number of requests allowed in a JSON-RPC batch. Default: 100.
+    ///
+    /// Batches exceeding this limit are rejected with a parse error before
+    /// any individual request is dispatched.
+    pub max_batch_size: usize,
 }
 
 impl Default for DispatchConfig {
@@ -64,6 +69,7 @@ impl Default for DispatchConfig {
             max_query_string_length: 4096,
             sse_keep_alive_interval: std::time::Duration::from_secs(30),
             sse_channel_capacity: 64,
+            max_batch_size: 100,
         }
     }
 }
@@ -103,6 +109,13 @@ impl DispatchConfig {
         self.sse_channel_capacity = capacity;
         self
     }
+
+    /// Sets the maximum JSON-RPC batch size.
+    #[must_use]
+    pub const fn with_max_batch_size(mut self, size: usize) -> Self {
+        self.max_batch_size = size;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -118,6 +131,7 @@ mod tests {
         assert_eq!(config.max_query_string_length, 4096);
         assert_eq!(config.sse_keep_alive_interval, Duration::from_secs(30));
         assert_eq!(config.sse_channel_capacity, 64);
+        assert_eq!(config.max_batch_size, 100);
     }
 
     #[test]
@@ -177,5 +191,6 @@ mod tests {
         assert!(debug.contains("max_query_string_length"));
         assert!(debug.contains("sse_keep_alive_interval"));
         assert!(debug.contains("sse_channel_capacity"));
+        assert!(debug.contains("max_batch_size"));
     }
 }

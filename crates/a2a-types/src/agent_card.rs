@@ -226,6 +226,25 @@ pub struct AgentCard {
     pub signatures: Option<Vec<AgentCardSignature>>,
 }
 
+impl AgentCard {
+    /// Validates the agent card for completeness.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `name` is empty
+    /// - `supported_interfaces` is empty (spec requires at least one interface)
+    pub const fn validate(&self) -> Result<(), &'static str> {
+        if self.name.is_empty() {
+            return Err("agent card name must not be empty");
+        }
+        if self.supported_interfaces.is_empty() {
+            return Err("agent card must have at least one supported interface");
+        }
+        Ok(())
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -425,5 +444,32 @@ mod tests {
         assert_eq!(caps.streaming, Some(true));
         assert_eq!(caps.push_notifications, Some(false));
         assert_eq!(caps.extended_agent_card, Some(true));
+    }
+
+    // ── AgentCard::validate tests ─────────────────────────────────────────
+
+    #[test]
+    fn validate_minimal_card_ok() {
+        let card = minimal_card();
+        assert!(card.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_empty_name_returns_error() {
+        let mut card = minimal_card();
+        card.name = String::new();
+        let err = card.validate().unwrap_err();
+        assert!(err.contains("name"), "error should mention name: {err}");
+    }
+
+    #[test]
+    fn validate_empty_supported_interfaces_returns_error() {
+        let mut card = minimal_card();
+        card.supported_interfaces = vec![];
+        let err = card.validate().unwrap_err();
+        assert!(
+            err.contains("supported interface"),
+            "error should mention supported interface: {err}"
+        );
     }
 }

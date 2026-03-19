@@ -192,10 +192,10 @@ impl RestDispatcher {
                 if !id.is_empty() {
                     match (method, action) {
                         ("POST", "cancel") => {
-                            return self.handle_cancel_task(id, headers).await;
+                            return self.handle_cancel_task(id, tenant, headers).await;
                         }
                         ("POST" | "GET", "subscribe") => {
-                            return self.handle_resubscribe(id, headers).await;
+                            return self.handle_resubscribe(id, tenant, headers).await;
                         }
                         _ => {}
                     }
@@ -208,10 +208,10 @@ impl RestDispatcher {
         match (method, segments.as_slice()) {
             // Tasks.
             ("GET", ["tasks"]) => self.handle_list_tasks(query, tenant, headers).await,
-            ("GET", ["tasks", id]) => self.handle_get_task(id, query, headers).await,
+            ("GET", ["tasks", id]) => self.handle_get_task(id, query, tenant, headers).await,
 
             // Task cancel (slash-separated variant: /tasks/{id}/cancel).
-            ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id, headers).await,
+            ("POST", ["tasks", id, "cancel"]) => self.handle_cancel_task(id, tenant, headers).await,
 
             // Push notification configs (accept both plural and singular path segments).
             ("POST", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
@@ -221,11 +221,12 @@ impl RestDispatcher {
                 "GET",
                 ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id],
             ) => {
-                self.handle_get_push_config(task_id, config_id, headers)
+                self.handle_get_push_config(task_id, config_id, tenant, headers)
                     .await
             }
             ("GET", ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig"]) => {
-                self.handle_list_push_configs(task_id, headers).await
+                self.handle_list_push_configs(task_id, tenant, headers)
+                    .await
             }
             (
                 "DELETE",
@@ -235,7 +236,7 @@ impl RestDispatcher {
                 "POST",
                 ["tasks", task_id, "pushNotificationConfigs" | "pushNotificationConfig", config_id, "delete"],
             ) => {
-                self.handle_delete_push_config(task_id, config_id, headers)
+                self.handle_delete_push_config(task_id, config_id, tenant, headers)
                     .await
             }
 
@@ -288,11 +289,12 @@ impl RestDispatcher {
         &self,
         id: &str,
         query: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let history_length = parse_query_param_u32(query, "historyLength");
         let params = a2a_protocol_types::params::TaskQueryParams {
-            tenant: None,
+            tenant: tenant.map(str::to_owned),
             id: id.to_owned(),
             history_length,
         };
@@ -318,10 +320,11 @@ impl RestDispatcher {
     async fn handle_cancel_task(
         &self,
         id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::CancelTaskParams {
-            tenant: None,
+            tenant: tenant.map(str::to_owned),
             id: id.to_owned(),
             metadata: None,
         };
@@ -334,10 +337,11 @@ impl RestDispatcher {
     async fn handle_resubscribe(
         &self,
         id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::TaskIdParams {
-            tenant: None,
+            tenant: tenant.map(str::to_owned),
             id: id.to_owned(),
         };
         match self.handler.on_resubscribe(params, Some(headers)).await {
@@ -389,10 +393,11 @@ impl RestDispatcher {
         &self,
         task_id: &str,
         config_id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::GetPushConfigParams {
-            tenant: None,
+            tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };
@@ -405,11 +410,12 @@ impl RestDispatcher {
     async fn handle_list_push_configs(
         &self,
         task_id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         match self
             .handler
-            .on_list_push_configs(task_id, None, Some(headers))
+            .on_list_push_configs(task_id, tenant, Some(headers))
             .await
         {
             Ok(configs) => json_ok_response(&configs),
@@ -421,10 +427,11 @@ impl RestDispatcher {
         &self,
         task_id: &str,
         config_id: &str,
+        tenant: Option<&str>,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
         let params = a2a_protocol_types::params::DeletePushConfigParams {
-            tenant: None,
+            tenant: tenant.map(str::to_owned),
             task_id: task_id.to_owned(),
             id: config_id.to_owned(),
         };

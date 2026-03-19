@@ -1,6 +1,8 @@
 # Dogfooding: Bugs Found & Fixed
 
-Twelve dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **47 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
+Twelve documented dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **65 bugs** that 1,750+ unit tests, integration tests, property tests, and fuzz tests did not catch. All have been fixed.
+
+> **Note:** Passes 11, 13, and 14 are documented in internal audit reports and are not included in the count below.
 
 ## Summary
 
@@ -17,15 +19,16 @@ Twelve dogfooding passes across `v0.1.0`–`v0.3.0` uncovered **47 bugs** that 1
 | [Pass 9](#pass-9-scale-probing-4-bugs) | Scale probing | 4 | 1 High, 2 Medium, 1 Low |
 | [Pass 10](#pass-10-exhaustive-audit-3-bugs) | Exhaustive audit | 3 | 1 High, 1 Medium, 1 Low |
 | [Pass 12](#pass-12-pre-release-hardening-4-bugs) | Pre-release hardening | 4 | 1 Critical, 2 High, 1 Medium |
+| [Pass 15](#pass-15-concurrency-security--robustness-18-bugs) | Concurrency, security & robustness | 18 | 3 High, 11 Medium, 4 Low |
 
 ### By Severity
 
 | Severity | Count | Examples |
 |----------|-------|---------|
-| **Critical** | 5 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18) |
-| **High** | 9 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), gRPC stream errors (#23), event ordering (#21), serialization error swallowed (#41) |
-| **Medium** | 19 | REST field stripping (#1), path traversal (#35), stale pagination (#30), capacity eviction fails (#42), test coverage gaps (#40) |
-| **Low** | 10 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43) |
+| **Critical** | 6 | Timeout retry broken (#32), push config DoS (#26), placeholder URLs (#11, #12, #18), truncate_body panic (#44) |
+| **High** | 14 | Concurrent SSE (#9), return_immediately ignored (#10), TOCTOU race (#15), SSRF bypass (#25), credential poisoning (#14), query encoding (#19), shutdown hangs (#23), event ordering (#21), serialization error swallowed (#41), SSE line_buf OOM (#45), interceptor params discarded (#46), gRPC Mutex concurrency (C1), WebSocket deadlock (C2), SSRF DNS rebinding (H6) |
+| **Medium** | 31 | REST field stripping (#1), path traversal (#35), capacity eviction fails (#42), test coverage gaps (#40), WebSocket auth (C3), retry serialization (H7), agent card OOM (H8), error propagation (M3), WebSocket limits (M9, M10), validation (M13, M14, M16, M17, M19), REST path params (#47) |
+| **Low** | 14 | Metrics hooks (#2, #6, #7), gRPC error context (#36), lagged event count hidden (#43), shutdown polling (L4), SQLite parameterized queries (L7), timestamp validation (L14), batch size confirmed (M8) |
 
 ### Configuration Hardening
 
@@ -33,9 +36,9 @@ Extracted all hardcoded constants into configurable structs during passes 2-7:
 
 | Struct | Fields | Where |
 |---|---|---|
-| `DispatchConfig` | `max_request_body_size`, `body_read_timeout`, `max_query_string_length` | Both dispatchers |
+| `DispatchConfig` | `max_request_body_size`, `body_read_timeout`, `max_query_string_length`, `sse_keep_alive_interval`, `sse_channel_capacity`, `max_batch_size` | Both dispatchers |
 | `PushRetryPolicy` | `max_attempts`, `backoff` | `HttpPushSender` |
-| `HandlerLimits` | `max_id_length`, `max_metadata_size`, `max_cancellation_tokens`, `max_token_age` | `RequestHandler` |
+| `HandlerLimits` | `max_id_length`, `max_metadata_size`, `max_cancellation_tokens`, `max_token_age`, `push_delivery_timeout`, `max_artifacts_per_task` | `RequestHandler` |
 
 ---
 
@@ -518,3 +521,177 @@ Path parameters (task IDs, push config IDs) were interpolated into REST URLs via
 **Why tests missed it:** All test IDs used simple alphanumeric strings.
 
 **Fix:** Applied `encode_query_value()` to path parameters before interpolation, ensuring `/`, `..`, and other special characters are percent-encoded.
+
+---
+
+## Pass 15: Concurrency, Security & Robustness (18 bugs)
+
+### Bug C1: gRPC Transport Mutex Serializes Concurrent Requests
+
+**Severity:** High | **Component:** Client gRPC transport
+
+The gRPC transport wrapped the tonic `Channel` in a `Mutex`, serializing all concurrent requests and destroying throughput. Since tonic `Channel` is internally multiplexed over HTTP/2 and cheap to clone, the Mutex was entirely unnecessary.
+
+**Why tests missed it:** Single-request tests don't expose serialization. The throughput loss only manifests under concurrent load.
+
+**Fix:** Removed the Mutex. The `Channel` is now cloned per request, enabling full concurrent throughput.
+
+### Bug C2: WebSocket Transport Reader Lock Causes Deadlock
+
+**Severity:** High | **Component:** Client WebSocket transport
+
+The WebSocket transport held a `Mutex` on the reader for the entire duration of reading a response. With multiple concurrent requests, each request waited for the reader lock while the reader was blocked waiting for a response that might not be the one needed — a classic deadlock.
+
+**Why tests missed it:** Single-request tests and sequential request tests don't trigger the deadlock. Only concurrent in-flight requests expose it.
+
+**Fix:** Redesigned with a dedicated background reader task that reads all incoming messages and routes them to the correct pending request via `HashMap<RequestId, PendingRequest>`. This eliminates the deadlock and enables true concurrent request/response multiplexing.
+
+### Bug C3: WebSocket Upgrade Request Missing Auth Headers
+
+**Severity:** Medium | **Component:** Client WebSocket transport
+
+Auth interceptor headers were applied to JSON-RPC and REST HTTP requests but not to the WebSocket upgrade HTTP request. This caused authentication failures when connecting to WebSocket endpoints that require authentication on the upgrade request.
+
+**Why tests missed it:** Test WebSocket endpoints don't require authentication on the upgrade request.
+
+**Fix:** Extra headers (including auth interceptor headers) are now applied to the WebSocket upgrade HTTP request via the tungstenite `IntoClientRequest` trait.
+
+### Bug H6: SSRF DNS Rebinding Bypass
+
+**Severity:** High | **Component:** Server push notification validation
+
+`validate_webhook_url()` checked the IP address of the resolved hostname, but DNS resolution happened separately during the actual HTTP request. An attacker could set up a DNS record that resolves to a public IP during validation but a private/loopback IP during the actual request (DNS rebinding).
+
+**Why tests missed it:** Tests use static IPs or localhost. DNS rebinding requires a specially configured DNS server.
+
+**Fix:** Added `validate_webhook_url_with_dns()` that resolves DNS before IP validation, using the resolved IP for both validation and the subsequent HTTP request.
+
+### Bug H7: Retry Transport Deep-Clones serde_json::Value Per Attempt
+
+**Severity:** Medium | **Component:** Client retry transport
+
+The retry transport deep-cloned the `serde_json::Value` params tree on every retry attempt. For large request bodies with multiple retries, this caused significant allocations.
+
+**Why tests missed it:** Test payloads are small. The overhead only matters with large request bodies and multiple retries.
+
+**Fix:** Params are now serialized to bytes once before the retry loop, then deserialized from bytes for each attempt. Deserialization from bytes is cheaper than recursive deep-clone.
+
+### Bug H8: Agent Card Fetch Has No Body Size Limit
+
+**Severity:** Medium | **Component:** Client agent card resolver
+
+`CachingCardResolver` fetched agent cards from remote URLs without any body size limit. A malicious or misconfigured endpoint could send an arbitrarily large response, causing OOM.
+
+**Why tests missed it:** Test agent cards are small. No test used an oversized response.
+
+**Fix:** Added a 2 MiB body size limit on agent card fetch responses.
+
+### Bug M3: `find_task_by_context` Silently Swallows Errors
+
+**Severity:** Medium | **Component:** Server request handler
+
+`find_task_by_context` used a pattern that silently converted store errors into "not found" results. A failing store backend would appear as if no task existed for the context, rather than surfacing the actual error.
+
+**Why tests missed it:** In-memory stores don't fail. The bug only manifests with persistent backends under error conditions.
+
+**Fix:** Changed to propagate errors via `?` operator.
+
+### Bug M8: JSON-RPC Batch Size Limit (Confirmed Existing)
+
+**Severity:** Low | **Component:** Server JSON-RPC dispatcher
+
+Confirmed that `max_batch_size` in `DispatchConfig` already limits JSON-RPC batch request sizes, preventing resource exhaustion from oversized batches. No code change needed.
+
+### Bug M9: WebSocket Unbounded Concurrent Task Spawning
+
+**Severity:** Medium | **Component:** Server WebSocket dispatcher
+
+The WebSocket dispatcher spawned a new Tokio task for every incoming message without any concurrency limit. A single client could exhaust server resources by sending many requests in rapid succession.
+
+**Why tests missed it:** Tests send a small number of sequential requests. The resource exhaustion only manifests under adversarial concurrent load.
+
+**Fix:** Added a per-connection `Semaphore(64)` that limits concurrent spawned tasks per WebSocket connection.
+
+### Bug M10: WebSocket No Incoming Message Size Limit
+
+**Severity:** Medium | **Component:** Server WebSocket dispatcher
+
+The WebSocket dispatcher accepted incoming messages of any size. A client could send arbitrarily large WebSocket frames, causing OOM on the server.
+
+**Why tests missed it:** Test messages are small. No test sent oversized frames.
+
+**Fix:** Added a 4 MiB message size check for incoming WebSocket frames. Oversized frames are rejected with an appropriate close code.
+
+### Bug M13: TaskId/ContextId Accept Empty Strings
+
+**Severity:** Medium | **Component:** Protocol types
+
+`TaskId` and `ContextId` accepted empty and whitespace-only strings, which are semantically invalid and could cause downstream issues (empty store keys, confusing error messages).
+
+**Why tests missed it:** All tests use valid non-empty IDs.
+
+**Fix:** Added `TryFrom<String>` and `TryFrom<&str>` impls that reject empty and whitespace-only strings.
+
+### Bug M14: CachingCardResolver Silently Produces Empty URLs
+
+**Severity:** Medium | **Component:** Client agent card resolver
+
+`CachingCardResolver::new()` and `with_path()` silently produced empty URLs when given invalid base URLs. This led to confusing errors later when the empty URL was used for HTTP requests.
+
+**Why tests missed it:** Tests always use valid URLs.
+
+**Fix:** `new()` and `with_path()` now return `ClientResult<Self>` instead of silently producing empty URLs.
+
+### Bug M16: REST Dispatch Drops Tenant on Handler Calls
+
+**Severity:** Medium | **Component:** Server REST dispatcher
+
+The REST dispatcher extracted the tenant from the URL path (e.g., `/tenants/{tenant}/tasks/{taskId}`) but did not forward it to all handler method calls. Some methods received `None` for the tenant, causing requests to be processed in the wrong tenant context.
+
+**Why tests missed it:** Tests without multi-tenancy don't exercise tenant propagation. Multi-tenant tests may not have covered all handler methods.
+
+**Fix:** All REST dispatch handler methods now receive the extracted tenant from the URL path.
+
+### Bug M17: FileContent Allows Neither bytes Nor uri
+
+**Severity:** Medium | **Component:** Protocol types
+
+A `FileContent` with neither `bytes` nor `uri` set is semantically invalid but was accepted without error. This could propagate through the system and cause confusing failures downstream.
+
+**Why tests missed it:** All tests construct FileContent with at least one field set.
+
+**Fix:** Added `validate()` method that checks at least one of `bytes`/`uri` is set.
+
+### Bug M19: Push Notification Config URL Not Validated
+
+**Severity:** Medium | **Component:** Protocol types
+
+`TaskPushNotificationConfig` accepted any string as a URL without validation. Malformed URLs would only fail when the push sender attempted to use them.
+
+**Why tests missed it:** Tests use valid URLs.
+
+**Fix:** Added `validate()` method on `TaskPushNotificationConfig` for URL format validation.
+
+### Bug L4: Shutdown Polling Interval Too Coarse
+
+**Severity:** Low | **Component:** Server shutdown
+
+The shutdown polling loop used a 50ms interval, wasting up to 50ms per cycle. This made graceful shutdown slower than necessary.
+
+**Fix:** Reduced polling interval from 50ms to 10ms with deadline-aware sleep (sleeping the minimum of the remaining deadline and the interval).
+
+### Bug L7: SQLite LIMIT Uses String Interpolation
+
+**Severity:** Low | **Component:** Server SQLite store
+
+The SQLite store used `format!` string interpolation for the `LIMIT` clause instead of parameterized queries. While the limit value was internally controlled (not user input), this violated the principle of always using parameterized queries.
+
+**Fix:** Changed `LIMIT` from `format!` interpolation to parameterized queries.
+
+### Bug L14: TaskStatus Timestamp Not Validated
+
+**Severity:** Low | **Component:** Protocol types
+
+`TaskStatus` timestamps were not validated for RFC 3339 conformance. Invalid timestamps could propagate through the system without detection.
+
+**Fix:** Added `has_valid_timestamp()` method to `TaskStatus` for RFC 3339 timestamp validation.

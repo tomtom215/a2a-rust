@@ -81,11 +81,24 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | Unbounded | Limit concurrent SSE streams |
 | `with_event_queue_write_timeout(Duration)` | 5 seconds | Prevents executor blocking on slow clients |
-| `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (ID length, metadata size, artifact count, etc.) |
+| `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (see [HandlerLimits](#handlerlimits) below) |
 | `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
 | `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
 | `with_tenant_config(PerTenantConfig)` | None | Per-tenant differentiated limits |
+
+### HandlerLimits
+
+The `HandlerLimits` struct configures per-handler bounds:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_id_length` | `usize` | 1024 | Maximum allowed length for task/context IDs |
+| `max_metadata_size` | `usize` | 1 MiB | Maximum serialized metadata size in bytes |
+| `max_cancellation_tokens` | `usize` | 10,000 | Max cancellation token map entries before cleanup |
+| `max_token_age` | `Duration` | 1 hour | Maximum age for cancellation tokens |
+| `push_delivery_timeout` | `Duration` | 5 seconds | Timeout for individual push webhook deliveries |
+| `max_artifacts_per_task` | `usize` | 1000 | Maximum artifacts per task (prevents unbounded growth) |
 
 ### Build-Time Validation
 

@@ -82,7 +82,13 @@ pub struct ClientResponse {
     /// The JSON-decoded result value.
     pub result: serde_json::Value,
 
-    /// The HTTP status code.
+    /// The HTTP status code of the response.
+    ///
+    /// For streaming responses, this is the actual HTTP status code captured
+    /// from the transport layer during stream establishment. The transport
+    /// validates the HTTP status and returns an error for non-2xx responses,
+    /// so a successful `send_streaming_request` call guarantees the server
+    /// responded with a success status (typically HTTP 200).
     pub status_code: u16,
 }
 

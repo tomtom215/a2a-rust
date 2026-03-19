@@ -164,6 +164,17 @@ impl JsonRpcDispatcher {
             if items.is_empty() {
                 return parse_error_response(None, "empty batch request");
             }
+            // FIX(M8): Reject oversized batches to prevent resource exhaustion.
+            if items.len() > self.config.max_batch_size {
+                return parse_error_response(
+                    None,
+                    &format!(
+                        "batch too large: {} requests exceeds {} limit",
+                        items.len(),
+                        self.config.max_batch_size
+                    ),
+                );
+            }
             let mut responses: Vec<serde_json::Value> = Vec::with_capacity(items.len());
             for item in items {
                 let rpc_req: JsonRpcRequest = match serde_json::from_value(item.clone()) {

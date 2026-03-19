@@ -75,6 +75,11 @@ pub struct RequestHandler {
     pub(crate) tenant_config: Option<PerTenantConfig>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
+    /// Per-context-ID locks to serialize find + save operations for the same
+    /// context, preventing two concurrent `SendMessage` requests from both
+    /// creating new tasks for the same `context_id`.
+    pub(crate) context_locks:
+        Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.

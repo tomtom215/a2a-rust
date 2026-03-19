@@ -44,7 +44,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging
-cargo package --workspace --exclude echo-agent --exclude agent-team
+cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude a2a-tck
 ```
 
 ### 2. Merge to main

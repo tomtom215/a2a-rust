@@ -230,8 +230,8 @@ class of bug, and the gaps between layers are where production incidents hide:
 | **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
 
 **The a2a-rust experience:** After building ~1,630 unit/integration/property/fuzz
-tests (with feature flags), an exhaustive E2E dogfood suite that caught 43 real bugs across 10
-passes, and achieving full green CI — **mutation testing still found gaps.** Tests
+tests (with feature flags), an exhaustive E2E dogfood suite that caught 65 real bugs across 12
+documented passes, and achieving full green CI — **mutation testing still found gaps.** Tests
 that looked comprehensive were silently missing assertions on return values,
 boundary conditions, and delegation correctness. The suite was green, but mutants
 survived because no test *verified* the specific behavior being mutated.

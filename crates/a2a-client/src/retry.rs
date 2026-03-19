@@ -148,6 +148,10 @@ impl Transport for RetryTransport {
             let mut last_err = None;
             let mut backoff = self.policy.initial_backoff;
 
+            // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
+            // avoiding deep-clone of the serde_json::Value tree on every retry.
+            let serialized = serde_json::to_vec(&params).map_err(ClientError::Serialization)?;
+
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
                     let jittered_backoff = jittered(backoff);
@@ -160,9 +164,12 @@ impl Transport for RetryTransport {
                     );
                 }
 
+                let attempt_params: serde_json::Value =
+                    serde_json::from_slice(&serialized).map_err(ClientError::Serialization)?;
+
                 match self
                     .inner
-                    .send_request(method, params.clone(), extra_headers)
+                    .send_request(method, attempt_params, extra_headers)
                     .await
                 {
                     Ok(result) => return Ok(result),
@@ -188,6 +195,10 @@ impl Transport for RetryTransport {
             let mut last_err = None;
             let mut backoff = self.policy.initial_backoff;
 
+            // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
+            // avoiding deep-clone of the serde_json::Value tree on every retry.
+            let serialized = serde_json::to_vec(&params).map_err(ClientError::Serialization)?;
+
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
                     let jittered_backoff = jittered(backoff);
@@ -205,9 +216,12 @@ impl Transport for RetryTransport {
                     );
                 }
 
+                let attempt_params: serde_json::Value =
+                    serde_json::from_slice(&serialized).map_err(ClientError::Serialization)?;
+
                 match self
                     .inner
-                    .send_streaming_request(method, params.clone(), extra_headers)
+                    .send_streaming_request(method, attempt_params, extra_headers)
                     .await
                 {
                     Ok(stream) => return Ok(stream),

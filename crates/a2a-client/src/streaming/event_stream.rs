@@ -61,6 +61,13 @@ pub struct EventStream {
     done: bool,
     /// Handle to abort the background body-reader task on drop.
     abort_handle: Option<AbortHandle>,
+    /// The HTTP status code from the response that established this stream.
+    ///
+    /// The transport layer validates the HTTP status during stream
+    /// establishment and returns an error for non-2xx responses. A successful
+    /// `send_streaming_request` call guarantees the server responded with a
+    /// success status (typically HTTP 200).
+    status_code: u16,
 }
 
 impl EventStream {
@@ -70,13 +77,14 @@ impl EventStream {
     /// Prefer [`EventStream::with_abort_handle`] to ensure the background task
     /// is cancelled when the stream is dropped.
     #[must_use]
-    #[cfg(test)]
+    #[cfg(any(test, feature = "websocket"))]
     pub(crate) fn new(rx: mpsc::Receiver<BodyChunk>) -> Self {
         Self {
             rx,
             parser: SseParser::new(),
             done: false,
             abort_handle: None,
+            status_code: 200,
         }
     }
 
@@ -85,6 +93,7 @@ impl EventStream {
     /// When the `EventStream` is dropped, the abort handle is used to cancel
     /// the background task, preventing resource leaks.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn with_abort_handle(
         rx: mpsc::Receiver<BodyChunk>,
         abort_handle: AbortHandle,
@@ -94,7 +103,34 @@ impl EventStream {
             parser: SseParser::new(),
             done: false,
             abort_handle: Some(abort_handle),
+            status_code: 200,
         }
+    }
+
+    /// Creates a new [`EventStream`] with an abort handle and the actual HTTP
+    /// status code from the response that established this stream.
+    #[must_use]
+    pub(crate) fn with_status(
+        rx: mpsc::Receiver<BodyChunk>,
+        abort_handle: AbortHandle,
+        status_code: u16,
+    ) -> Self {
+        Self {
+            rx,
+            parser: SseParser::new(),
+            done: false,
+            abort_handle: Some(abort_handle),
+            status_code,
+        }
+    }
+
+    /// Returns the HTTP status code from the response that established this stream.
+    ///
+    /// The transport layer validates the HTTP status during stream establishment
+    /// and returns an error for non-2xx responses, so this is typically `200`.
+    #[must_use]
+    pub const fn status_code(&self) -> u16 {
+        self.status_code
     }
 
     /// Returns the next event from the stream.

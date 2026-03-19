@@ -123,8 +123,17 @@ impl RequestHandler {
             .or_else(|| params.message.context_id.as_ref().map(|c| c.0.as_str()))
             .map_or_else(|| uuid::Uuid::new_v4().to_string(), ToString::to_string);
 
+        // Acquire a per-context lock to serialize the find + save sequence for
+        // the same context_id, preventing two concurrent SendMessage requests
+        // from both creating new tasks for the same context.
+        let context_lock = {
+            let mut locks = self.context_locks.write().await;
+            locks.entry(context_id.clone()).or_default().clone()
+        };
+        let context_guard = context_lock.lock().await;
+
         // Look up existing task for continuation.
-        let stored_task = self.find_task_by_context(&context_id).await;
+        let stored_task = self.find_task_by_context(&context_id).await?;
 
         // Context/task mismatch rejection: if message.task_id is set but
         // doesn't match the stored task found by context_id, reject.
@@ -191,16 +200,36 @@ impl RequestHandler {
         // the store but has no cancellation token — a concurrent CancelTask
         // during that window would silently fail to cancel.
         {
-            let mut tokens = self.cancellation_tokens.write().await;
-            // Sweep stale tokens if the map is getting large (prevent unbounded growth
-            // if executors panic and never clean up their tokens).
-            if tokens.len() >= self.limits.max_cancellation_tokens {
-                let now = Instant::now();
-                tokens.retain(|_, entry| {
-                    !entry.token.is_cancelled()
-                        && now.duration_since(entry.created_at) < self.limits.max_token_age
-                });
+            // Phase 1: Collect stale entries under READ lock (non-blocking for
+            // other readers). This avoids holding a write lock during the O(n)
+            // sweep of all cancellation tokens.
+            let stale_ids: Vec<TaskId> = {
+                let tokens = self.cancellation_tokens.read().await;
+                if tokens.len() >= self.limits.max_cancellation_tokens {
+                    let now = Instant::now();
+                    tokens
+                        .iter()
+                        .filter(|(_, entry)| {
+                            entry.token.is_cancelled()
+                                || now.duration_since(entry.created_at) >= self.limits.max_token_age
+                        })
+                        .map(|(id, _)| id.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            };
+
+            // Phase 2: Remove stale entries under WRITE lock (brief).
+            if !stale_ids.is_empty() {
+                let mut tokens = self.cancellation_tokens.write().await;
+                for id in &stale_ids {
+                    tokens.remove(id);
+                }
             }
+
+            // Phase 3: Insert the new token under WRITE lock.
+            let mut tokens = self.cancellation_tokens.write().await;
             tokens.insert(
                 task_id.clone(),
                 CancellationEntry {
@@ -212,18 +241,46 @@ impl RequestHandler {
 
         self.task_store.save(task.clone()).await?;
 
-        // Create event queue.
-        let (writer, reader) = self.event_queue_manager.get_or_create(&task_id).await;
-        let reader = reader
-            .ok_or_else(|| ServerError::Internal("event queue already exists for task".into()))?;
+        // Release the per-context lock now that the task is saved. Subsequent
+        // requests for this context_id will find the task via find_task_by_context.
+        drop(context_guard);
 
-        // FIX(#38): Subscribe the background reader BEFORE spawning the
-        // executor. This guarantees the background processor sees every event,
-        // even from executors that complete in <1ms.
-        let bg_reader = if streaming {
-            self.event_queue_manager.subscribe(&task_id).await
+        // Create event queue. For streaming mode, use a dedicated persistence
+        // channel so the background event processor is not affected by slow
+        // SSE consumers (H5 fix).
+        let (writer, reader, persistence_rx) = if streaming {
+            let (w, r, p) = self
+                .event_queue_manager
+                .get_or_create_with_persistence(&task_id)
+                .await;
+            let r = match r {
+                Some(r) => r,
+                None => {
+                    // Queue already exists — subscribe to it instead of failing.
+                    self.event_queue_manager
+                        .subscribe(&task_id)
+                        .await
+                        .ok_or_else(|| {
+                            ServerError::Internal("event queue disappeared during subscribe".into())
+                        })?
+                }
+            };
+            (w, r, p)
         } else {
-            None
+            let (w, r) = self.event_queue_manager.get_or_create(&task_id).await;
+            let r = match r {
+                Some(r) => r,
+                None => {
+                    // Queue already exists — subscribe to it instead of failing.
+                    self.event_queue_manager
+                        .subscribe(&task_id)
+                        .await
+                        .ok_or_else(|| {
+                            ServerError::Internal("event queue disappeared during subscribe".into())
+                        })?
+                }
+            };
+            (w, r, None)
         };
 
         // Spawn executor task. The spawned task owns the only writer clone
@@ -236,6 +293,35 @@ impl RequestHandler {
         let executor_timeout = self.executor_timeout;
         let executor_handle = tokio::spawn(async move {
             trace_debug!(task_id = %ctx.task_id, "executor started");
+
+            // FIX(L5): Use a cleanup guard so that the event queue and
+            // cancellation token are cleaned up even if the task is aborted
+            // or panics. The guard runs on drop, which Rust guarantees
+            // during normal unwinding and when the JoinHandle is aborted.
+            #[allow(clippy::items_after_statements)]
+            struct CleanupGuard {
+                task_id: Option<TaskId>,
+                queue_mgr: crate::streaming::EventQueueManager,
+                tokens: std::sync::Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
+            }
+            #[allow(clippy::items_after_statements)]
+            impl Drop for CleanupGuard {
+                fn drop(&mut self) {
+                    if let Some(tid) = self.task_id.take() {
+                        let qmgr = self.queue_mgr.clone();
+                        let tokens = std::sync::Arc::clone(&self.tokens);
+                        tokio::task::spawn(async move {
+                            qmgr.destroy(&tid).await;
+                            tokens.write().await.remove(&tid);
+                        });
+                    }
+                }
+            }
+            let mut cleanup_guard = CleanupGuard {
+                task_id: Some(task_id_for_cleanup.clone()),
+                queue_mgr: event_queue_mgr.clone(),
+                tokens: Arc::clone(&cancel_tokens),
+            };
 
             // Wrap executor call to catch panics, ensuring cleanup always runs.
             let result = {
@@ -271,12 +357,13 @@ impl RequestHandler {
                     );
                 }
             }
-            // Drop the writer and remove the manager's reference so the
-            // channel closes and readers see EOF.
+            // Drop the writer so the channel closes and readers see EOF.
             drop(writer);
+            // Perform explicit cleanup, then defuse the guard so it does not
+            // double-clean on normal exit.
             event_queue_mgr.destroy(&task_id_for_cleanup).await;
-            // Clean up the cancellation token.
             cancel_tokens.write().await.remove(&task_id_for_cleanup);
+            cleanup_guard.task_id = None;
         });
 
         self.interceptors.run_after(&call_ctx).await?;
@@ -288,9 +375,10 @@ impl RequestHandler {
             // 2. Push notifications fire for every event regardless of consumer mode
             // 3. State transition validation occurs for streaming events
             //
-            // FIX(#38): The background reader was subscribed BEFORE the executor
-            // was spawned, so it sees every event even from fast executors.
-            self.spawn_background_event_processor(task_id.clone(), executor_handle, bg_reader);
+            // H5 FIX: The persistence channel is a dedicated mpsc channel that
+            // is not affected by SSE consumer backpressure, so the background
+            // processor never misses state transitions.
+            self.spawn_background_event_processor(task_id.clone(), executor_handle, persistence_rx);
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.

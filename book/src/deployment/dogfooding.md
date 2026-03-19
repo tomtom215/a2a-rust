@@ -17,7 +17,7 @@ Unit tests and integration tests are necessary but insufficient. **No single tes
 | **Dogfooding** | DX issues, multi-hop bugs, performance surprises, missing features | Weak assertions, dead code paths |
 | **Mutation tests** | Weak/missing assertions, dead code paths, off-by-one errors, swapped operands | Protocol-level emergent behavior |
 
-**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 94 E2E dogfood tests that caught 43 real bugs across 10 passes — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
+**The critical lesson:** After building 1,750+ tests across all of the above categories — unit, integration, property, fuzz, and 94 E2E dogfood tests that caught 65 real bugs across 12 documented passes — **the entire suite was green.** Every CI check passed. Then we ran mutation testing, and it found gaps in every crate. Tests that *looked* comprehensive were silently missing assertions on return values, boundary conditions, delegation correctness, and hash function specifics.
 
 Mutation testing fills the gap between "tests pass" and "tests actually detect bugs." A test suite with 100% line coverage can still have a 0% mutation score if every assertion is trivial. Mutation testing is the only technique that directly measures *test effectiveness* rather than test *existence*. See **[Testing Your Agent — Mutation Testing](./testing.md#mutation-testing)** for setup and usage.
 
@@ -195,7 +195,7 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Open Issues & Future Work — All Resolved
 
-All architecture, ergonomics, observability, performance, and durability issues from passes 1–12 have been resolved (47 bugs across 12 passes, all fixed). Additional scale and security hardening items are documented in the [CHANGELOG](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) as known limitations for future releases. All proposed beyond-spec features have been implemented:
+All architecture, ergonomics, observability, performance, and durability issues from the documented passes have been resolved (65 bugs across 12 documented passes, all fixed). Additional scale and security hardening items are documented in the [CHANGELOG](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) as known limitations for future releases. All proposed beyond-spec features have been implemented:
 
 | Feature | Location |
 |---|---|

@@ -9,9 +9,12 @@ use std::sync::Arc;
 use a2a_protocol_types::task::TaskId;
 use tokio::sync::RwLock;
 
+use a2a_protocol_types::error::A2aResult;
+use a2a_protocol_types::events::StreamResponse;
+
 use super::{
-    new_in_memory_queue_with_options, InMemoryQueueReader, InMemoryQueueWriter,
-    DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT,
+    new_in_memory_queue_with_options, new_in_memory_queue_with_persistence, InMemoryQueueReader,
+    InMemoryQueueWriter, DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT,
 };
 use crate::metrics::Metrics;
 
@@ -167,6 +170,53 @@ impl EventQueueManager {
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             (writer, Some(reader))
+        };
+        let queue_count = map.len();
+        drop(map);
+        if let Some(ref metrics) = self.metrics {
+            metrics.on_queue_depth_change(queue_count);
+        }
+        result
+    }
+
+    /// Like [`get_or_create`](Self::get_or_create), but also creates a
+    /// dedicated persistence channel for the background event processor.
+    ///
+    /// Returns `(writer, Option<sse_reader>, Option<persistence_rx>)`.
+    /// The persistence receiver is only returned when a new queue is created
+    /// (not for existing queues). The persistence channel is independent of
+    /// the broadcast channel and is not affected by slow SSE consumers.
+    pub async fn get_or_create_with_persistence(
+        &self,
+        task_id: &TaskId,
+    ) -> (
+        Arc<InMemoryQueueWriter>,
+        Option<InMemoryQueueReader>,
+        Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+    ) {
+        let mut map = self.writers.write().await;
+        #[allow(clippy::option_if_let_else)]
+        let result = if let Some(existing) = map.get(task_id) {
+            (Arc::clone(existing), None, None)
+        } else if self
+            .max_concurrent_queues
+            .is_some_and(|max| map.len() >= max)
+        {
+            let (writer, _reader) = new_in_memory_queue_with_options(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
+            (Arc::new(writer), None, None)
+        } else {
+            let (writer, reader, persistence_rx) = new_in_memory_queue_with_persistence(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
+            let writer = Arc::new(writer);
+            map.insert(task_id.clone(), Arc::clone(&writer));
+            (writer, Some(reader), Some(persistence_rx))
         };
         let queue_count = map.len();
         drop(map);

@@ -49,9 +49,6 @@ manifest at extreme scale or under adversarial conditions:
 - **SQL push config stores** — Unlike `InMemoryPushConfigStore`, the SQLite and
   Postgres push config stores do not enforce per-task or global config limits.
   Mitigation: implement application-level limits or periodic cleanup.
-- **gRPC transport Mutex** — The client gRPC transport serializes all requests
-  through a `tokio::sync::Mutex` on the tonic client. This limits concurrent
-  throughput. A future release will clone the tonic channel directly.
 
 ## [0.3.0] - 2026-03-18
 
