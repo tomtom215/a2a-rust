@@ -131,6 +131,7 @@ impl JsonRpcTransport {
         let client = {
             let mut connector = HttpConnector::new();
             connector.set_connect_timeout(Some(connection_timeout));
+            connector.set_nodelay(true);
             Client::builder(TokioExecutor::new())
                 .pool_idle_timeout(Duration::from_secs(90))
                 .build(connector)

@@ -123,6 +123,9 @@ pub async fn serve(
 
     loop {
         let (stream, _peer) = listener.accept().await?;
+        // Disable Nagle's algorithm to avoid ~40ms delayed-ACK latency on
+        // small SSE frames and JSON-RPC responses.
+        let _ = stream.set_nodelay(true);
         let io = hyper_util::rt::TokioIo::new(stream);
         let dispatcher = Arc::clone(&dispatcher);
 
@@ -162,6 +165,7 @@ pub async fn serve_with_addr(
             let Ok((stream, _peer)) = listener.accept().await else {
                 break;
             };
+            let _ = stream.set_nodelay(true);
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
 

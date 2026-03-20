@@ -120,8 +120,14 @@ fn bench_serialize_allocs(c: &mut Criterion) {
 
     // AgentCard
     let card = fixtures::agent_card("https://bench.example.com");
+    // Pre-measure allocation count for verification
+    let expected_card_allocs = measure_allocs(|| {
+        let _ = serde_json::to_vec(criterion::black_box(&card));
+    })
+    .alloc_count;
     group.bench_function("agent_card_alloc_count", |b| {
         b.iter_custom(|iters| {
+            let start = std::time::Instant::now();
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
@@ -129,15 +135,25 @@ fn bench_serialize_allocs(c: &mut Criterion) {
                 });
                 total_allocs += snap.alloc_count;
             }
-            // Return a Duration proportional to alloc count for criterion tracking
-            std::time::Duration::from_nanos(total_allocs)
+            // Verify allocation count hasn't regressed
+            assert_eq!(
+                total_allocs,
+                expected_card_allocs * iters,
+                "AgentCard serialize alloc count changed"
+            );
+            start.elapsed()
         });
     });
 
     // Task with history
     let task = fixtures::completed_task(0);
+    let expected_task_allocs = measure_allocs(|| {
+        let _ = serde_json::to_vec(criterion::black_box(&task));
+    })
+    .alloc_count;
     group.bench_function("task_alloc_count", |b| {
         b.iter_custom(|iters| {
+            let start = std::time::Instant::now();
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
@@ -145,7 +161,12 @@ fn bench_serialize_allocs(c: &mut Criterion) {
                 });
                 total_allocs += snap.alloc_count;
             }
-            std::time::Duration::from_nanos(total_allocs)
+            assert_eq!(
+                total_allocs,
+                expected_task_allocs * iters,
+                "Task serialize alloc count changed"
+            );
+            start.elapsed()
         });
     });
 
@@ -159,8 +180,13 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
 
     let card = fixtures::agent_card("https://bench.example.com");
     let card_bytes = serde_json::to_vec(&card).unwrap();
+    let expected_card_allocs = measure_allocs(|| {
+        let _: AgentCard = serde_json::from_slice(criterion::black_box(&card_bytes)).unwrap();
+    })
+    .alloc_count;
     group.bench_function("agent_card_alloc_count", |b| {
         b.iter_custom(|iters| {
+            let start = std::time::Instant::now();
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
@@ -169,14 +195,24 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
                 });
                 total_allocs += snap.alloc_count;
             }
-            std::time::Duration::from_nanos(total_allocs)
+            assert_eq!(
+                total_allocs,
+                expected_card_allocs * iters,
+                "AgentCard deserialize alloc count changed"
+            );
+            start.elapsed()
         });
     });
 
     let task = fixtures::completed_task(0);
     let task_bytes = serde_json::to_vec(&task).unwrap();
+    let expected_task_allocs = measure_allocs(|| {
+        let _: Task = serde_json::from_slice(criterion::black_box(&task_bytes)).unwrap();
+    })
+    .alloc_count;
     group.bench_function("task_alloc_count", |b| {
         b.iter_custom(|iters| {
+            let start = std::time::Instant::now();
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
@@ -185,7 +221,12 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
                 });
                 total_allocs += snap.alloc_count;
             }
-            std::time::Duration::from_nanos(total_allocs)
+            assert_eq!(
+                total_allocs,
+                expected_task_allocs * iters,
+                "Task deserialize alloc count changed"
+            );
+            start.elapsed()
         });
     });
 
@@ -201,11 +242,16 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
     for &turns in turn_counts {
         let task = fixtures::task_with_history(0, turns);
 
+        let expected_ser_allocs = measure_allocs(|| {
+            let _ = serde_json::to_vec(criterion::black_box(&task));
+        })
+        .alloc_count;
         group.bench_with_input(
             BenchmarkId::new("serialize_allocs", turns),
             &task,
             |b, task| {
                 b.iter_custom(|iters| {
+                    let start = std::time::Instant::now();
                     let mut total_allocs = 0u64;
                     for _ in 0..iters {
                         let snap = measure_allocs(|| {
@@ -213,17 +259,23 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
                         });
                         total_allocs += snap.alloc_count;
                     }
-                    std::time::Duration::from_nanos(total_allocs)
+                    assert_eq!(total_allocs, expected_ser_allocs * iters);
+                    start.elapsed()
                 });
             },
         );
 
         let task_bytes = serde_json::to_vec(&task).unwrap();
+        let expected_de_allocs = measure_allocs(|| {
+            let _: Task = serde_json::from_slice(criterion::black_box(&task_bytes)).unwrap();
+        })
+        .alloc_count;
         group.bench_with_input(
             BenchmarkId::new("deserialize_allocs", turns),
             &task_bytes,
             |b, bytes| {
                 b.iter_custom(|iters| {
+                    let start = std::time::Instant::now();
                     let mut total_allocs = 0u64;
                     for _ in 0..iters {
                         let snap = measure_allocs(|| {
@@ -232,7 +284,8 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
                         });
                         total_allocs += snap.alloc_count;
                     }
-                    std::time::Duration::from_nanos(total_allocs)
+                    assert_eq!(total_allocs, expected_de_allocs * iters);
+                    start.elapsed()
                 });
             },
         );
@@ -250,8 +303,13 @@ fn bench_alloc_bytes_scaling(c: &mut Criterion) {
     for &size in sizes {
         let msg = fixtures::user_message(&"x".repeat(size));
 
+        let expected_bytes = measure_allocs(|| {
+            let _ = serde_json::to_vec(criterion::black_box(&msg));
+        })
+        .alloc_bytes;
         group.bench_with_input(BenchmarkId::new("serialize_bytes", size), &msg, |b, msg| {
             b.iter_custom(|iters| {
+                let start = std::time::Instant::now();
                 let mut total_bytes = 0u64;
                 for _ in 0..iters {
                     let snap = measure_allocs(|| {
@@ -259,7 +317,8 @@ fn bench_alloc_bytes_scaling(c: &mut Criterion) {
                     });
                     total_bytes += snap.alloc_bytes;
                 }
-                std::time::Duration::from_nanos(total_bytes)
+                assert_eq!(total_bytes, expected_bytes * iters);
+                start.elapsed()
             });
         });
     }

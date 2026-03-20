@@ -161,8 +161,11 @@ impl JsonRpcDispatcher {
             Err(e) => return parse_error_response(None, &e.to_string()),
         };
 
-        if let Some(items) = raw.as_array() {
-            // Batch request: dispatch each element, collect responses.
+        if raw.is_array() {
+            // Batch request: take ownership of the array to avoid per-item clones.
+            let serde_json::Value::Array(items) = raw else {
+                unreachable!()
+            };
             if items.is_empty() {
                 return parse_error_response(None, "empty batch request");
             }
@@ -179,7 +182,7 @@ impl JsonRpcDispatcher {
             }
             let mut responses: Vec<serde_json::Value> = Vec::with_capacity(items.len());
             for item in items {
-                let rpc_req: JsonRpcRequest = match serde_json::from_value(item.clone()) {
+                let rpc_req: JsonRpcRequest = match serde_json::from_value(item) {
                     Ok(r) => r,
                     Err(e) => {
                         // Invalid request within batch — return individual parse error.

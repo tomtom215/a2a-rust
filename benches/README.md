@@ -36,7 +36,7 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 | **Error Paths** | `error_paths.rs` | Happy path vs error path latency ratio; task-not-found lookup cost; malformed JSON rejection throughput; wrong content-type rejection |
 | **Backpressure** | `backpressure.rs` | Stream event volume scaling (3–101 events); slow consumer simulation (1ms/5ms read delays); concurrent stream fan-out under load (1–16 streams) |
 | **Data Volume** | `data_volume.rs` | TaskStore get/list/save at 1K–100K pre-populated tasks; context_id filtering at scale; concurrent read contention at 10K tasks; history depth impact on store operations |
-| **Memory Overhead** | `memory_overhead.rs` | Heap allocations per serialize/deserialize via counting allocator; allocation scaling with conversation history depth; allocation bytes per payload size (64B–16KB) |
+| **Memory Overhead** | `memory_overhead.rs` | Heap allocations per serialize/deserialize via counting allocator; allocation scaling with conversation history depth; allocation bytes per payload size (64B–16KB). Uses `iter_custom` with real wall-clock timing and deterministic allocation count assertions. |
 
 ## Architecture
 

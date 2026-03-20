@@ -200,6 +200,7 @@ async fn fetch_card_with_metadata(
     let client: Client<HttpConnector, Full<Bytes>> = {
         let mut connector = HttpConnector::new();
         connector.set_connect_timeout(Some(Duration::from_secs(10)));
+        connector.set_nodelay(true);
         Client::builder(TokioExecutor::new()).build(connector)
     };
 

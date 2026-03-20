@@ -28,7 +28,7 @@ use crate::message::Message;
 /// the inner `String`). No Unicode normalization is applied, so two IDs
 /// that look identical but use different Unicode representations (e.g.
 /// NFC vs. NFD) will be considered distinct.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct TaskId(pub String);
 
 impl TaskId {
