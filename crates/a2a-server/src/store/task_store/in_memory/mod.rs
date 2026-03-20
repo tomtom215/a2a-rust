@@ -14,7 +14,7 @@
 
 mod eviction;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
@@ -64,7 +64,7 @@ pub(super) struct TaskEntry {
 /// uses a single `RwLock` and is optimized for testing and moderate load.
 #[derive(Debug)]
 pub struct InMemoryTaskStore {
-    pub(super) entries: RwLock<HashMap<TaskId, TaskEntry>>,
+    pub(super) entries: RwLock<BTreeMap<TaskId, TaskEntry>>,
     pub(super) config: TaskStoreConfig,
     /// Counter for amortized eviction (only run every `EVICTION_INTERVAL` writes).
     pub(super) write_count: std::sync::atomic::AtomicU64,
@@ -85,7 +85,7 @@ impl InMemoryTaskStore {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            entries: RwLock::new(HashMap::new()),
+            entries: RwLock::new(BTreeMap::new()),
             config: TaskStoreConfig::default(),
             write_count: std::sync::atomic::AtomicU64::new(0),
             eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
@@ -96,7 +96,7 @@ impl InMemoryTaskStore {
     #[must_use]
     pub fn with_config(config: TaskStoreConfig) -> Self {
         Self {
-            entries: RwLock::new(HashMap::new()),
+            entries: RwLock::new(BTreeMap::new()),
             config,
             write_count: std::sync::atomic::AtomicU64::new(0),
             eviction_in_progress: std::sync::atomic::AtomicBool::new(false),
@@ -153,52 +153,59 @@ impl TaskStore for InMemoryTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
         Box::pin(async move {
             let store = self.entries.read().await;
-            let mut tasks: Vec<Task> = store
-                .values()
-                .filter(|e| {
-                    if let Some(ref ctx) = params.context_id {
-                        if e.task.context_id.0 != *ctx {
-                            return false;
-                        }
-                    }
-                    if let Some(ref status) = params.status {
-                        if e.task.status.state != *status {
-                            return false;
-                        }
-                    }
-                    true
-                })
-                .map(|e| e.task.clone())
-                .collect();
-            drop(store);
-
-            // Sort by task ID for deterministic output.
-            tasks.sort_by(|a, b| a.id.0.cmp(&b.id.0));
-
-            // Apply cursor-based pagination via page_token.
-            // The page_token is the last task ID from the previous page.
-            if let Some(ref token) = params.page_token {
-                if let Some(pos) = tasks.iter().position(|t| t.id.0 == *token) {
-                    // Skip up to and including the cursor task.
-                    tasks = tasks.split_off(pos + 1);
-                } else {
-                    // Token refers to a non-existent task — return empty page.
-                    tasks.clear();
-                }
-            }
 
             // Treat page_size of 0 as "use default"; clamp to MAX_PAGE_SIZE.
             let page_size = match params.page_size {
                 Some(0) | None => 50_usize,
                 Some(n) => (n.min(self.config.max_page_size)) as usize,
             };
+
+            // BTreeMap iteration is already sorted by TaskId.
+            // Use range() to skip past the cursor efficiently instead of
+            // scanning all entries, and only clone the page we need.
+            let filter = |e: &TaskEntry| -> bool {
+                if let Some(ref ctx) = params.context_id {
+                    if e.task.context_id.0 != *ctx {
+                        return false;
+                    }
+                }
+                if let Some(ref status) = params.status {
+                    if e.task.status.state != *status {
+                        return false;
+                    }
+                }
+                true
+            };
+
+            let iter: Box<dyn Iterator<Item = (&TaskId, &TaskEntry)>> =
+                if let Some(ref token) = params.page_token {
+                    let cursor = TaskId::new(token.clone());
+                    // Token must reference an existing task; return empty if invalid.
+                    if !store.contains_key(&cursor) {
+                        let empty: Vec<Task> = Vec::new();
+                        let response = TaskListResponse::new(empty);
+                        return Ok(response);
+                    }
+                    // range excludes the lower bound when using Excluded
+                    Box::new(store.range((std::ops::Bound::Excluded(cursor), std::ops::Bound::Unbounded)))
+                } else {
+                    Box::new(store.iter())
+                };
+
+            // Only clone up to page_size + 1 tasks (the +1 tells us if there's a next page).
+            let tasks: Vec<Task> = iter
+                .filter(|(_, e)| filter(e))
+                .take(page_size + 1)
+                .map(|(_, e)| e.task.clone())
+                .collect();
+            drop(store);
+
             let next_page_token = if tasks.len() > page_size {
-                tasks
-                    .get(page_size.saturating_sub(1))
-                    .map(|t| t.id.0.clone())
+                tasks.get(page_size.saturating_sub(1)).map(|t| t.id.0.clone())
             } else {
                 None
             };
+            let mut tasks = tasks;
             tasks.truncate(page_size);
 
             let mut response = TaskListResponse::new(tasks);
