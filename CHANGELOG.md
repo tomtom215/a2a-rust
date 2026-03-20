@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (Benchmarks)
+
+- **`data_volume/save` eviction interference** — The `bench_save_at_scale` and
+  `bench_store_with_history` benchmarks accumulated tasks across all criterion
+  warmup and measurement iterations (sharing one store instance), triggering
+  O(n log n) eviction scans every 64 writes once the store exceeded 10K tasks.
+  Disabled eviction with `TaskStoreConfig { max_capacity: None, task_ttl: None }`
+  to measure pure insert performance. Results: ~580µs → ~1.5µs (400× improvement).
+- **`protocol_type_serde` throughput misreporting** — Throughput was set once for
+  `AgentCard` but applied to all subsequent `Task` and `Message` benchmarks,
+  causing incorrect bytes/sec reporting. Now sets correct `Throughput::Bytes`
+  before each type's benchmark.
+- **`realistic_workloads` fixture allocation in hot loop** — `mixed_parts_message()`
+  and `nested_metadata()` were constructed inside `b.iter()` closures, measuring
+  fixture creation cost instead of the send operation. Moved to pre-construction
+  outside the hot loop.
+- **Concurrent benchmark params allocation in hot loop** — `send_params()` with
+  `format!` was called inside `b.iter()` closures in `concurrent_agents`,
+  `cross_language`, and `backpressure` benchmarks. Pre-allocated params `Vec`
+  outside the hot loop to avoid measuring allocation overhead.
+- **`fixtures::large_metadata_message` unnecessary String clone** — Changed from
+  cloning a `String` then wrapping in `Value::String` per entry to cloning the
+  pre-built `Value::String` directly, eliminating one allocation per metadata entry.
+
 ### Improved (Performance)
 
 - **`TCP_NODELAY` on all sockets** — Enabled `TCP_NODELAY` on server accept

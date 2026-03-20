@@ -194,14 +194,18 @@ fn bench_concurrent_streams_volume(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("streams", n), &n, |b, &n| {
             let client = Arc::new(ClientBuilder::new(&url).build().expect("build client"));
+            // Pre-allocate params to avoid format! allocations in the hot loop.
+            let all_params: Vec<_> = (0..n)
+                .map(|i| fixtures::send_params(&format!("concurrent-{i}")))
+                .collect();
 
             b.to_async(&runtime).iter(|| {
                 let client = Arc::clone(&client);
+                let all_params = all_params.clone();
                 async move {
                     let mut handles = Vec::with_capacity(n);
-                    for i in 0..n {
+                    for params in all_params {
                         let c = Arc::clone(&client);
-                        let params = fixtures::send_params(&format!("concurrent-{i}"));
                         handles.push(tokio::spawn(async move {
                             let mut stream =
                                 c.stream_message(params).await.expect("stream_message");

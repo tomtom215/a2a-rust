@@ -104,8 +104,8 @@ fn bench_type_serde(c: &mut Criterion) {
     // AgentCard
     let card = fixtures::agent_card("https://bench.example.com");
     let card_bytes = serde_json::to_vec(&card).unwrap();
-    group.throughput(Throughput::Bytes(card_bytes.len() as u64));
 
+    group.throughput(Throughput::Bytes(card_bytes.len() as u64));
     group.bench_function("agent_card/serialize", |b| {
         b.iter(|| serde_json::to_vec(black_box(&card)).unwrap());
     });
@@ -114,8 +114,10 @@ fn bench_type_serde(c: &mut Criterion) {
     });
 
     // Task (completed, with history + artifacts)
+    // Set throughput to the task's actual byte size so MiB/s is accurate.
     let task = fixtures::completed_task(0);
     let task_bytes = serde_json::to_vec(&task).unwrap();
+    group.throughput(Throughput::Bytes(task_bytes.len() as u64));
     group.bench_with_input(
         BenchmarkId::new("task/serialize", task_bytes.len()),
         &task,
@@ -132,8 +134,10 @@ fn bench_type_serde(c: &mut Criterion) {
     );
 
     // Message (multi-part)
+    // Set throughput to the message's actual byte size so MiB/s is accurate.
     let msg = fixtures::multi_part_message();
     let msg_bytes = serde_json::to_vec(&msg).unwrap();
+    group.throughput(Throughput::Bytes(msg_bytes.len() as u64));
     group.bench_with_input(
         BenchmarkId::new("message/serialize", msg_bytes.len()),
         &msg,

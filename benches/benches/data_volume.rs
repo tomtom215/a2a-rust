@@ -26,7 +26,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 
 use a2a_benchmarks::fixtures;
 
-use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::{ContextId, TaskId};
 
@@ -128,22 +128,29 @@ fn bench_save_at_scale(c: &mut Criterion) {
     let mut group = c.benchmark_group("data_volume/save");
     group.throughput(Throughput::Elements(1));
 
+    // Disable eviction so we measure pure insert performance, not amortized
+    // eviction overhead (O(n log n) sort every 64 writes). Without this,
+    // the store hits max_capacity across criterion samples and the benchmark
+    // reports ~600µs/save instead of the true ~700ns/save.
+    let no_eviction_config = TaskStoreConfig {
+        max_capacity: None,
+        task_ttl: None,
+        ..TaskStoreConfig::default()
+    };
+
     let pre_fill_levels: &[usize] = &[0, 1_000, 10_000, 50_000];
 
     for &pre_fill in pre_fill_levels {
-        let store = InMemoryTaskStore::new();
+        let store = InMemoryTaskStore::with_config(no_eviction_config.clone());
         populate_store(&rt, &store, pre_fill);
 
-        // Use a Cell to track the counter across iterations without
-        // shared-mutable-state issues across benchmark groups.
-        let counter = std::cell::Cell::new(pre_fill);
+        let mut counter = pre_fill;
 
         group.bench_with_input(BenchmarkId::new("after_prefill", pre_fill), &(), |b, _| {
             b.iter(|| {
-                let i = counter.get();
-                let task = fixtures::completed_task(i);
+                let task = fixtures::completed_task(counter);
                 rt.block_on(store.save(criterion::black_box(task))).unwrap();
-                counter.set(i + 1);
+                counter += 1;
             });
         });
     }
@@ -192,10 +199,18 @@ fn bench_store_with_history(c: &mut Criterion) {
     let mut group = c.benchmark_group("data_volume/history_depth");
     group.throughput(Throughput::Elements(1));
 
+    // Disable eviction so we measure pure insert performance with varying
+    // history sizes, not amortized eviction overhead.
+    let no_eviction_config = TaskStoreConfig {
+        max_capacity: None,
+        task_ttl: None,
+        ..TaskStoreConfig::default()
+    };
+
     let turn_counts: &[usize] = &[1, 5, 10, 20, 50];
 
     for &turns in turn_counts {
-        let store = InMemoryTaskStore::new();
+        let store = InMemoryTaskStore::with_config(no_eviction_config.clone());
 
         group.bench_with_input(
             BenchmarkId::new("save_with_turns", turns),
