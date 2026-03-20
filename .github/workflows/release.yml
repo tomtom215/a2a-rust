@@ -399,12 +399,17 @@ jobs:
           VERSION="${{ needs.validate.outputs.version }}"
 
           # Helper: idempotent publish that treats "already uploaded" as success.
+          # If a previous release attempt published and then yanked a crate,
+          # we unyank it so that downstream crates can resolve it as a dependency.
           publish_crate() {
             local crate="$1"
             echo "::group::cargo publish — $crate v$VERSION"
             if ! cargo publish -p "$crate" 2>&1 | tee /tmp/publish-${crate}.log; then
               if grep -q "already uploaded" /tmp/publish-${crate}.log; then
-                echo "::warning::$crate v$VERSION is already published — skipping."
+                echo "::warning::$crate v$VERSION is already published — unyanking (if yanked) and skipping."
+                # Unyank in case a prior failed release left it yanked.
+                # This is a no-op if the crate is not currently yanked.
+                cargo yank --undo "$crate@$VERSION" 2>&1 || true
               else
                 echo "::error::cargo publish -p $crate failed"
                 cat /tmp/publish-${crate}.log
