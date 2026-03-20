@@ -178,13 +178,10 @@ pub fn nested_metadata(depth: usize) -> serde_json::Value {
 pub fn large_metadata_message(kb: usize) -> Message {
     // Build metadata with repeated keys to reach target size.
     let mut map = serde_json::Map::new();
-    let chunk = "x".repeat(100); // ~100 bytes per entry
+    let chunk: serde_json::Value = serde_json::Value::String("x".repeat(100)); // ~100 bytes per entry
     let entries = (kb * 1024) / 120; // ~120 bytes per JSON entry with key
     for i in 0..entries {
-        map.insert(
-            format!("field_{i:06}"),
-            serde_json::Value::String(chunk.clone()),
-        );
+        map.insert(format!("field_{i:06}"), chunk.clone());
     }
     Message {
         id: MessageId::new("msg-bench-large-meta"),

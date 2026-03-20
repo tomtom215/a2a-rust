@@ -188,18 +188,18 @@ Shows how store operations scale as data accumulates over time.
 | `data_volume_get/lookup/1000` | 444 ns |
 | `data_volume_get/lookup/10000` | 450 ns |
 | `data_volume_get/lookup/100000` | 204 ns |
-| `data_volume_history_depth/save_with_turns/1` | 14.5 µs |
-| `data_volume_history_depth/save_with_turns/10` | 17.7 µs |
-| `data_volume_history_depth/save_with_turns/20` | 25.4 µs |
-| `data_volume_history_depth/save_with_turns/5` | 15.2 µs |
-| `data_volume_history_depth/save_with_turns/50` | 39.0 µs |
+| `data_volume_history_depth/save_with_turns/1` | 946 ns |
+| `data_volume_history_depth/save_with_turns/10` | 3.1 µs |
+| `data_volume_history_depth/save_with_turns/20` | 6.1 µs |
+| `data_volume_history_depth/save_with_turns/5` | 1.6 µs |
+| `data_volume_history_depth/save_with_turns/50` | 13.7 µs |
 | `data_volume_list/filtered_page_50/1000` | 22.9 µs |
 | `data_volume_list/filtered_page_50/10000` | 23.2 µs |
 | `data_volume_list/filtered_page_50/100000` | 22.9 µs |
-| `data_volume_save/after_prefill/0` | 576.9 µs |
-| `data_volume_save/after_prefill/1000` | 584.2 µs |
-| `data_volume_save/after_prefill/10000` | 593.6 µs |
-| `data_volume_save/after_prefill/50000` | 582.2 µs |
+| `data_volume_save/after_prefill/0` | 1.5 µs |
+| `data_volume_save/after_prefill/1000` | 1.5 µs |
+| `data_volume_save/after_prefill/10000` | 1.1 µs |
+| `data_volume_save/after_prefill/50000` | 1.0 µs |
 
 ## Memory Overhead
 

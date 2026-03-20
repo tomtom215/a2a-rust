@@ -57,13 +57,17 @@ fn bench_concurrent_sends(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("jsonrpc", n), &n, |b, &n| {
             let client = Arc::new(ClientBuilder::new(&srv.url).build().expect("build client"));
+            // Pre-allocate params to avoid format! allocations in the hot loop.
+            let all_params: Vec<_> = (0..n)
+                .map(|i| fixtures::send_params(&format!("concurrent-{i}")))
+                .collect();
 
             b.to_async(&runtime).iter(|| {
                 let client = Arc::clone(&client);
+                let all_params = all_params.clone();
                 async move {
                     let mut handles = Vec::with_capacity(n);
-                    for i in 0..n {
-                        let params = fixtures::send_params(&format!("concurrent-{i}"));
+                    for params in all_params {
                         let c = Arc::clone(&client);
                         handles.push(tokio::spawn(async move {
                             c.send_message(params).await.expect("send_message");
@@ -94,13 +98,17 @@ fn bench_concurrent_streams(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("jsonrpc", n), &n, |b, &n| {
             let client = Arc::new(ClientBuilder::new(&srv.url).build().expect("build client"));
+            // Pre-allocate params to avoid format! allocations in the hot loop.
+            let all_params: Vec<_> = (0..n)
+                .map(|i| fixtures::send_params(&format!("stream-{i}")))
+                .collect();
 
             b.to_async(&runtime).iter(|| {
                 let client = Arc::clone(&client);
+                let all_params = all_params.clone();
                 async move {
                     let mut handles = Vec::with_capacity(n);
-                    for i in 0..n {
-                        let params = fixtures::send_params(&format!("stream-{i}"));
+                    for params in all_params {
                         let c = Arc::clone(&client);
                         handles.push(tokio::spawn(async move {
                             let mut stream =

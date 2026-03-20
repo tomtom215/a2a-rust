@@ -139,12 +139,14 @@ fn bench_payload_complexity(c: &mut Criterion) {
     });
 
     // Mixed parts (text + file URL + metadata)
+    // Pre-construct the message outside iter to measure only send overhead.
+    let mixed_msg = fixtures::mixed_parts_message();
     group.bench_function("mixed_parts", |b| {
         b.to_async(&runtime).iter(|| async {
             let params = a2a_protocol_types::params::MessageSendParams {
                 tenant: None,
                 context_id: None,
-                message: fixtures::mixed_parts_message(),
+                message: mixed_msg.clone(),
                 configuration: None,
                 metadata: None,
             };
@@ -153,15 +155,17 @@ fn bench_payload_complexity(c: &mut Criterion) {
     });
 
     // Nested metadata (10 levels deep)
+    // Pre-construct the message outside iter to measure only send overhead.
+    let nested_msg = a2a_protocol_types::message::Message {
+        metadata: Some(fixtures::nested_metadata(10)),
+        ..fixtures::user_message("With nested metadata")
+    };
     group.bench_function("nested_metadata_10", |b| {
         b.to_async(&runtime).iter(|| async {
             let params = a2a_protocol_types::params::MessageSendParams {
                 tenant: None,
                 context_id: None,
-                message: a2a_protocol_types::message::Message {
-                    metadata: Some(fixtures::nested_metadata(10)),
-                    ..fixtures::user_message("With nested metadata")
-                },
+                message: nested_msg.clone(),
                 configuration: None,
                 metadata: None,
             };

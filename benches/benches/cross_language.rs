@@ -173,14 +173,18 @@ fn bench_concurrent_50(c: &mut Criterion) {
 
     group.bench_function("rust", |b| {
         let client = Arc::new(ClientBuilder::new(&srv.url).build().expect("build client"));
+        // Pre-allocate params to avoid format! allocations in the hot loop.
+        let all_params: Vec<_> = (0..50)
+            .map(|i| fixtures::send_params(&format!("concurrent-{i}")))
+            .collect();
 
         b.to_async(&runtime).iter(|| {
             let client = Arc::clone(&client);
+            let all_params = all_params.clone();
             async move {
                 let mut handles = Vec::with_capacity(50);
-                for i in 0..50 {
+                for params in all_params {
                     let c = Arc::clone(&client);
-                    let params = fixtures::send_params(&format!("concurrent-{i}"));
                     handles.push(tokio::spawn(async move {
                         c.send_message(params).await.expect("send_message");
                     }));
