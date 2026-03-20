@@ -398,25 +398,68 @@ jobs:
         run: |
           VERSION="${{ needs.validate.outputs.version }}"
 
-          # Helper: idempotent publish that treats "already uploaded" as success.
+          # Helper: idempotent publish with retry and yank recovery.
+          #
+          # Handles three recovery scenarios:
+          #   1. "already uploaded" — unyank (if yanked) and treat as success.
+          #   2. "yanked" dep resolution failure — a dependency was just unyanked
+          #      but the index hasn't propagated yet; wait and retry.
+          #   3. Transient network errors — retry with backoff.
           publish_crate() {
             local crate="$1"
+            local max_attempts=5
+            local attempt=1
+
             echo "::group::cargo publish — $crate v$VERSION"
-            if ! cargo publish -p "$crate" 2>&1 | tee /tmp/publish-${crate}.log; then
+            while (( attempt <= max_attempts )); do
+              echo "Attempt $attempt/$max_attempts: publishing $crate v$VERSION"
+
+              if cargo publish -p "$crate" 2>&1 | tee /tmp/publish-${crate}.log; then
+                echo "::endgroup::"
+                return 0
+              fi
+
+              # Already uploaded — unyank if needed and treat as success
               if grep -q "already uploaded" /tmp/publish-${crate}.log; then
-                echo "::warning::$crate v$VERSION is already published — skipping."
+                echo "::warning::$crate v$VERSION is already published — unyanking (if yanked) and skipping."
+                cargo yank --undo "$crate@$VERSION" 2>&1 || true
+                # Wait for the index to reflect the unyank before continuing
+                # to the next crate that may depend on this one.
+                echo "Waiting 30s for crates.io index to propagate unyank..."
+                sleep 30
+                echo "::endgroup::"
+                return 0
+              fi
+
+              # Yanked dependency — the index hasn't caught up after a prior
+              # unyank. Wait and retry.
+              if grep -q "is yanked" /tmp/publish-${crate}.log; then
+                local wait=$(( 15 * attempt ))
+                echo "::warning::Dependency appears yanked in index — waiting ${wait}s for propagation (attempt $attempt/$max_attempts)."
+                sleep "$wait"
+                attempt=$(( attempt + 1 ))
+                continue
+              fi
+
+              # Unknown / transient failure — retry with exponential backoff
+              local wait=$(( 2 ** attempt ))
+              if (( attempt < max_attempts )); then
+                echo "::warning::Publish failed — retrying in ${wait}s (attempt $attempt/$max_attempts)."
+                sleep "$wait"
+                attempt=$(( attempt + 1 ))
               else
-                echo "::error::cargo publish -p $crate failed"
+                echo "::error::cargo publish -p $crate failed after $max_attempts attempts"
                 cat /tmp/publish-${crate}.log
+                echo "::endgroup::"
                 exit 1
               fi
-            fi
-            echo "::endgroup::"
+            done
           }
 
           # Publish in topological order of ALL dependencies (including dev-deps).
           # `cargo publish` automatically waits for each crate to appear in the
-          # crates.io index before returning, so no manual sleep is needed.
+          # crates.io index before returning, so no manual sleep is needed
+          # (except after unyank — see publish_crate).
           #
           # Dependency graph:
           #   types  ──►  server  ──►  client (dev-dep on server)  ──►  sdk
