@@ -414,22 +414,16 @@ jobs:
             echo "::endgroup::"
           }
 
-          # Tier 1: no workspace dependencies
+          # Publish in topological order of ALL dependencies (including dev-deps).
+          # `cargo publish` automatically waits for each crate to appear in the
+          # crates.io index before returning, so no manual sleep is needed.
+          #
+          # Dependency graph:
+          #   types  ──►  server  ──►  client (dev-dep on server)  ──►  sdk
+          #          └────────────────────┘ (runtime dep on types)  ────┘
           publish_crate a2a-protocol-types
-          echo "Waiting for crates.io index to update..."
-          sleep 30
-
-          # Tier 2: a2a-protocol-server depends only on types
           publish_crate a2a-protocol-server
-          echo "Waiting for crates.io index to update..."
-          sleep 30
-
-          # Tier 3: a2a-protocol-client has a2a-protocol-server as a dev-dependency
           publish_crate a2a-protocol-client
-          echo "Waiting for crates.io index to update..."
-          sleep 30
-
-          # Tier 4: depends on all of the above
           publish_crate a2a-protocol-sdk
 
           echo "::notice::All crates published successfully"
