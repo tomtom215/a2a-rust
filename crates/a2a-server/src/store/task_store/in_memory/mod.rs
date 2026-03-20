@@ -187,7 +187,10 @@ impl TaskStore for InMemoryTaskStore {
                         return Ok(response);
                     }
                     // range excludes the lower bound when using Excluded
-                    Box::new(store.range((std::ops::Bound::Excluded(cursor), std::ops::Bound::Unbounded)))
+                    Box::new(store.range((
+                        std::ops::Bound::Excluded(cursor),
+                        std::ops::Bound::Unbounded,
+                    )))
                 } else {
                     Box::new(store.iter())
                 };
@@ -201,7 +204,9 @@ impl TaskStore for InMemoryTaskStore {
             drop(store);
 
             let next_page_token = if tasks.len() > page_size {
-                tasks.get(page_size.saturating_sub(1)).map(|t| t.id.0.clone())
+                tasks
+                    .get(page_size.saturating_sub(1))
+                    .map(|t| t.id.0.clone())
             } else {
                 None
             };

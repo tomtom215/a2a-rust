@@ -10,6 +10,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved (Performance)
+
+- **`TCP_NODELAY` on all sockets** — Enabled `TCP_NODELAY` on server accept
+  sockets and all client `HttpConnector` instances (JSON-RPC, REST, TLS,
+  discovery). Eliminates ~40ms Nagle/delayed-ACK latency that caused constant
+  overhead on SSE streaming regardless of event count.
+- **`InMemoryTaskStore` switched to `BTreeMap`** — Replaced `HashMap` with
+  `BTreeMap<TaskId, TaskEntry>` (added `Ord` to `TaskId`). List queries now
+  use `BTreeMap::range()` for O(page_size) cursor seek instead of O(n) full
+  scan + O(m log m) sort + O(m) clone. Benchmarked improvements:
+  1K tasks 346µs → 20µs (17×), 10K tasks 4.2ms → 27µs (153×),
+  100K tasks 4.5ms → 27µs (164×).
+- **Batch request clone removal** — JSON-RPC batch dispatch now takes ownership
+  of the parsed `Value::Array` instead of cloning each item, eliminating one
+  heap allocation per batch element.
+
+### Fixed (CI)
+
+- **`memory_overhead` benchmark crash** — The benchmark encoded deterministic
+  allocation counts as `Duration::from_nanos()`, producing identical samples
+  that caused criterion's statistical analysis to panic on NaN. Now measures
+  real wall-clock time and verifies allocation counts via assertions.
+
 ## [0.3.0] - 2026-03-19
 
 ### Fixed (CI / Release Pipeline)

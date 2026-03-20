@@ -183,6 +183,16 @@ async fn health_check(req: hyper::Request<impl hyper::body::Body>) -> hyper::Res
 
 Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server::conn::auto::Builder`. This automatically negotiates the best protocol version.
 
+`TCP_NODELAY` is enabled on all server and client TCP sockets. This disables Nagle's algorithm, eliminating the ~40ms delayed-ACK latency that would otherwise penalize small SSE frames and JSON-RPC responses on loopback and low-latency networks.
+
+### Task Store Performance
+
+The `InMemoryTaskStore` uses a `BTreeMap` (sorted by `TaskId`) instead of a `HashMap`. This provides:
+
+- **O(page_size) list queries** — `BTreeMap::range()` seeks directly to the cursor position and only clones the tasks returned in the page
+- **No per-query sort** — iteration is already in key order
+- **Consistent performance at scale** — list latency depends on page size, not total store size (27µs for page_size=50 whether the store has 1K or 100K tasks)
+
 ### No Web Framework Overhead
 
 a2a-rust works directly with hyper — no middleware framework overhead. Cross-cutting concerns (rate limiting, request logging, auth) are handled via the interceptor chain rather than a framework.

@@ -36,6 +36,15 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## Unreleased
+
+### Performance
+
+- **`TCP_NODELAY` on all sockets** — Eliminates ~40ms Nagle/delayed-ACK latency on SSE streaming and JSON-RPC responses
+- **`InMemoryTaskStore` BTreeMap migration** — List queries now O(page_size) instead of O(n): 17–164× faster at 1K–100K tasks
+- **Batch clone removal** — JSON-RPC batch dispatch no longer clones each request item
+- **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
+
 ## v0.3.0 (2026-03-19)
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
