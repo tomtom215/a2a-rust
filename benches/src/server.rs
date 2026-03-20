@@ -78,6 +78,8 @@ async fn spawn_hyper_server(listener: tokio::net::TcpListener, dispatcher: Arc<d
             let Ok((stream, _)) = listener.accept().await else {
                 continue;
             };
+            // Disable Nagle's algorithm — matches production serve.rs.
+            let _ = stream.set_nodelay(true);
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
             tokio::spawn(async move {

@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Batch request clone removal** — JSON-RPC batch dispatch now takes ownership
   of the parsed `Value::Array` instead of cloning each item, eliminating one
   heap allocation per batch element.
+- **Benchmark server `TCP_NODELAY`** — The in-process benchmark server was
+  missing `TCP_NODELAY`, causing all streaming benchmarks to report ~44ms
+  (Nagle delay) instead of actual SDK latency (~1.5ms). Benchmark streaming
+  results now accurately reflect SDK overhead.
 
 ### Fixed (CI)
 

@@ -44,6 +44,7 @@ This ensures each crate's dependencies are available before it publishes.
 - **`InMemoryTaskStore` BTreeMap migration** — List queries now O(page_size) instead of O(n): 17–164× faster at 1K–100K tasks
 - **Batch clone removal** — JSON-RPC batch dispatch no longer clones each request item
 - **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
+- **Benchmark server `TCP_NODELAY`** — Streaming benchmarks now report actual SDK latency (~1.5ms) instead of Nagle-inflated ~44ms
 
 ## v0.3.0 (2026-03-19)
 

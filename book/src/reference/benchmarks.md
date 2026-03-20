@@ -25,7 +25,7 @@ Benchmark results will be populated after the next CI run.
 
 | Optimization | Before | After | Improvement |
 |---|---|---|---|
-| SSE streaming (3–101 events) | ~41ms constant (Nagle delay) | <1ms | **~40× faster** |
+| SSE streaming (3–101 events) | ~44ms constant (Nagle delay) | ~1.5ms | **~28× faster** |
 | List 1K tasks (page_size=50) | 346µs | 20µs | **17× faster** |
 | List 10K tasks (page_size=50) | 4.2ms | 27µs | **153× faster** |
 | List 100K tasks (page_size=50) | 4.5ms | 27µs | **164× faster** |
@@ -91,3 +91,31 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 
 Full HTML reports (with violin plots and comparison overlays) are generated
 in `target/criterion/`.
+
+### Representative results
+
+> Numbers below are from a single run on a development machine. Use for relative
+> comparisons, not absolute guarantees.
+
+| Benchmark | Latency | Throughput |
+|-----------|---------|------------|
+| JSON-RPC send (single message) | 2.16ms | 462 msg/s |
+| REST send (single message) | 2.21ms | 452 msg/s |
+| SSE stream drain (3 events) | 1.53ms | 653 events/s |
+| AgentCard serialize | 482ns | 921 MiB/s |
+| AgentCard deserialize | 1.59µs | 279 MiB/s |
+| AgentCard round-trip | 2.18µs | 203 MiB/s |
+| Batch serialize (100 tasks) | 31.8µs | 3.14M elem/s |
+| Batch deserialize (100 tasks) | 165µs | 605K elem/s |
+| Store get (100K tasks) | 287ns | 3.49M ops/s |
+| Store list (100K tasks, page=50) | 27.5µs | 1.82M elem/s |
+| Queue write+read (100 events) | 47.2µs | 2.12M elem/s |
+| E2E send_and_complete | 2.17ms | 460 ops/s |
+| E2E stream_and_drain | 3.32ms | 302 ops/s |
+| Concurrent 64 sends | 13.6ms | 4.7K ops/s |
+| Concurrent 50 sends (cross-lang) | 15.9ms | 3.14K ops/s |
+| Error path (FailingExecutor) | 2.17ms | 461 ops/s |
+| Malformed JSON rejection | 134µs | 7.47K ops/s |
+| Backpressure 101 events | 1.92ms | 51.8K events/s |
+| Memory: AgentCard serialize | 4 allocs | — |
+| Minimal SDK overhead (NoopExecutor) | 2.14ms | 467 ops/s |
