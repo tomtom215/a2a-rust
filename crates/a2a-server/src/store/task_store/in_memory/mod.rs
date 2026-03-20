@@ -36,7 +36,7 @@ pub(super) struct TaskEntry {
     pub(super) last_updated: Instant,
 }
 
-/// In-memory [`TaskStore`] backed by a [`HashMap`] under a [`RwLock`].
+/// In-memory [`TaskStore`] backed by a [`BTreeMap`] under a [`RwLock`].
 ///
 /// Suitable for testing and single-process deployments. Data is lost when the
 /// process exits.
