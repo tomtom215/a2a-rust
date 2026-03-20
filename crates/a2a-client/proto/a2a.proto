@@ -1,0 +1,78 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Tom F.
+//
+// A2A protocol v1.0 — gRPC service definition.
+//
+// This binding uses JSON-encoded payloads over gRPC framing, providing
+// HTTP/2 multiplexing and native server-streaming while reusing the
+// canonical JSON wire format from the A2A specification.
+//
+// Each RPC method corresponds to an A2A JSON-RPC method. Request and
+// response payloads are the same JSON structures used by the JSON-RPC
+// and REST bindings, wrapped in a `bytes` field for transport.
+
+syntax = "proto3";
+
+package a2a.v1;
+
+// JSON payload wrapper.
+//
+// The `data` field contains a UTF-8 JSON document. For requests this is
+// the method-specific params object; for responses it is the result
+// object (or a serialized A2aError on failure).
+message JsonPayload {
+  bytes data = 1;
+}
+
+// Metadata key for passing the A2A protocol version.
+// Clients SHOULD set `a2a-version: 1.0.0` in gRPC metadata.
+
+// Metadata key for tenant identification in multi-tenant deployments.
+// Clients MAY set `a2a-tenant` in gRPC metadata.
+
+// A2A gRPC service.
+//
+// All methods use JSON-encoded payloads so that the same serde types
+// work across JSON-RPC, REST, and gRPC bindings without duplication.
+service A2aService {
+  // ── Messaging ──────────────────────────────────────────────────
+
+  // Sends a message to the agent and waits for a response.
+  rpc SendMessage(JsonPayload) returns (JsonPayload);
+
+  // Sends a message and streams back status/artifact updates.
+  rpc SendStreamingMessage(JsonPayload) returns (stream JsonPayload);
+
+  // ── Task lifecycle ─────────────────────────────────────────────
+
+  // Retrieves a task by ID.
+  rpc GetTask(JsonPayload) returns (JsonPayload);
+
+  // Lists tasks with optional filters.
+  rpc ListTasks(JsonPayload) returns (JsonPayload);
+
+  // Cancels a running task.
+  rpc CancelTask(JsonPayload) returns (JsonPayload);
+
+  // Subscribes to updates for an existing task.
+  rpc SubscribeToTask(JsonPayload) returns (stream JsonPayload);
+
+  // ── Push notification config ───────────────────────────────────
+
+  // Creates or updates a push notification configuration.
+  rpc CreateTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
+
+  // Retrieves a push notification configuration.
+  rpc GetTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
+
+  // Lists push notification configurations for a task.
+  rpc ListTaskPushNotificationConfigs(JsonPayload) returns (JsonPayload);
+
+  // Deletes a push notification configuration.
+  rpc DeleteTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
+
+  // ── Agent card ─────────────────────────────────────────────────
+
+  // Returns the extended agent card (requires authentication).
+  rpc GetExtendedAgentCard(JsonPayload) returns (JsonPayload);
+}
