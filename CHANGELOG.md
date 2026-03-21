@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-03-21
+
+### Security
+
+- **`rustls-webpki` upgraded to 0.103.10** — Fixes RUSTSEC-2026-0049
+  ([GHSA-pwjx-qhcg-rvj4](https://github.com/rustls/webpki/security/advisories/GHSA-pwjx-qhcg-rvj4)):
+  when a certificate had more than one `distributionPoint`, only the first was
+  matched against each CRL's `IssuingDistributionPoint`, causing subsequent
+  distribution points to be silently ignored and valid CRLs to be skipped.
+
 ### Fixed (Benchmarks)
 
 - **`data_volume/save` eviction interference** — The `bench_save_at_scale` and

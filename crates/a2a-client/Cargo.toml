@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-client"
-version     = "0.3.0"
+version     = "0.3.1"
 description = "A2A protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "README.md"
 
@@ -30,7 +30,7 @@ websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 grpc = ["dep:tonic", "dep:prost", "dep:tokio-stream", "dep:tonic-build"]
 
 [dependencies]
-a2a-protocol-types = { version = "0.3.0", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.3.1", path = "../a2a-types" }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
@@ -66,8 +66,8 @@ rustls-pki-types = { version = ">=1.7, <2" }
 hyper = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
-a2a-protocol-types = { version = "0.3.0", path = "../a2a-types" }
-a2a-protocol-server = { version = "0.3.0", path = "../a2a-server", features = ["websocket"] }
+a2a-protocol-types = { version = "0.3.1", path = "../a2a-types" }
+a2a-protocol-server = { version = "0.3.1", path = "../a2a-server", features = ["websocket"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
 
 [[bench]]
