@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-sdk"
-version     = "0.3.0"
+version     = "0.3.1"
 description = "A2A protocol v1.0 — convenience umbrella re-export crate"
 readme      = "README.md"
 
@@ -42,6 +42,6 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-a2a-protocol-types  = { version = "0.3.0", path = "../a2a-types" }
-a2a-protocol-client = { version = "0.3.0", path = "../a2a-client" }
-a2a-protocol-server = { version = "0.3.0", path = "../a2a-server" }
+a2a-protocol-types  = { version = "0.3.1", path = "../a2a-types" }
+a2a-protocol-client = { version = "0.3.1", path = "../a2a-client" }
+a2a-protocol-server = { version = "0.3.1", path = "../a2a-server" }

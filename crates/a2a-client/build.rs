@@ -6,10 +6,15 @@
 fn main() {
     #[cfg(feature = "grpc")]
     {
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+        let proto_dir = std::path::PathBuf::from(&manifest).join("proto");
+        let proto_file = proto_dir.join("a2a.proto");
+        println!("cargo:rerun-if-changed={}", proto_file.display());
+        println!("cargo:rerun-if-changed={}", proto_dir.display());
         tonic_build::configure()
             .build_server(false)
             .build_client(true)
-            .compile_protos(&["../../proto/a2a.proto"], &["../../proto"])
+            .compile_protos(&[&proto_file], &[&proto_dir])
             .expect("Failed to compile A2A proto");
     }
 }
