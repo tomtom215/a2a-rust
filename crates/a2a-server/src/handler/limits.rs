@@ -43,6 +43,12 @@ pub struct HandlerLimits {
     /// executors emit many artifacts. Once the limit is reached, new artifact
     /// updates are rejected.
     pub max_artifacts_per_task: usize,
+    /// Maximum number of per-context locks before cleanup. Default: 10,000.
+    ///
+    /// Context locks serialize concurrent `SendMessage` requests for the same
+    /// `context_id`. Stale entries (where no other reference is held) are
+    /// pruned when this limit is reached.
+    pub max_context_locks: usize,
 }
 
 impl Default for HandlerLimits {
@@ -54,6 +60,7 @@ impl Default for HandlerLimits {
             max_token_age: Duration::from_secs(3600),
             push_delivery_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
+            max_context_locks: 10_000,
         }
     }
 }
@@ -100,6 +107,13 @@ impl HandlerLimits {
         self.max_artifacts_per_task = max;
         self
     }
+
+    /// Sets the maximum number of per-context locks before cleanup.
+    #[must_use]
+    pub const fn with_max_context_locks(mut self, max: usize) -> Self {
+        self.max_context_locks = max;
+        self
+    }
 }
 
 #[cfg(test)]
@@ -115,6 +129,7 @@ mod tests {
         assert_eq!(limits.max_token_age, Duration::from_secs(3600));
         assert_eq!(limits.push_delivery_timeout, Duration::from_secs(5));
         assert_eq!(limits.max_artifacts_per_task, 1000);
+        assert_eq!(limits.max_context_locks, 10_000);
     }
 
     #[test]
@@ -180,5 +195,6 @@ mod tests {
         assert!(debug.contains("max_token_age"));
         assert!(debug.contains("push_delivery_timeout"));
         assert!(debug.contains("max_artifacts_per_task"));
+        assert!(debug.contains("max_context_locks"));
     }
 }

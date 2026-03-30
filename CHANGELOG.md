@@ -10,6 +10,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-03-30
+
+### Fixed
+
+- **`a2a-protocol-server`: `find_task_by_context` now prefers non-terminal tasks** —
+  When multiple tasks shared the same `context_id` (e.g. after a task reached a
+  terminal state and a new one was created), the lookup used `page_size=1` and
+  returned whichever task the store ordered first, which could be the stale
+  terminal task. Now fetches up to 10 candidates and returns the first
+  non-terminal (active) task, falling back to the first terminal task only when
+  no active task exists.
+
+- **`a2a-protocol-server`: `context_locks` map no longer grows without bound** —
+  The per-context mutex map (used to serialize concurrent `SendMessage` requests
+  for the same `context_id`) never cleaned up stale entries, causing unbounded
+  memory growth under sustained traffic with diverse context IDs. Stale locks
+  (where no task holds a reference) are now pruned when the map exceeds the
+  configurable `max_context_locks` limit (default 10,000).
+
+- **`a2a-protocol-server`: `PayloadTooLarge` now returns correct JSON-RPC error
+  code** — Previously mapped to `InternalError` (-32603), now correctly returns
+  `InvalidRequest` (-32600) since an oversized payload is a client error.
+
+- **`a2a-protocol-server`: params-level `context_id` now validated** — The
+  `context_id` field at the `MessageSendParams` level (which takes precedence
+  over `message.context_id`) was not checked by `validate_id()`, allowing
+  empty/whitespace-only or excessively long values to bypass validation.
+
+- **`a2a-protocol-server`: `eviction_interval=0` no longer panics** — Setting
+  `TaskStoreConfig::eviction_interval` to 0 caused a panic in
+  `u64::is_multiple_of(0)`. Now treated as "disable periodic eviction" (only
+  capacity-based eviction triggers).
+
 ## [0.3.2] - 2026-03-30
 
 ### Fixed

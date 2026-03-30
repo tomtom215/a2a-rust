@@ -123,10 +123,12 @@ impl ServerError {
             ),
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
-            Self::HttpClient(msg)
-            | Self::Transport(msg)
-            | Self::Internal(msg)
-            | Self::PayloadTooLarge(msg) => A2aError::internal(msg.clone()),
+            Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
+                A2aError::internal(msg.clone())
+            }
+            Self::PayloadTooLarge(msg) => {
+                A2aError::new(ErrorCode::InvalidRequest, msg.clone())
+            }
             Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
                 format!("invalid state transition for task {task_id}: {from} → {to}"),
             ),
@@ -320,7 +322,7 @@ mod tests {
         );
         assert_eq!(
             ServerError::PayloadTooLarge("x".into()).to_a2a_error().code,
-            ErrorCode::InternalError
+            ErrorCode::InvalidRequest
         );
         let ist = ServerError::InvalidStateTransition {
             task_id: "t".into(),

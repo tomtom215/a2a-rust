@@ -36,6 +36,22 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## v0.3.3 (2026-03-30)
+
+### Bug Fixes
+
+- **`find_task_by_context` prefers non-terminal tasks** — Stale terminal tasks no longer shadow active tasks for the same `context_id`
+- **`context_locks` memory leak** — Stale per-context mutexes are now pruned when the map exceeds `max_context_locks`
+- **`PayloadTooLarge` error code** — Returns `InvalidRequest` (-32600) instead of `InternalError` (-32603)
+- **Params-level `context_id` validation** — Now validated via `validate_id()` like message-level `context_id`
+- **`eviction_interval=0` panic** — No longer panics; treated as "disable periodic eviction"
+
+## v0.3.2 (2026-03-30)
+
+### Bug Fixes
+
+- **Task ID not reused for non-terminal continuations** — `on_send_message` now reuses the client-provided `task_id` when it matches a stored non-terminal task (#66)
+
 ## Unreleased
 
 ### Performance
