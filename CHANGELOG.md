@@ -43,6 +43,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `u64::is_multiple_of(0)`. Now treated as "disable periodic eviction" (only
   capacity-based eviction triggers).
 
+- **`a2a-protocol-server`: push config `list()` now returns deterministic order** —
+  The in-memory push config store iterated over a `HashMap`, producing
+  non-deterministic ordering. Results are now sorted by `(task_id, config_id)`.
+
+- **`a2a-protocol-server`: cancel task TOCTOU race narrowed** — `on_cancel_task`
+  now re-reads the task immediately before writing `Canceled` state, preventing
+  it from overwriting a concurrent terminal transition (e.g. `Completed`) that
+  occurred between the initial check and the save.
+
+- **`a2a-protocol-server`: `page_size` clamped at handler level** — `ListTasks`
+  now clamps `page_size` to 1000 at the handler layer before passing to the
+  store, preventing oversized allocations from untrusted client input.
+
+- **`a2a-protocol-server`: tenant store no longer allocates on read** — Read-only
+  operations (`get`, `list`, `count`, `delete`) on the tenant-aware in-memory
+  store no longer create a new tenant partition, closing a DoS vector where
+  read requests with unknown tenant IDs could exhaust `max_tenants`.
+
+- **`a2a-protocol-server`: `from_pool()` schema now matches `with_migrations()`** —
+  The `SqliteTaskStore::from_pool()` and `TenantSqliteTaskStore::from_pool()`
+  constructors now create the `created_at` column and composite
+  `(context_id, state)` index, matching the schema produced by
+  `with_migrations()`.
+
+- **`a2a-protocol-server`: JSON-RPC serialization errors no longer produce `null`
+  results** — `success_response` and `success_response_bytes` now return proper
+  JSON-RPC error responses instead of silently producing `null` result values
+  when `serde_json::to_value` fails. The `internal_serialization_error` fallback
+  now returns HTTP 200 per JSON-RPC spec.
+
+- **`a2a-protocol-types`: `MessageRole` serializes as lowercase** — Now serializes
+  as `"user"` / `"agent"` per the A2A v1.0 JSON wire format, instead of
+  proto-style `"ROLE_USER"` / `"ROLE_AGENT"`. The proto-style values remain as
+  deserialization aliases for backward compatibility.
+
+- **Unused example dependencies removed** — Removed `rig-core` from `rig-agent`
+  and `bytes` from `echo-agent` examples.
+
 ## [0.3.2] - 2026-03-30
 
 ### Fixed

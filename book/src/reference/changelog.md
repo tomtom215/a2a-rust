@@ -45,6 +45,14 @@ This ensures each crate's dependencies are available before it publishes.
 - **`PayloadTooLarge` error code** — Returns `InvalidRequest` (-32600) instead of `InternalError` (-32603)
 - **Params-level `context_id` validation** — Now validated via `validate_id()` like message-level `context_id`
 - **`eviction_interval=0` panic** — No longer panics; treated as "disable periodic eviction"
+- **Push config deterministic ordering** — `list()` results sorted by `(task_id, config_id)`
+- **Cancel task TOCTOU race narrowed** — Re-reads task before saving `Canceled` to avoid overwriting concurrent completion
+- **`page_size` clamped at handler** — Prevents oversized allocations from untrusted input
+- **Tenant store read-path DoS** — Read operations no longer allocate tenant partitions
+- **`from_pool()` schema parity** — Now matches `with_migrations()` schema (adds `created_at`, composite index)
+- **JSON-RPC serialization error handling** — Returns proper errors instead of `null` results; uses HTTP 200 per spec
+- **`MessageRole` wire format** — Serializes as lowercase `"user"`/`"agent"` per A2A spec
+- **Unused example deps removed** — `rig-core`, `bytes`
 
 ## v0.3.2 (2026-03-30)
 
