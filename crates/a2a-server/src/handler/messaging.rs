@@ -165,7 +165,6 @@ impl RequestHandler {
                     ));
                 }
                 // Reuse the existing task_id for non-terminal continuations.
-                msg_task_id.clone()
             } else {
                 // Atomically check for duplicate task ID using insert_if_absent (CB-4).
                 // Create a placeholder task that will be overwritten below.
@@ -182,8 +181,8 @@ impl RequestHandler {
                         "task_id already exists; cannot create duplicate".into(),
                     ));
                 }
-                msg_task_id.clone()
             }
+            msg_task_id.clone()
         } else {
             TaskId::new(uuid::Uuid::new_v4().to_string())
         };
