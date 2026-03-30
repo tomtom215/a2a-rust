@@ -195,7 +195,7 @@ Agent [Coordinator]   REST     on http://127.0.0.1:XXXXX
 
 ## Open Issues & Future Work — All Resolved
 
-All architecture, ergonomics, observability, performance, and durability issues from the documented passes have been resolved (65 bugs across 12 documented passes, all fixed). Additional scale and security hardening items are documented in the [CHANGELOG](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) as known limitations for future releases. All proposed beyond-spec features have been implemented:
+All architecture, ergonomics, observability, performance, and durability issues from the documented passes have been resolved (68 bugs across 13 documented passes, all fixed). Additional scale and security hardening items are documented in the [CHANGELOG](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) as known limitations for future releases. All proposed beyond-spec features have been implemented:
 
 | Feature | Location |
 |---|---|
@@ -209,7 +209,7 @@ All architecture, ergonomics, observability, performance, and durability issues 
 
 ## Sub-pages
 
-- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 47 bugs discovered across twelve dogfooding passes
+- **[Bugs Found & Fixed](./dogfooding-bugs.md)** — All 68 bugs discovered across thirteen dogfooding passes
 - **[Test Coverage Matrix](./dogfooding-tests.md)** — Complete 81-test base E2E coverage map (94 with all optional features)
 
 ## See Also

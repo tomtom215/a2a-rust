@@ -60,7 +60,7 @@ This ensures each crate's dependencies are available before it publishes.
 
 - **Task ID not reused for non-terminal continuations** — `on_send_message` now reuses the client-provided `task_id` when it matches a stored non-terminal task (#66)
 
-## Unreleased
+## v0.3.0 (2026-03-19)
 
 ### Performance
 
@@ -69,8 +69,6 @@ This ensures each crate's dependencies are available before it publishes.
 - **Batch clone removal** — JSON-RPC batch dispatch no longer clones each request item
 - **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
 - **Benchmark server `TCP_NODELAY`** — Streaming benchmarks now report actual SDK latency (~1.5ms) instead of Nagle-inflated ~44ms
-
-## v0.3.0 (2026-03-19)
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
   Axum servers. All 11 REST methods, composable with other Axum routes/middleware.

@@ -197,7 +197,7 @@ fn message_role_wire_format() {
         // ...
     };
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("\"ROLE_USER\""));
+    assert!(json.contains("\"user\""));
     assert!(json.contains("\"messageId\""));
 }
 ```

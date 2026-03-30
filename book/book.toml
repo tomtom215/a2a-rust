@@ -1,6 +1,6 @@
 [book]
 title = "a2a-rust"
-description = "Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0.0"
+description = "Official Rust SDK for the A2A (Agent-to-Agent) protocol — build interoperable AI agents with type-safe, async Rust"
 authors = ["Tom F."]
 language = "en"
 src = "src"

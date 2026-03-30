@@ -105,8 +105,8 @@ pub struct Message {
 
 | Role | Wire Value | Meaning |
 |------|------------|---------|
-| `User` | `ROLE_USER` | From the client/human side |
-| `Agent` | `ROLE_AGENT` | From the agent/server side |
+| `User` | `"user"` | From the client/human side |
+| `Agent` | `"agent"` | From the agent/server side |
 
 ### Creating Messages
 
