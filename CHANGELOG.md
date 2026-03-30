@@ -10,6 +10,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-03-30
+
+### Fixed
+
+- **`a2a-protocol-server`: task_id not reused for non-terminal continuations** —
+  `on_send_message` unconditionally generated a new `task_id` even when the
+  client sent a `task_id` matching an existing non-terminal task (e.g.
+  `input-required`). This violated A2A spec §3.4.3 (multi-turn conversation
+  patterns) and caused non-deterministic `invalid params` errors on subsequent
+  messages due to duplicate tasks per `context_id`. The handler now reuses the
+  client-provided `task_id` when it matches the stored task. (#66)
+
 ## [0.3.1] - 2026-03-21
 
 ### Security

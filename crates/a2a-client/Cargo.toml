@@ -67,7 +67,7 @@ hyper = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
 a2a-protocol-types = { version = "0.3.1", path = "../a2a-types" }
-a2a-protocol-server = { version = "0.3.1", path = "../a2a-server", features = ["websocket"] }
+a2a-protocol-server = { version = "0.3.2", path = "../a2a-server", features = ["websocket"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
 
 [[bench]]
