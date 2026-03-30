@@ -44,9 +44,10 @@ pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result:
                 br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#.to_vec()
             })
         }
-        Err(_) => {
-            error_response_bytes(id, &ServerError::Internal("result serialization failed".into()))
-        }
+        Err(_) => error_response_bytes(
+            id,
+            &ServerError::Internal("result serialization failed".into()),
+        ),
     }
 }
 

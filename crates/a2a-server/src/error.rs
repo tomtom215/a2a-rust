@@ -126,9 +126,7 @@ impl ServerError {
             Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
                 A2aError::internal(msg.clone())
             }
-            Self::PayloadTooLarge(msg) => {
-                A2aError::new(ErrorCode::InvalidRequest, msg.clone())
-            }
+            Self::PayloadTooLarge(msg) => A2aError::new(ErrorCode::InvalidRequest, msg.clone()),
             Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
                 format!("invalid state transition for task {task_id}: {from} → {to}"),
             ),

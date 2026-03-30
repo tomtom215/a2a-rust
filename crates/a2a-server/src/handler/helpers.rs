@@ -51,7 +51,7 @@ impl RequestHandler {
     /// multi-tenant deployments only search within the caller's tenant.
     /// The maximum number of tasks to fetch when looking up by context ID.
     /// We fetch more than one so we can prefer non-terminal tasks over terminal
-    /// ones when multiple tasks share the same context_id.
+    /// ones when multiple tasks share the same `context_id`.
     const CONTEXT_LOOKUP_PAGE_SIZE: u32 = 10;
 
     pub(crate) async fn find_task_by_context(
@@ -250,7 +250,7 @@ mod tests {
             );
         }
 
-        /// Helper to create a task with the given id, context_id, and state.
+        /// Helper to create a task with the given `id`, `context_id`, and state.
         fn make_task(id: &str, context_id: &str, state: TaskState) -> Task {
             Task {
                 id: TaskId::new(id.to_owned()),
