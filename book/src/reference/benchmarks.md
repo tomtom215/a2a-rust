@@ -14,8 +14,8 @@ benchmarking.
 >
 > To reproduce on your own machine: `cargo bench -p a2a-benchmarks`
 
-**Last updated:** 2026-03-21 01:16 UTC  
-**Rust version:** rustc 1.94.0 (4a4ef493e 2026-03-02)  
+**Last updated:** 2026-03-30 22:23 UTC  
+**Rust version:** rustc 1.94.1 (e408947bf 2026-03-25)  
 **Platform:** Linux-x86_64  
 
 ## Transport Throughput
@@ -25,15 +25,15 @@ All measurements use loopback (127.0.0.1) to isolate SDK overhead from network l
 
 | Benchmark | Median |
 |-----------|--------|
-| `transport_jsonrpc_send/single_message` | 1.66 ms |
-| `transport_jsonrpc_stream/stream_drain` | 1.39 ms |
-| `transport_payload_scaling/jsonrpc_send/1024` | 1.69 ms |
-| `transport_payload_scaling/jsonrpc_send/16384` | 1.52 ms |
-| `transport_payload_scaling/jsonrpc_send/256` | 1.69 ms |
+| `transport_jsonrpc_send/single_message` | 1.69 ms |
+| `transport_jsonrpc_stream/stream_drain` | 1.36 ms |
+| `transport_payload_scaling/jsonrpc_send/1024` | 1.51 ms |
+| `transport_payload_scaling/jsonrpc_send/16384` | 1.56 ms |
+| `transport_payload_scaling/jsonrpc_send/256` | 1.68 ms |
 | `transport_payload_scaling/jsonrpc_send/4096` | 1.52 ms |
-| `transport_payload_scaling/jsonrpc_send/64` | 1.68 ms |
+| `transport_payload_scaling/jsonrpc_send/64` | 1.67 ms |
 | `transport_rest_send/single_message` | 1.67 ms |
-| `transport_rest_stream/stream_drain` | 1.37 ms |
+| `transport_rest_stream/stream_drain` | 1.33 ms |
 
 ## Protocol Overhead
 
@@ -44,26 +44,26 @@ every message pays regardless of transport.
 |-----------|--------|
 | `protocol_batch/deserialize_tasks/1` | 1.4 µs |
 | `protocol_batch/deserialize_tasks/10` | 16.6 µs |
-| `protocol_batch/deserialize_tasks/100` | 163.7 µs |
-| `protocol_batch/deserialize_tasks/50` | 83.0 µs |
-| `protocol_batch/serialize_tasks/1` | 466 ns |
-| `protocol_batch/serialize_tasks/10` | 3.9 µs |
-| `protocol_batch/serialize_tasks/100` | 35.7 µs |
-| `protocol_batch/serialize_tasks/50` | 18.5 µs |
-| `protocol_jsonrpc_envelope/deserialize_request` | 929 ns |
+| `protocol_batch/deserialize_tasks/100` | 164.6 µs |
+| `protocol_batch/deserialize_tasks/50` | 82.1 µs |
+| `protocol_batch/serialize_tasks/1` | 417 ns |
+| `protocol_batch/serialize_tasks/10` | 3.6 µs |
+| `protocol_batch/serialize_tasks/100` | 33.1 µs |
+| `protocol_batch/serialize_tasks/50` | 16.7 µs |
+| `protocol_jsonrpc_envelope/deserialize_request` | 918 ns |
 | `protocol_jsonrpc_envelope/deserialize_response` | 2.0 µs |
-| `protocol_jsonrpc_envelope/serialize_request` | 289 ns |
-| `protocol_jsonrpc_envelope/serialize_response` | 580 ns |
-| `protocol_stream_events/artifact_update_deserialize` | 693 ns |
-| `protocol_stream_events/artifact_update_serialize` | 273 ns |
-| `protocol_stream_events/status_update_deserialize` | 382 ns |
-| `protocol_stream_events/status_update_serialize` | 110 ns |
+| `protocol_jsonrpc_envelope/serialize_request` | 264 ns |
+| `protocol_jsonrpc_envelope/serialize_response` | 489 ns |
+| `protocol_stream_events/artifact_update_deserialize` | 699 ns |
+| `protocol_stream_events/artifact_update_serialize` | 261 ns |
+| `protocol_stream_events/status_update_deserialize` | 381 ns |
+| `protocol_stream_events/status_update_serialize` | 103 ns |
 | `protocol_type_serde/agent_card_deserialize` | 1.4 µs |
-| `protocol_type_serde/agent_card_serialize` | 597 ns |
+| `protocol_type_serde/agent_card_serialize` | 545 ns |
 | `protocol_type_serde/message_deserialize/254` | 1.2 µs |
-| `protocol_type_serde/message_serialize/254` | 352 ns |
+| `protocol_type_serde/message_serialize/254` | 316 ns |
 | `protocol_type_serde/task_deserialize/295` | 1.4 µs |
-| `protocol_type_serde/task_serialize/295` | 464 ns |
+| `protocol_type_serde/task_serialize/295` | 426 ns |
 
 ## Task Lifecycle
 
@@ -71,15 +71,15 @@ TaskStore and EventQueue operations — the backbone of task management.
 
 | Benchmark | Median |
 |-----------|--------|
-| `lifecycle_e2e/send_and_complete` | 1.63 ms |
-| `lifecycle_e2e/stream_and_drain` | 2.69 ms |
-| `lifecycle_queue/write_read/1` | 770 ns |
-| `lifecycle_queue/write_read/10` | 4.4 µs |
-| `lifecycle_queue/write_read/100` | 42.4 µs |
+| `lifecycle_e2e/send_and_complete` | 1.50 ms |
+| `lifecycle_e2e/stream_and_drain` | 2.63 ms |
+| `lifecycle_queue/write_read/1` | 840 ns |
+| `lifecycle_queue/write_read/10` | 4.2 µs |
+| `lifecycle_queue/write_read/100` | 42.3 µs |
 | `lifecycle_queue/write_read/50` | 20.9 µs |
-| `lifecycle_store_get/lookup_in_1000` | 436 ns |
-| `lifecycle_store_list/filtered_page_50_of_250` | 23.1 µs |
-| `lifecycle_store_save/single_task` | 660 ns |
+| `lifecycle_store_get/lookup_in_1000` | 435 ns |
+| `lifecycle_store_list/filtered_page_50_of_250` | 22.9 µs |
+| `lifecycle_store_save/single_task` | 662 ns |
 
 ## Concurrent Agents
 
@@ -88,19 +88,19 @@ concurrency increases from 1 to 64 simultaneous operations.
 
 | Benchmark | Median |
 |-----------|--------|
-| `concurrent_mixed/send_then_get` | 1.59 ms |
-| `concurrent_sends/jsonrpc/1` | 1.69 ms |
-| `concurrent_sends/jsonrpc/16` | 5.63 ms |
-| `concurrent_sends/jsonrpc/4` | 2.99 ms |
-| `concurrent_sends/jsonrpc/64` | 13.94 ms |
-| `concurrent_store/save_and_get/1` | 29.8 µs |
-| `concurrent_store/save_and_get/16` | 74.2 µs |
-| `concurrent_store/save_and_get/4` | 28.6 µs |
-| `concurrent_store/save_and_get/64` | 200.6 µs |
-| `concurrent_streams/jsonrpc/1` | 1.41 ms |
-| `concurrent_streams/jsonrpc/16` | 6.52 ms |
-| `concurrent_streams/jsonrpc/4` | 3.93 ms |
-| `concurrent_streams/jsonrpc/64` | 12.49 ms |
+| `concurrent_mixed/send_then_get` | 1.61 ms |
+| `concurrent_sends/jsonrpc/1` | 1.63 ms |
+| `concurrent_sends/jsonrpc/16` | 5.89 ms |
+| `concurrent_sends/jsonrpc/4` | 2.93 ms |
+| `concurrent_sends/jsonrpc/64` | 13.63 ms |
+| `concurrent_store/save_and_get/1` | 34.4 µs |
+| `concurrent_store/save_and_get/16` | 74.7 µs |
+| `concurrent_store/save_and_get/4` | 31.9 µs |
+| `concurrent_store/save_and_get/64` | 185.4 µs |
+| `concurrent_streams/jsonrpc/1` | 1.37 ms |
+| `concurrent_streams/jsonrpc/16` | 6.75 ms |
+| `concurrent_streams/jsonrpc/4` | 4.33 ms |
+| `concurrent_streams/jsonrpc/64` | 12.94 ms |
 
 ## Realistic Workloads
 
@@ -110,37 +110,37 @@ interceptor chains, and connection reuse vs per-request clients.
 | Benchmark | Median |
 |-----------|--------|
 | `realistic_complex_card/deserialize/1` | 2.4 µs |
-| `realistic_complex_card/deserialize/10` | 13.0 µs |
-| `realistic_complex_card/deserialize/100` | 118.8 µs |
-| `realistic_complex_card/deserialize/50` | 60.8 µs |
-| `realistic_complex_card/serialize/1` | 920 ns |
-| `realistic_complex_card/serialize/10` | 3.4 µs |
-| `realistic_complex_card/serialize/100` | 27.8 µs |
-| `realistic_complex_card/serialize/50` | 14.2 µs |
-| `realistic_connection/new_client_per_request` | 1.64 ms |
-| `realistic_connection/reused_client` | 1.51 ms |
-| `realistic_history_serde/deserialize/1` | 1.9 µs |
-| `realistic_history_serde/deserialize/10` | 7.2 µs |
-| `realistic_history_serde/deserialize/20` | 13.7 µs |
-| `realistic_history_serde/deserialize/5` | 4.2 µs |
-| `realistic_history_serde/deserialize/50` | 34.0 µs |
-| `realistic_history_serde/serialize/1` | 540 ns |
-| `realistic_history_serde/serialize/10` | 2.3 µs |
-| `realistic_history_serde/serialize/20` | 4.4 µs |
-| `realistic_history_serde/serialize/5` | 1.4 µs |
-| `realistic_history_serde/serialize/50` | 9.5 µs |
-| `realistic_interceptor_chain/interceptors/0` | 165.0 µs |
-| `realistic_interceptor_chain/interceptors/1` | 165.1 µs |
-| `realistic_interceptor_chain/interceptors/10` | 166.9 µs |
-| `realistic_interceptor_chain/interceptors/5` | 166.8 µs |
-| `realistic_multi_turn/sequential/1` | 1.67 ms |
-| `realistic_multi_turn/sequential/10` | 14.76 ms |
-| `realistic_multi_turn/sequential/3` | 4.52 ms |
+| `realistic_complex_card/deserialize/10` | 12.1 µs |
+| `realistic_complex_card/deserialize/100` | 117.1 µs |
+| `realistic_complex_card/deserialize/50` | 59.3 µs |
+| `realistic_complex_card/serialize/1` | 1.1 µs |
+| `realistic_complex_card/serialize/10` | 4.1 µs |
+| `realistic_complex_card/serialize/100` | 32.5 µs |
+| `realistic_complex_card/serialize/50` | 16.6 µs |
+| `realistic_connection/new_client_per_request` | 1.68 ms |
+| `realistic_connection/reused_client` | 1.61 ms |
+| `realistic_history_serde/deserialize/1` | 1.8 µs |
+| `realistic_history_serde/deserialize/10` | 7.0 µs |
+| `realistic_history_serde/deserialize/20` | 13.4 µs |
+| `realistic_history_serde/deserialize/5` | 4.0 µs |
+| `realistic_history_serde/deserialize/50` | 32.8 µs |
+| `realistic_history_serde/serialize/1` | 631 ns |
+| `realistic_history_serde/serialize/10` | 2.6 µs |
+| `realistic_history_serde/serialize/20` | 4.8 µs |
+| `realistic_history_serde/serialize/5` | 1.5 µs |
+| `realistic_history_serde/serialize/50` | 11.0 µs |
+| `realistic_interceptor_chain/interceptors/0` | 176.1 µs |
+| `realistic_interceptor_chain/interceptors/1` | 177.6 µs |
+| `realistic_interceptor_chain/interceptors/10` | 177.2 µs |
+| `realistic_interceptor_chain/interceptors/5` | 178.6 µs |
+| `realistic_multi_turn/sequential/1` | 1.66 ms |
+| `realistic_multi_turn/sequential/10` | 14.71 ms |
+| `realistic_multi_turn/sequential/3` | 4.50 ms |
 | `realistic_multi_turn/sequential/5` | 7.49 ms |
-| `realistic_payload_complexity/large_metadata_10kb` | 1.62 ms |
-| `realistic_payload_complexity/mixed_parts` | 1.50 ms |
-| `realistic_payload_complexity/nested_metadata_10` | 1.50 ms |
-| `realistic_payload_complexity/simple_text` | 1.50 ms |
+| `realistic_payload_complexity/large_metadata_10kb` | 1.71 ms |
+| `realistic_payload_complexity/mixed_parts` | 1.58 ms |
+| `realistic_payload_complexity/nested_metadata_10` | 1.60 ms |
+| `realistic_payload_complexity/simple_text` | 1.53 ms |
 
 ## Error Paths
 
@@ -150,11 +150,11 @@ the happy path gives an incomplete picture.
 
 | Benchmark | Median |
 |-----------|--------|
-| `errors_happy_vs_error/error_path` | 1.52 ms |
-| `errors_happy_vs_error/happy_path` | 1.64 ms |
-| `errors_malformed_request/invalid_json` | 95.7 µs |
-| `errors_malformed_request/wrong_content_type` | 92.7 µs |
-| `errors_task_not_found/get_nonexistent_task` | 107.9 µs |
+| `errors_happy_vs_error/error_path` | 1.50 ms |
+| `errors_happy_vs_error/happy_path` | 1.67 ms |
+| `errors_malformed_request/invalid_json` | 102.2 µs |
+| `errors_malformed_request/wrong_content_type` | 98.6 µs |
+| `errors_task_not_found/get_nonexistent_task` | 110.7 µs |
 
 ## Streaming & Backpressure
 
@@ -163,16 +163,16 @@ Reveals buffering and flow-control overhead that synthetic single-event tests mi
 
 | Benchmark | Median |
 |-----------|--------|
-| `backpressure_concurrent_streams/streams/1` | 1.49 ms |
-| `backpressure_concurrent_streams/streams/16` | 5.93 ms |
+| `backpressure_concurrent_streams/streams/1` | 1.44 ms |
+| `backpressure_concurrent_streams/streams/16` | 6.10 ms |
 | `backpressure_concurrent_streams/streams/4` | 4.16 ms |
-| `backpressure_slow_consumer/1ms_delay` | 45.55 ms |
-| `backpressure_slow_consumer/5ms_delay` | 130.49 ms |
-| `backpressure_slow_consumer/fast_consumer` | 1.48 ms |
-| `backpressure_stream_volume/101_events` | 1.62 ms |
-| `backpressure_stream_volume/11_events` | 1.45 ms |
-| `backpressure_stream_volume/3_events` | 1.40 ms |
-| `backpressure_stream_volume/51_events` | 1.59 ms |
+| `backpressure_slow_consumer/1ms_delay` | 45.53 ms |
+| `backpressure_slow_consumer/5ms_delay` | 130.73 ms |
+| `backpressure_slow_consumer/fast_consumer` | 1.44 ms |
+| `backpressure_stream_volume/101_events` | 1.63 ms |
+| `backpressure_stream_volume/11_events` | 1.40 ms |
+| `backpressure_stream_volume/3_events` | 1.36 ms |
+| `backpressure_stream_volume/51_events` | 1.55 ms |
 
 ## Data Volume Scaling
 
@@ -181,25 +181,25 @@ Shows how store operations scale as data accumulates over time.
 
 | Benchmark | Median |
 |-----------|--------|
-| `data_volume_concurrent_reads/get/1` | 27.8 µs |
-| `data_volume_concurrent_reads/get/16` | 39.1 µs |
-| `data_volume_concurrent_reads/get/4` | 29.8 µs |
-| `data_volume_concurrent_reads/get/64` | 88.7 µs |
-| `data_volume_get/lookup/1000` | 445 ns |
-| `data_volume_get/lookup/10000` | 442 ns |
-| `data_volume_get/lookup/100000` | 203 ns |
+| `data_volume_concurrent_reads/get/1` | 33.1 µs |
+| `data_volume_concurrent_reads/get/16` | 43.7 µs |
+| `data_volume_concurrent_reads/get/4` | 33.4 µs |
+| `data_volume_concurrent_reads/get/64` | 91.9 µs |
+| `data_volume_get/lookup/1000` | 444 ns |
+| `data_volume_get/lookup/10000` | 452 ns |
+| `data_volume_get/lookup/100000` | 211 ns |
 | `data_volume_history_depth/save_with_turns/1` | 1.3 µs |
-| `data_volume_history_depth/save_with_turns/10` | 4.4 µs |
-| `data_volume_history_depth/save_with_turns/20` | 9.4 µs |
+| `data_volume_history_depth/save_with_turns/10` | 4.1 µs |
+| `data_volume_history_depth/save_with_turns/20` | 8.8 µs |
 | `data_volume_history_depth/save_with_turns/5` | 2.3 µs |
-| `data_volume_history_depth/save_with_turns/50` | 19.7 µs |
-| `data_volume_list/filtered_page_50/1000` | 23.6 µs |
-| `data_volume_list/filtered_page_50/10000` | 23.8 µs |
-| `data_volume_list/filtered_page_50/100000` | 24.6 µs |
-| `data_volume_save/after_prefill/0` | 1.5 µs |
-| `data_volume_save/after_prefill/1000` | 1.5 µs |
-| `data_volume_save/after_prefill/10000` | 845 ns |
-| `data_volume_save/after_prefill/50000` | 903 ns |
+| `data_volume_history_depth/save_with_turns/50` | 19.1 µs |
+| `data_volume_list/filtered_page_50/1000` | 22.8 µs |
+| `data_volume_list/filtered_page_50/10000` | 23.3 µs |
+| `data_volume_list/filtered_page_50/100000` | 23.0 µs |
+| `data_volume_save/after_prefill/0` | 1.3 µs |
+| `data_volume_save/after_prefill/1000` | 832 ns |
+| `data_volume_save/after_prefill/10000` | 775 ns |
+| `data_volume_save/after_prefill/50000` | 831 ns |
 
 ## Memory Overhead
 
@@ -214,25 +214,25 @@ bytes — not time — encoded as nanoseconds for Criterion tracking.
 
 | Benchmark | Value |
 |-----------|-------|
-| `memory_bytes_per_payload/serialize_bytes/1024` | 910 |
-| `memory_bytes_per_payload/serialize_bytes/16384` | 11031 |
-| `memory_bytes_per_payload/serialize_bytes/256` | 351 |
-| `memory_bytes_per_payload/serialize_bytes/4096` | 2949 |
-| `memory_bytes_per_payload/serialize_bytes/64` | 212 |
-| `memory_deserialize/agent_card_alloc_count` | 1381 |
-| `memory_deserialize/task_alloc_count` | 1355 |
-| `memory_history_scaling/deserialize_allocs/1` | 1713 |
-| `memory_history_scaling/deserialize_allocs/10` | 6984 |
-| `memory_history_scaling/deserialize_allocs/20` | 13304 |
-| `memory_history_scaling/deserialize_allocs/5` | 3973 |
-| `memory_history_scaling/deserialize_allocs/50` | 31775 |
-| `memory_history_scaling/serialize_allocs/1` | 554 |
-| `memory_history_scaling/serialize_allocs/10` | 2500 |
-| `memory_history_scaling/serialize_allocs/20` | 6096 |
-| `memory_history_scaling/serialize_allocs/5` | 1491 |
-| `memory_history_scaling/serialize_allocs/50` | 14600 |
-| `memory_serialize/agent_card_alloc_count` | 546 |
-| `memory_serialize/task_alloc_count` | 400 |
+| `memory_bytes_per_payload/serialize_bytes/1024` | 867 |
+| `memory_bytes_per_payload/serialize_bytes/16384` | 10982 |
+| `memory_bytes_per_payload/serialize_bytes/256` | 329 |
+| `memory_bytes_per_payload/serialize_bytes/4096` | 2895 |
+| `memory_bytes_per_payload/serialize_bytes/64` | 182 |
+| `memory_deserialize/agent_card_alloc_count` | 1413 |
+| `memory_deserialize/task_alloc_count` | 1445 |
+| `memory_history_scaling/deserialize_allocs/1` | 1626 |
+| `memory_history_scaling/deserialize_allocs/10` | 7154 |
+| `memory_history_scaling/deserialize_allocs/20` | 13430 |
+| `memory_history_scaling/deserialize_allocs/5` | 4014 |
+| `memory_history_scaling/deserialize_allocs/50` | 31824 |
+| `memory_history_scaling/serialize_allocs/1` | 562 |
+| `memory_history_scaling/serialize_allocs/10` | 2495 |
+| `memory_history_scaling/serialize_allocs/20` | 5942 |
+| `memory_history_scaling/serialize_allocs/5` | 1447 |
+| `memory_history_scaling/serialize_allocs/50` | 14567 |
+| `memory_serialize/agent_card_alloc_count` | 543 |
+| `memory_serialize/task_alloc_count` | 387 |
 
 ## Cross-Language Comparison
 
@@ -245,13 +245,13 @@ A2A SDK implementations (Python, Go, JS, Java, C#/.NET).
 
 | Benchmark | Median |
 |-----------|--------|
-| `cross_language_concurrent_50/rust` | 10.34 ms |
-| `cross_language_echo_roundtrip/rust` | 1.69 ms |
-| `cross_language_minimal_overhead/rust` | 1.58 ms |
+| `cross_language_concurrent_50/rust` | 10.95 ms |
+| `cross_language_echo_roundtrip/rust` | 1.67 ms |
+| `cross_language_minimal_overhead/rust` | 1.61 ms |
 | `cross_language_serialize_agent_card/rust_deserialize` | 1.4 µs |
 | `cross_language_serialize_agent_card/rust_roundtrip` | 2.1 µs |
-| `cross_language_serialize_agent_card/rust_serialize` | 600 ns |
-| `cross_language_stream_events/rust` | 1.38 ms |
+| `cross_language_serialize_agent_card/rust_serialize` | 591 ns |
+| `cross_language_stream_events/rust` | 1.35 ms |
 
 ---
 
