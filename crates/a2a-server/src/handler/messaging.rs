@@ -134,9 +134,8 @@ impl RequestHandler {
             }
         }
 
-        // Generate task and context IDs.
+        // Generate context ID.
         // Params-level context_id takes precedence over message-level.
-        let task_id = TaskId::new(uuid::Uuid::new_v4().to_string());
         let context_id = params
             .context_id
             .as_deref()
@@ -155,15 +154,18 @@ impl RequestHandler {
         // Look up existing task for continuation.
         let stored_task = self.find_task_by_context(&context_id).await?;
 
-        // Context/task mismatch rejection: if message.task_id is set but
-        // doesn't match the stored task found by context_id, reject.
-        if let Some(ref msg_task_id) = params.message.task_id {
+        // Determine task_id: reuse the client-provided task_id when it matches
+        // a stored non-terminal task (e.g. input-required continuations per
+        // A2A spec §3.4.3), otherwise generate a new one.
+        let task_id = if let Some(ref msg_task_id) = params.message.task_id {
             if let Some(ref stored) = stored_task {
                 if msg_task_id != &stored.id {
                     return Err(ServerError::InvalidParams(
                         "message task_id does not match task found for context".into(),
                     ));
                 }
+                // Reuse the existing task_id for non-terminal continuations.
+                msg_task_id.clone()
             } else {
                 // Atomically check for duplicate task ID using insert_if_absent (CB-4).
                 // Create a placeholder task that will be overwritten below.
@@ -180,8 +182,11 @@ impl RequestHandler {
                         "task_id already exists; cannot create duplicate".into(),
                     ));
                 }
+                msg_task_id.clone()
             }
-        }
+        } else {
+            TaskId::new(uuid::Uuid::new_v4().to_string())
+        };
 
         // Check return_immediately mode.
         let return_immediately = params
@@ -1032,5 +1037,43 @@ mod tests {
             matches!(result, Ok(SendMessageResult::Stream(_))),
             "streaming executor failure should still return stream"
         );
+    }
+
+    #[tokio::test]
+    async fn input_required_continuation_reuses_task_id() {
+        // When a client sends a task_id matching an existing non-terminal task
+        // for the same context_id, the handler should reuse the task_id rather
+        // than generating a new one (A2A spec §3.4.3).
+        use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Pre-save a task in InputRequired state (non-terminal).
+        let existing_task_id = TaskId::new("input-required-task");
+        let task = Task {
+            id: existing_task_id.clone(),
+            context_id: ContextId::new("ctx-input"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send a continuation message with the same context_id and task_id.
+        let mut params = make_params(Some("ctx-input"));
+        params.message.task_id = Some(existing_task_id.clone());
+
+        let result = handler.on_send_message(params, false, None).await;
+        let send_result = result.expect("continuation should succeed");
+        match send_result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => {
+                assert_eq!(
+                    t.id, existing_task_id,
+                    "task_id should be reused for input-required continuation"
+                );
+            }
+            _ => panic!("expected Response(Task)"),
+        }
     }
 }
