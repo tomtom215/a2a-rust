@@ -142,6 +142,17 @@ impl TenantAwareInMemoryTaskStore {
         Ok(store)
     }
 
+    /// Returns the store for the current tenant WITHOUT creating one if absent.
+    ///
+    /// Used by read-only operations (`get`, `list`, `count`) to avoid allocating
+    /// a new store (and consuming a tenant slot) when a nonexistent tenant is
+    /// queried.
+    async fn get_existing_store(&self) -> Option<Arc<InMemoryTaskStore>> {
+        let tenant = TenantContext::current();
+        let stores = self.stores.read().await;
+        stores.get(&tenant).map(Arc::clone)
+    }
+
     /// Returns the number of active tenant partitions.
     pub async fn tenant_count(&self) -> usize {
         self.stores.read().await.len()
@@ -188,8 +199,10 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.get(id).await
+            match self.get_existing_store().await {
+                Some(store) => store.get(id).await,
+                None => Ok(None),
+            }
         })
     }
 
@@ -198,8 +211,10 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         params: &'a ListTasksParams,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.list(params).await
+            match self.get_existing_store().await {
+                Some(store) => store.list(params).await,
+                None => Ok(TaskListResponse::new(Vec::new())),
+            }
         })
     }
 
@@ -218,15 +233,19 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
         id: &'a TaskId,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.delete(id).await
+            match self.get_existing_store().await {
+                Some(store) => store.delete(id).await,
+                None => Ok(()),
+            }
         })
     }
 
     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.count().await
+            match self.get_existing_store().await {
+                Some(store) => store.count().await,
+                None => Ok(0),
+            }
         })
     }
 }

@@ -87,6 +87,7 @@ impl TenantAwareSqliteTaskStore {
                 state      TEXT NOT NULL,
                 data       TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 PRIMARY KEY (tenant_id, id)
             )",
         )
@@ -101,6 +102,12 @@ impl TenantAwareSqliteTaskStore {
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_state ON tenant_tasks(tenant_id, state)",
+        )
+        .execute(&pool)
+        .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx_state ON tenant_tasks(tenant_id, context_id, state)",
         )
         .execute(&pool)
         .await?;

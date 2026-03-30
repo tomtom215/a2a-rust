@@ -217,7 +217,7 @@ mod tests {
             "v1.0 should not have kind tag: {json}"
         );
         assert!(json.contains("\"messageId\":\"msg-stream-1\""));
-        assert!(json.contains("\"role\":\"ROLE_AGENT\""));
+        assert!(json.contains("\"role\":\"agent\""));
 
         let back: StreamResponse = serde_json::from_str(&json).expect("deserialize");
         match back {

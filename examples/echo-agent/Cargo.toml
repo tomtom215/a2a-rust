@@ -27,5 +27,4 @@ tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "n
 hyper          = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
-bytes          = "1"
 uuid           = { workspace = true }

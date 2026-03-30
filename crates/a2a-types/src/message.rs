@@ -6,7 +6,7 @@
 //! Message types for the A2A protocol.
 //!
 //! A [`Message`] is the fundamental communication unit between a client and an
-//! agent. Each message has a [`MessageRole`] (`ROLE_USER` or `ROLE_AGENT`) and
+//! agent. Each message has a [`MessageRole`] (`"user"` or `"agent"`) and
 //! carries one or more [`Part`] values.
 //!
 //! # Part type discriminator
@@ -69,22 +69,22 @@ impl AsRef<str> for MessageId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MessageRole {
     /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
+    #[serde(rename = "unspecified", alias = "ROLE_UNSPECIFIED")]
     Unspecified,
     /// Sent by the human/client side.
-    #[serde(rename = "ROLE_USER", alias = "user")]
+    #[serde(rename = "user", alias = "ROLE_USER")]
     User,
     /// Sent by the agent.
-    #[serde(rename = "ROLE_AGENT", alias = "agent")]
+    #[serde(rename = "agent", alias = "ROLE_AGENT")]
     Agent,
 }
 
 impl std::fmt::Display for MessageRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Unspecified => "ROLE_UNSPECIFIED",
-            Self::User => "ROLE_USER",
-            Self::Agent => "ROLE_AGENT",
+            Self::Unspecified => "unspecified",
+            Self::User => "user",
+            Self::Agent => "agent",
         };
         f.write_str(s)
     }
@@ -372,7 +372,7 @@ mod tests {
         let msg = make_message();
         let json = serde_json::to_string(&msg).expect("serialize");
         assert!(json.contains("\"messageId\":\"msg-1\""));
-        assert!(json.contains("\"role\":\"ROLE_USER\""));
+        assert!(json.contains("\"role\":\"user\""));
 
         let back: Message = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.id, MessageId::new("msg-1"));
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn wire_format_role_unspecified_roundtrip() {
         let json = serde_json::to_string(&MessageRole::Unspecified).unwrap();
-        assert_eq!(json, "\"ROLE_UNSPECIFIED\"");
+        assert_eq!(json, "\"unspecified\"");
 
         let back: MessageRole = serde_json::from_str("\"ROLE_UNSPECIFIED\"").unwrap();
         assert_eq!(back, MessageRole::Unspecified);
@@ -474,9 +474,9 @@ mod tests {
 
     #[test]
     fn message_role_display_trait() {
-        assert_eq!(MessageRole::User.to_string(), "ROLE_USER");
-        assert_eq!(MessageRole::Agent.to_string(), "ROLE_AGENT");
-        assert_eq!(MessageRole::Unspecified.to_string(), "ROLE_UNSPECIFIED");
+        assert_eq!(MessageRole::User.to_string(), "user");
+        assert_eq!(MessageRole::Agent.to_string(), "agent");
+        assert_eq!(MessageRole::Unspecified.to_string(), "unspecified");
     }
 
     #[test]
