@@ -22,7 +22,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -89,7 +89,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.22.1",
  "criterion",
