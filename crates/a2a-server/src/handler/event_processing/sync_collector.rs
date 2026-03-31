@@ -136,6 +136,10 @@ impl RequestHandler {
                     if let Some(existing) =
                         artifacts.iter_mut().find(|a| a.id == update.artifact.id)
                     {
+                        // Snapshot before mutation for revert on save failure.
+                        let prev_parts_len = existing.parts.len();
+                        let prev_metadata = existing.metadata.clone();
+
                         existing.parts.extend(update.artifact.parts.iter().cloned());
                         if let Some(ref new_meta) = update.artifact.metadata {
                             let meta = existing.metadata.get_or_insert_with(|| {
@@ -149,7 +153,16 @@ impl RequestHandler {
                                 }
                             }
                         }
-                        self.task_store.save(last_task.clone()).await?;
+                        if let Err(e) = self.task_store.save(last_task.clone()).await {
+                            // Revert: truncate parts and restore metadata.
+                            if let Some(existing) = last_task.artifacts.as_mut().and_then(|arts| {
+                                arts.iter_mut().find(|a| a.id == update.artifact.id)
+                            }) {
+                                existing.parts.truncate(prev_parts_len);
+                                existing.metadata = prev_metadata;
+                            }
+                            return Err(ServerError::from(e));
+                        }
                         self.deliver_push(task_id, stream_resp).await;
                         return Ok(());
                     }

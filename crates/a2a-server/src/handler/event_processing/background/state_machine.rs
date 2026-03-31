@@ -97,6 +97,11 @@ pub(super) async fn process_event_bg(
             // artifact with the same ID (Python #735, Java #615).
             if update.append == Some(true) {
                 if let Some(existing) = artifacts.iter_mut().find(|a| a.id == update.artifact.id) {
+                    // Snapshot the artifact state before mutation so we can
+                    // revert if the store save fails (data consistency).
+                    let prev_parts_len = existing.parts.len();
+                    let prev_metadata = existing.metadata.clone();
+
                     existing.parts.extend(update.artifact.parts.iter().cloned());
                     // Merge metadata: new values override existing keys.
                     if let Some(ref new_meta) = update.artifact.metadata {
@@ -117,7 +122,16 @@ pub(super) async fn process_event_bg(
                             error = %_e,
                             "background processor: task store save failed for artifact append; reverting"
                         );
-                        // Revert: we can't undo the extend easily, so just log.
+                        // Revert: truncate parts back and restore metadata.
+                        if let Some(existing) = last_task
+                            .artifacts
+                            .as_mut()
+                            .and_then(|arts| arts.iter_mut().find(|a| a.id == update.artifact.id))
+                        {
+                            existing.parts.truncate(prev_parts_len);
+                            existing.metadata = prev_metadata;
+                        }
+                        return;
                     }
                     deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits)
                         .await;

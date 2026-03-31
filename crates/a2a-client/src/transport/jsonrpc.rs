@@ -272,6 +272,14 @@ impl JsonRpcTransport {
                 Ok(ok.result)
             }
             JsonRpcResponse::Error(err) => {
+                // Validate error response ID matches request ID (spec compliance).
+                if err.id != Some(request_id.clone()) {
+                    trace_warn!(
+                        method,
+                        "JSON-RPC error response id mismatch (expected {request_id}, got {:?})",
+                        err.id
+                    );
+                }
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
                 let a2a = a2a_protocol_types::A2aError::new(
                     a2a_protocol_types::ErrorCode::try_from(err.error.code)
