@@ -129,6 +129,33 @@ impl RequestHandler {
                     }
                 }
                 let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
+
+                // When append=true, merge parts and metadata into the existing
+                // artifact with the same ID (Python #735, Java #615).
+                if update.append == Some(true) {
+                    if let Some(existing) =
+                        artifacts.iter_mut().find(|a| a.id == update.artifact.id)
+                    {
+                        existing.parts.extend(update.artifact.parts.iter().cloned());
+                        if let Some(ref new_meta) = update.artifact.metadata {
+                            let meta = existing.metadata.get_or_insert_with(|| {
+                                serde_json::Value::Object(serde_json::Map::new())
+                            });
+                            if let (Some(existing_map), Some(new_map)) =
+                                (meta.as_object_mut(), new_meta.as_object())
+                            {
+                                for (k, v) in new_map {
+                                    existing_map.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                        self.task_store.save(last_task.clone()).await?;
+                        self.deliver_push(task_id, stream_resp).await;
+                        return Ok(());
+                    }
+                    // Artifact ID not found — fall through to push as new.
+                }
+
                 if artifacts.len() >= self.limits.max_artifacts_per_task {
                     trace_warn!(
                         task_id = %task_id,

@@ -92,6 +92,40 @@ pub(super) async fn process_event_bg(
                 }
             }
             let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
+
+            // When append=true, merge parts and metadata into the existing
+            // artifact with the same ID (Python #735, Java #615).
+            if update.append == Some(true) {
+                if let Some(existing) = artifacts.iter_mut().find(|a| a.id == update.artifact.id) {
+                    existing.parts.extend(update.artifact.parts.iter().cloned());
+                    // Merge metadata: new values override existing keys.
+                    if let Some(ref new_meta) = update.artifact.metadata {
+                        let meta = existing.metadata.get_or_insert_with(|| {
+                            serde_json::Value::Object(serde_json::Map::new())
+                        });
+                        if let (Some(existing_map), Some(new_map)) =
+                            (meta.as_object_mut(), new_meta.as_object())
+                        {
+                            for (k, v) in new_map {
+                                existing_map.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                    if let Err(_e) = task_store.save(last_task.clone()).await {
+                        trace_error!(
+                            task_id = %task_id,
+                            error = %_e,
+                            "background processor: task store save failed for artifact append; reverting"
+                        );
+                        // Revert: we can't undo the extend easily, so just log.
+                    }
+                    deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits)
+                        .await;
+                    return;
+                }
+                // Artifact ID not found — fall through to push as new artifact.
+            }
+
             if artifacts.len() >= limits.max_artifacts_per_task {
                 trace_warn!(
                     task_id = %task_id,

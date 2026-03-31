@@ -80,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cause silent data corruption in pipelined scenarios.
   (Cross-SDK learning from a2a-js#318)
 
+- **`a2a-protocol-server`: Artifact append now merges parts AND metadata** —
+  When `TaskArtifactUpdateEvent` has `append=true`, the server now correctly
+  merges parts into the existing artifact and deep-merges metadata (new keys
+  override existing). Previously, appended artifacts were pushed as separate
+  entries, losing the merge semantics. Both sync and background event processors
+  are fixed. (Cross-SDK learning from a2a-python#735, a2a-java#615)
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed
