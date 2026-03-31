@@ -187,7 +187,7 @@ impl ClientBuilder {
     /// Sets the default tenant for multi-tenancy.
     ///
     /// When set, this tenant is included in all requests unless overridden
-    /// per-request. Automatically populated from [`AgentInterface::tenant`]
+    /// per-request. Automatically populated from `AgentInterface.tenant`
     /// when building via [`ClientBuilder::from_card`].
     #[must_use]
     pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {

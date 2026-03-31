@@ -109,7 +109,7 @@ pub struct ClientConfig {
     /// Default tenant identifier for multi-tenancy.
     ///
     /// When set, this tenant is included in all requests unless overridden
-    /// per-request. Automatically populated from [`AgentInterface::tenant`]
+    /// per-request. Automatically populated from `AgentInterface.tenant`
     /// when building via [`crate::ClientBuilder::from_card`].
     pub tenant: Option<String>,
 }

@@ -255,6 +255,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 String::new()
             };
 
+            #[allow(clippy::cast_possible_truncation)]
             let page_len = tasks.len() as u32;
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
