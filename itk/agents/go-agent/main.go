@@ -368,9 +368,18 @@ func main() {
 		json.NewEncoder(w).Encode(TaskListResponse{Tasks: allTasks})
 	})
 
-	// REST: Get task by ID
-	mux.HandleFunc("GET /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("id")
+	// REST: Get task by ID (must come after /tasks to avoid conflict)
+	// Note: Go's ServeMux can't handle {id}:cancel syntax, so we use a
+	// general /tasks/ handler and parse the path manually for :cancel/:subscribe
+	mux.HandleFunc("GET /tasks/{id...}", func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("id")
+		// Strip trailing :subscribe
+		if strings.HasSuffix(path, ":subscribe") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{})
+			return
+		}
+		taskID := path
 		if val, ok := tasks.Load(taskID); ok {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(val)
@@ -381,38 +390,46 @@ func main() {
 		}
 	})
 
-	// REST: Cancel task
-	mux.HandleFunc("POST /tasks/{id}:cancel", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("id")
-		if val, ok := tasks.Load(taskID); ok {
-			task := val.(Task)
-			task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
-			tasks.Store(taskID, task)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(task)
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(404)
-			json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+	// REST: Cancel task (POST /tasks/{id}:cancel) and push config create
+	mux.HandleFunc("POST /tasks/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+		rest := r.PathValue("rest")
+		if strings.HasSuffix(rest, ":cancel") {
+			taskID := strings.TrimSuffix(rest, ":cancel")
+			if val, ok := tasks.Load(taskID); ok {
+				task := val.(Task)
+				task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
+				tasks.Store(taskID, task)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(task)
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(404)
+				json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+			}
+			return
 		}
-	})
-
-	// REST: Create push notification config
-	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfigs", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("taskId")
-		var cfg PushConfig
-		json.NewDecoder(r.Body).Decode(&cfg)
-		cfg.TaskID = taskID
-		if cfg.ID == "" {
-			cfg.ID = uuid.New().String()
+		// POST /tasks/{taskId}/pushNotificationConfigs
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) == 2 && parts[1] == "pushNotificationConfigs" {
+			taskID := parts[0]
+			var cfg PushConfig
+			json.NewDecoder(r.Body).Decode(&cfg)
+			cfg.TaskID = taskID
+			if cfg.ID == "" {
+				cfg.ID = uuid.New().String()
+			}
+			key := taskID + ":" + cfg.ID
+			pushCfgs.Store(key, cfg)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(cfg)
+			return
 		}
-		key := taskID + ":" + cfg.ID
-		pushCfgs.Store(key, cfg)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cfg)
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(RpcError{Code: -32601, Message: "Not found"})
 	})
 
-	// REST: Get push notification config by id
+	// REST: Get/List push notification configs
 	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
 		if val, ok := pushCfgs.Load(key); ok {
@@ -425,7 +442,6 @@ func main() {
 		}
 	})
 
-	// REST: List push notification configs for task
 	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs", func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("taskId")
 		var configs []PushConfig
