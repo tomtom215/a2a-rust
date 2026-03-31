@@ -118,6 +118,7 @@ Configurable retry policy for `HttpPushSender`. Pass via
 | `with_accepted_output_modes` | `Vec<String>` | `["text/plain", "application/json"]` | MIME types accepted |
 | `with_history_length` | `u32` | None | Messages in responses |
 | `with_return_immediately` | `bool` | false | Don't wait for completion |
+| `with_tenant` | `impl Into<String>` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor` | `impl CallInterceptor` | Empty chain | Client middleware |
 
 ### GrpcTransportConfig

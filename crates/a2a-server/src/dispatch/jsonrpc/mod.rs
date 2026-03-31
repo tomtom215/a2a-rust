@@ -140,6 +140,23 @@ impl JsonRpcDispatcher {
             }
         }
 
+        // Validate A2A-Version header if present (Python #865).
+        // Accept any 1.x version; reject 0.x or 2.x+.
+        if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
+            if let Ok(v) = version.to_str() {
+                let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+                if major != Some(1) {
+                    return error_response(
+                        None,
+                        &ServerError::Protocol(a2a_protocol_types::error::A2aError::new(
+                            a2a_protocol_types::error::ErrorCode::VersionNotSupported,
+                            format!("unsupported A2A version: {v}; this server supports 1.x"),
+                        )),
+                    );
+                }
+            }
+        }
+
         // Extract HTTP headers BEFORE consuming the body.
         let headers = extract_headers(req.headers());
 

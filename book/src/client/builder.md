@@ -124,7 +124,7 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL and transport) |
+| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL, transport, and tenant) |
 | `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
@@ -134,6 +134,7 @@ let client = ClientBuilder::new(url)
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
+| `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
 
 ## Client Reuse (Best Practice)

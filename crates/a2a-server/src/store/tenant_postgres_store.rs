@@ -214,13 +214,16 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 
             let next_page_token = if tasks.len() > page_size as usize {
                 tasks.truncate(page_size as usize);
-                tasks.last().map(|t| t.id.0.clone())
+                tasks.last().map(|t| t.id.0.clone()).unwrap_or_default()
             } else {
-                None
+                String::new()
             };
 
+            #[allow(clippy::cast_possible_truncation)]
+            let page_len = tasks.len() as u32;
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
+            response.page_size = page_len;
             Ok(response)
         })
     }

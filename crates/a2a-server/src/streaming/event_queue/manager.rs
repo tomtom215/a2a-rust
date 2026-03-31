@@ -240,6 +240,29 @@ impl EventQueueManager {
         map.get(task_id).map(|writer| writer.subscribe())
     }
 
+    /// Subscribes to a task's event queue with an initial snapshot event.
+    ///
+    /// Per A2A spec, the first event in a `SubscribeToTask` stream MUST be a
+    /// `Task` or `Message` representing the current state. The snapshot is
+    /// delivered only to the new subscriber — it is NOT broadcast to existing
+    /// subscribers, avoiding mid-stream surprise events for other consumers.
+    ///
+    /// Returns `None` if no queue exists for the task.
+    pub async fn subscribe_with_snapshot(
+        &self,
+        task_id: &TaskId,
+        snapshot: StreamResponse,
+    ) -> Option<InMemoryQueueReader> {
+        let map = self.writers.read().await;
+        let writer = map.get(task_id)?;
+        // Create a reader with the snapshot as its pending first event.
+        // The snapshot is NOT written to the broadcast channel, so other
+        // subscribers are unaffected.
+        let rx = writer.raw_subscribe();
+        drop(map);
+        Some(InMemoryQueueReader::with_first_event(rx, snapshot))
+    }
+
     /// Removes and drops the event queue for the given task.
     pub async fn destroy(&self, task_id: &TaskId) {
         let mut map = self.writers.write().await;

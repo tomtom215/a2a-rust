@@ -85,6 +85,7 @@ impl RequestHandler {
 
     /// Processes a single event from the queue reader, updating the task and
     /// delivering push notifications.
+    #[allow(clippy::too_many_lines)]
     async fn process_event(
         &self,
         event: a2a_protocol_types::error::A2aResult<StreamResponse>,
@@ -117,7 +118,57 @@ impl RequestHandler {
                 self.deliver_push(task_id, stream_resp).await;
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
+                // Validate artifact has at least one part per A2A spec (unless appending).
+                if update.append != Some(true) {
+                    if let Err(_e) = update.artifact.validate() {
+                        trace_warn!(
+                            task_id = %task_id,
+                            "dropping artifact with empty parts (spec violation)"
+                        );
+                        return Ok(());
+                    }
+                }
                 let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
+
+                // When append=true, merge parts and metadata into the existing
+                // artifact with the same ID (Python #735, Java #615).
+                if update.append == Some(true) {
+                    if let Some(existing) =
+                        artifacts.iter_mut().find(|a| a.id == update.artifact.id)
+                    {
+                        // Snapshot before mutation for revert on save failure.
+                        let prev_parts_len = existing.parts.len();
+                        let prev_metadata = existing.metadata.clone();
+
+                        existing.parts.extend(update.artifact.parts.iter().cloned());
+                        if let Some(ref new_meta) = update.artifact.metadata {
+                            let meta = existing.metadata.get_or_insert_with(|| {
+                                serde_json::Value::Object(serde_json::Map::new())
+                            });
+                            if let (Some(existing_map), Some(new_map)) =
+                                (meta.as_object_mut(), new_meta.as_object())
+                            {
+                                for (k, v) in new_map {
+                                    existing_map.insert(k.clone(), v.clone());
+                                }
+                            }
+                        }
+                        if let Err(e) = self.task_store.save(last_task.clone()).await {
+                            // Revert: truncate parts and restore metadata.
+                            if let Some(existing) = last_task.artifacts.as_mut().and_then(|arts| {
+                                arts.iter_mut().find(|a| a.id == update.artifact.id)
+                            }) {
+                                existing.parts.truncate(prev_parts_len);
+                                existing.metadata = prev_metadata;
+                            }
+                            return Err(ServerError::from(e));
+                        }
+                        self.deliver_push(task_id, stream_resp).await;
+                        return Ok(());
+                    }
+                    // Artifact ID not found — fall through to push as new.
+                }
+
                 if artifacts.len() >= self.limits.max_artifacts_per_task {
                     trace_warn!(
                         task_id = %task_id,

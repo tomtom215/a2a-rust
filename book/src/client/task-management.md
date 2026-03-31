@@ -48,10 +48,10 @@ for task in &response.tasks {
     println!("{}: {:?}", task.id, task.status.state);
 }
 
-// Paginate
-if let Some(token) = &response.next_page_token {
+// Paginate (next_page_token is empty string when no more pages)
+if !response.next_page_token.is_empty() {
     let next_page = client.list_tasks(ListTasksParams {
-        page_token: Some(token.clone()),
+        page_token: Some(response.next_page_token.clone()),
         ..Default::default()
     }).await?;
 }
@@ -67,7 +67,7 @@ if let Some(token) = &response.next_page_token {
 | `page_size` | Results per page (capped by server's `max_page_size`, default 1,000) |
 | `page_token` | Cursor for the next page |
 | `include_artifacts` | Include artifact data in results |
-| `history_length` | Number of messages per task |
+| `history_length` | Max number of most recent messages per task (`0` = no history) |
 
 ## Cancel a Task
 

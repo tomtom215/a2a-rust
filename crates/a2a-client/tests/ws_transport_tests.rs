@@ -216,8 +216,8 @@ async fn ws_transport_send_streaming_request_returns_stream() {
         .await
         .expect("send_streaming_request should succeed");
 
-    // Read the first event — we should get at least one valid StreamResponse
-    // (the "working" status update). Don't try to consume the whole stream
+    // Read the first event — per spec, the first event in any streaming
+    // response MUST be a Task snapshot. Don't try to consume the whole stream
     // as the WS transport's reader-lock handoff can be timing-sensitive.
     let first = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
         .await
@@ -227,7 +227,7 @@ async fn ws_transport_send_streaming_request_returns_stream() {
         .expect("stream should yield at least one event")
         .expect("first event should be Ok");
     assert!(
-        matches!(event, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Working || ev.status.state == TaskState::Completed),
-        "first event should be a status update, got: {event:?}"
+        matches!(event, StreamResponse::Task(_)),
+        "first event should be a Task snapshot per spec, got: {event:?}"
     );
 }

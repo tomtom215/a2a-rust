@@ -173,26 +173,34 @@ impl RequestHandler {
                         "message task_id does not match task found for context".into(),
                     ));
                 }
+                // SPEC CORE-SEND-002: Reject messages explicitly targeting a
+                // task in terminal state. Tasks in Completed, Failed, Canceled,
+                // or Rejected state cannot accept further messages.
+                if stored.status.state.is_terminal() {
+                    return Err(ServerError::UnsupportedOperation(format!(
+                        "task {} is in terminal state '{}' and cannot accept new messages",
+                        stored.id, stored.status.state
+                    )));
+                }
                 // Reuse the existing task_id for non-terminal continuations.
             } else {
-                // Atomically check for duplicate task ID using insert_if_absent (CB-4).
-                // Create a placeholder task that will be overwritten below.
-                let placeholder = Task {
-                    id: msg_task_id.clone(),
-                    context_id: ContextId::new(&context_id),
-                    status: TaskStatus::with_timestamp(TaskState::Submitted),
-                    history: None,
-                    artifacts: None,
-                    metadata: None,
-                };
-                if !self.task_store.insert_if_absent(placeholder).await? {
-                    return Err(ServerError::InvalidParams(
-                        "task_id already exists; cannot create duplicate".into(),
-                    ));
+                // SPEC §3.4.2: When a client includes a taskId in a Message, it
+                // MUST reference an existing task. Return TaskNotFound if the
+                // task does not exist at all (not just absent from this context).
+                let exists = self.task_store.get(msg_task_id).await?.is_some();
+                if !exists {
+                    return Err(ServerError::TaskNotFound(msg_task_id.clone()));
                 }
+                // Task exists but under a different context — this is a mismatch.
+                return Err(ServerError::InvalidParams(
+                    "task_id exists but belongs to a different context".into(),
+                ));
             }
             msg_task_id.clone()
         } else {
+            // No explicit task_id from client. If the found stored task is
+            // terminal, a new task will be created on this context — this is
+            // allowed (new conversation round on same context).
             TaskId::new(uuid::Uuid::new_v4().to_string())
         };
 
@@ -412,6 +420,10 @@ impl RequestHandler {
             // is not affected by SSE consumer backpressure, so the background
             // processor never misses state transitions.
             self.spawn_background_event_processor(task_id.clone(), executor_handle, persistence_rx);
+            // SPEC §3.1.2: The first event in a streaming response MUST be a
+            // Task object representing the current state.
+            let mut reader = reader;
+            reader.set_first_event(StreamResponse::Task(task.clone()));
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.
@@ -622,16 +634,16 @@ mod tests {
 
     #[tokio::test]
     async fn task_id_mismatch_returns_invalid_params() {
-        // Covers line 136: context/task mismatch when stored task exists with different task_id.
+        // Covers context/task mismatch when stored task exists with different task_id.
         use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
         let handler = make_handler();
 
-        // Save a task with context_id "ctx-existing".
+        // Save a non-terminal task with context_id "ctx-existing".
         let task = Task {
             id: TaskId::new("stored-task-id"),
             context_id: ContextId::new("ctx-existing"),
-            status: TaskStatus::new(TaskState::Completed),
+            status: TaskStatus::new(TaskState::InputRequired),
             history: None,
             artifacts: None,
             metadata: None,
@@ -645,7 +657,7 @@ mod tests {
         let result = handler.on_send_message(params, false, None).await;
         assert!(
             matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("does not match")),
-            "expected InvalidParams for task_id mismatch"
+            "expected InvalidParams for task_id mismatch, got: {result:?}"
         );
     }
 
@@ -764,17 +776,17 @@ mod tests {
 
     #[tokio::test]
     async fn send_message_with_stored_task_continuation() {
-        // Covers lines 182-184: setting stored_task on context when a task
-        // exists for the given context_id.
+        // Covers setting stored_task on context when a non-terminal task
+        // exists for the given context_id (e.g. input-required continuation).
         use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
 
         let handler = make_handler();
 
-        // Pre-save a task with a known context_id.
+        // Pre-save a non-terminal task with a known context_id.
         let task = Task {
             id: TaskId::new("existing-task"),
             context_id: ContextId::new("continue-ctx"),
-            status: TaskStatus::new(TaskState::Completed),
+            status: TaskStatus::new(TaskState::InputRequired),
             history: None,
             artifacts: None,
             metadata: None,
@@ -786,7 +798,64 @@ mod tests {
         let result = handler.on_send_message(params, false, None).await;
         assert!(
             result.is_ok(),
-            "send_message with existing context should succeed"
+            "send_message with existing non-terminal context should succeed"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_to_terminal_task_returns_unsupported_operation() {
+        // SPEC CORE-SEND-002: Messages explicitly targeting a task in terminal
+        // state (via task_id) must be rejected with UnsupportedOperation.
+        use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Pre-save a completed task.
+        let task = Task {
+            id: TaskId::new("done-task"),
+            context_id: ContextId::new("done-ctx"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send message with explicit task_id targeting the terminal task.
+        let mut params = make_params(Some("done-ctx"));
+        params.message.task_id = Some(TaskId::new("done-task"));
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
+            "expected UnsupportedOperation for terminal task, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_to_terminal_context_without_task_id_creates_new_task() {
+        // When no task_id is provided but the context has a terminal task,
+        // a new task should be created (new conversation round on same context).
+        use a2a_protocol_types::task::{Task, TaskState, TaskStatus};
+
+        let handler = make_handler();
+
+        // Pre-save a completed task.
+        let task = Task {
+            id: TaskId::new("old-task"),
+            context_id: ContextId::new("reuse-ctx"),
+            status: TaskStatus::new(TaskState::Completed),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        // Send message to the same context WITHOUT task_id — should succeed.
+        let params = make_params(Some("reuse-ctx"));
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_ok(),
+            "should create new task on terminal context, got: {result:?}"
         );
     }
 
@@ -811,7 +880,7 @@ mod tests {
 
     #[tokio::test]
     async fn duplicate_task_id_without_context_match_returns_error() {
-        // Covers lines 140-152: insert_if_absent returns false for duplicate task_id.
+        // Task exists under a different context — should return InvalidParams.
         use a2a_protocol_types::task::{Task, TaskId as TId, TaskState, TaskStatus};
 
         let handler = make_handler();
@@ -833,8 +902,26 @@ mod tests {
 
         let result = handler.on_send_message(params, false, None).await;
         assert!(
-            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("already exists")),
-            "expected InvalidParams for duplicate task_id"
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("different context")),
+            "expected InvalidParams for task_id in different context, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_task_id_returns_task_not_found() {
+        // SPEC §3.4.2: Client-provided task_id must reference existing task.
+        use a2a_protocol_types::task::TaskId as TId;
+
+        let handler = make_handler();
+
+        // Send message with a task_id that doesn't exist anywhere.
+        let mut params = make_params(Some("fresh-ctx"));
+        params.message.task_id = Some(TId::new("nonexistent-task"));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for unknown task_id, got: {result:?}"
         );
     }
 

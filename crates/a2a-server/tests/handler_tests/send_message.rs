@@ -59,16 +59,23 @@ async fn send_message_streaming_returns_reader() {
             while let Some(event) = reader.read().await {
                 events.push(event.expect("event should be ok"));
             }
-            // Should have: Working status, ArtifactUpdate, Completed status.
+            // Should have: Task snapshot + Working status + ArtifactUpdate + Completed status.
             assert_eq!(
                 events.len(),
-                3,
-                "expected exactly 3 events (Working, Artifact, Completed), got {}",
+                4,
+                "expected 4 events (Task + Working + Artifact + Completed), got {}",
                 events.len()
             );
 
-            // First event should be Working status.
-            match &events[0] {
+            // First event should be the Task snapshot (spec requirement).
+            assert!(
+                matches!(&events[0], StreamResponse::Task(_)),
+                "first event must be Task snapshot, got {:?}",
+                std::mem::discriminant(&events[0])
+            );
+
+            // Second event should be Working status.
+            match &events[1] {
                 StreamResponse::StatusUpdate(u) => {
                     assert_eq!(
                         u.status.state,
@@ -78,19 +85,19 @@ async fn send_message_streaming_returns_reader() {
                 }
                 other => panic!("expected StatusUpdate(Working), got {other:?}"),
             }
-            // Second should be an artifact update.
+            // Third should be an artifact update.
             assert!(
-                matches!(&events[1], StreamResponse::ArtifactUpdate(_)),
-                "second event must be ArtifactUpdate, got {:?}",
-                events[1]
+                matches!(&events[2], StreamResponse::ArtifactUpdate(_)),
+                "third event must be ArtifactUpdate, got {:?}",
+                events[2]
             );
-            // Third should be Completed status.
-            match &events[2] {
+            // Fourth should be Completed status.
+            match &events[3] {
                 StreamResponse::StatusUpdate(u) => {
                     assert_eq!(
                         u.status.state,
                         TaskState::Completed,
-                        "third event must be Completed status"
+                        "fourth event must be Completed status"
                     );
                 }
                 other => panic!("expected StatusUpdate(Completed), got {other:?}"),

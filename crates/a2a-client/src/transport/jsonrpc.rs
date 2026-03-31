@@ -167,9 +167,9 @@ impl JsonRpcTransport {
         params: serde_json::Value,
         extra_headers: &HashMap<String, String>,
         accept_sse: bool,
-    ) -> ClientResult<hyper::Request<Full<Bytes>>> {
+    ) -> ClientResult<(serde_json::Value, hyper::Request<Full<Bytes>>)> {
         let id = serde_json::Value::String(Uuid::new_v4().to_string());
-        let rpc_req = JsonRpcRequest::with_params(id, method, params);
+        let rpc_req = JsonRpcRequest::with_params(id.clone(), method, params);
         let body_bytes = serde_json::to_vec(&rpc_req).map_err(ClientError::Serialization)?;
 
         let accept = if accept_sse {
@@ -192,11 +192,13 @@ impl JsonRpcTransport {
             builder = builder.header(k.as_str(), v.as_str());
         }
 
-        builder
+        let req = builder
             .body(Full::new(Bytes::from(body_bytes)))
-            .map_err(|e| ClientError::Transport(e.to_string()))
+            .map_err(|e| ClientError::Transport(e.to_string()))?;
+        Ok((id, req))
     }
 
+    #[allow(clippy::too_many_lines)]
     async fn execute_request(
         &self,
         method: &str,
@@ -205,7 +207,7 @@ impl JsonRpcTransport {
     ) -> ClientResult<serde_json::Value> {
         trace_info!(method, endpoint = %self.inner.endpoint, "sending JSON-RPC request");
 
-        let req = self.build_request(method, params, extra_headers, false)?;
+        let (request_id, req) = self.build_request(method, params, extra_headers, false)?;
 
         let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
             .await
@@ -255,10 +257,29 @@ impl JsonRpcTransport {
 
         match envelope {
             JsonRpcResponse::Success(ok) => {
+                // Validate response ID matches request ID (JS #318).
+                if ok.id != Some(request_id.clone()) {
+                    trace_warn!(
+                        method,
+                        "JSON-RPC response id mismatch (expected {request_id}, got {:?})",
+                        ok.id
+                    );
+                    return Err(ClientError::Transport(
+                        "JSON-RPC response id does not match request id".into(),
+                    ));
+                }
                 trace_info!(method, "request succeeded");
                 Ok(ok.result)
             }
             JsonRpcResponse::Error(err) => {
+                // Validate error response ID matches request ID (spec compliance).
+                if err.id != Some(request_id.clone()) {
+                    trace_warn!(
+                        method,
+                        "JSON-RPC error response id mismatch (expected {request_id}, got {:?})",
+                        err.id
+                    );
+                }
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
                 let a2a = a2a_protocol_types::A2aError::new(
                     a2a_protocol_types::ErrorCode::try_from(err.error.code)
@@ -278,7 +299,7 @@ impl JsonRpcTransport {
     ) -> ClientResult<EventStream> {
         trace_info!(method, endpoint = %self.inner.endpoint, "opening SSE stream");
 
-        let req = self.build_request(method, params, extra_headers, true)?;
+        let (_request_id, req) = self.build_request(method, params, extra_headers, true)?;
 
         let resp = tokio::time::timeout(
             self.inner.stream_connect_timeout,
@@ -430,6 +451,9 @@ mod tests {
     }
 
     /// Helper: start a local HTTP server returning a fixed status and body.
+    /// Starts a mock HTTP server that echoes the JSON-RPC request `id` into
+    /// the response template. The template should contain `"id":"__ID__"` as a
+    /// placeholder; if no placeholder is found the template is returned as-is.
     async fn start_server(status: u16, body: impl Into<String>) -> std::net::SocketAddr {
         let body: String = body.into();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -441,18 +465,38 @@ mod tests {
                 let io = hyper_util::rt::TokioIo::new(stream);
                 let body = body.clone();
                 tokio::spawn(async move {
-                    let service = hyper::service::service_fn(move |_req| {
-                        let body = body.clone();
-                        async move {
-                            Ok::<_, hyper::Error>(
-                                hyper::Response::builder()
-                                    .status(status)
-                                    .header("content-type", "application/json")
-                                    .body(Full::new(Bytes::from(body)))
-                                    .unwrap(),
-                            )
-                        }
-                    });
+                    let service = hyper::service::service_fn(
+                        move |req: hyper::Request<hyper::body::Incoming>| {
+                            let body_template = body.clone();
+                            async move {
+                                // Read request body and extract the id field.
+                                let req_bytes = req
+                                    .into_body()
+                                    .collect()
+                                    .await
+                                    .map(http_body_util::Collected::to_bytes)
+                                    .unwrap_or_default();
+                                let response_body = if let Ok(req_json) =
+                                    serde_json::from_slice::<serde_json::Value>(&req_bytes)
+                                {
+                                    if let Some(id) = req_json.get("id") {
+                                        body_template.replace("\"__ID__\"", &id.to_string())
+                                    } else {
+                                        body_template
+                                    }
+                                } else {
+                                    body_template
+                                };
+                                Ok::<_, hyper::Error>(
+                                    hyper::Response::builder()
+                                        .status(status)
+                                        .header("content-type", "application/json")
+                                        .body(Full::new(Bytes::from(response_body)))
+                                        .unwrap(),
+                                )
+                            }
+                        },
+                    );
                     let _ = hyper_util::server::conn::auto::Builder::new(
                         hyper_util::rt::TokioExecutor::new(),
                     )
@@ -483,7 +527,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_request_success_parses_jsonrpc() {
-        let response_body = r#"{"jsonrpc":"2.0","id":"1","result":{"hello":"world"}}"#;
+        let response_body = r#"{"jsonrpc":"2.0","id":"__ID__","result":{"hello":"world"}}"#;
         let addr = start_server(200, response_body).await;
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = JsonRpcTransport::new(&url).unwrap();
@@ -517,8 +561,7 @@ mod tests {
     /// Test JSON-RPC error response handling (covers lines 258-265).
     #[tokio::test]
     async fn execute_request_jsonrpc_error_returns_protocol_error() {
-        let response_body =
-            r#"{"jsonrpc":"2.0","id":"1","error":{"code":-32603,"message":"internal failure"}}"#;
+        let response_body = r#"{"jsonrpc":"2.0","id":"__ID__","error":{"code":-32603,"message":"internal failure"}}"#;
         let addr = start_server(200, response_body).await;
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = JsonRpcTransport::new(&url).unwrap();
@@ -604,7 +647,7 @@ mod tests {
     /// Test `send_request` via Transport trait delegation.
     #[tokio::test]
     async fn send_request_via_trait_delegation() {
-        let response_body = r#"{"jsonrpc":"2.0","id":"1","result":{"hello":"world"}}"#;
+        let response_body = r#"{"jsonrpc":"2.0","id":"__ID__","result":{"hello":"world"}}"#;
         let addr = start_server(200, response_body).await;
         let url = format!("http://127.0.0.1:{}", addr.port());
         let transport = JsonRpcTransport::new(&url).unwrap();

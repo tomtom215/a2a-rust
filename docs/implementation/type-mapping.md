@@ -493,9 +493,9 @@ pub enum SendMessageResponse {
 | Field | Type | Notes |
 |---|---|---|
 | `tasks` | `Vec<Task>` | Paginated results |
-| `next_page_token` | `Option<String>` | Absent on last page |
-| `page_size` | `Option<u32>` | Number of results in this page |
-| `total_size` | `Option<u32>` | Total number of matching tasks |
+| `next_page_token` | `String` | Empty string on last page (required per proto) |
+| `page_size` | `u32` | Number of results in this page (required per proto) |
+| `total_size` | `u32` | Total number of matching tasks (required per proto) |
 
 ### `AuthenticatedExtendedCardResponse`
 

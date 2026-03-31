@@ -36,8 +36,8 @@ async fn get_extended_agent_card_not_configured() {
 
     let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::Internal(ref msg) if !msg.is_empty()),
-        "expected Internal error with a message, got {err:?}"
+        matches!(err, a2a_protocol_server::ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
+        "expected ExtendedAgentCardNotConfigured, got {err:?}"
     );
 }
 

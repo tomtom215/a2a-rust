@@ -54,6 +54,19 @@ assert!(TaskState::Completed.is_terminal());
 assert!(!TaskState::Working.is_terminal());
 ```
 
+### Terminal State Constraints
+
+Tasks in terminal states enforce strict invariants:
+
+- **No new messages** — `SendMessage` to a terminal task returns
+  `UnsupportedOperation`. Start a new task instead.
+- **No subscription** — `SubscribeToTask` on a terminal task returns
+  `UnsupportedOperation` since no new events will be emitted.
+- **No cancellation** — `CancelTask` on a terminal task returns
+  `TaskNotCancelable`.
+- **Unknown taskId** — `SendMessage` with a `taskId` that doesn't reference an
+  existing task returns `TaskNotFound`.
+
 ### Task Status
 
 The status combines a state with an optional message and timestamp:
@@ -191,7 +204,7 @@ pub struct Artifact {
 }
 ```
 
-Create an artifact:
+Create and validate an artifact:
 
 ```rust
 use a2a_protocol_sdk::prelude::*;
@@ -200,6 +213,8 @@ let artifact = Artifact::new(
     "result-1",
     vec![Part::text("The answer is 42")],
 );
+// Validate before emitting — parts must be non-empty per A2A spec.
+artifact.validate().expect("artifact should be valid");
 ```
 
 ### Streaming Artifacts
@@ -217,16 +232,22 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     metadata: None,
 })).await?;
 
-// Final chunk
+// Final chunk — parts are appended, metadata is deep-merged
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
     context_id: ContextId::new(ctx.context_id.clone()),
     artifact: Artifact::new("doc", vec![Part::text("Last paragraph.")]),
-    append: Some(true),       // Append to previous
+    append: Some(true),       // Append parts to existing artifact by ID
     last_chunk: Some(true),   // This is the last chunk
     metadata: None,
 })).await?;
 ```
+
+When `append=true`, the server finds the existing artifact by ID and:
+1. Appends the new parts to the existing parts list
+2. Deep-merges metadata (new keys override existing keys)
+
+If no artifact with the ID exists, it is created as a new artifact.
 
 ## ID Types
 

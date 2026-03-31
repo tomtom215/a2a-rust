@@ -126,9 +126,10 @@ async fn streaming_mode_receives_all_events() {
             event_count += 1;
         }
     }
+    // +1 for the initial Task snapshot (spec requirement).
     assert_eq!(
-        event_count, 3,
-        "should receive exactly 3 events (Working + Artifact + Completed), got {event_count}"
+        event_count, 4,
+        "should receive 4 events (Task snapshot + Working + Artifact + Completed), got {event_count}"
     );
 }
 

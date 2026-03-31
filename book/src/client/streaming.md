@@ -46,10 +46,16 @@ while let Some(event) = stream.next().await {
 
 A typical stream delivers events in this order:
 
-1. `StatusUpdate` → `Working`
-2. `ArtifactUpdate` (one or more, potentially chunked)
-3. `StatusUpdate` → `Completed` (or `Failed`)
-4. Optionally, a final `Task` snapshot
+1. `Task` snapshot (always first — per spec, both `SendStreamingMessage` and `SubscribeToTask` emit this)
+2. `StatusUpdate` → `Working`
+3. `ArtifactUpdate` (one or more, potentially chunked)
+4. `StatusUpdate` → `Completed` (or `Failed`)
+5. Optionally, a final `Task` snapshot with accumulated artifacts
+
+> **Note:** The server always emits a `Task` snapshot as the **first event** in
+> any streaming response. For `subscribe_to_task()`, this allows reconnecting
+> clients to recover the current state. For `send_streaming_message()`, it
+> provides the initial task state before execution events begin.
 
 ## Chunked Artifacts
 
@@ -61,7 +67,9 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
     let is_last = ev.last_chunk.unwrap_or(false);
 
     if is_append {
-        // Append to existing artifact
+        // Append parts to existing artifact. The server also
+        // deep-merges metadata from the new event into the existing
+        // artifact's metadata (new keys override existing).
         buffer.push_str(&extract_text(&ev.artifact));
     } else {
         // New artifact or first chunk

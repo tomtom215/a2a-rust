@@ -77,34 +77,41 @@ impl<'de> Deserialize<'de> for SendMessageResponse {
 // ── TaskListResponse ──────────────────────────────────────────────────────────
 
 /// The result of a `ListTasks` call: a page of tasks with pagination.
+///
+/// Per A2A spec, `next_page_token`, `page_size`, and `total_size` are
+/// required fields (always present on the wire). `next_page_token` is
+/// empty string when there are no more pages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskListResponse {
     /// The tasks in this page of results.
     pub tasks: Vec<Task>,
 
-    /// Pagination token for the next page; absent on the last page.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_page_token: Option<String>,
+    /// Pagination token for the next page; empty string on the last page.
+    #[serde(default)]
+    pub next_page_token: String,
 
-    /// The requested page size.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub page_size: Option<u32>,
+    /// The actual page size used by the server.
+    #[serde(default)]
+    pub page_size: u32,
 
     /// Total number of tasks matching the query (across all pages).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_size: Option<u32>,
+    #[serde(default)]
+    pub total_size: u32,
 }
 
 impl TaskListResponse {
-    /// Creates a single-page response with no next-page token.
+    /// Creates a single-page response.
     #[must_use]
-    pub const fn new(tasks: Vec<Task>) -> Self {
+    #[allow(clippy::missing_const_for_fn)] // Vec::len() is not const
+    pub fn new(tasks: Vec<Task>) -> Self {
+        #[allow(clippy::cast_possible_truncation)]
+        let total = tasks.len() as u32;
         Self {
+            page_size: total,
+            total_size: total,
             tasks,
-            next_page_token: None,
-            page_size: None,
-            total_size: None,
+            next_page_token: String::new(),
         }
     }
 }
@@ -230,25 +237,34 @@ mod tests {
     fn task_list_response_roundtrip() {
         let resp = TaskListResponse {
             tasks: vec![make_task()],
-            next_page_token: Some("cursor-abc".into()),
-            page_size: Some(10),
-            total_size: Some(1),
+            next_page_token: "cursor-abc".into(),
+            page_size: 10,
+            total_size: 1,
         };
         let json = serde_json::to_string(&resp).expect("serialize");
         assert!(json.contains("\"nextPageToken\":\"cursor-abc\""));
 
         let back: TaskListResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.tasks.len(), 1);
-        assert_eq!(back.next_page_token.as_deref(), Some("cursor-abc"));
+        assert_eq!(back.next_page_token, "cursor-abc");
     }
 
     #[test]
-    fn task_list_response_no_token_omitted() {
+    fn task_list_response_empty_always_includes_required_fields() {
         let resp = TaskListResponse::new(vec![]);
         let json = serde_json::to_string(&resp).expect("serialize");
+        // Per spec, these fields are always present (required).
         assert!(
-            !json.contains("\"nextPageToken\""),
-            "token should be absent: {json}"
+            json.contains("\"nextPageToken\""),
+            "nextPageToken must always be present: {json}"
+        );
+        assert!(
+            json.contains("\"pageSize\""),
+            "pageSize must always be present: {json}"
+        );
+        assert!(
+            json.contains("\"totalSize\""),
+            "totalSize must always be present: {json}"
         );
     }
 

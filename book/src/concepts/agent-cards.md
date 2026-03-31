@@ -110,6 +110,22 @@ let interface = AgentInterface {
 
 An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
 
+When building a client via `ClientBuilder::from_card()`, the `tenant` field from the selected interface is automatically preserved in `ClientConfig::tenant` and applied to all requests.
+
+## Extended Agent Card
+
+An agent can expose a richer card via `GetExtendedAgentCard` for authenticated
+clients. This requires setting `capabilities.extended_agent_card = true`:
+
+```rust
+let capabilities = AgentCapabilities::none()
+    .with_extended_agent_card(true);
+```
+
+If the capability is `false` or absent, the server returns `UnsupportedOperationError`.
+If the capability is declared but no card is configured, the server returns
+`ExtendedAgentCardNotConfiguredError`.
+
 ## Serving Agent Cards
 
 ### Static Handler

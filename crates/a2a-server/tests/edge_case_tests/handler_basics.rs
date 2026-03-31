@@ -249,9 +249,9 @@ async fn push_config_not_supported_without_sender() {
 async fn extended_agent_card_not_configured() {
     let handler = RequestHandlerBuilder::new(EchoExecutor).build().unwrap();
     let result = handler.on_get_extended_agent_card(None).await;
-    let err = result.expect_err("should return Internal error");
+    let err = result.expect_err("should return error when no card configured");
     assert!(
-        matches!(err, ServerError::Internal(_)),
-        "expected Internal, got {err:?}"
+        matches!(err, ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
+        "expected ExtendedAgentCardNotConfigured, got {err:?}"
     );
 }

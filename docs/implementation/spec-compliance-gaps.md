@@ -150,19 +150,11 @@ Unspecified,
 
 **Impact:** Deserializing a message with `"role": "ROLE_UNSPECIFIED"` from another SDK will fail.
 
-### H2. `ListTasksParams` missing `history_length`
+### H2. ~~`ListTasksParams` missing `history_length`~~ (RESOLVED in v0.3.4)
 
-**File:** `crates/a2a-types/src/params.rs`
-
-Proto `ListTasksRequest` includes `optional int32 history_length = 6`. Our `ListTasksParams` does not have this field.
-
-```rust
-// ADD:
-#[serde(skip_serializing_if = "Option::is_none")]
-pub history_length: Option<u32>,
-```
-
-**Impact:** Clients cannot request truncated history when listing tasks.
+**Status:** Fixed. `history_length` is now present on both `ListTasksParams` and
+`TaskQueryParams`, and the server applies it to truncate message history in
+`GetTask` and `ListTasks` responses. A value of `0` returns no history.
 
 ### H3. `PasswordOAuthFlow` missing
 

@@ -218,6 +218,15 @@ impl Part {
 
     // ── Backward-compatible constructors ─────────────────────────────────
 
+    /// Returns the text content of this part, or `None` if it is not a text part.
+    #[must_use]
+    pub fn text_content(&self) -> Option<&str> {
+        match &self.content {
+            PartContent::Text { text } => Some(text),
+            _ => None,
+        }
+    }
+
     /// Creates a raw (bytes) [`Part`] with base64-encoded data.
     ///
     /// **Deprecated:** Use [`Part::file_bytes`] instead. This constructor

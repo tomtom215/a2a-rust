@@ -122,7 +122,11 @@ impl ClientBuilder {
             endpoint,
             transport_override: None,
             interceptors: InterceptorChain::new(),
-            config: ClientConfig::default(),
+            // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
+            config: ClientConfig {
+                tenant: first.tenant.clone(),
+                ..ClientConfig::default()
+            },
             preferred_binding: Some(binding),
             retry_policy: None,
         })
@@ -177,6 +181,17 @@ impl ClientBuilder {
     #[must_use]
     pub const fn with_history_length(mut self, length: u32) -> Self {
         self.config.history_length = Some(length);
+        self
+    }
+
+    /// Sets the default tenant for multi-tenancy.
+    ///
+    /// When set, this tenant is included in all requests unless overridden
+    /// per-request. Automatically populated from `AgentInterface.tenant`
+    /// when building via [`ClientBuilder::from_card`].
+    #[must_use]
+    pub fn with_tenant(mut self, tenant: impl Into<String>) -> Self {
+        self.config.tenant = Some(tenant.into());
         self
     }
 

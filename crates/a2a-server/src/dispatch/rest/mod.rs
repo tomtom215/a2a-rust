@@ -135,6 +135,19 @@ impl RestDispatcher {
             }
         }
 
+        // Validate A2A-Version header if present (Python #865).
+        if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
+            if let Ok(v) = version.to_str() {
+                let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+                if major != Some(1) {
+                    return error_json_response(
+                        400,
+                        &format!("unsupported A2A version: {v}; this server supports 1.x"),
+                    );
+                }
+            }
+        }
+
         // Reject path traversal attempts (check both raw and percent-decoded forms).
         if contains_path_traversal(&path) {
             return error_json_response(400, "invalid path: path traversal not allowed");

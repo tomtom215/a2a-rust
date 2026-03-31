@@ -1231,9 +1231,9 @@ fn tck_task_list_response_golden() {
 
     let resp: TaskListResponse = serde_json::from_value(golden).unwrap();
     assert_eq!(resp.tasks.len(), 2);
-    assert_eq!(resp.next_page_token.as_deref(), Some("cursor-abc"));
-    assert_eq!(resp.page_size, Some(10));
-    assert_eq!(resp.total_size, Some(42));
+    assert_eq!(resp.next_page_token, "cursor-abc");
+    assert_eq!(resp.page_size, 10);
+    assert_eq!(resp.total_size, 42);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

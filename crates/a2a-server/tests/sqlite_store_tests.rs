@@ -119,12 +119,12 @@ async fn task_list_pagination() -> A2aResult<()> {
         })
         .await?;
     assert_eq!(page1.tasks.len(), 2);
-    assert!(page1.next_page_token.is_some());
+    assert!(!page1.next_page_token.is_empty());
 
     let page2 = store
         .list(&ListTasksParams {
             page_size: Some(2),
-            page_token: page1.next_page_token,
+            page_token: Some(page1.next_page_token),
             ..Default::default()
         })
         .await?;

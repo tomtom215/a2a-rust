@@ -10,6 +10,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-03-31
+
+### Fixed
+
+- **`a2a-protocol-server`: SendMessage now rejects messages to tasks in terminal
+  state** — Per A2A spec CORE-SEND-002, tasks in Completed, Failed, Canceled, or
+  Rejected state cannot accept further messages. Previously, messages sent to
+  terminal tasks were silently accepted and forwarded to the executor. Now returns
+  `UnsupportedOperation` error. (Cross-SDK learning from a2a-java#741)
+
+- **`a2a-protocol-server`: SendMessage with unknown taskId now returns
+  TaskNotFound** — Per A2A spec section 3.4.2, when a client includes a `taskId`
+  in a Message, it must reference an existing task. Previously, a client-provided
+  `taskId` that didn't exist would create a new task with that ID. Now correctly
+  returns `TaskNotFound` error. (Cross-SDK learning from a2a-java#766)
+
+- **`a2a-protocol-server`: GetTask and ListTasks now apply `historyLength`
+  parameter** — The `history_length` parameter was accepted in query/params but
+  never actually used to truncate the message history in responses.
+  `historyLength=0` now correctly returns no history, and positive values return
+  only the N most recent messages. (Cross-SDK learning from a2a-python#573)
+
+- **`a2a-protocol-server`: SubscribeToTask on terminal task now returns
+  `UnsupportedOperation`** — Per A2A spec section 3.1.6, subscribing to a task
+  in a terminal state should return `UnsupportedOperation`, not a generic
+  internal error. (Cross-SDK learning from a2a-java#767)
+
+### Added
+
+- **`a2a-protocol-types`: `Artifact::validate()` method** — Validates that an
+  artifact's `parts` list is non-empty per A2A spec requirements. Server-side
+  event processing now validates artifacts before persisting them.
+  (Cross-SDK learning from a2a-python#670)
+
+- **`a2a-protocol-types`: `Part::text_content()` accessor** — Returns the text
+  content of a text part, or `None` for non-text parts.
+
+- **`a2a-protocol-server`: `ServerError::UnsupportedOperation` variant** — New
+  error variant that maps to `ErrorCode::UnsupportedOperation` (-32004) for
+  operations that are not valid for the current task state.
+
+- **`a2a-protocol-server`: `SendMessageResult` now implements `Debug`** — Added
+  `#[derive(Debug)]` to improve error messages in tests and logging.
+
+- **`a2a-protocol-server`: SubscribeToTask emits Task snapshot as first event** —
+  Per A2A spec, the first event in a `SubscribeToTask` stream must be a Task
+  object representing the current state, preventing clients from missing state on
+  reconnection. Added `EventQueueManager::subscribe_with_snapshot()`.
+  (Cross-SDK learning from a2a-go#231, a2a-js#323)
+
+- **`a2a-protocol-client`: `ClientBuilder::from_card()` preserves tenant** —
+  The `tenant` field from `AgentInterface` was silently dropped when constructing
+  a client from an `AgentCard`. Now preserved in `ClientConfig::tenant` and
+  automatically applied to `SendMessage` requests. Added `with_tenant()` builder
+  method for explicit configuration. (Cross-SDK learning from a2a-java#772)
+
+- **`a2a-protocol-client`: `ClientConfig::tenant` field** — New optional field
+  for default tenant in multi-tenancy scenarios.
+
+- **`a2a-protocol-server`: A2A-Version header validation on incoming requests** —
+  Both JSON-RPC and REST dispatchers now validate the `A2A-Version` header if
+  present. Requests with incompatible major versions (not 1.x) are rejected with
+  `VersionNotSupported` (-32009). (Cross-SDK learning from a2a-python#865)
+
+- **`a2a-protocol-client`: JSON-RPC response ID validation** — The client now
+  verifies that the response `id` matches the request `id` in JSON-RPC
+  responses. Previously, any response was accepted regardless of ID, which could
+  cause silent data corruption in pipelined scenarios.
+  (Cross-SDK learning from a2a-js#318)
+
+- **`a2a-protocol-server`: Artifact append now merges parts AND metadata** —
+  When `TaskArtifactUpdateEvent` has `append=true`, the server now correctly
+  merges parts into the existing artifact and deep-merges metadata (new keys
+  override existing). Previously, appended artifacts were pushed as separate
+  entries, losing the merge semantics. Both sync and background event processors
+  are fixed. (Cross-SDK learning from a2a-python#735, a2a-java#615)
+
+- **`a2a-protocol-types`: `TaskListResponse` fields are now required per spec** —
+  `next_page_token` (`String`), `page_size` (`u32`), and `total_size` (`u32`)
+  are now always present on the wire (not `Option`), matching the proto
+  definition. Empty `next_page_token` means no more pages. All task store
+  implementations now populate these fields.
+
+- **`a2a-protocol-server`: `SendStreamingMessage` emits Task snapshot as first
+  event** — Per A2A spec section 3.1.2, the first event in any streaming response
+  MUST be a `Task` object. Previously only `SubscribeToTask` did this.
+
+- **`a2a-protocol-server`: `GetExtendedAgentCard` capability check** — Per spec
+  section 3.1.11, returns `UnsupportedOperationError` when
+  `capabilities.extended_agent_card` is false/absent, and
+  `ExtendedAgentCardNotConfiguredError` when capability is declared but no card
+  is configured. Previously returned a generic internal error for both cases.
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed

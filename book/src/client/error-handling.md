@@ -15,7 +15,9 @@ ErrorCode::TaskNotCancelable    // Agent doesn't support cancellation
 ErrorCode::InvalidParams        // Bad request parameters
 ErrorCode::MethodNotFound       // Unknown method
 ErrorCode::InternalError        // Server-side failure
-ErrorCode::UnsupportedOperation // Not implemented
+ErrorCode::UnsupportedOperation // Operation invalid for current state
+                                // (e.g. SendMessage to terminal task,
+                                //  SubscribeToTask on completed task)
 ```
 
 ### Handling Protocol Errors

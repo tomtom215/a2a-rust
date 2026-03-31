@@ -37,10 +37,30 @@ impl RequestHandler {
         if let Some(ps) = params.page_size {
             params.page_size = Some(ps.min(1000));
         }
+        let history_length = params.history_length;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;
-            let result = self.task_store.list(&params).await?;
+            let mut result = self.task_store.list(&params).await?;
+
+            // Apply historyLength: truncate each task's history to the
+            // requested number of most recent messages. 0 means "no history".
+            if let Some(hl) = history_length {
+                for task in &mut result.tasks {
+                    task.history = match (task.history.take(), hl) {
+                        (Some(msgs), n) if n > 0 => {
+                            let n = n as usize;
+                            if msgs.len() > n {
+                                Some(msgs[msgs.len() - n..].to_vec())
+                            } else {
+                                Some(msgs)
+                            }
+                        }
+                        _ => None,
+                    };
+                }
+            }
+
             self.interceptors.run_after(&call_ctx).await?;
             Ok(result)
         })

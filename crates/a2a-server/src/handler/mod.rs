@@ -128,6 +128,7 @@ impl std::fmt::Debug for RequestHandler {
 }
 
 /// Result of [`RequestHandler::on_send_message`].
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum SendMessageResult {
     /// A synchronous JSON-RPC response.

@@ -18,10 +18,11 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 - **Single endpoint** — All methods go to `/` as POST requests
 - **Agent card** — `GET /.well-known/agent.json` returns the agent card (same as REST)
 - **Batch support** — Handles JSON-RPC batch arrays
-- **ID preservation** — Echoes back the exact request ID (string, number, float, null)
+- **ID preservation** — Echoes back the exact request ID (string, number, float, null). The client validates that response IDs match request IDs.
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams
 - **CORS** — Configurable cross-origin headers
-- **Content type** — Accepts `application/json`
+- **Content type** — Accepts `application/json` and `application/a2a+json`
+- **Version validation** — Validates `A2A-Version` header if present; rejects incompatible major versions with `VersionNotSupported` (-32009)
 
 ### Batch Restrictions
 

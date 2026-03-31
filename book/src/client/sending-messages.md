@@ -126,6 +126,17 @@ let follow_up = client.send_message(MessageSendParams {
 }).await?;
 ```
 
+## Error Conditions
+
+`SendMessage` returns specific errors for invalid requests:
+
+| Condition | Error |
+|-----------|-------|
+| Task in terminal state (completed, failed, etc.) | `UnsupportedOperation` |
+| Client-provided `taskId` doesn't exist | `TaskNotFound` |
+| `taskId`/`contextId` mismatch | `InvalidParams` |
+| Empty message parts | `InvalidParams` |
+
 ## Multi-Part Messages
 
 Send messages with multiple content types:

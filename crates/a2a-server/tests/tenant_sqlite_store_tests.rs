@@ -191,7 +191,7 @@ async fn list_returns_all_tasks() {
         let params = ListTasksParams::default();
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 3);
-        assert!(resp.next_page_token.is_none());
+        assert!(resp.next_page_token.is_empty());
     })
     .await;
 }
@@ -284,7 +284,10 @@ async fn list_paginates_with_page_size() {
         };
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 2);
-        assert!(resp.next_page_token.is_some(), "expected a next page token");
+        assert!(
+            !resp.next_page_token.is_empty(),
+            "expected a next page token"
+        );
     })
     .await;
 }
@@ -311,17 +314,17 @@ async fn list_paginates_with_page_token() {
         let resp1 = store.list(&params).await.unwrap();
         assert_eq!(resp1.tasks.len(), 2);
         let token = resp1.next_page_token.clone();
-        assert!(token.is_some(), "expected a next page token");
+        assert!(!token.is_empty(), "expected a next page token");
 
         // Get the second page using the token.
         let params = ListTasksParams {
             page_size: Some(2),
-            page_token: token,
+            page_token: Some(token),
             ..Default::default()
         };
         let resp2 = store.list(&params).await.unwrap();
         assert_eq!(resp2.tasks.len(), 2);
-        assert!(resp2.next_page_token.is_some());
+        assert!(!resp2.next_page_token.is_empty());
 
         // Pages must not overlap.
         let page1_ids: Vec<&str> = resp1.tasks.iter().map(|t| t.id.0.as_str()).collect();
@@ -333,13 +336,13 @@ async fn list_paginates_with_page_token() {
         // Get the third page (only 1 task remaining).
         let params = ListTasksParams {
             page_size: Some(2),
-            page_token: resp2.next_page_token.clone(),
+            page_token: Some(resp2.next_page_token.clone()),
             ..Default::default()
         };
         let resp3 = store.list(&params).await.unwrap();
         assert_eq!(resp3.tasks.len(), 1);
         assert!(
-            resp3.next_page_token.is_none(),
+            resp3.next_page_token.is_empty(),
             "last page should have no token"
         );
     })
@@ -368,7 +371,7 @@ async fn list_page_size_zero_uses_default() {
         };
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 3);
-        assert!(resp.next_page_token.is_none());
+        assert!(resp.next_page_token.is_empty());
     })
     .await;
 }
