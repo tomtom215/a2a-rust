@@ -85,6 +85,7 @@ impl RequestHandler {
 
     /// Processes a single event from the queue reader, updating the task and
     /// delivering push notifications.
+    #[allow(clippy::too_many_lines)]
     async fn process_event(
         &self,
         event: a2a_protocol_types::error::A2aResult<StreamResponse>,
@@ -117,6 +118,16 @@ impl RequestHandler {
                 self.deliver_push(task_id, stream_resp).await;
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
+                // Validate artifact has at least one part per A2A spec (unless appending).
+                if update.append != Some(true) {
+                    if let Err(_e) = update.artifact.validate() {
+                        trace_warn!(
+                            task_id = %task_id,
+                            "dropping artifact with empty parts (spec violation)"
+                        );
+                        return Ok(());
+                    }
+                }
                 let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
                 if artifacts.len() >= self.limits.max_artifacts_per_task {
                     trace_warn!(

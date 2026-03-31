@@ -193,7 +193,7 @@ async fn context_task_mismatch_rejected() {
             None,
         )
         .await;
-    let err = result.err().expect("expected error for task_id mismatch");
+    let err = result.expect_err("expected error for task_id mismatch");
 
     assert!(
         matches!(err, a2a_protocol_server::ServerError::InvalidParams(ref msg) if msg.contains("task") && msg.contains("match")),
@@ -211,7 +211,7 @@ async fn interceptor_rejection_stops_processing() {
     let result = handler
         .on_send_message(make_send_params("hello"), false, None)
         .await;
-    let err = result.err().expect("expected error from interceptor");
+    let err = result.expect_err("expected error from interceptor");
 
     // The error should be a Protocol error from the interceptor.
     assert!(

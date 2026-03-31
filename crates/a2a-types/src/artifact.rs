@@ -91,9 +91,18 @@ pub struct Artifact {
 }
 
 impl Artifact {
-    /// Creates a minimal [`Artifact`] with an ID and a single part.
+    /// Creates a minimal [`Artifact`] with an ID and parts.
+    ///
+    /// # Panics
+    ///
+    /// Panics in debug builds if `parts` is empty. Use [`Artifact::validate`]
+    /// for fallible validation.
     #[must_use]
     pub fn new(id: impl Into<ArtifactId>, parts: Vec<Part>) -> Self {
+        debug_assert!(
+            !parts.is_empty(),
+            "Artifact parts must not be empty per A2A spec"
+        );
         Self {
             id: id.into(),
             name: None,
@@ -102,6 +111,22 @@ impl Artifact {
             extensions: None,
             metadata: None,
         }
+    }
+
+    /// Validates this artifact against A2A spec requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`A2aError`](crate::error::A2aError) with
+    /// [`ErrorCode::InvalidParams`](crate::error::ErrorCode::InvalidParams)
+    /// if `parts` is empty.
+    pub fn validate(&self) -> Result<(), crate::error::A2aError> {
+        if self.parts.is_empty() {
+            return Err(crate::error::A2aError::invalid_params(
+                "artifact must contain at least one part",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -167,5 +192,36 @@ mod tests {
     fn artifact_id_display() {
         let id = ArtifactId::new("my-artifact");
         assert_eq!(id.to_string(), "my-artifact");
+    }
+
+    // ── validate() tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn validate_non_empty_parts_succeeds() {
+        let a = Artifact::new("art-ok", vec![Part::text("content")]);
+        assert!(a.validate().is_ok(), "artifact with parts should validate");
+    }
+
+    #[test]
+    fn validate_empty_parts_fails() {
+        let a = Artifact {
+            id: ArtifactId::new("art-empty"),
+            name: None,
+            description: None,
+            parts: vec![],
+            extensions: None,
+            metadata: None,
+        };
+        let err = a.validate().unwrap_err();
+        assert_eq!(
+            err.code,
+            crate::error::ErrorCode::InvalidParams,
+            "empty parts should return InvalidParams error"
+        );
+        assert!(
+            err.message.contains("at least one part"),
+            "error message should mention 'at least one part': {}",
+            err.message
+        );
     }
 }

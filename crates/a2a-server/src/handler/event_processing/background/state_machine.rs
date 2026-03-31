@@ -81,6 +81,16 @@ pub(super) async fn process_event_bg(
             deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
+            // Validate artifact has at least one part per A2A spec (unless appending).
+            if update.append != Some(true) {
+                if let Err(_e) = update.artifact.validate() {
+                    trace_warn!(
+                        task_id = %task_id,
+                        "dropping artifact with empty parts (spec violation)"
+                    );
+                    return;
+                }
+            }
             let artifacts = last_task.artifacts.get_or_insert_with(Vec::new);
             if artifacts.len() >= limits.max_artifacts_per_task {
                 trace_warn!(

@@ -36,6 +36,21 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## v0.3.4 (2026-03-31)
+
+### Bug Fixes
+
+- **SendMessage rejects terminal tasks** — Messages to Completed/Failed/Canceled/Rejected tasks now return `UnsupportedOperation` per spec CORE-SEND-002
+- **SendMessage validates unknown taskId** — Client-provided `taskId` that doesn't reference an existing task now returns `TaskNotFound` per spec section 3.4.2
+- **`historyLength` parameter applied** — `GetTask` and `ListTasks` now truncate message history to the requested length; `historyLength=0` returns no history
+- **SubscribeToTask terminal task error** — Subscribing to a terminal task now returns `UnsupportedOperation` instead of a generic internal error
+
+### Added
+
+- **`Artifact::validate()` method** — Validates non-empty `parts` per A2A spec
+- **`Part::text_content()` accessor** — Extracts text from a text part
+- **`ServerError::UnsupportedOperation` variant** — Maps to `ErrorCode::UnsupportedOperation` (-32004)
+
 ## v0.3.3 (2026-03-30)
 
 ### Bug Fixes

@@ -67,7 +67,7 @@ if let Some(token) = &response.next_page_token {
 | `page_size` | Results per page (capped by server's `max_page_size`, default 1,000) |
 | `page_token` | Cursor for the next page |
 | `include_artifacts` | Include artifact data in results |
-| `history_length` | Number of messages per task |
+| `history_length` | Max number of most recent messages per task (`0` = no history) |
 
 ## Cancel a Task
 

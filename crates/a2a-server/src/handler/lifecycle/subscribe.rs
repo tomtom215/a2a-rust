@@ -40,11 +40,20 @@ impl RequestHandler {
             let task_id = TaskId::new(&params.id);
 
             // Verify the task exists.
-            let _task = self
+            let task = self
                 .task_store
                 .get(&task_id)
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+
+            // SPEC §3.1.6: Subscribing to a task in a terminal state is an
+            // unsupported operation — the task will never produce new events.
+            if task.status.state.is_terminal() {
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {} is in terminal state '{}' and cannot be subscribed to",
+                    task_id, task.status.state
+                )));
+            }
 
             let reader = self
                 .event_queue_manager
@@ -98,8 +107,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resubscribe_task_exists_but_no_queue_returns_internal_error() {
-        // Task exists in store but has no active event queue (lines 53-54, 60-63).
+    async fn resubscribe_terminal_task_returns_unsupported_operation() {
+        // SPEC §3.1.6: Subscribing to a terminal task returns UnsupportedOperation.
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
@@ -119,8 +128,35 @@ mod tests {
         };
         let result = handler.on_resubscribe(params, None).await;
         assert!(
+            matches!(result, Err(ServerError::UnsupportedOperation(ref msg)) if msg.contains("terminal")),
+            "expected UnsupportedOperation for terminal task, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resubscribe_nonterminal_no_queue_returns_internal_error() {
+        // Non-terminal task exists but has no active event queue.
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let task = Task {
+            id: TaskId::new("t-resub-nonterminal"),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(task).await.unwrap();
+
+        let params = TaskIdParams {
+            tenant: None,
+            id: "t-resub-nonterminal".to_owned(),
+        };
+        let result = handler.on_resubscribe(params, None).await;
+        assert!(
             matches!(result, Err(ServerError::Internal(_))),
-            "expected Internal error when no event queue exists, got: {result:?}"
+            "expected Internal error when no event queue exists for non-terminal task, got: {result:?}"
         );
     }
 

@@ -121,9 +121,28 @@ fn artifact_new_construction() {
 }
 
 #[test]
-fn artifact_new_empty_parts() {
-    let artifact = Artifact::new("empty", vec![]);
-    assert_eq!(artifact.parts.len(), 0, "empty parts vec should stay empty");
+fn artifact_validate_rejects_empty_parts() {
+    // A2A spec requires at least one part. Artifact::validate() enforces this.
+    let artifact = Artifact {
+        id: a2a_protocol_types::artifact::ArtifactId::new("empty"),
+        name: None,
+        description: None,
+        parts: vec![],
+        extensions: None,
+        metadata: None,
+    };
+    assert!(
+        artifact.validate().is_err(),
+        "empty parts should fail validation"
+    );
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "Artifact parts must not be empty")]
+fn artifact_new_empty_parts_panics_in_debug() {
+    // debug_assert! catches empty parts in debug builds.
+    let _artifact = Artifact::new("empty", vec![]);
 }
 
 // 4. TaskPushNotificationConfig::new()

@@ -10,6 +10,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-03-31
+
+### Fixed
+
+- **`a2a-protocol-server`: SendMessage now rejects messages to tasks in terminal
+  state** — Per A2A spec CORE-SEND-002, tasks in Completed, Failed, Canceled, or
+  Rejected state cannot accept further messages. Previously, messages sent to
+  terminal tasks were silently accepted and forwarded to the executor. Now returns
+  `UnsupportedOperation` error. (Cross-SDK learning from a2a-java#741)
+
+- **`a2a-protocol-server`: SendMessage with unknown taskId now returns
+  TaskNotFound** — Per A2A spec section 3.4.2, when a client includes a `taskId`
+  in a Message, it must reference an existing task. Previously, a client-provided
+  `taskId` that didn't exist would create a new task with that ID. Now correctly
+  returns `TaskNotFound` error. (Cross-SDK learning from a2a-java#766)
+
+- **`a2a-protocol-server`: GetTask and ListTasks now apply `historyLength`
+  parameter** — The `history_length` parameter was accepted in query/params but
+  never actually used to truncate the message history in responses.
+  `historyLength=0` now correctly returns no history, and positive values return
+  only the N most recent messages. (Cross-SDK learning from a2a-python#573)
+
+- **`a2a-protocol-server`: SubscribeToTask on terminal task now returns
+  `UnsupportedOperation`** — Per A2A spec section 3.1.6, subscribing to a task
+  in a terminal state should return `UnsupportedOperation`, not a generic
+  internal error. (Cross-SDK learning from a2a-java#767)
+
+### Added
+
+- **`a2a-protocol-types`: `Artifact::validate()` method** — Validates that an
+  artifact's `parts` list is non-empty per A2A spec requirements. Server-side
+  event processing now validates artifacts before persisting them.
+  (Cross-SDK learning from a2a-python#670)
+
+- **`a2a-protocol-types`: `Part::text_content()` accessor** — Returns the text
+  content of a text part, or `None` for non-text parts.
+
+- **`a2a-protocol-server`: `ServerError::UnsupportedOperation` variant** — New
+  error variant that maps to `ErrorCode::UnsupportedOperation` (-32004) for
+  operations that are not valid for the current task state.
+
+- **`a2a-protocol-server`: `SendMessageResult` now implements `Debug`** — Added
+  `#[derive(Debug)]` to improve error messages in tests and logging.
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed

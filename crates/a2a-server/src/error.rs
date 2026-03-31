@@ -46,6 +46,9 @@ pub enum ServerError {
     Protocol(A2aError),
     /// The request body exceeds the configured size limit.
     PayloadTooLarge(String),
+    /// The operation is not supported for the current task state (e.g.
+    /// sending a message to a terminal task, subscribing to a completed task).
+    UnsupportedOperation(String),
     /// An invalid task state transition was attempted.
     InvalidStateTransition {
         /// The task ID.
@@ -68,6 +71,7 @@ impl fmt::Display for ServerError {
             Self::HttpClient(msg) => write!(f, "HTTP client error: {msg}"),
             Self::Transport(msg) => write!(f, "transport error: {msg}"),
             Self::PushNotSupported => f.write_str("push notifications not supported"),
+            Self::UnsupportedOperation(msg) => write!(f, "unsupported operation: {msg}"),
             Self::Internal(msg) => write!(f, "internal error: {msg}"),
             Self::MethodNotFound(m) => write!(f, "method not found: {m}"),
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
@@ -106,6 +110,7 @@ impl ServerError {
     /// | `Serialization` | `ParseError` |
     /// | `MethodNotFound` | `MethodNotFound` |
     /// | `PushNotSupported` | `PushNotificationNotSupported` |
+    /// | `UnsupportedOperation` | `UnsupportedOperation` |
     /// | everything else | `InternalError` |
     #[must_use]
     pub fn to_a2a_error(&self) -> A2aError {
@@ -121,6 +126,9 @@ impl ServerError {
                 ErrorCode::PushNotificationNotSupported,
                 "Push notifications not supported",
             ),
+            Self::UnsupportedOperation(msg) => {
+                A2aError::new(ErrorCode::UnsupportedOperation, msg.clone())
+            }
             Self::Protocol(e) => e.clone(),
             Self::Http(e) => A2aError::internal(e.to_string()),
             Self::HttpClient(msg) | Self::Transport(msg) | Self::Internal(msg) => {
@@ -243,6 +251,9 @@ mod tests {
             ServerError::PushNotSupported.to_string(),
             "push notifications not supported"
         );
+        assert!(ServerError::UnsupportedOperation("cannot do this".into())
+            .to_string()
+            .contains("cannot do this"));
         assert!(ServerError::Internal("oops".into())
             .to_string()
             .contains("oops"));
@@ -271,6 +282,7 @@ mod tests {
     // ── to_a2a_error mapping tests ────────────────────────────────────────
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn to_a2a_error_all_variants() {
         assert_eq!(
             ServerError::TaskNotFound("t".into()).to_a2a_error().code,
@@ -299,6 +311,12 @@ mod tests {
         assert_eq!(
             ServerError::PushNotSupported.to_a2a_error().code,
             ErrorCode::PushNotificationNotSupported
+        );
+        assert_eq!(
+            ServerError::UnsupportedOperation("test".into())
+                .to_a2a_error()
+                .code,
+            ErrorCode::UnsupportedOperation
         );
         assert_eq!(
             ServerError::Protocol(A2aError::task_not_found("t"))

@@ -54,6 +54,19 @@ assert!(TaskState::Completed.is_terminal());
 assert!(!TaskState::Working.is_terminal());
 ```
 
+### Terminal State Constraints
+
+Tasks in terminal states enforce strict invariants:
+
+- **No new messages** — `SendMessage` to a terminal task returns
+  `UnsupportedOperation`. Start a new task instead.
+- **No subscription** — `SubscribeToTask` on a terminal task returns
+  `UnsupportedOperation` since no new events will be emitted.
+- **No cancellation** — `CancelTask` on a terminal task returns
+  `TaskNotCancelable`.
+- **Unknown taskId** — `SendMessage` with a `taskId` that doesn't reference an
+  existing task returns `TaskNotFound`.
+
 ### Task Status
 
 The status combines a state with an optional message and timestamp:
