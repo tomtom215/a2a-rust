@@ -438,3 +438,63 @@ async fn rest_get_subscribe_allowed() {
         "GET /tasks/:id:subscribe should be routed"
     );
 }
+
+// ── REST streaming SSE event format verification ──────────────────────────
+
+/// Verifies that REST streaming SSE events contain bare `StreamResponse` JSON,
+/// **not** JSON-RPC envelopes. This is the server-side test that would have
+/// caught the v0.4.0 REST streaming deserialization bug.
+#[tokio::test]
+async fn rest_streaming_events_are_bare_stream_response() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let body = serde_json::to_vec(&make_send_params()).unwrap();
+
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:stream"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+
+    // Collect the entire SSE body.
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8_lossy(&body);
+
+    // Extract all `data:` lines from the SSE stream.
+    let data_lines: Vec<&str> = body_str
+        .lines()
+        .filter(|l| l.starts_with("data: "))
+        .map(|l| l.strip_prefix("data: ").unwrap())
+        .collect();
+
+    assert!(
+        !data_lines.is_empty(),
+        "SSE stream should contain at least one data line, got body: {body_str}"
+    );
+
+    for data in &data_lines {
+        let parsed: serde_json::Value = serde_json::from_str(data)
+            .unwrap_or_else(|e| panic!("SSE data should be valid JSON: {e}\ndata: {data}"));
+
+        // REST binding: bare StreamResponse — must NOT have jsonrpc/id/result envelope.
+        assert!(
+            parsed.get("jsonrpc").is_none(),
+            "REST SSE event must be bare StreamResponse, not JSON-RPC envelope.\n\
+             Got: {data}"
+        );
+
+        // Each event should be a recognized StreamResponse variant (externally tagged).
+        let is_known = parsed.get("task").is_some()
+            || parsed.get("statusUpdate").is_some()
+            || parsed.get("artifactUpdate").is_some();
+        assert!(
+            is_known,
+            "SSE event should be a recognized StreamResponse variant.\nGot: {data}"
+        );
+    }
+}
