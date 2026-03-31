@@ -13,7 +13,7 @@ pub async fn test_streaming_send_message(url: &str, binding: &str) -> Result<(),
 
     let stream_url = match binding {
         "jsonrpc" => url.to_string(),
-        "rest" => format!("{url}/message/stream"),
+        "rest" => format!("{url}/message:stream"),
         _ => return Err(format!("unknown binding: {binding}")),
     };
 
@@ -21,7 +21,7 @@ pub async fn test_streaming_send_message(url: &str, binding: &str) -> Result<(),
         "jsonrpc" => serde_json::json!({
             "jsonrpc": "2.0",
             "id": uuid::Uuid::new_v4().to_string(),
-            "method": "message/stream",
+            "method": "SendStreamingMessage",
             "params": params
         }),
         "rest" => params,

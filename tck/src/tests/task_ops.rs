@@ -10,14 +10,15 @@ pub async fn test_get_task_existing(url: &str, binding: &str) -> Result<(), Stri
     // Create a task first
     let params = helpers::make_send_params("TCK: get_task_existing");
     let created = helpers::send_message(url, binding, params).await?;
-    let task_id = created
+    let task = helpers::extract_task(&created)?;
+    let task_id = task
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or("created task missing 'id'")?;
 
     // Now retrieve it
-    let task = helpers::get_task(url, binding, task_id).await?;
-    let retrieved_id = task
+    let retrieved = helpers::get_task(url, binding, task_id).await?;
+    let retrieved_id = retrieved
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or("retrieved task missing 'id'")?;
@@ -29,10 +30,10 @@ pub async fn test_get_task_existing(url: &str, binding: &str) -> Result<(), Stri
     }
 
     // Verify structure
-    if task.get("status").is_none() {
+    if retrieved.get("status").is_none() {
         return Err("retrieved task missing 'status'".to_string());
     }
-    if task.get("contextId").is_none() {
+    if retrieved.get("contextId").is_none() {
         return Err("retrieved task missing 'contextId'".to_string());
     }
 
@@ -55,7 +56,7 @@ pub async fn test_list_tasks_basic(url: &str, binding: &str) -> Result<(), Strin
     let result = match binding {
         "jsonrpc" => {
             let params = serde_json::json!({});
-            let resp = helpers::jsonrpc_request(url, "tasks/list", params).await?;
+            let resp = helpers::jsonrpc_request(url, "ListTasks", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -87,7 +88,8 @@ pub async fn test_cancel_task(url: &str, binding: &str) -> Result<(), String> {
     // Create a task first
     let params = helpers::make_send_params("TCK: cancel_task");
     let created = helpers::send_message(url, binding, params).await?;
-    let task_id = created
+    let task = helpers::extract_task(&created)?;
+    let task_id = task
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or("created task missing 'id'")?;
@@ -96,14 +98,14 @@ pub async fn test_cancel_task(url: &str, binding: &str) -> Result<(), String> {
     let result = match binding {
         "jsonrpc" => {
             let params = serde_json::json!({"id": task_id});
-            let resp = helpers::jsonrpc_request(url, "tasks/cancel", params).await?;
+            let resp = helpers::jsonrpc_request(url, "CancelTask", params).await?;
             // Cancel may return an error if the task is already completed or not cancelable
             // Both are valid conformance behaviors
             resp
         }
         "rest" => {
-            let body = serde_json::json!({"id": task_id});
-            helpers::rest_post(url, &format!("/tasks/{task_id}/cancel"), &body).await?
+            let body = serde_json::json!({});
+            helpers::rest_post(url, &format!("/tasks/{task_id}:cancel"), &body).await?
         }
         _ => return Err(format!("unknown binding: {binding}")),
     };

@@ -43,7 +43,7 @@ pub async fn test_invalid_params_returns_error(url: &str, binding: &str) -> Resu
             // Send message/send with missing required 'message' field
             let resp = helpers::jsonrpc_request(
                 url,
-                "message/send",
+                "SendMessage",
                 serde_json::json!({"invalid_field": true}),
             )
             .await?;
@@ -63,7 +63,7 @@ pub async fn test_invalid_params_returns_error(url: &str, binding: &str) -> Resu
         }
         "rest" => {
             let body = serde_json::json!({"invalid_field": true});
-            let result = helpers::rest_post(url, "/message/send", &body).await;
+            let result = helpers::rest_post(url, "/message:send", &body).await;
             // Should return an error (either HTTP status or error JSON)
             match result {
                 Ok(resp) => {

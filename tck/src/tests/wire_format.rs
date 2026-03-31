@@ -13,7 +13,7 @@ pub async fn test_jsonrpc_envelope_format(url: &str, binding: &str) -> Result<()
     }
 
     let params = helpers::make_send_params("TCK: wire format test");
-    let resp = helpers::jsonrpc_request(url, "message/send", params).await?;
+    let resp = helpers::jsonrpc_request(url, "SendMessage", params).await?;
 
     // Must have "jsonrpc": "2.0"
     let version = resp
@@ -42,31 +42,34 @@ pub async fn test_jsonrpc_envelope_format(url: &str, binding: &str) -> Result<()
     Ok(())
 }
 
-/// Tests that task state values use the correct wire format strings.
+/// Tests that task state values use the v1.0 SCREAMING_SNAKE_CASE wire format.
 pub async fn test_task_state_values(url: &str, binding: &str) -> Result<(), String> {
     let params = helpers::make_send_params("TCK: state values test");
     let result = helpers::send_message(url, binding, params).await?;
+    let task = helpers::extract_task(&result)?;
 
-    let state = result
+    let state = task
         .get("status")
         .and_then(|s| s.get("state"))
         .and_then(|s| s.as_str())
         .ok_or("task missing status.state")?;
 
+    // v1.0: ProtoJSON SCREAMING_SNAKE_CASE with TASK_STATE_ prefix
     let valid_states = [
-        "submitted",
-        "working",
-        "input-required",
-        "auth-required",
-        "completed",
-        "failed",
-        "canceled",
-        "rejected",
+        "TASK_STATE_UNSPECIFIED",
+        "TASK_STATE_SUBMITTED",
+        "TASK_STATE_WORKING",
+        "TASK_STATE_INPUT_REQUIRED",
+        "TASK_STATE_AUTH_REQUIRED",
+        "TASK_STATE_COMPLETED",
+        "TASK_STATE_FAILED",
+        "TASK_STATE_CANCELED",
+        "TASK_STATE_REJECTED",
     ];
 
     if !valid_states.contains(&state) {
         return Err(format!(
-            "invalid task state wire format: '{state}'. Expected one of: {}",
+            "invalid task state wire format: '{state}'. Expected TASK_STATE_* format: {}",
             valid_states.join(", ")
         ));
     }

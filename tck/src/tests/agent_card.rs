@@ -21,9 +21,11 @@ pub async fn test_agent_card_discovery(url: &str) -> Result<(), String> {
 pub async fn test_agent_card_required_fields(url: &str) -> Result<(), String> {
     let (_, card) = helpers::rest_get(url, "/.well-known/agent-card.json").await?;
 
+    // Per proto AgentCard (lines 356-393): required fields per field_behavior annotation
     let required = [
         "name",
-        "url",
+        "description",
+        "supportedInterfaces",
         "version",
         "capabilities",
         "defaultInputModes",

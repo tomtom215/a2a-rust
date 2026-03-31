@@ -96,37 +96,46 @@ async fn http_get(url: &str) -> Result<(u16, Value), String> {
     Ok((status, json))
 }
 
-/// Creates a minimal SendMessage params with a text message.
+/// Creates a minimal SendMessage params with a text message (v1.0 wire format).
 pub fn make_send_params(text: &str) -> Value {
     serde_json::json!({
         "message": {
-            "role": "user",
-            "parts": [{"type": "text", "text": text}],
+            "role": "ROLE_USER",
+            "parts": [{"text": text}],
             "messageId": uuid::Uuid::new_v4().to_string()
         }
     })
 }
 
-/// Creates SendMessage params with a specific context ID.
+/// Creates SendMessage params with a specific context ID (v1.0 wire format).
+///
+/// Per v1.0 proto, context_id is on the Message, not at the params level.
 pub fn make_send_params_with_context(text: &str, context_id: &str) -> Value {
     serde_json::json!({
         "message": {
-            "role": "user",
-            "parts": [{"type": "text", "text": text}],
-            "messageId": uuid::Uuid::new_v4().to_string()
+            "role": "ROLE_USER",
+            "parts": [{"text": text}],
+            "messageId": uuid::Uuid::new_v4().to_string(),
+            "contextId": context_id
         },
         "configuration": {
-            "acceptedOutputModes": ["text"]
-        },
-        "contextId": context_id
+            "acceptedOutputModes": ["text/plain"]
+        }
     })
 }
 
 /// Sends a message via the appropriate binding and returns the response.
+///
+/// For JSON-RPC: extracts the `result` from the JSON-RPC envelope.
+/// For REST: returns the response body directly.
+///
+/// In v1.0, `SendMessageResponse` is externally tagged: `{"task": {...}}` or
+/// `{"message": {...}}`. This function returns the raw result — callers should
+/// use [`extract_task`] to unwrap the task from the response.
 pub async fn send_message(url: &str, binding: &str, params: Value) -> Result<Value, String> {
     match binding {
         "jsonrpc" => {
-            let resp = jsonrpc_request(url, "message/send", params).await?;
+            let resp = jsonrpc_request(url, "SendMessage", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -134,9 +143,18 @@ pub async fn send_message(url: &str, binding: &str, params: Value) -> Result<Val
                 .cloned()
                 .ok_or_else(|| "missing 'result' in JSON-RPC response".to_string())
         }
-        "rest" => rest_post(url, "/message/send", &params).await,
+        "rest" => rest_post(url, "/message:send", &params).await,
         _ => Err(format!("unknown binding: {binding}")),
     }
+}
+
+/// Extracts a Task object from a v1.0 `SendMessageResponse`.
+///
+/// The response is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
+pub fn extract_task(result: &Value) -> Result<&Value, String> {
+    result
+        .get("task")
+        .ok_or_else(|| format!("response is not a task (got: {result})"))
 }
 
 /// Gets a task by ID via the appropriate binding.
@@ -144,7 +162,7 @@ pub async fn get_task(url: &str, binding: &str, task_id: &str) -> Result<Value, 
     match binding {
         "jsonrpc" => {
             let params = serde_json::json!({"id": task_id});
-            let resp = jsonrpc_request(url, "tasks/get", params).await?;
+            let resp = jsonrpc_request(url, "GetTask", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -172,7 +190,7 @@ pub async fn get_task_expect_not_found(
     match binding {
         "jsonrpc" => {
             let params = serde_json::json!({"id": task_id});
-            let resp = jsonrpc_request(url, "tasks/get", params).await?;
+            let resp = jsonrpc_request(url, "GetTask", params).await?;
             if resp.get("error").is_some() {
                 Ok(())
             } else {

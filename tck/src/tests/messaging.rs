@@ -23,30 +23,31 @@ pub async fn test_send_message_returns_task(url: &str, binding: &str) -> Result<
     let params = helpers::make_send_params("TCK: send_message_returns_task");
     let result = helpers::send_message(url, binding, params).await?;
 
-    // Per spec, the response is a Task object
-    let id = result.get("id").ok_or("response missing 'id' field")?;
+    // v1.0: result is {"task": {...}} — extract the task
+    let task = helpers::extract_task(&result)?;
+
+    let id = task.get("id").ok_or("task missing 'id' field")?;
     if !id.is_string() {
         return Err("'id' must be a string".to_string());
     }
 
-    let status = result
-        .get("status")
-        .ok_or("response missing 'status' field")?;
+    let status = task.get("status").ok_or("task missing 'status' field")?;
     let state = status.get("state").ok_or("status missing 'state' field")?;
     if !state.is_string() {
         return Err("'state' must be a string".to_string());
     }
 
-    // State should be a valid TaskState value
+    // v1.0: State uses TASK_STATE_* ProtoJSON SCREAMING_SNAKE_CASE
     let valid_states = [
-        "submitted",
-        "working",
-        "input-required",
-        "auth-required",
-        "completed",
-        "failed",
-        "canceled",
-        "rejected",
+        "TASK_STATE_UNSPECIFIED",
+        "TASK_STATE_SUBMITTED",
+        "TASK_STATE_WORKING",
+        "TASK_STATE_INPUT_REQUIRED",
+        "TASK_STATE_AUTH_REQUIRED",
+        "TASK_STATE_COMPLETED",
+        "TASK_STATE_FAILED",
+        "TASK_STATE_CANCELED",
+        "TASK_STATE_REJECTED",
     ];
     let state_str = state.as_str().unwrap();
     if !valid_states.contains(&state_str) {
@@ -63,14 +64,14 @@ pub async fn test_send_message_context_id(url: &str, binding: &str) -> Result<()
     // First message with context
     let params = helpers::make_send_params_with_context("TCK: first turn", &ctx_id);
     let result1 = helpers::send_message(url, binding, params).await?;
+    let task1 = helpers::extract_task(&result1)?;
 
-    let context1 = result1
+    let context1 = task1
         .get("contextId")
-        .ok_or("first response missing 'contextId'")?
+        .ok_or("first task missing 'contextId'")?
         .as_str()
         .ok_or("'contextId' must be a string")?;
 
-    // The server may assign its own contextId or echo ours
     if context1.is_empty() {
         return Err("contextId should not be empty".to_string());
     }
@@ -78,10 +79,11 @@ pub async fn test_send_message_context_id(url: &str, binding: &str) -> Result<()
     // Second message with same context
     let params2 = helpers::make_send_params_with_context("TCK: second turn", context1);
     let result2 = helpers::send_message(url, binding, params2).await?;
+    let task2 = helpers::extract_task(&result2)?;
 
-    let context2 = result2
+    let context2 = task2
         .get("contextId")
-        .ok_or("second response missing 'contextId'")?
+        .ok_or("second task missing 'contextId'")?
         .as_str()
         .ok_or("'contextId' must be a string")?;
 
