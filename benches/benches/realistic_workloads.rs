@@ -145,7 +145,6 @@ fn bench_payload_complexity(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             let params = a2a_protocol_types::params::MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: mixed_msg.clone(),
                 configuration: None,
                 metadata: None,
@@ -164,7 +163,6 @@ fn bench_payload_complexity(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             let params = a2a_protocol_types::params::MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: nested_msg.clone(),
                 configuration: None,
                 metadata: None,
@@ -179,7 +177,6 @@ fn bench_payload_complexity(c: &mut Criterion) {
         b.to_async(&runtime).iter(|| async {
             let params = a2a_protocol_types::params::MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: msg.clone(),
                 configuration: None,
                 metadata: None,

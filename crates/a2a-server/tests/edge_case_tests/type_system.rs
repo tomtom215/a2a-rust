@@ -142,25 +142,25 @@ async fn task_version_from_u64() {
 async fn part_constructors() {
     let text = Part::text("hello");
     assert!(
-        matches!(text.content, PartContent::Text { .. }),
+        matches!(text.content, PartContent::Text(..)),
         "Part::text should produce PartContent::Text"
     );
 
     let raw = Part::raw("base64data");
     assert!(
-        matches!(raw.content, PartContent::File { .. }),
-        "Part::raw should produce PartContent::File"
+        matches!(raw.content, PartContent::Raw(..)),
+        "Part::raw should produce PartContent::Raw"
     );
 
     let url = Part::url("https://example.com");
     assert!(
-        matches!(url.content, PartContent::File { .. }),
-        "Part::url should produce PartContent::File"
+        matches!(url.content, PartContent::Url(..)),
+        "Part::url should produce PartContent::Url"
     );
 
     let data = Part::data(serde_json::json!({"key": "value"}));
     assert!(
-        matches!(data.content, PartContent::Data { .. }),
+        matches!(data.content, PartContent::Data(..)),
         "Part::data should produce PartContent::Data"
     );
 }

@@ -38,7 +38,6 @@ async fn return_immediately_returns_pending_task() {
 
     let params = MessageSendParams {
         tenant: None,
-        context_id: None,
         message: make_message("hello"),
         configuration: Some(a2a_protocol_types::params::SendMessageConfiguration {
             accepted_output_modes: vec!["text/plain".into()],
@@ -81,7 +80,6 @@ async fn task_continuation_same_context_finds_stored_task() {
         .on_send_message(
             MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: msg1,
                 configuration: None,
                 metadata: None,
@@ -106,7 +104,6 @@ async fn task_continuation_same_context_finds_stored_task() {
         .on_send_message(
             MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: msg2,
                 configuration: None,
                 metadata: None,
@@ -164,7 +161,6 @@ async fn context_task_mismatch_rejected() {
         .on_send_message(
             MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: msg1,
                 configuration: None,
                 metadata: None,
@@ -184,7 +180,6 @@ async fn context_task_mismatch_rejected() {
         .on_send_message(
             MessageSendParams {
                 tenant: None,
-                context_id: None,
                 message: msg2,
                 configuration: None,
                 metadata: None,

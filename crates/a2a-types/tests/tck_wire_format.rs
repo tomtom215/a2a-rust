@@ -53,21 +53,21 @@ use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 // §1 — TaskState: ProtoJSON SCREAMING_SNAKE_CASE with prefix
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Validates that all TaskState variants serialize to lowercase kebab-case.
-/// The old `TASK_STATE_*` format is still accepted via serde aliases for
-/// deserialization.
+/// Validates that all TaskState variants serialize to TASK_STATE_ prefixed
+/// SCREAMING_SNAKE_CASE. Legacy lowercase/kebab-case values are still accepted
+/// via serde aliases for deserialization.
 #[test]
 fn tck_task_state_proto_json_encoding() {
     let cases: &[(TaskState, &str)] = &[
-        (TaskState::Unspecified, "\"unspecified\""),
-        (TaskState::Submitted, "\"submitted\""),
-        (TaskState::Working, "\"working\""),
-        (TaskState::InputRequired, "\"input-required\""),
-        (TaskState::AuthRequired, "\"auth-required\""),
-        (TaskState::Completed, "\"completed\""),
-        (TaskState::Failed, "\"failed\""),
-        (TaskState::Canceled, "\"canceled\""),
-        (TaskState::Rejected, "\"rejected\""),
+        (TaskState::Unspecified, "\"TASK_STATE_UNSPECIFIED\""),
+        (TaskState::Submitted, "\"TASK_STATE_SUBMITTED\""),
+        (TaskState::Working, "\"TASK_STATE_WORKING\""),
+        (TaskState::InputRequired, "\"TASK_STATE_INPUT_REQUIRED\""),
+        (TaskState::AuthRequired, "\"TASK_STATE_AUTH_REQUIRED\""),
+        (TaskState::Completed, "\"TASK_STATE_COMPLETED\""),
+        (TaskState::Failed, "\"TASK_STATE_FAILED\""),
+        (TaskState::Canceled, "\"TASK_STATE_CANCELED\""),
+        (TaskState::Rejected, "\"TASK_STATE_REJECTED\""),
     ];
 
     for (state, expected_json) in cases {
@@ -86,7 +86,7 @@ fn tck_task_state_proto_json_encoding() {
 }
 
 /// Validates that truly invalid task state strings are rejected.
-/// Lowercase and TASK_STATE_* formats are both accepted now.
+/// TASK_STATE_* and legacy lowercase/kebab-case formats are both accepted now.
 #[test]
 fn tck_task_state_rejects_invalid() {
     let invalid = &[
@@ -109,9 +109,9 @@ fn tck_task_state_rejects_invalid() {
 #[test]
 fn tck_message_role_proto_json_encoding() {
     let cases: &[(MessageRole, &str)] = &[
-        (MessageRole::Unspecified, "\"unspecified\""),
-        (MessageRole::User, "\"user\""),
-        (MessageRole::Agent, "\"agent\""),
+        (MessageRole::Unspecified, "\"ROLE_UNSPECIFIED\""),
+        (MessageRole::User, "\"ROLE_USER\""),
+        (MessageRole::Agent, "\"ROLE_AGENT\""),
     ];
 
     for (role, expected_json) in cases {
@@ -131,7 +131,13 @@ fn tck_message_role_proto_json_encoding() {
 
 #[test]
 fn tck_message_role_rejects_invalid() {
-    let invalid = &["\"USER\"", "\"AGENT\"", "\"Admin\"", "\"role_user\""];
+    let invalid = &[
+        "\"USER\"",
+        "\"AGENT\"",
+        "\"Admin\"",
+        "\"role_user\"",
+        "\"ROLE_FUTURE\"",
+    ];
     for &input in invalid {
         assert!(
             serde_json::from_str::<MessageRole>(input).is_err(),
@@ -200,79 +206,69 @@ fn tck_security_requirement_rejects_flat_scopes() {
 // §4 — Part type discriminator
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Validates Part uses internally-tagged `"type"` discriminator per spec:
-/// - `{"type": "text", "text": "hello"}`
-/// - `{"type": "file", "file": {...}}`
-/// - `{"type": "data", "data": {...}}`
+/// Validates Part uses flat JSON with member name as discriminator per v1.0 spec:
+/// - `{"text": "hello"}`
+/// - `{"raw": "base64data", "filename": "report.pdf", "mediaType": "application/pdf"}`
+/// - `{"url": "https://example.com/report.pdf"}`
+/// - `{"data": {"key": "value"}}`
 #[test]
 fn tck_part_type_discriminator() {
     // Text part golden
     let text_golden = json!({
-        "type": "text",
         "text": "Hello, world!"
     });
     let text_part: Part = serde_json::from_value(text_golden.clone()).unwrap();
-    assert!(matches!(text_part.content, PartContent::Text { ref text } if text == "Hello, world!"));
+    assert!(matches!(text_part.content, PartContent::Text(ref text) if text == "Hello, world!"));
     let text_ser = serde_json::to_value(&text_part).unwrap();
-    assert_eq!(text_ser["type"], "text");
     assert_eq!(text_ser["text"], "Hello, world!");
 
-    // File part golden (with inline bytes)
-    let file_golden = json!({
-        "type": "file",
-        "file": {
-            "name": "report.pdf",
-            "mimeType": "application/pdf",
-            "bytes": "SGVsbG8="
-        }
+    // Raw part golden (base64-encoded bytes)
+    let raw_golden = json!({
+        "raw": "SGVsbG8=",
+        "filename": "report.pdf",
+        "mediaType": "application/pdf"
     });
-    let file_part: Part = serde_json::from_value(file_golden.clone()).unwrap();
-    match &file_part.content {
-        PartContent::File { file } => {
-            assert_eq!(file.name.as_deref(), Some("report.pdf"));
-            assert_eq!(file.mime_type.as_deref(), Some("application/pdf"));
-            assert_eq!(file.bytes.as_deref(), Some("SGVsbG8="));
+    let raw_part: Part = serde_json::from_value(raw_golden.clone()).unwrap();
+    match &raw_part.content {
+        PartContent::Raw(raw) => {
+            assert_eq!(raw, "SGVsbG8=");
         }
-        _ => panic!("expected File variant"),
+        _ => panic!("expected Raw variant"),
     }
-    let file_ser = serde_json::to_value(&file_part).unwrap();
-    assert_eq!(file_ser["type"], "file");
-    assert!(file_ser["file"].is_object());
+    assert_eq!(raw_part.filename.as_deref(), Some("report.pdf"));
+    assert_eq!(raw_part.media_type.as_deref(), Some("application/pdf"));
+    let raw_ser = serde_json::to_value(&raw_part).unwrap();
+    assert_eq!(raw_ser["raw"], "SGVsbG8=");
 
-    // File part golden (with URI)
-    let file_uri_golden = json!({
-        "type": "file",
-        "file": {
-            "uri": "https://example.com/report.pdf"
-        }
+    // URL part golden
+    let url_golden = json!({
+        "url": "https://example.com/report.pdf"
     });
-    let file_uri_part: Part = serde_json::from_value(file_uri_golden).unwrap();
-    match &file_uri_part.content {
-        PartContent::File { file } => {
-            assert_eq!(file.uri.as_deref(), Some("https://example.com/report.pdf"));
+    let url_part: Part = serde_json::from_value(url_golden).unwrap();
+    match &url_part.content {
+        PartContent::Url(url) => {
+            assert_eq!(url, "https://example.com/report.pdf");
         }
-        _ => panic!("expected File variant"),
+        _ => panic!("expected Url variant"),
     }
 
     // Data part golden
     let data_golden = json!({
-        "type": "data",
         "data": {"key": "value", "count": 42}
     });
     let data_part: Part = serde_json::from_value(data_golden.clone()).unwrap();
-    assert!(matches!(data_part.content, PartContent::Data { .. }));
+    assert!(matches!(data_part.content, PartContent::Data(..)));
     let data_ser = serde_json::to_value(&data_part).unwrap();
-    assert_eq!(data_ser["type"], "data");
     assert_eq!(data_ser["data"]["key"], "value");
 }
 
-/// Validates that Part without a `type` field cannot be deserialized.
+/// Validates that Part with no recognized content field cannot be deserialized.
 #[test]
-fn tck_part_requires_type_field() {
-    let missing_type = json!({"text": "hello"});
+fn tck_part_requires_content_field() {
+    let missing_content = json!({"metadata": {"x": 1}});
     assert!(
-        serde_json::from_value::<Part>(missing_type).is_err(),
-        "Part without 'type' field must fail"
+        serde_json::from_value::<Part>(missing_content).is_err(),
+        "Part without a content field must fail"
     );
 }
 
@@ -294,13 +290,13 @@ fn tck_task_golden_deserialization() {
             {
                 "messageId": "msg-001",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "Hello agent"}]
+                "parts": [{"text": "Hello agent"}]
             }
         ],
         "artifacts": [
             {
                 "artifactId": "art-001",
-                "parts": [{"type": "text", "text": "Response data"}]
+                "parts": [{"text": "Response data"}]
             }
         ],
         "metadata": {"custom_key": "custom_value"}
@@ -389,8 +385,8 @@ fn tck_message_golden_format() {
         "messageId": "msg-xyz",
         "role": "ROLE_AGENT",
         "parts": [
-            {"type": "text", "text": "Here is your answer"},
-            {"type": "file", "file": {"name": "result.csv", "mimeType": "text/csv", "bytes": "YSxiLGM="}}
+            {"text": "Here is your answer"},
+            {"raw": "YSxiLGM=", "filename": "result.csv", "mediaType": "text/csv"}
         ],
         "taskId": "task-123",
         "contextId": "ctx-456",
@@ -426,7 +422,7 @@ fn tck_message_golden_format() {
 // §7 — AgentCard wire format
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Golden agent card as returned by `GET /.well-known/agent.json`.
+/// Golden agent card as returned by `GET /.well-known/agent-card.json`.
 #[test]
 fn tck_agent_card_golden_format() {
     let golden = json!({
@@ -698,7 +694,7 @@ fn tck_jsonrpc_send_message_request() {
             "message": {
                 "messageId": "msg-001",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "Hello"}]
+                "parts": [{"text": "Hello"}]
             }
         }
     });
@@ -852,7 +848,7 @@ fn tck_stream_response_artifact_update_variant() {
             "contextId": "c1",
             "artifact": {
                 "artifactId": "art-1",
-                "parts": [{"type": "text", "text": "output data"}]
+                "parts": [{"text": "output data"}]
             },
             "lastChunk": true
         }
@@ -878,7 +874,7 @@ fn tck_stream_response_message_variant() {
         "message": {
             "messageId": "msg-stream-1",
             "role": "ROLE_AGENT",
-            "parts": [{"type": "text", "text": "quick answer"}],
+            "parts": [{"text": "quick answer"}],
             "taskId": "t1",
             "contextId": "c1"
         }
@@ -906,9 +902,11 @@ fn tck_stream_response_message_variant() {
 #[test]
 fn tck_send_message_response_task_variant() {
     let golden = json!({
-        "id": "t1",
-        "contextId": "c1",
-        "status": {"state": "completed"}
+        "task": {
+            "id": "t1",
+            "contextId": "c1",
+            "status": {"state": "TASK_STATE_COMPLETED"}
+        }
     });
 
     let resp: SendMessageResponse = serde_json::from_value(golden).unwrap();
@@ -925,9 +923,11 @@ fn tck_send_message_response_task_variant() {
 #[test]
 fn tck_send_message_response_message_variant() {
     let golden = json!({
-        "messageId": "msg-1",
-        "role": "ROLE_AGENT",
-        "parts": [{"type": "text", "text": "quick response"}]
+        "message": {
+            "messageId": "msg-1",
+            "role": "ROLE_AGENT",
+            "parts": [{"text": "quick response"}]
+        }
     });
 
     let resp: SendMessageResponse = serde_json::from_value(golden).unwrap();
@@ -992,7 +992,7 @@ fn tck_message_send_params_golden() {
         "message": {
             "messageId": "msg-send-1",
             "role": "ROLE_USER",
-            "parts": [{"type": "text", "text": "What is the weather?"}]
+            "parts": [{"text": "What is the weather?"}]
         },
         "configuration": {
             "acceptedOutputModes": ["text/plain", "application/json"],
@@ -1019,8 +1019,8 @@ fn tck_artifact_golden_format() {
     let golden = json!({
         "artifactId": "art-abc",
         "parts": [
-            {"type": "text", "text": "Generated code"},
-            {"type": "file", "file": {"name": "main.rs", "mimeType": "text/x-rust", "bytes": "Zm4gbWFpbigp"}}
+            {"text": "Generated code"},
+            {"raw": "Zm4gbWFpbigp", "filename": "main.rs", "mediaType": "text/x-rust"}
         ],
         "metadata": {"language": "rust"}
     });
@@ -1048,30 +1048,32 @@ fn tck_cross_sdk_python_send_message_response() {
         "jsonrpc": "2.0",
         "id": 42,
         "result": {
-            "id": "py-task-001",
-            "contextId": "py-ctx-001",
-            "status": {
-                "state": "completed",
-                "timestamp": "2026-03-15T10:30:00Z"
-            },
-            "history": [
-                {
-                    "messageId": "py-msg-001",
-                    "role": "ROLE_USER",
-                    "parts": [{"type": "text", "text": "Translate to French: Hello"}]
+            "task": {
+                "id": "py-task-001",
+                "contextId": "py-ctx-001",
+                "status": {
+                    "state": "TASK_STATE_COMPLETED",
+                    "timestamp": "2026-03-15T10:30:00Z"
                 },
-                {
-                    "messageId": "py-msg-002",
-                    "role": "ROLE_AGENT",
-                    "parts": [{"type": "text", "text": "Bonjour"}]
-                }
-            ],
-            "artifacts": [
-                {
-                    "artifactId": "py-art-001",
-                    "parts": [{"type": "text", "text": "Bonjour"}]
-                }
-            ]
+                "history": [
+                    {
+                        "messageId": "py-msg-001",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "Translate to French: Hello"}]
+                    },
+                    {
+                        "messageId": "py-msg-002",
+                        "role": "ROLE_AGENT",
+                        "parts": [{"text": "Bonjour"}]
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "artifactId": "py-art-001",
+                        "parts": [{"text": "Bonjour"}]
+                    }
+                ]
+            }
         }
     });
 
@@ -1107,7 +1109,7 @@ fn tck_cross_sdk_js_stream_event() {
                 "message": {
                     "messageId": "js-status-msg",
                     "role": "ROLE_AGENT",
-                    "parts": [{"type": "text", "text": "Processing your request..."}]
+                    "parts": [{"text": "Processing your request..."}]
                 }
             }
         }

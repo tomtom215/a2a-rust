@@ -10,13 +10,13 @@ When a client calls `SendStreamingMessage`, the server holds the HTTP connection
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
 
-data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"working"}}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_WORKING"}}}
 
-data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"partial..."}]},"lastChunk":false}}
+data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"partial..."}]},"lastChunk":false}}
 
-data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"type":"text","text":"complete result"}]},"lastChunk":true}}
+data: {"artifactUpdate":{"taskId":"t-1","contextId":"ctx-1","artifact":{"artifactId":"a-1","parts":[{"text":"complete result"}]},"lastChunk":true}}
 
-data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"completed"}}}
+data: {"statusUpdate":{"taskId":"t-1","contextId":"ctx-1","status":{"state":"TASK_STATE_COMPLETED"}}}
 
 ```
 
@@ -36,7 +36,7 @@ Reports a task state transition:
     "taskId": "task-abc",
     "contextId": "ctx-123",
     "status": {
-      "state": "working",
+      "state": "TASK_STATE_WORKING",
       "timestamp": "2026-03-15T10:30:00Z"
     }
   }
@@ -54,7 +54,7 @@ Delivers artifact content (potentially in chunks):
     "contextId": "ctx-123",
     "artifact": {
       "artifactId": "result-1",
-      "parts": [{"type": "text", "text": "The answer is..."}]
+      "parts": [{"text": "The answer is..."}]
     },
     "lastChunk": false,
     "append": false
@@ -80,7 +80,7 @@ A complete task snapshot (usually the first event on subscribe, or the final eve
   "task": {
     "id": "task-abc",
     "contextId": "ctx-123",
-    "status": {"state": "completed"},
+    "status": {"state": "TASK_STATE_COMPLETED"},
     "artifacts": [...]
   }
 }
@@ -94,8 +94,8 @@ A direct message response (for simple request/reply patterns):
 {
   "message": {
     "messageId": "msg-456",
-    "role": "agent",
-    "parts": [{"type": "text", "text": "Quick answer"}]
+    "role": "ROLE_AGENT",
+    "parts": [{"text": "Quick answer"}]
   }
 }
 ```

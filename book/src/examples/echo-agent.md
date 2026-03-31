@@ -12,7 +12,7 @@ The simplest possible A2A agent — echoes incoming messages back as artifacts. 
 | **JSON-RPC transport** | Server via `JsonRpcDispatcher`, client via `ClientBuilder` |
 | **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("REST")` |
 | **Streaming (SSE)** | `stream_message()` consumes `StatusUpdate` and `ArtifactUpdate` events |
-| **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent.json` at runtime |
+| **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent-card.json` at runtime |
 | **Task retrieval** | `get_task()` retrieves a completed task by ID |
 | **Pre-bind pattern** | Listeners are bound before the handler is built so agent card URLs are correct |
 
@@ -33,7 +33,7 @@ The example runs 6 demos in sequence:
 2. **Streaming SendMessage (JSON-RPC)** — receives real-time SSE events as the agent works
 3. **Synchronous SendMessage (REST)** — same operation over the REST transport
 4. **Streaming SendMessage (REST)** — SSE streaming over REST
-5. **Agent Card Discovery** — fetches `/.well-known/agent.json` and inspects capabilities
+5. **Agent Card Discovery** — fetches `/.well-known/agent-card.json` and inspects capabilities
 6. **GetTask** — retrieves the task created in Demo 1 by its ID
 
 ## Server-only mode

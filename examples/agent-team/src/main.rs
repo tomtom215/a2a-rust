@@ -305,6 +305,13 @@ async fn main() {
     results.push(coverage_gaps::test_agent_card_semantic_validation(&ctx).await);
     results.push(coverage_gaps::test_get_task_after_stream(&ctx).await);
 
+    // v1.0 Wire Format Verification Tests
+    results.push(coverage_gaps::test_wire_format_task_state_screaming_snake(&ctx).await);
+    results.push(coverage_gaps::test_wire_format_part_flat_oneof(&ctx).await);
+    results.push(coverage_gaps::test_wire_format_send_message_response_tagged(&ctx).await);
+    results.push(coverage_gaps::test_wire_format_aip193_error(&ctx).await);
+    results.push(coverage_gaps::test_include_artifacts_parameter(&ctx).await);
+
     // Tests 93-95: Axum framework integration (axum feature)
     #[cfg(feature = "axum")]
     {

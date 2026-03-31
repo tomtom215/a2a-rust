@@ -178,7 +178,6 @@ mod tests {
 
         // Send a streaming message to create a task with an active event queue.
         let params = MessageSendParams {
-            context_id: None,
             message: Message {
                 id: MessageId::new("msg-resub"),
                 role: MessageRole::User,

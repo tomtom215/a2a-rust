@@ -38,6 +38,7 @@ impl RequestHandler {
             params.page_size = Some(ps.min(1000));
         }
         let history_length = params.history_length;
+        let include_artifacts = params.include_artifacts;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -58,6 +59,14 @@ impl RequestHandler {
                         }
                         _ => None,
                     };
+                }
+            }
+
+            // Per Section 3.1.4: when includeArtifacts is false (default),
+            // the artifacts field MUST be omitted entirely from each Task.
+            if !include_artifacts.unwrap_or(false) {
+                for task in &mut result.tasks {
+                    task.artifacts = None;
                 }
             }
 

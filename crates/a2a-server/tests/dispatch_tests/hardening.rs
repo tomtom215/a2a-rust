@@ -224,7 +224,10 @@ async fn rest_rejects_oversized_body() {
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert!(
-        val["error"].as_str().unwrap_or("").contains("too large"),
+        val["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("too large"),
         "expected 'too large' in error message, got: {val}"
     );
 }

@@ -2,7 +2,7 @@
 
 > **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
 >
-> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). In particular, `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
+> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). As of v0.4.0, `TaskState` serialization uses `SCREAMING_SNAKE_CASE` as the primary format (e.g., `"TASK_STATE_COMPLETED"`), with lowercase as deserialization aliases for backward compatibility. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)
@@ -489,7 +489,7 @@ Implemented:
 - `EventStream`: async SSE parser that deserializes `JsonRpcResponse<StreamResponse>` frames
 - `SseParser`: raw byte-level SSE frame accumulator with keep-alive comment handling
 - `AuthInterceptor` + `InMemoryCredentialsStore` for bearer/basic auth
-- `resolve_agent_card()`: fetch `/.well-known/agent.json`
+- `resolve_agent_card()`: fetch `/.well-known/agent-card.json`
 - All 11 RPC methods implemented as `async` methods on `A2aClient`
 
 ---
@@ -527,7 +527,7 @@ Key changes:
 - `AgentCard`: flat `url`/`preferred_transport` → `supported_interfaces: Vec<AgentInterface>`
 - `ContextId` newtype added (was plain `String`)
 - `AgentCapabilities.extended_agent_card` added
-- Agent card path: `/.well-known/agent-card.json` → `/.well-known/agent.json`
+- Agent card path: `/.well-known/agent-card.json` (v0.4.0 restored this path after v1.0 briefly used `/.well-known/agent.json`)
 - JSON-RPC method names: `snake/case` → `PascalCase` (e.g., `message/send` → `SendMessage`)
 - `TaskStatus.message` changed from `Option<Message>` to optional embedded message
 - `Task.kind` field removed (v1.0 uses untagged unions)
@@ -885,9 +885,8 @@ This pattern applies to: `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushS
 | `#[serde(rename = "SCREAMING_SNAKE")]` | Enum variants (v1.0 wire format) |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All optional fields |
 | `#[serde(untagged)]` | `JsonRpcResponse<T>` (success vs error discrimination) |
-| `#[serde(tag = "type")]` | `PartContent` (internally tagged by `type` field) |
-| `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged with camelCase keys) |
-| Custom `Deserialize` impl | `SendMessageResponse` (discriminates on `role` field presence) |
+| Flat oneof (custom serde) | `PartContent` (field presence discriminates variants) |
+| `#[serde(rename_all = "camelCase")]` | `StreamResponse`, `SendMessageResponse` (externally tagged with camelCase keys) |
 
 ### Unsafe
 
@@ -938,7 +937,7 @@ A condensed quick-reference for implementation use (updated for v1.0.0).
 | `GET` | `/tasks/{taskId}/pushNotificationConfigs` | `ListTaskPushNotificationConfigs` |
 | `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `DeleteTaskPushNotificationConfig` |
 | `GET` | `/extendedAgentCard` | `GetExtendedAgentCard` |
-| `GET` | `/.well-known/agent.json` | Agent card discovery |
+| `GET` | `/.well-known/agent-card.json` | Agent card discovery |
 
 ### SSE Event Format
 
@@ -984,7 +983,7 @@ data: {"jsonrpc":"2.0","id":null,"result":{...StreamResponse...}}
 ### AgentCard Well-Known URI
 
 ```
-GET https://{host}/.well-known/agent.json
+GET https://{host}/.well-known/agent-card.json
 Response: application/json
 CORS: Access-Control-Allow-Origin: *
 ```
@@ -999,7 +998,7 @@ CORS: Access-Control-Allow-Origin: *
 | StreamResponse | `kind` tag field | Untagged by field presence |
 | Agent card URL | `url` field on AgentCard | `supported_interfaces[].url` |
 | Transport binding | `preferred_transport` enum | `protocol_binding` string |
-| Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent.json` |
+| Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent-card.json` (restored in v0.4.0) |
 | Context ID | plain `String` | `ContextId` newtype |
 | Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` removed (not in v1.0 spec) |
 

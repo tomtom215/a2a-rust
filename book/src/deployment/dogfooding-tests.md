@@ -196,7 +196,7 @@ The agent team runs **81 base E2E tests** across 8 test modules (94 with all opt
 |---|------|---------|-------------------|
 | 93 | axum-send-message | `axum` | `A2aRouter` → SendMessage → Completed task |
 | 94 | axum-streaming | `axum` | `A2aRouter` SSE streaming with event completeness |
-| 95 | axum-agent-card | `axum` | Agent card discovery via `/.well-known/agent.json` through Axum |
+| 95 | axum-agent-card | `axum` | Agent card discovery via `/.well-known/agent-card.json` through Axum |
 | 96 | sqlite-task-store | `sqlite` | `SqliteTaskStore` full lifecycle: send→get→list persistence |
 | 97 | sqlite-push-config | `sqlite` | `SqlitePushConfigStore` CRUD: set→list→delete |
 | 98 | axum-sqlite-combo | `axum`+`sqlite` | Combined production stack: Axum server + SQLite stores |

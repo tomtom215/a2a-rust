@@ -2,7 +2,7 @@
 
 > **Historical Reference** — All migrations are complete (Phase 4). This document is retained as a record of the v0.3.0 → v1.0.0 change matrices and design decisions.
 >
-> **Note:** `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence) rather than `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`).
+> **Note:** As of v0.4.0, `TaskState` serialization uses `SCREAMING_SNAKE_CASE` as the primary format (e.g., `"TASK_STATE_COMPLETED"`), with lowercase as deserialization aliases for backward compatibility. `SendMessageResponse` uses externally tagged serialization (`{"task":{...}}` or `{"message":{...}}`). `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`).
 
 ## Summary of Breaking Changes
 

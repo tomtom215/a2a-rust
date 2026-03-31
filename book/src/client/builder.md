@@ -180,7 +180,7 @@ async fn bad_pattern(url: &str) {
 
 ## gRPC Client
 
-> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.3", features = ["grpc"] }`
+> Requires the `grpc` feature: `a2a-protocol-client = { version = "0.4", features = ["grpc"] }`
 
 For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
 

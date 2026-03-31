@@ -41,7 +41,7 @@ use response::{
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
 /// Optionally applies CORS headers to all responses.
 ///
-/// Also serves the agent card at `GET /.well-known/agent.json` so that
+/// Also serves the agent card at `GET /.well-known/agent-card.json` so that
 /// JSON-RPC servers can participate in agent card discovery (spec §8.3).
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
@@ -103,7 +103,7 @@ impl JsonRpcDispatcher {
 
         // Serve the agent card at the well-known discovery path (spec §8.3).
         // This must be handled before JSON-RPC body parsing since it's a GET.
-        if req.method() == "GET" && req.uri().path() == "/.well-known/agent.json" {
+        if req.method() == "GET" && req.uri().path() == "/.well-known/agent-card.json" {
             let mut resp = self.card_handler.as_ref().map_or_else(
                 || json_response(404, br#"{"error":"agent card not configured"}"#.to_vec()),
                 |h| h.handle(&req).map(http_body_util::BodyExt::boxed),
@@ -140,19 +140,24 @@ impl JsonRpcDispatcher {
             }
         }
 
-        // Validate A2A-Version header if present (Python #865).
+        // Validate A2A-Version header if present.
+        // Per Section 3.6.2: empty value MUST be interpreted as 0.3.
         // Accept any 1.x version; reject 0.x or 2.x+.
         if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
             if let Ok(v) = version.to_str() {
-                let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-                if major != Some(1) {
-                    return error_response(
-                        None,
-                        &ServerError::Protocol(a2a_protocol_types::error::A2aError::new(
-                            a2a_protocol_types::error::ErrorCode::VersionNotSupported,
-                            format!("unsupported A2A version: {v}; this server supports 1.x"),
-                        )),
-                    );
+                let v = v.trim();
+                // Empty header → interpret as 0.3 per spec Section 3.6.2.
+                if !v.is_empty() {
+                    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+                    if major != Some(1) {
+                        return error_response(
+                            None,
+                            &ServerError::Protocol(a2a_protocol_types::error::A2aError::new(
+                                a2a_protocol_types::error::ErrorCode::VersionNotSupported,
+                                format!("unsupported A2A version: {v}; this server supports 1.x"),
+                            )),
+                        );
+                    }
                 }
             }
         }
@@ -257,6 +262,7 @@ impl JsonRpcDispatcher {
                             reader,
                             Some(self.config.sse_keep_alive_interval),
                             Some(self.config.sse_channel_capacity),
+                            true, // JSON-RPC envelope per Section 9.4.2
                         ),
                         Err(e) => error_response(id, &e),
                     },
@@ -452,6 +458,7 @@ impl JsonRpcDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
+                true, // JSON-RPC envelope per Section 9.4.2
             ),
             Err(e) => error_response(id, &e),
         }

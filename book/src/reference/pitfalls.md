@@ -6,7 +6,7 @@ A catalog of non-obvious problems encountered during development. Each entry doc
 
 ### Untagged enums hide inner errors
 
-`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` now uses a custom deserializer that discriminates on the `role` field instead of serde `untagged`, avoiding this pitfall. `StreamResponse` uses `#[serde(rename_all = "camelCase")]` — externally tagged — so it also produces clearer errors.)
+`#[serde(untagged)]` on `JsonRpcResponse<T>` swallows the real deserialization error and replaces it with a generic "data did not match any variant" message. (Note: `SendMessageResponse` and `StreamResponse` both use `#[serde(rename_all = "camelCase")]` — externally tagged — so they produce clearer errors.)
 
 **Workaround:** When debugging `JsonRpcResponse`, temporarily switch to an externally tagged enum to see the real error. In production, log the raw JSON before attempting deserialization.
 
@@ -147,7 +147,7 @@ When building REST transport query strings from JSON values, parameter values mu
 
 Detecting stream completion by checking `text.contains("stream_complete")` is fragile — it false-positives on any payload text containing that substring, and misses terminal status updates that don't contain that exact string.
 
-**Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`completed`, `failed`, `canceled`, `rejected`) or the `stream_complete` sentinel.
+**Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, `TASK_STATE_CANCELED`, `TASK_STATE_REJECTED`) or the `stream_complete` sentinel.
 
 ### gRPC transport must not serialize requests through a Mutex
 

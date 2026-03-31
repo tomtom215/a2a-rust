@@ -153,7 +153,7 @@ pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
     }
 }
 
-/// Test 95: Axum agent card discovery via `/.well-known/agent.json`.
+/// Test 95: Axum agent card discovery via `/.well-known/agent-card.json`.
 #[cfg(feature = "axum")]
 pub async fn test_axum_agent_card(ctx: &TestContext) -> TestResult {
     use a2a_protocol_server::dispatch::axum_adapter::A2aRouter;

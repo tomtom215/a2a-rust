@@ -70,7 +70,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 
 | Method | Default | Description |
 |--------|---------|-------------|
-| `with_agent_card(AgentCard)` | None | Discovery card for `/.well-known/agent.json` |
+| `with_agent_card(AgentCard)` | None | Discovery card for `/.well-known/agent-card.json` |
 | `with_task_store(impl TaskStore)` | `InMemoryTaskStore` | Custom task storage backend |
 | `with_task_store_config(TaskStoreConfig)` | 1hr TTL, 10k capacity | TTL and capacity for the default store |
 | `with_push_config_store(impl PushConfigStore)` | `InMemoryPushConfigStore` | Custom push config storage |

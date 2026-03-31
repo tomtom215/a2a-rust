@@ -125,7 +125,6 @@ fn make_client_with_interceptor(
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,
@@ -152,9 +151,9 @@ fn raw_task_json(id: &str, state: &str) -> serde_json::Value {
     })
 }
 
-/// Returns a task as a SendMessageResponse (untagged — just the task object).
+/// Returns a task as a SendMessageResponse (externally tagged per v1.0).
 fn send_message_response_json(id: &str, state: &str) -> serde_json::Value {
-    raw_task_json(id, state)
+    serde_json::json!({ "task": raw_task_json(id, state) })
 }
 
 // ── send_message tests ──────────────────────────────────────────────────────

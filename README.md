@@ -32,7 +32,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 | **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
 | **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
 | **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
-| **Agent card discovery** | `/.well-known/agent.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
+| **Agent card discovery** | `/.well-known/agent-card.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
 | **Agent card signing** | JWS/ES256 with RFC 8785 JSON canonicalization (`signing` feature) |
 | **HTTP caching** | `ETag`, `Last-Modified`, `304 Not Modified` for agent card endpoints |
 
@@ -101,7 +101,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.3"
+a2a-protocol-sdk = "0.4"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

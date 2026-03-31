@@ -22,8 +22,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `Message` | Structured payload with ID, role, parts |
 | `MessageId` | Newtype wrapper for message identifiers |
 | `MessageRole` | Enum: Unspecified, User, Agent |
-| `Part` | Content unit: text, file, or data |
-| `PartContent` | Enum: Text, File, Data |
+| `Part` | Content unit: text, raw, url, or data |
+| `PartContent` | Enum: Text, Raw, Url, Data |
 
 ### Artifacts
 
@@ -256,12 +256,13 @@ The prelude includes the most commonly used types from all three crates — see 
 TaskStatus::new(TaskState::Working)
 TaskStatus::with_timestamp(TaskState::Completed)
 
-// Messages and parts
-Part::text("hello")
-Part::file_bytes(base64_string)
-Part::file_uri("https://...")
-Part::raw(base64_string)   // backward-compat alias for file_bytes
-Part::url("https://...")   // backward-compat alias for file_uri
+// Messages and parts (v1.0 wire format: flat oneof)
+Part::text("hello")                 // → {"text": "hello"}
+Part::raw(base64_string)            // → {"raw": "aGVsbG8="}
+Part::url("https://...")            // → {"url": "https://..."}
+Part::data(serde_json::json!({..})) // → {"data": {...}}
+Part::file_bytes(base64_string)     // backward-compat alias for raw()
+Part::file_uri("https://...")       // backward-compat alias for url()
 
 // Artifacts
 Artifact::new("artifact-id", vec![Part::text("content")])

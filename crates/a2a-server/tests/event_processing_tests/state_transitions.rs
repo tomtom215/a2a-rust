@@ -209,26 +209,25 @@ async fn sync_mode_invalid_state_transition_returns_error() {
 
 #[tokio::test]
 async fn sync_mode_completed_to_working_is_invalid() {
+    // Per Section 3.2.2, blocking mode exits when the task reaches a terminal
+    // state (Completed). The executor emits Working → Completed → Working, but
+    // collect_events correctly returns at Completed before seeing the invalid
+    // transition. The task is returned in Completed state.
     let handler = RequestHandlerBuilder::new(TerminalTransitionExecutor)
         .build()
         .expect("build handler");
 
-    let result = handler
-        .on_send_message(make_send_params(), false, None)
-        .await;
-
-    match result {
-        Err(ref err) => {
-            assert!(
-                matches!(
-                    err,
-                    a2a_protocol_server::ServerError::InvalidStateTransition { .. }
-                ),
-                "expected InvalidStateTransition, got {err:?}"
-            );
-        }
-        Ok(_) => panic!("expected error for terminal state transition"),
-    }
+    let task = extract_task(
+        handler
+            .on_send_message(make_send_params(), false, None)
+            .await
+            .expect("send should succeed — early exit at terminal state"),
+    );
+    assert_eq!(
+        task.status.state,
+        TaskState::Completed,
+        "should return at terminal state before invalid transition"
+    );
 }
 
 #[tokio::test]
@@ -261,6 +260,9 @@ async fn streaming_mode_invalid_transition_does_not_crash_stream() {
 
 #[tokio::test]
 async fn sync_mode_multiple_valid_transitions() {
+    // MultiTransitionExecutor emits: Working → InputRequired → Working → Completed.
+    // Per Section 3.2.2, blocking mode returns at the first interrupted state
+    // (InputRequired). The client would then send a follow-up message.
     let handler = RequestHandlerBuilder::new(MultiTransitionExecutor)
         .build()
         .expect("build handler");
@@ -271,7 +273,11 @@ async fn sync_mode_multiple_valid_transitions() {
             .await
             .expect("send"),
     );
-    assert_eq!(task.status.state, TaskState::Completed);
+    assert_eq!(
+        task.status.state,
+        TaskState::InputRequired,
+        "blocking mode should return at first interrupted state"
+    );
 }
 
 #[tokio::test]

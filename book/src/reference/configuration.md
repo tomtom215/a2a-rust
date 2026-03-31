@@ -8,7 +8,7 @@ Complete reference of all configuration options across a2a-rust crates.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `with_agent_card` | `AgentCard` | None | Discovery card for `/.well-known/agent.json` |
+| `with_agent_card` | `AgentCard` | None | Discovery card for `/.well-known/agent-card.json` |
 | `with_task_store` | `impl TaskStore` | `InMemoryTaskStore` | Custom task storage backend |
 | `with_task_store_config` | `TaskStoreConfig` | 1hr TTL, 10k capacity | TTL and capacity for default store |
 | `with_push_config_store` | `impl PushConfigStore` | `InMemoryPushConfigStore` | Custom push config storage |

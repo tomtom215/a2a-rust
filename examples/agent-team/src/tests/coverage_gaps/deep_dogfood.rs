@@ -290,8 +290,7 @@ pub async fn test_artifact_content_correct(ctx: &TestContext) -> TestResult {
                 let mut has_content = false;
                 for art in arts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } =
-                            &part.content
+                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content
                         {
                             // The analyzer should mention lines/functions/analysis.
                             if !text.is_empty() {
@@ -633,6 +632,287 @@ pub async fn test_get_task_after_stream(ctx: &TestContext) -> TestResult {
             "get-after-stream",
             start.elapsed().as_millis(),
             &format!("stream error: {e}"),
+        ),
+    }
+}
+
+// ── v1.0 Wire Format Verification Tests ─────────────────────────────────────
+
+/// Test: Verify raw JSON wire format uses TASK_STATE_* enum values.
+///
+/// Sends a raw JSON-RPC request via HTTP and asserts the response body
+/// contains `"TASK_STATE_"` prefixed state values, not lowercase.
+pub async fn test_wire_format_task_state_screaming_snake(ctx: &TestContext) -> TestResult {
+    let start = Instant::now();
+    let body = jsonrpc_request(serde_json::json!(1), "SendMessage", send_message_params());
+
+    match post_raw(&ctx.analyzer_url, &body).await {
+        Ok((200, resp_body)) => {
+            let has_screaming = resp_body.contains("TASK_STATE_");
+            let has_lowercase_state = resp_body.contains("\"state\":\"completed\"")
+                || resp_body.contains("\"state\":\"working\"")
+                || resp_body.contains("\"state\":\"submitted\"");
+            if has_screaming && !has_lowercase_state {
+                TestResult::pass(
+                    "wire-task-state-format",
+                    start.elapsed().as_millis(),
+                    "response uses TASK_STATE_* ProtoJSON format",
+                )
+            } else {
+                TestResult::fail(
+                    "wire-task-state-format",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "expected TASK_STATE_* format; screaming={has_screaming}, lowercase={has_lowercase_state}: {resp_body}"
+                    ),
+                )
+            }
+        }
+        Ok((status, body)) => TestResult::fail(
+            "wire-task-state-format",
+            start.elapsed().as_millis(),
+            &format!("unexpected status {status}: {body}"),
+        ),
+        Err(e) => TestResult::fail(
+            "wire-task-state-format",
+            start.elapsed().as_millis(),
+            &format!("request failed: {e}"),
+        ),
+    }
+}
+
+/// Test: Verify Part wire format uses flat oneof (no "type" discriminator).
+///
+/// Asserts the response JSON contains `"text":` directly (not nested in
+/// `{"type":"text","text":"..."}` wrapper).
+pub async fn test_wire_format_part_flat_oneof(ctx: &TestContext) -> TestResult {
+    let start = Instant::now();
+    let body = jsonrpc_request(serde_json::json!(1), "SendMessage", send_message_params());
+
+    match post_raw(&ctx.analyzer_url, &body).await {
+        Ok((200, resp_body)) => {
+            let has_type_discriminator = resp_body.contains("\"type\":\"text\"")
+                || resp_body.contains("\"type\":\"file\"")
+                || resp_body.contains("\"type\":\"data\"");
+            if has_type_discriminator {
+                TestResult::fail(
+                    "wire-part-flat-oneof",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "response still uses old v0.3 Part format with type discriminator: {resp_body}"
+                    ),
+                )
+            } else {
+                TestResult::pass(
+                    "wire-part-flat-oneof",
+                    start.elapsed().as_millis(),
+                    "response uses v1.0 flat Part format (no type discriminator)",
+                )
+            }
+        }
+        Ok((status, body)) => TestResult::fail(
+            "wire-part-flat-oneof",
+            start.elapsed().as_millis(),
+            &format!("unexpected status {status}: {body}"),
+        ),
+        Err(e) => TestResult::fail(
+            "wire-part-flat-oneof",
+            start.elapsed().as_millis(),
+            &format!("request failed: {e}"),
+        ),
+    }
+}
+
+/// Test: Verify SendMessageResponse uses externally tagged format.
+///
+/// The JSON-RPC result should contain `{"task":{...}}` or `{"message":{...}}`
+/// wrapper, not a bare Task/Message object.
+pub async fn test_wire_format_send_message_response_tagged(ctx: &TestContext) -> TestResult {
+    let start = Instant::now();
+    let body = jsonrpc_request(serde_json::json!(1), "SendMessage", send_message_params());
+
+    match post_raw(&ctx.analyzer_url, &body).await {
+        Ok((200, resp_body)) => {
+            let parsed: serde_json::Value = match serde_json::from_str(&resp_body) {
+                Ok(v) => v,
+                Err(e) => {
+                    return TestResult::fail(
+                        "wire-response-tagged",
+                        start.elapsed().as_millis(),
+                        &format!("invalid JSON: {e}"),
+                    );
+                }
+            };
+            let result = &parsed["result"];
+            let has_task_wrapper = result.get("task").is_some();
+            let has_message_wrapper = result.get("message").is_some();
+            if has_task_wrapper || has_message_wrapper {
+                TestResult::pass(
+                    "wire-response-tagged",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "response uses externally tagged format (task={}|message={})",
+                        has_task_wrapper, has_message_wrapper
+                    ),
+                )
+            } else {
+                TestResult::fail(
+                    "wire-response-tagged",
+                    start.elapsed().as_millis(),
+                    &format!("expected {{\"task\":...}} or {{\"message\":...}} wrapper: {result}"),
+                )
+            }
+        }
+        Ok((status, body)) => TestResult::fail(
+            "wire-response-tagged",
+            start.elapsed().as_millis(),
+            &format!("unexpected status {status}: {body}"),
+        ),
+        Err(e) => TestResult::fail(
+            "wire-response-tagged",
+            start.elapsed().as_millis(),
+            &format!("request failed: {e}"),
+        ),
+    }
+}
+
+/// Test: Verify AIP-193 error response format for REST errors.
+///
+/// Sends an invalid request to REST and verifies the error response contains
+/// `{"error":{"code":N,"status":"...","message":"...","details":[...]}}`.
+pub async fn test_wire_format_aip193_error(ctx: &TestContext) -> TestResult {
+    let start = Instant::now();
+    let rest_url = format!("{}/tasks/nonexistent-task-12345", ctx.build_url);
+
+    match get_raw(&rest_url, &[]).await {
+        Ok((status, _, body)) => {
+            let parsed: serde_json::Value = match serde_json::from_str(&body) {
+                Ok(v) => v,
+                Err(e) => {
+                    return TestResult::fail(
+                        "wire-aip193-error",
+                        start.elapsed().as_millis(),
+                        &format!("invalid JSON: {e}"),
+                    );
+                }
+            };
+            let error_obj = &parsed["error"];
+            let has_code = error_obj.get("code").is_some();
+            let has_status = error_obj.get("status").is_some();
+            let has_message = error_obj.get("message").is_some();
+            let has_details = error_obj.get("details").is_some();
+            let details_has_error_info = error_obj["details"]
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|d| d.get("@type"))
+                .and_then(|t| t.as_str())
+                .is_some_and(|t| t.contains("ErrorInfo"));
+
+            if status == 404
+                && has_code
+                && has_status
+                && has_message
+                && has_details
+                && details_has_error_info
+            {
+                TestResult::pass(
+                    "wire-aip193-error",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "AIP-193 format with ErrorInfo (status={status}, code={}, reason={})",
+                        error_obj["code"], error_obj["details"][0]["reason"]
+                    ),
+                )
+            } else {
+                TestResult::fail(
+                    "wire-aip193-error",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "missing AIP-193 fields: code={has_code} status={has_status} message={has_message} details={has_details} errorInfo={details_has_error_info}: {body}"
+                    ),
+                )
+            }
+        }
+        Err(e) => TestResult::fail(
+            "wire-aip193-error",
+            start.elapsed().as_millis(),
+            &format!("request failed: {e}"),
+        ),
+    }
+}
+
+/// Test: Verify ListTasks includeArtifacts parameter works E2E.
+///
+/// Creates a task, then calls ListTasks with and without includeArtifacts,
+/// verifying artifacts are omitted by default and present when requested.
+pub async fn test_include_artifacts_parameter(ctx: &TestContext) -> TestResult {
+    let start = Instant::now();
+    let client = a2a_protocol_client::ClientBuilder::new(&ctx.analyzer_url)
+        .build()
+        .unwrap();
+
+    // First create a task with artifacts.
+    let send_result = client
+        .send_message(make_send_params("fn test_artifacts() {}"))
+        .await;
+    if send_result.is_err() {
+        return TestResult::fail(
+            "include-artifacts",
+            start.elapsed().as_millis(),
+            &format!("send failed: {:?}", send_result.err()),
+        );
+    }
+
+    // ListTasks without includeArtifacts (default false) - artifacts should be omitted.
+    let list_params_no_artifacts = a2a_protocol_types::params::ListTasksParams {
+        include_artifacts: None, // defaults to false
+        ..Default::default()
+    };
+    let list_result = client.list_tasks(list_params_no_artifacts).await;
+    match list_result {
+        Ok(resp) => {
+            let all_artifacts_none = resp.tasks.iter().all(|t| t.artifacts.is_none());
+            if !all_artifacts_none {
+                return TestResult::fail(
+                    "include-artifacts",
+                    start.elapsed().as_millis(),
+                    "artifacts should be None when includeArtifacts is not set",
+                );
+            }
+
+            // ListTasks WITH includeArtifacts=true - artifacts should be present.
+            let list_params_with = a2a_protocol_types::params::ListTasksParams {
+                include_artifacts: Some(true),
+                ..Default::default()
+            };
+            match client.list_tasks(list_params_with).await {
+                Ok(resp2) => {
+                    let any_has_artifacts = resp2.tasks.iter().any(|t| t.artifacts.is_some());
+                    if any_has_artifacts {
+                        TestResult::pass(
+                            "include-artifacts",
+                            start.elapsed().as_millis(),
+                            "artifacts omitted by default, present when requested",
+                        )
+                    } else {
+                        TestResult::fail(
+                            "include-artifacts",
+                            start.elapsed().as_millis(),
+                            "artifacts should be present when includeArtifacts=true",
+                        )
+                    }
+                }
+                Err(e) => TestResult::fail(
+                    "include-artifacts",
+                    start.elapsed().as_millis(),
+                    &format!("list with artifacts failed: {e}"),
+                ),
+            }
+        }
+        Err(e) => TestResult::fail(
+            "include-artifacts",
+            start.elapsed().as_millis(),
+            &format!("list failed: {e}"),
         ),
     }
 }

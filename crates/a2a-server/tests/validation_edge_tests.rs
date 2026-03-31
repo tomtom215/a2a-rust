@@ -105,7 +105,6 @@ impl AgentExecutor for ArtifactExecutor {
 fn make_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -124,7 +123,6 @@ fn make_params(text: &str) -> MessageSendParams {
 fn make_params_with_context(text: &str, ctx_id: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -236,7 +234,6 @@ async fn reject_empty_parts() {
 
     let params = MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,

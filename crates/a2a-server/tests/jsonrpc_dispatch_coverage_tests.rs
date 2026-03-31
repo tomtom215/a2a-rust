@@ -228,7 +228,8 @@ async fn options_without_cors_returns_204_no_cors_headers() {
 #[tokio::test]
 async fn agent_card_get_returns_card_when_configured() {
     let addr = start_server(make_dispatcher_with_agent_card()).await;
-    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+    let (status, body, _) =
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(status, 200, "agent card GET should return 200");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -238,7 +239,8 @@ async fn agent_card_get_returns_card_when_configured() {
 #[tokio::test]
 async fn agent_card_get_returns_404_when_not_configured() {
     let addr = start_server(make_plain_dispatcher()).await;
-    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+    let (status, body, _) =
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(
         status, 404,
@@ -253,7 +255,7 @@ async fn agent_card_get_returns_404_when_not_configured() {
 async fn agent_card_get_with_cors_has_cors_headers() {
     let addr = start_server(make_dispatcher_with_cors_and_card()).await;
     let (status, _, headers) =
-        http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(status, 200);
     assert_eq!(
@@ -366,7 +368,7 @@ async fn send_message_returns_completed_task() {
             "message": {
                 "messageId": "msg-1",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "hello"}]
+                "parts": [{"text": "hello"}]
             }
         }
     });
@@ -433,7 +435,7 @@ async fn send_message_in_batch_returns_result() {
             "message": {
                 "messageId": "msg-batch",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "hello from batch"}]
+                "parts": [{"text": "hello from batch"}]
             }
         }
     }]);
@@ -768,7 +770,7 @@ async fn send_streaming_message_returns_sse() {
             "message": {
                 "messageId": "msg-stream",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "hello stream"}]
+                "parts": [{"text": "hello stream"}]
             }
         }
     });
@@ -1028,7 +1030,7 @@ async fn agent_card_404_with_cors_has_cors_headers() {
     let dispatcher = make_dispatcher_with_cors(); // no agent card configured
     let addr = start_server(dispatcher).await;
     let (status, _, headers) =
-        http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(status, 404);
     assert!(
@@ -1050,7 +1052,7 @@ async fn send_streaming_message_in_batch_returns_error() {
             "message": {
                 "messageId": "msg-batch-stream",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "hello"}]
+                "parts": [{"text": "hello"}]
             }
         }
     }]);
@@ -1231,7 +1233,7 @@ async fn subscribe_to_active_task_returns_sse() {
             "message": {
                 "messageId": "msg-sub-setup",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "hello"}]
+                "parts": [{"text": "hello"}]
             }
         }
     });

@@ -147,29 +147,26 @@ pub struct OAuth2SecurityScheme {
 
 /// Available OAuth 2.0 flows for an [`OAuth2SecurityScheme`].
 ///
-/// Mirrors the OpenAPI 3.x `OAuthFlows` object.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// Per the proto definition, this is a `oneof flow` — exactly one flow type
+/// can be specified. Serialized as an externally tagged enum in JSON.
+#[non_exhaustive]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OAuthFlows {
+pub enum OAuthFlows {
     /// Authorization code flow.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub authorization_code: Option<AuthorizationCodeFlow>,
+    AuthorizationCode(AuthorizationCodeFlow),
 
     /// Client credentials flow.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_credentials: Option<ClientCredentialsFlow>,
+    ClientCredentials(ClientCredentialsFlow),
 
     /// Device authorization flow (RFC 8628).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device_code: Option<DeviceCodeFlow>,
+    DeviceCode(DeviceCodeFlow),
 
-    /// Implicit flow (deprecated in OAuth 2.1 but retained for compatibility).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub implicit: Option<ImplicitFlow>,
+    /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
+    Implicit(ImplicitFlow),
 
-    /// Resource owner password credentials flow (deprecated but present in spec).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub password: Option<PasswordOAuthFlow>,
+    /// Resource owner password credentials flow (deprecated).
+    Password(PasswordOAuthFlow),
 }
 
 /// OAuth 2.0 authorization code flow.
@@ -335,17 +332,11 @@ mod tests {
     #[test]
     fn oauth2_scheme_roundtrip() {
         let scheme = SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme {
-            flows: OAuthFlows {
-                authorization_code: None,
-                client_credentials: Some(ClientCredentialsFlow {
-                    token_url: "https://auth.example.com/token".into(),
-                    refresh_url: None,
-                    scopes: HashMap::from([("read".into(), "Read access".into())]),
-                }),
-                device_code: None,
-                implicit: None,
-                password: None,
-            },
+            flows: OAuthFlows::ClientCredentials(ClientCredentialsFlow {
+                token_url: "https://auth.example.com/token".into(),
+                refresh_url: None,
+                scopes: HashMap::from([("read".into(), "Read access".into())]),
+            }),
             oauth2_metadata_url: None,
             description: None,
         }));
@@ -353,18 +344,16 @@ mod tests {
         assert!(json.contains("\"type\":\"oauth2\""));
         let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
         match &back {
-            SecurityScheme::OAuth2(o) => {
-                let cc = o
-                    .flows
-                    .client_credentials
-                    .as_ref()
-                    .expect("client_credentials");
-                assert_eq!(cc.token_url, "https://auth.example.com/token");
-                assert_eq!(
-                    cc.scopes.get("read").map(String::as_str),
-                    Some("Read access")
-                );
-            }
+            SecurityScheme::OAuth2(o) => match &o.flows {
+                OAuthFlows::ClientCredentials(cc) => {
+                    assert_eq!(cc.token_url, "https://auth.example.com/token");
+                    assert_eq!(
+                        cc.scopes.get("read").map(String::as_str),
+                        Some("Read access")
+                    );
+                }
+                _ => panic!("expected ClientCredentials flow"),
+            },
             _ => panic!("expected OAuth2 variant"),
         }
     }
@@ -424,17 +413,11 @@ mod tests {
 
     #[test]
     fn wire_format_password_oauth_flow() {
-        let flows = OAuthFlows {
-            authorization_code: None,
-            client_credentials: None,
-            device_code: None,
-            implicit: None,
-            password: Some(PasswordOAuthFlow {
-                token_url: "https://auth.example.com/token".into(),
-                refresh_url: None,
-                scopes: HashMap::from([("read".into(), "Read access".into())]),
-            }),
-        };
+        let flows = OAuthFlows::Password(PasswordOAuthFlow {
+            token_url: "https://auth.example.com/token".into(),
+            refresh_url: None,
+            scopes: HashMap::from([("read".into(), "Read access".into())]),
+        });
         let json = serde_json::to_string(&flows).unwrap();
         assert!(
             json.contains("\"password\""),
@@ -442,10 +425,11 @@ mod tests {
         );
 
         let back: OAuthFlows = serde_json::from_str(&json).unwrap();
-        assert!(back.password.is_some());
-        assert_eq!(
-            back.password.unwrap().token_url,
-            "https://auth.example.com/token"
-        );
+        match back {
+            OAuthFlows::Password(p) => {
+                assert_eq!(p.token_url, "https://auth.example.com/token");
+            }
+            _ => panic!("expected Password flow"),
+        }
     }
 }

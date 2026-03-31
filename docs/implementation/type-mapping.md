@@ -34,23 +34,23 @@ All `Option<T>` fields use `#[serde(skip_serializing_if = "Option::is_none")]`.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskState {
-    #[serde(rename = "unspecified", alias = "TASK_STATE_UNSPECIFIED")]
+    #[serde(rename = "TASK_STATE_UNSPECIFIED", alias = "unspecified")]
     Unspecified,       // proto default (0-value)
-    #[serde(rename = "submitted", alias = "TASK_STATE_SUBMITTED")]
+    #[serde(rename = "TASK_STATE_SUBMITTED", alias = "submitted")]
     Submitted,
-    #[serde(rename = "working", alias = "TASK_STATE_WORKING")]
+    #[serde(rename = "TASK_STATE_WORKING", alias = "working")]
     Working,
-    #[serde(rename = "input-required", alias = "TASK_STATE_INPUT_REQUIRED")]
+    #[serde(rename = "TASK_STATE_INPUT_REQUIRED", alias = "input-required")]
     InputRequired,
-    #[serde(rename = "auth-required", alias = "TASK_STATE_AUTH_REQUIRED")]
+    #[serde(rename = "TASK_STATE_AUTH_REQUIRED", alias = "auth-required")]
     AuthRequired,
-    #[serde(rename = "completed", alias = "TASK_STATE_COMPLETED")]
+    #[serde(rename = "TASK_STATE_COMPLETED", alias = "completed")]
     Completed,
-    #[serde(rename = "failed", alias = "TASK_STATE_FAILED")]
+    #[serde(rename = "TASK_STATE_FAILED", alias = "failed")]
     Failed,
-    #[serde(rename = "canceled", alias = "TASK_STATE_CANCELED")]
+    #[serde(rename = "TASK_STATE_CANCELED", alias = "canceled")]
     Canceled,
-    #[serde(rename = "rejected", alias = "TASK_STATE_REJECTED")]
+    #[serde(rename = "TASK_STATE_REJECTED", alias = "rejected")]
     Rejected,
 }
 ```
@@ -77,7 +77,7 @@ Terminal states: `Completed | Failed | Canceled | Rejected`.
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-In v1.0, `StreamResponse` uses externally-tagged serialization: `{"task": {...}}`. `SendMessageResponse` uses a custom `Deserialize` impl that discriminates on the presence of the `role` field (present on `Message`, absent on `Task`), avoiding the error-swallowing behavior of serde `untagged`.
+In v1.0, both `StreamResponse` and `SendMessageResponse` use externally-tagged serialization: `{"task": {...}}`, `{"message": {...}}`, `{"statusUpdate": {...}}`, etc.
 
 ---
 
@@ -92,9 +92,9 @@ pub enum MessageRole {
     #[serde(rename = "ROLE_UNSPECIFIED", alias = "unspecified")]
     Unspecified,  // proto default (0-value)
     #[serde(rename = "ROLE_USER", alias = "user")]
-    User,
+    User,         // serializes as "ROLE_USER", accepts "user" as legacy alias
     #[serde(rename = "ROLE_AGENT", alias = "agent")]
-    Agent,
+    Agent,        // serializes as "ROLE_AGENT", accepts "agent" as legacy alias
 }
 ```
 
@@ -112,25 +112,22 @@ pub enum MessageRole {
 | `metadata` | `metadata` | `Option<serde_json::Value>` | No |
 
 
-In v1.0, enclosing enums use externally-tagged serialization: `{"message": {...}}`. There is no explicit `kind` field.
+In v1.0, enclosing enums (`SendMessageResponse`, `StreamResponse`) use externally-tagged serialization: `{"message": {...}}`, `{"task": {...}}`, etc.
 
-### `PartContent` (discriminated union, tag = `"type"`)
+### `PartContent` (flat oneof — field presence discriminates variants)
 
 ```rust
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "type")]
 pub enum PartContent {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "file")]
-    File { file: FileContent },
-    #[serde(rename = "data")]
-    Data { data: serde_json::Value },
+    Text(String),           // wire: {"text": "..."}
+    Raw(String),            // wire: {"raw": "base64...", "filename": "f.png", "mediaType": "image/png"}
+    Url(String),            // wire: {"url": "https://..."}
+    Data(serde_json::Value), // wire: {"data": {...}}
 }
 ```
 
-`Part` is a wrapper struct containing `PartContent` plus optional `metadata`.
+`Part` is a wrapper struct containing `PartContent` plus optional `metadata`, `filename`, and `media_type`.
 
 ### `TextPart`
 
@@ -474,18 +471,17 @@ Same fields as `GetPushConfigParams`.
 
 ## `responses.rs`
 
-### `SendMessageResponse` (custom deserializer — either Task or Message, discriminated by `role` field presence)
+### `SendMessageResponse` (externally tagged — `{"task":{...}}` or `{"message":{...}}`)
 
 ```rust
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {
     Task(Task),
     Message(Message),
 }
-// Custom Serialize: serializes the inner value directly (untagged wire format).
-// Custom Deserialize: checks for "role" field to distinguish Message from Task,
-// avoiding serde #[serde(untagged)] which swallows inner deserialization errors.
+// Externally tagged: each JSON object has a single key ("task" or "message") wrapping the variant value.
 ```
 
 ### `TaskListResponse`
@@ -575,13 +571,14 @@ Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResp
 | Pattern | Usage |
 |---|---|
 | `#[serde(rename_all = "camelCase")]` | All protocol structs (spec uses camelCase) |
-| `#[serde(rename = "...", alias = "TASK_STATE_...")]` | `TaskState` enum (lowercase primary, SCREAMING_SNAKE_CASE alias) |
-| `#[serde(rename = "ROLE_...", alias = "...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE primary, lowercase alias) |
+| `#[serde(rename = "TASK_STATE_...", alias = "...")]` | `TaskState` enum (SCREAMING_SNAKE_CASE primary, lowercase alias for backward compat) |
+| `#[serde(rename = "ROLE_...", alias = "...")]` | `MessageRole` enum (SCREAMING_SNAKE_CASE primary, lowercase alias for backward compat) |
 | `#[serde(rename_all = "lowercase")]` | `ApiKeyLocation` |
-| `#[serde(tag = "type")]` | `PartContent`, `SecurityScheme` |
+| `#[serde(tag = "type")]` | `SecurityScheme` |
+| Flat oneof (custom serde) | `PartContent` (field presence discriminates variants) |
 | `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged) |
 | `#[serde(untagged)]` | `JsonRpcResponse<T>` |
-| Custom `Deserialize` impl | `SendMessageResponse` (discriminates on `role` field presence, avoids `untagged` error swallowing) |
+| `#[serde(rename_all = "camelCase")]` | `SendMessageResponse` (externally tagged: `{"task":{...}}` or `{"message":{...}}`) |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All `Option<T>` fields |
 | `#[serde(rename = "in")]` | `ApiKeySecurityScheme.location` (`in` is a keyword) |
 | `#[serde(default)]` | Boolean fields defaulting to `false` |

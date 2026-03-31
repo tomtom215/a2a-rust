@@ -78,6 +78,12 @@ impl RequestHandler {
                     }
                 }
             }
+
+            // Per Section 3.2.2: blocking SendMessage MUST return when the task
+            // reaches a terminal OR interrupted state (INPUT_REQUIRED, AUTH_REQUIRED).
+            if last_task.status.state.is_terminal() || last_task.status.state.is_interrupted() {
+                break;
+            }
         }
 
         Ok(last_task)

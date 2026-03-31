@@ -100,8 +100,10 @@ async fn streaming_mode_background_processor_updates_store() {
     // Give background processor time to process all events.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
+    let mut params = default_list_params();
+    params.include_artifacts = Some(true);
     let list = handler
-        .on_list_tasks(default_list_params(), None)
+        .on_list_tasks(params, None)
         .await
         .expect("list tasks");
 
@@ -343,8 +345,10 @@ async fn streaming_mode_background_drains_after_executor_done() {
     let mut found = false;
     for _ in 0..40 {
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let mut params = default_list_params();
+        params.include_artifacts = Some(true);
         let list = handler
-            .on_list_tasks(default_list_params(), None)
+            .on_list_tasks(params, None)
             .await
             .expect("list tasks");
         if list

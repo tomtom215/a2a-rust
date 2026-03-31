@@ -6,7 +6,7 @@
 //! Agent card and capability discovery types.
 //!
 //! The [`AgentCard`] is the root discovery document served by an A2A agent at
-//! `/.well-known/agent.json`. It describes the agent's identity,
+//! `/.well-known/agent-card.json`. It describes the agent's identity,
 //! capabilities, skills, security requirements, and supported interfaces.
 //!
 //! # v1.0 changes
@@ -158,7 +158,7 @@ pub struct AgentSkill {
 
 /// The root discovery document for an A2A agent.
 ///
-/// Served at `/.well-known/agent.json`. Clients fetch this document to
+/// Served at `/.well-known/agent-card.json`. Clients fetch this document to
 /// discover the agent's interfaces, capabilities, skills, and security
 /// requirements before establishing a session.
 ///

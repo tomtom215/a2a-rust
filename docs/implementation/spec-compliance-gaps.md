@@ -49,8 +49,8 @@ Our variant `Pending` serializes as `"TASK_STATE_PENDING"`. The proto and JSON s
 #[serde(rename = "TASK_STATE_PENDING")]
 Pending,
 
-// CORRECT (lowercase primary, SCREAMING_SNAKE alias for backward compat):
-#[serde(rename = "submitted", alias = "TASK_STATE_SUBMITTED")]
+// CORRECT (SCREAMING_SNAKE_CASE primary, lowercase alias for backward compat):
+#[serde(rename = "TASK_STATE_SUBMITTED", alias = "submitted")]
 Submitted,
 ```
 

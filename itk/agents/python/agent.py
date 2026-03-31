@@ -33,6 +33,7 @@ AGENT_CARD = {
     "url": "http://0.0.0.0:{port}",
     "version": "1.0.0",
     "capabilities": {"streaming": True, "pushNotifications": True},
+    "supportedInterfaces": ["a2a"],
     "defaultInputModes": ["text"],
     "defaultOutputModes": ["text"],
     "skills": [
@@ -48,28 +49,28 @@ AGENT_CARD = {
 
 def extract_text(message: dict) -> str:
     parts = message.get("parts", [])
-    return "".join(p.get("text", "") for p in parts if p.get("type") == "text")
+    return "".join(p.get("text", "") for p in parts if "text" in p)
 
 
 def process_message(params: dict) -> dict:
     text = extract_text(params.get("message", {}))
     task_id = str(uuid.uuid4())
-    context_id = params.get("contextId") or str(uuid.uuid4())
+    context_id = (params.get("message", {}).get("contextId") or params.get("contextId") or str(uuid.uuid4()))
 
     task = {
         "id": task_id,
         "contextId": context_id,
-        "status": {"state": "completed"},
+        "status": {"state": "TASK_STATE_COMPLETED"},
         "history": [params.get("message", {})],
         "artifacts": [
             {
                 "artifactId": str(uuid.uuid4()),
-                "parts": [{"type": "text", "text": f"[Python Echo] {text}"}],
+                "parts": [{"text": f"[Python Echo] {text}"}],
             }
         ],
     }
     tasks[task_id] = task
-    return task
+    return {"task": task}
 
 
 def jsonrpc_error(req_id, code: int, message: str) -> dict:
@@ -96,51 +97,51 @@ async def jsonrpc_handler(request: Request) -> JSONResponse:
     if body.get("jsonrpc") != "2.0":
         return JSONResponse(jsonrpc_error(req_id, -32600, "Invalid Request"))
 
-    if method in ("message/send", "message/stream"):
+    if method in ("SendMessage", "SendStreamingMessage"):
         if not params.get("message"):
             return JSONResponse(
                 jsonrpc_error(req_id, -32602, "Invalid params: missing message field")
             )
         return JSONResponse(jsonrpc_result(req_id, process_message(params)))
 
-    elif method == "tasks/get":
+    elif method == "GetTask":
         task = tasks.get(params.get("id", ""))
         if task:
             return JSONResponse(jsonrpc_result(req_id, task))
         return JSONResponse(jsonrpc_error(req_id, -32001, "Task not found"))
 
-    elif method == "tasks/list":
+    elif method == "ListTasks":
         return JSONResponse(
             jsonrpc_result(req_id, {"tasks": list(tasks.values())})
         )
 
-    elif method == "tasks/cancel":
+    elif method == "CancelTask":
         task = tasks.get(params.get("id", ""))
         if not task:
             return JSONResponse(jsonrpc_error(req_id, -32001, "Task not found"))
-        task["status"] = {"state": "canceled"}
+        task["status"] = {"state": "TASK_STATE_CANCELED"}
         return JSONResponse(jsonrpc_result(req_id, task))
 
-    elif method == "tasks/pushNotificationConfig/set":
+    elif method == "CreateTaskPushNotificationConfig":
         cfg_id = params.get("id") or str(uuid.uuid4())
         config = {**params, "id": cfg_id}
         task_id = params.get("taskId", "")
         push_configs[f"{task_id}:{cfg_id}"] = config
         return JSONResponse(jsonrpc_result(req_id, config))
 
-    elif method == "tasks/pushNotificationConfig/get":
+    elif method == "GetTaskPushNotificationConfig":
         key = f"{params.get('taskId', '')}:{params.get('id', '')}"
         cfg = push_configs.get(key)
         if cfg:
             return JSONResponse(jsonrpc_result(req_id, cfg))
         return JSONResponse(jsonrpc_error(req_id, -32001, "Config not found"))
 
-    elif method == "tasks/pushNotificationConfig/list":
+    elif method == "ListTaskPushNotificationConfigs":
         task_id = params.get("taskId", "")
         configs = [c for c in push_configs.values() if c.get("taskId") == task_id]
         return JSONResponse(jsonrpc_result(req_id, configs))
 
-    elif method == "tasks/pushNotificationConfig/delete":
+    elif method == "DeleteTaskPushNotificationConfig":
         key = f"{params.get('taskId', '')}:{params.get('id', '')}"
         push_configs.pop(key, None)
         return JSONResponse(jsonrpc_result(req_id, {}))
@@ -175,12 +176,12 @@ async def rest_cancel_task(request: Request) -> JSONResponse:
         return JSONResponse(
             {"code": -32001, "message": "Task not found"}, status_code=404
         )
-    task["status"] = {"state": "canceled"}
+    task["status"] = {"state": "TASK_STATE_CANCELED"}
     return JSONResponse(task)
 
 
 async def rest_push_config_collection(request: Request) -> JSONResponse:
-    """Handles both POST (create) and GET (list) on /tasks/{task_id}/pushNotificationConfig."""
+    """Handles both POST (create) and GET (list) on /tasks/{task_id}/pushNotificationConfigs."""
     task_id = request.path_params["task_id"]
     if request.method == "POST":
         body = await request.json()
@@ -212,6 +213,13 @@ async def rest_delete_push_config(request: Request) -> JSONResponse:
     return JSONResponse({})
 
 
+async def rest_push_config_item(request: Request) -> JSONResponse:
+    """Routes GET and DELETE on /tasks/{task_id}/pushNotificationConfigs/{config_id}."""
+    if request.method == "DELETE":
+        return await rest_delete_push_config(request)
+    return await rest_get_push_config(request)
+
+
 async def catch_all(request: Request) -> JSONResponse:
     return JSONResponse(
         {"code": -32601, "message": "Not found"}, status_code=404
@@ -222,29 +230,24 @@ def create_app(port: int) -> Starlette:
     AGENT_CARD["url"] = f"http://0.0.0.0:{port}"
 
     routes = [
-        Route("/.well-known/agent.json", agent_card, methods=["GET"]),
+        Route("/.well-known/agent-card.json", agent_card, methods=["GET"]),
         # JSON-RPC
         Route("/", jsonrpc_handler, methods=["POST"]),
         # REST endpoints
-        Route("/message/send", rest_send_message, methods=["POST"]),
-        Route("/message/stream", rest_send_message, methods=["POST"]),
+        Route("/message:send", rest_send_message, methods=["POST"]),
+        Route("/message:stream", rest_send_message, methods=["POST"]),
         Route("/tasks", rest_list_tasks, methods=["GET"]),
         Route("/tasks/{task_id}", rest_get_task, methods=["GET"]),
-        Route("/tasks/{task_id}/cancel", rest_cancel_task, methods=["POST"]),
+        Route("/tasks/{task_id}:cancel", rest_cancel_task, methods=["POST"]),
         Route(
-            "/tasks/{task_id}/pushNotificationConfig/{config_id}",
-            rest_get_push_config,
-            methods=["GET"],
+            "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+            rest_push_config_item,
+            methods=["GET", "DELETE"],
         ),
         Route(
-            "/tasks/{task_id}/pushNotificationConfig",
+            "/tasks/{task_id}/pushNotificationConfigs",
             rest_push_config_collection,
             methods=["GET", "POST"],
-        ),
-        Route(
-            "/tasks/{task_id}/pushNotificationConfig/{config_id}/delete",
-            rest_delete_push_config,
-            methods=["POST"],
         ),
         # Catch-all
         Route("/{path:path}", catch_all),

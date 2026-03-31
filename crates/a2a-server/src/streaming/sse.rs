@@ -111,8 +111,11 @@ impl hyper::body::Body for ChannelBody {
 
 /// Builds an SSE streaming response from an event queue reader.
 ///
-/// Each event is wrapped in a JSON-RPC 2.0 success response envelope so that
-/// clients can uniformly parse SSE frames regardless of transport binding.
+/// When `jsonrpc_envelope` is `true` (JSON-RPC binding), each event is wrapped
+/// in a JSON-RPC 2.0 success response: `{"jsonrpc":"2.0","id":0,"result":{...}}`.
+///
+/// When `jsonrpc_envelope` is `false` (REST/HTTP binding), each event is
+/// a bare `StreamResponse` JSON object per Section 11.7 of the spec.
 ///
 /// Spawns a background task that:
 /// 1. Reads events from `reader` and serializes them as SSE `message` frames.
@@ -125,6 +128,7 @@ pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
     keep_alive_interval: Option<Duration>,
     channel_capacity: Option<usize>,
+    jsonrpc_envelope: bool,
 ) -> hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>> {
     trace_info!("building SSE response stream");
     let interval = keep_alive_interval.unwrap_or(DEFAULT_KEEP_ALIVE);
@@ -145,15 +149,20 @@ pub fn build_sse_response(
                 event = reader.read() => {
                     match event {
                         Some(Ok(stream_response)) => {
-                            let envelope = JsonRpcSuccessResponse {
-                                jsonrpc: JsonRpcVersion,
-                                id: JsonRpcId::default(),
-                                result: stream_response,
+                            let data = if jsonrpc_envelope {
+                                let envelope = JsonRpcSuccessResponse {
+                                    jsonrpc: JsonRpcVersion,
+                                    id: JsonRpcId::default(),
+                                    result: stream_response,
+                                };
+                                serde_json::to_string(&envelope)
+                            } else {
+                                // REST binding: bare StreamResponse per Section 11.7
+                                serde_json::to_string(&stream_response)
                             };
-                            let data = match serde_json::to_string(&envelope) {
+                            let data = match data {
                                 Ok(d) => d,
                                 Err(e) => {
-                                    // PR-6: Send error event before closing.
                                     let err_msg = format!("{{\"error\":\"serialization failed: {e}\"}}");
                                     let _ = body_writer.send_event("error", &err_msg).await;
                                     break;
@@ -350,7 +359,7 @@ mod tests {
     async fn build_sse_response_has_correct_headers() {
         let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, None, None);
+        let response = build_sse_response(reader, None, None, true);
 
         assert_eq!(response.status(), 200, "status should be 200 OK");
         assert_eq!(
@@ -384,7 +393,7 @@ mod tests {
         // Covers lines 128-129: custom keep_alive_interval and channel_capacity.
         let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, Some(Duration::from_secs(5)), Some(16));
+        let response = build_sse_response(reader, Some(Duration::from_secs(5)), Some(16), true);
 
         assert_eq!(response.status(), 200);
         assert_eq!(
@@ -405,7 +414,7 @@ mod tests {
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, None, None);
+        let response = build_sse_response(reader, None, None, true);
 
         // Drop the response body (simulating client disconnect).
         drop(response);
@@ -440,7 +449,7 @@ mod tests {
         // Close the writer immediately — reader should return None.
         drop(writer);
 
-        let mut response = build_sse_response(reader, None, None);
+        let mut response = build_sse_response(reader, None, None, true);
 
         // The stream should end (return None after all events are consumed).
         let frame = response.body_mut().frame().await;
@@ -470,7 +479,7 @@ mod tests {
         tx.send(Err(err)).expect("send should succeed");
         drop(tx);
 
-        let mut response = build_sse_response(reader, None, None);
+        let mut response = build_sse_response(reader, None, None, true);
 
         let frame = response
             .body_mut()
@@ -511,7 +520,7 @@ mod tests {
         writer.write(event).await.expect("write should succeed");
         drop(writer);
 
-        let mut response = build_sse_response(reader, None, None);
+        let mut response = build_sse_response(reader, None, None, true);
 
         // Collect the first data frame from the body.
         let frame = response

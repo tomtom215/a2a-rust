@@ -109,7 +109,7 @@ jobs:
       - name: Wait for agent to be ready
         run: |
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:${{ matrix.port }}/.well-known/agent.json > /dev/null 2>&1; then
+            if curl -sf http://127.0.0.1:${{ matrix.port }}/.well-known/agent-card.json > /dev/null 2>&1; then
               echo "Agent ready on port ${{ matrix.port }}"
               exit 0
             fi

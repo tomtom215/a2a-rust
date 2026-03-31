@@ -16,7 +16,7 @@ let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 ### Features
 
 - **Single endpoint** — All methods go to `/` as POST requests
-- **Agent card** — `GET /.well-known/agent.json` returns the agent card (same as REST)
+- **Agent card** — `GET /.well-known/agent-card.json` returns the agent card (same as REST)
 - **Batch support** — Handles JSON-RPC batch arrays
 - **ID preservation** — Echoes back the exact request ID (string, number, float, null). The client validates that response IDs match request IDs.
 - **Streaming** — `SendStreamingMessage` and `SubscribeToTask` return SSE streams
@@ -73,7 +73,7 @@ let dispatcher = Arc::new(RestDispatcher::new(handler));
 | `GET` | `/tasks/{id}/pushNotificationConfigs` | ListPushConfigs |
 | `GET` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | GetPushConfig |
 | `DELETE` | `/tasks/{id}/pushNotificationConfigs/{cfgId}` | DeletePushConfig |
-| `GET` | `/.well-known/agent.json` | AgentCard |
+| `GET` | `/.well-known/agent-card.json` | AgentCard |
 
 ### Multi-Tenancy
 
@@ -158,7 +158,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.3", features = ["websocket"] }
+a2a-protocol-server = { version = "0.4", features = ["websocket"] }
 ```
 
 ```rust
@@ -192,7 +192,7 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.3", features = ["grpc"] }
+a2a-protocol-server = { version = "0.4", features = ["grpc"] }
 ```
 
 ```rust
@@ -252,7 +252,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.3", features = ["axum"] }
+a2a-protocol-server = { version = "0.4", features = ["axum"] }
 ```
 
 ```rust

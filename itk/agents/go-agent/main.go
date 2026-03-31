@@ -32,7 +32,6 @@ var (
 // --- Types ---
 
 type Part struct {
-	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
 }
 
@@ -40,6 +39,7 @@ type Message struct {
 	Role      string `json:"role"`
 	Parts     []Part `json:"parts"`
 	MessageID string `json:"messageId"`
+	ContextID string `json:"contextId,omitempty"`
 }
 
 type TaskStatus struct {
@@ -93,13 +93,18 @@ type TaskListResponse struct {
 	Tasks []Task `json:"tasks"`
 }
 
+type SendMessageResponse struct {
+	Task Task `json:"task"`
+}
+
 // Agent Card
 type AgentCard struct {
 	Name               string      `json:"name"`
 	Description        string      `json:"description"`
 	URL                string      `json:"url"`
 	Version            string      `json:"version"`
-	Capabilities       interface{} `json:"capabilities"`
+	Capabilities        interface{} `json:"capabilities"`
+	SupportedInterfaces []string   `json:"supportedInterfaces"`
 	DefaultInputModes  []string    `json:"defaultInputModes"`
 	DefaultOutputModes []string    `json:"defaultOutputModes"`
 	Skills             []Skill     `json:"skills"`
@@ -151,7 +156,7 @@ func jsonNotFoundHandler(next http.Handler) http.Handler {
 func extractText(msg Message) string {
 	var texts []string
 	for _, p := range msg.Parts {
-		if p.Type == "text" {
+		if p.Text != "" {
 			texts = append(texts, p.Text)
 		}
 	}
@@ -161,7 +166,10 @@ func extractText(msg Message) string {
 func processMessage(params SendParams) Task {
 	text := extractText(params.Message)
 	taskID := uuid.New().String()
-	contextID := params.ContextID
+	contextID := params.Message.ContextID
+	if contextID == "" {
+		contextID = params.ContextID
+	}
 	if contextID == "" {
 		contextID = uuid.New().String()
 	}
@@ -169,11 +177,11 @@ func processMessage(params SendParams) Task {
 	task := Task{
 		ID:        taskID,
 		ContextID: contextID,
-		Status:    TaskStatus{State: "completed"},
+		Status:    TaskStatus{State: "TASK_STATE_COMPLETED"},
 		History:   []Message{params.Message},
 		Artifacts: []Artifact{{
 			ArtifactID: uuid.New().String(),
-			Parts:      []Part{{Type: "text", Text: fmt.Sprintf("[Go Echo] %s", text)}},
+			Parts:      []Part{{Text: fmt.Sprintf("[Go Echo] %s", text)}},
 		}},
 	}
 
@@ -189,7 +197,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch req.Method {
-	case "message/send", "message/stream":
+	case "SendMessage", "SendStreamingMessage":
 		var params SendParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32602, Message: "Invalid params"})
@@ -200,9 +208,9 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		task := processMessage(params)
-		writeJsonRpc(w, req.ID, task, nil)
+		writeJsonRpc(w, req.ID, SendMessageResponse{Task: task}, nil)
 
-	case "tasks/get":
+	case "GetTask":
 		var params struct{ ID string `json:"id"` }
 		json.Unmarshal(req.Params, &params)
 		if val, ok := tasks.Load(params.ID); ok {
@@ -211,7 +219,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
 		}
 
-	case "tasks/list":
+	case "ListTasks":
 		var allTasks []Task
 		tasks.Range(func(_, v interface{}) bool {
 			allTasks = append(allTasks, v.(Task))
@@ -222,19 +230,19 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJsonRpc(w, req.ID, TaskListResponse{Tasks: allTasks}, nil)
 
-	case "tasks/cancel":
+	case "CancelTask":
 		var params struct{ ID string `json:"id"` }
 		json.Unmarshal(req.Params, &params)
 		if val, ok := tasks.Load(params.ID); ok {
 			task := val.(Task)
-			task.Status = TaskStatus{State: "canceled"}
+			task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
 			tasks.Store(params.ID, task)
 			writeJsonRpc(w, req.ID, task, nil)
 		} else {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
 		}
 
-	case "tasks/pushNotificationConfig/set":
+	case "CreateTaskPushNotificationConfig":
 		var cfg PushConfig
 		json.Unmarshal(req.Params, &cfg)
 		if cfg.ID == "" {
@@ -244,7 +252,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		pushCfgs.Store(key, cfg)
 		writeJsonRpc(w, req.ID, cfg, nil)
 
-	case "tasks/pushNotificationConfig/get":
+	case "GetTaskPushNotificationConfig":
 		var params struct {
 			TaskID string `json:"taskId"`
 			ID     string `json:"id"`
@@ -257,7 +265,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Config not found"})
 		}
 
-	case "tasks/pushNotificationConfig/list":
+	case "ListTaskPushNotificationConfigs":
 		var params struct{ TaskID string `json:"taskId"` }
 		json.Unmarshal(req.Params, &params)
 		var configs []PushConfig
@@ -273,7 +281,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJsonRpc(w, req.ID, configs, nil)
 
-	case "tasks/pushNotificationConfig/delete":
+	case "DeleteTaskPushNotificationConfig":
 		var params struct {
 			TaskID string `json:"taskId"`
 			ID     string `json:"id"`
@@ -307,7 +315,8 @@ func main() {
 		Description:        "A2A ITK echo agent implemented in Go",
 		URL:                fmt.Sprintf("http://0.0.0.0:%d", *port),
 		Version:            "1.0.0",
-		Capabilities:       map[string]bool{"streaming": true, "pushNotifications": true},
+		Capabilities:        map[string]bool{"streaming": true, "pushNotifications": true},
+		SupportedInterfaces: []string{"a2a"},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Skills: []Skill{{
@@ -321,7 +330,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Agent card
-	mux.HandleFunc("GET /.well-known/agent.json", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /.well-known/agent-card.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(agentCard)
 	})
@@ -330,20 +339,20 @@ func main() {
 	mux.HandleFunc("POST /", handleJsonRpc)
 
 	// REST endpoints
-	mux.HandleFunc("POST /message/send", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /message:send", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(task)
+		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
 	})
 
-	mux.HandleFunc("POST /message/stream", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /message:stream", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(task)
+		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
 	})
 
 	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, _ *http.Request) {
@@ -359,9 +368,18 @@ func main() {
 		json.NewEncoder(w).Encode(TaskListResponse{Tasks: allTasks})
 	})
 
-	// REST: Get task by ID
-	mux.HandleFunc("GET /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("id")
+	// REST: Get task by ID (must come after /tasks to avoid conflict)
+	// Note: Go's ServeMux can't handle {id}:cancel syntax, so we use a
+	// general /tasks/ handler and parse the path manually for :cancel/:subscribe
+	mux.HandleFunc("GET /tasks/{id...}", func(w http.ResponseWriter, r *http.Request) {
+		path := r.PathValue("id")
+		// Strip trailing :subscribe
+		if strings.HasSuffix(path, ":subscribe") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{})
+			return
+		}
+		taskID := path
 		if val, ok := tasks.Load(taskID); ok {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(val)
@@ -372,39 +390,47 @@ func main() {
 		}
 	})
 
-	// REST: Cancel task
-	mux.HandleFunc("POST /tasks/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("id")
-		if val, ok := tasks.Load(taskID); ok {
-			task := val.(Task)
-			task.Status = TaskStatus{State: "canceled"}
-			tasks.Store(taskID, task)
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(task)
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(404)
-			json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+	// REST: Cancel task (POST /tasks/{id}:cancel) and push config create
+	mux.HandleFunc("POST /tasks/{rest...}", func(w http.ResponseWriter, r *http.Request) {
+		rest := r.PathValue("rest")
+		if strings.HasSuffix(rest, ":cancel") {
+			taskID := strings.TrimSuffix(rest, ":cancel")
+			if val, ok := tasks.Load(taskID); ok {
+				task := val.(Task)
+				task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
+				tasks.Store(taskID, task)
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(task)
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(404)
+				json.NewEncoder(w).Encode(RpcError{Code: -32001, Message: "Task not found"})
+			}
+			return
 		}
-	})
-
-	// REST: Create push notification config
-	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
-		taskID := r.PathValue("taskId")
-		var cfg PushConfig
-		json.NewDecoder(r.Body).Decode(&cfg)
-		cfg.TaskID = taskID
-		if cfg.ID == "" {
-			cfg.ID = uuid.New().String()
+		// POST /tasks/{taskId}/pushNotificationConfigs
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) == 2 && parts[1] == "pushNotificationConfigs" {
+			taskID := parts[0]
+			var cfg PushConfig
+			json.NewDecoder(r.Body).Decode(&cfg)
+			cfg.TaskID = taskID
+			if cfg.ID == "" {
+				cfg.ID = uuid.New().String()
+			}
+			key := taskID + ":" + cfg.ID
+			pushCfgs.Store(key, cfg)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(cfg)
+			return
 		}
-		key := taskID + ":" + cfg.ID
-		pushCfgs.Store(key, cfg)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(cfg)
+		w.WriteHeader(404)
+		json.NewEncoder(w).Encode(RpcError{Code: -32601, Message: "Not found"})
 	})
 
-	// REST: Get push notification config by id
-	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig/{configId}", func(w http.ResponseWriter, r *http.Request) {
+	// REST: Get/List push notification configs
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
 		if val, ok := pushCfgs.Load(key); ok {
 			w.Header().Set("Content-Type", "application/json")
@@ -416,8 +442,7 @@ func main() {
 		}
 	})
 
-	// REST: List push notification configs for task
-	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs", func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("taskId")
 		var configs []PushConfig
 		pushCfgs.Range(func(_, v interface{}) bool {
@@ -435,7 +460,7 @@ func main() {
 	})
 
 	// REST: Delete push notification config
-	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig/{configId}/delete", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /tasks/{taskId}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
 		pushCfgs.Delete(key)
 		w.Header().Set("Content-Type", "application/json")

@@ -30,7 +30,7 @@ pub async fn test_full_orchestration(ctx: &TestContext) -> TestResult {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let PartContent::Text { text } = &part.content {
+                        if let PartContent::Text(text) = &part.content {
                             for line in text.lines().take(10) {
                                 println!("  {line}");
                             }
@@ -71,7 +71,7 @@ pub async fn test_health_orchestration(ctx: &TestContext) -> TestResult {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let PartContent::Text { text } = &part.content {
+                        if let PartContent::Text(text) = &part.content {
                             for line in text.lines() {
                                 println!("  {line}");
                             }
@@ -108,7 +108,6 @@ pub async fn test_message_metadata(ctx: &TestContext) -> TestResult {
 
     let params = MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,
@@ -171,7 +170,7 @@ pub async fn test_cancel_task(ctx: &TestContext) -> TestResult {
                     Ok(StreamResponse::ArtifactUpdate(ev)) => {
                         task_id = Some(ev.task_id.0.clone());
                         for part in &ev.artifact.parts {
-                            if let PartContent::Text { text } = &part.content {
+                            if let PartContent::Text(text) = &part.content {
                                 println!("  Build: {text}");
                             }
                         }
