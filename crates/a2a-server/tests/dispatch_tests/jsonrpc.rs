@@ -415,3 +415,60 @@ async fn jsonrpc_accepts_a2a_content_type() {
         "a2a+json should be accepted"
     );
 }
+
+// ── JSON-RPC streaming SSE event format verification ──────────────────────
+
+/// Verifies that JSON-RPC streaming SSE events are wrapped in a JSON-RPC
+/// envelope. Mirrors the REST test that checks for *bare* events.
+#[tokio::test]
+async fn jsonrpc_streaming_events_are_jsonrpc_enveloped() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    let rpc = JsonRpcRequest::with_params(
+        serde_json::json!(30),
+        "SendStreamingMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc).unwrap();
+
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 200);
+
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body_str = String::from_utf8_lossy(&body);
+
+    let data_lines: Vec<&str> = body_str
+        .lines()
+        .filter(|l| l.starts_with("data: "))
+        .map(|l| l.strip_prefix("data: ").unwrap())
+        .collect();
+
+    assert!(
+        !data_lines.is_empty(),
+        "SSE stream should contain data lines, got: {body_str}"
+    );
+
+    for data in &data_lines {
+        let parsed: serde_json::Value = serde_json::from_str(data)
+            .unwrap_or_else(|e| panic!("SSE data should be valid JSON: {e}\ndata: {data}"));
+
+        // JSON-RPC binding: must have jsonrpc envelope.
+        assert_eq!(
+            parsed.get("jsonrpc").and_then(|v| v.as_str()),
+            Some("2.0"),
+            "JSON-RPC SSE event must have jsonrpc: \"2.0\" envelope.\nGot: {data}"
+        );
+        assert!(
+            parsed.get("result").is_some(),
+            "JSON-RPC SSE event must have a result field.\nGot: {data}"
+        );
+    }
+}

@@ -80,9 +80,13 @@ fn bench_jsonrpc_stream(c: &mut Criterion) {
                 .stream_message(fixtures::send_params("bench-stream"))
                 .await
                 .expect("stream_message");
+            let mut count = 0u32;
             while let Some(event) = stream.next().await {
                 let _ = event.expect("stream event");
+                count += 1;
             }
+            // EchoExecutor emits: Task snapshot + Working + ArtifactUpdate + Completed = 4
+            assert!(count >= 3, "expected ≥3 stream events, got {count}");
         });
     });
 
@@ -133,9 +137,13 @@ fn bench_rest_stream(c: &mut Criterion) {
                 .stream_message(fixtures::send_params("bench-stream"))
                 .await
                 .expect("stream_message REST");
+            let mut count = 0u32;
             while let Some(event) = stream.next().await {
                 let _ = event.expect("stream event");
+                count += 1;
             }
+            // EchoExecutor emits: Task snapshot + Working + ArtifactUpdate + Completed = 4
+            assert!(count >= 3, "expected ≥3 REST stream events, got {count}");
         });
     });
 

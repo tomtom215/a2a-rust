@@ -66,11 +66,10 @@ impl RestTransport {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::with_status(
-            rx,
-            task_handle.abort_handle(),
-            actual_status,
-        ))
+        Ok(
+            EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
+                .with_jsonrpc_envelope(false),
+        )
     }
 }
 
@@ -155,7 +154,18 @@ mod tests {
 
     #[tokio::test]
     async fn execute_streaming_request_success_returns_event_stream() {
-        // Start a server that returns SSE data with a valid JSON-RPC wrapped StreamResponse.
+        use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+        use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+
+        // Build a bare StreamResponse SSE frame (REST binding — no JSON-RPC envelope).
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("t1"),
+            context_id: ContextId::new("c1"),
+            status: TaskStatus::new(TaskState::Completed),
+            metadata: None,
+        });
+        let sse_body = format!("data: {}\n\n", serde_json::to_string(&event).unwrap());
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
@@ -163,16 +173,19 @@ mod tests {
             loop {
                 let (stream, _) = listener.accept().await.unwrap();
                 let io = hyper_util::rt::TokioIo::new(stream);
+                let body = sse_body.clone();
                 tokio::spawn(async move {
-                    let service = hyper::service::service_fn(|_req| async {
-                        let sse_body = "data: {\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{\"status\":\"ok\"}}\n\n";
-                        Ok::<_, hyper::Error>(
-                            hyper::Response::builder()
-                                .status(200)
-                                .header("content-type", "text/event-stream")
-                                .body(Full::new(Bytes::from(sse_body)))
-                                .unwrap(),
-                        )
+                    let service = hyper::service::service_fn(move |_req| {
+                        let body = body.clone();
+                        async move {
+                            Ok::<_, hyper::Error>(
+                                hyper::Response::builder()
+                                    .status(200)
+                                    .header("content-type", "text/event-stream")
+                                    .body(Full::new(Bytes::from(body)))
+                                    .unwrap(),
+                            )
+                        }
                     });
                     let _ = hyper_util::server::conn::auto::Builder::new(
                         hyper_util::rt::TokioExecutor::new(),
@@ -193,13 +206,19 @@ mod tests {
             )
             .await
             .unwrap();
-        // The EventStream should yield at least one event from body_reader_task.
-        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+
+        // Verify the event deserializes correctly as bare StreamResponse.
+        let result = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
             .await
-            .expect("timed out waiting for event");
+            .expect("timed out waiting for event")
+            .expect("stream should yield an event")
+            .expect("event should parse as bare StreamResponse");
         assert!(
-            event.is_some(),
-            "expected at least one event from the stream"
+            matches!(
+                result,
+                StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Completed
+            ),
+            "event should be a Completed status update, got: {result:?}"
         );
     }
 }

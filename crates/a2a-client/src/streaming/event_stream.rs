@@ -70,6 +70,12 @@ pub struct EventStream {
     /// `send_streaming_request` call guarantees the server responded with a
     /// success status (typically HTTP 200).
     status_code: u16,
+    /// Whether SSE frames carry a JSON-RPC envelope around the `StreamResponse`.
+    ///
+    /// - `true` (default): each `data:` field is a `JsonRpcResponse<StreamResponse>`.
+    /// - `false`: each `data:` field is a bare `StreamResponse` (REST binding,
+    ///   per A2A spec Section 11.7).
+    jsonrpc_envelope: bool,
 }
 
 impl EventStream {
@@ -87,6 +93,7 @@ impl EventStream {
             done: false,
             abort_handle: None,
             status_code: 200,
+            jsonrpc_envelope: true,
         }
     }
 
@@ -106,6 +113,7 @@ impl EventStream {
             done: false,
             abort_handle: Some(abort_handle),
             status_code: 200,
+            jsonrpc_envelope: true,
         }
     }
 
@@ -123,7 +131,18 @@ impl EventStream {
             done: false,
             abort_handle: Some(abort_handle),
             status_code,
+            jsonrpc_envelope: true,
         }
+    }
+
+    /// Sets whether SSE frames are wrapped in a JSON-RPC envelope.
+    ///
+    /// When `false`, each SSE `data:` field is parsed as a bare
+    /// `StreamResponse` (REST binding). Default is `true` (JSON-RPC binding).
+    #[must_use]
+    pub(crate) const fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
+        self.jsonrpc_envelope = envelope;
+        self
     }
 
     /// Returns the HTTP status code from the response that established this stream.
@@ -187,27 +206,37 @@ impl EventStream {
     // ── internals ─────────────────────────────────────────────────────────────
 
     fn decode_frame(&mut self, data: &str) -> ClientResult<StreamResponse> {
-        // Each SSE frame's `data` is a JSON-RPC response carrying a StreamResponse.
-        let envelope: JsonRpcResponse<StreamResponse> =
-            serde_json::from_str(data).map_err(ClientError::Serialization)?;
+        if self.jsonrpc_envelope {
+            // JSON-RPC binding: each `data:` field is a JsonRpcResponse envelope.
+            let envelope: JsonRpcResponse<StreamResponse> =
+                serde_json::from_str(data).map_err(ClientError::Serialization)?;
 
-        match envelope {
-            JsonRpcResponse::Success(ok) => {
-                // Check for terminal event so callers don't need to.
-                if is_terminal(&ok.result) {
-                    self.done = true;
+            match envelope {
+                JsonRpcResponse::Success(ok) => {
+                    if is_terminal(&ok.result) {
+                        self.done = true;
+                    }
+                    Ok(ok.result)
                 }
-                Ok(ok.result)
+                JsonRpcResponse::Error(err) => {
+                    self.done = true;
+                    let a2a = a2a_protocol_types::A2aError::new(
+                        a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                            .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                        err.error.message,
+                    );
+                    Err(ClientError::Protocol(a2a))
+                }
             }
-            JsonRpcResponse::Error(err) => {
+        } else {
+            // REST binding: each `data:` field is a bare StreamResponse
+            // (per A2A spec Section 11.7).
+            let event: StreamResponse =
+                serde_json::from_str(data).map_err(ClientError::Serialization)?;
+            if is_terminal(&event) {
                 self.done = true;
-                let a2a = a2a_protocol_types::A2aError::new(
-                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
-                    err.error.message,
-                );
-                Err(ClientError::Protocol(a2a))
             }
+            Ok(event)
         }
     }
 }
@@ -585,6 +614,140 @@ mod tests {
         let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
             .await
             .expect("timed out waiting for stream end");
+        assert!(end.is_none());
+    }
+
+    // ── Bare StreamResponse (REST binding) tests ─────────────────────────
+
+    /// Helper: formats a bare `StreamResponse` as an SSE frame (no JSON-RPC envelope).
+    fn bare_sse_frame(event: &StreamResponse) -> String {
+        let json = serde_json::to_string(event).unwrap();
+        format!("data: {json}\n\n")
+    }
+
+    #[tokio::test]
+    async fn bare_stream_delivers_events() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(result, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Working)
+        );
+    }
+
+    #[tokio::test]
+    async fn bare_stream_ends_on_terminal() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+
+        let event = make_status_event(TaskState::Completed, true);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(result, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Completed)
+        );
+
+        let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
+        assert!(end.is_none(), "bare stream should end after terminal event");
+    }
+
+    #[tokio::test]
+    async fn bare_stream_rejects_jsonrpc_envelope() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+
+        // Send a JSON-RPC envelope — this should fail to parse as bare StreamResponse.
+        let event = make_status_event(TaskState::Working, false);
+        let envelope_frame = sse_frame(&event); // uses JSON-RPC envelope
+        tx.send(Ok(Bytes::from(envelope_frame))).await.unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
+        assert!(
+            result.is_err(),
+            "bare stream should reject JSON-RPC envelope as invalid"
+        );
+    }
+
+    #[tokio::test]
+    async fn envelope_stream_rejects_bare_response() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx); // default: jsonrpc_envelope = true
+
+        // Send bare StreamResponse — this should fail to parse as JsonRpcResponse.
+        let event = make_status_event(TaskState::Working, false);
+        let bare_frame = bare_sse_frame(&event);
+        tx.send(Ok(Bytes::from(bare_frame))).await.unwrap();
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap();
+        assert!(
+            result.is_err(),
+            "envelope stream should reject bare StreamResponse"
+        );
+    }
+
+    #[tokio::test]
+    async fn bare_stream_multiple_events() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx).with_jsonrpc_envelope(false);
+
+        let working = make_status_event(TaskState::Working, false);
+        let completed = make_status_event(TaskState::Completed, true);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&working))))
+            .await
+            .unwrap();
+        tx.send(Ok(Bytes::from(bare_sse_frame(&completed))))
+            .await
+            .unwrap();
+
+        let first = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(first, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Working)
+        );
+
+        let second = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(second, StreamResponse::StatusUpdate(ref ev) if ev.status.state == TaskState::Completed)
+        );
+
+        let end = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
         assert!(end.is_none());
     }
 }
