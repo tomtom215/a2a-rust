@@ -28,10 +28,12 @@ Response:
   "jsonrpc": "2.0",
   "id": "req-1",
   "result": {
-    "id": "task-abc",
-    "contextId": "ctx-123",
-    "status": { "state": "TASK_STATE_COMPLETED" },
-    "artifacts": [...]
+    "task": {
+      "id": "task-abc",
+      "contextId": "ctx-123",
+      "status": { "state": "TASK_STATE_COMPLETED" },
+      "artifacts": [...]
+    }
   }
 }
 ```

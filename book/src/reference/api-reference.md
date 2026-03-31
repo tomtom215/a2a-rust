@@ -256,12 +256,13 @@ The prelude includes the most commonly used types from all three crates — see 
 TaskStatus::new(TaskState::Working)
 TaskStatus::with_timestamp(TaskState::Completed)
 
-// Messages and parts
-Part::text("hello")
-Part::file_bytes(base64_string)
-Part::file_uri("https://...")
-Part::raw(base64_string)   // backward-compat alias for file_bytes
-Part::url("https://...")   // backward-compat alias for file_uri
+// Messages and parts (v1.0 wire format: flat oneof)
+Part::text("hello")                 // → {"text": "hello"}
+Part::raw(base64_string)            // → {"raw": "aGVsbG8="}
+Part::url("https://...")            // → {"url": "https://..."}
+Part::data(serde_json::json!({..})) // → {"data": {...}}
+Part::file_bytes(base64_string)     // backward-compat alias for raw()
+Part::file_uri("https://...")       // backward-compat alias for url()
 
 // Artifacts
 Artifact::new("artifact-id", vec![Part::text("content")])
