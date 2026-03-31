@@ -70,6 +70,12 @@ pub struct EventStream {
     /// `send_streaming_request` call guarantees the server responded with a
     /// success status (typically HTTP 200).
     status_code: u16,
+    /// Whether SSE frames carry a JSON-RPC envelope around the `StreamResponse`.
+    ///
+    /// - `true` (default): each `data:` field is a `JsonRpcResponse<StreamResponse>`.
+    /// - `false`: each `data:` field is a bare `StreamResponse` (REST binding,
+    ///   per A2A spec Section 11.7).
+    jsonrpc_envelope: bool,
 }
 
 impl EventStream {
@@ -87,6 +93,7 @@ impl EventStream {
             done: false,
             abort_handle: None,
             status_code: 200,
+            jsonrpc_envelope: true,
         }
     }
 
@@ -106,6 +113,7 @@ impl EventStream {
             done: false,
             abort_handle: Some(abort_handle),
             status_code: 200,
+            jsonrpc_envelope: true,
         }
     }
 
@@ -123,7 +131,18 @@ impl EventStream {
             done: false,
             abort_handle: Some(abort_handle),
             status_code,
+            jsonrpc_envelope: true,
         }
+    }
+
+    /// Sets whether SSE frames are wrapped in a JSON-RPC envelope.
+    ///
+    /// When `false`, each SSE `data:` field is parsed as a bare
+    /// `StreamResponse` (REST binding). Default is `true` (JSON-RPC binding).
+    #[must_use]
+    pub(crate) fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
+        self.jsonrpc_envelope = envelope;
+        self
     }
 
     /// Returns the HTTP status code from the response that established this stream.
@@ -187,27 +206,37 @@ impl EventStream {
     // ── internals ─────────────────────────────────────────────────────────────
 
     fn decode_frame(&mut self, data: &str) -> ClientResult<StreamResponse> {
-        // Each SSE frame's `data` is a JSON-RPC response carrying a StreamResponse.
-        let envelope: JsonRpcResponse<StreamResponse> =
-            serde_json::from_str(data).map_err(ClientError::Serialization)?;
+        if self.jsonrpc_envelope {
+            // JSON-RPC binding: each `data:` field is a JsonRpcResponse envelope.
+            let envelope: JsonRpcResponse<StreamResponse> =
+                serde_json::from_str(data).map_err(ClientError::Serialization)?;
 
-        match envelope {
-            JsonRpcResponse::Success(ok) => {
-                // Check for terminal event so callers don't need to.
-                if is_terminal(&ok.result) {
-                    self.done = true;
+            match envelope {
+                JsonRpcResponse::Success(ok) => {
+                    if is_terminal(&ok.result) {
+                        self.done = true;
+                    }
+                    Ok(ok.result)
                 }
-                Ok(ok.result)
+                JsonRpcResponse::Error(err) => {
+                    self.done = true;
+                    let a2a = a2a_protocol_types::A2aError::new(
+                        a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                            .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                        err.error.message,
+                    );
+                    Err(ClientError::Protocol(a2a))
+                }
             }
-            JsonRpcResponse::Error(err) => {
+        } else {
+            // REST binding: each `data:` field is a bare StreamResponse
+            // (per A2A spec Section 11.7).
+            let event: StreamResponse =
+                serde_json::from_str(data).map_err(ClientError::Serialization)?;
+            if is_terminal(&event) {
                 self.done = true;
-                let a2a = a2a_protocol_types::A2aError::new(
-                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
-                    err.error.message,
-                );
-                Err(ClientError::Protocol(a2a))
             }
+            Ok(event)
         }
     }
 }

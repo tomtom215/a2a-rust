@@ -70,7 +70,8 @@ impl RestTransport {
             rx,
             task_handle.abort_handle(),
             actual_status,
-        ))
+        )
+        .with_jsonrpc_envelope(false))
     }
 }
 
