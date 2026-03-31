@@ -34,7 +34,7 @@ public class EchoAgent {
 
         HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
 
-        server.createContext("/.well-known/agent.json", EchoAgent::handleAgentCard);
+        server.createContext("/.well-known/agent-card.json", EchoAgent::handleAgentCard);
         server.createContext("/", EchoAgent::handleRequest);
 
         server.start();
@@ -52,6 +52,10 @@ public class EchoAgent {
         capabilities.addProperty("streaming", true);
         capabilities.addProperty("pushNotifications", true);
         card.add("capabilities", capabilities);
+
+        JsonArray supportedInterfaces = new JsonArray();
+        supportedInterfaces.add("a2a");
+        card.add("supportedInterfaces", supportedInterfaces);
 
         JsonArray inputModes = new JsonArray();
         inputModes.add("text");
@@ -155,8 +159,8 @@ public class EchoAgent {
         JsonObject result;
 
         switch (method) {
-            case "message/send":
-            case "message/stream":
+            case "SendMessage":
+            case "SendStreamingMessage":
                 if (!params.has("message")) {
                     sendJsonRpc(exchange, id, null, errorJson(-32602, "Invalid params: missing 'message' field"));
                     break;
@@ -165,7 +169,7 @@ public class EchoAgent {
                 sendJsonRpc(exchange, id, result, null);
                 break;
 
-            case "tasks/get": {
+            case "GetTask": {
                 String taskId = params.has("id") ? params.get("id").getAsString() : "";
                 JsonObject task = tasks.get(taskId);
                 if (task != null) {
@@ -176,7 +180,7 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/list": {
+            case "ListTasks": {
                 JsonObject listResult = new JsonObject();
                 JsonArray arr = new JsonArray();
                 tasks.values().forEach(arr::add);
@@ -185,12 +189,12 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/cancel": {
+            case "CancelTask": {
                 String taskId = params.has("id") ? params.get("id").getAsString() : "";
                 JsonObject task = tasks.get(taskId);
                 if (task != null) {
                     JsonObject status = new JsonObject();
-                    status.addProperty("state", "canceled");
+                    status.addProperty("state", "TASK_STATE_CANCELED");
                     task.add("status", status);
                     sendJsonRpc(exchange, id, task, null);
                 } else {
@@ -199,7 +203,7 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/pushNotificationConfig/set": {
+            case "CreateTaskPushNotificationConfig": {
                 String cfgId = params.has("id") ? params.get("id").getAsString() : UUID.randomUUID().toString();
                 params.addProperty("id", cfgId);
                 String taskId = params.has("taskId") ? params.get("taskId").getAsString() : "";
@@ -208,7 +212,7 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/pushNotificationConfig/get": {
+            case "GetTaskPushNotificationConfig": {
                 String taskId = params.has("taskId") ? params.get("taskId").getAsString() : "";
                 String cfgId = params.has("id") ? params.get("id").getAsString() : "";
                 JsonObject cfg = pushConfigs.get(taskId + ":" + cfgId);
@@ -220,7 +224,7 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/pushNotificationConfig/list": {
+            case "ListTaskPushNotificationConfigs": {
                 String taskId = params.has("taskId") ? params.get("taskId").getAsString() : "";
                 JsonArray configs = new JsonArray();
                 pushConfigs.forEach((k, v) -> {
@@ -230,7 +234,7 @@ public class EchoAgent {
                 break;
             }
 
-            case "tasks/pushNotificationConfig/delete": {
+            case "DeleteTaskPushNotificationConfig": {
                 String taskId = params.has("taskId") ? params.get("taskId").getAsString() : "";
                 String cfgId = params.has("id") ? params.get("id").getAsString() : "";
                 pushConfigs.remove(taskId + ":" + cfgId);
@@ -252,7 +256,7 @@ public class EchoAgent {
             JsonObject task = tasks.get(taskId);
             if (task != null) {
                 JsonObject status = new JsonObject();
-                status.addProperty("state", "canceled");
+                status.addProperty("state", "TASK_STATE_CANCELED");
                 task.add("status", status);
                 sendJson(exchange, 200, task);
             } else {
@@ -285,8 +289,8 @@ public class EchoAgent {
             if (msg.has("parts")) {
                 for (JsonElement part : msg.getAsJsonArray("parts")) {
                     JsonObject p = part.getAsJsonObject();
-                    if ("text".equals(p.has("type") ? p.get("type").getAsString() : "")) {
-                        text += p.has("text") ? p.get("text").getAsString() : "";
+                    if (p.has("text")) {
+                        text += p.get("text").getAsString();
                     }
                 }
             }
@@ -300,7 +304,7 @@ public class EchoAgent {
         task.addProperty("contextId", contextId);
 
         JsonObject status = new JsonObject();
-        status.addProperty("state", "completed");
+        status.addProperty("state", "TASK_STATE_COMPLETED");
         task.add("status", status);
 
         JsonArray artifacts = new JsonArray();
@@ -308,7 +312,6 @@ public class EchoAgent {
         artifact.addProperty("artifactId", UUID.randomUUID().toString());
         JsonArray parts = new JsonArray();
         JsonObject echoPart = new JsonObject();
-        echoPart.addProperty("type", "text");
         echoPart.addProperty("text", "[Java Echo] " + text);
         parts.add(echoPart);
         artifact.add("parts", parts);
@@ -322,7 +325,10 @@ public class EchoAgent {
         }
 
         tasks.put(taskId, task);
-        return task;
+
+        JsonObject response = new JsonObject();
+        response.add("task", task);
+        return response;
     }
 
     private static JsonObject errorJson(int code, String message) {

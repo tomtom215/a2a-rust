@@ -32,7 +32,6 @@ var (
 // --- Types ---
 
 type Part struct {
-	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
 }
 
@@ -93,13 +92,18 @@ type TaskListResponse struct {
 	Tasks []Task `json:"tasks"`
 }
 
+type SendMessageResponse struct {
+	Task Task `json:"task"`
+}
+
 // Agent Card
 type AgentCard struct {
 	Name               string      `json:"name"`
 	Description        string      `json:"description"`
 	URL                string      `json:"url"`
 	Version            string      `json:"version"`
-	Capabilities       interface{} `json:"capabilities"`
+	Capabilities        interface{} `json:"capabilities"`
+	SupportedInterfaces []string   `json:"supportedInterfaces"`
 	DefaultInputModes  []string    `json:"defaultInputModes"`
 	DefaultOutputModes []string    `json:"defaultOutputModes"`
 	Skills             []Skill     `json:"skills"`
@@ -151,7 +155,7 @@ func jsonNotFoundHandler(next http.Handler) http.Handler {
 func extractText(msg Message) string {
 	var texts []string
 	for _, p := range msg.Parts {
-		if p.Type == "text" {
+		if p.Text != "" {
 			texts = append(texts, p.Text)
 		}
 	}
@@ -169,11 +173,11 @@ func processMessage(params SendParams) Task {
 	task := Task{
 		ID:        taskID,
 		ContextID: contextID,
-		Status:    TaskStatus{State: "completed"},
+		Status:    TaskStatus{State: "TASK_STATE_COMPLETED"},
 		History:   []Message{params.Message},
 		Artifacts: []Artifact{{
 			ArtifactID: uuid.New().String(),
-			Parts:      []Part{{Type: "text", Text: fmt.Sprintf("[Go Echo] %s", text)}},
+			Parts:      []Part{{Text: fmt.Sprintf("[Go Echo] %s", text)}},
 		}},
 	}
 
@@ -189,7 +193,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch req.Method {
-	case "message/send", "message/stream":
+	case "SendMessage", "SendStreamingMessage":
 		var params SendParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32602, Message: "Invalid params"})
@@ -200,9 +204,9 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		task := processMessage(params)
-		writeJsonRpc(w, req.ID, task, nil)
+		writeJsonRpc(w, req.ID, SendMessageResponse{Task: task}, nil)
 
-	case "tasks/get":
+	case "GetTask":
 		var params struct{ ID string `json:"id"` }
 		json.Unmarshal(req.Params, &params)
 		if val, ok := tasks.Load(params.ID); ok {
@@ -211,7 +215,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
 		}
 
-	case "tasks/list":
+	case "ListTasks":
 		var allTasks []Task
 		tasks.Range(func(_, v interface{}) bool {
 			allTasks = append(allTasks, v.(Task))
@@ -222,19 +226,19 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJsonRpc(w, req.ID, TaskListResponse{Tasks: allTasks}, nil)
 
-	case "tasks/cancel":
+	case "CancelTask":
 		var params struct{ ID string `json:"id"` }
 		json.Unmarshal(req.Params, &params)
 		if val, ok := tasks.Load(params.ID); ok {
 			task := val.(Task)
-			task.Status = TaskStatus{State: "canceled"}
+			task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
 			tasks.Store(params.ID, task)
 			writeJsonRpc(w, req.ID, task, nil)
 		} else {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Task not found"})
 		}
 
-	case "tasks/pushNotificationConfig/set":
+	case "CreateTaskPushNotificationConfig":
 		var cfg PushConfig
 		json.Unmarshal(req.Params, &cfg)
 		if cfg.ID == "" {
@@ -244,7 +248,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		pushCfgs.Store(key, cfg)
 		writeJsonRpc(w, req.ID, cfg, nil)
 
-	case "tasks/pushNotificationConfig/get":
+	case "GetTaskPushNotificationConfig":
 		var params struct {
 			TaskID string `json:"taskId"`
 			ID     string `json:"id"`
@@ -257,7 +261,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 			writeJsonRpc(w, req.ID, nil, &RpcError{Code: -32001, Message: "Config not found"})
 		}
 
-	case "tasks/pushNotificationConfig/list":
+	case "ListTaskPushNotificationConfigs":
 		var params struct{ TaskID string `json:"taskId"` }
 		json.Unmarshal(req.Params, &params)
 		var configs []PushConfig
@@ -273,7 +277,7 @@ func handleJsonRpc(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJsonRpc(w, req.ID, configs, nil)
 
-	case "tasks/pushNotificationConfig/delete":
+	case "DeleteTaskPushNotificationConfig":
 		var params struct {
 			TaskID string `json:"taskId"`
 			ID     string `json:"id"`
@@ -307,7 +311,8 @@ func main() {
 		Description:        "A2A ITK echo agent implemented in Go",
 		URL:                fmt.Sprintf("http://0.0.0.0:%d", *port),
 		Version:            "1.0.0",
-		Capabilities:       map[string]bool{"streaming": true, "pushNotifications": true},
+		Capabilities:        map[string]bool{"streaming": true, "pushNotifications": true},
+		SupportedInterfaces: []string{"a2a"},
 		DefaultInputModes:  []string{"text"},
 		DefaultOutputModes: []string{"text"},
 		Skills: []Skill{{
@@ -321,7 +326,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Agent card
-	mux.HandleFunc("GET /.well-known/agent.json", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /.well-known/agent-card.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(agentCard)
 	})
@@ -335,7 +340,7 @@ func main() {
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(task)
+		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
 	})
 
 	mux.HandleFunc("POST /message/stream", func(w http.ResponseWriter, r *http.Request) {
@@ -343,7 +348,7 @@ func main() {
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(task)
+		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
 	})
 
 	mux.HandleFunc("GET /tasks", func(w http.ResponseWriter, _ *http.Request) {
@@ -377,7 +382,7 @@ func main() {
 		taskID := r.PathValue("id")
 		if val, ok := tasks.Load(taskID); ok {
 			task := val.(Task)
-			task.Status = TaskStatus{State: "canceled"}
+			task.Status = TaskStatus{State: "TASK_STATE_CANCELED"}
 			tasks.Store(taskID, task)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(task)

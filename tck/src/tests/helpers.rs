@@ -151,10 +151,17 @@ pub async fn send_message(url: &str, binding: &str, params: Value) -> Result<Val
 /// Extracts a Task object from a v1.0 `SendMessageResponse`.
 ///
 /// The response is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
+/// Also accepts bare Task objects (v0.3 untagged format) for backward compat.
 pub fn extract_task(result: &Value) -> Result<&Value, String> {
-    result
-        .get("task")
-        .ok_or_else(|| format!("response is not a task (got: {result})"))
+    // v1.0: externally tagged {"task": {...}}
+    if let Some(task) = result.get("task") {
+        return Ok(task);
+    }
+    // v0.3 fallback: bare task object with "id" field
+    if result.get("id").is_some() && result.get("status").is_some() {
+        return Ok(result);
+    }
+    Err(format!("response is not a task (got: {result})"))
 }
 
 /// Gets a task by ID via the appropriate binding.

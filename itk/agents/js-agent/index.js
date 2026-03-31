@@ -31,6 +31,7 @@ const agentCard = {
   url: `http://0.0.0.0:${PORT}`,
   version: '1.0.0',
   capabilities: { streaming: true, pushNotifications: true },
+  supportedInterfaces: ['a2a'],
   defaultInputModes: ['text'],
   defaultOutputModes: ['text'],
   skills: [{
@@ -42,7 +43,7 @@ const agentCard = {
 };
 
 // Well-known agent card endpoint
-app.get('/.well-known/agent.json', (_, res) => {
+app.get('/.well-known/agent-card.json', (_, res) => {
   res.json(agentCard);
 });
 
@@ -50,7 +51,7 @@ app.get('/.well-known/agent.json', (_, res) => {
 function extractText(message) {
   if (!message?.parts) return '';
   return message.parts
-    .filter(p => p.type === 'text')
+    .filter(p => 'text' in p)
     .map(p => p.text)
     .join('');
 }
@@ -64,16 +65,16 @@ function processMessage(params) {
   const task = {
     id: taskId,
     contextId,
-    status: { state: 'completed' },
+    status: { state: 'TASK_STATE_COMPLETED' },
     history: [params.message],
     artifacts: [{
       artifactId: uuidv4(),
-      parts: [{ type: 'text', text: `[JS Echo] ${text}` }],
+      parts: [{ text: `[JS Echo] ${text}` }],
     }],
   };
 
   tasks.set(taskId, task);
-  return task;
+  return { task };
 }
 
 // JSON-RPC handler
@@ -88,14 +89,14 @@ app.post('/', (req, res) => {
     let result;
 
     switch (method) {
-      case 'message/send':
+      case 'SendMessage':
         if (!params || !params.message) {
           return res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params: missing message field' } });
         }
         result = processMessage(params);
         break;
 
-      case 'message/stream': {
+      case 'SendStreamingMessage': {
         if (!params || !params.message) {
           return res.json({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params: missing message field' } });
         }
@@ -103,7 +104,7 @@ app.post('/', (req, res) => {
         break;
       }
 
-      case 'tasks/get': {
+      case 'GetTask': {
         const task = tasks.get(params.id);
         if (!task) {
           return res.json({ jsonrpc: '2.0', id, error: { code: -32001, message: 'Task not found' } });
@@ -112,23 +113,23 @@ app.post('/', (req, res) => {
         break;
       }
 
-      case 'tasks/list': {
+      case 'ListTasks': {
         const allTasks = Array.from(tasks.values());
         result = { tasks: allTasks };
         break;
       }
 
-      case 'tasks/cancel': {
+      case 'CancelTask': {
         const task = tasks.get(params.id);
         if (!task) {
           return res.json({ jsonrpc: '2.0', id, error: { code: -32001, message: 'Task not found' } });
         }
-        task.status = { state: 'canceled' };
+        task.status = { state: 'TASK_STATE_CANCELED' };
         result = task;
         break;
       }
 
-      case 'tasks/pushNotificationConfig/set': {
+      case 'CreateTaskPushNotificationConfig': {
         const configId = params.id || uuidv4();
         const config = { ...params, id: configId };
         pushConfigs.set(`${params.taskId}:${configId}`, config);
@@ -136,7 +137,7 @@ app.post('/', (req, res) => {
         break;
       }
 
-      case 'tasks/pushNotificationConfig/get': {
+      case 'GetTaskPushNotificationConfig': {
         const key = `${params.taskId}:${params.id}`;
         const cfg = pushConfigs.get(key);
         if (!cfg) {
@@ -146,14 +147,14 @@ app.post('/', (req, res) => {
         break;
       }
 
-      case 'tasks/pushNotificationConfig/list': {
+      case 'ListTaskPushNotificationConfigs': {
         const configs = Array.from(pushConfigs.values())
           .filter(c => c.taskId === params.taskId);
         result = configs;
         break;
       }
 
-      case 'tasks/pushNotificationConfig/delete': {
+      case 'DeleteTaskPushNotificationConfig': {
         const delKey = `${params.taskId}:${params.id}`;
         pushConfigs.delete(delKey);
         result = {};
@@ -193,7 +194,7 @@ app.get('/tasks', (_, res) => {
 app.post('/tasks/:id/cancel', (req, res) => {
   const task = tasks.get(req.params.id);
   if (!task) return res.status(404).json({ code: -32001, message: 'Task not found' });
-  task.status = { state: 'canceled' };
+  task.status = { state: 'TASK_STATE_CANCELED' };
   res.json(task);
 });
 
