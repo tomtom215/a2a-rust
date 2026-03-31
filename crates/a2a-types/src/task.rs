@@ -238,6 +238,17 @@ impl TaskState {
         )
     }
 
+    /// Returns `true` if this state is an interrupted state.
+    ///
+    /// Interrupted states: `InputRequired`, `AuthRequired`.
+    /// Per Section 3.2.2, blocking SendMessage MUST return when the task
+    /// reaches a terminal OR interrupted state.
+    #[inline]
+    #[must_use]
+    pub const fn is_interrupted(self) -> bool {
+        matches!(self, Self::InputRequired | Self::AuthRequired)
+    }
+
     /// Returns `true` if transitioning from `self` to `next` is a valid
     /// state transition per the A2A protocol.
     ///
