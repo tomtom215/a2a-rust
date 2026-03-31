@@ -71,7 +71,7 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
         | ErrorCode::PushNotificationNotSupported
         | ErrorCode::UnsupportedOperation
         | ErrorCode::VersionNotSupported => tonic::Code::Unimplemented,
-        ErrorCode::InvalidAgentResponse | ErrorCode::InternalError => tonic::Code::Internal,
+        ErrorCode::InvalidAgentResponse | ErrorCode::InternalError | _ => tonic::Code::Internal,
     };
     Status::new(code, a2a_err.message)
 }

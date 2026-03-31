@@ -117,7 +117,6 @@ fn minimal_agent_card() -> AgentCard {
 fn make_send_params() -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new("msg-ws-transport-1"),
             role: MessageRole::User,
