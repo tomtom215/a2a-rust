@@ -390,7 +390,7 @@ pub async fn test_multi_part_message(ctx: &TestContext) -> TestResult {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let PartContent::Text { text } = &part.content {
+                        if let PartContent::Text(text) = &part.content {
                             println!("  {text}");
                         }
                     }
@@ -429,7 +429,7 @@ pub async fn test_agent_to_agent(ctx: &TestContext) -> TestResult {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let PartContent::Text { text } = &part.content {
+                        if let PartContent::Text(text) = &part.content {
                             for line in text.lines().take(6) {
                                 println!("  {line}");
                             }

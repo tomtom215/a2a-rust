@@ -190,38 +190,38 @@ impl From<u64> for TaskVersion {
 
 /// The lifecycle state of a [`Task`].
 ///
-/// Serializes as lowercase kebab-case (e.g. `"completed"`, `"input-required"`).
-/// Also accepts the legacy `TASK_STATE_*` format on deserialization for
-/// backward compatibility.
+/// Per v1.0 spec (Section 5.5), enum values use ProtoJSON SCREAMING_SNAKE_CASE:
+/// `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
+/// Legacy lowercase/kebab-case values are accepted on deserialization.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskState {
     /// Proto default (0-value); should not appear in normal usage.
-    #[serde(rename = "unspecified", alias = "TASK_STATE_UNSPECIFIED")]
+    #[serde(rename = "TASK_STATE_UNSPECIFIED", alias = "unspecified")]
     Unspecified,
     /// Task received, not yet started.
-    #[serde(rename = "submitted", alias = "TASK_STATE_SUBMITTED")]
+    #[serde(rename = "TASK_STATE_SUBMITTED", alias = "submitted")]
     Submitted,
     /// Task is actively being processed.
-    #[serde(rename = "working", alias = "TASK_STATE_WORKING")]
+    #[serde(rename = "TASK_STATE_WORKING", alias = "working")]
     Working,
     /// Agent requires additional input from the client to proceed.
-    #[serde(rename = "input-required", alias = "TASK_STATE_INPUT_REQUIRED")]
+    #[serde(rename = "TASK_STATE_INPUT_REQUIRED", alias = "input-required")]
     InputRequired,
     /// Agent requires the client to complete an authentication step.
-    #[serde(rename = "auth-required", alias = "TASK_STATE_AUTH_REQUIRED")]
+    #[serde(rename = "TASK_STATE_AUTH_REQUIRED", alias = "auth-required")]
     AuthRequired,
     /// Task finished successfully.
-    #[serde(rename = "completed", alias = "TASK_STATE_COMPLETED")]
+    #[serde(rename = "TASK_STATE_COMPLETED", alias = "completed")]
     Completed,
     /// Task finished with an error.
-    #[serde(rename = "failed", alias = "TASK_STATE_FAILED")]
+    #[serde(rename = "TASK_STATE_FAILED", alias = "failed")]
     Failed,
     /// Task was canceled by the client.
-    #[serde(rename = "canceled", alias = "TASK_STATE_CANCELED")]
+    #[serde(rename = "TASK_STATE_CANCELED", alias = "canceled")]
     Canceled,
     /// Task was rejected by the agent before execution.
-    #[serde(rename = "rejected", alias = "TASK_STATE_REJECTED")]
+    #[serde(rename = "TASK_STATE_REJECTED", alias = "rejected")]
     Rejected,
 }
 
@@ -271,15 +271,15 @@ impl TaskState {
 impl std::fmt::Display for TaskState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Unspecified => "unspecified",
-            Self::Submitted => "submitted",
-            Self::Working => "working",
-            Self::InputRequired => "input-required",
-            Self::AuthRequired => "auth-required",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Canceled => "canceled",
-            Self::Rejected => "rejected",
+            Self::Unspecified => "TASK_STATE_UNSPECIFIED",
+            Self::Submitted => "TASK_STATE_SUBMITTED",
+            Self::Working => "TASK_STATE_WORKING",
+            Self::InputRequired => "TASK_STATE_INPUT_REQUIRED",
+            Self::AuthRequired => "TASK_STATE_AUTH_REQUIRED",
+            Self::Completed => "TASK_STATE_COMPLETED",
+            Self::Failed => "TASK_STATE_FAILED",
+            Self::Canceled => "TASK_STATE_CANCELED",
+            Self::Rejected => "TASK_STATE_REJECTED",
         };
         f.write_str(s)
     }
@@ -395,26 +395,28 @@ mod tests {
     }
 
     #[test]
-    fn task_state_lowercase_serde() {
+    fn task_state_screaming_snake_serde() {
         assert_eq!(
             serde_json::to_string(&TaskState::InputRequired).expect("ser"),
-            "\"input-required\""
+            "\"TASK_STATE_INPUT_REQUIRED\""
         );
         assert_eq!(
             serde_json::to_string(&TaskState::AuthRequired).expect("ser"),
-            "\"auth-required\""
+            "\"TASK_STATE_AUTH_REQUIRED\""
         );
         assert_eq!(
             serde_json::to_string(&TaskState::Submitted).expect("ser"),
-            "\"submitted\""
+            "\"TASK_STATE_SUBMITTED\""
         );
         assert_eq!(
             serde_json::to_string(&TaskState::Unspecified).expect("ser"),
-            "\"unspecified\""
+            "\"TASK_STATE_UNSPECIFIED\""
         );
-        // Legacy aliases still deserialize
-        let back: TaskState = serde_json::from_str("\"TASK_STATE_COMPLETED\"").unwrap();
+        // Legacy lowercase aliases still deserialize
+        let back: TaskState = serde_json::from_str("\"completed\"").unwrap();
         assert_eq!(back, TaskState::Completed);
+        let back: TaskState = serde_json::from_str("\"input-required\"").unwrap();
+        assert_eq!(back, TaskState::InputRequired);
     }
 
     #[test]
@@ -460,7 +462,7 @@ mod tests {
     #[test]
     fn wire_format_submitted_state() {
         let json = serde_json::to_string(&TaskState::Submitted).unwrap();
-        assert_eq!(json, "\"submitted\"");
+        assert_eq!(json, "\"TASK_STATE_SUBMITTED\"");
 
         // Both formats deserialize
         let back: TaskState = serde_json::from_str("\"submitted\"").unwrap();
@@ -523,15 +525,15 @@ mod tests {
 
     #[test]
     fn task_state_display_trait() {
-        assert_eq!(TaskState::Working.to_string(), "working");
-        assert_eq!(TaskState::Completed.to_string(), "completed");
-        assert_eq!(TaskState::Failed.to_string(), "failed");
-        assert_eq!(TaskState::Canceled.to_string(), "canceled");
-        assert_eq!(TaskState::Rejected.to_string(), "rejected");
-        assert_eq!(TaskState::Submitted.to_string(), "submitted");
-        assert_eq!(TaskState::InputRequired.to_string(), "input-required");
-        assert_eq!(TaskState::AuthRequired.to_string(), "auth-required");
-        assert_eq!(TaskState::Unspecified.to_string(), "unspecified");
+        assert_eq!(TaskState::Working.to_string(), "TASK_STATE_WORKING");
+        assert_eq!(TaskState::Completed.to_string(), "TASK_STATE_COMPLETED");
+        assert_eq!(TaskState::Failed.to_string(), "TASK_STATE_FAILED");
+        assert_eq!(TaskState::Canceled.to_string(), "TASK_STATE_CANCELED");
+        assert_eq!(TaskState::Rejected.to_string(), "TASK_STATE_REJECTED");
+        assert_eq!(TaskState::Submitted.to_string(), "TASK_STATE_SUBMITTED");
+        assert_eq!(TaskState::InputRequired.to_string(), "TASK_STATE_INPUT_REQUIRED");
+        assert_eq!(TaskState::AuthRequired.to_string(), "TASK_STATE_AUTH_REQUIRED");
+        assert_eq!(TaskState::Unspecified.to_string(), "TASK_STATE_UNSPECIFIED");
     }
 
     // ── is_terminal exhaustive ────────────────────────────────────────────

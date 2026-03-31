@@ -58,7 +58,7 @@ impl AgentExecutor for EchoExecutor {
                 .parts
                 .first()
                 .and_then(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.clone()),
+                    PartContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "no text".to_owned());
@@ -155,7 +155,7 @@ fn make_send_body(text: &str) -> String {
         "message": {
             "messageId": format!("msg-{}", uuid::Uuid::new_v4()),
             "role": "ROLE_USER",
-            "parts": [{"type": "text", "text": text}]
+            "parts": [{"text": text}]
         }
     })
     .to_string()
@@ -200,7 +200,7 @@ async fn axum_health_endpoint() {
 #[tokio::test]
 async fn axum_agent_card_discovery() {
     let base = start_test_server().await;
-    let (status, body) = http_get(&format!("{base}/.well-known/agent.json")).await;
+    let (status, body) = http_get(&format!("{base}/.well-known/agent-card.json")).await;
     assert_eq!(status, 200);
     let card: AgentCard = serde_json::from_slice(&body).unwrap();
     assert_eq!(card.name, "Test Echo Agent");
@@ -225,7 +225,7 @@ async fn axum_send_message_returns_completed_task() {
             // Verify the echo text is in the artifact
             let first_art = &arts[0];
             match &first_art.parts[0].content {
-                PartContent::Text { text } => {
+                PartContent::Text(text) => {
                     assert_eq!(text, "Hello from Axum test");
                 }
                 _ => panic!("expected text part in artifact"),

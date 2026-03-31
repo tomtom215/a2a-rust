@@ -41,7 +41,7 @@ impl AgentExecutor for CodeAnalyzerExecutor {
                 .parts
                 .iter()
                 .filter_map(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.as_str()),
+                    PartContent::Text(text) => Some(text.as_str()),
                     _ => None,
                 })
                 .collect::<Vec<_>>()

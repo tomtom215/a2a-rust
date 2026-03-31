@@ -251,7 +251,7 @@ pub async fn test_dynamic_agent_card(_ctx: &TestContext) -> TestResult {
 /// yields 304 Not Modified.
 pub async fn test_agent_card_caching(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
-    let card_url = format!("{}/.well-known/agent.json", ctx.analyzer_url);
+    let card_url = format!("{}/.well-known/agent-card.json", ctx.analyzer_url);
 
     // First request — get ETag.
     match get_raw(&card_url, &[]).await {

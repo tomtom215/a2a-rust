@@ -237,7 +237,7 @@ async fn list_push_configs_for_nonexistent_task() {
 #[tokio::test]
 async fn well_known_agent_card_without_card() {
     let addr = start_rest_server(make_handler()).await;
-    let (status, _) = http_request(addr, "GET", "/.well-known/agent.json", None, None).await;
+    let (status, _) = http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
     // No card configured on the handler, should return 404.
     assert_eq!(status, 404);
 }

@@ -49,13 +49,15 @@ proptest! {
         prop_assert_eq!(state.is_terminal(), expected_terminal);
     }
 
-    /// All TaskState JSON representations are lowercase kebab-case.
+    /// All TaskState JSON representations use TASK_STATE_ prefix.
     #[test]
     fn task_state_wire_format(state in arb_task_state()) {
         let json = serde_json::to_string(&state).unwrap();
         let inner = json.trim_matches('"');
-        let valid = ["unspecified", "submitted", "working", "input-required",
-                     "auth-required", "completed", "failed", "canceled", "rejected"];
+        let valid = ["TASK_STATE_UNSPECIFIED", "TASK_STATE_SUBMITTED", "TASK_STATE_WORKING",
+                     "TASK_STATE_INPUT_REQUIRED", "TASK_STATE_AUTH_REQUIRED",
+                     "TASK_STATE_COMPLETED", "TASK_STATE_FAILED", "TASK_STATE_CANCELED",
+                     "TASK_STATE_REJECTED"];
         prop_assert!(valid.contains(&inner), "got: {}", inner);
     }
 }
@@ -87,12 +89,14 @@ proptest! {
 
         // Verify content type matches.
         match (&part.content, &back.content) {
-            (PartContent::Text { text: a }, PartContent::Text { text: b }) => {
+            (PartContent::Text(a), PartContent::Text(b)) => {
                 prop_assert_eq!(a, b);
             }
-            (PartContent::File { file: a }, PartContent::File { file: b }) => {
-                prop_assert_eq!(&a.bytes, &b.bytes);
-                prop_assert_eq!(&a.uri, &b.uri);
+            (PartContent::Raw(a), PartContent::Raw(b)) => {
+                prop_assert_eq!(a, b);
+            }
+            (PartContent::Url(a), PartContent::Url(b)) => {
+                prop_assert_eq!(a, b);
             }
             _ => prop_assert!(false, "content type mismatch"),
         }

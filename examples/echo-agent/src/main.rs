@@ -64,7 +64,7 @@ impl AgentExecutor for EchoExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.as_str()),
+                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.as_str()),
                     _ => None,
                 })
                 .unwrap_or("<no text>");
@@ -374,7 +374,7 @@ async fn main() {
                 for art in artifacts {
                     println!("  Artifact:   {}", art.id);
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                        if let a2a_protocol_types::message::PartContent::Text(text) =
                             &part.content
                         {
                             println!("  Content:    {text}");
@@ -406,7 +406,7 @@ async fn main() {
             Ok(StreamResponse::ArtifactUpdate(ev)) => {
                 println!("  Artifact update: {}", ev.artifact.id);
                 for part in &ev.artifact.parts {
-                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
                         println!("  Content:    {text}");
                     }
                 }
@@ -448,7 +448,7 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                        if let a2a_protocol_types::message::PartContent::Text(text) =
                             &part.content
                         {
                             println!("  Content:    {text}");
@@ -479,7 +479,7 @@ async fn main() {
             }
             Ok(StreamResponse::ArtifactUpdate(ev)) => {
                 for part in &ev.artifact.parts {
-                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
                         println!("  Content:    {text}");
                     }
                 }
@@ -494,7 +494,7 @@ async fn main() {
     println!();
 
     // ── Demo 5: Agent Card Discovery ─────────────────────────────────────
-    // The server exposes /.well-known/agent.json — the client can discover
+    // The server exposes /.well-known/agent-card.json — the client can discover
     // the agent's capabilities without any prior configuration.
 
     println!("--- Demo 5: Agent Card Discovery ---");

@@ -5,9 +5,9 @@
 
 use super::helpers;
 
-/// Tests that the agent card is discoverable at `/.well-known/agent.json`.
+/// Tests that the agent card is discoverable at `/.well-known/agent-card.json`.
 pub async fn test_agent_card_discovery(url: &str) -> Result<(), String> {
-    let (status, body) = helpers::rest_get(url, "/.well-known/agent.json").await?;
+    let (status, body) = helpers::rest_get(url, "/.well-known/agent-card.json").await?;
     if status != 200 {
         return Err(format!("expected 200 for agent card, got {status}: {body}"));
     }
@@ -19,7 +19,7 @@ pub async fn test_agent_card_discovery(url: &str) -> Result<(), String> {
 
 /// Tests that the agent card contains all required fields per the spec.
 pub async fn test_agent_card_required_fields(url: &str) -> Result<(), String> {
-    let (_, card) = helpers::rest_get(url, "/.well-known/agent.json").await?;
+    let (_, card) = helpers::rest_get(url, "/.well-known/agent-card.json").await?;
 
     let required = [
         "name",
@@ -61,7 +61,7 @@ pub async fn test_agent_card_required_fields(url: &str) -> Result<(), String> {
 pub async fn test_agent_card_content_type(url: &str) -> Result<(), String> {
     // We can't easily check headers with our simple helper, but we can verify
     // the response is valid JSON (which our helper already does).
-    let (status, _) = helpers::rest_get(url, "/.well-known/agent.json").await?;
+    let (status, _) = helpers::rest_get(url, "/.well-known/agent-card.json").await?;
     if status != 200 {
         return Err(format!("expected 200, got {status}"));
     }

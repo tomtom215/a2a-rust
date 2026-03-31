@@ -92,7 +92,7 @@ async fn resolve_agent_card_with_path_connection_refused() {
 
 #[tokio::test]
 async fn fetch_card_from_url_connection_refused() {
-    let err = fetch_card_from_url("http://127.0.0.1:19999/.well-known/agent.json")
+    let err = fetch_card_from_url("http://127.0.0.1:19999/.well-known/agent-card.json")
         .await
         .unwrap_err();
     assert!(

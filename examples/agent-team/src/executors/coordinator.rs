@@ -80,7 +80,7 @@ impl AgentExecutor for CoordinatorExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.clone()),
+                    PartContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "analyze".to_owned());
@@ -139,10 +139,10 @@ impl CoordinatorExecutor {
                 if let Some(artifacts) = &task.artifacts {
                     for art in artifacts {
                         for part in &art.parts {
-                            if let PartContent::Text { text } = &part.content {
+                            if let PartContent::Text(text) = &part.content {
                                 report_lines.push(format!("  {}", text));
                             }
-                            if let PartContent::Data { data } = &part.content {
+                            if let PartContent::Data(data) = &part.content {
                                 report_lines.push(format!("  JSON: {}", data));
                             }
                         }
@@ -211,7 +211,7 @@ impl CoordinatorExecutor {
                 if let Some(artifacts) = &task.artifacts {
                     for art in artifacts {
                         for part in &art.parts {
-                            if let PartContent::Text { text } = &part.content {
+                            if let PartContent::Text(text) = &part.content {
                                 report_lines.push(format!("  {text}"));
                             }
                         }

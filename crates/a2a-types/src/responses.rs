@@ -22,56 +22,19 @@ use crate::task::Task;
 
 // ── SendMessageResponse ───────────────────────────────────────────────────────
 
-/// The result of a `SendMessage` call: either a completed [`Task`] or an
-/// immediate [`Message`] response.
+/// The result of a `SendMessage` call: either a [`Task`] or a [`Message`].
 ///
-/// Deserialization uses a discriminator-based strategy: if the JSON object
-/// contains a `"role"` field it is treated as a [`Message`] (since `role` is
-/// required on `Message` but absent on `Task`). Otherwise it is treated as a
-/// [`Task`]. This avoids the ambiguity of serde `untagged` where a `Message`
-/// with fields that happen to overlap the `Task` schema could mis-deserialize.
+/// Per v1.0 spec, the response uses the proto `oneof payload` pattern.
+/// In JSON this is externally tagged: `{"task": {...}}` or `{"message": {...}}`.
 #[non_exhaustive]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum SendMessageResponse {
     /// The agent accepted the message and created (or updated) a task.
     Task(Task),
 
     /// The agent responded immediately with a message (no task created).
     Message(Message),
-}
-
-impl Serialize for SendMessageResponse {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        // Untagged serialization: serialize the inner value directly without
-        // a variant wrapper, matching the A2A spec wire format.
-        match self {
-            Self::Task(task) => task.serialize(serializer),
-            Self::Message(msg) => msg.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for SendMessageResponse {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = serde_json::Value::deserialize(deserializer)?;
-
-        // Discriminate: Message always has a "role" field; Task does not.
-        if value.get("role").is_some() {
-            // Has role field -> try Message first, fall back to Task.
-            serde_json::from_value::<Message>(value.clone())
-                .map(SendMessageResponse::Message)
-                .or_else(|_| {
-                    serde_json::from_value::<Task>(value)
-                        .map(SendMessageResponse::Task)
-                        .map_err(serde::de::Error::custom)
-                })
-        } else {
-            // No role field -> must be Task (Message requires role).
-            serde_json::from_value::<Task>(value)
-                .map(SendMessageResponse::Task)
-                .map_err(serde::de::Error::custom)
-        }
-    }
 }
 
 // ── TaskListResponse ──────────────────────────────────────────────────────────
@@ -174,9 +137,10 @@ mod tests {
     fn send_message_response_task_variant() {
         let resp = SendMessageResponse::Task(make_task());
         let json = serde_json::to_string(&resp).expect("serialize");
+        // v1.0: externally tagged as {"task": {...}}
         assert!(
-            !json.contains("\"kind\""),
-            "v1.0 should not have kind: {json}"
+            json.contains("\"task\""),
+            "v1.0 should have 'task' wrapper key: {json}"
         );
 
         let back: SendMessageResponse = serde_json::from_str(&json).expect("deserialize");
@@ -193,9 +157,10 @@ mod tests {
     fn send_message_response_message_variant() {
         let resp = SendMessageResponse::Message(make_message());
         let json = serde_json::to_string(&resp).expect("serialize");
+        // v1.0: externally tagged as {"message": {...}}
         assert!(
-            !json.contains("\"kind\""),
-            "v1.0 should not have kind: {json}"
+            json.contains("\"message\""),
+            "v1.0 should have 'message' wrapper key: {json}"
         );
 
         let back: SendMessageResponse = serde_json::from_str(&json).expect("deserialize");
@@ -208,22 +173,18 @@ mod tests {
         }
     }
 
-    /// Covers the fallback deserialization path (lines 62-64): a JSON object with
-    /// a "role" field that fails to deserialize as Message but succeeds as Task.
+    /// Deserialize a v1.0 Task response with externally tagged format.
     #[test]
-    fn send_message_response_fallback_role_field_to_task() {
-        // Construct a valid Task JSON but inject a "role" field so the
-        // deserializer takes the `if value.get("role").is_some()` branch.
-        // Message deserialization will fail (missing required "parts"), so it
-        // falls back to Task deserialization via the `or_else` path.
+    fn send_message_response_deserialize_task() {
         let json = serde_json::json!({
-            "id": "t1",
-            "contextId": "c1",
-            "status": {"state": "completed"},
-            "role": "unexpected_extra_field"
+            "task": {
+                "id": "t1",
+                "contextId": "c1",
+                "status": {"state": "TASK_STATE_COMPLETED"}
+            }
         });
         let back: SendMessageResponse =
-            serde_json::from_value(json).expect("should fall back to Task");
+            serde_json::from_value(json).expect("should deserialize as Task");
         match back {
             SendMessageResponse::Task(task) => {
                 assert_eq!(task.id.as_ref(), "t1");
@@ -231,6 +192,24 @@ mod tests {
             }
             other => panic!("expected Task variant, got {other:?}"),
         }
+    }
+
+    /// Deserialize a v1.0 Message response with externally tagged format.
+    #[test]
+    fn send_message_response_deserialize_message() {
+        let json = serde_json::json!({
+            "message": {
+                "messageId": "m1",
+                "role": "ROLE_AGENT",
+                "parts": [{ "text": "hi" }]
+            }
+        });
+        let resp: SendMessageResponse =
+            serde_json::from_value(json).expect("should deserialize as Message");
+        assert!(
+            matches!(resp, SendMessageResponse::Message(_)),
+            "expected Message variant"
+        );
     }
 
     #[test]
@@ -268,54 +247,4 @@ mod tests {
         );
     }
 
-    /// A Task JSON (no `role` field) deserializes as `SendMessageResponse::Task`.
-    #[test]
-    fn send_message_response_disambiguates_task() {
-        let json = serde_json::json!({
-            "id": "t1",
-            "contextId": "c1",
-            "status": { "state": "completed" }
-        });
-        let resp: SendMessageResponse =
-            serde_json::from_value(json).expect("should deserialize as Task");
-        assert!(
-            matches!(resp, SendMessageResponse::Task(_)),
-            "expected Task variant"
-        );
-    }
-
-    /// A Message JSON (has `role` field) deserializes as `SendMessageResponse::Message`.
-    #[test]
-    fn send_message_response_disambiguates_message() {
-        let json = serde_json::json!({
-            "messageId": "m1",
-            "role": "agent",
-            "parts": [{ "type": "text", "text": "hi" }]
-        });
-        let resp: SendMessageResponse =
-            serde_json::from_value(json).expect("should deserialize as Message");
-        assert!(
-            matches!(resp, SendMessageResponse::Message(_)),
-            "expected Message variant"
-        );
-    }
-
-    /// A Message that has fields overlapping with Task (id, contextId, status)
-    /// still deserializes as Message because it has `role`.
-    #[test]
-    fn send_message_response_message_with_task_like_fields() {
-        let json = serde_json::json!({
-            "messageId": "m1",
-            "role": "agent",
-            "parts": [{ "type": "text", "text": "hi" }],
-            "contextId": "c1",
-            "taskId": "t1"
-        });
-        let resp: SendMessageResponse =
-            serde_json::from_value(json).expect("should deserialize as Message");
-        assert!(
-            matches!(resp, SendMessageResponse::Message(_)),
-            "expected Message variant even with task-like fields"
-        );
-    }
 }

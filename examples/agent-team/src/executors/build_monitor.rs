@@ -38,7 +38,7 @@ impl AgentExecutor for BuildMonitorExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.clone()),
+                    PartContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "check".to_owned());

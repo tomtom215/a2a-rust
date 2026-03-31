@@ -187,7 +187,8 @@ async fn rest_tenant_prefix_stripping() {
 async fn rest_extended_card_not_configured() {
     let addr = start_rest_server(make_handler()).await;
     let (status, _) = http_request(addr, "GET", "/extendedAgentCard", None, None).await;
-    assert_eq!(status, 500);
+    // ExtendedAgentCardNotConfigured → 400 per Section 5.4
+    assert_eq!(status, 400);
 }
 
 #[tokio::test]
@@ -211,7 +212,7 @@ async fn rest_send_message_success() {
         "message": {
             "messageId": "msg-1",
             "role": "ROLE_USER",
-            "parts": [{"type": "text", "text": "hello"}]
+            "parts": [{"text": "hello"}]
         }
     });
     let (status, resp_body) = http_request(
@@ -223,7 +224,7 @@ async fn rest_send_message_success() {
     )
     .await;
     assert_eq!(status, 200);
-    assert!(resp_body.contains("\"completed\""));
+    assert!(resp_body.contains("TASK_STATE_COMPLETED"));
 }
 
 #[tokio::test]

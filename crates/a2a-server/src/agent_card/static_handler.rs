@@ -112,7 +112,7 @@ mod tests {
         let handler = StaticAgentCardHandler::new(&card).unwrap();
         let req = hyper::Request::builder()
             .method("GET")
-            .uri("/.well-known/agent.json")
+            .uri("/.well-known/agent-card.json")
             .body(Full::new(Bytes::new()))
             .unwrap();
         let resp = handler.handle(&req);
@@ -129,7 +129,7 @@ mod tests {
         // First request to get the etag.
         let req1 = hyper::Request::builder()
             .method("GET")
-            .uri("/.well-known/agent.json")
+            .uri("/.well-known/agent-card.json")
             .body(Full::new(Bytes::new()))
             .unwrap();
         let resp1 = handler.handle(&req1);
@@ -144,7 +144,7 @@ mod tests {
         // Second request with If-None-Match.
         let req2 = hyper::Request::builder()
             .method("GET")
-            .uri("/.well-known/agent.json")
+            .uri("/.well-known/agent-card.json")
             .header("if-none-match", &etag)
             .body(Full::new(Bytes::new()))
             .unwrap();
@@ -158,7 +158,7 @@ mod tests {
         let handler = StaticAgentCardHandler::new(&card).unwrap();
         let req = hyper::Request::builder()
             .method("GET")
-            .uri("/.well-known/agent.json")
+            .uri("/.well-known/agent-card.json")
             .header("if-none-match", "\"wrong-etag\"")
             .body(Full::new(Bytes::new()))
             .unwrap();
@@ -189,7 +189,7 @@ mod tests {
             .with_max_age(7200);
         let req = hyper::Request::builder()
             .method("GET")
-            .uri("/.well-known/agent.json")
+            .uri("/.well-known/agent-card.json")
             .body(Full::new(Bytes::new()))
             .unwrap();
         let resp = handler.handle(&req);

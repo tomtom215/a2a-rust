@@ -38,11 +38,22 @@ pub(super) fn json_ok_response<T: serde::Serialize>(
     }
 }
 
+/// Builds an AIP-193 compliant error response.
+///
+/// Per Section 11.6, HTTP error responses use the format:
+/// ```json
+/// {"error": {"code": 404, "status": "NOT_FOUND", "message": "...", "details": [...]}}
+/// ```
 pub(super) fn error_json_response(
     status: u16,
     message: &str,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = serde_json::json!({ "error": message });
+    let body = serde_json::json!({
+        "error": {
+            "code": status,
+            "message": message
+        }
+    });
     serde_json::to_vec(&body).map_or_else(
         |_| internal_error_response(),
         |bytes| build_json_response(status, bytes),
@@ -51,7 +62,7 @@ pub(super) fn error_json_response(
 
 /// Fallback when serialization itself fails.
 pub(super) fn internal_error_response() -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let body = br#"{"error":"internal serialization error"}"#;
+    let body = br#"{"error":{"code":500,"message":"internal serialization error"}}"#;
     build_json_response(500, body.to_vec())
 }
 
@@ -59,19 +70,29 @@ pub(super) fn not_found_response() -> hyper::Response<BoxBody<Bytes, Infallible>
     error_json_response(404, "not found")
 }
 
+/// Converts a [`ServerError`] to an AIP-193 error response with proper status codes.
+///
+/// Per Section 5.4 and 11.6, each A2A error type maps to a specific HTTP status.
 pub(super) fn server_error_to_response(
     err: &ServerError,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-    let status = match err {
-        ServerError::TaskNotFound(_) | ServerError::MethodNotFound(_) => 404,
-        ServerError::TaskNotCancelable(_) => 409,
-        ServerError::InvalidParams(_)
-        | ServerError::Serialization(_)
-        | ServerError::PushNotSupported => 400,
-        _ => 500,
-    };
     let a2a_err = err.to_a2a_error();
-    serde_json::to_vec(&a2a_err).map_or_else(
+    let status = a2a_err.code.http_status();
+    let grpc_status = a2a_err.code.grpc_status();
+    let details = a2a_err.error_info_data(None);
+
+    let mut error_obj = serde_json::json!({
+        "error": {
+            "code": status,
+            "status": grpc_status,
+            "message": a2a_err.message
+        }
+    });
+    if !details.is_null() {
+        error_obj["error"]["details"] = details;
+    }
+
+    serde_json::to_vec(&error_obj).map_or_else(
         |_| internal_error_response(),
         |body| build_json_response(status, body),
     )
@@ -194,7 +215,9 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 400);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(val["error"], "bad request");
+        // AIP-193 format: {"error": {"code": 400, "message": "bad request"}}
+        assert_eq!(val["error"]["message"], "bad request");
+        assert_eq!(val["error"]["code"], 400);
     }
 
     #[tokio::test]
@@ -214,7 +237,7 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 404);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(val["error"], "not found");
+        assert_eq!(val["error"]["message"], "not found");
     }
 
     #[tokio::test]
@@ -375,10 +398,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn server_error_payload_too_large_maps_to_500() {
+    async fn server_error_payload_too_large_maps_to_400() {
         let err = ServerError::PayloadTooLarge("too big".into());
         let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 500);
+        // PayloadTooLarge → InvalidRequest → 400
+        assert_eq!(resp.status().as_u16(), 400);
     }
 
     #[tokio::test]
@@ -390,7 +414,7 @@ mod tests {
 
     /// Covers the `InvalidStateTransition` variant through `server_error_to_response`.
     #[tokio::test]
-    async fn server_error_invalid_state_transition_maps_to_400_equiv() {
+    async fn server_error_invalid_state_transition_maps_to_400() {
         use a2a_protocol_types::task::TaskState;
         let err = ServerError::InvalidStateTransition {
             task_id: "t1".into(),
@@ -398,8 +422,8 @@ mod tests {
             to: TaskState::Working,
         };
         let resp = server_error_to_response(&err);
-        // InvalidStateTransition hits the `_ => 500` branch.
-        assert_eq!(resp.status().as_u16(), 500);
+        // InvalidStateTransition → InvalidParams → 400
+        assert_eq!(resp.status().as_u16(), 400);
     }
 
     /// Covers line 73: `server_error_to_response` serialization fallback.
@@ -411,7 +435,8 @@ mod tests {
         assert_eq!(resp.status().as_u16(), 500);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(val["message"].as_str().unwrap_or("").contains("proto err"));
+        // AIP-193 format: {"error": {"message": "..."}}
+        assert!(val["error"]["message"].as_str().unwrap_or("").contains("proto err"));
     }
 
     /// Covers line 97: `build_json_response` `unwrap_or_else` fallback.

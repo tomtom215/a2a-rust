@@ -164,21 +164,15 @@ fn security_scheme_http_bearer_roundtrip() {
 #[test]
 fn security_scheme_oauth2_roundtrip() {
     let scheme = SecurityScheme::OAuth2(Box::new(OAuth2SecurityScheme {
-        flows: OAuthFlows {
-            authorization_code: Some(AuthorizationCodeFlow {
-                authorization_url: "https://example.com/auth".into(),
-                token_url: "https://example.com/token".into(),
-                refresh_url: None,
-                scopes: [("read".to_owned(), "Read access".to_owned())]
-                    .into_iter()
-                    .collect(),
-                pkce_required: Some(true),
-            }),
-            client_credentials: None,
-            device_code: None,
-            implicit: None,
-            password: None,
-        },
+        flows: OAuthFlows::AuthorizationCode(AuthorizationCodeFlow {
+            authorization_url: "https://example.com/auth".into(),
+            token_url: "https://example.com/token".into(),
+            refresh_url: None,
+            scopes: [("read".to_owned(), "Read access".to_owned())]
+                .into_iter()
+                .collect(),
+            pkce_required: Some(true),
+        }),
         oauth2_metadata_url: None,
         description: None,
     }));
@@ -191,18 +185,18 @@ fn security_scheme_oauth2_roundtrip() {
     let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
     match back {
         SecurityScheme::OAuth2(ref o) => {
-            let ac = o
-                .flows
-                .authorization_code
-                .as_ref()
-                .expect("authorization_code flow");
-            assert_eq!(ac.authorization_url, "https://example.com/auth");
-            assert_eq!(ac.token_url, "https://example.com/token");
-            assert_eq!(ac.pkce_required, Some(true));
-            assert_eq!(
-                ac.scopes.get("read").map(String::as_str),
-                Some("Read access")
-            );
+            match &o.flows {
+                OAuthFlows::AuthorizationCode(ac) => {
+                    assert_eq!(ac.authorization_url, "https://example.com/auth");
+                    assert_eq!(ac.token_url, "https://example.com/token");
+                    assert_eq!(ac.pkce_required, Some(true));
+                    assert_eq!(
+                        ac.scopes.get("read").map(String::as_str),
+                        Some("Read access")
+                    );
+                }
+                _ => panic!("expected AuthorizationCode flow"),
+            }
         }
         _ => panic!("expected OAuth2 variant"),
     }

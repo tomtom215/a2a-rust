@@ -16,7 +16,7 @@ impl A2aClient {
     ///
     /// Calls `GetExtendedAgentCard`. The returned card may include
     /// private skills, security schemes, or additional interfaces not exposed
-    /// in the public `/.well-known/agent.json`.
+    /// in the public `/.well-known/agent-card.json`.
     ///
     /// The caller must have registered auth credentials via
     /// [`crate::auth::AuthInterceptor`] or equivalent before calling this

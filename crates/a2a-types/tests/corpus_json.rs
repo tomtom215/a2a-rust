@@ -69,7 +69,7 @@ fn corpus_task_completed_with_artifacts() {
         "status": {"state": "TASK_STATE_COMPLETED"},
         "artifacts": [{
             "artifactId": "art-1",
-            "parts": [{"type": "text", "text": "Hello from agent"}]
+            "parts": [{"text": "Hello from agent"}]
         }]
     }"#;
     let task: Task = serde_json::from_str(json).unwrap();
@@ -103,13 +103,13 @@ fn corpus_user_message() {
     let json = r#"{
         "messageId": "msg-001",
         "role": "ROLE_USER",
-        "parts": [{"type": "text", "text": "What is the weather?"}]
+        "parts": [{"text": "What is the weather?"}]
     }"#;
     let msg: Message = serde_json::from_str(json).unwrap();
     assert_eq!(msg.role, MessageRole::User);
     assert_eq!(msg.parts.len(), 1);
     assert!(
-        matches!(&msg.parts[0].content, PartContent::Text { text } if text == "What is the weather?")
+        matches!(&msg.parts[0].content, PartContent::Text(text) if text == "What is the weather?")
     );
     assert_roundtrip::<Message>(json);
 }
@@ -119,7 +119,7 @@ fn corpus_agent_message_with_metadata() {
     let json = r#"{
         "messageId": "msg-002",
         "role": "ROLE_AGENT",
-        "parts": [{"type": "text", "text": "It's sunny"}],
+        "parts": [{"text": "It's sunny"}],
         "metadata": {"confidence": 0.95}
     }"#;
     let msg: Message = serde_json::from_str(json).unwrap();
@@ -135,18 +135,18 @@ fn corpus_message_multi_part() {
         "messageId": "msg-003",
         "role": "ROLE_USER",
         "parts": [
-            {"type": "text", "text": "See attached"},
-            {"type": "file", "file": {"uri": "https://example.com/doc.pdf"}}
+            {"text": "See attached"},
+            {"url": "https://example.com/doc.pdf"}
         ]
     }"#;
     let msg: Message = serde_json::from_str(json).unwrap();
     assert_eq!(msg.parts.len(), 2);
-    assert!(matches!(&msg.parts[0].content, PartContent::Text { text } if text == "See attached"));
+    assert!(matches!(&msg.parts[0].content, PartContent::Text(text) if text == "See attached"));
     match &msg.parts[1].content {
-        PartContent::File { file } => {
-            assert_eq!(file.uri.as_deref(), Some("https://example.com/doc.pdf"));
+        PartContent::Url(url) => {
+            assert_eq!(url, "https://example.com/doc.pdf");
         }
-        _ => panic!("expected File variant"),
+        _ => panic!("expected Url variant"),
     }
 }
 
@@ -154,32 +154,28 @@ fn corpus_message_multi_part() {
 
 #[test]
 fn corpus_text_part() {
-    let json = r#"{"type": "text", "text": "hello world"}"#;
+    let json = r#"{"text": "hello world"}"#;
     let part: Part = serde_json::from_str(json).unwrap();
-    assert!(matches!(&part.content, PartContent::Text { text } if text == "hello world"));
+    assert!(matches!(&part.content, PartContent::Text(text) if text == "hello world"));
     assert_roundtrip::<Part>(json);
 }
 
 #[test]
 fn corpus_raw_part_with_metadata() {
-    let json = r#"{"type": "file", "file": {"bytes": "aGVsbG8=", "mimeType": "image/png", "name": "test.png"}}"#;
+    let json = r#"{"raw": "aGVsbG8=", "mediaType": "image/png", "filename": "test.png"}"#;
     let part: Part = serde_json::from_str(json).unwrap();
-    match &part.content {
-        PartContent::File { file } => {
-            assert_eq!(file.mime_type.as_deref(), Some("image/png"));
-            assert_eq!(file.name.as_deref(), Some("test.png"));
-        }
-        _ => panic!("expected File variant"),
-    }
+    assert!(matches!(&part.content, PartContent::Raw(ref r) if r == "aGVsbG8="));
+    assert_eq!(part.media_type.as_deref(), Some("image/png"));
+    assert_eq!(part.filename.as_deref(), Some("test.png"));
     assert_roundtrip::<Part>(json);
 }
 
 #[test]
 fn corpus_data_part() {
-    let json = r#"{"type": "data", "data": {"key": "value", "count": 42}}"#;
+    let json = r#"{"data": {"key": "value", "count": 42}}"#;
     let part: Part = serde_json::from_str(json).unwrap();
     match &part.content {
-        PartContent::Data { data } => {
+        PartContent::Data(data) => {
             assert_eq!(data["key"], "value");
             assert_eq!(data["count"], 42);
         }
@@ -269,7 +265,7 @@ fn corpus_jsonrpc_request() {
             "message": {
                 "messageId": "msg-rpc-1",
                 "role": "ROLE_USER",
-                "parts": [{"type": "text", "text": "Hello"}]
+                "parts": [{"text": "Hello"}]
             }
         }
     }"#;
@@ -352,7 +348,7 @@ fn corpus_stream_artifact_update() {
             "contextId": "ctx-100",
             "artifact": {
                 "artifactId": "art-1",
-                "parts": [{"type": "text", "text": "Result data"}]
+                "parts": [{"text": "Result data"}]
             }
         }
     }"#;

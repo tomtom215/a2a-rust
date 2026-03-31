@@ -556,8 +556,8 @@ mod tests {
             "params": {
                 "message": {
                     "messageId": "msg-1",
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "hello"}]
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "hello"}]
                 }
             }
         })
@@ -782,8 +782,8 @@ mod tests {
             "params": {
                 "message": {
                     "messageId": "msg-stream-1",
-                    "role": "user",
-                    "parts": [{"type": "text", "text": "stream me"}]
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "stream me"}]
                 }
             }
         })

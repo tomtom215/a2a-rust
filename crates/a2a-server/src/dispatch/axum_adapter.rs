@@ -85,7 +85,7 @@ use crate::streaming::build_sse_response;
 /// | `GET` | `/tasks/:task_id/pushNotificationConfigs/:id` | `GetTaskPushNotificationConfig` |
 /// | `DELETE` | `/tasks/:task_id/pushNotificationConfigs/:id` | `DeleteTaskPushNotificationConfig` |
 /// | `GET` | `/extendedAgentCard` | `GetExtendedAgentCard` |
-/// | `GET` | `/.well-known/agent.json` | Agent Card Discovery |
+/// | `GET` | `/.well-known/agent-card.json` | Agent Card Discovery |
 /// | `GET` | `/health` | Health check |
 pub struct A2aRouter {
     handler: Arc<RequestHandler>,
@@ -132,7 +132,7 @@ impl A2aRouter {
             // Extended card
             .route("/extendedAgentCard", get(handle_extended_card))
             // Agent card discovery
-            .route("/.well-known/agent.json", get(handle_agent_card))
+            .route("/.well-known/agent-card.json", get(handle_agent_card))
             // Health check
             .route("/health", get(handle_health))
             .with_state(state)

@@ -41,7 +41,7 @@ use response::{
 /// Routes incoming JSON-RPC requests to the underlying [`RequestHandler`].
 /// Optionally applies CORS headers to all responses.
 ///
-/// Also serves the agent card at `GET /.well-known/agent.json` so that
+/// Also serves the agent card at `GET /.well-known/agent-card.json` so that
 /// JSON-RPC servers can participate in agent card discovery (spec §8.3).
 pub struct JsonRpcDispatcher {
     handler: Arc<RequestHandler>,
@@ -103,7 +103,7 @@ impl JsonRpcDispatcher {
 
         // Serve the agent card at the well-known discovery path (spec §8.3).
         // This must be handled before JSON-RPC body parsing since it's a GET.
-        if req.method() == "GET" && req.uri().path() == "/.well-known/agent.json" {
+        if req.method() == "GET" && req.uri().path() == "/.well-known/agent-card.json" {
             let mut resp = self.card_handler.as_ref().map_or_else(
                 || json_response(404, br#"{"error":"agent card not configured"}"#.to_vec()),
                 |h| h.handle(&req).map(http_body_util::BodyExt::boxed),

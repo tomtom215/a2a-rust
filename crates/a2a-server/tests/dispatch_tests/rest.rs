@@ -137,7 +137,7 @@ async fn rest_wellknown_agent_card() {
 
     let req = hyper::Request::builder()
         .method("GET")
-        .uri(format!("http://{addr}/.well-known/agent.json"))
+        .uri(format!("http://{addr}/.well-known/agent-card.json"))
         .body(Full::new(Bytes::new()))
         .unwrap();
 

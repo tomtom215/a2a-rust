@@ -83,6 +83,61 @@ impl ErrorCode {
             Self::VersionNotSupported => "Version not supported",
         }
     }
+
+    /// Returns the A2A error reason in UPPER_SNAKE_CASE without the "Error" suffix,
+    /// as required by the spec for `google.rpc.ErrorInfo.reason`.
+    ///
+    /// Returns `None` for standard JSON-RPC errors (not A2A-specific).
+    #[must_use]
+    pub const fn a2a_reason(self) -> Option<&'static str> {
+        match self {
+            Self::TaskNotFound => Some("TASK_NOT_FOUND"),
+            Self::TaskNotCancelable => Some("TASK_NOT_CANCELABLE"),
+            Self::PushNotificationNotSupported => Some("PUSH_NOTIFICATION_NOT_SUPPORTED"),
+            Self::UnsupportedOperation => Some("UNSUPPORTED_OPERATION"),
+            Self::ContentTypeNotSupported => Some("CONTENT_TYPE_NOT_SUPPORTED"),
+            Self::InvalidAgentResponse => Some("INVALID_AGENT_RESPONSE"),
+            Self::ExtendedAgentCardNotConfigured => Some("EXTENDED_AGENT_CARD_NOT_CONFIGURED"),
+            Self::ExtensionSupportRequired => Some("EXTENSION_SUPPORT_REQUIRED"),
+            Self::VersionNotSupported => Some("VERSION_NOT_SUPPORTED"),
+            _ => None,
+        }
+    }
+
+    /// Returns the HTTP status code for this error, per Section 5.4 of the spec.
+    #[must_use]
+    pub const fn http_status(self) -> u16 {
+        match self {
+            Self::TaskNotFound => 404,
+            Self::TaskNotCancelable => 409,
+            Self::ContentTypeNotSupported => 415,
+            Self::InvalidAgentResponse => 502,
+            Self::PushNotificationNotSupported
+            | Self::UnsupportedOperation
+            | Self::ExtendedAgentCardNotConfigured
+            | Self::ExtensionSupportRequired
+            | Self::VersionNotSupported => 400,
+            Self::ParseError | Self::InvalidRequest | Self::InvalidParams => 400,
+            Self::MethodNotFound => 404,
+            Self::InternalError => 500,
+        }
+    }
+
+    /// Returns the gRPC status code string for this error, per Section 5.4.
+    #[must_use]
+    pub const fn grpc_status(self) -> &'static str {
+        match self {
+            Self::TaskNotFound => "NOT_FOUND",
+            Self::TaskNotCancelable | Self::ExtendedAgentCardNotConfigured
+            | Self::ExtensionSupportRequired => "FAILED_PRECONDITION",
+            Self::PushNotificationNotSupported | Self::UnsupportedOperation
+            | Self::VersionNotSupported => "UNIMPLEMENTED",
+            Self::ContentTypeNotSupported | Self::InvalidParams
+            | Self::InvalidRequest | Self::ParseError => "INVALID_ARGUMENT",
+            Self::InvalidAgentResponse | Self::InternalError => "INTERNAL",
+            Self::MethodNotFound => "UNIMPLEMENTED",
+        }
+    }
 }
 
 impl From<ErrorCode> for i32 {
@@ -214,6 +269,51 @@ impl A2aError {
     #[must_use]
     pub fn extended_card_not_configured(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::ExtendedAgentCardNotConfigured, msg)
+    }
+
+    /// Creates a "Push notification not supported" error.
+    #[must_use]
+    pub fn push_not_supported(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::PushNotificationNotSupported, msg)
+    }
+
+    /// Creates a "Content type not supported" error.
+    #[must_use]
+    pub fn content_type_not_supported(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ContentTypeNotSupported, msg)
+    }
+
+    /// Creates an "Extension support required" error.
+    #[must_use]
+    pub fn extension_support_required(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ExtensionSupportRequired, msg)
+    }
+
+    /// Creates a "Version not supported" error.
+    #[must_use]
+    pub fn version_not_supported(msg: impl Into<String>) -> Self {
+        Self::new(ErrorCode::VersionNotSupported, msg)
+    }
+
+    /// Builds the `google.rpc.ErrorInfo` data array as required by the spec.
+    ///
+    /// Per Section 9.5, 10.6, and 11.6, A2A-specific errors MUST include
+    /// an ErrorInfo entry with `@type`, `reason`, `domain`, and optional `metadata`.
+    #[must_use]
+    pub fn error_info_data(&self, metadata: Option<serde_json::Value>) -> serde_json::Value {
+        if let Some(reason) = self.code.a2a_reason() {
+            let mut info = serde_json::json!({
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                "reason": reason,
+                "domain": "a2a-protocol.org"
+            });
+            if let Some(meta) = metadata {
+                info["metadata"] = meta;
+            }
+            serde_json::json!([info])
+        } else {
+            serde_json::Value::Null
+        }
     }
 }
 

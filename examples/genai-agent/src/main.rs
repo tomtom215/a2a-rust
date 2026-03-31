@@ -72,7 +72,7 @@ impl AgentExecutor for GenaiAgentExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.as_str()),
+                    PartContent::Text(text) => Some(text.as_str()),
                     _ => None,
                 })
                 .unwrap_or("");

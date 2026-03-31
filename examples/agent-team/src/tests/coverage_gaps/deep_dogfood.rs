@@ -290,7 +290,7 @@ pub async fn test_artifact_content_correct(ctx: &TestContext) -> TestResult {
                 let mut has_content = false;
                 for art in arts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } =
+                        if let a2a_protocol_types::message::PartContent::Text(text) =
                             &part.content
                         {
                             // The analyzer should mention lines/functions/analysis.

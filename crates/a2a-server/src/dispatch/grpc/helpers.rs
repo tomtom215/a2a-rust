@@ -53,16 +53,26 @@ pub(super) fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload,
 }
 
 /// Converts a [`ServerError`] into a tonic [`Status`].
+///
+/// Per Section 5.4, each A2A error type maps to a specific gRPC status code.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
+    use a2a_protocol_types::ErrorCode;
     let a2a_err = err.to_a2a_error();
     let code = match a2a_err.code {
-        a2a_protocol_types::ErrorCode::TaskNotFound => tonic::Code::NotFound,
-        a2a_protocol_types::ErrorCode::TaskNotCancelable => tonic::Code::FailedPrecondition,
-        a2a_protocol_types::ErrorCode::InvalidParams
-        | a2a_protocol_types::ErrorCode::ParseError => tonic::Code::InvalidArgument,
-        a2a_protocol_types::ErrorCode::MethodNotFound
-        | a2a_protocol_types::ErrorCode::PushNotificationNotSupported => tonic::Code::Unimplemented,
-        _ => tonic::Code::Internal,
+        ErrorCode::TaskNotFound => tonic::Code::NotFound,
+        ErrorCode::TaskNotCancelable
+        | ErrorCode::ExtendedAgentCardNotConfigured
+        | ErrorCode::ExtensionSupportRequired => tonic::Code::FailedPrecondition,
+        ErrorCode::ContentTypeNotSupported
+        | ErrorCode::InvalidParams
+        | ErrorCode::InvalidRequest
+        | ErrorCode::ParseError => tonic::Code::InvalidArgument,
+        ErrorCode::MethodNotFound
+        | ErrorCode::PushNotificationNotSupported
+        | ErrorCode::UnsupportedOperation
+        | ErrorCode::VersionNotSupported => tonic::Code::Unimplemented,
+        ErrorCode::InvalidAgentResponse
+        | ErrorCode::InternalError => tonic::Code::Internal,
     };
     Status::new(code, a2a_err.message)
 }

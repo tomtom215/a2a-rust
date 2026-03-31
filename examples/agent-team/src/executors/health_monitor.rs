@@ -40,7 +40,7 @@ impl AgentExecutor for HealthMonitorExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    PartContent::Data { data } => {
+                    PartContent::Data(data) => {
                         serde_json::from_value::<Vec<String>>(data.clone()).ok()
                     }
                     _ => None,
@@ -60,7 +60,7 @@ impl AgentExecutor for HealthMonitorExecutor {
                 .parts
                 .iter()
                 .find_map(|p| match &p.content {
-                    PartContent::Text { text } => Some(text.clone()),
+                    PartContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_default();

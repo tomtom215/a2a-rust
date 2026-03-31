@@ -8,7 +8,7 @@
 //! A2A agents publish their [`AgentCard`] at a well-known URL. This module
 //! provides helpers to fetch and parse the card.
 //!
-//! The default discovery path is `/.well-known/agent.json` appended to
+//! The default discovery path is `/.well-known/agent-card.json` appended to
 //! the agent's base URL.
 //!
 //! Per spec §8.3, the client supports HTTP caching via `ETag` and
@@ -33,13 +33,13 @@ use a2a_protocol_types::AgentCard;
 use crate::error::{ClientError, ClientResult};
 
 /// The standard well-known path for agent card discovery.
-pub const AGENT_CARD_PATH: &str = "/.well-known/agent.json";
+pub const AGENT_CARD_PATH: &str = "/.well-known/agent-card.json";
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Fetches the [`AgentCard`] from the standard well-known path.
 ///
-/// Appends `/.well-known/agent.json` to `base_url` and performs an
+/// Appends `/.well-known/agent-card.json` to `base_url` and performs an
 /// HTTP GET.
 ///
 /// # Errors
@@ -308,13 +308,13 @@ mod tests {
     #[test]
     fn build_card_url_standard() {
         let url = build_card_url("http://localhost:8080", AGENT_CARD_PATH).unwrap();
-        assert_eq!(url, "http://localhost:8080/.well-known/agent.json");
+        assert_eq!(url, "http://localhost:8080/.well-known/agent-card.json");
     }
 
     #[test]
     fn build_card_url_trailing_slash() {
         let url = build_card_url("http://localhost:8080/", AGENT_CARD_PATH).unwrap();
-        assert_eq!(url, "http://localhost:8080/.well-known/agent.json");
+        assert_eq!(url, "http://localhost:8080/.well-known/agent-card.json");
     }
 
     #[test]
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn caching_resolver_new() {
         let resolver = CachingCardResolver::new("http://localhost:8080").unwrap();
-        assert_eq!(resolver.url, "http://localhost:8080/.well-known/agent.json");
+        assert_eq!(resolver.url, "http://localhost:8080/.well-known/agent-card.json");
     }
 
     #[test]

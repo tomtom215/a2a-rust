@@ -52,12 +52,16 @@ pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result:
 }
 
 /// Serializes an error response to bytes (for batch request support).
+///
+/// Per Section 9.5, A2A errors MUST include `google.rpc.ErrorInfo` in the data array.
 pub(super) fn error_response_bytes(id: JsonRpcId, err: &ServerError) -> Vec<u8> {
     let a2a_err = err.to_a2a_error();
-    let resp = JsonRpcErrorResponse::new(
-        id,
-        JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
-    );
+    let data = a2a_err.error_info_data(None);
+    let mut error = JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message);
+    if !data.is_null() {
+        error.data = Some(data);
+    }
+    let resp = JsonRpcErrorResponse::new(id, error);
     serde_json::to_vec(&resp).unwrap_or_default()
 }
 
@@ -96,10 +100,12 @@ pub(super) fn error_response(
     err: &ServerError,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     let a2a_err = err.to_a2a_error();
-    let resp = JsonRpcErrorResponse::new(
-        id.clone(),
-        JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message),
-    );
+    let data = a2a_err.error_info_data(None);
+    let mut error = JsonRpcError::new(a2a_err.code.as_i32(), a2a_err.message);
+    if !data.is_null() {
+        error.data = Some(data);
+    }
+    let resp = JsonRpcErrorResponse::new(id.clone(), error);
     match serde_json::to_vec(&resp) {
         Ok(body) => json_response(200, body),
         Err(e) => internal_serialization_error(id, &e),

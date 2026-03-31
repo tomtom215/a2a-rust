@@ -154,7 +154,7 @@ impl RestDispatcher {
         }
 
         // Agent card is always at the well-known path (no tenant prefix).
-        if method == "GET" && path == "/.well-known/agent.json" {
+        if method == "GET" && path == "/.well-known/agent-card.json" {
             return self
                 .card_handler
                 .as_ref()
