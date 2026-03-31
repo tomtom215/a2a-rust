@@ -89,6 +89,11 @@ public class EchoAgent {
             return;
         }
 
+        if ("DELETE".equals(method)) {
+            handleDelete(exchange, path);
+            return;
+        }
+
         if (!"POST".equals(method)) {
             sendJson(exchange, 405, errorJson(-32600, "Method not allowed"));
             return;
@@ -118,8 +123,8 @@ public class EchoAgent {
             tasks.values().forEach(arr::add);
             result.add("tasks", arr);
             sendJson(exchange, 200, result);
-        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig/[^/]+")) {
-            // GET /tasks/{taskId}/pushNotificationConfig/{configId}
+        } else if (path.matches("/tasks/[^/:]+/pushNotificationConfigs/[^/]+")) {
+            // GET /tasks/{taskId}/pushNotificationConfigs/{configId}
             String[] parts = path.split("/");
             String taskId = parts[2];
             String configId = parts[4];
@@ -130,14 +135,17 @@ public class EchoAgent {
             } else {
                 sendJson(exchange, 404, errorJson(-32001, "Config not found"));
             }
-        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig")) {
-            // GET /tasks/{taskId}/pushNotificationConfig — list
+        } else if (path.matches("/tasks/[^/:]+/pushNotificationConfigs")) {
+            // GET /tasks/{taskId}/pushNotificationConfigs — list
             String taskId = path.split("/")[2];
             JsonArray configs = new JsonArray();
             pushConfigs.forEach((k, v) -> {
                 if (k.startsWith(taskId + ":")) configs.add(v);
             });
             sendJson(exchange, 200, configs);
+        } else if (path.matches("/tasks/[^/:]+:subscribe")) {
+            // GET /tasks/{id}:subscribe — stub
+            sendJson(exchange, 200, new JsonObject());
         } else if (path.startsWith("/tasks/")) {
             String taskId = path.substring("/tasks/".length());
             JsonObject task = tasks.get(taskId);
@@ -146,6 +154,19 @@ public class EchoAgent {
             } else {
                 sendJson(exchange, 404, errorJson(-32001, "Task not found"));
             }
+        } else {
+            sendJson(exchange, 404, errorJson(-32601, "Not found"));
+        }
+    }
+
+    private static void handleDelete(HttpExchange exchange, String path) throws IOException {
+        if (path.matches("/tasks/[^/:]+/pushNotificationConfigs/[^/]+")) {
+            // DELETE /tasks/{taskId}/pushNotificationConfigs/{configId}
+            String[] parts = path.split("/");
+            String taskId = parts[2];
+            String configId = parts[4];
+            pushConfigs.remove(taskId + ":" + configId);
+            sendJson(exchange, 200, new JsonObject());
         } else {
             sendJson(exchange, 404, errorJson(-32601, "Not found"));
         }
@@ -248,11 +269,11 @@ public class EchoAgent {
     }
 
     private static void handleRest(HttpExchange exchange, String path, JsonObject body) throws IOException {
-        if ("/message/send".equals(path) || "/message/stream".equals(path)) {
+        if ("/message:send".equals(path) || "/message:stream".equals(path)) {
             sendJson(exchange, 200, processMessage(body));
-        } else if (path.matches("/tasks/[^/]+/cancel")) {
-            // POST /tasks/{taskId}/cancel
-            String taskId = path.split("/")[2];
+        } else if (path.matches("/tasks/[^/:]+:cancel")) {
+            // POST /tasks/{taskId}:cancel
+            String taskId = path.split(":")[0].split("/")[2];
             JsonObject task = tasks.get(taskId);
             if (task != null) {
                 JsonObject status = new JsonObject();
@@ -262,15 +283,8 @@ public class EchoAgent {
             } else {
                 sendJson(exchange, 404, errorJson(-32001, "Task not found"));
             }
-        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig/[^/]+/delete")) {
-            // POST /tasks/{taskId}/pushNotificationConfig/{configId}/delete
-            String[] parts = path.split("/");
-            String taskId = parts[2];
-            String configId = parts[4];
-            pushConfigs.remove(taskId + ":" + configId);
-            sendJson(exchange, 200, new JsonObject());
-        } else if (path.matches("/tasks/[^/]+/pushNotificationConfig")) {
-            // POST /tasks/{taskId}/pushNotificationConfig — create
+        } else if (path.matches("/tasks/[^/:]+/pushNotificationConfigs")) {
+            // POST /tasks/{taskId}/pushNotificationConfigs — create
             String taskId = path.split("/")[2];
             String cfgId = body.has("id") ? body.get("id").getAsString() : UUID.randomUUID().toString();
             body.addProperty("id", cfgId);

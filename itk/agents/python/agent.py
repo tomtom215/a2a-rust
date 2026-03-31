@@ -181,7 +181,7 @@ async def rest_cancel_task(request: Request) -> JSONResponse:
 
 
 async def rest_push_config_collection(request: Request) -> JSONResponse:
-    """Handles both POST (create) and GET (list) on /tasks/{task_id}/pushNotificationConfig."""
+    """Handles both POST (create) and GET (list) on /tasks/{task_id}/pushNotificationConfigs."""
     task_id = request.path_params["task_id"]
     if request.method == "POST":
         body = await request.json()
@@ -213,6 +213,13 @@ async def rest_delete_push_config(request: Request) -> JSONResponse:
     return JSONResponse({})
 
 
+async def rest_push_config_item(request: Request) -> JSONResponse:
+    """Routes GET and DELETE on /tasks/{task_id}/pushNotificationConfigs/{config_id}."""
+    if request.method == "DELETE":
+        return await rest_delete_push_config(request)
+    return await rest_get_push_config(request)
+
+
 async def catch_all(request: Request) -> JSONResponse:
     return JSONResponse(
         {"code": -32601, "message": "Not found"}, status_code=404
@@ -227,25 +234,20 @@ def create_app(port: int) -> Starlette:
         # JSON-RPC
         Route("/", jsonrpc_handler, methods=["POST"]),
         # REST endpoints
-        Route("/message/send", rest_send_message, methods=["POST"]),
-        Route("/message/stream", rest_send_message, methods=["POST"]),
+        Route("/message:send", rest_send_message, methods=["POST"]),
+        Route("/message:stream", rest_send_message, methods=["POST"]),
         Route("/tasks", rest_list_tasks, methods=["GET"]),
         Route("/tasks/{task_id}", rest_get_task, methods=["GET"]),
-        Route("/tasks/{task_id}/cancel", rest_cancel_task, methods=["POST"]),
+        Route("/tasks/{task_id}:cancel", rest_cancel_task, methods=["POST"]),
         Route(
-            "/tasks/{task_id}/pushNotificationConfig/{config_id}",
-            rest_get_push_config,
-            methods=["GET"],
+            "/tasks/{task_id}/pushNotificationConfigs/{config_id}",
+            rest_push_config_item,
+            methods=["GET", "DELETE"],
         ),
         Route(
-            "/tasks/{task_id}/pushNotificationConfig",
+            "/tasks/{task_id}/pushNotificationConfigs",
             rest_push_config_collection,
             methods=["GET", "POST"],
-        ),
-        Route(
-            "/tasks/{task_id}/pushNotificationConfig/{config_id}/delete",
-            rest_delete_push_config,
-            methods=["POST"],
         ),
         # Catch-all
         Route("/{path:path}", catch_all),

@@ -172,11 +172,11 @@ app.post('/', (req, res) => {
 });
 
 // REST endpoints
-app.post('/message/send', (req, res) => {
+app.post('/message\\:send', (req, res) => {
   res.json(processMessage(req.body));
 });
 
-app.post('/message/stream', (req, res) => {
+app.post('/message\\:stream', (req, res) => {
   res.json(processMessage(req.body));
 });
 
@@ -191,7 +191,7 @@ app.get('/tasks', (_, res) => {
 });
 
 // Cancel task
-app.post('/tasks/:id/cancel', (req, res) => {
+app.post('/tasks/:id\\:cancel', (req, res) => {
   const task = tasks.get(req.params.id);
   if (!task) return res.status(404).json({ code: -32001, message: 'Task not found' });
   task.status = { state: 'TASK_STATE_CANCELED' };
@@ -199,7 +199,7 @@ app.post('/tasks/:id/cancel', (req, res) => {
 });
 
 // Push notification config — create
-app.post('/tasks/:taskId/pushNotificationConfig', (req, res) => {
+app.post('/tasks/:taskId/pushNotificationConfigs', (req, res) => {
   const taskId = req.params.taskId;
   const configId = req.body.id || uuidv4();
   const config = { ...req.body, id: configId, taskId };
@@ -208,7 +208,7 @@ app.post('/tasks/:taskId/pushNotificationConfig', (req, res) => {
 });
 
 // Push notification config — get by id
-app.get('/tasks/:taskId/pushNotificationConfig/:configId', (req, res) => {
+app.get('/tasks/:taskId/pushNotificationConfigs/:configId', (req, res) => {
   const key = `${req.params.taskId}:${req.params.configId}`;
   const cfg = pushConfigs.get(key);
   if (!cfg) return res.status(404).json({ code: -32001, message: 'Config not found' });
@@ -216,14 +216,14 @@ app.get('/tasks/:taskId/pushNotificationConfig/:configId', (req, res) => {
 });
 
 // Push notification config — list
-app.get('/tasks/:taskId/pushNotificationConfig', (req, res) => {
+app.get('/tasks/:taskId/pushNotificationConfigs', (req, res) => {
   const configs = Array.from(pushConfigs.values())
     .filter(c => c.taskId === req.params.taskId);
   res.json(configs);
 });
 
-// Push notification config — delete
-app.post('/tasks/:taskId/pushNotificationConfig/:configId/delete', (req, res) => {
+// Push notification config — delete (DELETE method)
+app.delete('/tasks/:taskId/pushNotificationConfigs/:configId', (req, res) => {
   const key = `${req.params.taskId}:${req.params.configId}`;
   pushConfigs.delete(key);
   res.json({});

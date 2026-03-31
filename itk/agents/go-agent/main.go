@@ -339,7 +339,7 @@ func main() {
 	mux.HandleFunc("POST /", handleJsonRpc)
 
 	// REST endpoints
-	mux.HandleFunc("POST /message/send", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /message:send", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
@@ -347,7 +347,7 @@ func main() {
 		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
 	})
 
-	mux.HandleFunc("POST /message/stream", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /message:stream", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
 		json.NewDecoder(r.Body).Decode(&params)
 		task := processMessage(params)
@@ -382,7 +382,7 @@ func main() {
 	})
 
 	// REST: Cancel task
-	mux.HandleFunc("POST /tasks/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /tasks/{id}:cancel", func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("id")
 		if val, ok := tasks.Load(taskID); ok {
 			task := val.(Task)
@@ -398,7 +398,7 @@ func main() {
 	})
 
 	// REST: Create push notification config
-	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfigs", func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("taskId")
 		var cfg PushConfig
 		json.NewDecoder(r.Body).Decode(&cfg)
@@ -413,7 +413,7 @@ func main() {
 	})
 
 	// REST: Get push notification config by id
-	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig/{configId}", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
 		if val, ok := pushCfgs.Load(key); ok {
 			w.Header().Set("Content-Type", "application/json")
@@ -426,7 +426,7 @@ func main() {
 	})
 
 	// REST: List push notification configs for task
-	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfig", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /tasks/{taskId}/pushNotificationConfigs", func(w http.ResponseWriter, r *http.Request) {
 		taskID := r.PathValue("taskId")
 		var configs []PushConfig
 		pushCfgs.Range(func(_, v interface{}) bool {
@@ -444,7 +444,7 @@ func main() {
 	})
 
 	// REST: Delete push notification config
-	mux.HandleFunc("POST /tasks/{taskId}/pushNotificationConfig/{configId}/delete", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /tasks/{taskId}/pushNotificationConfigs/{configId}", func(w http.ResponseWriter, r *http.Request) {
 		key := r.PathValue("taskId") + ":" + r.PathValue("configId")
 		pushCfgs.Delete(key)
 		w.Header().Set("Content-Type", "application/json")
