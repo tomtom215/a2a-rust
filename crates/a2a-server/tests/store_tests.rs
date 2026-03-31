@@ -67,7 +67,7 @@ async fn list_with_page_size_truncates() {
         );
     }
     // Should have a next_page_token since there are more results.
-    assert!(result.next_page_token.is_some());
+    assert!(!result.next_page_token.is_empty());
 }
 
 #[tokio::test]
@@ -91,7 +91,7 @@ async fn list_with_page_token_returns_next_page() {
     };
     let page1 = store.list(&params).await.unwrap();
     assert_eq!(page1.tasks.len(), 3);
-    let token = page1.next_page_token.unwrap();
+    let token = page1.next_page_token.clone();
 
     // Get second page using the token.
     let params2 = ListTasksParams {
@@ -142,7 +142,7 @@ async fn list_last_page_has_no_next_token() {
     };
     let result = store.list(&params).await.unwrap();
     assert_eq!(result.tasks.len(), 3);
-    assert!(result.next_page_token.is_none());
+    assert!(result.next_page_token.is_empty());
 }
 
 // ── Filter tests ──────────────────────────────────────────────────────────────

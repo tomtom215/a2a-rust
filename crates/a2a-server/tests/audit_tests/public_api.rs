@@ -235,9 +235,12 @@ async fn shutdown_cancels_in_flight_tasks() {
 // 7. RequestHandler::on_get_extended_agent_card() - configured and unconfigured
 
 #[tokio::test]
-async fn get_extended_agent_card_configured() {
+async fn get_extended_agent_card_configured_with_capability() {
+    use a2a_protocol_types::agent_card::AgentCapabilities;
+    let mut card = minimal_agent_card();
+    card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
     let handler = RequestHandlerBuilder::new(EchoExecutor)
-        .with_agent_card(minimal_agent_card())
+        .with_agent_card(card)
         .build()
         .expect("build handler");
 
@@ -247,10 +250,22 @@ async fn get_extended_agent_card_configured() {
         .expect("get agent card");
     assert_eq!(card.name, "Test Agent");
     assert_eq!(card.version, "1.0.0");
-    assert_eq!(
-        card.supported_interfaces.len(),
-        1,
-        "expected exactly one supported interface"
+}
+
+#[tokio::test]
+async fn get_extended_agent_card_without_capability_returns_unsupported() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .with_agent_card(minimal_agent_card()) // capabilities.extended_agent_card is None
+        .build()
+        .expect("build handler");
+
+    let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
+    assert!(
+        matches!(
+            err,
+            a2a_protocol_server::ServerError::UnsupportedOperation(_)
+        ),
+        "expected UnsupportedOperation when capability not set, got {err:?}"
     );
 }
 
@@ -261,10 +276,9 @@ async fn get_extended_agent_card_unconfigured() {
         .expect("build handler");
 
     let err = handler.on_get_extended_agent_card(None).await.unwrap_err();
-    let err_msg = format!("{err:?}");
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::Internal(_)),
-        "expected Internal error, got {err_msg}"
+        matches!(err, a2a_protocol_server::ServerError::Protocol(ref e) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
+        "expected ExtendedAgentCardNotConfigured error, got {err:?}"
     );
 }
 

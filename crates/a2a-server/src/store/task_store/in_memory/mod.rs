@@ -147,6 +147,7 @@ impl TaskStore for InMemoryTaskStore {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn list<'a>(
         &'a self,
         params: &'a ListTasksParams,
@@ -201,20 +202,30 @@ impl TaskStore for InMemoryTaskStore {
                 .take(page_size + 1)
                 .map(|(_, e)| e.task.clone())
                 .collect();
+            #[allow(clippy::cast_possible_truncation)]
+            let total_size = store.len() as u32;
             drop(store);
 
-            let next_page_token = if tasks.len() > page_size {
+            let has_next_page = tasks.len() > page_size;
+            let next_page_token = if has_next_page {
                 tasks
                     .get(page_size.saturating_sub(1))
                     .map(|t| t.id.0.clone())
+                    .unwrap_or_default()
             } else {
-                None
+                String::new()
             };
+
             let mut tasks = tasks;
             tasks.truncate(page_size);
 
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                response.page_size = page_size as u32;
+            }
+            response.total_size = total_size;
             Ok(response)
         })
     }
@@ -429,7 +440,7 @@ mod tests {
         let params = ListTasksParams::default();
         let response = store.list(&params).await.unwrap();
         assert!(response.tasks.is_empty());
-        assert!(response.next_page_token.is_none());
+        assert!(response.next_page_token.is_empty());
     }
 
     #[tokio::test]
@@ -520,14 +531,14 @@ mod tests {
         let page1 = store.list(&params).await.unwrap();
         assert_eq!(page1.tasks.len(), 2, "first page should have 2 tasks");
         assert!(
-            page1.next_page_token.is_some(),
+            !page1.next_page_token.is_empty(),
             "should have next_page_token when more results exist"
         );
 
         // Fetch second page using the cursor.
         let params2 = ListTasksParams {
             page_size: Some(2),
-            page_token: page1.next_page_token,
+            page_token: Some(page1.next_page_token),
             ..Default::default()
         };
         let page2 = store.list(&params2).await.unwrap();
@@ -536,13 +547,13 @@ mod tests {
         // Fetch third page (should have 1 remaining task).
         let params3 = ListTasksParams {
             page_size: Some(2),
-            page_token: page2.next_page_token,
+            page_token: Some(page2.next_page_token),
             ..Default::default()
         };
         let page3 = store.list(&params3).await.unwrap();
         assert_eq!(page3.tasks.len(), 1, "third page should have 1 task");
         assert!(
-            page3.next_page_token.is_none(),
+            page3.next_page_token.is_empty(),
             "no more pages after the last task"
         );
     }

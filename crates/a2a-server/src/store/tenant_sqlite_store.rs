@@ -250,13 +250,15 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
             let next_page_token = if tasks.len() > page_size as usize {
                 tasks.truncate(page_size as usize);
-                tasks.last().map(|t| t.id.0.clone())
+                tasks.last().map(|t| t.id.0.clone()).unwrap_or_default()
             } else {
-                None
+                String::new()
             };
 
+            let page_len = tasks.len() as u32;
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
+            response.page_size = page_len;
             Ok(response)
         })
     }
@@ -574,13 +576,13 @@ mod tests {
             let response = store.list(&params).await.unwrap();
             assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
             assert!(
-                response.next_page_token.is_some(),
+                !response.next_page_token.is_empty(),
                 "should have a next page token"
             );
 
             let params2 = ListTasksParams {
                 page_size: Some(2),
-                page_token: response.next_page_token,
+                page_token: Some(response.next_page_token),
                 ..Default::default()
             };
             let response2 = store.list(&params2).await.unwrap();

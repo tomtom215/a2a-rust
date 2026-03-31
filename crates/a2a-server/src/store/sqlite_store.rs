@@ -264,13 +264,15 @@ impl TaskStore for SqliteTaskStore {
 
             let next_page_token = if tasks.len() > page_size as usize {
                 tasks.truncate(page_size as usize);
-                tasks.last().map(|t| t.id.0.clone())
+                tasks.last().map(|t| t.id.0.clone()).unwrap_or_default()
             } else {
-                None
+                String::new()
             };
 
+            let page_len = tasks.len() as u32;
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
+            response.page_size = page_len;
             Ok(response)
         })
     }
@@ -593,33 +595,33 @@ mod tests {
         let response = store.list(&params).await.unwrap();
         assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
         assert!(
-            response.next_page_token.is_some(),
+            response.next_page_token.is_empty(),
             "should have a next page token"
         );
 
         // Second page using the token
         let params2 = ListTasksParams {
             page_size: Some(2),
-            page_token: response.next_page_token,
+            page_token: Some(response.next_page_token),
             ..Default::default()
         };
         let response2 = store.list(&params2).await.unwrap();
         assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
         assert!(
-            response2.next_page_token.is_some(),
+            response2.next_page_token.is_empty(),
             "should still have a next page token"
         );
 
         // Third page - only 1 remaining
         let params3 = ListTasksParams {
             page_size: Some(2),
-            page_token: response2.next_page_token,
+            page_token: Some(response2.next_page_token),
             ..Default::default()
         };
         let response3 = store.list(&params3).await.unwrap();
         assert_eq!(response3.tasks.len(), 1, "last page should have 1 task");
         assert!(
-            response3.next_page_token.is_none(),
+            response3.next_page_token.is_empty(),
             "last page should have no next page token"
         );
     }
@@ -660,7 +662,7 @@ mod tests {
             "list on empty store should return no tasks"
         );
         assert!(
-            response.next_page_token.is_none(),
+            response.next_page_token.is_empty(),
             "no pagination token for empty results"
         );
     }

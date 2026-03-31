@@ -581,9 +581,9 @@ fn task_list_response_roundtrip() {
             artifacts: None,
             metadata: None,
         }],
-        next_page_token: Some("next-page".into()),
-        page_size: Some(50),
-        total_size: Some(1),
+        next_page_token: "next-page".into(),
+        page_size: 50,
+        total_size: 1,
     };
 
     let json = serde_json::to_string(&resp).expect("serialize");
@@ -592,7 +592,7 @@ fn task_list_response_roundtrip() {
     assert_eq!(back.tasks.len(), 1);
     assert_eq!(back.tasks[0].id, TaskId::new("t1"));
     assert_eq!(back.tasks[0].status.state, TaskState::Completed);
-    assert_eq!(back.next_page_token.as_deref(), Some("next-page"));
+    assert_eq!(back.next_page_token, "next-page");
 }
 
 // ── UTC timestamp ────────────────────────────────────────────────────────────

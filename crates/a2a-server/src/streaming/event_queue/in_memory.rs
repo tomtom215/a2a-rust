@@ -186,6 +186,11 @@ impl InMemoryQueueReader {
         }
     }
 
+    /// Sets a pending first event to be yielded before broadcast events.
+    pub fn set_first_event(&mut self, event: StreamResponse) {
+        self.pending_first = Some(Ok(event));
+    }
+
     /// Creates a reader with a snapshot event that will be yielded first.
     pub(crate) const fn with_first_event(
         rx: broadcast::Receiver<A2aResult<StreamResponse>>,

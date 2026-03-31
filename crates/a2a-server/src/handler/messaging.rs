@@ -420,6 +420,10 @@ impl RequestHandler {
             // is not affected by SSE consumer backpressure, so the background
             // processor never misses state transitions.
             self.spawn_background_event_processor(task_id.clone(), executor_handle, persistence_rx);
+            // SPEC §3.1.2: The first event in a streaming response MUST be a
+            // Task object representing the current state.
+            let mut reader = reader;
+            reader.set_first_event(StreamResponse::Task(task.clone()));
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.

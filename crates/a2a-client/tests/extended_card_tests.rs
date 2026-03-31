@@ -60,7 +60,7 @@ fn test_agent_card() -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none(),
+        capabilities: AgentCapabilities::none().with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,

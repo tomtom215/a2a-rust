@@ -292,7 +292,7 @@ pub async fn test_pagination_walk(ctx: &TestContext) -> TestResult {
     let client = ClientBuilder::new(&ctx.analyzer_url).build().unwrap();
 
     let mut all_task_ids = Vec::new();
-    let mut page_token = None;
+    let mut page_token: Option<String> = None;
     let mut pages = 0;
     loop {
         let resp = client
@@ -312,10 +312,10 @@ pub async fn test_pagination_walk(ctx: &TestContext) -> TestResult {
         for t in &resp.tasks {
             all_task_ids.push(t.id.to_string());
         }
-        if resp.next_page_token.is_none() || pages > 50 {
+        if resp.next_page_token.is_empty() || pages > 50 {
             break;
         }
-        page_token = resp.next_page_token;
+        page_token = Some(resp.next_page_token);
     }
     println!(
         "  Walked {pages} pages, found {} unique tasks",

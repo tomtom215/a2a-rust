@@ -32,10 +32,28 @@ impl RequestHandler {
             let call_ctx = build_call_context("GetExtendedAgentCard", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
-            let card = self
-                .agent_card
-                .clone()
-                .ok_or_else(|| ServerError::Internal("no agent card configured".into()))?;
+            // SPEC §3.1.11: If capabilities.extended_agent_card is false or
+            // absent, MUST return UnsupportedOperationError. If capability is
+            // declared but card not configured, return ExtendedAgentCardNotConfigured.
+            let card = match &self.agent_card {
+                Some(card) => {
+                    let has_capability = card.capabilities.extended_agent_card.unwrap_or(false);
+                    if !has_capability {
+                        return Err(ServerError::UnsupportedOperation(
+                            "agent does not support extended agent card".into(),
+                        ));
+                    }
+                    card.clone()
+                }
+                None => {
+                    return Err(ServerError::Protocol(
+                        a2a_protocol_types::error::A2aError::new(
+                            a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured,
+                            "extended agent card not configured",
+                        ),
+                    ));
+                }
+            };
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(card)
@@ -95,18 +113,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_extended_agent_card_no_card_returns_error() {
+    async fn get_extended_agent_card_no_card_returns_not_configured_error() {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let result = handler.on_get_extended_agent_card(None).await;
         assert!(
-            matches!(result, Err(ServerError::Internal(_))),
-            "expected Internal error when no agent card is configured, got: {result:?}"
+            matches!(result, Err(ServerError::Protocol(ref e)) if e.code == a2a_protocol_types::error::ErrorCode::ExtendedAgentCardNotConfigured),
+            "expected ExtendedAgentCardNotConfigured when no card configured, got: {result:?}"
         );
     }
 
     #[tokio::test]
-    async fn get_extended_agent_card_with_card_returns_ok() {
-        let card = make_agent_card();
+    async fn get_extended_agent_card_without_capability_returns_unsupported() {
+        let card = make_agent_card(); // capabilities.extended_agent_card is None
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card)
+            .build()
+            .unwrap();
+        let result = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            matches!(result, Err(ServerError::UnsupportedOperation(_))),
+            "expected UnsupportedOperation when capability is false, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_extended_agent_card_with_capability_returns_ok() {
+        let mut card = make_agent_card();
+        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_agent_card(card)
             .build()
@@ -121,12 +154,12 @@ mod tests {
 
     #[tokio::test]
     async fn get_extended_agent_card_error_path_records_metrics() {
-        // Exercises the Err metrics path (line 68) when no agent card is configured.
+        // Exercises the Err metrics path when no agent card is configured.
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let result = handler.on_get_extended_agent_card(None).await;
         assert!(
-            matches!(result, Err(ServerError::Internal(_))),
-            "expected Internal error for error metrics path, got: {result:?}"
+            result.is_err(),
+            "expected error for error metrics path, got: {result:?}"
         );
     }
 }
