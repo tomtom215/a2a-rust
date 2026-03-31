@@ -300,6 +300,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
+                false, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }
@@ -369,6 +370,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
+                false, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }

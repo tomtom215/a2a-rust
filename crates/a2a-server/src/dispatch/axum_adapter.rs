@@ -351,6 +351,7 @@ async fn handle_send_inner(
             reader,
             Some(state.config.sse_keep_alive_interval),
             Some(state.config.sse_channel_capacity),
+            false, // REST: bare StreamResponse per Section 11.7
         )),
         Err(e) => handler_error_to_response(&e),
     }
@@ -402,6 +403,7 @@ async fn handle_subscribe_inner(
             reader,
             Some(state.config.sse_keep_alive_interval),
             Some(state.config.sse_channel_capacity),
+            false, // REST: bare StreamResponse per Section 11.7
         )),
         Err(e) => handler_error_to_response(&e),
     }

@@ -262,6 +262,7 @@ impl JsonRpcDispatcher {
                             reader,
                             Some(self.config.sse_keep_alive_interval),
                             Some(self.config.sse_channel_capacity),
+                            true, // JSON-RPC envelope per Section 9.4.2
                         ),
                         Err(e) => error_response(id, &e),
                     },
@@ -457,6 +458,7 @@ impl JsonRpcDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
+                true, // JSON-RPC envelope per Section 9.4.2
             ),
             Err(e) => error_response(id, &e),
         }
