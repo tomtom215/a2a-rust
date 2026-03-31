@@ -596,7 +596,7 @@ mod tests {
         let response = store.list(&params).await.unwrap();
         assert_eq!(response.tasks.len(), 2, "first page should have 2 tasks");
         assert!(
-            response.next_page_token.is_empty(),
+            !response.next_page_token.is_empty(),
             "should have a next page token"
         );
 
@@ -609,7 +609,7 @@ mod tests {
         let response2 = store.list(&params2).await.unwrap();
         assert_eq!(response2.tasks.len(), 2, "second page should have 2 tasks");
         assert!(
-            response2.next_page_token.is_empty(),
+            !response2.next_page_token.is_empty(),
             "should still have a next page token"
         );
 

@@ -285,7 +285,7 @@ async fn list_paginates_with_page_size() {
         let resp = store.list(&params).await.unwrap();
         assert_eq!(resp.tasks.len(), 2);
         assert!(
-            resp.next_page_token.is_empty(),
+            !resp.next_page_token.is_empty(),
             "expected a next page token"
         );
     })
