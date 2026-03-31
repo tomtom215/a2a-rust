@@ -74,6 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present. Requests with incompatible major versions (not 1.x) are rejected with
   `VersionNotSupported` (-32009). (Cross-SDK learning from a2a-python#865)
 
+- **`a2a-protocol-client`: JSON-RPC response ID validation** — The client now
+  verifies that the response `id` matches the request `id` in JSON-RPC
+  responses. Previously, any response was accepted regardless of ID, which could
+  cause silent data corruption in pipelined scenarios.
+  (Cross-SDK learning from a2a-js#318)
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed
