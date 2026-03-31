@@ -140,7 +140,7 @@ impl EventStream {
     /// When `false`, each SSE `data:` field is parsed as a bare
     /// `StreamResponse` (REST binding). Default is `true` (JSON-RPC binding).
     #[must_use]
-    pub(crate) fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
+    pub(crate) const fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
         self.jsonrpc_envelope = envelope;
         self
     }
