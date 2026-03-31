@@ -103,9 +103,15 @@ impl InMemoryQueueWriter {
     /// event queue, which is required for `SubscribeToTask` (resubscribe).
     #[must_use]
     pub fn subscribe(&self) -> InMemoryQueueReader {
-        InMemoryQueueReader {
-            rx: self.tx.subscribe(),
-        }
+        InMemoryQueueReader::new(self.tx.subscribe())
+    }
+
+    /// Returns a raw broadcast receiver without wrapping in `InMemoryQueueReader`.
+    ///
+    /// Used by [`crate::streaming::EventQueueManager::subscribe_with_snapshot`]
+    /// to create a reader with a pending first event.
+    pub(crate) fn raw_subscribe(&self) -> broadcast::Receiver<A2aResult<StreamResponse>> {
+        self.tx.subscribe()
     }
 }
 
@@ -161,15 +167,34 @@ impl EventQueueWriter for InMemoryQueueWriter {
 ///
 /// If the reader falls behind (slower than the writer), missed events are
 /// silently skipped and the reader continues with the next available event.
+///
+/// Optionally holds a "pending first event" that is yielded before any
+/// broadcast events. This is used by `SubscribeToTask` to emit a `Task`
+/// snapshot as the first event without broadcasting it to all subscribers.
 #[derive(Debug)]
 pub struct InMemoryQueueReader {
     rx: broadcast::Receiver<A2aResult<StreamResponse>>,
+    pending_first: Option<A2aResult<StreamResponse>>,
 }
 
 impl InMemoryQueueReader {
     /// Creates a new `InMemoryQueueReader`.
     pub(crate) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
-        Self { rx }
+        Self {
+            rx,
+            pending_first: None,
+        }
+    }
+
+    /// Creates a reader with a snapshot event that will be yielded first.
+    pub(crate) const fn with_first_event(
+        rx: broadcast::Receiver<A2aResult<StreamResponse>>,
+        first: StreamResponse,
+    ) -> Self {
+        Self {
+            rx,
+            pending_first: Some(Ok(first)),
+        }
     }
 }
 
@@ -178,6 +203,11 @@ impl EventQueueReader for InMemoryQueueReader {
         &mut self,
     ) -> Pin<Box<dyn Future<Output = Option<A2aResult<StreamResponse>>> + Send + '_>> {
         Box::pin(async move {
+            // Yield the pending first event (e.g., Task snapshot for SubscribeToTask)
+            // before reading from the broadcast channel.
+            if let Some(first) = self.pending_first.take() {
+                return Some(first);
+            }
             loop {
                 match self.rx.recv().await {
                     Ok(event) => return Some(event),

@@ -15,9 +15,8 @@ use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::StreamResponse;
 
 use super::{
-    new_in_memory_queue_with_options, new_in_memory_queue_with_persistence, EventQueueWriter,
-    InMemoryQueueReader, InMemoryQueueWriter, DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY,
-    DEFAULT_WRITE_TIMEOUT,
+    new_in_memory_queue_with_options, new_in_memory_queue_with_persistence, InMemoryQueueReader,
+    InMemoryQueueWriter, DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY, DEFAULT_WRITE_TIMEOUT,
 };
 use crate::metrics::Metrics;
 
@@ -241,32 +240,27 @@ impl EventQueueManager {
         map.get(task_id).map(|writer| writer.subscribe())
     }
 
-    /// Subscribes to a task's event queue and writes an initial snapshot event.
+    /// Subscribes to a task's event queue with an initial snapshot event.
     ///
     /// Per A2A spec, the first event in a `SubscribeToTask` stream MUST be a
-    /// `Task` or `Message` representing the current state. This method:
-    /// 1. Creates a new subscriber (broadcast receiver)
-    /// 2. Writes the snapshot through the existing writer
+    /// `Task` or `Message` representing the current state. The snapshot is
+    /// delivered only to the new subscriber — it is NOT broadcast to existing
+    /// subscribers, avoiding mid-stream surprise events for other consumers.
     ///
-    /// The new subscriber will receive the snapshot as its first event because
-    /// `subscribe()` is called before the write. Returns `None` if no queue
-    /// exists for the task.
+    /// Returns `None` if no queue exists for the task.
     pub async fn subscribe_with_snapshot(
         &self,
         task_id: &TaskId,
-        snapshot: a2a_protocol_types::events::StreamResponse,
+        snapshot: StreamResponse,
     ) -> Option<InMemoryQueueReader> {
         let map = self.writers.read().await;
-        let writer = Arc::clone(map.get(task_id)?);
-        // Subscribe FIRST so the new reader receives the snapshot.
-        let reader = writer.subscribe();
-        // Release read lock before async write.
+        let writer = map.get(task_id)?;
+        // Create a reader with the snapshot as its pending first event.
+        // The snapshot is NOT written to the broadcast channel, so other
+        // subscribers are unaffected.
+        let rx = writer.raw_subscribe();
         drop(map);
-        // Write the snapshot outside the read lock; if this fails (queue
-        // full/closed), we still return the reader — worst case the client
-        // misses the snapshot but still receives subsequent events.
-        let _ = writer.write(snapshot).await;
-        Some(reader)
+        Some(InMemoryQueueReader::with_first_event(rx, snapshot))
     }
 
     /// Removes and drops the event queue for the given task.
