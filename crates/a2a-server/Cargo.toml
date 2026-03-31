@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.3.4"
+version     = "0.4.0"
 description = "A2A protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
@@ -36,7 +36,7 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 axum = ["dep:axum"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.3.4", path = "../a2a-types" }
+a2a-protocol-types      = { version = "0.4.0", path = "../a2a-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -72,7 +72,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.3.4", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.4.0", path = "../a2a-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }

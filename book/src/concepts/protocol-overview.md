@@ -9,7 +9,7 @@ An A2A interaction follows this flow:
 ```
   Client Agent                Agent (Server)
        │                           │
-       │  1. GET /.well-known/agent.json │
+       │  1. GET /.well-known/agent-card.json │
        │ ─────────────────────────►│
        │          AgentCard        │
        │ ◄─────────────────────────│
@@ -26,7 +26,7 @@ An A2A interaction follows this flow:
        │                           │
 ```
 
-1. **Discovery** — The client fetches the agent's card from `/.well-known/agent.json`
+1. **Discovery** — The client fetches the agent's card from `/.well-known/agent-card.json`
 2. **Communication** — The client sends a message and receives results
 3. **Management** — The client can query, cancel, or subscribe to tasks
 

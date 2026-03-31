@@ -43,7 +43,7 @@ match response {
         if let Some(artifacts) = &task.artifacts {
             for artifact in artifacts {
                 for part in &artifact.parts {
-                    if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                    if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
                         println!("Result: {text}");
                     }
                 }

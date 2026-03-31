@@ -4,7 +4,7 @@ An **Agent Card** is the machine-readable discovery document that describes an A
 
 ## The Agent Card
 
-Agent cards are served at `/.well-known/agent.json` and contain:
+Agent cards are served at `/.well-known/agent-card.json` and contain:
 
 ```json
 {

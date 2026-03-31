@@ -83,14 +83,14 @@ let status = TaskStatus::with_timestamp(TaskState::Completed);
 
 ### Wire Format
 
-On the wire, task states use lowercase kebab-case:
+On the wire, task states use SCREAMING_SNAKE_CASE with a `TASK_STATE_` prefix:
 
 ```json
 {
   "id": "task-abc",
   "contextId": "ctx-123",
   "status": {
-    "state": "completed",
+    "state": "TASK_STATE_COMPLETED",
     "timestamp": "2026-03-15T10:30:00Z"
   },
   "artifacts": [...]
@@ -118,8 +118,8 @@ pub struct Message {
 
 | Role | Wire Value | Meaning |
 |------|------------|---------|
-| `User` | `"user"` | From the client/human side |
-| `Agent` | `"agent"` | From the agent/server side |
+| `User` | `"ROLE_USER"` | From the client/human side |
+| `Agent` | `"ROLE_AGENT"` | From the agent/server side |
 
 ### Creating Messages
 
@@ -148,7 +148,7 @@ Parts are the content units within messages and artifacts. Three types are suppo
 let part = Part::text("Hello, agent!");
 ```
 
-Wire format: `{"type": "text", "text": "Hello, agent!"}`
+Wire format: `{"text": "Hello, agent!"}`
 
 ### File (bytes or URI)
 
@@ -160,9 +160,9 @@ let part = Part::file_bytes(base64_encoded_string);
 let part = Part::file_uri("https://example.com/document.pdf");
 ```
 
-Wire format (bytes): `{"type": "file", "file": {"bytes": "aGVsbG8="}}`
+Wire format (bytes): `{"raw": "aGVsbG8="}`
 
-Wire format (URI): `{"type": "file", "file": {"uri": "https://example.com/document.pdf"}}`
+Wire format (URI): `{"url": "https://example.com/document.pdf"}`
 
 ### Structured Data
 
@@ -175,7 +175,7 @@ let part = Part::data(serde_json::json!({
 }));
 ```
 
-Wire format: `{"type": "data", "data": {"table": [...]}}`
+Wire format: `{"data": {"table": [...]}}`
 
 ### Part Metadata
 
@@ -183,7 +183,6 @@ Any part can carry optional metadata:
 
 ```json
 {
-  "type": "text",
   "text": "Hello",
   "metadata": {"language": "en"}
 }

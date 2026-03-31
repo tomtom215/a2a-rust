@@ -13,7 +13,7 @@ A minimal end-to-end example of the [A2A protocol](https://github.com/a2aproject
 | **JSON-RPC transport** | Server via `JsonRpcDispatcher`, client via `ClientBuilder` (default binding) |
 | **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("REST")` |
 | **Streaming (SSE)** | `stream_message()` consumes `StatusUpdate` and `ArtifactUpdate` events |
-| **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent.json` at runtime |
+| **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent-card.json` at runtime |
 | **Task retrieval** | `get_task()` retrieves a completed task by ID |
 | **Pre-bind pattern** | Listeners are bound before the handler is built so agent card URLs are correct |
 

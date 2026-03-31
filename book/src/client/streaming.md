@@ -17,7 +17,7 @@ while let Some(event) = stream.next().await {
         }
         Ok(StreamResponse::ArtifactUpdate(ev)) => {
             for part in &ev.artifact.parts {
-                if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
                     print!("{text}");
                 }
             }

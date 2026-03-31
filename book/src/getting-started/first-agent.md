@@ -50,7 +50,7 @@ impl AgentExecutor for CalcExecutor {
             // Extract the expression from the message
             let expr = ctx.message.parts.iter()
                 .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.clone()),
+                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.clone()),
                     _ => None,
                 })
                 .unwrap_or_default();
@@ -223,7 +223,7 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text { text } = &part.content {
+                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
                             println!("Answer: {text}");
                         }
                     }

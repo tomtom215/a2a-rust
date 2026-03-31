@@ -63,7 +63,7 @@ The example exercised all major protocol operations:
 2. **Streaming send** (JSON-RPC) — Client receives real-time SSE events as the agent works
 3. **Synchronous send** (REST) — Same operation over the REST transport
 4. **Streaming send** (REST) — SSE streaming over REST
-5. **Agent card discovery** — Fetches `/.well-known/agent.json` to discover the agent's capabilities
+5. **Agent card discovery** — Fetches `/.well-known/agent-card.json` to discover the agent's capabilities
 6. **GetTask** — Retrieves a previously completed task by ID
 
 ## The Code in Brief
@@ -95,7 +95,7 @@ impl AgentExecutor for EchoExecutor {
             // 2. Extract text from incoming message
             let input = ctx.message.parts.iter()
                 .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text { text } => Some(text.as_str()),
+                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.as_str()),
                     _ => None,
                 })
                 .unwrap_or("<no text>");

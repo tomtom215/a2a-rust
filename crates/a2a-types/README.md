@@ -16,7 +16,7 @@ Pure A2A protocol v1.0 data types -- serde only, no I/O.
 
 | Module | Key Types | Purpose |
 |--------|-----------|---------|
-| `agent_card` | `AgentCard`, `AgentCapabilities`, `AgentSkill` | Agent discovery (`/.well-known/agent.json`) |
+| `agent_card` | `AgentCard`, `AgentCapabilities`, `AgentSkill` | Agent discovery (`/.well-known/agent-card.json`) |
 | `task` | `Task`, `TaskStatus`, `TaskState`, `TaskId`, `ContextId` | Unit of work lifecycle |
 | `message` | `Message`, `Part`, `MessageRole`, `FileContent` | Communication with text/file/data parts |
 | `artifact` | `Artifact`, `ArtifactId` | Discrete agent outputs |

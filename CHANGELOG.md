@@ -10,6 +10,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-31
+
+### Breaking Changes
+
+This release implements full A2A v1.0.0 wire format compliance. The following
+changes are **breaking** — existing clients and servers using the old wire format
+will need to update.
+
+- **Part wire format migrated to v1.0 flat oneof** — Parts no longer use
+  `{"type": "text", "text": "..."}` discriminated format. The new format uses
+  JSON member name as discriminator: `{"text": "..."}`, `{"raw": "base64..."}`,
+  `{"url": "https://..."}`, `{"data": {...}}`. Top-level `filename` and
+  `mediaType` fields replace the nested `file` object. The `PartContent` enum
+  now has `Text`, `Raw`, `Url`, and `Data` variants (previously `Text`, `File`,
+  `Data`). The old `FileContent` struct is retained for backward-compatible
+  constructors only.
+
+- **Enum serialization uses ProtoJSON SCREAMING_SNAKE_CASE** — `TaskState` now
+  serializes as `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
+  (previously `"completed"`, `"input-required"`). `MessageRole` now serializes
+  as `"ROLE_USER"`, `"ROLE_AGENT"` (previously `"user"`, `"agent"`). Legacy
+  lowercase values are still accepted on deserialization via serde aliases.
+
+- **`SendMessageResponse` uses externally tagged format** — Now serializes as
+  `{"task": {...}}` or `{"message": {...}}` per proto `oneof payload` semantics
+  (previously untagged — just the inner object).
+
+- **Agent Card well-known path changed** — Discovery path is now
+  `/.well-known/agent-card.json` (previously `/.well-known/agent.json`),
+  matching the spec Section 8.2 and IANA registration (Section 14.3).
+
+- **`OAuthFlows` is now an enum (oneof)** — Previously a struct with five
+  optional fields, now an enum with one variant per flow type, matching the
+  proto `oneof flow` definition. Only one OAuth flow can be specified at a time.
+
+- **Error responses use AIP-193 format** — REST errors now follow
+  `{"error": {"code": N, "status": "...", "message": "...", "details": [...]}}`.
+  JSON-RPC errors include `google.rpc.ErrorInfo` in the `data` array with
+  `@type`, `reason` (UPPER_SNAKE_CASE), and `domain` ("a2a-protocol.org").
+
+### Fixed
+
+- **HTTP error status codes corrected for all 9 A2A error types** — Per Section
+  5.4: `ContentTypeNotSupported` → 415, `InvalidAgentResponse` → 502,
+  `UnsupportedOperation` → 400, `ExtendedAgentCardNotConfigured` → 400,
+  `ExtensionSupportRequired` → 400, `VersionNotSupported` → 400.
+
+- **gRPC error status codes corrected for all 9 A2A error types** — Per Section
+  5.4: `UnsupportedOperation`/`VersionNotSupported` → `UNIMPLEMENTED`,
+  `ContentTypeNotSupported` → `INVALID_ARGUMENT`,
+  `ExtendedAgentCardNotConfigured`/`ExtensionSupportRequired` →
+  `FAILED_PRECONDITION`.
+
+- **Blocking SendMessage now returns on interrupted states** — Per Section 3.2.2,
+  `return_immediately=false` operations now correctly return when the task
+  reaches `INPUT_REQUIRED` or `AUTH_REQUIRED`, not just terminal states.
+
+- **`ListTasks` `includeArtifacts` parameter now applied** — Per Section 3.1.4,
+  when `includeArtifacts` is false (the default), artifacts are omitted entirely
+  from task responses.
+
+### Added
+
+- **`ErrorCode::a2a_reason()`** — Returns the UPPER_SNAKE_CASE reason string
+  for `google.rpc.ErrorInfo`.
+- **`ErrorCode::http_status()`** — Returns the correct HTTP status code per
+  Section 5.4.
+- **`ErrorCode::grpc_status()`** — Returns the correct gRPC status string per
+  Section 5.4.
+- **`A2aError::error_info_data()`** — Builds the `google.rpc.ErrorInfo` data
+  array for error responses.
+- **`TaskState::is_interrupted()`** — Returns true for `InputRequired` and
+  `AuthRequired` states.
+- **Missing error constructors** — `push_not_supported()`,
+  `content_type_not_supported()`, `extension_support_required()`,
+  `version_not_supported()`.
+
 ## [0.3.4] - 2026-03-31
 
 ### Fixed

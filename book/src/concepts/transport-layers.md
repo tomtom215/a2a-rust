@@ -14,8 +14,8 @@ The JSON-RPC transport sends all requests to a single endpoint as POST requests 
   "params": {
     "message": {
       "messageId": "msg-1",
-      "role": "user",
-      "parts": [{"type": "text", "text": "Hello, agent!"}]
+      "role": "ROLE_USER",
+      "parts": [{"text": "Hello, agent!"}]
     }
   }
 }
@@ -30,7 +30,7 @@ Response:
   "result": {
     "id": "task-abc",
     "contextId": "ctx-123",
-    "status": { "state": "completed" },
+    "status": { "state": "TASK_STATE_COMPLETED" },
     "artifacts": [...]
   }
 }
@@ -86,7 +86,7 @@ The REST transport uses standard HTTP methods and URL paths:
 | List push configs | `GET` | `/tasks/{id}/pushNotificationConfigs` |
 | Delete push config | `DELETE` | `/tasks/{id}/pushNotificationConfigs/{configId}` |
 | Extended card | `GET` | `/extendedAgentCard` |
-| Agent card | `GET` | `/.well-known/agent.json` |
+| Agent card | `GET` | `/.well-known/agent-card.json` |
 
 ### Multi-Tenant Paths
 
@@ -110,10 +110,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.3", features = ["websocket"] }
+a2a-protocol-server = { version = "0.4", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.3", features = ["websocket"] }
+a2a-protocol-client = { version = "0.4", features = ["websocket"] }
 ```
 
 ### Server
@@ -160,10 +160,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.3", features = ["grpc"] }
+a2a-protocol-server = { version = "0.4", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.3", features = ["grpc"] }
+a2a-protocol-client = { version = "0.4", features = ["grpc"] }
 ```
 
 ### Server

@@ -111,7 +111,7 @@ All handler error paths used `?` to propagate without invoking `on_error`.
 
 **Severity:** Medium | **Component:** `JsonRpcDispatcher`
 
-`resolve_agent_card()` failed for JSON-RPC agents because only `RestDispatcher` served `/.well-known/agent.json`.
+`resolve_agent_card()` failed for JSON-RPC agents because only `RestDispatcher` served `/.well-known/agent-card.json`.
 
 **Fix:** Added `StaticAgentCardHandler` to `JsonRpcDispatcher`.
 
@@ -155,7 +155,7 @@ The JSON-RPC dispatcher parsed `ListTaskPushNotificationConfigs` params as `Task
 
 **Severity:** Critical | **Component:** Agent-team example
 
-Agent cards were constructed with `code_analyzer_card("http://placeholder")` *before* the server bound to a port. The actual address was only known after `TcpListener::bind()`. This meant `/.well-known/agent.json` served a card with a URL that didn't match the actual server address.
+Agent cards were constructed with `code_analyzer_card("http://placeholder")` *before* the server bound to a port. The actual address was only known after `TcpListener::bind()`. This meant `/.well-known/agent-card.json` served a card with a URL that didn't match the actual server address.
 
 **Why tests missed it:** Tests used URLs from `TestContext` (the real bound addresses), not from the agent card. Only `resolve_agent_card()` tests would have caught this, and those didn't exist.
 

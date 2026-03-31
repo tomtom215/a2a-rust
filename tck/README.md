@@ -38,7 +38,7 @@ cargo run -p a2a-tck -- --url http://localhost:3000 --binding rest
 | Naming | ProtoJSON naming conventions (`SCREAMING_SNAKE_CASE` with type prefix) |
 | Security | `SecurityRequirement` / `StringList` wrapper format |
 | Unions | Discriminated union serialization (`SendMessageResponse`, `StreamResponse`) |
-| Discovery | Agent card discovery (`/.well-known/agent.json`) |
+| Discovery | Agent card discovery (`/.well-known/agent-card.json`) |
 | Errors | Error responses for invalid requests |
 
 ## Integration Test Kit (ITK)

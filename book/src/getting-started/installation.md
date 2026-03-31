@@ -89,11 +89,11 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.3", features = ["tracing", "signing"] }
+a2a-protocol-sdk = { version = "0.4", features = ["tracing", "signing"] }
 
 # Or with individual crates:
-a2a-protocol-server = { version = "0.3", features = ["tracing", "sqlite"] }
-a2a-protocol-client = { version = "0.3", features = ["tls-rustls"] }
+a2a-protocol-server = { version = "0.4", features = ["tracing", "sqlite"] }
+a2a-protocol-client = { version = "0.4", features = ["tls-rustls"] }
 ```
 
 ## Verifying the Installation
