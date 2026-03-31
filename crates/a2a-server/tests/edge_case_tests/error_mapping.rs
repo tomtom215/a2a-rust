@@ -38,7 +38,7 @@ async fn server_error_to_a2a_error_mapping() {
         ),
         (
             ServerError::PayloadTooLarge("x".into()),
-            ErrorCode::InternalError,
+            ErrorCode::InvalidRequest,
         ),
     ];
     for (server_err, expected_code) in mappings {

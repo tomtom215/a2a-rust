@@ -200,12 +200,14 @@ impl PushConfigStore for InMemoryPushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
             let store = self.configs.read().await;
-            let configs: Vec<_> = store
+            let mut configs: Vec<_> = store
                 .iter()
                 .filter(|((tid, _), _)| tid == task_id)
                 .map(|(_, v)| v.clone())
                 .collect();
             drop(store);
+            // Sort by (task_id, config_id) for deterministic ordering.
+            configs.sort_by(|a, b| a.task_id.cmp(&b.task_id).then_with(|| a.id.cmp(&b.id)));
             Ok(configs)
         })
     }

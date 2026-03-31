@@ -36,7 +36,9 @@ impl InMemoryTaskStore {
             .write_count
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let over_capacity = self.config.max_capacity.is_some_and(|max| store_len > max);
-        count.is_multiple_of(self.config.eviction_interval) || over_capacity
+        let interval_hit = self.config.eviction_interval > 0
+            && count.is_multiple_of(self.config.eviction_interval);
+        interval_hit || over_capacity
     }
 
     /// Runs eviction in a separate lock acquisition if not already in progress.

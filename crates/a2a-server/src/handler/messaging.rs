@@ -96,6 +96,9 @@ impl RequestHandler {
         self.interceptors.run_before(&call_ctx).await?;
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
+        if let Some(ref ctx_id) = params.context_id {
+            validate_id(ctx_id, "context_id", self.limits.max_id_length)?;
+        }
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
         }
@@ -147,6 +150,12 @@ impl RequestHandler {
         // from both creating new tasks for the same context.
         let context_lock = {
             let mut locks = self.context_locks.write().await;
+            // Prune stale entries when the map exceeds the configured limit.
+            // A lock is "stale" when no other task holds a reference to it
+            // (strong_count == 1 means only the map itself owns it).
+            if locks.len() >= self.limits.max_context_locks {
+                locks.retain(|_, v| Arc::strong_count(v) > 1);
+            }
             locks.entry(context_id.clone()).or_default().clone()
         };
         let context_guard = context_lock.lock().await;

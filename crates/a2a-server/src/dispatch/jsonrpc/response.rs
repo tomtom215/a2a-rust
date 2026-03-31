@@ -33,12 +33,22 @@ pub(super) fn extract_headers(headers: &hyper::HeaderMap) -> HashMap<String, Str
 
 /// Serializes a success response to bytes (for batch request support).
 pub(super) fn success_response_bytes<T: serde::Serialize>(id: JsonRpcId, result: &T) -> Vec<u8> {
-    let resp = JsonRpcSuccessResponse {
-        jsonrpc: JsonRpcVersion,
-        id,
-        result: serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
-    };
-    serde_json::to_vec(&resp).unwrap_or_default()
+    match serde_json::to_value(result) {
+        Ok(value) => {
+            let resp = JsonRpcSuccessResponse {
+                jsonrpc: JsonRpcVersion,
+                id,
+                result: value,
+            };
+            serde_json::to_vec(&resp).unwrap_or_else(|_| {
+                br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#.to_vec()
+            })
+        }
+        Err(_) => error_response_bytes(
+            id,
+            &ServerError::Internal("result serialization failed".into()),
+        ),
+    }
 }
 
 /// Serializes an error response to bytes (for batch request support).
@@ -66,10 +76,14 @@ pub(super) fn success_response<T: serde::Serialize>(
     id: JsonRpcId,
     result: &T,
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    let value = match serde_json::to_value(result) {
+        Ok(v) => v,
+        Err(e) => return internal_serialization_error(id, &e),
+    };
     let resp = JsonRpcSuccessResponse {
         jsonrpc: JsonRpcVersion,
         id: id.clone(),
-        result: serde_json::to_value(result).unwrap_or(serde_json::Value::Null),
+        result: value,
     };
     match serde_json::to_vec(&resp) {
         Ok(body) => json_response(200, body),
@@ -117,7 +131,7 @@ pub(super) fn internal_serialization_error(
     trace_error!(error = %_err, "JSON-RPC response serialization failed");
     // Hand-craft a minimal JSON-RPC error to avoid further serialization failures.
     let body = br#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"internal serialization error"}}"#;
-    json_response(500, body.to_vec())
+    json_response(200, body.to_vec())
 }
 
 /// Reads a request body with a size limit and timeout.
@@ -359,10 +373,11 @@ mod tests {
     // ── internal_serialization_error ──────────────────────────────────────
 
     #[tokio::test]
-    async fn internal_serialization_error_returns_500() {
+    async fn internal_serialization_error_returns_200() {
         let err = serde_json::from_str::<String>("bad").unwrap_err();
         let resp = internal_serialization_error(None, &err);
-        assert_eq!(resp.status().as_u16(), 500);
+        // JSON-RPC spec: all responses use HTTP 200, even errors.
+        assert_eq!(resp.status().as_u16(), 200);
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(val["error"]["code"], -32603);

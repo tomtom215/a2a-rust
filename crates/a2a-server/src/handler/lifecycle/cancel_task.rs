@@ -78,13 +78,22 @@ impl RequestHandler {
             let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
             self.executor.cancel(&ctx, writer.as_ref()).await?;
 
-            // Update task state, then re-read to return the actual final state.
-            // This handles the TOCTOU race where a concurrent task completion
-            // could overwrite our Canceled state between the terminal check
-            // above and this save.
-            let mut updated = task;
+            // Re-read the task to narrow the TOCTOU window: if the background
+            // processor completed/failed the task between our initial check and
+            // now, we must not overwrite the terminal state with Canceled.
+            let current = self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+            if current.status.state.is_terminal() {
+                return Err(ServerError::TaskNotCancelable(task_id));
+            }
+
+            let mut updated = current;
             updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
             self.task_store.save(updated).await?;
+            // Re-read to return the authoritative final state.
             let final_task = self
                 .task_store
                 .get(&task_id)

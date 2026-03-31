@@ -85,7 +85,7 @@ A direct message response (for simple request/reply patterns):
 {
   "message": {
     "messageId": "msg-456",
-    "role": "ROLE_AGENT",
+    "role": "agent",
     "parts": [{"type": "text", "text": "Quick answer"}]
   }
 }

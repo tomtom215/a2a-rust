@@ -32,6 +32,11 @@ impl RequestHandler {
         self.metrics.on_request("ListTasks");
 
         let tenant = params.tenant.clone().unwrap_or_default();
+        // Clamp page_size at the handler level to prevent oversized allocations.
+        let mut params = params;
+        if let Some(ps) = params.page_size {
+            params.page_size = Some(ps.min(1000));
+        }
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;

@@ -93,7 +93,8 @@ impl SqliteTaskStore {
                 context_id TEXT NOT NULL,
                 state      TEXT NOT NULL,
                 data       TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )",
         )
         .execute(&pool)
@@ -106,6 +107,12 @@ impl SqliteTaskStore {
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)")
             .execute(&pool)
             .await?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state)",
+        )
+        .execute(&pool)
+        .await?;
 
         Ok(Self { pool })
     }

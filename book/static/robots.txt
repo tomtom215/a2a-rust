@@ -1,5 +1,7 @@
-# a2a-rust documentation — allow full crawling and indexing
+# a2a-rust — Official Rust SDK for the A2A (Agent-to-Agent) protocol
+# Full crawling and indexing enabled for maximum discoverability
 User-agent: *
 Allow: /
 
+# Sitemap for search engine discovery
 Sitemap: https://a2a-rust.com/sitemap.xml

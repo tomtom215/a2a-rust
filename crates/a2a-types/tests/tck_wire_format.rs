@@ -109,9 +109,9 @@ fn tck_task_state_rejects_invalid() {
 #[test]
 fn tck_message_role_proto_json_encoding() {
     let cases: &[(MessageRole, &str)] = &[
-        (MessageRole::Unspecified, "\"ROLE_UNSPECIFIED\""),
-        (MessageRole::User, "\"ROLE_USER\""),
-        (MessageRole::Agent, "\"ROLE_AGENT\""),
+        (MessageRole::Unspecified, "\"unspecified\""),
+        (MessageRole::User, "\"user\""),
+        (MessageRole::Agent, "\"agent\""),
     ];
 
     for (role, expected_json) in cases {

@@ -36,7 +36,31 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
-## Unreleased
+## v0.3.3 (2026-03-30)
+
+### Bug Fixes
+
+- **`find_task_by_context` prefers non-terminal tasks** — Stale terminal tasks no longer shadow active tasks for the same `context_id`
+- **`context_locks` memory leak** — Stale per-context mutexes are now pruned when the map exceeds `max_context_locks`
+- **`PayloadTooLarge` error code** — Returns `InvalidRequest` (-32600) instead of `InternalError` (-32603)
+- **Params-level `context_id` validation** — Now validated via `validate_id()` like message-level `context_id`
+- **`eviction_interval=0` panic** — No longer panics; treated as "disable periodic eviction"
+- **Push config deterministic ordering** — `list()` results sorted by `(task_id, config_id)`
+- **Cancel task TOCTOU race narrowed** — Re-reads task before saving `Canceled` to avoid overwriting concurrent completion
+- **`page_size` clamped at handler** — Prevents oversized allocations from untrusted input
+- **Tenant store read-path DoS** — Read operations no longer allocate tenant partitions
+- **`from_pool()` schema parity** — Now matches `with_migrations()` schema (adds `created_at`, composite index)
+- **JSON-RPC serialization error handling** — Returns proper errors instead of `null` results; uses HTTP 200 per spec
+- **`MessageRole` wire format** — Serializes as lowercase `"user"`/`"agent"` per A2A spec
+- **Unused example deps removed** — `rig-core`, `bytes`
+
+## v0.3.2 (2026-03-30)
+
+### Bug Fixes
+
+- **Task ID not reused for non-terminal continuations** — `on_send_message` now reuses the client-provided `task_id` when it matches a stored non-terminal task (#66)
+
+## v0.3.0 (2026-03-19)
 
 ### Performance
 
@@ -45,8 +69,6 @@ This ensures each crate's dependencies are available before it publishes.
 - **Batch clone removal** — JSON-RPC batch dispatch no longer clones each request item
 - **`memory_overhead` benchmark fix** — CI no longer crashes on zero-variance allocation counts
 - **Benchmark server `TCP_NODELAY`** — Streaming benchmarks now report actual SDK latency (~1.5ms) instead of Nagle-inflated ~44ms
-
-## v0.3.0 (2026-03-19)
 
 - **Axum framework integration** (`axum` feature) — `A2aRouter` for idiomatic
   Axum servers. All 11 REST methods, composable with other Axum routes/middleware.

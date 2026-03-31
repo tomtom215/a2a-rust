@@ -10,6 +10,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-03-30
+
+### Fixed
+
+- **`a2a-protocol-server`: `find_task_by_context` now prefers non-terminal tasks** —
+  When multiple tasks shared the same `context_id` (e.g. after a task reached a
+  terminal state and a new one was created), the lookup used `page_size=1` and
+  returned whichever task the store ordered first, which could be the stale
+  terminal task. Now fetches up to 10 candidates and returns the first
+  non-terminal (active) task, falling back to the first terminal task only when
+  no active task exists.
+
+- **`a2a-protocol-server`: `context_locks` map no longer grows without bound** —
+  The per-context mutex map (used to serialize concurrent `SendMessage` requests
+  for the same `context_id`) never cleaned up stale entries, causing unbounded
+  memory growth under sustained traffic with diverse context IDs. Stale locks
+  (where no task holds a reference) are now pruned when the map exceeds the
+  configurable `max_context_locks` limit (default 10,000).
+
+- **`a2a-protocol-server`: `PayloadTooLarge` now returns correct JSON-RPC error
+  code** — Previously mapped to `InternalError` (-32603), now correctly returns
+  `InvalidRequest` (-32600) since an oversized payload is a client error.
+
+- **`a2a-protocol-server`: params-level `context_id` now validated** — The
+  `context_id` field at the `MessageSendParams` level (which takes precedence
+  over `message.context_id`) was not checked by `validate_id()`, allowing
+  empty/whitespace-only or excessively long values to bypass validation.
+
+- **`a2a-protocol-server`: `eviction_interval=0` no longer panics** — Setting
+  `TaskStoreConfig::eviction_interval` to 0 caused a panic in
+  `u64::is_multiple_of(0)`. Now treated as "disable periodic eviction" (only
+  capacity-based eviction triggers).
+
+- **`a2a-protocol-server`: push config `list()` now returns deterministic order** —
+  The in-memory push config store iterated over a `HashMap`, producing
+  non-deterministic ordering. Results are now sorted by `(task_id, config_id)`.
+
+- **`a2a-protocol-server`: cancel task TOCTOU race narrowed** — `on_cancel_task`
+  now re-reads the task immediately before writing `Canceled` state, preventing
+  it from overwriting a concurrent terminal transition (e.g. `Completed`) that
+  occurred between the initial check and the save.
+
+- **`a2a-protocol-server`: `page_size` clamped at handler level** — `ListTasks`
+  now clamps `page_size` to 1000 at the handler layer before passing to the
+  store, preventing oversized allocations from untrusted client input.
+
+- **`a2a-protocol-server`: tenant store no longer allocates on read** — Read-only
+  operations (`get`, `list`, `count`, `delete`) on the tenant-aware in-memory
+  store no longer create a new tenant partition, closing a DoS vector where
+  read requests with unknown tenant IDs could exhaust `max_tenants`.
+
+- **`a2a-protocol-server`: `from_pool()` schema now matches `with_migrations()`** —
+  The `SqliteTaskStore::from_pool()` and `TenantSqliteTaskStore::from_pool()`
+  constructors now create the `created_at` column and composite
+  `(context_id, state)` index, matching the schema produced by
+  `with_migrations()`.
+
+- **`a2a-protocol-server`: JSON-RPC serialization errors no longer produce `null`
+  results** — `success_response` and `success_response_bytes` now return proper
+  JSON-RPC error responses instead of silently producing `null` result values
+  when `serde_json::to_value` fails. The `internal_serialization_error` fallback
+  now returns HTTP 200 per JSON-RPC spec.
+
+- **`a2a-protocol-types`: `MessageRole` serializes as lowercase** — Now serializes
+  as `"user"` / `"agent"` per the A2A v1.0 JSON wire format, instead of
+  proto-style `"ROLE_USER"` / `"ROLE_AGENT"`. The proto-style values remain as
+  deserialization aliases for backward compatibility.
+
+- **Unused example dependencies removed** — Removed `rig-core` from `rig-agent`
+  and `bytes` from `echo-agent` examples.
+
 ## [0.3.2] - 2026-03-30
 
 ### Fixed

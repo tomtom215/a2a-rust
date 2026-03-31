@@ -257,9 +257,9 @@ Enabling a feature in one crate (e.g., `signing` in `a2a-protocol-types`) enable
 
 ## Testing Pitfalls
 
-### HashMap iteration order is non-deterministic
+### Collection iteration order and determinism
 
-The `InMemoryTaskStore` uses a `HashMap` internally. `list()` must sort results by task ID before applying pagination; otherwise, page boundaries shift between runs and tests become flaky.
+The `InMemoryTaskStore` uses a `BTreeMap` internally (sorted by `TaskId`), ensuring deterministic `list()` pagination. However, other in-memory stores (e.g., `InMemoryPushConfigStore`) use `HashMap`, where iteration order is non-deterministic. Always sort results before applying pagination or returning them to clients.
 
 ### Percent-encoded path traversal
 

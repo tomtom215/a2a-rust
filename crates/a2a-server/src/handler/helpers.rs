@@ -49,6 +49,11 @@ impl RequestHandler {
     ///
     /// Uses [`crate::store::tenant::TenantContext::current()`] so that
     /// multi-tenant deployments only search within the caller's tenant.
+    /// The maximum number of tasks to fetch when looking up by context ID.
+    /// We fetch more than one so we can prefer non-terminal tasks over terminal
+    /// ones when multiple tasks share the same `context_id`.
+    const CONTEXT_LOOKUP_PAGE_SIZE: u32 = 10;
+
     pub(crate) async fn find_task_by_context(
         &self,
         context_id: &str,
@@ -67,14 +72,26 @@ impl RequestHandler {
             tenant: tenant_param,
             context_id: Some(context_id.to_owned()),
             status: None,
-            page_size: Some(1),
+            page_size: Some(Self::CONTEXT_LOOKUP_PAGE_SIZE),
             page_token: None,
             status_timestamp_after: None,
             include_artifacts: None,
             history_length: None,
         };
         let resp = self.task_store.list(&params).await?;
-        Ok(resp.tasks.into_iter().next())
+
+        // Prefer a non-terminal task (active conversation) over a terminal one.
+        // If all tasks are terminal, return the first one the store provided.
+        let mut terminal_fallback: Option<Task> = None;
+        for task in resp.tasks {
+            if !task.status.state.is_terminal() {
+                return Ok(Some(task));
+            }
+            if terminal_fallback.is_none() {
+                terminal_fallback = Some(task);
+            }
+        }
+        Ok(terminal_fallback)
     }
 }
 
@@ -191,6 +208,8 @@ mod tests {
     // ── find_task_by_context ─────────────────────────────────────────────
 
     mod find_task_by_context_tests {
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
         use crate::agent_executor;
         use crate::builder::RequestHandlerBuilder;
         use crate::handler::limits::HandlerLimits;
@@ -228,6 +247,101 @@ mod tests {
             assert!(
                 result.is_none(),
                 "find_task_by_context should return None when no task matches the context"
+            );
+        }
+
+        /// Helper to create a task with the given `id`, `context_id`, and state.
+        fn make_task(id: &str, context_id: &str, state: TaskState) -> Task {
+            Task {
+                id: TaskId::new(id.to_owned()),
+                context_id: ContextId::new(context_id),
+                status: TaskStatus::new(state),
+                history: None,
+                artifacts: None,
+                metadata: None,
+            }
+        }
+
+        #[tokio::test]
+        async fn prefers_non_terminal_over_terminal_task() {
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
+                .build()
+                .unwrap();
+
+            // Save a terminal task first (sorts first alphabetically: "aaa-...")
+            handler
+                .task_store
+                .save(make_task("aaa-completed", "ctx-1", TaskState::Completed))
+                .await
+                .unwrap();
+            // Save a non-terminal task (sorts after: "bbb-...")
+            handler
+                .task_store
+                .save(make_task("bbb-working", "ctx-1", TaskState::Working))
+                .await
+                .unwrap();
+
+            let result = handler.find_task_by_context("ctx-1").await.unwrap();
+            assert!(result.is_some(), "should find a task");
+            let task = result.unwrap();
+            assert_eq!(
+                task.id.0, "bbb-working",
+                "should prefer the non-terminal (Working) task over the terminal (Completed) one"
+            );
+        }
+
+        #[tokio::test]
+        async fn returns_terminal_task_when_no_non_terminal_exists() {
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
+                .build()
+                .unwrap();
+
+            handler
+                .task_store
+                .save(make_task("task-done", "ctx-2", TaskState::Completed))
+                .await
+                .unwrap();
+
+            let result = handler.find_task_by_context("ctx-2").await.unwrap();
+            assert!(result.is_some(), "should still return a terminal task");
+            assert_eq!(result.unwrap().id.0, "task-done");
+        }
+
+        #[tokio::test]
+        async fn returns_first_non_terminal_when_multiple_exist() {
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(100))
+                .build()
+                .unwrap();
+
+            handler
+                .task_store
+                .save(make_task("aaa-failed", "ctx-3", TaskState::Failed))
+                .await
+                .unwrap();
+            handler
+                .task_store
+                .save(make_task("bbb-submitted", "ctx-3", TaskState::Submitted))
+                .await
+                .unwrap();
+            handler
+                .task_store
+                .save(make_task("ccc-working", "ctx-3", TaskState::Working))
+                .await
+                .unwrap();
+
+            let result = handler.find_task_by_context("ctx-3").await.unwrap();
+            let task = result.unwrap();
+            assert!(
+                !task.status.state.is_terminal(),
+                "should return a non-terminal task, got {:?}",
+                task.status.state
+            );
+            assert_eq!(
+                task.id.0, "bbb-submitted",
+                "should return the first non-terminal task in store order"
             );
         }
     }
