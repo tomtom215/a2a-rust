@@ -190,7 +190,7 @@ impl From<u64> for TaskVersion {
 
 /// The lifecycle state of a [`Task`].
 ///
-/// Per v1.0 spec (Section 5.5), enum values use ProtoJSON SCREAMING_SNAKE_CASE:
+/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
 /// `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
 /// Legacy lowercase/kebab-case values are accepted on deserialization.
 #[non_exhaustive]
@@ -241,7 +241,7 @@ impl TaskState {
     /// Returns `true` if this state is an interrupted state.
     ///
     /// Interrupted states: `InputRequired`, `AuthRequired`.
-    /// Per Section 3.2.2, blocking SendMessage MUST return when the task
+    /// Per Section 3.2.2, blocking `SendMessage` MUST return when the task
     /// reaches a terminal OR interrupted state.
     #[inline]
     #[must_use]

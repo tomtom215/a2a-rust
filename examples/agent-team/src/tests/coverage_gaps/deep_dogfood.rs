@@ -806,7 +806,7 @@ pub async fn test_wire_format_aip193_error(ctx: &TestContext) -> TestResult {
                 .and_then(|arr| arr.first())
                 .and_then(|d| d.get("@type"))
                 .and_then(|t| t.as_str())
-                .map_or(false, |t| t.contains("ErrorInfo"));
+                .is_some_and(|t| t.contains("ErrorInfo"));
 
             if status == 404
                 && has_code

@@ -67,7 +67,7 @@ impl AsRef<str> for MessageId {
 
 /// The originator of a [`Message`].
 ///
-/// Per v1.0 spec (Section 5.5), enum values use ProtoJSON SCREAMING_SNAKE_CASE:
+/// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
 /// `"ROLE_USER"`, `"ROLE_AGENT"`, `"ROLE_UNSPECIFIED"`.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -369,6 +369,10 @@ impl FileContent {
     }
 
     /// Validates that at least one of `bytes` or `uri` is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error string if both `bytes` and `uri` are `None`.
     pub const fn validate(&self) -> Result<(), &'static str> {
         if self.bytes.is_none() && self.uri.is_none() {
             Err("FileContent must have at least one of 'bytes' or 'uri' set")

@@ -84,7 +84,7 @@ impl ErrorCode {
         }
     }
 
-    /// Returns the A2A error reason in UPPER_SNAKE_CASE without the "Error" suffix,
+    /// Returns the A2A error reason in `UPPER_SNAKE_CASE` without the "Error" suffix,
     /// as required by the spec for `google.rpc.ErrorInfo.reason`.
     ///
     /// Returns `None` for standard JSON-RPC errors (not A2A-specific).
@@ -108,7 +108,7 @@ impl ErrorCode {
     #[must_use]
     pub const fn http_status(self) -> u16 {
         match self {
-            Self::TaskNotFound => 404,
+            Self::TaskNotFound | Self::MethodNotFound => 404,
             Self::TaskNotCancelable => 409,
             Self::ContentTypeNotSupported => 415,
             Self::InvalidAgentResponse => 502,
@@ -116,9 +116,10 @@ impl ErrorCode {
             | Self::UnsupportedOperation
             | Self::ExtendedAgentCardNotConfigured
             | Self::ExtensionSupportRequired
-            | Self::VersionNotSupported => 400,
-            Self::ParseError | Self::InvalidRequest | Self::InvalidParams => 400,
-            Self::MethodNotFound => 404,
+            | Self::VersionNotSupported
+            | Self::ParseError
+            | Self::InvalidRequest
+            | Self::InvalidParams => 400,
             Self::InternalError => 500,
         }
     }
@@ -133,13 +134,13 @@ impl ErrorCode {
             | Self::ExtensionSupportRequired => "FAILED_PRECONDITION",
             Self::PushNotificationNotSupported
             | Self::UnsupportedOperation
-            | Self::VersionNotSupported => "UNIMPLEMENTED",
+            | Self::VersionNotSupported
+            | Self::MethodNotFound => "UNIMPLEMENTED",
             Self::ContentTypeNotSupported
             | Self::InvalidParams
             | Self::InvalidRequest
             | Self::ParseError => "INVALID_ARGUMENT",
             Self::InvalidAgentResponse | Self::InternalError => "INTERNAL",
-            Self::MethodNotFound => "UNIMPLEMENTED",
         }
     }
 }
@@ -302,22 +303,22 @@ impl A2aError {
     /// Builds the `google.rpc.ErrorInfo` data array as required by the spec.
     ///
     /// Per Section 9.5, 10.6, and 11.6, A2A-specific errors MUST include
-    /// an ErrorInfo entry with `@type`, `reason`, `domain`, and optional `metadata`.
+    /// an `ErrorInfo` entry with `@type`, `reason`, `domain`, and optional `metadata`.
     #[must_use]
     pub fn error_info_data(&self, metadata: Option<serde_json::Value>) -> serde_json::Value {
-        if let Some(reason) = self.code.a2a_reason() {
-            let mut info = serde_json::json!({
-                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-                "reason": reason,
-                "domain": "a2a-protocol.org"
-            });
-            if let Some(meta) = metadata {
-                info["metadata"] = meta;
-            }
-            serde_json::json!([info])
-        } else {
-            serde_json::Value::Null
-        }
+        self.code
+            .a2a_reason()
+            .map_or(serde_json::Value::Null, |reason| {
+                let mut info = serde_json::json!({
+                    "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                    "reason": reason,
+                    "domain": "a2a-protocol.org"
+                });
+                if let Some(meta) = metadata {
+                    info["metadata"] = meta;
+                }
+                serde_json::json!([info])
+            })
     }
 }
 
