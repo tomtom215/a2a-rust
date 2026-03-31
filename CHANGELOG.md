@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-03-31
+
+### Fixed
+
+- **`a2a-protocol-client`: REST streaming deserialization failure** — The REST
+  binding sends bare `StreamResponse` JSON in SSE frames (per A2A spec Section
+  11.7), but the client always tried to unwrap a JSON-RPC envelope, causing
+  `"data did not match any variant of untagged enum JsonRpcResponse"` errors.
+  `EventStream` now tracks the transport binding and parses bare responses for
+  REST streams.
+
 ## [0.4.0] - 2026-03-31
 
 ### Breaking Changes

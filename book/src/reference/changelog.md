@@ -36,6 +36,12 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## v0.4.1 (2026-03-31)
+
+### Bug Fixes
+
+- **REST streaming deserialization failure** — `EventStream` now correctly parses bare `StreamResponse` JSON for REST SSE streams instead of expecting a JSON-RPC envelope wrapper. Fixes `"data did not match any variant of untagged enum JsonRpcResponse"` errors when streaming via the REST binding.
+
 ## v0.4.0 (2026-03-31)
 
 ### Breaking Changes

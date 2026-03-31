@@ -66,12 +66,10 @@ impl RestTransport {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::with_status(
-            rx,
-            task_handle.abort_handle(),
-            actual_status,
+        Ok(
+            EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
+                .with_jsonrpc_envelope(false),
         )
-        .with_jsonrpc_envelope(false))
     }
 }
 
