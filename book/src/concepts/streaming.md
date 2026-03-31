@@ -62,9 +62,18 @@ Delivers artifact content (potentially in chunks):
 }
 ```
 
+#### Append Semantics
+
+When `append: true`, the server merges the event into the existing artifact with
+the same ID:
+
+- **Parts** are appended to the existing artifact's parts list
+- **Metadata** is deep-merged: new keys override existing keys
+- If no artifact with the matching ID exists, a new artifact is created
+
 ### Task
 
-A complete task snapshot (usually the final event):
+A complete task snapshot (usually the first event on subscribe, or the final event):
 
 ```json
 {
@@ -214,7 +223,16 @@ let mut stream = client
     .expect("resubscribe");
 ```
 
-The server creates a new broadcast subscriber for the task's event queue. Multiple SSE connections can be active simultaneously for the same task — each receives all events published after it subscribes. If a reader falls behind, it receives a `Lagged` notification and skips missed events rather than blocking other readers or the writer.
+The server creates a new broadcast subscriber and immediately emits a `Task`
+snapshot as the first event, allowing the client to recover the current state.
+Multiple SSE connections can be active simultaneously for the same task — each
+receives all events published after it subscribes. If a reader falls behind, it
+receives a `Lagged` notification and skips missed events rather than blocking
+other readers or the writer.
+
+> **Terminal tasks:** Subscribing to a task in a terminal state
+> (`Completed`, `Failed`, `Canceled`, `Rejected`) returns an
+> `UnsupportedOperation` error immediately, without opening an SSE stream.
 
 ## Streaming vs Synchronous
 

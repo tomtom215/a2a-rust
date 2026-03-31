@@ -29,7 +29,7 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 
 | Type | Description |
 |------|-------------|
-| `Artifact` | Result produced by an agent |
+| `Artifact` | Result produced by an agent. Call `validate()` to check non-empty parts. |
 | `ArtifactId` | Newtype wrapper for artifact identifiers |
 
 ### Events

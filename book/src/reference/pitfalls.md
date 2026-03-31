@@ -329,6 +329,24 @@ A `FileContent` with neither `bytes` nor `uri` set is semantically invalid. Alwa
 
 `TaskStatus` timestamps should conform to RFC 3339. The `has_valid_timestamp()` method validates this at the type level.
 
+### Artifact parts must not be empty
+
+`Artifact` must contain at least one `Part` per the A2A spec. Call
+`artifact.validate()` before emitting artifacts from your executor.
+The server validates this during event processing and drops invalid artifacts.
+
+### Artifact append must merge metadata
+
+When `TaskArtifactUpdateEvent` has `append=true`, metadata from the new event
+must be merged into the existing artifact's metadata (new keys override
+existing). Simply pushing a new artifact entry loses the append semantics.
+
+### SendMessage to terminal tasks must be rejected
+
+A `SendMessage` targeting a task in a terminal state (`Completed`, `Failed`,
+`Canceled`, `Rejected`) via explicit `taskId` must return `UnsupportedOperation`,
+not silently create a new task. The server enforces this at the handler level.
+
 ### `CachingCardResolver` must not silently produce empty URLs
 
 If `CachingCardResolver::new()` or `with_path()` receives an invalid base URL, silently producing an empty URL leads to confusing errors later. These constructors should return `ClientResult<Self>` so callers can handle the error immediately.

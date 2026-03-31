@@ -124,7 +124,7 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL and transport) |
+| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL, transport, and tenant) |
 | `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |

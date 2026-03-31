@@ -204,7 +204,7 @@ pub struct Artifact {
 }
 ```
 
-Create an artifact:
+Create and validate an artifact:
 
 ```rust
 use a2a_protocol_sdk::prelude::*;
@@ -213,6 +213,8 @@ let artifact = Artifact::new(
     "result-1",
     vec![Part::text("The answer is 42")],
 );
+// Validate before emitting — parts must be non-empty per A2A spec.
+artifact.validate().expect("artifact should be valid");
 ```
 
 ### Streaming Artifacts
@@ -230,16 +232,22 @@ queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     metadata: None,
 })).await?;
 
-// Final chunk
+// Final chunk — parts are appended, metadata is deep-merged
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),
     context_id: ContextId::new(ctx.context_id.clone()),
     artifact: Artifact::new("doc", vec![Part::text("Last paragraph.")]),
-    append: Some(true),       // Append to previous
+    append: Some(true),       // Append parts to existing artifact by ID
     last_chunk: Some(true),   // This is the last chunk
     metadata: None,
 })).await?;
 ```
+
+When `append=true`, the server finds the existing artifact by ID and:
+1. Appends the new parts to the existing parts list
+2. Deep-merges metadata (new keys override existing keys)
+
+If no artifact with the ID exists, it is created as a new artifact.
 
 ## ID Types
 

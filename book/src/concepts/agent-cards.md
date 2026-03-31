@@ -110,6 +110,8 @@ let interface = AgentInterface {
 
 An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
 
+When building a client via `ClientBuilder::from_card()`, the `tenant` field from the selected interface is automatically preserved in `ClientConfig::tenant` and applied to all requests.
+
 ## Serving Agent Cards
 
 ### Static Handler
