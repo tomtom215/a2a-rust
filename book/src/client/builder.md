@@ -134,6 +134,7 @@ let client = ClientBuilder::new(url)
 | `with_accepted_output_modes(Vec<String>)` | `["text/plain", "application/json"]` | MIME types the client handles |
 | `with_history_length(u32)` | None | Messages to include in responses |
 | `with_return_immediately(bool)` | false | Don't wait for task completion |
+| `with_tenant(str)` | None (auto from `AgentCard`) | Default tenant for multi-tenancy |
 | `with_interceptor(impl CallInterceptor)` | Empty chain | Add request/response hook |
 
 ## Client Reuse (Best Practice)

@@ -55,9 +55,12 @@ impl RequestHandler {
                 )));
             }
 
+            // SPEC: The first event in a SubscribeToTask stream MUST be a Task
+            // snapshot representing the current state (Go #231, JS #323).
+            let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
             let reader = self
                 .event_queue_manager
-                .subscribe(&task_id)
+                .subscribe_with_snapshot(&task_id, snapshot)
                 .await
                 .ok_or_else(|| ServerError::Internal("no active event queue for task".into()))?;
 

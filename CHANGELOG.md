@@ -54,6 +54,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`a2a-protocol-server`: `SendMessageResult` now implements `Debug`** — Added
   `#[derive(Debug)]` to improve error messages in tests and logging.
 
+- **`a2a-protocol-server`: SubscribeToTask emits Task snapshot as first event** —
+  Per A2A spec, the first event in a `SubscribeToTask` stream must be a Task
+  object representing the current state, preventing clients from missing state on
+  reconnection. Added `EventQueueManager::subscribe_with_snapshot()`.
+  (Cross-SDK learning from a2a-go#231, a2a-js#323)
+
+- **`a2a-protocol-client`: `ClientBuilder::from_card()` preserves tenant** —
+  The `tenant` field from `AgentInterface` was silently dropped when constructing
+  a client from an `AgentCard`. Now preserved in `ClientConfig::tenant` and
+  automatically applied to `SendMessage` requests. Added `with_tenant()` builder
+  method for explicit configuration. (Cross-SDK learning from a2a-java#772)
+
+- **`a2a-protocol-client`: `ClientConfig::tenant` field** — New optional field
+  for default tenant in multi-tenancy scenarios.
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed

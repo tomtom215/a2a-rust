@@ -36,6 +36,10 @@ fn apply_client_config(params: &mut MessageSendParams, config: &ClientConfig) {
         cfg.accepted_output_modes
             .clone_from(&config.accepted_output_modes);
     }
+    // Apply default tenant from client config (populated from AgentInterface).
+    if params.tenant.is_none() {
+        params.tenant.clone_from(&config.tenant);
+    }
 }
 
 impl A2aClient {

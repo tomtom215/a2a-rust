@@ -105,6 +105,13 @@ pub struct ClientConfig {
 
     /// TLS configuration.
     pub tls: TlsConfig,
+
+    /// Default tenant identifier for multi-tenancy.
+    ///
+    /// When set, this tenant is included in all requests unless overridden
+    /// per-request. Automatically populated from [`AgentInterface::tenant`]
+    /// when building via [`crate::ClientBuilder::from_card`].
+    pub tenant: Option<String>,
 }
 
 impl ClientConfig {
@@ -121,6 +128,7 @@ impl ClientConfig {
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
             tls: TlsConfig::Disabled,
+            tenant: None,
         }
     }
 }
@@ -136,6 +144,7 @@ impl Default for ClientConfig {
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
             tls: TlsConfig::default(),
+            tenant: None,
         }
     }
 }

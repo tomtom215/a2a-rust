@@ -50,6 +50,10 @@ This ensures each crate's dependencies are available before it publishes.
 - **`Artifact::validate()` method** — Validates non-empty `parts` per A2A spec
 - **`Part::text_content()` accessor** — Extracts text from a text part
 - **`ServerError::UnsupportedOperation` variant** — Maps to `ErrorCode::UnsupportedOperation` (-32004)
+- **SubscribeToTask emits Task snapshot as first event** — Prevents clients from missing state on reconnection
+- **`ClientBuilder::from_card()` preserves tenant** — Tenant from `AgentInterface` is preserved in `ClientConfig::tenant`
+- **`ClientBuilder::with_tenant()` method** — Explicit tenant configuration for multi-tenancy
+- **`ClientConfig::tenant` field** — Default tenant for all requests
 
 ## v0.3.3 (2026-03-30)
 
