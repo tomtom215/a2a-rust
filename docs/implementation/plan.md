@@ -527,7 +527,7 @@ Key changes:
 - `AgentCard`: flat `url`/`preferred_transport` → `supported_interfaces: Vec<AgentInterface>`
 - `ContextId` newtype added (was plain `String`)
 - `AgentCapabilities.extended_agent_card` added
-- Agent card path: `/.well-known/agent-card.json` → `/.well-known/agent.json`
+- Agent card path: `/.well-known/agent-card.json` (v0.4.0 restored this path after v1.0 briefly used `/.well-known/agent.json`)
 - JSON-RPC method names: `snake/case` → `PascalCase` (e.g., `message/send` → `SendMessage`)
 - `TaskStatus.message` changed from `Option<Message>` to optional embedded message
 - `Task.kind` field removed (v1.0 uses untagged unions)
@@ -885,9 +885,8 @@ This pattern applies to: `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushS
 | `#[serde(rename = "SCREAMING_SNAKE")]` | Enum variants (v1.0 wire format) |
 | `#[serde(skip_serializing_if = "Option::is_none")]` | All optional fields |
 | `#[serde(untagged)]` | `JsonRpcResponse<T>` (success vs error discrimination) |
-| `#[serde(tag = "type")]` | `PartContent` (internally tagged by `type` field) |
-| `#[serde(rename_all = "camelCase")]` | `StreamResponse` (externally tagged with camelCase keys) |
-| Custom `Deserialize` impl | `SendMessageResponse` (discriminates on `role` field presence) |
+| Flat oneof (custom serde) | `PartContent` (field presence discriminates variants) |
+| `#[serde(rename_all = "camelCase")]` | `StreamResponse`, `SendMessageResponse` (externally tagged with camelCase keys) |
 
 ### Unsafe
 
@@ -999,7 +998,7 @@ CORS: Access-Control-Allow-Origin: *
 | StreamResponse | `kind` tag field | Untagged by field presence |
 | Agent card URL | `url` field on AgentCard | `supported_interfaces[].url` |
 | Transport binding | `preferred_transport` enum | `protocol_binding` string |
-| Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent.json` |
+| Agent card path | `/.well-known/agent-card.json` | `/.well-known/agent-card.json` (restored in v0.4.0) |
 | Context ID | plain `String` | `ContextId` newtype |
 | Capabilities | `state_transition_history` only | Added `extended_agent_card`; `state_transition_history` removed (not in v1.0 spec) |
 

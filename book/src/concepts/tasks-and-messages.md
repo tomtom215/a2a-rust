@@ -140,7 +140,7 @@ let message = Message {
 
 ## Parts
 
-Parts are the content units within messages and artifacts. Three types are supported:
+Parts are the content units within messages and artifacts. Four types are supported:
 
 ### Text
 
@@ -150,19 +150,23 @@ let part = Part::text("Hello, agent!");
 
 Wire format: `{"text": "Hello, agent!"}`
 
-### File (bytes or URI)
+### Raw (inline bytes)
 
 ```rust
 // Inline bytes (base64-encoded)
-let part = Part::file_bytes(base64_encoded_string);
-
-// URI reference
-let part = Part::file_uri("https://example.com/document.pdf");
+let part = Part::raw(base64_encoded_string);
 ```
 
-Wire format (bytes): `{"raw": "aGVsbG8="}`
+Wire format: `{"raw": "aGVsbG8=", "filename": "doc.bin", "mediaType": "application/octet-stream"}`
 
-Wire format (URI): `{"url": "https://example.com/document.pdf"}`
+### Url (URI reference)
+
+```rust
+// URI reference
+let part = Part::url("https://example.com/document.pdf");
+```
+
+Wire format: `{"url": "https://example.com/document.pdf"}`
 
 ### Structured Data
 

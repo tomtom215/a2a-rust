@@ -22,8 +22,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `Message` | Structured payload with ID, role, parts |
 | `MessageId` | Newtype wrapper for message identifiers |
 | `MessageRole` | Enum: Unspecified, User, Agent |
-| `Part` | Content unit: text, file, or data |
-| `PartContent` | Enum: Text, File, Data |
+| `Part` | Content unit: text, raw, url, or data |
+| `PartContent` | Enum: Text, Raw, Url, Data |
 
 ### Artifacts
 
