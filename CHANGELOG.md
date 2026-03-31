@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`a2a-protocol-client`: `ClientConfig::tenant` field** — New optional field
   for default tenant in multi-tenancy scenarios.
 
+- **`a2a-protocol-server`: A2A-Version header validation on incoming requests** —
+  Both JSON-RPC and REST dispatchers now validate the `A2A-Version` header if
+  present. Requests with incompatible major versions (not 1.x) are rejected with
+  `VersionNotSupported` (-32009). (Cross-SDK learning from a2a-python#865)
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed
