@@ -46,15 +46,16 @@ while let Some(event) = stream.next().await {
 
 A typical stream delivers events in this order:
 
-1. `Task` snapshot (always first when using `SubscribeToTask`)
+1. `Task` snapshot (always first — per spec, both `SendStreamingMessage` and `SubscribeToTask` emit this)
 2. `StatusUpdate` → `Working`
 3. `ArtifactUpdate` (one or more, potentially chunked)
 4. `StatusUpdate` → `Completed` (or `Failed`)
 5. Optionally, a final `Task` snapshot with accumulated artifacts
 
-> **Note:** When re-subscribing via `subscribe_to_task()`, the server always
-> emits the current `Task` state as the first event so the client can
-> recover without missing any state transitions.
+> **Note:** The server always emits a `Task` snapshot as the **first event** in
+> any streaming response. For `subscribe_to_task()`, this allows reconnecting
+> clients to recover the current state. For `send_streaming_message()`, it
+> provides the initial task state before execution events begin.
 
 ## Chunked Artifacts
 

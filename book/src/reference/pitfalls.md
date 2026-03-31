@@ -341,6 +341,12 @@ When `TaskArtifactUpdateEvent` has `append=true`, metadata from the new event
 must be merged into the existing artifact's metadata (new keys override
 existing). Simply pushing a new artifact entry loses the append semantics.
 
+### ListTasksResponse fields are always present
+
+`next_page_token`, `page_size`, and `total_size` are required per the proto
+spec — they are `String` and `u32`, not `Option`. An empty `next_page_token`
+means no more pages. Custom `TaskStore` implementations must populate all three.
+
 ### SendMessage to terminal tasks must be rejected
 
 A `SendMessage` targeting a task in a terminal state (`Completed`, `Failed`,

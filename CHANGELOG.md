@@ -87,6 +87,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   entries, losing the merge semantics. Both sync and background event processors
   are fixed. (Cross-SDK learning from a2a-python#735, a2a-java#615)
 
+- **`a2a-protocol-types`: `TaskListResponse` fields are now required per spec** —
+  `next_page_token` (`String`), `page_size` (`u32`), and `total_size` (`u32`)
+  are now always present on the wire (not `Option`), matching the proto
+  definition. Empty `next_page_token` means no more pages. All task store
+  implementations now populate these fields.
+
+- **`a2a-protocol-server`: `SendStreamingMessage` emits Task snapshot as first
+  event** — Per A2A spec section 3.1.2, the first event in any streaming response
+  MUST be a `Task` object. Previously only `SubscribeToTask` did this.
+
+- **`a2a-protocol-server`: `GetExtendedAgentCard` capability check** — Per spec
+  section 3.1.11, returns `UnsupportedOperationError` when
+  `capabilities.extended_agent_card` is false/absent, and
+  `ExtendedAgentCardNotConfiguredError` when capability is declared but no card
+  is configured. Previously returned a generic internal error for both cases.
+
 ## [0.3.3] - 2026-03-30
 
 ### Fixed

@@ -54,6 +54,9 @@ This ensures each crate's dependencies are available before it publishes.
 - **`ClientBuilder::from_card()` preserves tenant** — Tenant from `AgentInterface` is preserved in `ClientConfig::tenant`
 - **`ClientBuilder::with_tenant()` method** — Explicit tenant configuration for multi-tenancy
 - **`ClientConfig::tenant` field** — Default tenant for all requests
+- **`TaskListResponse` required fields** — `next_page_token`, `page_size`, `total_size` always present per proto spec
+- **`SendStreamingMessage` first event** — Task snapshot emitted as first SSE event (like SubscribeToTask)
+- **`GetExtendedAgentCard` capability check** — Returns correct errors per spec section 3.1.11
 
 ## v0.3.3 (2026-03-30)
 
