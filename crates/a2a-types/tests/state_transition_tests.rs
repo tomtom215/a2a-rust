@@ -150,5 +150,8 @@ fn completed_to_working_is_invalid() {
 #[test]
 fn task_state_display_format() {
     assert_eq!(TaskState::Working.to_string(), "TASK_STATE_WORKING");
-    assert_eq!(TaskState::InputRequired.to_string(), "TASK_STATE_INPUT_REQUIRED");
+    assert_eq!(
+        TaskState::InputRequired.to_string(),
+        "TASK_STATE_INPUT_REQUIRED"
+    );
 }

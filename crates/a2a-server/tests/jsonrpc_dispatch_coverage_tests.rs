@@ -228,7 +228,8 @@ async fn options_without_cors_returns_204_no_cors_headers() {
 #[tokio::test]
 async fn agent_card_get_returns_card_when_configured() {
     let addr = start_server(make_dispatcher_with_agent_card()).await;
-    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
+    let (status, body, _) =
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(status, 200, "agent card GET should return 200");
     let v: serde_json::Value = serde_json::from_str(&body).unwrap();
@@ -238,7 +239,8 @@ async fn agent_card_get_returns_card_when_configured() {
 #[tokio::test]
 async fn agent_card_get_returns_404_when_not_configured() {
     let addr = start_server(make_plain_dispatcher()).await;
-    let (status, body, _) = http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
+    let (status, body, _) =
+        http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
 
     assert_eq!(
         status, 404,

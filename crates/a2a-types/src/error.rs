@@ -128,12 +128,16 @@ impl ErrorCode {
     pub const fn grpc_status(self) -> &'static str {
         match self {
             Self::TaskNotFound => "NOT_FOUND",
-            Self::TaskNotCancelable | Self::ExtendedAgentCardNotConfigured
+            Self::TaskNotCancelable
+            | Self::ExtendedAgentCardNotConfigured
             | Self::ExtensionSupportRequired => "FAILED_PRECONDITION",
-            Self::PushNotificationNotSupported | Self::UnsupportedOperation
+            Self::PushNotificationNotSupported
+            | Self::UnsupportedOperation
             | Self::VersionNotSupported => "UNIMPLEMENTED",
-            Self::ContentTypeNotSupported | Self::InvalidParams
-            | Self::InvalidRequest | Self::ParseError => "INVALID_ARGUMENT",
+            Self::ContentTypeNotSupported
+            | Self::InvalidParams
+            | Self::InvalidRequest
+            | Self::ParseError => "INVALID_ARGUMENT",
             Self::InvalidAgentResponse | Self::InternalError => "INTERNAL",
             Self::MethodNotFound => "UNIMPLEMENTED",
         }

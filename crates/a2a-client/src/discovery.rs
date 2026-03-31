@@ -336,7 +336,10 @@ mod tests {
     #[test]
     fn caching_resolver_new() {
         let resolver = CachingCardResolver::new("http://localhost:8080").unwrap();
-        assert_eq!(resolver.url, "http://localhost:8080/.well-known/agent-card.json");
+        assert_eq!(
+            resolver.url,
+            "http://localhost:8080/.well-known/agent-card.json"
+        );
     }
 
     #[test]

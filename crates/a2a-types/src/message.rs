@@ -476,7 +476,9 @@ mod tests {
         assert!(json.contains("\"filename\":\"file.pdf\""));
         assert!(!json.contains("\"type\""));
         let back: Part = serde_json::from_str(&json).expect("deserialize");
-        assert!(matches!(back.content, PartContent::Url(ref u) if u == "https://example.com/file.pdf"));
+        assert!(
+            matches!(back.content, PartContent::Url(ref u) if u == "https://example.com/file.pdf")
+        );
     }
 
     #[test]

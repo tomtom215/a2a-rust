@@ -184,20 +184,18 @@ fn security_scheme_oauth2_roundtrip() {
     assert!(json.contains("\"pkceRequired\""));
     let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
     match back {
-        SecurityScheme::OAuth2(ref o) => {
-            match &o.flows {
-                OAuthFlows::AuthorizationCode(ac) => {
-                    assert_eq!(ac.authorization_url, "https://example.com/auth");
-                    assert_eq!(ac.token_url, "https://example.com/token");
-                    assert_eq!(ac.pkce_required, Some(true));
-                    assert_eq!(
-                        ac.scopes.get("read").map(String::as_str),
-                        Some("Read access")
-                    );
-                }
-                _ => panic!("expected AuthorizationCode flow"),
+        SecurityScheme::OAuth2(ref o) => match &o.flows {
+            OAuthFlows::AuthorizationCode(ac) => {
+                assert_eq!(ac.authorization_url, "https://example.com/auth");
+                assert_eq!(ac.token_url, "https://example.com/token");
+                assert_eq!(ac.pkce_required, Some(true));
+                assert_eq!(
+                    ac.scopes.get("read").map(String::as_str),
+                    Some("Read access")
+                );
             }
-        }
+            _ => panic!("expected AuthorizationCode flow"),
+        },
         _ => panic!("expected OAuth2 variant"),
     }
 }

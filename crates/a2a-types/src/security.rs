@@ -344,18 +344,16 @@ mod tests {
         assert!(json.contains("\"type\":\"oauth2\""));
         let back: SecurityScheme = serde_json::from_str(&json).expect("deserialize");
         match &back {
-            SecurityScheme::OAuth2(o) => {
-                match &o.flows {
-                    OAuthFlows::ClientCredentials(cc) => {
-                        assert_eq!(cc.token_url, "https://auth.example.com/token");
-                        assert_eq!(
-                            cc.scopes.get("read").map(String::as_str),
-                            Some("Read access")
-                        );
-                    }
-                    _ => panic!("expected ClientCredentials flow"),
+            SecurityScheme::OAuth2(o) => match &o.flows {
+                OAuthFlows::ClientCredentials(cc) => {
+                    assert_eq!(cc.token_url, "https://auth.example.com/token");
+                    assert_eq!(
+                        cc.scopes.get("read").map(String::as_str),
+                        Some("Read access")
+                    );
                 }
-            }
+                _ => panic!("expected ClientCredentials flow"),
+            },
             _ => panic!("expected OAuth2 variant"),
         }
     }

@@ -436,7 +436,10 @@ mod tests {
         let body = resp.into_body().collect().await.unwrap().to_bytes();
         let val: serde_json::Value = serde_json::from_slice(&body).unwrap();
         // AIP-193 format: {"error": {"message": "..."}}
-        assert!(val["error"]["message"].as_str().unwrap_or("").contains("proto err"));
+        assert!(val["error"]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("proto err"));
     }
 
     /// Covers line 97: `build_json_response` `unwrap_or_else` fallback.

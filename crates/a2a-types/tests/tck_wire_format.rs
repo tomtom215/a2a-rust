@@ -131,7 +131,13 @@ fn tck_message_role_proto_json_encoding() {
 
 #[test]
 fn tck_message_role_rejects_invalid() {
-    let invalid = &["\"USER\"", "\"AGENT\"", "\"Admin\"", "\"role_user\"", "\"ROLE_FUTURE\""];
+    let invalid = &[
+        "\"USER\"",
+        "\"AGENT\"",
+        "\"Admin\"",
+        "\"role_user\"",
+        "\"ROLE_FUTURE\"",
+    ];
     for &input in invalid {
         assert!(
             serde_json::from_str::<MessageRole>(input).is_err(),

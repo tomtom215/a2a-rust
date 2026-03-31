@@ -542,8 +542,14 @@ mod tests {
         assert_eq!(TaskState::Canceled.to_string(), "TASK_STATE_CANCELED");
         assert_eq!(TaskState::Rejected.to_string(), "TASK_STATE_REJECTED");
         assert_eq!(TaskState::Submitted.to_string(), "TASK_STATE_SUBMITTED");
-        assert_eq!(TaskState::InputRequired.to_string(), "TASK_STATE_INPUT_REQUIRED");
-        assert_eq!(TaskState::AuthRequired.to_string(), "TASK_STATE_AUTH_REQUIRED");
+        assert_eq!(
+            TaskState::InputRequired.to_string(),
+            "TASK_STATE_INPUT_REQUIRED"
+        );
+        assert_eq!(
+            TaskState::AuthRequired.to_string(),
+            "TASK_STATE_AUTH_REQUIRED"
+        );
         assert_eq!(TaskState::Unspecified.to_string(), "TASK_STATE_UNSPECIFIED");
     }
 

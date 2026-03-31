@@ -374,8 +374,7 @@ async fn main() {
                 for art in artifacts {
                     println!("  Artifact:   {}", art.id);
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text(text) =
-                            &part.content
+                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content
                         {
                             println!("  Content:    {text}");
                         }
@@ -448,8 +447,7 @@ async fn main() {
             if let Some(artifacts) = &task.artifacts {
                 for art in artifacts {
                     for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text(text) =
-                            &part.content
+                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content
                         {
                             println!("  Content:    {text}");
                         }
