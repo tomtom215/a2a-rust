@@ -139,7 +139,6 @@ fn make_message(text: &str) -> Message {
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: make_message(text),
         configuration: None,
         metadata: None,

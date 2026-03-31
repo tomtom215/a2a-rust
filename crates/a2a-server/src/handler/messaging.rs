@@ -96,9 +96,6 @@ impl RequestHandler {
         self.interceptors.run_before(&call_ctx).await?;
 
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
-        if let Some(ref ctx_id) = params.context_id {
-            validate_id(ctx_id, "context_id", self.limits.max_id_length)?;
-        }
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
         }
@@ -137,13 +134,13 @@ impl RequestHandler {
             }
         }
 
-        // Generate context ID.
-        // Params-level context_id takes precedence over message-level.
+        // Resolve context ID from the message per proto SendMessageRequest definition.
+        // If the message doesn't include a context_id, generate a new one.
         let context_id = params
+            .message
             .context_id
-            .as_deref()
-            .or_else(|| params.message.context_id.as_ref().map(|c| c.0.as_str()))
-            .map_or_else(|| uuid::Uuid::new_v4().to_string(), ToString::to_string);
+            .as_ref()
+            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |c| c.0.clone());
 
         // Acquire a per-context lock to serialize the find + save sequence for
         // the same context_id, preventing two concurrent SendMessage requests
@@ -462,7 +459,6 @@ mod tests {
 
     fn make_params(context_id: Option<&str>) -> MessageSendParams {
         MessageSendParams {
-            context_id: None,
             message: Message {
                 id: MessageId::new("msg-1"),
                 role: MessageRole::User,

@@ -108,7 +108,6 @@ pub async fn test_message_metadata(ctx: &TestContext) -> TestResult {
 
     let params = MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new(uuid::Uuid::new_v4().to_string()),
             role: MessageRole::User,

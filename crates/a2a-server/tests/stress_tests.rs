@@ -126,7 +126,6 @@ fn minimal_agent_card() -> AgentCard {
 fn make_send_params(id: usize) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new(format!("stress-msg-{id}")),
             role: MessageRole::User,

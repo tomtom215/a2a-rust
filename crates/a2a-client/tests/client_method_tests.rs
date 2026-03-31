@@ -125,7 +125,6 @@ fn make_client_with_interceptor(
 fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: Message {
             id: MessageId::new("msg-1"),
             role: MessageRole::User,

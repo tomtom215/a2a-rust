@@ -142,7 +142,6 @@ pub fn agent_card(url: &str) -> AgentCard {
 pub fn send_params(text: &str) -> MessageSendParams {
     MessageSendParams {
         tenant: None,
-        context_id: None,
         message: user_message(text),
         configuration: None,
         metadata: None,
@@ -151,10 +150,11 @@ pub fn send_params(text: &str) -> MessageSendParams {
 
 /// Creates `MessageSendParams` targeting an existing context (for multi-turn).
 pub fn send_params_with_context(text: &str, context_id: &str) -> MessageSendParams {
+    let mut msg = user_message(text);
+    msg.context_id = Some(ContextId::new(context_id));
     MessageSendParams {
         tenant: None,
-        context_id: Some(context_id.into()),
-        message: user_message(text),
+        message: msg,
         configuration: None,
         metadata: None,
     }
