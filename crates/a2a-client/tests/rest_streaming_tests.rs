@@ -254,3 +254,75 @@ async fn rest_send_message_returns_completed_task() {
         other => panic!("expected Task, got {other:?}"),
     }
 }
+
+// ── REST client non-streaming method coverage ─────────────────────────────
+
+/// Verifies get_task works over REST transport.
+#[tokio::test]
+async fn rest_get_task_roundtrip() {
+    let (addr, _handle) = start_rest_server().await;
+    let url = format!("http://{addr}");
+    let client = ClientBuilder::new(&url)
+        .with_protocol_binding("REST")
+        .build()
+        .expect("build REST client");
+
+    // Create a task via send_message.
+    let result = tokio::time::timeout(TEST_TIMEOUT, client.send_message(send_params()))
+        .await
+        .expect("timed out")
+        .expect("send_message");
+
+    let task_id = match result {
+        a2a_protocol_types::responses::SendMessageResponse::Task(t) => t.id,
+        other => panic!("expected Task, got {other:?}"),
+    };
+
+    // Fetch it back via get_task.
+    let params = a2a_protocol_types::TaskQueryParams {
+        tenant: None,
+        id: task_id.0.clone(),
+        history_length: None,
+    };
+    let fetched = tokio::time::timeout(TEST_TIMEOUT, client.get_task(params))
+        .await
+        .expect("timed out")
+        .expect("get_task");
+    assert_eq!(fetched.id, task_id);
+    assert_eq!(fetched.status.state, TaskState::Completed);
+}
+
+/// Verifies list_tasks works over REST transport.
+#[tokio::test]
+async fn rest_list_tasks() {
+    let (addr, _handle) = start_rest_server().await;
+    let url = format!("http://{addr}");
+    let client = ClientBuilder::new(&url)
+        .with_protocol_binding("REST")
+        .build()
+        .expect("build REST client");
+
+    let params = a2a_protocol_types::ListTasksParams::default();
+    let result = tokio::time::timeout(TEST_TIMEOUT, client.list_tasks(params))
+        .await
+        .expect("timed out")
+        .expect("list_tasks");
+    // Verify the call succeeds and returns a valid Vec (may be empty).
+    let _ = result.tasks.len();
+}
+
+/// Verifies cancel_task returns an appropriate error for a nonexistent task.
+#[tokio::test]
+async fn rest_cancel_nonexistent_task_returns_error() {
+    let (addr, _handle) = start_rest_server().await;
+    let url = format!("http://{addr}");
+    let client = ClientBuilder::new(&url)
+        .with_protocol_binding("REST")
+        .build()
+        .expect("build REST client");
+
+    let result = tokio::time::timeout(TEST_TIMEOUT, client.cancel_task("does-not-exist"))
+        .await
+        .expect("timed out");
+    assert!(result.is_err(), "cancel nonexistent task should fail");
+}
