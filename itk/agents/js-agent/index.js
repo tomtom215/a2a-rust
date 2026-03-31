@@ -60,7 +60,7 @@ function extractText(message) {
 function processMessage(params) {
   const text = extractText(params.message);
   const taskId = uuidv4();
-  const contextId = params.contextId || uuidv4();
+  const contextId = (params.message && params.message.contextId) || params.contextId || uuidv4();
 
   const task = {
     id: taskId,

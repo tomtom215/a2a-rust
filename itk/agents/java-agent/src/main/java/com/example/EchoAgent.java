@@ -297,7 +297,13 @@ public class EchoAgent {
         }
 
         String taskId = UUID.randomUUID().toString();
-        String contextId = params.has("contextId") ? params.get("contextId").getAsString() : UUID.randomUUID().toString();
+        // v1.0: context_id is on message, not params
+        String contextId = UUID.randomUUID().toString();
+        if (params.has("message") && params.getAsJsonObject("message").has("contextId")) {
+            contextId = params.getAsJsonObject("message").get("contextId").getAsString();
+        } else if (params.has("contextId")) {
+            contextId = params.get("contextId").getAsString();
+        }
 
         JsonObject task = new JsonObject();
         task.addProperty("id", taskId);

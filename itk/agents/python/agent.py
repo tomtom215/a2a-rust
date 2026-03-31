@@ -55,7 +55,7 @@ def extract_text(message: dict) -> str:
 def process_message(params: dict) -> dict:
     text = extract_text(params.get("message", {}))
     task_id = str(uuid.uuid4())
-    context_id = params.get("contextId") or str(uuid.uuid4())
+    context_id = (params.get("message", {}).get("contextId") or params.get("contextId") or str(uuid.uuid4()))
 
     task = {
         "id": task_id,

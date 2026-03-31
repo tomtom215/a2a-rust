@@ -39,6 +39,7 @@ type Message struct {
 	Role      string `json:"role"`
 	Parts     []Part `json:"parts"`
 	MessageID string `json:"messageId"`
+	ContextID string `json:"contextId,omitempty"`
 }
 
 type TaskStatus struct {
@@ -165,7 +166,10 @@ func extractText(msg Message) string {
 func processMessage(params SendParams) Task {
 	text := extractText(params.Message)
 	taskID := uuid.New().String()
-	contextID := params.ContextID
+	contextID := params.Message.ContextID
+	if contextID == "" {
+		contextID = params.ContextID
+	}
 	if contextID == "" {
 		contextID = uuid.New().String()
 	}
