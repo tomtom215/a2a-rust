@@ -18,7 +18,7 @@ Pure A2A protocol v1.0 data types -- serde only, no I/O.
 |--------|-----------|---------|
 | `agent_card` | `AgentCard`, `AgentCapabilities`, `AgentSkill` | Agent discovery (`/.well-known/agent-card.json`) |
 | `task` | `Task`, `TaskStatus`, `TaskState`, `TaskId`, `ContextId` | Unit of work lifecycle |
-| `message` | `Message`, `Part`, `MessageRole`, `FileContent` | Communication with text/file/data parts |
+| `message` | `Message`, `Part`, `MessageRole` | Communication with text/raw/url/data parts |
 | `artifact` | `Artifact`, `ArtifactId` | Discrete agent outputs |
 | `error` | `A2aError`, `ErrorCode`, `A2aResult` | Protocol errors (14 codes) |
 | `jsonrpc` | `JsonRpcRequest`, `JsonRpcResponse` | JSON-RPC 2.0 envelope |

@@ -147,7 +147,7 @@ When building REST transport query strings from JSON values, parameter values mu
 
 Detecting stream completion by checking `text.contains("stream_complete")` is fragile — it false-positives on any payload text containing that substring, and misses terminal status updates that don't contain that exact string.
 
-**Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`completed`, `failed`, `canceled`, `rejected`) or the `stream_complete` sentinel.
+**Solution:** Deserialize the JSON-RPC frame and check the result object for terminal task states (`TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, `TASK_STATE_CANCELED`, `TASK_STATE_REJECTED`) or the `stream_complete` sentinel.
 
 ### gRPC transport must not serialize requests through a Mutex
 

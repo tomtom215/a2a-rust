@@ -185,7 +185,7 @@ Verify JSON serialization matches the A2A spec:
 fn task_state_wire_format() {
     let status = TaskStatus::new(TaskState::Completed);
     let json = serde_json::to_string(&status).unwrap();
-    assert!(json.contains("\"completed\""));
+    assert!(json.contains("\"TASK_STATE_COMPLETED\""));
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn message_role_wire_format() {
         // ...
     };
     let json = serde_json::to_string(&msg).unwrap();
-    assert!(json.contains("\"user\""));
+    assert!(json.contains("\"ROLE_USER\""));
     assert!(json.contains("\"messageId\""));
 }
 ```

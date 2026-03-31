@@ -2,7 +2,7 @@
 
 > **Historical Reference** — All phases are complete. This document is retained as a record of the implementation approach and design decisions. For current status, see the [README](../../README.md).
 >
-> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). In particular, `TaskState` serialization uses lowercase kebab-case (`"completed"`, `"input-required"`) as the primary format, with `TASK_STATE_*` as deserialization aliases — not `SCREAMING_SNAKE_CASE` as originally planned. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
+> **Note:** Some details are outdated (e.g., line counts, test counts, directory names). As of v0.4.0, `TaskState` serialization uses `SCREAMING_SNAKE_CASE` as the primary format (e.g., `"TASK_STATE_COMPLETED"`), with lowercase as deserialization aliases for backward compatibility. `SendMessageResponse` uses a custom deserializer (discriminating on `role` field presence), not `#[serde(untagged)]`. `StreamResponse` uses externally tagged serialization (`#[serde(rename_all = "camelCase")]`). See `type-mapping.md` for current wire format details.
 
 **Protocol Version:** A2A v1.0.0
 **Target Rust Version:** 1.93.x (stable)
@@ -489,7 +489,7 @@ Implemented:
 - `EventStream`: async SSE parser that deserializes `JsonRpcResponse<StreamResponse>` frames
 - `SseParser`: raw byte-level SSE frame accumulator with keep-alive comment handling
 - `AuthInterceptor` + `InMemoryCredentialsStore` for bearer/basic auth
-- `resolve_agent_card()`: fetch `/.well-known/agent.json`
+- `resolve_agent_card()`: fetch `/.well-known/agent-card.json`
 - All 11 RPC methods implemented as `async` methods on `A2aClient`
 
 ---
@@ -938,7 +938,7 @@ A condensed quick-reference for implementation use (updated for v1.0.0).
 | `GET` | `/tasks/{taskId}/pushNotificationConfigs` | `ListTaskPushNotificationConfigs` |
 | `DELETE` | `/tasks/{taskId}/pushNotificationConfigs/{id}` | `DeleteTaskPushNotificationConfig` |
 | `GET` | `/extendedAgentCard` | `GetExtendedAgentCard` |
-| `GET` | `/.well-known/agent.json` | Agent card discovery |
+| `GET` | `/.well-known/agent-card.json` | Agent card discovery |
 
 ### SSE Event Format
 
@@ -984,7 +984,7 @@ data: {"jsonrpc":"2.0","id":null,"result":{...StreamResponse...}}
 ### AgentCard Well-Known URI
 
 ```
-GET https://{host}/.well-known/agent.json
+GET https://{host}/.well-known/agent-card.json
 Response: application/json
 CORS: Access-Control-Allow-Origin: *
 ```

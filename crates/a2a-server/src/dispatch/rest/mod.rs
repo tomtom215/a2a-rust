@@ -135,15 +135,20 @@ impl RestDispatcher {
             }
         }
 
-        // Validate A2A-Version header if present (Python #865).
+        // Validate A2A-Version header if present.
+        // Per Section 3.6.2: empty value MUST be interpreted as 0.3.
         if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
             if let Ok(v) = version.to_str() {
-                let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-                if major != Some(1) {
-                    return error_json_response(
-                        400,
-                        &format!("unsupported A2A version: {v}; this server supports 1.x"),
-                    );
+                let v = v.trim();
+                // Empty header → interpret as 0.3 per spec Section 3.6.2.
+                if !v.is_empty() {
+                    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+                    if major != Some(1) {
+                        return error_json_response(
+                            400,
+                            &format!("unsupported A2A version: {v}; this server supports 1.x"),
+                        );
+                    }
                 }
             }
         }

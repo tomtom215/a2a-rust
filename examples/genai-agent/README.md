@@ -60,10 +60,10 @@ curl -X POST http://127.0.0.1:<port> \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
-    "method": "message/send",
+    "method": "SendMessage",
     "params": {
       "message": {
-        "role": "user",
+        "role": "ROLE_USER",
         "parts": [{"text": "What is the A2A protocol?"}]
       }
     }

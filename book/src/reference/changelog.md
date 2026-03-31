@@ -43,7 +43,7 @@ This ensures each crate's dependencies are available before it publishes.
 - **Part wire format → v1.0 flat oneof** — `{"type":"text","text":"..."}` → `{"text":"..."}`. File parts: `{"raw":"base64","filename":"f.png","mediaType":"image/png"}` or `{"url":"https://..."}`. `PartContent` enum variants: `Text`, `Raw`, `Url`, `Data`.
 - **Enum serialization → SCREAMING_SNAKE_CASE** — `TaskState`: `"completed"` → `"TASK_STATE_COMPLETED"`. `MessageRole`: `"user"` → `"ROLE_USER"`. Legacy lowercase accepted on deserialization.
 - **`SendMessageResponse` → externally tagged** — `{"task":{...}}` or `{"message":{...}}` (was untagged).
-- **Agent Card path** — `/.well-known/agent.json` → `/.well-known/agent-card.json`.
+- **Agent Card path** — `/.well-known/agent-card.json` (previously `/.well-known/agent.json`).
 - **`OAuthFlows` → enum (oneof)** — One flow per scheme, matching proto.
 - **Error responses → AIP-193 format** — `{"error":{"code":N,"status":"...","message":"...","details":[...]}}` with `google.rpc.ErrorInfo`.
 

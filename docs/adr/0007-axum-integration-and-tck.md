@@ -33,7 +33,7 @@ validate:
 
 - ProtoJSON `SCREAMING_SNAKE_CASE` for `TaskState` and `MessageRole`
 - `SecurityRequirement` / `StringList` proto wrapper format (rejects OpenAPI-style flat scopes)
-- `Part` type discriminator (`{"type": "text", ...}`)
+- `Part` flat oneof format (`{"text": "..."}`, `{"raw": "..."}`, `{"url": "..."}`, `{"data": {...}}`)
 - All 5 `SecurityScheme` variants
 - Cross-SDK interop fixtures (Python, JS, Go payload shapes)
 - JSON-RPC 2.0 envelope and all 14 error codes
