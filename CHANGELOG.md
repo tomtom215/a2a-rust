@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **`a2a-protocol-server`: `InMemoryTaskStore::list()` O(n log n) → O(log n + page_size)** —
+  Added `BTreeSet<TaskId>` sorted index and `HashMap<String, BTreeSet<TaskId>>`
+  context_id secondary index. Eliminates the per-call sort that caused 20-70×
+  regressions at 10K+ tasks. Uses `BTreeSet::range()` for O(log n) cursor
+  positioning.
+- **`a2a-protocol-server`: SSE per-event allocation reduced** — New
+  `build_sse_message_frame()` serializes JSON directly into the SSE frame
+  buffer via `serde_json::to_writer`, reducing per-event allocations from 2 to 1.
+- **`a2a-protocol-types`: Part deserialization ~80 fewer allocations per Task** —
+  Replaced `#[serde(flatten)]` on `Part.content` with a hand-rolled `Deserialize`
+  implementation that reads all fields in a single pass without intermediate
+  `serde_json::Value` buffering.
+
+### Added
+
+- **`production_scenarios` benchmark suite** — SubscribeToTask reconnection,
+  cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E
+  orchestration, push config CRUD round-trip, parallel agent burst (10-100
+  agents), dispatch routing isolation.
+- **Timer calibration benchmark** — Measures actual `tokio::time::sleep()`
+  duration to isolate CI timer jitter from real SDK overhead.
+
 ## [0.4.1] - 2026-03-31
 
 ### Fixed

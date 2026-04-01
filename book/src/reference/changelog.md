@@ -36,6 +36,20 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## Unreleased (v0.4.2)
+
+### Performance
+
+- **`InMemoryTaskStore::list()` — O(n log n) → O(log n + page_size)** — Added `BTreeSet<TaskId>` sorted index and `HashMap<String, BTreeSet<TaskId>>` context index. Eliminates the per-call sort that caused 20-70× regressions at 10K+ tasks.
+- **SSE per-event serialization — 2 allocations → 1** — `build_sse_message_frame()` serializes JSON directly into the SSE frame buffer via `serde_json::to_writer`, skipping the intermediate `serde_json::to_string()` allocation.
+- **`Part` deserialization — ~80 fewer allocations per Task** — Replaced `#[serde(flatten)]` with a hand-rolled `Deserialize` implementation that reads all fields in a single pass without intermediate `serde_json::Value` buffering.
+
+### Benchmarks
+
+- **New: `production_scenarios` suite** — SubscribeToTask reconnection, cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E orchestration, push config CRUD round-trip, parallel agent burst (10-100 agents), dispatch routing isolation.
+- **Improved: `data_volume` get benchmark** — Uses 64 pseudo-random keys instead of single midpoint to avoid HashMap bucket anomalies.
+- **Improved: `backpressure` stream volume** — Added 501 and 1001 event counts to push per-event signal above CI noise floor; added timer calibration benchmarks.
+
 ## v0.4.1 (2026-03-31)
 
 ### Bug Fixes

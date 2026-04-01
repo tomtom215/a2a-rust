@@ -10,13 +10,15 @@
 //! the store exceeds `max_capacity`. The sweep is decoupled from the
 //! `save()` write lock so that writers are not blocked during the O(n)
 //! cleanup.
+//!
+//! All eviction operations maintain the secondary indexes (`sorted_ids`
+//! and `context_index`) via [`StoreData::remove`].
 
-use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::task::TaskId;
 
-use super::{TaskEntry, TaskStoreConfig};
+use super::{StoreData, TaskStoreConfig};
 
 use super::InMemoryTaskStore;
 
@@ -26,7 +28,7 @@ impl InMemoryTaskStore {
     /// Call this periodically (e.g. every 60 seconds) to clean up terminal
     /// tasks that would otherwise persist until the next `save()` call.
     pub async fn run_eviction(&self) {
-        let mut store = self.entries.write().await;
+        let mut store = self.data.write().await;
         Self::evict(&mut store, &self.config);
     }
 
@@ -59,7 +61,7 @@ impl InMemoryTaskStore {
             return;
         }
 
-        let mut store = self.entries.write().await;
+        let mut store = self.data.write().await;
         Self::evict(&mut store, &self.config);
         drop(store);
 
@@ -68,18 +70,27 @@ impl InMemoryTaskStore {
     }
 
     /// Evicts expired and over-capacity entries (must be called with write lock held).
-    pub(super) fn evict(store: &mut HashMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
+    ///
+    /// Uses [`StoreData::remove`] for each evicted entry to maintain the
+    /// sorted index and context index consistency.
+    pub(super) fn evict(store: &mut StoreData, config: &TaskStoreConfig) {
         let now = Instant::now();
 
         // TTL eviction: remove terminal tasks older than the TTL.
+        // Collect IDs first, then remove via StoreData::remove to maintain indexes.
         if let Some(ttl) = config.task_ttl {
-            store.retain(|_, entry| {
-                if entry.task.status.state.is_terminal() {
-                    now.duration_since(entry.last_updated) < ttl
-                } else {
-                    true
-                }
-            });
+            let expired: Vec<TaskId> = store
+                .entries
+                .iter()
+                .filter(|(_, entry)| {
+                    entry.task.status.state.is_terminal()
+                        && now.duration_since(entry.last_updated) >= ttl
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in expired {
+                store.remove(&id);
+            }
         }
 
         // Capacity eviction: remove oldest terminal tasks if over capacity.
@@ -90,6 +101,7 @@ impl InMemoryTaskStore {
                 let overflow = store.len() - max;
                 // Collect terminal tasks sorted by age (oldest first).
                 let mut terminal: Vec<(TaskId, Instant)> = store
+                    .entries
                     .iter()
                     .filter(|(_, e)| e.task.status.state.is_terminal())
                     .map(|(id, e)| (id.clone(), e.last_updated))
@@ -107,6 +119,7 @@ impl InMemoryTaskStore {
                 if removed < overflow && store.len() > max {
                     let remaining = store.len() - max;
                     let mut non_terminal: Vec<(TaskId, Instant)> = store
+                        .entries
                         .iter()
                         .map(|(id, e)| (id.clone(), e.last_updated))
                         .collect();

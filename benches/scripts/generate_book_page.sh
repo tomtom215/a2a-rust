@@ -301,6 +301,21 @@ SECTION
 # Criterion dirs: enterprise_multi_tenant, enterprise_push_config, enterprise_eviction, etc.
 emit_table "enterprise_"
 
+# ── Production Scenarios ─────────────────────────────────────────────────
+
+cat >> "$OUTPUT_FILE" <<'SECTION'
+## Production Scenarios
+
+Full end-to-end workflows exercising the complete SDK pipeline in scenarios
+that real-world deployments encounter at scale: task reconnection, cold start
+latency, concurrent race conditions, multi-context orchestration, push config
+lifecycle, parallel agent bursts, and dispatch routing overhead isolation.
+
+SECTION
+
+# Criterion dirs: production_subscribe_to_task, production_cold_start, production_e2e_orchestration, etc.
+emit_table "production_"
+
 # ── Footer ────────────────────────────────────────────────────────────────
 
 cat >> "$OUTPUT_FILE" <<'FOOTER'

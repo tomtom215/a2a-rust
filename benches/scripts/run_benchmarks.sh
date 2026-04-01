@@ -72,6 +72,7 @@ BENCHMARKS=(
     data_volume
     memory_overhead
     enterprise_scenarios
+    production_scenarios
 )
 
 if [[ -n "$SPECIFIC_BENCH" ]]; then
@@ -116,7 +117,7 @@ cat > "$SUMMARY_FILE" <<EOF
 {
   "language": "rust",
   "sdk": "a2a-protocol-sdk",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "timestamp": "$TIMESTAMP",
   "rust_version": "$(rustc --version)",
   "platform": "$(uname -s)-$(uname -m)",
