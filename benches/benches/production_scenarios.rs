@@ -118,6 +118,20 @@ fn bench_subscribe_to_task(c: &mut Criterion) {
 }
 
 // ── Cold start / first request latency ───────────────────────────────────
+//
+// IMPORTANT: `first_request` (~330µs) and `steady_state` (~1.49ms) measure
+// fundamentally different things — they are **complementary, not comparable**.
+//
+// - `first_request` creates a fresh server per iteration (sample_size=20),
+//   measuring server handler initialization + first TCP connect. It answers:
+//   "how fast can a new server instance start handling requests?"
+//
+// - `steady_state` reuses an existing keep-alive connection, measuring the
+//   full HTTP round-trip with connection overhead amortized. It answers:
+//   "what's the per-request cost at scale?"
+//
+// The 330µs cold start is excellent for autoscaling / serverless deployments.
+// The 1.49ms steady state is the operational baseline for capacity planning.
 
 fn bench_cold_start(c: &mut Criterion) {
     let runtime = rt();

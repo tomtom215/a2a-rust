@@ -599,6 +599,6 @@ async fn multiple_subscribers_all_receive_events() {
 
 #[tokio::test]
 async fn default_constants_are_sane() {
-    assert_eq!(DEFAULT_QUEUE_CAPACITY, 64);
+    assert_eq!(DEFAULT_QUEUE_CAPACITY, 256);
     assert_eq!(DEFAULT_MAX_EVENT_SIZE, 16 * 1024 * 1024);
 }

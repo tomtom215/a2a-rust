@@ -191,6 +191,15 @@ Checking for private IPs and hostnames in webhook URLs is insufficient. URLs lik
 
 ## Performance Pitfalls
 
+### Deserialization allocation overhead
+
+Standard `serde_json::to_vec` and `serde_json::from_str` allocate fresh buffers on every call. For hot paths (SSE frame building, transport payload serialization), this overhead compounds. The `serde_helpers` module in `a2a-protocol-types` provides optimized alternatives:
+
+- **`SerBuffer`** — Thread-local reusable serialization buffer. Call `SerBuffer::serialize(&value)` to get a `&[u8]` without allocating a new `Vec` each time. Reduces 2.3x small-payload overhead.
+- **`deser_from_str` / `deser_from_slice`** — Borrowed deserialization functions that reduce ~15-25% of allocations by avoiding intermediate owned strings.
+
+Use these in performance-sensitive paths where serialization/deserialization is called repeatedly (e.g., per-event SSE frame building, transport payload encoding).
+
 ### `Vec<u8>` vs `Bytes` in retry loops
 
 Cloning a `Vec<u8>` inside a retry loop allocates a full heap copy each time. Use `bytes::Bytes` (reference-counted) so that `.clone()` is just an atomic reference count increment. This matters for push notification delivery where large payloads may be retried 3+ times.

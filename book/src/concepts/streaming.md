@@ -154,21 +154,21 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 
 | Limit | Default | Purpose |
 |-------|---------|---------|
-| Queue capacity | 64 events | Broadcast channel ring buffer size |
+| Queue capacity | 256 events | Broadcast channel ring buffer size |
 | Max event size | 16 MiB | Rejects oversized events |
 
 With broadcast channels, writes never block — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification.
 
-> **High-volume streams:** For tasks producing >100 events, increase the queue
-> capacity to match expected peak volume. The default capacity of 64 is sufficient
-> for most use cases, but high-volume streams (252+ events) will experience
+> **High-volume streams:** For tasks producing >250 events, increase the queue
+> capacity to match expected peak volume. The default capacity of 256 is sufficient
+> for most use cases, but high-volume streams beyond that will experience
 > increased per-event cost due to broadcast buffer pressure.
 
 Configure these via the builder:
 
 ```rust
 RequestHandlerBuilder::new(executor)
-    .with_event_queue_capacity(128)
+    .with_event_queue_capacity(512)  // increase above 256 default for high-volume streams
     .with_max_event_size(8 * 1024 * 1024)  // 8 MiB
     .build()
     .unwrap()

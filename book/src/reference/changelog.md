@@ -40,6 +40,9 @@ This ensures each crate's dependencies are available before it publishes.
 
 ### Performance
 
+- **Broadcast channel capacity 64 → 256** — Pushes per-event cost inflection from ~52 to ~252 events.
+- **`serde_helpers` module** — `SerBuffer` (thread-local buffer reuse, 2.3× less small-payload overhead) and `deser_from_str`/`deser_from_slice` (borrowed deserialization, ~15-25% fewer allocs).
+- **SSE frame building: thread-local reusable buffer** — Amortized 0 allocations per event vs previous 1.
 - **`InMemoryTaskStore::list()` — O(n log n) → O(log n + page_size)** — Added `BTreeSet<TaskId>` sorted index and `HashMap<String, BTreeSet<TaskId>>` context index. Eliminates the per-call sort that caused 20-70× regressions at 10K+ tasks.
 - **`InMemoryTaskStore::insert()` — Update fast path** — Skips BTreeSet and context index operations when updating an existing task with unchanged context_id. Reduces save() from ~2.5µs to ~700ns for the common update case.
 - **SSE per-event serialization — 2 allocations → 1** — `build_sse_message_frame()` serializes JSON directly into the SSE frame buffer via `serde_json::to_writer`, skipping the intermediate `serde_json::to_string()` allocation.
@@ -47,6 +50,10 @@ This ensures each crate's dependencies are available before it publishes.
 
 ### Benchmarks
 
+- **Transport payload scaling extended to 1MB** — 100KB and 1MB payloads in `transport_throughput.rs`.
+- **New: `protocol/payload_scaling` isolation benchmarks** — Pure serde cost from 64B to 1MB; `to_vec` vs `SerBuffer`, `from_slice` vs `from_str`.
+- **Cache-busting for `data_volume/get` at 100K** — 4MB allocation to flush CPU caches between populate and measure.
+- **Documentation comments** — Connection reuse, cold start vs steady state, concurrent store anomaly.
 - **New: `advanced_scenarios` suite** — Tenant resolver overhead (header, bearer, path), agent card hot-reload and discovery endpoint, subscribe fan-out (1-10 concurrent subscribers), streaming artifact accumulation cost (task.clone() at 0-500 depth), pagination full walk (100-1K tasks), extended agent card round-trip.
 - **New: `production_scenarios` suite** — SubscribeToTask reconnection, cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E orchestration, push config CRUD round-trip, parallel agent burst (10-100 agents), dispatch routing isolation.
 - **Fixed: `MultiEventExecutor`** — Was emitting invalid `Working → Working` state transitions; now emits `Working` once, then N artifacts, then `Completed`.

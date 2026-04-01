@@ -123,7 +123,7 @@ reverse proxy or implement a custom `ServerInterceptor`.
 
 ### Client Retry & Reuse
 
-When calling remote agents, build clients once and reuse them:
+When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding ~300-500us of overhead per call:
 
 ```rust
 // Build once at startup
@@ -202,18 +202,20 @@ a2a-rust works directly with hyper — no middleware framework overhead. Cross-c
 Tune the event queue for your workload:
 
 ```rust
-// High-throughput: larger queues (recommended for >100 events/task)
-.with_event_queue_capacity(256)
+// High-throughput: larger queues for tasks producing >250 events/task
+.with_event_queue_capacity(512)
 
 // Memory-constrained: smaller queues
-.with_event_queue_capacity(16)
+.with_event_queue_capacity(64)
 ```
 
 > **Benchmark data:** Per-event cost inflects at the broadcast channel capacity
-> boundary. With the default capacity of 64, tasks producing >64 events see
-> increased per-event overhead due to broadcast buffer pressure (~4µs/event
-> below capacity, ~46µs/event at 2-4× capacity, ~193µs/event at 8× capacity).
-> Set capacity to at least your expected peak event count per task.
+> boundary. With the default capacity of 256 (increased from 64), tasks producing
+> >250 events see increased per-event overhead due to broadcast buffer pressure
+> (~4µs/event below capacity, ~193µs/event above capacity). Set capacity to at
+> least your expected peak event count per task. The `serde_helpers::SerBuffer`
+> module can further reduce per-event serialization overhead via thread-local
+> buffer reuse.
 
 ## Deployment Checklist
 

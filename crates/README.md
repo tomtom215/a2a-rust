@@ -22,7 +22,7 @@ a2a-protocol-sdk            ← umbrella re-export + prelude
 
 | Crate | Published Name | Purpose | When to Use |
 |-------|---------------|---------|-------------|
-| [a2a-types](a2a-types/) | `a2a-protocol-types` | Pure A2A v1.0 data types -- serde only, no I/O | You need typed protocol definitions without HTTP dependencies |
+| [a2a-types](a2a-types/) | `a2a-protocol-types` | Pure A2A v1.0 data types -- serde only, no I/O. Includes `serde_helpers` module with `SerBuffer` (thread-local buffer reuse) and `deser_from_str`/`deser_from_slice` (borrowed deserialization) for optimized serialization paths. | You need typed protocol definitions without HTTP dependencies |
 | [a2a-client](a2a-client/) | `a2a-protocol-client` | Async HTTP client (hyper 1.x) with pluggable transports | Building orchestrators, gateways, or test harnesses |
 | [a2a-server](a2a-server/) | `a2a-protocol-server` | Server framework with dispatchers, stores, and streaming | Building A2A-compliant agents |
 | [a2a-sdk](a2a-sdk/) | `a2a-protocol-sdk` | Umbrella re-export + `prelude` module | Full applications that need client + server + types |

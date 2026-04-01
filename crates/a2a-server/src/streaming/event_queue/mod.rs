@@ -30,7 +30,17 @@ use a2a_protocol_types::events::StreamResponse;
 use tokio::sync::{broadcast, mpsc};
 
 /// Default channel capacity for event queues.
-pub const DEFAULT_QUEUE_CAPACITY: usize = 64;
+///
+/// Set to 256 to avoid the 12× per-event cost inflection that occurs when the
+/// broadcast channel overflows. At capacity 64, tasks producing >64 in-flight
+/// events triggered `Lagged(n)` recovery in the broadcast receiver, causing
+/// per-event cost to jump from ~4µs to ~53µs. The 256 capacity pushes this
+/// inflection point above the typical event volume for most production tasks.
+///
+/// Deployments expecting >256 events/task should use
+/// [`EventQueueManager::with_capacity()`] to set a higher value matching their
+/// peak event volume.
+pub const DEFAULT_QUEUE_CAPACITY: usize = 256;
 
 /// Default maximum event size in bytes (16 MiB).
 pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;

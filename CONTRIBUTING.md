@@ -183,7 +183,7 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 | `json_serde` | `a2a-protocol-types` | Serialize/deserialize AgentCard, Task, Message |
 | `sse_parse` | `a2a-protocol-client` | SSE frame parsing (single, batch, fragmented) |
 | `handler_bench` | `a2a-protocol-server` | Request handler throughput |
-| `protocol_overhead` | `a2a-benchmarks` | JSON-RPC envelope serialization/deserialization |
+| `protocol_overhead` | `a2a-benchmarks` | JSON-RPC envelope serialization/deserialization; `protocol/payload_scaling` isolation benchmarks (64B-1MB, `to_vec` vs `SerBuffer`, `from_slice` vs `from_str`) |
 | `cross_language` | `a2a-benchmarks` | Standardized workloads for cross-SDK comparison |
 | `transport_throughput` | `a2a-benchmarks` | End-to-end HTTP round-trip latency |
 | `concurrent_agents` | `a2a-benchmarks` | Scaling behavior under parallel load |

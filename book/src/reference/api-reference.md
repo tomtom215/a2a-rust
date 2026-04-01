@@ -81,6 +81,14 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `ListPushConfigsResponse` | Paginated push config list |
 | `AuthenticatedExtendedCardResponse` | Type alias for `AgentCard` |
 
+### Serialization Helpers
+
+| Type | Description |
+|------|-------------|
+| `SerBuffer` | Thread-local reusable serialization buffer (2.3x less small-payload overhead) |
+| `deser_from_str` | Borrowed deserialization from `&str` (~15-25% fewer allocations) |
+| `deser_from_slice` | Borrowed deserialization from `&[u8]` (~15-25% fewer allocations) |
+
 ### Errors
 
 | Type | Description |

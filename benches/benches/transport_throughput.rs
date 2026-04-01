@@ -223,7 +223,13 @@ fn bench_payload_scaling(c: &mut Criterion) {
     // Bumped from 8s to 10s: CI runs showed 4KB and 16KB payloads needing
     // 8.4–9.5s, triggering criterion timeout warnings on slower runners.
     group.measurement_time(std::time::Duration::from_secs(10));
-    let sizes: &[usize] = &[64, 256, 1024, 4096, 16384];
+    // Extended to 100KB and 1MB to find the crossover point where payload
+    // cost dominates transport overhead. At 64B-16KB, the ~1.4ms fixed HTTP
+    // round-trip cost dwarfs the ~30-50µs serde overhead, making transport
+    // benchmarks insensitive to serialization regressions. At 100KB+, payload
+    // serialization becomes the dominant factor, enabling regression detection
+    // for large-payload workloads (document generation, data extraction).
+    let sizes: &[usize] = &[64, 256, 1024, 4096, 16384, 102_400, 1_048_576];
 
     for &size in sizes {
         let payload = "x".repeat(size);
