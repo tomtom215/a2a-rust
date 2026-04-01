@@ -71,6 +71,7 @@ BENCHMARKS=(
     backpressure
     data_volume
     memory_overhead
+    enterprise_scenarios
 )
 
 if [[ -n "$SPECIFIC_BENCH" ]]; then

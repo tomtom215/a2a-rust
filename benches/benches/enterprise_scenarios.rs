@@ -20,6 +20,10 @@
 //! - Rate limiter interceptor per-request overhead
 //! - CORS preflight OPTIONS handling latency
 //! - Read/write mix ratios simulating real traffic patterns
+//! - Cancel task round-trip (cancellation responsiveness SLA)
+//! - List tasks client round-trip with pagination
+//! - Handler limits enforcement and rejection throughput
+//! - Client-side interceptor chain overhead (0–10 interceptors)
 //!
 //! ## What this does NOT measure
 //!
@@ -28,6 +32,7 @@
 //! - TLS handshake overhead
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -37,9 +42,12 @@ use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
 
 use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
+use a2a_protocol_client::ClientResult;
 use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_server::push::InMemoryPushConfigStore;
 use a2a_protocol_server::push::PushConfigStore;
+use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::TaskId;
 
@@ -513,6 +521,256 @@ fn bench_large_history(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Cancel task round-trip ─────────────────────────────────────────────────
+
+fn bench_cancel_task(c: &mut Criterion) {
+    let runtime = multi_thread_rt();
+    let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+    let client = ClientBuilder::new(&srv.url).build().expect("build client");
+
+    let mut group = c.benchmark_group("enterprise/cancel_task");
+    group.throughput(Throughput::Elements(1));
+
+    // Measure the full cancel round-trip: create a task via send_message,
+    // then immediately cancel it. This exercises the cancellation token
+    // system, executor cancel() callback, and state transition to Canceled.
+    group.bench_function("send_then_cancel", |b| {
+        b.to_async(&runtime).iter(|| {
+            let client = &client;
+            async move {
+                let resp = client
+                    .send_message(fixtures::send_params("cancel-bench"))
+                    .await
+                    .expect("send_message");
+
+                if let a2a_protocol_types::responses::SendMessageResponse::Task(task) = resp {
+                    // Task may already be completed by EchoExecutor; cancel
+                    // should return the task in its terminal state. The
+                    // benchmark measures the cancel round-trip regardless
+                    // of whether the task was still in-progress.
+                    let _ = client.cancel_task(task.id.to_string()).await;
+                }
+            }
+        });
+    });
+
+    group.finish();
+}
+
+// ── List tasks client round-trip ──────────────────────────────────────────
+
+fn bench_list_tasks_roundtrip(c: &mut Criterion) {
+    let runtime = multi_thread_rt();
+    let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+    let client = ClientBuilder::new(&srv.url).build().expect("build client");
+
+    // Pre-populate the server's task store by sending messages.
+    runtime.block_on(async {
+        for i in 0..50 {
+            client
+                .send_message(fixtures::send_params(&format!("populate-{i}")))
+                .await
+                .expect("populate");
+        }
+    });
+
+    let mut group = c.benchmark_group("enterprise/list_tasks");
+    group.throughput(Throughput::Elements(1));
+
+    // Measure list with various page sizes through the full client→server→client
+    // round-trip, including JSON-RPC envelope, pagination, and response parsing.
+    let page_sizes: &[u32] = &[10, 25, 50];
+    for &page_size in page_sizes {
+        group.bench_with_input(
+            BenchmarkId::new("page_size", page_size),
+            &page_size,
+            |b, &page_size| {
+                let params = ListTasksParams {
+                    tenant: None,
+                    context_id: None,
+                    status: None,
+                    page_size: Some(page_size),
+                    page_token: None,
+                    status_timestamp_after: None,
+                    include_artifacts: None,
+                    history_length: None,
+                };
+                b.to_async(&runtime).iter(|| {
+                    let client = &client;
+                    let params = params.clone();
+                    async move {
+                        client.list_tasks(params).await.expect("list_tasks");
+                    }
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+// ── Handler limits enforcement ────────────────────────────────────────────
+
+fn bench_handler_limits(c: &mut Criterion) {
+    let runtime = multi_thread_rt();
+
+    let mut group = c.benchmark_group("enterprise/handler_limits");
+    group.throughput(Throughput::Elements(1));
+
+    // Baseline: default limits (no rejection expected)
+    let srv_default = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+    let client_default = ClientBuilder::new(&srv_default.url)
+        .build()
+        .expect("build client");
+
+    group.bench_function("default_limits", |b| {
+        b.to_async(&runtime).iter(|| async {
+            client_default
+                .send_message(fixtures::send_params("limits-bench"))
+                .await
+                .expect("send");
+        });
+    });
+
+    // Tight limits: small max_metadata_size and max_id_length.
+    // The request should still succeed (our fixture is small) but the
+    // validation check runs on every request.
+    let tight_limits = a2a_protocol_server::HandlerLimits::default()
+        .with_max_metadata_size(512)
+        .with_max_id_length(128);
+
+    let handler = Arc::new(
+        a2a_protocol_server::builder::RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(fixtures::agent_card("http://127.0.0.1:0"))
+            .with_handler_limits(tight_limits)
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher =
+        a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
+    let addr = runtime
+        .block_on(a2a_protocol_server::serve::serve_with_addr(
+            "127.0.0.1:0",
+            dispatcher,
+        ))
+        .expect("serve");
+    let tight_url = format!("http://{addr}");
+    let client_tight = ClientBuilder::new(&tight_url)
+        .build()
+        .expect("build client");
+
+    group.bench_function("tight_limits", |b| {
+        b.to_async(&runtime).iter(|| async {
+            client_tight
+                .send_message(fixtures::send_params("limits-bench"))
+                .await
+                .expect("send");
+        });
+    });
+
+    // Measure rejection latency: send oversized metadata that exceeds the limit.
+    group.bench_function("metadata_rejection", |b| {
+        let oversized_msg = a2a_protocol_types::message::Message {
+            metadata: Some(serde_json::json!({
+                "large_field": "x".repeat(1024),
+            })),
+            ..fixtures::user_message("oversized metadata")
+        };
+        b.to_async(&runtime).iter(|| {
+            let params = a2a_protocol_types::params::MessageSendParams {
+                tenant: None,
+                message: oversized_msg.clone(),
+                configuration: None,
+                metadata: None,
+            };
+            let client = &client_tight;
+            async move {
+                // This should be rejected; we measure rejection throughput.
+                let _ = client.send_message(params).await;
+            }
+        });
+    });
+
+    group.finish();
+}
+
+// ── Client-side interceptor chain overhead ────────────────────────────────
+
+/// A client-side counting interceptor that increments an atomic counter
+/// on every before/after call. The atomic increment (~2ns) is negligible
+/// but proves the interceptors are invoked.
+struct ClientCountingInterceptor {
+    calls: Arc<AtomicU64>,
+}
+
+impl ClientCountingInterceptor {
+    fn new(counter: Arc<AtomicU64>) -> Self {
+        Self { calls: counter }
+    }
+}
+
+impl CallInterceptor for ClientCountingInterceptor {
+    fn before<'a>(
+        &'a self,
+        _req: &'a mut ClientRequest,
+    ) -> impl std::future::Future<Output = ClientResult<()>> + Send + 'a {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        async { Ok(()) }
+    }
+    fn after<'a>(
+        &'a self,
+        _resp: &'a ClientResponse,
+    ) -> impl std::future::Future<Output = ClientResult<()>> + Send + 'a {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        async { Ok(()) }
+    }
+}
+
+fn bench_client_interceptor_chain(c: &mut Criterion) {
+    let runtime = multi_thread_rt();
+    let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+
+    let mut group = c.benchmark_group("enterprise/client_interceptors");
+    group.throughput(Throughput::Elements(1));
+
+    let interceptor_counts: &[usize] = &[0, 1, 5, 10];
+    for &n in interceptor_counts {
+        group.bench_with_input(
+            BenchmarkId::new("interceptors", n),
+            &n,
+            |b, &n| {
+                let counter = Arc::new(AtomicU64::new(0));
+                let mut builder = ClientBuilder::new(&srv.url);
+                for _ in 0..n {
+                    builder = builder.with_interceptor(
+                        ClientCountingInterceptor::new(Arc::clone(&counter)),
+                    );
+                }
+                let client = builder.build().expect("build client");
+
+                counter.store(0, Ordering::SeqCst);
+                b.to_async(&runtime).iter(|| async {
+                    client
+                        .send_message(fixtures::send_params("interceptor-bench"))
+                        .await
+                        .expect("send");
+                });
+
+                // Verify interceptors were actually called.
+                if n > 0 {
+                    let total = counter.load(Ordering::SeqCst);
+                    assert!(
+                        total > 0,
+                        "client interceptors were never called (n={n})"
+                    );
+                }
+            },
+        );
+    }
+
+    group.finish();
+}
+
 // ── Criterion groups ────────────────────────────────────────────────────────
 
 criterion_group!(
@@ -524,5 +782,9 @@ criterion_group!(
     bench_cors_preflight,
     bench_read_write_mix,
     bench_large_history,
+    bench_cancel_task,
+    bench_list_tasks_roundtrip,
+    bench_handler_limits,
+    bench_client_interceptor_chain,
 );
 criterion_main!(benches);

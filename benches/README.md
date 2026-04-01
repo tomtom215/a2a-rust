@@ -37,7 +37,7 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 | **Backpressure** | `backpressure.rs` | Stream event volume scaling (3–101 events); slow consumer simulation (1ms/5ms read delays); concurrent stream fan-out under load (1–16 streams) |
 | **Data Volume** | `data_volume.rs` | TaskStore get/list/save at 1K–100K pre-populated tasks; context_id filtering at scale; concurrent read contention at 10K tasks; history depth impact on store operations |
 | **Memory Overhead** | `memory_overhead.rs` | Heap allocations per serialize/deserialize via counting allocator; allocation scaling with conversation history depth; allocation bytes per payload size (64B–16KB). Uses `iter_custom` with real wall-clock timing and tolerance-based allocation assertions (5% threshold to absorb serde_json version variance). |
-| **Enterprise Scenarios** | `enterprise_scenarios.rs` | Multi-tenant task store isolation under concurrent load (1–100 tenants); push notification config store CRUD at scale; task eviction under sustained memory pressure (100–10K tasks at capacity); rate limiter interceptor overhead; CORS preflight OPTIONS handling; read/write mix ratios (100:0 → 0:100); large conversation history (100–500 turns) ser/de and store save |
+| **Enterprise Scenarios** | `enterprise_scenarios.rs` | Multi-tenant task store isolation (1–100 tenants); push config store CRUD; eviction under memory pressure (100–10K at capacity); rate limiting overhead; CORS preflight; R/W mix ratios (100:0 → 0:100); large history (100–500 turns); cancel task round-trip; list tasks with pagination (10–50 page sizes); handler limits enforcement and rejection throughput; client-side interceptor chain (0–10 interceptors) |
 
 ## Architecture
 
