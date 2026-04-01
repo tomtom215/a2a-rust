@@ -316,6 +316,21 @@ SECTION
 # Criterion dirs: production_subscribe_to_task, production_cold_start, production_e2e_orchestration, etc.
 emit_table "production_"
 
+# ── Advanced Scenarios ──────────────────────────────────────────────────
+
+cat >> "$OUTPUT_FILE" <<'SECTION'
+## Advanced Scenarios
+
+SDK capabilities exercising previously-unbenchmarked paths: tenant resolver
+overhead, agent card hot-reload and discovery, subscribe fan-out for
+reconnection bursts, streaming artifact accumulation cost (the 90µs/event
+bottleneck), pagination full walk, and extended agent card round-trip.
+
+SECTION
+
+# Criterion dirs: advanced_tenant_resolver, advanced_agent_card_hot_reload, advanced_agent_card_discovery, etc.
+emit_table "advanced_"
+
 # ── Footer ────────────────────────────────────────────────────────────────
 
 cat >> "$OUTPUT_FILE" <<'FOOTER'

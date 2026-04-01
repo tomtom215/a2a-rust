@@ -87,6 +87,9 @@ jobs:
       - name: Run production_scenarios
         run: cargo bench -p a2a-benchmarks --bench production_scenarios
 
+      - name: Run advanced_scenarios
+        run: cargo bench -p a2a-benchmarks --bench advanced_scenarios
+
       # ── Generate and commit book page ────────────────────────────────
 
       - name: Generate benchmark results page

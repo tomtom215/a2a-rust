@@ -27,12 +27,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`advanced_scenarios` benchmark suite** — Tenant resolver overhead (header,
+  bearer, path segment extraction); agent card hot-reload (read, update, complex
+  card swap); `/.well-known/agent.json` discovery endpoint latency; subscribe
+  fan-out (1–10 concurrent subscribers); streaming artifact accumulation cost
+  (`task.clone()` at 0–500 artifact depth); pagination full walk (100–1K tasks,
+  unfiltered + context-filtered); extended agent card round-trip.
 - **`production_scenarios` benchmark suite** — SubscribeToTask reconnection,
   cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E
   orchestration, push config CRUD round-trip, parallel agent burst (10-100
   agents), dispatch routing isolation.
 - **Timer calibration benchmark** — Measures actual `tokio::time::sleep()`
   duration to isolate CI timer jitter from real SDK overhead.
+- **`NoopPushSender`** for benchmarks that require push notification support
+  without performing actual HTTP webhook delivery.
+- **`start_jsonrpc_server_with_push()`** helper for benchmark servers with push
+  notification capabilities enabled.
+
+### Fixed
+
+- **`MultiEventExecutor` invalid state transitions** — Was emitting
+  `Working → Working` status events in a loop, violating the A2A spec state
+  machine. Now emits `Working` once, then N artifact events, then `Completed`.
+- **`production_scenarios` push config benchmark** — Was using a server without
+  push notification support, causing `PushNotificationNotSupported` errors.
+- **`InMemoryTaskStore::insert()` unnecessary index operations** — Update path
+  now skips BTreeSet and context index operations when the task already exists
+  with the same context_id, eliminating variance from occasional BTreeSet node
+  splits and reducing update cost from ~2.5µs to ~700ns.
+- **Criterion `measurement_time` warnings** — Added `measurement_time` to 23+
+  benchmark groups across 8 files, eliminating all 15 warnings and preventing
+  23 borderline cases from triggering on CI runners.
 
 ## [0.4.1] - 2026-03-31
 
