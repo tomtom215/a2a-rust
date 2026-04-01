@@ -220,7 +220,9 @@ fn bench_payload_scaling(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("transport/payload_scaling");
-    group.measurement_time(std::time::Duration::from_secs(8));
+    // Bumped from 8s to 10s: CI runs showed 4KB and 16KB payloads needing
+    // 8.4–9.5s, triggering criterion timeout warnings on slower runners.
+    group.measurement_time(std::time::Duration::from_secs(10));
     let sizes: &[usize] = &[64, 256, 1024, 4096, 16384];
 
     for &size in sizes {

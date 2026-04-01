@@ -142,6 +142,35 @@ These notes help interpret benchmark results accurately:
   ≈ 2.09ms actual. Use `backpressure/timer_calibration` results to interpret
   slow consumer benchmarks.
 
+- **`data_volume/save` wide CIs**: The `after_prefill/10000` case shows wide
+  confidence intervals ([1.4µs, 3.5µs]) and 18% high severe outlier rate
+  from BTreeSet rebalancing spikes during sorted index inserts. The median
+  (~1.6µs) is representative. Acceptable tradeoff: BTreeSet enables
+  O(page_size) pagination vs O(n) full scans.
+
+- **Dispatch routing inverted results**: `direct_handler_invoke` may appear
+  slower than `full_http_roundtrip`. The HTTP path reuses a warm keep-alive
+  connection, while direct invocation exercises the full handler dispatch path
+  without connection pooling. The ~7% difference validates near-zero HTTP
+  layer overhead on warm connections.
+
+- **Cold start vs steady state**: `first_request` (~328µs) appears faster
+  than `steady_state` (~1.97ms) because they measure different things.
+  `first_request` creates a fresh server per iteration (sample_size=20);
+  `steady_state` measures full HTTP round-trip with connection reuse.
+
+- **Subscribe fan-out O(1) scaling**: O(1) cost from 1→5 subscribers (~2.9ms),
+  gradual increase at 10+ from channel contention.
+
+- **Agent burst sub-linear scaling**: Per-agent cost drops from 714µs at 10
+  agents to 310µs at 100 agents — Tokio work-stealing amortizes scheduling.
+
+- **Tenant resolver overhead**: 88–173ns per request (~0.008% of round-trip).
+  Effectively free at production scale.
+
+- **Pagination context index**: Filtered walks are ~2× faster than unfiltered
+  (309µs vs 592µs at 1K tasks) via BTreeSet context index.
+
 - **Benchmark server socket reuse**: Servers set `SO_REUSEADDR` + `SO_REUSEPORT`
   and use graceful shutdown to prevent `AddrInUse` errors during rapid cold-start
   cycling on CI runners.

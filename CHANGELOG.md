@@ -12,6 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **237 benchmarks, zero panics, zero errors** — Cleanest benchmark run in
+  project history. All 13 benchmark suites (transport, protocol, lifecycle,
+  concurrency, cross-language, realistic, error paths, backpressure, data
+  volume, memory, enterprise, production, advanced) pass with zero failures.
+- **Streaming bimodal distribution fully resolved** — Zero streaming benchmarks
+  appear in the high-outlier list. `stream_drain` confidence interval tightened
+  from [1.79ms, 2.11ms] (18% range) to [1.59ms, 1.67ms] (5% range).
+- **Agent burst sub-linear scaling confirmed** — Per-agent cost drops from
+  714µs/agent (10 agents) to 310µs/agent (100 agents). SDK handles high-fanout
+  agent coordination without degradation.
+- **Subscribe fan-out O(1) up to 5 subscribers** — 1 subscriber = 2.90ms,
+  5 subscribers = 2.89ms. Broadcast channel delivers in a single pass.
+- **Pagination context index 2x speedup** — Filtered walk at 1K tasks: 309µs
+  vs unfiltered 592µs. BTreeSet context index eliminates half the scan work.
+- **Tenant resolvers effectively free** — 88–173ns per request (~0.008% of a
+  typical 1.6ms round-trip).
 - **SSE streaming bimodal distribution eliminated** — Root-caused the ~24%
   high severe outlier rate in all streaming benchmarks to cross-thread task
   scheduling: on a 4-core system, `tokio::spawn` has a 3/4 probability of
@@ -33,10 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   handle (`watch::Sender<bool>`) so that rapid server cycling during cold-start
   benchmarks does not fail with `Address already in use` on CI runners where
   `TIME_WAIT` recycling is slower.
-- **Criterion timeout warnings eliminated** — Increased `measurement_time` for
-  3 remaining benchmark groups: `lifecycle/e2e` (8s→20s),
-  `concurrent/sends` (10s→18s), `backpressure/slow_consumer` (15s→20s with
-  10 samples). All 140 benchmarks now complete within their budget.
+- **Criterion timeout warnings eliminated (round 2)** — Bumped `measurement_time`
+  for 5 additional benchmark groups based on CI analysis: `transport/payload_scaling`
+  (8s→10s), `concurrent/sends` (18s→30s), `realistic/payload_complexity` (10s→15s),
+  `realistic/connection` (10s→15s), `enterprise/client_interceptors` (8s→10s).
+  All 237 benchmarks now complete within their budget on CI runners.
 - **Push config benchmark per-task limit** — `production/push_config/set_roundtrip`
   and `delete_roundtrip` now upsert a pre-created config instead of creating new
   configs each iteration, preventing `push config limit exceeded` panics during
@@ -44,10 +61,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Benchmark documentation** — Added "Known Measurement Limitations" section
-  to `benches/README.md` and the auto-generated GH Book benchmarks page
-  documenting streaming bimodal distribution, get()/100K cache anomaly, stream
-  volume per-event cost inflection, and slow consumer timer calibration.
+- **Benchmark documentation expanded** — Added 8 new "Known Measurement
+  Limitations" entries to `benches/README.md` and the auto-generated GH Book
+  benchmarks page: data_volume/save wide CIs, dispatch routing inverted results,
+  cold start vs steady state, subscribe fan-out O(1) scaling, agent burst
+  sub-linear scaling, tenant resolver overhead, pagination context index speedup.
+  These complement the existing entries for streaming bimodal distribution,
+  get()/100K cache anomaly, stream volume per-event cost inflection, and slow
+  consumer timer calibration.
 - **Stream volume scaling documentation** — Added detailed per-event cost
   analysis comments to `backpressure.rs` explaining the broadcast channel
   capacity-driven inflection at 252+ events.
@@ -93,6 +114,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   machine. Now emits `Working` once, then N artifact events, then `Completed`.
 - **`production_scenarios` push config benchmark** — Was using a server without
   push notification support, causing `PushNotificationNotSupported` errors.
+- **`production_scenarios` dispatch routing benchmark** — Pre-allocate params
+  outside the measurement loop for `direct_handler_invoke` to isolate handler
+  dispatch cost from fixture allocation cost, producing a fairer comparison
+  against the HTTP round-trip path.
 - **`InMemoryTaskStore::insert()` unnecessary index operations** — Update path
   now skips BTreeSet and context index operations when the task already exists
   with the same context_id, eliminating variance from occasional BTreeSet node

@@ -706,7 +706,9 @@ fn bench_client_interceptor_chain(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("enterprise/client_interceptors");
-    group.measurement_time(std::time::Duration::from_secs(8));
+    // Bumped from 8s to 10s: CI runs showed /5 and /10 interceptor chains
+    // marginally exceeding 8s budget (6–36% over) on slower runners.
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
 
     let interceptor_counts: &[usize] = &[0, 1, 5, 10];
