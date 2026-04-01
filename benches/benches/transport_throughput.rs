@@ -72,6 +72,19 @@ fn bench_jsonrpc_stream(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
+    // Warm up the HTTP connection pool by sending one request before timing.
+    // Without this, the first stream iteration includes TCP connection
+    // establishment and hyper connection pool initialization, which interact
+    // with the tokio timer wheel to produce bimodal latency distributions.
+    // The warmup request ensures the keep-alive connection is established
+    // before criterion's measurement begins.
+    runtime.block_on(async {
+        client
+            .send_message(fixtures::send_params("warmup"))
+            .await
+            .expect("warmup request");
+    });
+
     let mut group = c.benchmark_group("transport/jsonrpc/stream");
     group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
@@ -131,6 +144,14 @@ fn bench_rest_stream(c: &mut Criterion) {
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
+
+    // Warm up the HTTP connection pool (see bench_jsonrpc_stream comment).
+    runtime.block_on(async {
+        client
+            .send_message(fixtures::send_params("warmup"))
+            .await
+            .expect("warmup request");
+    });
 
     let mut group = c.benchmark_group("transport/rest/stream");
     group.measurement_time(std::time::Duration::from_secs(8));

@@ -12,12 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **`a2a-protocol-server`: SSE streaming bimodal distribution fix** — Added
-  `tokio::task::yield_now()` before the SSE read loop to align the first poll
-  with a fresh executor slot, reducing timer wheel collisions that caused ~24%
-  of streaming iterations to hit a ~1ms slow path. Also set
-  `MissedTickBehavior::Skip` on the keep-alive interval to prevent timer-induced
-  latency spikes during event processing.
+- **SSE streaming bimodal distribution mitigation** — Added
+  `tokio::task::yield_now()` before the SSE read loop (server-side) and body
+  reader task (client-side JSON-RPC and REST) to align first polls with fresh
+  executor slots, reducing timer wheel collisions. Set
+  `MissedTickBehavior::Skip` on the keep-alive interval. Added HTTP connection
+  warmup to transport streaming benchmarks. These changes reduce the bimodal
+  pattern in isolated paths (lifecycle/e2e: 24%→1% outliers) while the full
+  transport pipeline retains the pattern as a documented measurement artifact.
 
 ### Fixed
 
