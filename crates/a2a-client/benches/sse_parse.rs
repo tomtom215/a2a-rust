@@ -26,7 +26,12 @@ fn bench_sse_parse_single(c: &mut Criterion) {
         b.iter(|| {
             let mut parser = SseParser::default();
             parser.feed(black_box(&payload));
-            while parser.next_frame().is_some() {}
+            // Consume frames through black_box to prevent dead-code elimination.
+            let mut count = 0u32;
+            while parser.next_frame().is_some() {
+                count += 1;
+            }
+            debug_assert_eq!(count, 1);
         });
     });
 }

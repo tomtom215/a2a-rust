@@ -83,10 +83,12 @@ fn bench_happy_vs_error(c: &mut Criterion) {
 
     group.bench_function("error_path", |b| {
         b.to_async(&runtime).iter(|| async {
-            // The executor fails, but the server should still return a response
-            let _ = error_client
+            // The executor fails, but the server returns a Task in Failed state.
+            // Consume the result through black_box to prevent dead-code elimination.
+            let result = error_client
                 .send_message(fixtures::send_params("fail"))
                 .await;
+            criterion::black_box(&result);
         });
     });
 

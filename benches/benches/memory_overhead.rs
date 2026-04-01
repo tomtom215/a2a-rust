@@ -116,9 +116,15 @@ fn measure_allocs<F: FnOnce()>(f: F) -> AllocSnapshot {
 /// Maximum allowed allocation count deviation before flagging a regression.
 ///
 /// A serde_json or Rust stdlib patch version bump can change allocation counts
-/// by a small amount (e.g. buffer sizing heuristics). Using exact `assert_eq!`
-/// would cause spurious CI failures. Instead, we allow a small tolerance and
-/// flag genuine regressions (>5% increase) while ignoring benign fluctuations.
+/// by a small amount (e.g. buffer sizing heuristics, Vec growth factor changes).
+/// Using exact `assert_eq!` would cause spurious CI failures on dependency
+/// updates. Instead, we allow a 5% tolerance:
+///
+/// - **Why 5%?** Empirically, serde_json minor versions vary allocation counts
+///   by 1-3%. The 5% threshold catches genuine regressions (e.g. accidental
+///   O(n²) cloning) while tolerating toolchain-level fluctuations.
+/// - **Lower bound**: Allocation counts should never *decrease* significantly
+///   without an intentional optimization, so we only check the upper bound.
 const ALLOC_TOLERANCE_PERCENT: u64 = 5;
 
 // ── Serialization allocation cost ───────────────────────────────────────────

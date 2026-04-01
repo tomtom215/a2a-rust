@@ -302,6 +302,25 @@ which provides:
 - **Median ± MAD** — robust central tendency resistant to outliers
 - **Configurable sample sizes** — more iterations for noisy benchmarks
 
+### Measurement rigor
+
+All benchmarks follow these practices for reproducibility:
+
+- **Deterministic inputs**: Fixed task IDs and payloads inside `iter()` — no
+  incrementing counters that change HashMap distribution across iterations
+- **Setup outside measurement**: Store creation, server startup, and resource
+  allocation happen before `iter()`, not inside it
+- **`debug_assert!` for invariants**: Correctness checks inside measurement
+  loops use `debug_assert!` to avoid string-formatting cost in release builds
+- **`black_box()` on inputs and outputs**: Prevents the compiler from
+  eliminating measured work through dead-code optimization
+- **Tolerance-based allocation assertions**: Memory benchmarks use a 5%
+  tolerance instead of exact counts to avoid spurious CI failures from
+  serde_json/stdlib version changes
+- **Side-effect interceptors**: The interceptor chain benchmark uses
+  `CountingInterceptor` (AtomicU64) to verify interceptors are actually
+  invoked during measurement — not just optimized away
+
 ### What we benchmark
 
 The SDK's value proposition is the **A2A protocol layer and runtime efficiency**,

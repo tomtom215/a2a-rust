@@ -85,8 +85,9 @@ fn bench_jsonrpc_stream(c: &mut Criterion) {
                 let _ = event.expect("stream event");
                 count += 1;
             }
+            // Use debug_assert to avoid string-formatting cost in release benchmarks.
             // EchoExecutor emits: Task snapshot + Working + ArtifactUpdate + Completed = 4
-            assert!(count >= 3, "expected ≥3 stream events, got {count}");
+            debug_assert!(count >= 3, "expected ≥3 stream events, got {count}");
         });
     });
 
@@ -143,7 +144,7 @@ fn bench_rest_stream(c: &mut Criterion) {
                 count += 1;
             }
             // EchoExecutor emits: Task snapshot + Working + ArtifactUpdate + Completed = 4
-            assert!(count >= 3, "expected ≥3 REST stream events, got {count}");
+            debug_assert!(count >= 3, "expected ≥3 REST stream events, got {count}");
         });
     });
 

@@ -210,15 +210,13 @@ impl TaskStore for InMemoryTaskStore {
             sorted_keys.sort();
 
             // Skip past cursor if present.
-            let start_idx = if let Some(ref token) = params.page_token {
+            let start_idx = params.page_token.as_ref().map_or(0, |token| {
                 let cursor = TaskId::new(token.clone());
                 sorted_keys
                     .iter()
                     .position(|k| **k == cursor)
                     .map_or(0, |pos| pos + 1)
-            } else {
-                0
-            };
+            });
 
             // Only clone up to page_size + 1 tasks (the +1 tells us if there's a next page).
             let tasks: Vec<Task> = sorted_keys[start_idx..]

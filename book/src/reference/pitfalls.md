@@ -259,7 +259,7 @@ Enabling a feature in one crate (e.g., `signing` in `a2a-protocol-types`) enable
 
 ### Collection iteration order and determinism
 
-The `InMemoryTaskStore` uses a `BTreeMap` internally (sorted by `TaskId`), ensuring deterministic `list()` pagination. However, other in-memory stores (e.g., `InMemoryPushConfigStore`) use `HashMap`, where iteration order is non-deterministic. Always sort results before applying pagination or returning them to clients.
+The `InMemoryTaskStore` uses a `HashMap` internally. Its `list()` method sorts keys on-demand to provide deterministic cursor-based pagination despite `HashMap`'s non-deterministic iteration order. Other in-memory stores (e.g., `InMemoryPushConfigStore`) also use `HashMap`. Always sort results before applying pagination or returning them to clients.
 
 ### Percent-encoded path traversal
 

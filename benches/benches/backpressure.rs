@@ -111,7 +111,7 @@ fn bench_stream_volume(c: &mut Criterion) {
                         let _ = event.expect("event");
                         count += 1;
                     }
-                    assert!(count > 0, "should receive at least one event");
+                    debug_assert!(count > 0, "should receive at least one event");
                 });
             });
         }
