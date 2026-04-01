@@ -336,6 +336,54 @@ emit_table "advanced_"
 cat >> "$OUTPUT_FILE" <<'FOOTER'
 ---
 
+## Known Measurement Limitations
+
+These notes help interpret benchmark results accurately and avoid
+misdiagnosing CI variance as real performance changes.
+
+### Streaming bimodal distribution
+
+All streaming benchmarks may show ~24% high severe outliers in Criterion
+reports. This is a **systemic pattern** caused by the tokio timer wheel
+interaction: when the SSE reader task is first polled just after a 1ms timer
+tick, the first event delivery waits up to 1ms for the next rotation. The
+`yield_now()` call before the SSE read loop (added in v1.0.0) mitigates this
+by aligning the task's first poll with a fresh executor slot.
+
+**Impact on published medians:** Streaming medians may be pulled upward by
+~170µs relative to the fast-path mode. Compare with the CI low bound for the
+true fast-path latency.
+
+### Data volume get() at 100K tasks
+
+The `data_volume/get/100K` benchmark reports ~42% faster lookups than the
+1K/10K cases (~206ns vs ~430ns). This is a **CPU cache warming artifact**,
+not a genuine HashMap improvement. The large `populate_store()` setup at
+100K fills L1/L2 caches with bucket data overlapping the lookup keys. The
+1K/10K number (~430ns) is the representative O(1) lookup time; the 100K
+number reflects cache-warmed performance.
+
+### Stream volume per-event cost inflection
+
+Per-event cost inflects dramatically above ~252 events:
+- 3→52 events: ~4µs/event (fast path)
+- 52→252 events: ~46µs/event (broadcast buffer pressure)
+- 252→502 events: ~193µs/event (SSE frame accumulation)
+
+This is caused by the broadcast channel's default capacity (64 events).
+Production deployments expecting >100 events/task should increase
+`EventQueueManager::with_capacity()` to match their peak volume.
+
+### Slow consumer timer calibration
+
+The `backpressure/timer_calibration` benchmarks measure actual
+`tokio::time::sleep()` durations on the CI runner. On shared runners,
+1ms sleep ≈ 2.09ms actual, 5ms sleep ≈ 6.14ms actual. Slow consumer
+results should be interpreted against these calibrated durations, not
+the nominal sleep values.
+
+---
+
 ## Methodology
 
 All benchmarks use [Criterion.rs](https://github.com/bheisler/criterion.rs),

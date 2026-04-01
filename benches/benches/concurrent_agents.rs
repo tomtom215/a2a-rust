@@ -50,7 +50,9 @@ fn bench_concurrent_sends(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("concurrent/sends");
-    group.measurement_time(std::time::Duration::from_secs(10));
+    // The 4-concurrent case needs ~16.4s at ~3.28ms/iter × 5050 iterations.
+    // 18s provides headroom for CI variance without being excessive.
+    group.measurement_time(std::time::Duration::from_secs(18));
     let concurrency_levels: &[usize] = &[1, 4, 16, 64];
 
     for &n in concurrency_levels {

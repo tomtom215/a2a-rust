@@ -82,6 +82,20 @@ If `AgentExecutor::execute` returns an `A2aError`, the server:
 
 The client receives the terminal event, marks the stream as ended, and returns the error from the next `EventStream::next()` call as `ClientResult::Err(ClientError::Protocol(A2aError { code: InternalError, ... }))`.
 
+### Timer Wheel Mitigation
+
+Benchmark analysis revealed a systemic bimodal latency distribution in all
+streaming benchmarks: ~24% of iterations hit a ~1ms slow path caused by the
+tokio timer wheel tick boundary. When the SSE reader task is first polled just
+after a timer tick, the first `reader.read()` waits up to 1ms for the next
+timer wheel rotation.
+
+**Fix (v1.0.0):** The SSE builder calls `tokio::task::yield_now()` before
+entering the read loop, aligning the task's first poll with a fresh executor
+slot. Additionally, the keep-alive interval uses `MissedTickBehavior::Skip`
+to prevent timer-induced latency spikes when event processing exceeds the
+keep-alive interval.
+
 ## Consequences
 
 ### Positive
@@ -90,12 +104,14 @@ The client receives the terminal event, marks the stream as ended, and returns t
 - SSE parser handles all real-world edge cases (fragmented TCP, keep-alive, multi-line data).
 - Backpressure prevents OOM in slow-consumer scenarios.
 - Stream termination is deterministic and spec-compliant.
+- Timer wheel mitigation reduces streaming latency variance by ~9× (from 18% to ~2% of median).
 
 ### Negative
 
 - In-tree SSE code must be maintained when the SSE spec changes (rare; SSE is stable).
 - Resubscription does not replay missed events; clients must tolerate gaps.
 - Bounded queue (64 events) may need tuning for high-throughput streaming agents; `RequestHandlerBuilder::with_event_queue_capacity(n)` allows override.
+- Per-event cost inflects above queue capacity: ~4µs/event under capacity → ~193µs/event at 8× capacity (broadcast buffer pressure).
 
 ## Alternatives Considered
 

@@ -51,7 +51,7 @@ benches/
 │   ├── lib.rs                      # Shared helpers entry point
 │   ├── executor.rs                 # EchoExecutor, NoopExecutor, MultiEventExecutor, FailingExecutor, NoopPushSender
 │   ├── fixtures.rs                 # Deterministic test data + realistic payload generators
-│   └── server.rs                   # In-process HTTP server startup (with push support variant)
+│   └── server.rs                   # In-process HTTP server startup (SO_REUSEADDR, graceful shutdown)
 ├── benches/
 │   ├── transport_throughput.rs     # criterion benchmarks
 │   ├── protocol_overhead.rs
@@ -70,6 +70,7 @@ benches/
 │   └── canonical_send_params.json  # Reference payload (256 bytes)
 ├── scripts/
 │   ├── run_benchmarks.sh           # Run all + collect results
+│   ├── generate_book_page.sh       # Auto-generate book/src/reference/benchmarks.md
 │   ├── compare_results.sh          # Cross-language comparison table
 │   ├── cross_language_python.sh    # Python SDK runner
 │   ├── cross_language_go.sh        # Go SDK runner
@@ -116,6 +117,32 @@ All benchmarks follow these practices for reproducibility and academic-grade rig
 - **`black_box()` on inputs and outputs** — All measured inputs are wrapped with `criterion::black_box()` to prevent dead-code elimination by the compiler.
 - **Tolerance-based allocation assertions** — Memory benchmarks use a 5% tolerance (calibrated against serde_json version variance) instead of exact `assert_eq!` counts. This avoids spurious CI failures on dependency updates while catching genuine regressions.
 - **Side-effect interceptors** — The interceptor chain benchmark uses `CountingInterceptor` (`AtomicU64`) to verify interceptors are actually invoked during the timed region, with a post-benchmark assertion confirming `calls > 0`.
+
+## Known Measurement Limitations
+
+These notes help interpret benchmark results accurately:
+
+- **Streaming bimodal distribution**: All streaming benchmarks may show ~24%
+  high severe outliers due to tokio timer wheel interaction. The `yield_now()`
+  in the SSE builder mitigates this. Published streaming medians may be ~170µs
+  above the true fast-path mode.
+
+- **`data_volume/get/100K` anomaly**: Reports ~42% faster lookups than 1K/10K
+  due to CPU cache warming from the large `populate_store()` setup — not a
+  genuine HashMap improvement. The 1K/10K number (~430ns) is representative.
+
+- **Stream volume per-event cost inflection**: Per-event cost jumps from ~4µs
+  to ~193µs above 252 events due to broadcast channel buffer pressure (default
+  capacity: 64). Production deployments with >100 events/task should increase
+  `EventQueueManager::with_capacity()`.
+
+- **Slow consumer timer calibration**: On CI runners, `tokio::time::sleep(1ms)`
+  ≈ 2.09ms actual. Use `backpressure/timer_calibration` results to interpret
+  slow consumer benchmarks.
+
+- **Benchmark server socket reuse**: Servers set `SO_REUSEADDR` + `SO_REUSEPORT`
+  and use graceful shutdown to prevent `AddrInUse` errors during rapid cold-start
+  cycling on CI runners.
 
 ## Cross-Language Comparison
 

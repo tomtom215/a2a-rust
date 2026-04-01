@@ -12,6 +12,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- **`a2a-protocol-server`: SSE streaming bimodal distribution fix** — Added
+  `tokio::task::yield_now()` before the SSE read loop to align the first poll
+  with a fresh executor slot, reducing timer wheel collisions that caused ~24%
+  of streaming iterations to hit a ~1ms slow path. Also set
+  `MissedTickBehavior::Skip` on the keep-alive interval to prevent timer-induced
+  latency spikes during event processing.
+
+### Fixed
+
+- **Benchmark server `AddrInUse` on CI** — Benchmark servers now set
+  `SO_REUSEADDR` + `SO_REUSEPORT` via `socket2` and use a graceful shutdown
+  handle (`watch::Sender<bool>`) so that rapid server cycling during cold-start
+  benchmarks does not fail with `Address already in use` on CI runners where
+  `TIME_WAIT` recycling is slower.
+- **Criterion timeout warnings eliminated** — Increased `measurement_time` for
+  3 remaining benchmark groups: `lifecycle/e2e` (8s→20s),
+  `concurrent/sends` (10s→18s), `backpressure/slow_consumer` (15s→20s with
+  10 samples). All 140 benchmarks now complete within their budget.
+- **Push config benchmark per-task limit** — `production/push_config/set_roundtrip`
+  and `delete_roundtrip` now upsert a pre-created config instead of creating new
+  configs each iteration, preventing `push config limit exceeded` panics during
+  criterion warmup.
+
+### Changed
+
+- **Benchmark documentation** — Added "Known Measurement Limitations" section
+  to `benches/README.md` and the auto-generated GH Book benchmarks page
+  documenting streaming bimodal distribution, get()/100K cache anomaly, stream
+  volume per-event cost inflection, and slow consumer timer calibration.
+- **Stream volume scaling documentation** — Added detailed per-event cost
+  analysis comments to `backpressure.rs` explaining the broadcast channel
+  capacity-driven inflection at 252+ events.
+
+### Performance
+
 - **`a2a-protocol-server`: `InMemoryTaskStore::list()` O(n log n) → O(log n + page_size)** —
   Added `BTreeSet<TaskId>` sorted index and `HashMap<String, BTreeSet<TaskId>>`
   context_id secondary index. Eliminates the per-call sort that caused 20-70×
