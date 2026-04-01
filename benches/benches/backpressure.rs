@@ -84,12 +84,12 @@ fn bench_stream_volume(c: &mut Criterion) {
     // the 3-101 event range shows an inverted scaling curve because CI
     // scheduler variance exceeds the per-event overhead.
     let event_configs: &[(usize, &str)] = &[
-        (1, "3_events"),      // EchoExecutor baseline
-        (5, "7_events"),      // Working + 5 artifacts + Completed
-        (25, "27_events"),    // Working + 25 artifacts + Completed
-        (50, "52_events"),    // Working + 50 artifacts + Completed
-        (250, "252_events"),  // 250 artifacts — noise floor breaker
-        (500, "502_events"),  // 500 artifacts — clear per-event scaling
+        (1, "3_events"),     // EchoExecutor baseline
+        (5, "7_events"),     // Working + 5 artifacts + Completed
+        (25, "27_events"),   // Working + 25 artifacts + Completed
+        (50, "52_events"),   // Working + 50 artifacts + Completed
+        (250, "252_events"), // 250 artifacts — noise floor breaker
+        (500, "502_events"), // 500 artifacts — clear per-event scaling
     ];
 
     for &(pairs, label) in event_configs {

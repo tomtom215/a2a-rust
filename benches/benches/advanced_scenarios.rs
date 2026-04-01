@@ -38,8 +38,8 @@ use a2a_benchmarks::server;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::agent_card::HotReloadAgentCardHandler;
-use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_server::call_context::CallContext;
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_server::tenant_resolver::{
     BearerTokenTenantResolver, HeaderTenantResolver, PathSegmentTenantResolver, TenantResolver,
 };
@@ -83,9 +83,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
     group.bench_function("header_resolver", |b| {
         let resolver = HeaderTenantResolver::default();
         let ctx = make_ctx(vec![("x-tenant-id", "tenant-acme-corp")]);
-        b.iter(|| {
-            rt.block_on(resolver.resolve(criterion::black_box(&ctx)))
-        });
+        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
     });
 
     // BearerTokenTenantResolver: extract Authorization header
@@ -95,9 +93,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
             "authorization",
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.tenant-12345",
         )]);
-        b.iter(|| {
-            rt.block_on(resolver.resolve(criterion::black_box(&ctx)))
-        });
+        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
     });
 
     // BearerTokenTenantResolver with mapper: extract + transform
@@ -110,27 +106,21 @@ fn bench_tenant_resolver(c: &mut Criterion) {
             "authorization",
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.tenant-12345",
         )]);
-        b.iter(|| {
-            rt.block_on(resolver.resolve(criterion::black_box(&ctx)))
-        });
+        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
     });
 
     // PathSegmentTenantResolver: extract from URL path
     group.bench_function("path_resolver", |b| {
         let resolver = PathSegmentTenantResolver::new(2); // /api/v1/{tenant}/...
         let ctx = make_ctx(vec![("path", "/api/v1/tenant-acme-corp/tasks")]);
-        b.iter(|| {
-            rt.block_on(resolver.resolve(criterion::black_box(&ctx)))
-        });
+        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
     });
 
     // Missing header (fast rejection path)
     group.bench_function("header_resolver_miss", |b| {
         let resolver = HeaderTenantResolver::default();
         let ctx = CallContext::new("message/send"); // no headers
-        b.iter(|| {
-            rt.block_on(resolver.resolve(criterion::black_box(&ctx)))
-        });
+        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
     });
 
     group.finish();
@@ -235,8 +225,7 @@ fn bench_subscribe_fanout(c: &mut Criterion) {
             .build()
             .expect("build handler"),
     );
-    let dispatcher =
-        a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
+    let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
         .block_on(a2a_protocol_server::serve::serve_with_addr(
             "127.0.0.1:0",
@@ -261,8 +250,7 @@ fn bench_subscribe_fanout(c: &mut Criterion) {
                     let url = url.clone();
                     async move {
                         // Create a task via streaming to keep it alive.
-                        let client =
-                            ClientBuilder::new(&url).build().expect("build client");
+                        let client = ClientBuilder::new(&url).build().expect("build client");
                         let mut stream = client
                             .stream_message(fixtures::send_params("fanout-bench"))
                             .await
@@ -485,9 +473,7 @@ fn bench_extended_agent_card(c: &mut Criterion) {
 
     // Build a server with extended agent card support.
     let mut card = fixtures::agent_card("http://127.0.0.1:0");
-    card.capabilities = card
-        .capabilities
-        .with_extended_agent_card(true);
+    card.capabilities = card.capabilities.with_extended_agent_card(true);
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(EchoExecutor)
@@ -495,8 +481,7 @@ fn bench_extended_agent_card(c: &mut Criterion) {
             .build()
             .expect("build handler with extended card"),
     );
-    let dispatcher =
-        a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
+    let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
         .block_on(a2a_protocol_server::serve::serve_with_addr(
             "127.0.0.1:0",

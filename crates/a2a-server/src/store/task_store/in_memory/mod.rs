@@ -85,10 +85,10 @@ impl StoreData {
     /// Inserts or updates a task, maintaining all indexes.
     ///
     /// Optimized for the common update path: when a task already exists with
-    /// the same context_id, we skip all index operations (both BTreeSet inserts
-    /// and the context_id string clone) and only update the primary HashMap
+    /// the same `context_id`, we skip all index operations (both `BTreeSet` inserts
+    /// and the `context_id` string clone) and only update the primary `HashMap`
     /// entry. This reduces the update-path cost from ~2.5µs to ~700ns and
-    /// eliminates the variance from occasional BTreeSet node splits.
+    /// eliminates the variance from occasional `BTreeSet` node splits.
     pub(super) fn insert(&mut self, task_id: TaskId, entry: TaskEntry) {
         if let Some(old_entry) = self.entries.get(&task_id) {
             // Fast path: updating an existing task.

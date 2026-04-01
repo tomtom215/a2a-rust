@@ -54,7 +54,7 @@ pub async fn start_jsonrpc_server(executor: impl AgentExecutor) -> BenchServer {
 /// Starts a JSON-RPC server with push notification support enabled.
 ///
 /// Required for benchmarks that exercise push config CRUD operations
-/// (set/get/list/delete push notification configs). Uses a [`NoopPushSender`]
+/// (set/get/list/delete push notification configs). Uses a [`crate::executor::NoopPushSender`]
 /// that accepts all webhook URLs without performing actual HTTP delivery.
 pub async fn start_jsonrpc_server_with_push(executor: impl AgentExecutor) -> BenchServer {
     use crate::executor::NoopPushSender;
