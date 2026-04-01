@@ -14,7 +14,9 @@
 //! ## What this measures
 //!
 //! - TaskStore `get()` latency at 1K, 10K, 100K pre-populated tasks
+//!   (uses 64 deterministic pseudo-random keys to avoid single-key anomalies)
 //! - TaskStore `list()` with filters at scale (context_id filtering)
+//!   (exercises the BTreeSet sorted index + context_id secondary index)
 //! - TaskStore `save()` throughput as store grows
 //! - Concurrent read contention at scale
 //! - Pagination overhead through large result sets
@@ -68,16 +70,34 @@ fn bench_get_at_scale(c: &mut Criterion) {
 
     let scales: &[usize] = &[1_000, 10_000, 100_000];
 
+    // Pre-generate deterministic pseudo-random lookup keys for each scale.
+    // Using multiple keys avoids the single-midpoint anomaly where one key
+    // can hash to a zero-probe-distance bucket at specific HashMap capacities,
+    // producing artificially fast lookups (e.g. 202ns at 100K vs 410ns at 10K).
+    // The mean over 64 keys gives a representative O(1) lookup time.
+    const NUM_LOOKUP_KEYS: usize = 64;
+
     for &n in scales {
         let store = InMemoryTaskStore::new();
         populate_store(&rt, &store, n);
-        // Look up a task in the middle
-        let target = TaskId::new(format!("task-bench-{:06}", n / 2));
+
+        // Deterministic pseudo-random key selection using a simple LCG.
+        // Keys are spread across the full ID range to exercise different
+        // HashMap bucket positions.
+        let targets: Vec<TaskId> = (0..NUM_LOOKUP_KEYS)
+            .map(|i| {
+                let idx = (i.wrapping_mul(137).wrapping_add(17)) % n;
+                TaskId::new(format!("task-bench-{idx:06}"))
+            })
+            .collect();
 
         group.bench_with_input(BenchmarkId::new("lookup", n), &(), |b, _| {
+            let mut key_idx = 0usize;
             b.iter(|| {
-                rt.block_on(store.get(criterion::black_box(&target)))
+                let target = &targets[key_idx % NUM_LOOKUP_KEYS];
+                rt.block_on(store.get(criterion::black_box(target)))
                     .unwrap();
+                key_idx = key_idx.wrapping_add(1);
             });
         });
     }

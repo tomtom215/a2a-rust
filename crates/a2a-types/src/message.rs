@@ -150,7 +150,7 @@ pub struct Message {
 /// {"url": "https://example.com/f.pdf", "filename": "f.pdf", "mediaType": "application/pdf"}
 /// {"data": {"key": "value"}, "mediaType": "application/json"}
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Part {
     /// The content of this part (text, raw, url, or data).
@@ -167,7 +167,162 @@ pub struct Part {
 
     /// The media type (MIME type) of the part content.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "mediaType")]
     pub media_type: Option<String>,
+}
+
+/// Hand-rolled `Deserialize` for [`Part`] that reads all fields in a single
+/// pass, avoiding the intermediate `serde_json::Value` buffering caused by
+/// `#[serde(flatten)]`. This eliminates ~80 allocations per Task deserialize
+/// that the derive-based implementation incurred.
+#[allow(clippy::too_many_lines)]
+impl<'de> serde::Deserialize<'de> for Part {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, MapAccess, Visitor};
+
+        /// Field names we recognize in the Part JSON object.
+        #[derive(Debug)]
+        enum Field {
+            Text,
+            Raw,
+            Url,
+            Data,
+            Metadata,
+            Filename,
+            MediaType,
+            Unknown,
+        }
+
+        impl<'de> serde::Deserialize<'de> for Field {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct FieldVisitor;
+                impl serde::de::Visitor<'_> for FieldVisitor {
+                    type Value = Field;
+                    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.write_str("a Part field name")
+                    }
+                    fn visit_str<E: de::Error>(self, v: &str) -> Result<Field, E> {
+                        Ok(match v {
+                            "text" => Field::Text,
+                            "raw" => Field::Raw,
+                            "url" => Field::Url,
+                            "data" => Field::Data,
+                            "metadata" => Field::Metadata,
+                            "filename" => Field::Filename,
+                            "mediaType" | "media_type" => Field::MediaType,
+                            _ => Field::Unknown,
+                        })
+                    }
+                }
+                deserializer.deserialize_identifier(FieldVisitor)
+            }
+        }
+
+        struct PartVisitor;
+
+        impl<'de> Visitor<'de> for PartVisitor {
+            type Value = Part;
+
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a Part object with text, raw, url, or data content")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Part, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut text: Option<String> = None;
+                let mut raw: Option<String> = None;
+                let mut url: Option<String> = None;
+                let mut data: Option<serde_json::Value> = None;
+                let mut metadata: Option<serde_json::Value> = None;
+                let mut filename: Option<String> = None;
+                let mut media_type: Option<String> = None;
+
+                while let Some(key) = map.next_key::<Field>()? {
+                    match key {
+                        Field::Text => {
+                            if text.is_some() {
+                                return Err(de::Error::duplicate_field("text"));
+                            }
+                            text = Some(map.next_value()?);
+                        }
+                        Field::Raw => {
+                            if raw.is_some() {
+                                return Err(de::Error::duplicate_field("raw"));
+                            }
+                            raw = Some(map.next_value()?);
+                        }
+                        Field::Url => {
+                            if url.is_some() {
+                                return Err(de::Error::duplicate_field("url"));
+                            }
+                            url = Some(map.next_value()?);
+                        }
+                        Field::Data => {
+                            if data.is_some() {
+                                return Err(de::Error::duplicate_field("data"));
+                            }
+                            data = Some(map.next_value()?);
+                        }
+                        Field::Metadata => {
+                            if metadata.is_some() {
+                                return Err(de::Error::duplicate_field("metadata"));
+                            }
+                            metadata = Some(map.next_value()?);
+                        }
+                        Field::Filename => {
+                            if filename.is_some() {
+                                return Err(de::Error::duplicate_field("filename"));
+                            }
+                            filename = Some(map.next_value()?);
+                        }
+                        Field::MediaType => {
+                            if media_type.is_some() {
+                                return Err(de::Error::duplicate_field("mediaType"));
+                            }
+                            media_type = Some(map.next_value()?);
+                        }
+                        Field::Unknown => {
+                            // Skip unknown fields for forward compatibility.
+                            let _ = map.next_value::<de::IgnoredAny>()?;
+                        }
+                    }
+                }
+
+                // Determine the content variant. Exactly one content field
+                // should be present per the A2A spec.
+                let content = if let Some(t) = text {
+                    PartContent::Text(t)
+                } else if let Some(r) = raw {
+                    PartContent::Raw(r)
+                } else if let Some(u) = url {
+                    PartContent::Url(u)
+                } else if let Some(d) = data {
+                    PartContent::Data(d)
+                } else {
+                    return Err(de::Error::custom(
+                        "Part must contain one of: text, raw, url, data",
+                    ));
+                };
+
+                Ok(Part {
+                    content,
+                    metadata,
+                    filename,
+                    media_type,
+                })
+            }
+        }
+
+        deserializer.deserialize_map(PartVisitor)
+    }
 }
 
 impl Part {

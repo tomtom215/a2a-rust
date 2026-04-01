@@ -45,6 +45,23 @@ pub fn write_event(event_type: &str, data: &str) -> Bytes {
     Bytes::from(buf)
 }
 
+/// Builds an SSE `message` frame by serializing `value` directly into the
+/// frame buffer, avoiding the intermediate `serde_json::to_string()` allocation.
+///
+/// This reduces per-event allocations from 2 (JSON `String` + SSE frame `String`)
+/// to 1 (combined `Vec<u8>` → `Bytes`). Since `serde_json` never emits raw newlines
+/// in compact mode (they are escaped as `\n`), the data is always single-line
+/// and does not need the multi-line `data:` splitting of [`write_event`].
+fn build_sse_message_frame<T: serde::Serialize>(value: &T) -> Result<Bytes, serde_json::Error> {
+    // Pre-allocate with a reasonable estimate: "event: message\ndata: " (21 bytes)
+    // + typical JSON payload (~256-512 bytes) + "\n\n" (2 bytes).
+    let mut buf = Vec::with_capacity(512);
+    buf.extend_from_slice(b"event: message\ndata: ");
+    serde_json::to_writer(&mut buf, value)?;
+    buf.extend_from_slice(b"\n\n");
+    Ok(Bytes::from(buf))
+}
+
 /// Formats a keep-alive SSE comment.
 #[must_use]
 pub const fn write_keep_alive() -> Bytes {
@@ -67,6 +84,19 @@ impl SseBodyWriter {
     /// Returns `Err(())` if the receiver has been dropped (client disconnected).
     pub async fn send_event(&self, event_type: &str, data: &str) -> Result<(), ()> {
         let frame = Frame::data(write_event(event_type, data));
+        self.tx.send(Ok(frame)).await.map_err(|_| ())
+    }
+
+    /// Sends a pre-built frame directly to the response body.
+    ///
+    /// Used by the optimized SSE path that builds the frame in a single
+    /// allocation via [`build_sse_message_frame`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err(())` if the receiver has been dropped.
+    async fn send_raw_frame(&self, bytes: Bytes) -> Result<(), ()> {
+        let frame = Frame::data(bytes);
         self.tx.send(Ok(frame)).await.map_err(|_| ())
     }
 
@@ -149,26 +179,30 @@ pub fn build_sse_response(
                 event = reader.read() => {
                     match event {
                         Some(Ok(stream_response)) => {
-                            let data = if jsonrpc_envelope {
+                            // Optimized path: serialize directly into the SSE
+                            // frame buffer, avoiding the intermediate String
+                            // allocation from serde_json::to_string(). This
+                            // reduces per-event allocations from 2 to 1.
+                            let frame_bytes = if jsonrpc_envelope {
                                 let envelope = JsonRpcSuccessResponse {
                                     jsonrpc: JsonRpcVersion,
                                     id: JsonRpcId::default(),
                                     result: stream_response,
                                 };
-                                serde_json::to_string(&envelope)
+                                build_sse_message_frame(&envelope)
                             } else {
                                 // REST binding: bare StreamResponse per Section 11.7
-                                serde_json::to_string(&stream_response)
+                                build_sse_message_frame(&stream_response)
                             };
-                            let data = match data {
-                                Ok(d) => d,
+                            let frame_bytes = match frame_bytes {
+                                Ok(b) => b,
                                 Err(e) => {
                                     let err_msg = format!("{{\"error\":\"serialization failed: {e}\"}}");
                                     let _ = body_writer.send_event("error", &err_msg).await;
                                     break;
                                 }
                             };
-                            if body_writer.send_event("message", &data).await.is_err() {
+                            if body_writer.send_raw_frame(frame_bytes).await.is_err() {
                                 break;
                             }
                         }
