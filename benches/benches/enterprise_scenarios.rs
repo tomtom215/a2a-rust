@@ -31,8 +31,8 @@
 //! - External webhook delivery latency (network I/O)
 //! - TLS handshake overhead
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -41,12 +41,12 @@ use a2a_benchmarks::executor::EchoExecutor;
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
 
-use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
+use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_client::ClientResult;
-use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_server::push::InMemoryPushConfigStore;
 use a2a_protocol_server::push::PushConfigStore;
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::TaskId;
@@ -83,9 +83,8 @@ fn bench_multi_tenant_store(c: &mut Criterion) {
             BenchmarkId::new("concurrent_tenant_saves", n_tenants),
             &n_tenants,
             |b, &n_tenants| {
-                let store = Arc::new(
-                    a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new(),
-                );
+                let store =
+                    Arc::new(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new());
 
                 b.to_async(&runtime).iter(|| {
                     let store = Arc::clone(&store);
@@ -117,9 +116,8 @@ fn bench_multi_tenant_store(c: &mut Criterion) {
             BenchmarkId::new("tenant_isolation_check", n_tenants),
             &n_tenants,
             |b, &n_tenants| {
-                let store = Arc::new(
-                    a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new(),
-                );
+                let store =
+                    Arc::new(a2a_protocol_server::store::TenantAwareInMemoryTaskStore::new());
 
                 // Pre-populate: each tenant gets one task.
                 runtime.block_on(async {
@@ -144,10 +142,7 @@ fn bench_multi_tenant_store(c: &mut Criterion) {
                         a2a_protocol_server::store::TenantContext::scope(
                             "tenant-0".to_string(),
                             async move {
-                                let _ = s
-                                    .get(&TaskId::new("task-bench-000000"))
-                                    .await
-                                    .unwrap();
+                                let _ = s.get(&TaskId::new("task-bench-000000")).await.unwrap();
                             },
                         )
                         .await;
@@ -173,12 +168,11 @@ fn bench_push_config_store(c: &mut Criterion) {
     group.bench_function("set", |b| {
         let store = InMemoryPushConfigStore::with_max_configs_per_task(10_000_000)
             .with_max_total_configs(10_000_000);
-        let config = TaskPushNotificationConfig::new("task-bench-001", "https://hooks.example.com/webhook");
+        let config =
+            TaskPushNotificationConfig::new("task-bench-001", "https://hooks.example.com/webhook");
         b.iter(|| {
-            rt.block_on(
-                store.set(criterion::black_box(config.clone())),
-            )
-            .unwrap();
+            rt.block_on(store.set(criterion::black_box(config.clone())))
+                .unwrap();
         });
     });
 
@@ -194,10 +188,7 @@ fn bench_push_config_store(c: &mut Criterion) {
             );
             let saved = rt.block_on(store.set(config)).unwrap();
             if i == 50 {
-                config_ids.push((
-                    saved.task_id.clone(),
-                    saved.id.clone().unwrap_or_default(),
-                ));
+                config_ids.push((saved.task_id.clone(), saved.id.clone().unwrap_or_default()));
             }
         }
         let (task_id, config_id) = &config_ids[0];
@@ -213,24 +204,20 @@ fn bench_push_config_store(c: &mut Criterion) {
     // list() latency with many configs per task
     let configs_per_task: &[usize] = &[1, 10, 50];
     for &n in configs_per_task {
-        group.bench_with_input(
-            BenchmarkId::new("list_per_task", n),
-            &n,
-            |b, &n| {
-                let store = InMemoryPushConfigStore::new();
-                for i in 0..n {
-                    let config = TaskPushNotificationConfig::new(
-                        "task-list-bench",
-                        format!("https://hooks.example.com/webhook-{i}"),
-                    );
-                    rt.block_on(store.set(config)).unwrap();
-                }
-                b.iter(|| {
-                    rt.block_on(store.list(criterion::black_box("task-list-bench")))
-                        .unwrap();
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("list_per_task", n), &n, |b, &n| {
+            let store = InMemoryPushConfigStore::new();
+            for i in 0..n {
+                let config = TaskPushNotificationConfig::new(
+                    "task-list-bench",
+                    format!("https://hooks.example.com/webhook-{i}"),
+                );
+                rt.block_on(store.set(config)).unwrap();
+            }
+            b.iter(|| {
+                rt.block_on(store.list(criterion::black_box("task-list-bench")))
+                    .unwrap();
+            });
+        });
     }
 
     group.finish();
@@ -261,7 +248,8 @@ fn bench_eviction_pressure(c: &mut Criterion) {
                 let store = InMemoryTaskStore::with_config(config);
                 // Fill to capacity with terminal tasks.
                 for i in 0..cap {
-                    rt.block_on(store.save(fixtures::completed_task(i))).unwrap();
+                    rt.block_on(store.save(fixtures::completed_task(i)))
+                        .unwrap();
                 }
                 // Wait for TTL to expire so eviction has work to do.
                 std::thread::sleep(Duration::from_millis(5));
@@ -277,28 +265,25 @@ fn bench_eviction_pressure(c: &mut Criterion) {
 
     // Measure run_eviction() sweep duration at various store sizes.
     for &cap in capacities {
-        group.bench_with_input(
-            BenchmarkId::new("sweep_duration", cap),
-            &cap,
-            |b, &cap| {
-                let config = TaskStoreConfig {
-                    max_capacity: None, // No auto-eviction
-                    task_ttl: Some(Duration::from_millis(1)),
-                    eviction_interval: u64::MAX,
-                    max_page_size: 1000,
-                };
-                let store = InMemoryTaskStore::with_config(config);
-                for i in 0..cap {
-                    rt.block_on(store.save(fixtures::completed_task(i))).unwrap();
-                }
-                // Wait for TTL to expire.
-                std::thread::sleep(Duration::from_millis(5));
+        group.bench_with_input(BenchmarkId::new("sweep_duration", cap), &cap, |b, &cap| {
+            let config = TaskStoreConfig {
+                max_capacity: None, // No auto-eviction
+                task_ttl: Some(Duration::from_millis(1)),
+                eviction_interval: u64::MAX,
+                max_page_size: 1000,
+            };
+            let store = InMemoryTaskStore::with_config(config);
+            for i in 0..cap {
+                rt.block_on(store.save(fixtures::completed_task(i)))
+                    .unwrap();
+            }
+            // Wait for TTL to expire.
+            std::thread::sleep(Duration::from_millis(5));
 
-                b.iter(|| {
-                    rt.block_on(store.run_eviction());
-                });
-            },
-        );
+            b.iter(|| {
+                rt.block_on(store.run_eviction());
+            });
+        });
     }
 
     group.finish();
@@ -340,8 +325,7 @@ fn bench_rate_limiting(c: &mut Criterion) {
             .build()
             .expect("build handler"),
     );
-    let dispatcher =
-        a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
+    let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
         .block_on(a2a_protocol_server::serve::serve_with_addr(
             "127.0.0.1:0",
@@ -349,9 +333,7 @@ fn bench_rate_limiting(c: &mut Criterion) {
         ))
         .expect("serve");
     let rate_url = format!("http://{addr}");
-    let client_rate = ClientBuilder::new(&rate_url)
-        .build()
-        .expect("build client");
+    let client_rate = ClientBuilder::new(&rate_url).build().expect("build client");
     group.bench_function("with_rate_limit", |b| {
         b.to_async(&runtime).iter(|| async {
             client_rate
@@ -374,9 +356,8 @@ fn bench_cors_preflight(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     // Measure OPTIONS preflight request handling.
-    let client =
-        hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
-            .build_http::<http_body_util::Full<bytes::Bytes>>();
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http::<http_body_util::Full<bytes::Bytes>>();
     let uri: hyper::Uri = srv.url.parse().expect("parse URI");
 
     group.bench_function("options_preflight", |b| {
@@ -482,21 +463,17 @@ fn bench_large_history(c: &mut Criterion) {
         let bytes = serde_json::to_vec(&task).unwrap();
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
-        group.bench_with_input(
-            BenchmarkId::new("serialize", turns),
-            &task,
-            |b, task| {
-                b.iter(|| serde_json::to_vec(criterion::black_box(task)).unwrap());
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("serialize", turns), &task, |b, task| {
+            b.iter(|| serde_json::to_vec(criterion::black_box(task)).unwrap());
+        });
         group.bench_with_input(
             BenchmarkId::new("deserialize", turns),
             &bytes,
             |b, bytes| {
                 b.iter(|| {
-                    serde_json::from_slice::<a2a_protocol_types::task::Task>(
-                        criterion::black_box(bytes),
-                    )
+                    serde_json::from_slice::<a2a_protocol_types::task::Task>(criterion::black_box(
+                        bytes,
+                    ))
                     .unwrap()
                 });
             },
@@ -506,16 +483,12 @@ fn bench_large_history(c: &mut Criterion) {
         // including HashMap insert and potential eviction check.
         let rt = current_thread_rt();
         let store = InMemoryTaskStore::new();
-        group.bench_with_input(
-            BenchmarkId::new("store_save", turns),
-            &task,
-            |b, task| {
-                b.iter(|| {
-                    rt.block_on(store.save(criterion::black_box(task.clone())))
-                        .unwrap();
-                });
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("store_save", turns), &task, |b, task| {
+            b.iter(|| {
+                rt.block_on(store.save(criterion::black_box(task.clone())))
+                    .unwrap();
+            });
+        });
     }
 
     group.finish();
@@ -646,8 +619,7 @@ fn bench_handler_limits(c: &mut Criterion) {
             .build()
             .expect("build handler"),
     );
-    let dispatcher =
-        a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
+    let dispatcher = a2a_protocol_server::dispatch::JsonRpcDispatcher::new(handler);
     let addr = runtime
         .block_on(a2a_protocol_server::serve::serve_with_addr(
             "127.0.0.1:0",
@@ -735,37 +707,29 @@ fn bench_client_interceptor_chain(c: &mut Criterion) {
 
     let interceptor_counts: &[usize] = &[0, 1, 5, 10];
     for &n in interceptor_counts {
-        group.bench_with_input(
-            BenchmarkId::new("interceptors", n),
-            &n,
-            |b, &n| {
-                let counter = Arc::new(AtomicU64::new(0));
-                let mut builder = ClientBuilder::new(&srv.url);
-                for _ in 0..n {
-                    builder = builder.with_interceptor(
-                        ClientCountingInterceptor::new(Arc::clone(&counter)),
-                    );
-                }
-                let client = builder.build().expect("build client");
+        group.bench_with_input(BenchmarkId::new("interceptors", n), &n, |b, &n| {
+            let counter = Arc::new(AtomicU64::new(0));
+            let mut builder = ClientBuilder::new(&srv.url);
+            for _ in 0..n {
+                builder =
+                    builder.with_interceptor(ClientCountingInterceptor::new(Arc::clone(&counter)));
+            }
+            let client = builder.build().expect("build client");
 
-                counter.store(0, Ordering::SeqCst);
-                b.to_async(&runtime).iter(|| async {
-                    client
-                        .send_message(fixtures::send_params("interceptor-bench"))
-                        .await
-                        .expect("send");
-                });
+            counter.store(0, Ordering::SeqCst);
+            b.to_async(&runtime).iter(|| async {
+                client
+                    .send_message(fixtures::send_params("interceptor-bench"))
+                    .await
+                    .expect("send");
+            });
 
-                // Verify interceptors were actually called.
-                if n > 0 {
-                    let total = counter.load(Ordering::SeqCst);
-                    assert!(
-                        total > 0,
-                        "client interceptors were never called (n={n})"
-                    );
-                }
-            },
-        );
+            // Verify interceptors were actually called.
+            if n > 0 {
+                let total = counter.load(Ordering::SeqCst);
+                assert!(total > 0, "client interceptors were never called (n={n})");
+            }
+        });
     }
 
     group.finish();

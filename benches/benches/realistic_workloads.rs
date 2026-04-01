@@ -257,8 +257,7 @@ fn bench_interceptor_chain(c: &mut Criterion) {
             let url = "http://127.0.0.1:0".to_string();
             builder = builder.with_agent_card(fixtures::agent_card(&url));
             for _ in 0..n {
-                builder =
-                    builder.with_interceptor(CountingInterceptor::new(Arc::clone(&counter)));
+                builder = builder.with_interceptor(CountingInterceptor::new(Arc::clone(&counter)));
             }
             let handler = Arc::new(builder.build().expect("build handler"));
             let dispatcher = JsonRpcDispatcher::new(handler);
