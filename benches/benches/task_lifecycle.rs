@@ -197,6 +197,7 @@ fn bench_e2e_lifecycle(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("lifecycle/e2e");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Full round-trip: send → (server: create task, execute, complete) → response

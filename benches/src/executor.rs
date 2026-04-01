@@ -13,9 +13,11 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Part;
+use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use a2a_protocol_server::executor::AgentExecutor;
+use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 
@@ -134,17 +136,20 @@ impl AgentExecutor for MultiEventExecutor {
         queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // Emit N event pairs (status + artifact)
-            for i in 0..self.event_pairs {
-                queue
-                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                        task_id: ctx.task_id.clone(),
-                        context_id: ContextId::new(ctx.context_id.clone()),
-                        status: TaskStatus::new(TaskState::Working),
-                        metadata: None,
-                    }))
-                    .await?;
+            // Emit a single Working status, then N artifact events, then Completed.
+            // The state machine only allows Working → Completed (not Working → Working),
+            // so we emit Working once and use artifact events for the streaming volume.
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
 
+            // Emit N artifact events (the streaming payload).
+            for i in 0..self.event_pairs {
                 queue
                     .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                         task_id: ctx.task_id.clone(),
@@ -202,5 +207,26 @@ impl AgentExecutor for FailingExecutor {
                 "Benchmark: simulated executor failure",
             ))
         })
+    }
+}
+
+// ── NoopPushSender ─────────────────────────────────────────────────────────
+
+/// A no-op push sender for benchmarks that need push notification support
+/// enabled without performing actual webhook delivery.
+pub struct NoopPushSender;
+
+impl PushSender for NoopPushSender {
+    fn send<'a>(
+        &'a self,
+        _url: &'a str,
+        _event: &'a StreamResponse,
+        _config: &'a TaskPushNotificationConfig,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn allows_private_urls(&self) -> bool {
+        true
     }
 }

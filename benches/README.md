@@ -34,11 +34,12 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 | **Cross-Language** | `cross_language.rs` | Standardized workloads reproducible across all A2A SDK languages (Python, Go, JS, Java, C#/.NET) |
 | **Realistic Workloads** | `realistic_workloads.rs` | Multi-turn conversations (1–10 turns); mixed payload complexity (text, file refs, nested metadata); connection reuse vs per-request clients; interceptor chain overhead (0–10 interceptors); complex agent card ser/de (1–100 skills); conversation history scaling |
 | **Error Paths** | `error_paths.rs` | Happy path vs error path latency ratio; task-not-found lookup cost; malformed JSON rejection throughput; wrong content-type rejection |
-| **Backpressure** | `backpressure.rs` | Stream event volume scaling (3–1001 events); slow consumer simulation (1ms/5ms read delays); concurrent stream fan-out under load (1–16 streams). Higher event counts (501, 1001) push per-event signal above CI noise floor. |
+| **Backpressure** | `backpressure.rs` | Stream event volume scaling (3–502 events); slow consumer simulation (1ms/5ms read delays); concurrent stream fan-out under load (1–16 streams); timer calibration. Higher event counts (252, 502) push per-event signal above CI noise floor. |
 | **Data Volume** | `data_volume.rs` | TaskStore get/list/save at 1K–100K pre-populated tasks; context_id filtering at scale (exercises BTreeSet sorted index + context_id secondary index for O(page_size) queries); concurrent read contention at 10K tasks; history depth impact on store operations. Get benchmarks use 64 pseudo-random keys to avoid single-key HashMap anomalies. |
 | **Memory Overhead** | `memory_overhead.rs` | Heap allocations per serialize/deserialize via counting allocator; allocation scaling with conversation history depth; allocation bytes per payload size (64B–16KB). Uses `iter_custom` with real wall-clock timing and tolerance-based allocation assertions (5% threshold to absorb serde_json version variance). |
 | **Enterprise Scenarios** | `enterprise_scenarios.rs` | Multi-tenant task store isolation (1–100 tenants); push config store CRUD; eviction under memory pressure (100–10K at capacity); rate limiting overhead; CORS preflight; R/W mix ratios (100:0 → 0:100); large history (100–500 turns); cancel task round-trip; list tasks with pagination (10–50 page sizes); handler limits enforcement and rejection throughput; client-side interceptor chain (0–10 interceptors) |
 | **Production Scenarios** | `production_scenarios.rs` | Full E2E production workflows: SubscribeToTask reconnection (snapshot replay); cold start vs steady-state latency; concurrent cancel+subscribe race; 7-step multi-context orchestration (send→follow-up→new-context→list→get→stream→cancel); push notification config full CRUD round-trip; parallel agent burst (10–100 concurrent agents, 3 ops each); dispatch routing overhead isolation (HTTP round-trip vs direct handler invoke) |
+| **Advanced Scenarios** | `advanced_scenarios.rs` | SDK capability gaps: tenant resolver overhead (header/bearer/path extraction); agent card hot-reload (read, swap, complex swap); /.well-known discovery endpoint latency; subscribe fan-out (1–10 concurrent subscribers); streaming artifact accumulation cost (task.clone() at 0–500 artifact depth); pagination full walk (100–1K tasks, unfiltered + filtered); extended agent card round-trip |
 
 ## Architecture
 
@@ -48,9 +49,9 @@ benches/
 ├── README.md                       # This file
 ├── src/
 │   ├── lib.rs                      # Shared helpers entry point
-│   ├── executor.rs                 # EchoExecutor, NoopExecutor, MultiEventExecutor, FailingExecutor
+│   ├── executor.rs                 # EchoExecutor, NoopExecutor, MultiEventExecutor, FailingExecutor, NoopPushSender
 │   ├── fixtures.rs                 # Deterministic test data + realistic payload generators
-│   └── server.rs                   # In-process HTTP server startup
+│   └── server.rs                   # In-process HTTP server startup (with push support variant)
 ├── benches/
 │   ├── transport_throughput.rs     # criterion benchmarks
 │   ├── protocol_overhead.rs
@@ -62,7 +63,8 @@ benches/
 │   ├── backpressure.rs             # streaming under load
 │   ├── data_volume.rs              # store ops at scale
 │   ├── memory_overhead.rs          # heap allocation profiling
-│   └── production_scenarios.rs     # real-world E2E workflows
+│   ├── production_scenarios.rs     # real-world E2E workflows
+│   └── advanced_scenarios.rs       # SDK capability gap coverage
 ├── cross_language/
 │   ├── canonical_agent_card.json   # Reference AgentCard for all SDKs
 │   └── canonical_send_params.json  # Reference payload (256 bytes)
@@ -93,6 +95,9 @@ efficiency**, not the agent logic itself. We benchmark what the SDK owns:
 | **Backpressure** | Slow consumers and high event volume expose buffering and flow-control overhead that synthetic tests miss |
 | **Data volume** | Store operations must scale gracefully from empty to 100K+ tasks; degradation curves predict production capacity |
 | **Memory overhead** | Allocation counts and bytes per operation reveal hidden costs that latency benchmarks alone cannot capture |
+| **Enterprise scenarios** | Multi-tenant isolation, push notifications, eviction, rate limiting, CORS, read/write mix, handler limits — the operational concerns of production deployments |
+| **Production scenarios** | Full E2E workflows: reconnection, cold start, race conditions, multi-context orchestration, agent bursts — the patterns at Anthropic/Google scale |
+| **Advanced scenarios** | Tenant resolver overhead, agent card hot-reload, discovery latency, subscribe fan-out, artifact accumulation bottleneck, pagination walks — coverage of every SDK capability path |
 
 ### What We Do NOT Benchmark
 
@@ -174,7 +179,7 @@ output and in the HTML reports.
 The `benchmarks.yml` workflow runs on-demand (`workflow_dispatch`) and on
 pushes to `main`. It:
 
-1. Runs all 12 benchmark suites
+1. Runs all 13 benchmark suites
 2. Archives criterion HTML reports as artifacts
 3. Comments summary on PRs (when applicable)
 

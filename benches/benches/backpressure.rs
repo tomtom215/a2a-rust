@@ -12,7 +12,7 @@
 //!
 //! ## What this measures
 //!
-//! - Streaming throughput with varying event counts (3 → 1001 events)
+//! - Streaming throughput with varying event counts (3 → 502 events)
 //! - Slow consumer impact (delayed reads between events)
 //! - Producer-consumer ratio (fast producer vs slow consumer)
 //! - Event queue buffer behavior under load
@@ -74,25 +74,26 @@ fn bench_stream_volume(c: &mut Criterion) {
     let runtime = rt();
 
     let mut group = c.benchmark_group("backpressure/stream_volume");
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     // EchoExecutor produces 3 events (Working + Artifact + Completed).
-    // MultiEventExecutor produces 2*N + 1 events (N pairs + final Completed).
+    // MultiEventExecutor produces N + 2 events (Working + N artifacts + Completed).
     //
     // Higher event counts (250, 500) push the per-event signal above CI
     // noise floor (~250µs jitter at 64 concurrent tasks). Without these,
     // the 3-101 event range shows an inverted scaling curve because CI
     // scheduler variance exceeds the per-event overhead.
     let event_configs: &[(usize, &str)] = &[
-        (1, "3_events"),      // EchoExecutor baseline
-        (5, "11_events"),     // 5 pairs + completed
-        (25, "51_events"),    // 25 pairs + completed
-        (50, "101_events"),   // 50 pairs + completed
-        (250, "501_events"),  // 250 pairs — noise floor breaker
-        (500, "1001_events"), // 500 pairs — clear per-event scaling
+        (1, "3_events"),     // EchoExecutor baseline
+        (5, "7_events"),     // Working + 5 artifacts + Completed
+        (25, "27_events"),   // Working + 25 artifacts + Completed
+        (50, "52_events"),   // Working + 50 artifacts + Completed
+        (250, "252_events"), // 250 artifacts — noise floor breaker
+        (500, "502_events"), // 500 artifacts — clear per-event scaling
     ];
 
     for &(pairs, label) in event_configs {
-        let total_events = if pairs == 1 { 3 } else { pairs * 2 + 1 };
+        let total_events = if pairs == 1 { 3 } else { pairs + 2 };
         group.throughput(Throughput::Elements(total_events as u64));
 
         if pairs == 1 {
@@ -140,12 +141,13 @@ fn bench_stream_volume(c: &mut Criterion) {
 fn bench_slow_consumer(c: &mut Criterion) {
     let runtime = rt();
 
-    // Server with 10 event pairs (21 total events)
+    // Server with 10 event pairs (Working + 10 artifacts + Completed = 12 events)
     let (url, _addr) = runtime.block_on(start_multi_event_server(10));
     let client = ClientBuilder::new(&url).build().expect("build client");
 
     let mut group = c.benchmark_group("backpressure/slow_consumer");
-    group.throughput(Throughput::Elements(21));
+    group.measurement_time(std::time::Duration::from_secs(15));
+    group.throughput(Throughput::Elements(12));
     // Use fewer samples for slow benchmarks
     group.sample_size(20);
 
@@ -198,14 +200,15 @@ fn bench_slow_consumer(c: &mut Criterion) {
 fn bench_concurrent_streams_volume(c: &mut Criterion) {
     let runtime = rt();
 
-    // Server with 5 event pairs (11 events each)
+    // Server with 5 event pairs (Working + 5 artifacts + Completed = 7 events each)
     let (url, _addr) = runtime.block_on(start_multi_event_server(5));
 
     let mut group = c.benchmark_group("backpressure/concurrent_streams");
+    group.measurement_time(std::time::Duration::from_secs(8));
     let concurrency_levels: &[usize] = &[1, 4, 16];
 
     for &n in concurrency_levels {
-        group.throughput(Throughput::Elements((n * 11) as u64));
+        group.throughput(Throughput::Elements((n * 7) as u64));
 
         group.bench_with_input(BenchmarkId::new("streams", n), &n, |b, &n| {
             let client = Arc::new(ClientBuilder::new(&url).build().expect("build client"));

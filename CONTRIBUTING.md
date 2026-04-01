@@ -193,6 +193,9 @@ representative JSON sample matching the A2A v1.0 wire format and verifies
 | `data_volume` | `a2a-benchmarks` | Store performance at scale (1K–100K tasks) |
 | `memory_overhead` | `a2a-benchmarks` | Heap allocation counts per operation |
 | `task_lifecycle` | `a2a-benchmarks` | TaskStore and EventQueue operations |
+| `enterprise_scenarios` | `a2a-benchmarks` | Multi-tenant, push config, eviction, rate limiting, CORS |
+| `production_scenarios` | `a2a-benchmarks` | Full E2E production workflows and race conditions |
+| `advanced_scenarios` | `a2a-benchmarks` | Tenant resolver, agent card discovery, fan-out, artifact accumulation |
 
 Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-client`, `cargo bench -p a2a-protocol-server`, or `cargo bench -p a2a-benchmarks`.
 

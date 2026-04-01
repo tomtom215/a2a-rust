@@ -50,6 +50,7 @@ fn bench_jsonrpc_send(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("transport/jsonrpc/send");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("single_message", |b| {
@@ -72,6 +73,7 @@ fn bench_jsonrpc_stream(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("transport/jsonrpc/stream");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("stream_drain", |b| {
@@ -105,6 +107,7 @@ fn bench_rest_send(c: &mut Criterion) {
         .expect("build REST client");
 
     let mut group = c.benchmark_group("transport/rest/send");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("single_message", |b| {
@@ -130,6 +133,7 @@ fn bench_rest_stream(c: &mut Criterion) {
         .expect("build REST client");
 
     let mut group = c.benchmark_group("transport/rest/stream");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("stream_drain", |b| {
@@ -159,6 +163,7 @@ fn bench_payload_scaling(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("transport/payload_scaling");
+    group.measurement_time(std::time::Duration::from_secs(8));
     let sizes: &[usize] = &[64, 256, 1024, 4096, 16384];
 
     for &size in sizes {

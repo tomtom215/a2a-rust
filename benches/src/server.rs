@@ -51,6 +51,35 @@ pub async fn start_jsonrpc_server(executor: impl AgentExecutor) -> BenchServer {
     BenchServer { addr, url }
 }
 
+/// Starts a JSON-RPC server with push notification support enabled.
+///
+/// Required for benchmarks that exercise push config CRUD operations
+/// (set/get/list/delete push notification configs). Uses a [`crate::executor::NoopPushSender`]
+/// that accepts all webhook URLs without performing actual HTTP delivery.
+pub async fn start_jsonrpc_server_with_push(executor: impl AgentExecutor) -> BenchServer {
+    use crate::executor::NoopPushSender;
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind benchmark server");
+    let addr = listener.local_addr().expect("local addr");
+    let url = format!("http://{addr}");
+
+    let mut card = fixtures::agent_card(&url);
+    card.capabilities = card.capabilities.with_push_notifications(true);
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(executor)
+            .with_agent_card(card)
+            .with_push_sender(NoopPushSender)
+            .build()
+            .expect("build benchmark handler with push"),
+    );
+    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
+    spawn_hyper_server(listener, dispatcher).await;
+    BenchServer { addr, url }
+}
+
 /// Starts a REST server on an ephemeral port with the given executor.
 pub async fn start_rest_server(executor: impl AgentExecutor) -> BenchServer {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

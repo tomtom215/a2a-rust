@@ -41,14 +41,19 @@ This ensures each crate's dependencies are available before it publishes.
 ### Performance
 
 - **`InMemoryTaskStore::list()` — O(n log n) → O(log n + page_size)** — Added `BTreeSet<TaskId>` sorted index and `HashMap<String, BTreeSet<TaskId>>` context index. Eliminates the per-call sort that caused 20-70× regressions at 10K+ tasks.
+- **`InMemoryTaskStore::insert()` — Update fast path** — Skips BTreeSet and context index operations when updating an existing task with unchanged context_id. Reduces save() from ~2.5µs to ~700ns for the common update case.
 - **SSE per-event serialization — 2 allocations → 1** — `build_sse_message_frame()` serializes JSON directly into the SSE frame buffer via `serde_json::to_writer`, skipping the intermediate `serde_json::to_string()` allocation.
 - **`Part` deserialization — ~80 fewer allocations per Task** — Replaced `#[serde(flatten)]` with a hand-rolled `Deserialize` implementation that reads all fields in a single pass without intermediate `serde_json::Value` buffering.
 
 ### Benchmarks
 
+- **New: `advanced_scenarios` suite** — Tenant resolver overhead (header, bearer, path), agent card hot-reload and discovery endpoint, subscribe fan-out (1-10 concurrent subscribers), streaming artifact accumulation cost (task.clone() at 0-500 depth), pagination full walk (100-1K tasks), extended agent card round-trip.
 - **New: `production_scenarios` suite** — SubscribeToTask reconnection, cold start vs steady-state, concurrent cancel+subscribe race, 7-step E2E orchestration, push config CRUD round-trip, parallel agent burst (10-100 agents), dispatch routing isolation.
+- **Fixed: `MultiEventExecutor`** — Was emitting invalid `Working → Working` state transitions; now emits `Working` once, then N artifacts, then `Completed`.
+- **Fixed: `InMemoryTaskStore::insert()`** — Optimized update path skips redundant BTreeSet/context index operations, reducing save() variance from [1.5µs, 4.2µs] to ~700ns.
+- **Fixed: Criterion measurement_time warnings** — Added measurement_time to 23+ groups across 8 files.
 - **Improved: `data_volume` get benchmark** — Uses 64 pseudo-random keys instead of single midpoint to avoid HashMap bucket anomalies.
-- **Improved: `backpressure` stream volume** — Added 501 and 1001 event counts to push per-event signal above CI noise floor; added timer calibration benchmarks.
+- **Improved: `backpressure` stream volume** — Added 252 and 502 event counts to push per-event signal above CI noise floor; added timer calibration benchmarks.
 
 ## v0.4.1 (2026-03-31)
 

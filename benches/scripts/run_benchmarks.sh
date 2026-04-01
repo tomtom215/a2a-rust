@@ -73,6 +73,7 @@ BENCHMARKS=(
     memory_overhead
     enterprise_scenarios
     production_scenarios
+    advanced_scenarios
 )
 
 if [[ -n "$SPECIFIC_BENCH" ]]; then
