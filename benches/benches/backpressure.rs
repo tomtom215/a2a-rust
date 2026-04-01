@@ -240,6 +240,41 @@ fn bench_concurrent_streams_volume(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Timer resolution calibration ───────────────────────────────────────────
+//
+// The slow consumer benchmark uses `tokio::time::sleep(1ms)` to simulate
+// delayed reads. On shared CI runners, the actual sleep duration can be
+// 2-3ms due to OS scheduler preemption and tokio timer wheel resolution.
+// This calibration benchmark measures the true sleep overhead so that the
+// slow consumer results can be interpreted correctly.
+//
+// If `timer_resolution_1ms` reports 2.5ms instead of 1ms, then the slow
+// consumer `1ms_delay` results should be compared against 21 × 2.5ms, not
+// 21 × 1ms. This prevents misdiagnosing CI timer jitter as SDK overhead.
+
+fn bench_timer_resolution(c: &mut Criterion) {
+    let runtime = rt();
+
+    let mut group = c.benchmark_group("backpressure/timer_calibration");
+    group.sample_size(100);
+
+    // Measure actual tokio::time::sleep(1ms) duration.
+    group.bench_function("sleep_1ms_actual", |b| {
+        b.to_async(&runtime).iter(|| async {
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        });
+    });
+
+    // Measure actual tokio::time::sleep(5ms) duration.
+    group.bench_function("sleep_5ms_actual", |b| {
+        b.to_async(&runtime).iter(|| async {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        });
+    });
+
+    group.finish();
+}
+
 // ── Criterion groups ────────────────────────────────────────────────────────
 
 criterion_group!(
@@ -247,5 +282,6 @@ criterion_group!(
     bench_stream_volume,
     bench_slow_consumer,
     bench_concurrent_streams_volume,
+    bench_timer_resolution,
 );
 criterion_main!(benches);
