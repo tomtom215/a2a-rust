@@ -100,7 +100,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
     group.bench_function("bearer_resolver_with_mapper", |b| {
         let resolver = BearerTokenTenantResolver::with_mapper(|token| {
             // Simulate extracting tenant from a JWT-like token.
-            token.split('.').last().map(String::from)
+            token.split('.').next_back().map(String::from)
         });
         let ctx = make_ctx(vec![(
             "authorization",
@@ -393,7 +393,7 @@ fn bench_pagination_walk(c: &mut Criterion) {
             rt.block_on(store.save(task)).unwrap();
         }
 
-        let n_pages = (n_tasks + page_size as usize - 1) / page_size as usize;
+        let n_pages = n_tasks.div_ceil(page_size as usize);
         group.throughput(Throughput::Elements(n_pages as u64));
 
         // Full unfiltered walk
