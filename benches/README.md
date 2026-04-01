@@ -122,10 +122,12 @@ All benchmarks follow these practices for reproducibility and academic-grade rig
 
 These notes help interpret benchmark results accurately:
 
-- **Streaming bimodal distribution**: All streaming benchmarks may show ~24%
-  high severe outliers due to tokio timer wheel interaction. The `yield_now()`
-  in the SSE builder mitigates this. Published streaming medians may be ~170µs
-  above the true fast-path mode.
+- **Streaming cross-thread scheduling**: On N-core systems, `tokio::spawn`
+  places the SSE builder task on a different worker thread with (N-1)/N
+  probability, causing ~500µs cache-miss + work-stealing penalty. Transport
+  streaming benchmarks use `worker_threads(1)` runtime to eliminate this.
+  Production code uses `sleep` + reset (not `interval`) and `yield_now()`
+  to minimize the impact.
 
 - **`data_volume/get/100K` anomaly**: Reports ~42% faster lookups than 1K/10K
   due to CPU cache warming from the large `populate_store()` setup — not a

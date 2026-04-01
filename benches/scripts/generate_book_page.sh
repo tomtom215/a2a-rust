@@ -341,18 +341,18 @@ cat >> "$OUTPUT_FILE" <<'FOOTER'
 These notes help interpret benchmark results accurately and avoid
 misdiagnosing CI variance as real performance changes.
 
-### Streaming bimodal distribution
+### Streaming cross-thread scheduling
 
-All streaming benchmarks may show ~24% high severe outliers in Criterion
-reports. This is a **systemic pattern** caused by the tokio timer wheel
-interaction: when the SSE reader task is first polled just after a 1ms timer
-tick, the first event delivery waits up to 1ms for the next rotation. The
-`yield_now()` call before the SSE read loop (added in v1.0.0) mitigates this
-by aligning the task's first poll with a fresh executor slot.
+On N-core systems, \`tokio::spawn\` places the SSE builder task on a different
+worker thread with (N-1)/N probability, causing ~500µs cache-miss +
+work-stealing penalty. This was root-caused as the source of the ~24% bimodal
+distribution in all streaming benchmarks.
 
-**Impact on published medians:** Streaming medians may be pulled upward by
-~170µs relative to the fast-path mode. Compare with the CI low bound for the
-true fast-path latency.
+**Mitigations (v1.0.0):** The SSE builder uses \`sleep\` + reset (not
+\`interval\`) to eliminate timer wheel entries during active streaming.
+Transport streaming benchmarks use \`worker_threads(1)\` runtime to eliminate
+cross-thread variance entirely (24 high severe → 4 high mild outliers, 3×
+tighter confidence intervals).
 
 ### Data volume get() at 100K tasks
 

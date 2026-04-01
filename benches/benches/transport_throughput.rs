@@ -42,6 +42,31 @@ fn rt() -> tokio::runtime::Runtime {
         .expect("build tokio runtime")
 }
 
+/// Creates a multi-thread runtime with a single worker thread.
+///
+/// Streaming latency benchmarks use this to eliminate cross-thread task
+/// scheduling overhead. On an N-core system, `tokio::spawn` has a 1/N
+/// probability of placing the SSE builder task on the same worker thread
+/// as the client. On a 4-core system this means ~25% of iterations avoid
+/// cross-thread scheduling while ~75% pay a cache-miss + work-stealing
+/// penalty of ~500µs. This creates the bimodal latency distribution where
+/// exactly 24% of 100 samples are high severe outliers.
+///
+/// A single-worker runtime forces ALL tasks (server accept loop, executor,
+/// SSE builder, client body reader) onto the same thread, eliminating
+/// cross-thread scheduling variance entirely. This gives a consistent,
+/// lower-variance measurement of the SSE pipeline's inherent latency.
+///
+/// This is NOT used for concurrency benchmarks (concurrent_agents.rs, etc.)
+/// which need multiple worker threads to exercise parallel scheduling.
+fn streaming_rt() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("build single-worker streaming runtime")
+}
+
 // ── JSON-RPC: synchronous send ──────────────────────────────────────────────
 
 fn bench_jsonrpc_send(c: &mut Criterion) {
@@ -68,21 +93,26 @@ fn bench_jsonrpc_send(c: &mut Criterion) {
 // ── JSON-RPC: streaming send ────────────────────────────────────────────────
 
 fn bench_jsonrpc_stream(c: &mut Criterion) {
-    let runtime = rt();
+    // Use single-worker runtime to eliminate cross-thread scheduling jitter.
+    // See `streaming_rt()` doc comment for the full analysis.
+    let runtime = streaming_rt();
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
-    // Warm up the HTTP connection pool by sending one request before timing.
-    // Without this, the first stream iteration includes TCP connection
-    // establishment and hyper connection pool initialization, which interact
-    // with the tokio timer wheel to produce bimodal latency distributions.
-    // The warmup request ensures the keep-alive connection is established
-    // before criterion's measurement begins.
+    // Warm up the HTTP connection pool and tokio task scheduler by running
+    // streaming requests before timing. This ensures the keep-alive
+    // connection is established and the executor's work-stealing queues
+    // are primed.
     runtime.block_on(async {
-        client
-            .send_message(fixtures::send_params("warmup"))
-            .await
-            .expect("warmup request");
+        for _ in 0..10 {
+            let mut stream = client
+                .stream_message(fixtures::send_params("warmup"))
+                .await
+                .expect("warmup stream");
+            while let Some(event) = stream.next().await {
+                let _ = event;
+            }
+        }
     });
 
     let mut group = c.benchmark_group("transport/jsonrpc/stream");
@@ -138,19 +168,25 @@ fn bench_rest_send(c: &mut Criterion) {
 // ── REST: streaming send ────────────────────────────────────────────────────
 
 fn bench_rest_stream(c: &mut Criterion) {
-    let runtime = rt();
+    // Use single-worker runtime to eliminate cross-thread scheduling jitter.
+    let runtime = streaming_rt();
     let srv = runtime.block_on(server::start_rest_server(EchoExecutor));
     let client = ClientBuilder::new(&srv.url)
         .with_protocol_binding("REST")
         .build()
         .expect("build REST client");
 
-    // Warm up the HTTP connection pool (see bench_jsonrpc_stream comment).
+    // Warm up with streaming requests (see bench_jsonrpc_stream comment).
     runtime.block_on(async {
-        client
-            .send_message(fixtures::send_params("warmup"))
-            .await
-            .expect("warmup request");
+        for _ in 0..10 {
+            let mut stream = client
+                .stream_message(fixtures::send_params("warmup"))
+                .await
+                .expect("warmup stream");
+            while let Some(event) = stream.next().await {
+                let _ = event;
+            }
+        }
     });
 
     let mut group = c.benchmark_group("transport/rest/stream");

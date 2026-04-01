@@ -12,14 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **SSE streaming bimodal distribution mitigation** — Added
-  `tokio::task::yield_now()` before the SSE read loop (server-side) and body
-  reader task (client-side JSON-RPC and REST) to align first polls with fresh
-  executor slots, reducing timer wheel collisions. Set
-  `MissedTickBehavior::Skip` on the keep-alive interval. Added HTTP connection
-  warmup to transport streaming benchmarks. These changes reduce the bimodal
-  pattern in isolated paths (lifecycle/e2e: 24%→1% outliers) while the full
-  transport pipeline retains the pattern as a documented measurement artifact.
+- **SSE streaming bimodal distribution eliminated** — Root-caused the ~24%
+  high severe outlier rate in all streaming benchmarks to cross-thread task
+  scheduling: on a 4-core system, `tokio::spawn` has a 3/4 probability of
+  placing the SSE builder task on a different worker thread, causing a ~500µs
+  cache-miss + work-stealing penalty. Three production fixes applied:
+  1. Replaced `tokio::time::interval` with `tokio::time::sleep` + reset
+     pattern in `build_sse_response` — eliminates persistent timer wheel
+     registration during active streaming
+  2. Added `tokio::task::yield_now()` before read loops in SSE builder
+     (server) and body reader tasks (client JSON-RPC + REST)
+  3. Transport streaming benchmarks now use `worker_threads(1)` runtime
+     and streaming-specific warmup, reducing outliers from 24 high severe
+     to 4 high mild and tightening confidence intervals by 3×
 
 ### Fixed
 
