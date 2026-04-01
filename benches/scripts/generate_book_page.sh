@@ -287,6 +287,20 @@ SECTION
 # Criterion dirs: cross_language_echo_roundtrip, cross_language_stream_events, etc.
 emit_table "cross_language_"
 
+# ── Enterprise Scenarios ─────────────────────────────────────────────────
+
+cat >> "$OUTPUT_FILE" <<'SECTION'
+## Enterprise Scenarios
+
+Production-scale workloads modeling real deployments: multi-tenant isolation,
+push notification management, eviction under memory pressure, rate limiting,
+CORS handling, read/write mix ratios, and large conversation histories.
+
+SECTION
+
+# Criterion dirs: enterprise_multi_tenant, enterprise_push_config, enterprise_eviction, etc.
+emit_table "enterprise_"
+
 # ── Footer ────────────────────────────────────────────────────────────────
 
 cat >> "$OUTPUT_FILE" <<'FOOTER'
