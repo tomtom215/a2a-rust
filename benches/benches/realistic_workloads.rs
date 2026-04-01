@@ -144,7 +144,9 @@ fn bench_payload_complexity(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("realistic/payload_complexity");
-    group.measurement_time(std::time::Duration::from_secs(10));
+    // Bumped from 10s to 15s: CI runs showed mixed_parts and nested_metadata
+    // benchmarks marginally exceeding 10s budget (6–36% over) on slower runners.
+    group.measurement_time(std::time::Duration::from_secs(15));
     group.throughput(Throughput::Elements(1));
 
     // Simple text (baseline)
@@ -214,7 +216,9 @@ fn bench_connection_reuse(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("realistic/connection");
-    group.measurement_time(std::time::Duration::from_secs(10));
+    // Bumped from 10s to 15s: CI runs showed new_client_per_request marginally
+    // exceeding 10s budget on slower runners due to per-request TCP setup cost.
+    group.measurement_time(std::time::Duration::from_secs(15));
     group.throughput(Throughput::Elements(1));
 
     // Reused connection (normal usage)

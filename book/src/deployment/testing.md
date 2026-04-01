@@ -372,6 +372,44 @@ This tells you that replacing the body of `is_terminal()` with `false` did not
 cause any test to fail. The fix is to add a test that asserts `is_terminal()`
 returns `true` for terminal states.
 
+## Performance Benchmarks
+
+The `benches/` directory contains **237 Criterion.rs benchmarks** across 13 suites
+measuring SDK overhead independently of agent logic:
+
+| Suite | Coverage |
+|-------|----------|
+| Transport Throughput | HTTP round-trip, payload scaling, SSE streaming drain |
+| Protocol Overhead | Serde ser/de per A2A type, JSON-RPC envelope, batch scaling |
+| Task Lifecycle | TaskStore save/get/list, EventQueue throughput, E2E lifecycle |
+| Concurrent Agents | 1–64 parallel sends/streams, store contention, mixed workloads |
+| Cross-Language | Standardized workloads reproducible across all A2A SDK languages |
+| Realistic Workloads | Multi-turn conversations, interceptor chains, connection reuse |
+| Error Paths | Happy vs error path latency ratio, rejection throughput |
+| Backpressure | Stream volume scaling, slow consumer, concurrent streams |
+| Data Volume | Store ops at 1K–100K tasks, context filtering, history depth |
+| Memory Overhead | Heap allocations per operation via counting allocator |
+| Enterprise Scenarios | Multi-tenant, push configs, eviction, rate limiting, CORS |
+| Production Scenarios | Cold start, reconnection, agent burst, dispatch routing |
+| Advanced Scenarios | Tenant resolvers, hot-reload, fan-out, pagination, artifacts |
+
+```bash
+# Run all benchmarks
+cargo bench -p a2a-benchmarks
+
+# Run a specific suite
+cargo bench -p a2a-benchmarks --bench transport_throughput
+
+# Save baseline, make changes, compare for regression detection
+./benches/scripts/run_benchmarks.sh --save
+# ... make changes ...
+./benches/scripts/run_benchmarks.sh --compare
+```
+
+Results are auto-published to the [benchmark results page](../reference/benchmarks.md)
+in the GH Book via CI. Full HTML reports with violin plots are archived as
+CI artifacts.
+
 ## Running the Test Suite
 
 > **Current status:** The workspace has **1,769 passing tests** (with websocket feature)

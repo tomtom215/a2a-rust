@@ -297,8 +297,10 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (task store, event queue)
-cargo bench -p a2a-protocol-server
+# Run benchmarks (237 benchmarks across 13 suites — transport, protocol,
+# lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
+# data volume, memory, enterprise, production, and advanced scenarios)
+cargo bench -p a2a-benchmarks
 
 # Mutation testing (requires cargo-mutants)
 cargo mutants --workspace
