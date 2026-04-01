@@ -159,6 +159,11 @@ The event queue uses `tokio::sync::broadcast` channels for fan-out to multiple s
 
 With broadcast channels, writes never block — if a reader is too slow, it receives a `Lagged` notification and skips missed events. The task store is the source of truth; SSE is best-effort notification.
 
+> **High-volume streams:** For tasks producing >100 events, increase the queue
+> capacity to match expected peak volume. The default capacity of 64 is sufficient
+> for most use cases, but high-volume streams (252+ events) will experience
+> increased per-event cost due to broadcast buffer pressure.
+
 Configure these via the builder:
 
 ```rust

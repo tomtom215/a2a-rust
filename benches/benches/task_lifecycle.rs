@@ -197,7 +197,11 @@ fn bench_e2e_lifecycle(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("lifecycle/e2e");
-    group.measurement_time(std::time::Duration::from_secs(8));
+    // Streaming lifecycle (stream_and_drain) needs more time than sync sends
+    // because SSE setup + event delivery at ~3.6ms/iter × 100 samples
+    // exceeds the default budget. 20s provides sufficient headroom on CI
+    // runners where per-iteration latency can be higher than local machines.
+    group.measurement_time(std::time::Duration::from_secs(20));
     group.throughput(Throughput::Elements(1));
 
     // Full round-trip: send → (server: create task, execute, complete) → response

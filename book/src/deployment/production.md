@@ -202,12 +202,18 @@ a2a-rust works directly with hyper — no middleware framework overhead. Cross-c
 Tune the event queue for your workload:
 
 ```rust
-// High-throughput: larger queues
+// High-throughput: larger queues (recommended for >100 events/task)
 .with_event_queue_capacity(256)
 
 // Memory-constrained: smaller queues
 .with_event_queue_capacity(16)
 ```
+
+> **Benchmark data:** Per-event cost inflects at the broadcast channel capacity
+> boundary. With the default capacity of 64, tasks producing >64 events see
+> increased per-event overhead due to broadcast buffer pressure (~4µs/event
+> below capacity, ~46µs/event at 2-4× capacity, ~193µs/event at 8× capacity).
+> Set capacity to at least your expected peak event count per task.
 
 ## Deployment Checklist
 

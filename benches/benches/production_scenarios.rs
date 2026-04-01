@@ -133,14 +133,23 @@ fn bench_cold_start(c: &mut Criterion) {
     // 2. First-request lazy initialization (tokio task spawning, etc.)
     // 3. TCP connection establishment (first connect)
     // 4. First message processing through the full pipeline
+    //
+    // The server is created in the async block with SO_REUSEADDR enabled
+    // (via `bind_reusable_listener()` in server.rs) to prevent AddrInUse
+    // errors during criterion's rapid warmup iterations on CI runners.
     group.bench_function("first_request", |b| {
         b.to_async(&runtime).iter(|| async {
             let srv = server::start_jsonrpc_server(EchoExecutor).await;
             let client = ClientBuilder::new(&srv.url).build().expect("build client");
-            client
+            let result = client
                 .send_message(fixtures::send_params("cold-start"))
                 .await
                 .expect("first request");
+            // Explicitly drop the server before the next iteration to ensure
+            // the accept loop stops and the socket begins closing promptly.
+            drop(result);
+            drop(client);
+            drop(srv);
         });
     });
 
@@ -359,11 +368,23 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
 
     // Measure set_push_config round-trip (client → server → store → response).
-    group.bench_function("set_roundtrip", |b| {
+    // Pre-create a config with a fixed ID so that subsequent iterations
+    // perform upserts (overwrites) instead of creating new configs. Without
+    // this, criterion's warmup/measurement iterations create hundreds of
+    // configs per task, hitting the per-task limit (default: 100).
+    let base_config = runtime.block_on(async {
         let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
             &task_id,
             "https://hooks.example.com/webhook",
         );
+        client
+            .set_push_config(config)
+            .await
+            .expect("create initial push config for set_roundtrip")
+    });
+
+    group.bench_function("set_roundtrip", |b| {
+        let config = base_config.clone();
         b.to_async(&runtime).iter(|| {
             let client = &client;
             let config = config.clone();
@@ -425,18 +446,29 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
     });
 
     // Measure delete_push_config round-trip.
+    // Pre-create a config, then each iteration sets (upserts) and deletes it.
+    // Using upserts avoids hitting the per-task config limit.
+    let delete_config = runtime.block_on(async {
+        let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
+            &task_id,
+            "https://hooks.example.com/webhook-delete",
+        );
+        client
+            .set_push_config(config)
+            .await
+            .expect("create initial push config for delete_roundtrip")
+    });
+
     group.bench_function("delete_roundtrip", |b| {
+        let template = delete_config.clone();
         b.to_async(&runtime).iter(|| {
             let client = &client;
             let task_id = &task_id;
+            let template = template.clone();
             async move {
-                // Create then delete to have something to delete each iteration.
-                let config = a2a_protocol_types::push::TaskPushNotificationConfig::new(
-                    task_id,
-                    "https://hooks.example.com/webhook-delete",
-                );
+                // Re-create (upsert) then delete to have something to delete each iteration.
                 let saved = client
-                    .set_push_config(config)
+                    .set_push_config(template)
                     .await
                     .expect("set before delete");
                 let id = saved.id.unwrap_or_default();

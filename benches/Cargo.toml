@@ -29,6 +29,9 @@ http-body-util = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 bytes          = "1"
 
+# Socket options (SO_REUSEADDR for benchmark server rapid cycling)
+socket2 = { version = "0.5", features = ["all"] }
+
 # Serialization
 serde      = { workspace = true }
 serde_json = { workspace = true }
