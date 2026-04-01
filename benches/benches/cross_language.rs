@@ -84,6 +84,7 @@ fn bench_echo_roundtrip(c: &mut Criterion) {
 
     let payload = canonical_payload();
     let mut group = c.benchmark_group("cross_language/echo_roundtrip");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Bytes(256));
 
     group.bench_function("rust", |b| {
@@ -110,6 +111,7 @@ fn bench_stream_events(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("cross_language/stream_events");
+    group.measurement_time(std::time::Duration::from_secs(8));
     // EchoExecutor produces 3 events: Working, ArtifactUpdate, Completed
     group.throughput(Throughput::Elements(3));
 
@@ -169,6 +171,7 @@ fn bench_concurrent_50(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("cross_language/concurrent_50");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(50));
 
     group.bench_function("rust", |b| {
@@ -207,6 +210,7 @@ fn bench_minimal_overhead(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("cross_language/minimal_overhead");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Pure SDK overhead: HTTP parse + JSON-RPC dispatch + task create +

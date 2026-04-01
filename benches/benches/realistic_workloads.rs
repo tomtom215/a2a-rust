@@ -92,6 +92,7 @@ fn bench_multi_turn(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("realistic/multi_turn");
+    group.measurement_time(std::time::Duration::from_secs(10));
 
     let turn_counts: &[usize] = &[1, 3, 5, 10];
     for &turns in turn_counts {
@@ -143,6 +144,7 @@ fn bench_payload_complexity(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("realistic/payload_complexity");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
 
     // Simple text (baseline)
@@ -212,6 +214,7 @@ fn bench_connection_reuse(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("realistic/connection");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
 
     // Reused connection (normal usage)
@@ -245,6 +248,7 @@ fn bench_interceptor_chain(c: &mut Criterion) {
     let runtime = rt();
 
     let mut group = c.benchmark_group("realistic/interceptor_chain");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     let interceptor_counts: &[usize] = &[0, 1, 5, 10];

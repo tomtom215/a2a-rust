@@ -70,6 +70,7 @@ fn bench_happy_vs_error(c: &mut Criterion) {
         .expect("build error client");
 
     let mut group = c.benchmark_group("errors/happy_vs_error");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     group.bench_function("happy_path", |b| {

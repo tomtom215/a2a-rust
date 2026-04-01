@@ -80,6 +80,7 @@ fn bench_subscribe_to_task(c: &mut Criterion) {
     let client = ClientBuilder::new(&url).build().expect("build client");
 
     let mut group = c.benchmark_group("production/subscribe_to_task");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
 
     // Measure the full subscribe round-trip: send a message to create a
@@ -122,6 +123,7 @@ fn bench_cold_start(c: &mut Criterion) {
     let runtime = rt();
 
     let mut group = c.benchmark_group("production/cold_start");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
     group.sample_size(20); // Each iteration starts a new server
 
@@ -186,6 +188,7 @@ fn bench_cancel_subscribe_race(c: &mut Criterion) {
     let url = format!("http://{addr}");
 
     let mut group = c.benchmark_group("production/cancel_subscribe_race");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(2)); // 2 operations per iteration
     group.sample_size(20);
 
@@ -250,6 +253,7 @@ fn bench_full_e2e_orchestration(c: &mut Criterion) {
     let client = Arc::new(ClientBuilder::new(&srv.url).build().expect("build client"));
 
     let mut group = c.benchmark_group("production/e2e_orchestration");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.sample_size(20);
 
     // Simulates a real multi-agent workflow:
@@ -335,7 +339,7 @@ fn bench_full_e2e_orchestration(c: &mut Criterion) {
 
 fn bench_push_config_roundtrip(c: &mut Criterion) {
     let runtime = rt();
-    let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+    let srv = runtime.block_on(server::start_jsonrpc_server_with_push(EchoExecutor));
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     // Pre-populate: create a task so we have a valid task_id for push configs.
@@ -351,6 +355,7 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
     });
 
     let mut group = c.benchmark_group("production/push_config");
+    group.measurement_time(std::time::Duration::from_secs(10));
     group.throughput(Throughput::Elements(1));
 
     // Measure set_push_config round-trip (client → server → store → response).
@@ -453,6 +458,7 @@ fn bench_agent_burst(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("production/agent_burst");
+    group.measurement_time(std::time::Duration::from_secs(15));
 
     // Simulate a burst of N independent agents all hitting the server
     // simultaneously — the pattern seen during peak traffic at scale.
@@ -511,6 +517,7 @@ fn bench_dispatch_routing(c: &mut Criterion) {
     let runtime = rt();
 
     let mut group = c.benchmark_group("production/dispatch_routing");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Measure JSON-RPC dispatch overhead by comparing full round-trip

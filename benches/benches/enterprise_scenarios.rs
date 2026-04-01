@@ -295,6 +295,7 @@ fn bench_rate_limiting(c: &mut Criterion) {
     let runtime = multi_thread_rt();
 
     let mut group = c.benchmark_group("enterprise/rate_limiting");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Baseline: no rate limiting
@@ -502,6 +503,7 @@ fn bench_cancel_task(c: &mut Criterion) {
     let client = ClientBuilder::new(&srv.url).build().expect("build client");
 
     let mut group = c.benchmark_group("enterprise/cancel_task");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Measure the full cancel round-trip: create a task via send_message,
@@ -588,6 +590,7 @@ fn bench_handler_limits(c: &mut Criterion) {
     let runtime = multi_thread_rt();
 
     let mut group = c.benchmark_group("enterprise/handler_limits");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Baseline: default limits (no rejection expected)
@@ -703,6 +706,7 @@ fn bench_client_interceptor_chain(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("enterprise/client_interceptors");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     let interceptor_counts: &[usize] = &[0, 1, 5, 10];

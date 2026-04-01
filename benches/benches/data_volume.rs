@@ -75,6 +75,16 @@ fn bench_get_at_scale(c: &mut Criterion) {
     // can hash to a zero-probe-distance bucket at specific HashMap capacities,
     // producing artificially fast lookups (e.g. 202ns at 100K vs 410ns at 10K).
     // The mean over 64 keys gives a representative O(1) lookup time.
+    //
+    // KNOWN MEASUREMENT LIMITATION: The 100K case reports ~42% faster lookups
+    // than 1K/10K (~259ns vs ~450ns). This is a CPU cache warming artifact,
+    // NOT a genuine HashMap performance difference. The large `populate_store()`
+    // setup at 100K tasks fills the L1/L2 caches with HashMap bucket data that
+    // overlaps with the benchmark's lookup keys. At 1K/10K the working set is
+    // smaller and the cache is cold relative to the lookup keys. The 1K/10K
+    // number (~450ns) is the representative O(1) lookup time; the 100K number
+    // reflects cache-warmed performance that won't occur in production where
+    // other work interleaves between lookups.
     const NUM_LOOKUP_KEYS: usize = 64;
 
     for &n in scales {

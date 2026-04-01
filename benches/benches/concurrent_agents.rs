@@ -50,6 +50,7 @@ fn bench_concurrent_sends(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("concurrent/sends");
+    group.measurement_time(std::time::Duration::from_secs(10));
     let concurrency_levels: &[usize] = &[1, 4, 16, 64];
 
     for &n in concurrency_levels {
@@ -91,6 +92,7 @@ fn bench_concurrent_streams(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("concurrent/streams");
+    group.measurement_time(std::time::Duration::from_secs(8));
     let concurrency_levels: &[usize] = &[1, 4, 16, 64];
 
     for &n in concurrency_levels {
@@ -178,6 +180,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
     let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
 
     let mut group = c.benchmark_group("concurrent/mixed");
+    group.measurement_time(std::time::Duration::from_secs(8));
     group.throughput(Throughput::Elements(1));
 
     // Simulate a realistic workload: send a message, then immediately
