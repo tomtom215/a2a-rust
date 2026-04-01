@@ -259,6 +259,24 @@ Production-scale workloads modeling real deployments: multi-tenant isolation,
 push notification management, eviction under memory pressure, rate limiting,
 CORS handling, read/write mix ratios, and large conversation histories.
 
+## Production Scenarios
+
+Full end-to-end workflows exercising the complete SDK pipeline in scenarios
+that real-world deployments encounter at scale: task reconnection, cold start
+latency, concurrent race conditions, multi-context orchestration, push config
+lifecycle, parallel agent bursts, and dispatch routing overhead isolation.
+
+> **Note**: Production scenario results will appear here after the next CI
+> benchmark run. These benchmarks were added to measure:
+>
+> - **SubscribeToTask reconnection** — snapshot replay latency for reconnecting clients
+> - **Cold start vs steady-state** — first-request initialization overhead
+> - **Concurrent cancel + subscribe race** — lock contention under concurrent operations
+> - **7-step E2E orchestration** — full multi-context workflow through the complete pipeline
+> - **Push config CRUD round-trip** — set/get/list/delete through client→server→store
+> - **Parallel agent burst** — 10/50/100 concurrent agents (3 ops each)
+> - **Dispatch routing isolation** — HTTP transport cost vs direct handler invoke
+
 ---
 
 ## Methodology

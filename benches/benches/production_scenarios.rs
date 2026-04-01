@@ -363,7 +363,10 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             let client = &client;
             let config = config.clone();
             async move {
-                client.set_push_config(config).await.expect("set_push_config");
+                client
+                    .set_push_config(config)
+                    .await
+                    .expect("set_push_config");
             }
         });
     });
@@ -374,7 +377,10 @@ fn bench_push_config_roundtrip(c: &mut Criterion) {
             &task_id,
             "https://hooks.example.com/webhook-bench",
         );
-        client.set_push_config(config).await.expect("setup push config")
+        client
+            .set_push_config(config)
+            .await
+            .expect("setup push config")
     });
 
     // Measure get_push_config round-trip.
@@ -466,8 +472,7 @@ fn bench_agent_burst(c: &mut Criterion) {
                     for i in 0..n {
                         let url = url.clone();
                         handles.push(tokio::spawn(async move {
-                            let client =
-                                ClientBuilder::new(&url).build().expect("build client");
+                            let client = ClientBuilder::new(&url).build().expect("build client");
                             // Send
                             let resp = client
                                 .send_message(fixtures::send_params(&format!("agent-{i}")))
@@ -485,9 +490,7 @@ fn bench_agent_burst(c: &mut Criterion) {
                             }
                             // List
                             let _ = client
-                                .list_tasks(
-                                    a2a_protocol_types::params::ListTasksParams::default(),
-                                )
+                                .list_tasks(a2a_protocol_types::params::ListTasksParams::default())
                                 .await;
                         }));
                     }

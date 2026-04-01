@@ -81,6 +81,12 @@ jobs:
       - name: Run memory_overhead
         run: cargo bench -p a2a-benchmarks --bench memory_overhead
 
+      - name: Run enterprise_scenarios
+        run: cargo bench -p a2a-benchmarks --bench enterprise_scenarios
+
+      - name: Run production_scenarios
+        run: cargo bench -p a2a-benchmarks --bench production_scenarios
+
       # ── Generate and commit book page ────────────────────────────────
 
       - name: Generate benchmark results page

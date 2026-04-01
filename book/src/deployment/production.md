@@ -187,11 +187,11 @@ Both dispatchers use hyper's HTTP/1.1 and HTTP/2 support via `hyper_util::server
 
 ### Task Store Performance
 
-The `InMemoryTaskStore` uses a pre-allocated `HashMap` with `HashMap::with_capacity(max_capacity)`. This provides:
+The `InMemoryTaskStore` uses a pre-allocated `HashMap` with secondary indexes for efficient queries:
 
 - **O(1) amortized save/get/delete** — constant-time operations regardless of store size
 - **No resize-induced latency spikes** — pre-allocation to the configured `max_capacity` eliminates the periodic full-rehash events that cause unpredictable 5-7× latency cliffs when the table outgrows its capacity
-- **Deterministic list queries** — `list()` sorts keys on-demand for stable cursor-based pagination; sort cost is bounded by page size in practice
+- **O(log n + page\_size) list queries** — a `BTreeSet<TaskId>` sorted index provides O(log n) cursor positioning via `range()`, and a `HashMap<String, BTreeSet<TaskId>>` context index enables O(log m + page\_size) filtered queries where m = matching tasks. This replaces the previous O(n log n) per-call sort that caused 20-70× regressions at 10K+ tasks.
 
 ### No Web Framework Overhead
 
