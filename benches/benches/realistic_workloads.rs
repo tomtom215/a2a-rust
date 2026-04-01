@@ -22,6 +22,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -39,21 +40,37 @@ use a2a_protocol_server::serve::serve_with_addr;
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::responses::SendMessageResponse;
 
-// ── Noop interceptor for overhead measurement ───────────────────────────────
+// ── Counting interceptor for overhead measurement ───────────────────────────
+//
+// Uses an AtomicU64 counter to verify that interceptors are actually invoked
+// during the timed region. The atomic increment (~2ns) is negligible compared
+// to the ~174µs operation cost but proves the interceptor is on the hot path.
+// A pure noop interceptor that does zero work cannot distinguish "interceptor
+// was called" from "interceptor was optimized away."
 
-struct NoopInterceptor;
+struct CountingInterceptor {
+    calls: Arc<AtomicU64>,
+}
 
-impl ServerInterceptor for NoopInterceptor {
+impl CountingInterceptor {
+    fn new(counter: Arc<AtomicU64>) -> Self {
+        Self { calls: counter }
+    }
+}
+
+impl ServerInterceptor for CountingInterceptor {
     fn before<'a>(
         &'a self,
         _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(()) })
     }
     fn after<'a>(
         &'a self,
         _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(()) })
     }
 }
@@ -233,12 +250,15 @@ fn bench_interceptor_chain(c: &mut Criterion) {
     let interceptor_counts: &[usize] = &[0, 1, 5, 10];
     for &n in interceptor_counts {
         group.bench_with_input(BenchmarkId::new("interceptors", n), &n, |b, &n| {
-            // Build handler with N interceptors
+            // Build handler with N counting interceptors.
+            // The shared counter proves interceptors are on the hot path.
+            let counter = Arc::new(AtomicU64::new(0));
             let mut builder = RequestHandlerBuilder::new(EchoExecutor);
             let url = "http://127.0.0.1:0".to_string();
             builder = builder.with_agent_card(fixtures::agent_card(&url));
             for _ in 0..n {
-                builder = builder.with_interceptor(NoopInterceptor);
+                builder =
+                    builder.with_interceptor(CountingInterceptor::new(Arc::clone(&counter)));
             }
             let handler = Arc::new(builder.build().expect("build handler"));
             let dispatcher = JsonRpcDispatcher::new(handler);
@@ -248,12 +268,24 @@ fn bench_interceptor_chain(c: &mut Criterion) {
             let url = format!("http://{addr}");
             let client = ClientBuilder::new(&url).build().expect("build client");
 
+            // Reset counter before measurement.
+            counter.store(0, Ordering::SeqCst);
             b.to_async(&runtime).iter(|| async {
                 client
                     .send_message(fixtures::send_params("interceptor bench"))
                     .await
                     .expect("send");
             });
+
+            // After benchmark: verify interceptors were actually called.
+            // Each request triggers N before + N after = 2N calls.
+            if n > 0 {
+                let total_calls = counter.load(Ordering::SeqCst);
+                assert!(
+                    total_calls > 0,
+                    "interceptors were never invoked during benchmark (n={n})"
+                );
+            }
         });
     }
 

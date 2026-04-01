@@ -6,9 +6,9 @@
 //! Task persistence trait and in-memory implementation.
 //!
 //! [`TaskStore`] abstracts task persistence so that the server framework can
-//! be backed by any storage engine. [`InMemoryTaskStore`] provides a simple
-//! `HashMap`-based implementation suitable for testing and single-process
-//! deployments.
+//! be backed by any storage engine. [`InMemoryTaskStore`] provides a
+//! pre-allocated `HashMap`-based implementation suitable for testing and
+//! single-process deployments.
 
 mod in_memory;
 

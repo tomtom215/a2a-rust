@@ -11,7 +11,7 @@
 //! `save()` write lock so that writers are not blocked during the O(n)
 //! cleanup.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::time::Instant;
 
 use a2a_protocol_types::task::TaskId;
@@ -68,7 +68,7 @@ impl InMemoryTaskStore {
     }
 
     /// Evicts expired and over-capacity entries (must be called with write lock held).
-    pub(super) fn evict(store: &mut BTreeMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
+    pub(super) fn evict(store: &mut HashMap<TaskId, TaskEntry>, config: &TaskStoreConfig) {
         let now = Instant::now();
 
         // TTL eviction: remove terminal tasks older than the TTL.

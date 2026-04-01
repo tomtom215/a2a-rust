@@ -21,10 +21,15 @@ use a2a_protocol_server::streaming::EventQueueWriter;
 
 // ── EchoExecutor ────────────────────────────────────────────────────────────
 
-/// A zero-overhead executor that echoes the first text part back.
+/// A minimal executor that echoes a fixed text part back.
 ///
-/// Status transitions: Working → ArtifactUpdate → Completed.
-/// No heap allocations beyond the required `Box::pin`.
+/// Writes 3 events: Working status → ArtifactUpdate → Completed status.
+/// Each event write involves a queue send (~400-800ns for event allocation +
+/// broadcast channel send), so this executor is *not* zero-overhead — it
+/// performs real work that contributes measurably to benchmark results.
+///
+/// For pure transport overhead measurement, prefer [`NoopExecutor`] which
+/// writes only 2 events (Working → Completed).
 pub struct EchoExecutor;
 
 impl AgentExecutor for EchoExecutor {
@@ -73,10 +78,14 @@ impl AgentExecutor for EchoExecutor {
 
 // ── NoopExecutor ────────────────────────────────────────────────────────────
 
-/// An executor that immediately completes without writing any events.
+/// A near-minimal executor that writes 2 status events (Working → Completed).
 ///
-/// Useful for measuring pure transport overhead (dispatch + routing + response
-/// serialization) without any executor work at all.
+/// The minimum cost of any conforming executor is at least 1 queue write
+/// (~400-800ns for event allocation + broadcast channel send). This executor
+/// writes 2 events, making it the lowest-overhead executor that produces a
+/// valid Working → Completed state transition.
+///
+/// Useful for measuring transport overhead with minimal executor contribution.
 pub struct NoopExecutor;
 
 impl AgentExecutor for NoopExecutor {

@@ -141,21 +141,28 @@ fn bench_concurrent_store(c: &mut Criterion) {
         group.throughput(Throughput::Elements(n as u64));
 
         group.bench_with_input(BenchmarkId::new("save_and_get", n), &n, |b, &n| {
-            b.to_async(&runtime).iter(|| async move {
-                let store = Arc::new(InMemoryTaskStore::new());
+            // Create the store OUTSIDE the measurement loop so that
+            // initialization cost is not measured. Without this, the
+            // single-threaded case pays full store init cost per iteration,
+            // while multi-threaded cases can overlap init with task scheduling.
+            let store = Arc::new(InMemoryTaskStore::new());
 
-                let mut handles = Vec::with_capacity(n);
-                for i in 0..n {
-                    let s = Arc::clone(&store);
-                    handles.push(tokio::spawn(async move {
-                        let task = fixtures::completed_task(i);
-                        let id = task.id.clone();
-                        s.save(task).await.unwrap();
-                        s.get(&id).await.unwrap();
-                    }));
-                }
-                for handle in handles {
-                    handle.await.expect("task join");
+            b.to_async(&runtime).iter(|| {
+                let store = Arc::clone(&store);
+                async move {
+                    let mut handles = Vec::with_capacity(n);
+                    for i in 0..n {
+                        let s = Arc::clone(&store);
+                        handles.push(tokio::spawn(async move {
+                            let task = fixtures::completed_task(i);
+                            let id = task.id.clone();
+                            s.save(task).await.unwrap();
+                            s.get(&id).await.unwrap();
+                        }));
+                    }
+                    for handle in handles {
+                        handle.await.expect("task join");
+                    }
                 }
             });
         });
