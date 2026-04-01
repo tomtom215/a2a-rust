@@ -49,11 +49,12 @@ let store = InMemoryTaskStore::with_config(TaskStoreConfig {
 ```
 
 Features:
-- Thread-safe (`RwLock<BTreeMap>` — concurrent readers, exclusive writers)
-- Sorted storage by `TaskId` — O(page_size) list queries via `BTreeMap::range()` instead of O(n) full-table scan + sort
+- Thread-safe (`RwLock<HashMap>` — concurrent readers, exclusive writers)
+- Pre-allocated `HashMap::with_capacity(max_capacity)` — eliminates resize-induced latency spikes under load
+- O(1) amortized `save()`/`get()`/`delete()` via `HashMap` (no log(n) tree traversal overhead)
 - Automatic TTL eviction on access
 - Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — hard capacity guarantee
-- Pagination support with cursor tokens (efficient cursor seek via sorted tree)
+- Pagination support with cursor tokens (sorted on-demand during `list()`)
 - Filtering by `context_id` and `status`
 
 ### SqliteTaskStore (feature-gated)

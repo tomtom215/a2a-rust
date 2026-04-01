@@ -75,3 +75,7 @@ harness = false
 [[bench]]
 name    = "memory_overhead"
 harness = false
+
+[[bench]]
+name    = "enterprise_scenarios"
+harness = false

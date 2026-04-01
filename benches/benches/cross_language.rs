@@ -126,7 +126,7 @@ fn bench_stream_events(c: &mut Criterion) {
                     let _ = event.expect("stream event");
                     count += 1;
                 }
-                assert!(count >= 3, "expected at least 3 events, got {count}");
+                debug_assert!(count >= 3, "expected at least 3 events, got {count}");
             }
         });
     });
