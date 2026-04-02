@@ -118,7 +118,7 @@ cat > "$SUMMARY_FILE" <<EOF
 {
   "language": "rust",
   "sdk": "a2a-protocol-sdk",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "timestamp": "$TIMESTAMP",
   "rust_version": "$(rustc --version)",
   "platform": "$(uname -s)-$(uname -m)",

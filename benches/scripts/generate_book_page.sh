@@ -245,7 +245,7 @@ Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
 
 The default broadcast channel capacity was increased from 64 to 256 events in
-v0.4.2, pushing the per-event cost inflection point from ~52 events to ~252
+v0.5.0, pushing the per-event cost inflection point from ~52 events to ~252
 events. Deployments with >256 events/task should use
 `EventQueueManager::with_capacity()` to set a higher value.
 
@@ -375,7 +375,7 @@ tighter confidence intervals).
 The `data_volume/get/100K` benchmark previously reported ~42% faster lookups
 than the 1K/10K cases due to a **CPU cache warming artifact** from the large
 `populate_store()` setup filling L1/L2 caches. A 4MB cache-busting step was
-added in v0.4.2 to flush caches between populate and measure, producing more
+added in v0.5.0 to flush caches between populate and measure, producing more
 representative O(1) lookup times across all scales. The 1K/10K number (~450ns)
 remains the representative baseline.
 
@@ -383,7 +383,7 @@ remains the representative baseline.
 
 Per-event cost inflects dramatically when events exceed the broadcast channel
 capacity. The default capacity was increased from 64 to **256** events in
-v0.4.2, pushing the inflection from ~52 events to ~252 events:
+v0.5.0, pushing the inflection from ~52 events to ~252 events:
 
 - Below capacity: ~4µs/event (fast path)
 - At capacity boundary: ~53µs/event (12× jump — broadcast back-pressure)

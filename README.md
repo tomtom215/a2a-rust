@@ -101,7 +101,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.4"
+a2a-protocol-sdk = "0.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -297,7 +297,7 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (265+ benchmarks across 13 suites — transport, protocol,
+# Run benchmarks (267 benchmarks across 13 suites — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
 # data volume, memory, enterprise, production, and advanced scenarios)
 cargo bench -p a2a-benchmarks

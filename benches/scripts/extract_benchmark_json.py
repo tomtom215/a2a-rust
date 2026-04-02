@@ -340,10 +340,10 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
     # counts are verified internally via assertions. The values here are
     # timing in nanoseconds under the counting allocator overhead.
     alloc_timing = {
-        "task_ser_ns": _ns(benchmarks, "memory_serialize/task_alloc_count"),
-        "task_de_ns": _ns(benchmarks, "memory_deserialize/task_alloc_count"),
-        "agent_card_ser_ns": _ns(benchmarks, "memory_serialize/agent_card_alloc_count"),
-        "agent_card_de_ns": _ns(benchmarks, "memory_deserialize/agent_card_alloc_count"),
+        "task_ser": _ns(benchmarks, "memory_serialize/task_alloc_count"),
+        "task_de": _ns(benchmarks, "memory_deserialize/task_alloc_count"),
+        "agent_card_ser": _ns(benchmarks, "memory_serialize/agent_card_alloc_count"),
+        "agent_card_de": _ns(benchmarks, "memory_deserialize/agent_card_alloc_count"),
     }
 
     bytes_per_payload = []

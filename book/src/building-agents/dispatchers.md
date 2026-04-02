@@ -158,7 +158,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.4", features = ["websocket"] }
+a2a-protocol-server = { version = "0.5", features = ["websocket"] }
 ```
 
 ```rust
@@ -192,7 +192,7 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.4", features = ["grpc"] }
+a2a-protocol-server = { version = "0.5", features = ["grpc"] }
 ```
 
 ```rust
@@ -252,7 +252,7 @@ For projects already using Axum, the `axum` feature provides `A2aRouter` — an
 idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 
 ```toml
-a2a-protocol-server = { version = "0.4", features = ["axum"] }
+a2a-protocol-server = { version = "0.5", features = ["axum"] }
 ```
 
 ```rust

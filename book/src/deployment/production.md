@@ -144,8 +144,8 @@ Enable the `tracing` feature for structured logs:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.4", features = ["tracing"] }
-tracing-subscriber = { version = "0.4", features = ["env-filter"] }
+a2a-protocol-server = { version = "0.5", features = ["tracing"] }
+tracing-subscriber = { version = "0.5", features = ["env-filter"] }
 ```
 
 ```rust

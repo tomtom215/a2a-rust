@@ -77,7 +77,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_push_sender(impl PushSender)` | None | Webhook delivery implementation |
 | `with_interceptor(impl ServerInterceptor)` | Empty chain | Add a server interceptor |
 | `with_executor_timeout(Duration)` | None | Timeout for executor completion |
-| `with_event_queue_capacity(usize)` | 64 | Bounded channel size per stream |
+| `with_event_queue_capacity(usize)` | 256 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | Unbounded | Limit concurrent SSE streams |
 | `with_event_queue_write_timeout(Duration)` | 5 seconds | Prevents executor blocking on slow clients |
