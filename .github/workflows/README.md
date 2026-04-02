@@ -37,7 +37,7 @@ cargo doc --workspace --no-deps
 
 ## Benchmark Automation
 
-The benchmarks workflow runs all 13 benchmark modules (237 benchmarks total), generates a Markdown results page, and commits it to `book/src/reference/benchmarks.md`. This triggers the docs workflow to redeploy GitHub Pages with fresh numbers.
+The benchmarks workflow runs all 13 benchmark modules (267 benchmarks total), generates a Markdown results page and an interactive dashboard, and commits them to `book/src/reference/benchmarks.md` and `book/src/reference/benchmark-dashboard.html`. This triggers the docs workflow to redeploy GitHub Pages with fresh numbers.
 
 ## License
 

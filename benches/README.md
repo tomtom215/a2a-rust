@@ -63,14 +63,19 @@ benches/
 │   ├── backpressure.rs             # streaming under load
 │   ├── data_volume.rs              # store ops at scale
 │   ├── memory_overhead.rs          # heap allocation profiling
+│   ├── enterprise_scenarios.rs     # multi-tenant, CORS, eviction, rate limiting
 │   ├── production_scenarios.rs     # real-world E2E workflows
 │   └── advanced_scenarios.rs       # SDK capability gap coverage
+├── dashboard/
+│   └── template.html               # Interactive dashboard HTML template
 ├── cross_language/
 │   ├── canonical_agent_card.json   # Reference AgentCard for all SDKs
 │   └── canonical_send_params.json  # Reference payload (256 bytes)
 ├── scripts/
 │   ├── run_benchmarks.sh           # Run all + collect results
 │   ├── generate_book_page.sh       # Auto-generate book/src/reference/benchmarks.md
+│   ├── generate_dashboard.sh       # Generate interactive dashboard from criterion data
+│   ├── extract_benchmark_json.py   # Extract criterion results into structured JSON
 │   ├── compare_results.sh          # Cross-language comparison table
 │   ├── cross_language_python.sh    # Python SDK runner
 │   ├── cross_language_go.sh        # Go SDK runner

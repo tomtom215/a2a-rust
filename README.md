@@ -297,7 +297,7 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (265+ benchmarks across 13 suites — transport, protocol,
+# Run benchmarks (267 benchmarks across 13 suites — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
 # data volume, memory, enterprise, production, and advanced scenarios)
 cargo bench -p a2a-benchmarks
