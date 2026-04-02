@@ -1,391 +1,644 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+# Copyright 2026 Tom F.
 #
 # Extract criterion benchmark results into structured JSON for the dashboard.
 #
-# Reads: target/criterion/*/new/estimates.json
-# Writes: structured JSON to stdout or file (--output)
-#
 # Usage:
-#   python3 extract_benchmark_json.py --criterion-dir target/criterion
-#   python3 extract_benchmark_json.py --criterion-dir target/criterion --output data.json
+#   python3 benches/scripts/extract_benchmark_json.py [--criterion-dir DIR] [--output FILE]
+#
+# Walks target/criterion/ recursively, finds all new/estimates.json files,
+# extracts median point estimates and confidence intervals, and produces a
+# structured JSON document consumed by the benchmark dashboard template.
 
-"""Criterion benchmark data extractor for the a2a-rust dashboard.
-
-Walks the criterion output directory, extracts median point estimates and
-confidence intervals from estimates.json files, and assembles a structured
-JSON object consumed by the interactive benchmark dashboard template.
-"""
+"""Extract criterion benchmark results into structured JSON for the dashboard."""
 
 import argparse
 import json
+import os
+import platform
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-import platform as plat
+from typing import Any, Dict, List, Optional, Tuple
 
 
-def extract_estimate(est_path: Path) -> dict | None:
-    """Extract median point estimate and CI from a criterion estimates.json."""
+# ---------------------------------------------------------------------------
+# Criterion estimates extraction
+# ---------------------------------------------------------------------------
+
+def extract_estimate(est_path: Path) -> Dict[str, float]:
+    """Extract median point estimate and confidence interval from estimates.json.
+
+    Returns a dict with keys: median_ns, lower_ns, upper_ns.
+    Returns zeros if the file is missing or malformed.
+    """
     try:
         with open(est_path) as f:
             data = json.load(f)
         median = data["median"]
-        ns = median["point_estimate"]
-        ci = median.get("confidence_interval", {})
         return {
-            "median_ns": ns,
-            "ci_lower_ns": ci.get("lower_bound", ns),
-            "ci_upper_ns": ci.get("upper_bound", ns),
+            "median_ns": float(median["point_estimate"]),
+            "lower_ns": float(median["confidence_interval"]["lower_bound"]),
+            "upper_ns": float(median["confidence_interval"]["upper_bound"]),
         }
-    except (json.JSONDecodeError, KeyError, FileNotFoundError):
-        return None
+    except (FileNotFoundError, KeyError, json.JSONDecodeError, TypeError):
+        return {"median_ns": 0.0, "lower_ns": 0.0, "upper_ns": 0.0}
 
 
 def format_human(ns: float) -> str:
-    """Convert nanoseconds to human-readable string."""
+    """Format nanoseconds into a human-readable string."""
+    if ns <= 0:
+        return "---"
     if ns >= 1_000_000:
         return f"{ns / 1_000_000:.2f} ms"
-    elif ns >= 1_000:
-        return f"{ns / 1_000:.1f} \u00b5s"
-    else:
-        return f"{ns:.0f} ns"
+    if ns >= 1_000:
+        return f"{ns / 1_000:.1f} us"
+    return f"{ns:.0f} ns"
 
 
-def collect_benchmarks(criterion_dir: Path) -> list[dict]:
-    """Walk criterion output and collect all benchmark results."""
-    results = []
+# ---------------------------------------------------------------------------
+# Collect all benchmarks from criterion directory
+# ---------------------------------------------------------------------------
+
+def collect_benchmarks(criterion_dir: Path) -> Dict[str, Dict[str, float]]:
+    """Walk criterion_dir and collect all benchmark estimates.
+
+    Returns a dict mapping bench_name (relative path before /new/estimates.json)
+    to the extracted estimate dict.
+    """
+    benchmarks: Dict[str, Dict[str, float]] = {}
     if not criterion_dir.is_dir():
-        return results
+        return benchmarks
+
     for est_path in sorted(criterion_dir.rglob("new/estimates.json")):
+        # Build bench_name from the relative path: everything before /new/estimates.json
         rel = est_path.relative_to(criterion_dir)
-        bench_name = str(rel.parent.parent)
-        if bench_name == "." or bench_name.startswith("report"):
+        parts = rel.parts
+        # Find the "new" directory in the path
+        try:
+            new_idx = parts.index("new")
+        except ValueError:
             continue
-        estimate = extract_estimate(est_path)
-        if estimate is None:
-            continue
-        results.append({
-            "name": bench_name,
-            "median_ns": estimate["median_ns"],
-            "ci_lower_ns": estimate["ci_lower_ns"],
-            "ci_upper_ns": estimate["ci_upper_ns"],
-            "human": format_human(estimate["median_ns"]),
-        })
-    return results
+        bench_name = "/".join(parts[:new_idx])
+        benchmarks[bench_name] = extract_estimate(est_path)
+
+    return benchmarks
 
 
-def categorize(benchmarks: list[dict]) -> dict:
-    """Group benchmarks by category prefix."""
-    cats = {p: [] for p in [
-        "transport", "protocol", "lifecycle", "concurrent", "realistic",
-        "errors", "backpressure", "data_volume", "memory",
-        "cross_language", "enterprise", "production", "advanced",
-    ]}
-    cats["uncategorized"] = []
-    for b in benchmarks:
-        matched = False
-        for prefix in cats:
-            if prefix != "uncategorized" and b["name"].startswith(prefix + "_"):
-                cats[prefix].append(b)
-                matched = True
-                break
-        if not matched:
-            cats["uncategorized"].append(b)
-    return {k: v for k, v in cats.items() if v}
+# ---------------------------------------------------------------------------
+# Lookup helpers
+# ---------------------------------------------------------------------------
+
+def _ns(benchmarks: Dict[str, Dict[str, float]], key: str) -> float:
+    """Get median_ns for a benchmark key, returning 0 if missing."""
+    return benchmarks.get(key, {}).get("median_ns", 0.0)
 
 
-def build_dashboard_data(benchmarks: list[dict], categories: dict) -> dict:
-    """Build the structured data object consumed by the HTML dashboard."""
-    lookup = {b["name"]: b["median_ns"] for b in benchmarks}
+def _ms(benchmarks: Dict[str, Dict[str, float]], key: str) -> float:
+    """Get median in milliseconds for a benchmark key."""
+    return _ns(benchmarks, key) / 1_000_000
 
-    def find(name: str) -> float:
-        return lookup.get(name, 0)
 
-    def ms(name: str) -> float:
-        return round(find(name) / 1_000_000, 2)
+def _us(benchmarks: Dict[str, Dict[str, float]], key: str) -> float:
+    """Get median in microseconds for a benchmark key."""
+    return _ns(benchmarks, key) / 1_000
 
-    def us(name: str) -> float:
-        return round(find(name) / 1_000, 1)
 
-    def ns(name: str) -> int:
-        return int(find(name))
+# ---------------------------------------------------------------------------
+# Size label helpers
+# ---------------------------------------------------------------------------
 
-    # Metadata
-    rust_version = "unknown"
+_PAYLOAD_SIZES = [
+    (64, "64B"),
+    (256, "256B"),
+    (1024, "1KB"),
+    (4096, "4KB"),
+    (16384, "16KB"),
+    (102400, "100KB"),
+    (1048576, "1MB"),
+]
+
+_VOLUME_MAP = {
+    1000: "1K",
+    10000: "10K",
+    100000: "100K",
+}
+
+
+# ---------------------------------------------------------------------------
+# Build the structured dashboard data
+# ---------------------------------------------------------------------------
+
+def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, Any]:
+    """Build the complete structured JSON object for the dashboard."""
+
+    # -- metadata ----------------------------------------------------------
     try:
-        r = subprocess.run(["rustc", "--version"], capture_output=True, text=True)
-        if r.returncode == 0:
-            rust_version = r.stdout.strip()
-    except FileNotFoundError:
-        pass
+        rust_version = subprocess.check_output(
+            ["rustc", "--version"], stderr=subprocess.DEVNULL, text=True
+        ).strip()
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        rust_version = "unknown"
 
+    plat = f"{platform.system()}-{platform.machine()}"
+    total = len(benchmarks)
+
+    # Categorize benchmarks by top-level prefix
+    categories: set = set()
+    for name in benchmarks:
+        prefix = name.split("/")[0].split("_")[0]
+        categories.add(prefix)
+
+    metadata = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "rust_version": rust_version,
+        "platform": plat,
+        "total_benchmarks": total,
+        "total_categories": len(categories),
+    }
+
+    # -- highlights --------------------------------------------------------
+    highlights = {
+        "serde_floor_ns": _ns(benchmarks, "protocol_type_serde/agent_card/serialize"),
+        "roundtrip_reused_ms": _ms(benchmarks, "realistic_connection/reused_client"),
+        "roundtrip_new_ms": _ms(benchmarks, "realistic_connection/new_client_per_request"),
+        "concurrent_64_sends_ms": _ms(benchmarks, "concurrent_sends/jsonrpc/64"),
+        "concurrent_1_send_ms": _ms(benchmarks, "concurrent_sends/jsonrpc/1"),
+        "error_path_ms": _ms(benchmarks, "errors_happy_vs_error/error_path"),
+        "happy_path_ms": _ms(benchmarks, "errors_happy_vs_error/happy_path"),
+        "agent_burst_100_ms": _ms(benchmarks, "production_agent_burst/agents/100"),
+    }
+
+    # -- transport ---------------------------------------------------------
+    transport_payload_scaling = []
+    for size_bytes, size_label in _PAYLOAD_SIZES:
+        transport_payload_scaling.append({
+            "size": size_label,
+            "ms": _ms(benchmarks, f"transport_payload_scaling/jsonrpc_send/{size_bytes}"),
+        })
+
+    transport = {
+        "jsonrpc_send_ms": _ms(benchmarks, "transport_jsonrpc_send/single_message"),
+        "jsonrpc_stream_ms": _ms(benchmarks, "transport_jsonrpc_stream/stream_drain"),
+        "rest_send_ms": _ms(benchmarks, "transport_rest_send/single_message"),
+        "rest_stream_ms": _ms(benchmarks, "transport_rest_stream/stream_drain"),
+        "payload_scaling": transport_payload_scaling,
+    }
+
+    # -- connection_reuse --------------------------------------------------
+    connection_reuse = {
+        "reused_ms": _ms(benchmarks, "realistic_connection/reused_client"),
+        "new_per_request_ms": _ms(benchmarks, "realistic_connection/new_client_per_request"),
+    }
+
+    # -- concurrency -------------------------------------------------------
+    concurrency = []
+    for c_level in [1, 4, 16, 64]:
+        concurrency.append({
+            "c": c_level,
+            "sends": _ms(benchmarks, f"concurrent_sends/jsonrpc/{c_level}"),
+            "streams": _ms(benchmarks, f"concurrent_streams/jsonrpc/{c_level}"),
+            "store": _ms(benchmarks, f"concurrent_store/save_and_get/{c_level}"),
+        })
+
+    # -- serde -------------------------------------------------------------
+    # Type-level ser/de
+    # protocol_type_serde uses bench_function("agent_card/serialize") -> agent_card_serialize
+    # and BenchmarkId::new("task/serialize", len) -> task_serialize/<len>
+    # We need to find the actual task_bytes length from the benchmarks
+    task_ser_key = _find_prefix(benchmarks, "protocol_type_serde/task_serialize/")
+    task_de_key = _find_prefix(benchmarks, "protocol_type_serde/task_deserialize/")
+    msg_ser_key = _find_prefix(benchmarks, "protocol_type_serde/message_serialize/")
+    msg_de_key = _find_prefix(benchmarks, "protocol_type_serde/message_deserialize/")
+
+    serde_types = [
+        {"type": "AgentCard ser", "ns": _ns(benchmarks, "protocol_type_serde/agent_card_serialize")},
+        {"type": "AgentCard de", "ns": _ns(benchmarks, "protocol_type_serde/agent_card_deserialize")},
+        {"type": "Task ser", "ns": _ns(benchmarks, task_ser_key) if task_ser_key else 0.0},
+        {"type": "Task de", "ns": _ns(benchmarks, task_de_key) if task_de_key else 0.0},
+        {"type": "Message ser", "ns": _ns(benchmarks, msg_ser_key) if msg_ser_key else 0.0},
+        {"type": "Message de", "ns": _ns(benchmarks, msg_de_key) if msg_de_key else 0.0},
+        {"type": "status_update ser", "ns": _ns(benchmarks, "protocol_stream_events/status_update_serialize")},
+        {"type": "status_update de", "ns": _ns(benchmarks, "protocol_stream_events/status_update_deserialize")},
+        {"type": "artifact_update ser", "ns": _ns(benchmarks, "protocol_stream_events/artifact_update_serialize")},
+        {"type": "artifact_update de", "ns": _ns(benchmarks, "protocol_stream_events/artifact_update_deserialize")},
+        {"type": "request envelope ser", "ns": _ns(benchmarks, "protocol_jsonrpc_envelope/serialize_request")},
+        {"type": "request envelope de", "ns": _ns(benchmarks, "protocol_jsonrpc_envelope/deserialize_request")},
+        {"type": "response envelope ser", "ns": _ns(benchmarks, "protocol_jsonrpc_envelope/serialize_response")},
+        {"type": "response envelope de", "ns": _ns(benchmarks, "protocol_jsonrpc_envelope/deserialize_response")},
+    ]
+
+    serde_batch = []
+    for count in [1, 10, 50, 100]:
+        serde_batch.append({
+            "count": count,
+            "ser_us": _us(benchmarks, f"protocol_batch/serialize_tasks/{count}"),
+            "de_us": _us(benchmarks, f"protocol_batch/deserialize_tasks/{count}"),
+        })
+
+    serde_interceptors = []
+    for n in [0, 1, 5, 10]:
+        serde_interceptors.append({
+            "n": n,
+            "us": _us(benchmarks, f"realistic_interceptor_chain/interceptors/{n}"),
+        })
+
+    serde_payload_scaling = []
+    for size_bytes, size_label in _PAYLOAD_SIZES:
+        serde_payload_scaling.append({
+            "size": size_label,
+            "to_vec_ns": _ns(benchmarks, f"protocol_payload_scaling/to_vec/{size_bytes}"),
+            "ser_buffer_ns": _ns(benchmarks, f"protocol_payload_scaling/ser_buffer/{size_bytes}"),
+            "from_slice_ns": _ns(benchmarks, f"protocol_payload_scaling/from_slice/{size_bytes}"),
+            "from_str_ns": _ns(benchmarks, f"protocol_payload_scaling/from_str/{size_bytes}"),
+        })
+
+    serde = {
+        "types": serde_types,
+        "batch": serde_batch,
+        "interceptors": serde_interceptors,
+        "payload_scaling": serde_payload_scaling,
+    }
+
+    # -- backpressure ------------------------------------------------------
+    stream_volume = []
+    for label in ["3_events", "7_events", "27_events", "52_events", "252_events", "502_events"]:
+        stream_volume.append({
+            "events": label.replace("_events", ""),
+            "ms": _ms(benchmarks, f"backpressure_stream_volume/{label}"),
+        })
+
+    slow_consumer = {
+        "fast_ms": _ms(benchmarks, "backpressure_slow_consumer/fast_consumer"),
+        "delay_1ms_ms": _ms(benchmarks, "backpressure_slow_consumer/1ms_delay"),
+        "delay_5ms_ms": _ms(benchmarks, "backpressure_slow_consumer/5ms_delay"),
+    }
+
+    concurrent_streams_bp = []
+    for n in [1, 4, 16]:
+        concurrent_streams_bp.append({
+            "streams": n,
+            "ms": _ms(benchmarks, f"backpressure_concurrent_streams/streams/{n}"),
+        })
+
+    timer_cal = {
+        "sleep_1ms_actual_ms": _ms(benchmarks, "backpressure_timer_calibration/sleep_1ms_actual"),
+        "sleep_5ms_actual_ms": _ms(benchmarks, "backpressure_timer_calibration/sleep_5ms_actual"),
+    }
+
+    backpressure = {
+        "stream_volume": stream_volume,
+        "slow_consumer": slow_consumer,
+        "concurrent_streams": concurrent_streams_bp,
+        "timer_cal": timer_cal,
+    }
+
+    # -- data_volume -------------------------------------------------------
+    data_volume_get = []
+    for vol, vol_label in [(1000, "1K"), (10000, "10K"), (100000, "100K")]:
+        data_volume_get.append({
+            "volume": vol_label,
+            "ns": _ns(benchmarks, f"data_volume_get/lookup/{vol}"),
+        })
+
+    data_volume_list = []
+    for vol, vol_label in [(1000, "1K"), (10000, "10K"), (100000, "100K")]:
+        data_volume_list.append({
+            "volume": vol_label,
+            "us": _us(benchmarks, f"data_volume_list/filtered_page_50/{vol}"),
+        })
+
+    data_volume_save = []
+    for prefill in [0, 1000, 10000, 50000]:
+        label = "0" if prefill == 0 else _VOLUME_MAP.get(prefill, str(prefill))
+        if prefill == 50000:
+            label = "50K"
+        data_volume_save.append({
+            "prefill": label,
+            "us": _us(benchmarks, f"data_volume_save/after_prefill/{prefill}"),
+        })
+
+    data_volume_history = []
+    for turns in [1, 5, 10, 20, 50]:
+        data_volume_history.append({
+            "turns": turns,
+            "us": _us(benchmarks, f"data_volume_history_depth/save_with_turns/{turns}"),
+        })
+
+    data_volume = {
+        "get": data_volume_get,
+        "list": data_volume_list,
+        "save": data_volume_save,
+        "history_depth": data_volume_history,
+    }
+
+    # -- memory ------------------------------------------------------------
+    alloc_counts = {
+        "task_ser": _ns(benchmarks, "memory_serialize/task_alloc_count"),
+        "task_de": _ns(benchmarks, "memory_deserialize/task_alloc_count"),
+        "agent_card_ser": _ns(benchmarks, "memory_serialize/agent_card_alloc_count"),
+        "agent_card_de": _ns(benchmarks, "memory_deserialize/agent_card_alloc_count"),
+    }
+
+    bytes_per_payload = []
+    for size_bytes, size_label in _PAYLOAD_SIZES[:5]:  # 64 to 16384
+        bytes_per_payload.append({
+            "payload": size_label,
+            "bytes": _ns(benchmarks, f"memory_bytes_per_payload/serialize_bytes/{size_bytes}"),
+        })
+
+    history_allocs = []
+    for turns in [1, 5, 10, 20, 50]:
+        history_allocs.append({
+            "turns": turns,
+            "ser": _ns(benchmarks, f"memory_history_scaling/serialize_allocs/{turns}"),
+            "de": _ns(benchmarks, f"memory_history_scaling/deserialize_allocs/{turns}"),
+        })
+
+    memory = {
+        "alloc_counts": alloc_counts,
+        "bytes_per_payload": bytes_per_payload,
+        "history_allocs": history_allocs,
+    }
+
+    # -- cross_language ----------------------------------------------------
+    cross_language = {
+        "echo_roundtrip_ms": _ms(benchmarks, "cross_language_echo_roundtrip/rust"),
+        "stream_events_ms": _ms(benchmarks, "cross_language_stream_events/rust"),
+        "serialize_ns": _ns(benchmarks, "cross_language_serialize_agent_card/rust_serialize"),
+        "concurrent_50_ms": _ms(benchmarks, "cross_language_concurrent_50/rust"),
+        "minimal_overhead_ms": _ms(benchmarks, "cross_language_minimal_overhead/rust"),
+    }
+
+    # -- enterprise --------------------------------------------------------
+    tenant_isolation = []
+    for n in [1, 10, 50, 100]:
+        tenant_isolation.append({
+            "tenants": n,
+            "ns": _ns(benchmarks, f"enterprise_multi_tenant/concurrent_tenant_saves/{n}"),
+        })
+
+    rw_mix = []
+    for label, display in [("100r_0w", "100R/0W"), ("75r_25w", "75R/25W"),
+                           ("50r_50w", "50R/50W"), ("25r_75w", "25R/75W"),
+                           ("0r_100w", "0R/100W")]:
+        rw_mix.append({
+            "mix": display,
+            "us": _us(benchmarks, f"enterprise_rw_mix/{label}"),
+        })
+
+    eviction = []
+    for size in [100, 1000, 10000]:
+        eviction.append({
+            "size": str(size),
+            "sweep_ns": _ns(benchmarks, f"enterprise_eviction/sweep_duration/{size}"),
+        })
+
+    large_history = []
+    for turns in [100, 200, 500]:
+        large_history.append({
+            "turns": turns,
+            "ser_us": _us(benchmarks, f"enterprise_large_history/serialize/{turns}"),
+            "de_us": _us(benchmarks, f"enterprise_large_history/deserialize/{turns}"),
+            "save_us": _us(benchmarks, f"enterprise_large_history/store_save/{turns}"),
+        })
+
+    enterprise = {
+        "tenant_isolation": tenant_isolation,
+        "rw_mix": rw_mix,
+        "cors_preflight_us": _us(benchmarks, "enterprise_cors/options_preflight"),
+        "cancel_task_ms": _ms(benchmarks, "enterprise_cancel_task/send_then_cancel"),
+        "rate_limit_ms": _ms(benchmarks, "enterprise_rate_limiting/with_rate_limit"),
+        "no_rate_limit_ms": _ms(benchmarks, "enterprise_rate_limiting/no_rate_limit"),
+        "metadata_rejection_us": _us(benchmarks, "enterprise_handler_limits/metadata_rejection"),
+        "eviction": eviction,
+        "large_history": large_history,
+    }
+
+    # -- production --------------------------------------------------------
+    agent_burst = []
+    for n in [10, 50, 100]:
+        agent_burst.append({
+            "agents": n,
+            "ms": _ms(benchmarks, f"production_agent_burst/agents/{n}"),
+        })
+
+    production = {
+        "agent_burst": agent_burst,
+        "orchestration_7step_ms": _ms(benchmarks, "production_e2e_orchestration/7_step_workflow"),
+        "subscribe_reconnect_ms": _ms(benchmarks, "production_subscribe_to_task/send_then_subscribe"),
+        "cold_start_us": _us(benchmarks, "production_cold_start/first_request"),
+        "steady_state_ms": _ms(benchmarks, "production_cold_start/steady_state"),
+        "cancel_subscribe_race_us": _us(benchmarks, "production_cancel_subscribe_race/concurrent_cancel_and_subscribe"),
+        "dispatch_direct_ms": _ms(benchmarks, "production_dispatch_routing/direct_handler_invoke"),
+        "dispatch_http_ms": _ms(benchmarks, "production_dispatch_routing/full_http_roundtrip"),
+        "push_config": {
+            "set_us": _us(benchmarks, "production_push_config/set_roundtrip"),
+            "get_us": _us(benchmarks, "production_push_config/get_roundtrip"),
+            "list_us": _us(benchmarks, "production_push_config/list_roundtrip"),
+            "delete_us": _us(benchmarks, "production_push_config/delete_roundtrip"),
+        },
+    }
+
+    # -- advanced ----------------------------------------------------------
+    tenant_resolvers = []
+    for resolver, label in [
+        ("header_resolver_miss", "header_miss"),
+        ("header_resolver", "header"),
+        ("bearer_resolver", "bearer"),
+        ("bearer_resolver_with_mapper", "bearer_with_mapper"),
+        ("path_resolver", "path"),
+    ]:
+        tenant_resolvers.append({
+            "resolver": label,
+            "ns": _ns(benchmarks, f"advanced_tenant_resolver/{resolver}"),
+        })
+
+    agent_card_hot_reload = {
+        "read_ns": _ns(benchmarks, "advanced_agent_card_hot_reload/read_current_card"),
+        "swap_read_ns": _ns(benchmarks, "advanced_agent_card_hot_reload/swap_and_read"),
+        "swap_complex_us": _us(benchmarks, "advanced_agent_card_hot_reload/swap_complex_card"),
+    }
+
+    subscribe_fanout = []
+    for n in [1, 5, 10]:
+        subscribe_fanout.append({
+            "subscribers": n,
+            "ms": _ms(benchmarks, f"advanced_subscribe_fanout/concurrent_subscribers/{n}"),
+        })
+
+    artifact_accumulation = []
+    for depth in [0, 10, 50, 100, 500]:
+        artifact_accumulation.append({
+            "depth": depth,
+            "clone_us": _us(benchmarks, f"advanced_artifact_accumulation/task_clone_at_depth/{depth}"),
+            "save_us": _us(benchmarks, f"advanced_artifact_accumulation/store_save_at_depth/{depth}"),
+        })
+
+    pagination_walk = []
+    for config_key, config_label in [
+        ("unfiltered/100_tasks_page_25", "100 unfiltered"),
+        ("filtered/100_tasks_page_25", "100 filtered"),
+        ("unfiltered/1000_tasks_page_50", "1000 unfiltered"),
+        ("filtered/1000_tasks_page_50", "1000 filtered"),
+    ]:
+        pagination_walk.append({
+            "config": config_label,
+            "us": _us(benchmarks, f"advanced_pagination_walk/{config_key}"),
+        })
+
+    advanced = {
+        "tenant_resolvers": tenant_resolvers,
+        "agent_card_hot_reload": agent_card_hot_reload,
+        "discovery_us": _us(benchmarks, "advanced_agent_card_discovery/well_known_endpoint"),
+        "extended_card_us": _us(benchmarks, "advanced_extended_agent_card/get_extended_card_roundtrip"),
+        "subscribe_fanout": subscribe_fanout,
+        "artifact_accumulation": artifact_accumulation,
+        "pagination_walk": pagination_walk,
+    }
+
+    # -- errors ------------------------------------------------------------
+    errors = {
+        "happy_path_ms": _ms(benchmarks, "errors_happy_vs_error/happy_path"),
+        "error_path_ms": _ms(benchmarks, "errors_happy_vs_error/error_path"),
+        "invalid_json_us": _us(benchmarks, "errors_malformed_request/invalid_json"),
+        "wrong_content_type_us": _us(benchmarks, "errors_malformed_request/wrong_content_type"),
+        "task_not_found_us": _us(benchmarks, "errors_task_not_found/get_nonexistent_task"),
+    }
+
+    # -- lifecycle ---------------------------------------------------------
+    queue_write_read = []
+    for n in [1, 10, 50, 100]:
+        queue_write_read.append({
+            "n": n,
+            "us": _us(benchmarks, f"lifecycle_queue/write_read/{n}"),
+        })
+
+    lifecycle = {
+        "send_complete_ms": _ms(benchmarks, "lifecycle_e2e/send_and_complete"),
+        "stream_drain_ms": _ms(benchmarks, "lifecycle_e2e/stream_and_drain"),
+        "store_save_ns": _ns(benchmarks, "lifecycle_store_save/single_task"),
+        "store_get_ns": _ns(benchmarks, "lifecycle_store_get/lookup_in_1000"),
+        "store_list_us": _us(benchmarks, "lifecycle_store_list/filtered_page_50_of_250"),
+        "queue_write_read": queue_write_read,
+    }
+
+    # -- all_benchmarks (raw list) -----------------------------------------
+    all_benchmarks = []
+    for name in sorted(benchmarks):
+        est = benchmarks[name]
+        all_benchmarks.append({
+            "name": name,
+            "median_ns": est["median_ns"],
+            "lower_ns": est["lower_ns"],
+            "upper_ns": est["upper_ns"],
+            "human": format_human(est["median_ns"]),
+        })
+
+    # -- assemble ----------------------------------------------------------
     return {
-        "metadata": {
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-            "rust_version": rust_version,
-            "platform": f"{plat.system()}-{plat.machine()}",
-            "total_benchmarks": len(benchmarks),
-            "total_categories": len(categories),
-        },
-        "highlights": {
-            "serde_floor_ns": ns("protocol_stream_events/status_update/serialize"),
-            "roundtrip_reused_ms": ms("realistic_connection/reused_client"),
-            "roundtrip_new_ms": ms("realistic_connection/new_client_per_request"),
-            "concurrent_64_sends_ms": ms("concurrent_sends/jsonrpc/64"),
-            "concurrent_1_send_ms": ms("concurrent_sends/jsonrpc/1"),
-            "error_path_ms": ms("errors_happy_vs_error/error_path"),
-            "happy_path_ms": ms("errors_happy_vs_error/happy_path"),
-            "agent_burst_100_ms": ms("production_agent_burst/agents/100"),
-            "agent_burst_10_ms": ms("production_agent_burst/agents/10"),
-        },
-        "transport": {
-            "jsonrpc_send_ms": ms("transport_jsonrpc_send/single_message"),
-            "jsonrpc_stream_ms": ms("transport_jsonrpc_stream/stream_drain"),
-            "rest_send_ms": ms("transport_rest_send/single_message"),
-            "rest_stream_ms": ms("transport_rest_stream/stream_drain"),
-            "payload_scaling": [
-                {"size": s, "ms": ms(f"transport_payload_scaling/jsonrpc_send/{n}")}
-                for s, n in [("64B", 64), ("256B", 256), ("1KB", 1024), ("4KB", 4096),
-                             ("16KB", 16384), ("100KB", 102400), ("1MB", 1048576)]
-            ],
-        },
-        "connection_reuse": {
-            "reused_ms": ms("realistic_connection/reused_client"),
-            "new_per_request_ms": ms("realistic_connection/new_client_per_request"),
-        },
-        "concurrency": [
-            {"c": c,
-             "sends": ms(f"concurrent_sends/jsonrpc/{c}"),
-             "streams": ms(f"concurrent_streams/jsonrpc/{c}"),
-             "store": us(f"concurrent_store/save_and_get/{c}")}
-            for c in [1, 4, 16, 64]
-        ],
-        "serde": {
-            "types": [
-                {"type": t, "ns": ns(n)} for t, n in [
-                    ("AgentCard ser", "protocol_type_serde/agent_card/serialize"),
-                    ("AgentCard de", "protocol_type_serde/agent_card/deserialize"),
-                    ("Task ser", "protocol_type_serde/task/serialize/278"),
-                    ("Task de", "protocol_type_serde/task/deserialize/278"),
-                    ("Message ser", "protocol_type_serde/message/serialize/217"),
-                    ("Message de", "protocol_type_serde/message/deserialize/217"),
-                    ("status_update ser", "protocol_stream_events/status_update/serialize"),
-                    ("status_update de", "protocol_stream_events/status_update/deserialize"),
-                    ("artifact_update ser", "protocol_stream_events/artifact_update/serialize"),
-                    ("artifact_update de", "protocol_stream_events/artifact_update/deserialize"),
-                    ("request envelope ser", "protocol_jsonrpc_envelope/serialize_request"),
-                    ("request envelope de", "protocol_jsonrpc_envelope/deserialize_request"),
-                    ("response envelope ser", "protocol_jsonrpc_envelope/serialize_response"),
-                    ("response envelope de", "protocol_jsonrpc_envelope/deserialize_response"),
-                ]
-            ],
-            "batch": [
-                {"count": c,
-                 "ser_us": us(f"protocol_batch/serialize_tasks/{c}"),
-                 "de_us": us(f"protocol_batch/deserialize_tasks/{c}")}
-                for c in [1, 10, 50, 100]
-            ],
-            "interceptors": [
-                {"n": n, "us": us(f"realistic_interceptor_chain/interceptors/{n}")}
-                for n in [0, 1, 5, 10]
-            ],
-            "payload_scaling": [
-                {"size": s,
-                 "to_vec_ns": ns(f"protocol_payload_scaling/to_vec/{n}"),
-                 "ser_buffer_ns": ns(f"protocol_payload_scaling/ser_buffer/{n}"),
-                 "from_slice_ns": ns(f"protocol_payload_scaling/from_slice/{n}"),
-                 "from_str_ns": ns(f"protocol_payload_scaling/from_str/{n}")}
-                for s, n in [("64B", 64), ("256B", 256), ("1KB", 1024), ("4KB", 4096),
-                             ("16KB", 16384), ("100KB", 102400), ("1MB", 1048576)]
-            ],
-        },
-        "backpressure": {
-            "stream_volume": [
-                {"events": e, "ms": ms(f"backpressure_stream_volume/{l}")}
-                for e, l in [("3", "3_events"), ("7", "7_events"), ("27", "27_events"),
-                             ("52", "52_events"), ("252", "252_events"), ("502", "502_events")]
-            ],
-            "slow_consumer": {
-                "fast_ms": ms("backpressure_slow_consumer/fast_consumer"),
-                "delay_1ms_ms": ms("backpressure_slow_consumer/1ms_delay"),
-                "delay_5ms_ms": ms("backpressure_slow_consumer/5ms_delay"),
-            },
-            "concurrent_streams": [
-                {"streams": s, "ms": ms(f"backpressure_concurrent_streams/streams/{s}")}
-                for s in [1, 4, 16]
-            ],
-            "timer_cal": {
-                "sleep_1ms_actual_ms": ms("backpressure_timer_calibration/sleep_1ms_actual"),
-                "sleep_5ms_actual_ms": ms("backpressure_timer_calibration/sleep_5ms_actual"),
-            },
-        },
-        "data_volume": {
-            "get": [{"volume": v, "ns": ns(f"data_volume_get/lookup/{n}")}
-                    for v, n in [("1K", 1000), ("10K", 10000), ("100K", 100000)]],
-            "list": [{"volume": v, "us": us(f"data_volume_list/filtered_page_50/{n}")}
-                     for v, n in [("1K", 1000), ("10K", 10000), ("100K", 100000)]],
-            "save": [{"prefill": p, "us": us(f"data_volume_save/after_prefill/{n}")}
-                     for p, n in [("0", 0), ("1K", 1000), ("10K", 10000), ("50K", 50000)]],
-            "history_depth": [{"turns": t, "us": us(f"data_volume_history_depth/save_with_turns/{t}")}
-                              for t in [1, 5, 10, 20, 50]],
-        },
-        "memory": {
-            "alloc_counts": {
-                "task_ser": ns("memory_serialize/task_alloc_count"),
-                "task_de": ns("memory_deserialize/task_alloc_count"),
-                "agent_card_ser": ns("memory_serialize/agent_card_alloc_count"),
-                "agent_card_de": ns("memory_deserialize/agent_card_alloc_count"),
-            },
-            "bytes_per_payload": [
-                {"payload": s, "bytes": ns(f"memory_bytes_per_payload/serialize_bytes/{n}")}
-                for s, n in [("64B", 64), ("256B", 256), ("1KB", 1024), ("4KB", 4096), ("16KB", 16384)]
-            ],
-            "history_allocs": [
-                {"turns": t,
-                 "ser": ns(f"memory_history_scaling/serialize_allocs/{t}"),
-                 "de": ns(f"memory_history_scaling/deserialize_allocs/{t}")}
-                for t in [1, 5, 10, 20, 50]
-            ],
-        },
-        "cross_language": {
-            "echo_roundtrip_ms": ms("cross_language_echo_roundtrip/rust"),
-            "stream_events_ms": ms("cross_language_stream_events/rust"),
-            "serialize_ns": ns("cross_language_serialize_agent_card/rust_serialize"),
-            "concurrent_50_ms": ms("cross_language_concurrent_50/rust"),
-            "minimal_overhead_ms": ms("cross_language_minimal_overhead/rust"),
-        },
-        "enterprise": {
-            "tenant_isolation": [
-                {"tenants": t, "ns": ns(f"enterprise_multi_tenant/tenant_isolation_check/{t}")}
-                for t in [1, 10, 50, 100]
-            ],
-            "rw_mix": [
-                {"mix": m, "us": us(f"enterprise_rw_mix/{k}")}
-                for m, k in [("100R/0W", "100r_0w"), ("75R/25W", "75r_25w"),
-                             ("50R/50W", "50r_50w"), ("25R/75W", "25r_75w"), ("0R/100W", "0r_100w")]
-            ],
-            "cors_preflight_us": us("enterprise_cors/options_preflight"),
-            "cancel_task_ms": ms("enterprise_cancel_task/send_then_cancel"),
-            "rate_limit_ms": ms("enterprise_rate_limiting/with_rate_limit"),
-            "no_rate_limit_ms": ms("enterprise_rate_limiting/no_rate_limit"),
-            "metadata_rejection_us": us("enterprise_handler_limits/metadata_rejection"),
-            "eviction": [
-                {"size": s,
-                 "save_ns": ns(f"enterprise_eviction/save_at_capacity/{n}"),
-                 "sweep_ns": ns(f"enterprise_eviction/sweep_duration/{n}")}
-                for s, n in [("100", 100), ("1K", 1000), ("10K", 10000)]
-            ],
-            "large_history": [
-                {"turns": t,
-                 "ser_us": us(f"enterprise_large_history/serialize/{t}"),
-                 "de_us": us(f"enterprise_large_history/deserialize/{t}"),
-                 "save_us": us(f"enterprise_large_history/store_save/{t}")}
-                for t in [100, 200, 500]
-            ],
-        },
-        "production": {
-            "agent_burst": [
-                {"agents": a, "ms": ms(f"production_agent_burst/agents/{a}")}
-                for a in [10, 50, 100]
-            ],
-            "orchestration_7step_ms": ms("production_e2e_orchestration/7_step_workflow"),
-            "subscribe_reconnect_ms": ms("production_subscribe_to_task/send_then_subscribe"),
-            "cold_start_us": us("production_cold_start/first_request"),
-            "steady_state_ms": ms("production_cold_start/steady_state"),
-            "cancel_subscribe_race_us": us("production_cancel_subscribe_race/concurrent_cancel_and_subscribe"),
-            "dispatch_direct_ms": ms("production_dispatch_routing/direct_handler_invoke"),
-            "dispatch_http_ms": ms("production_dispatch_routing/full_http_roundtrip"),
-            "push_config": {
-                "set_us": us("production_push_config/set_roundtrip"),
-                "get_us": us("production_push_config/get_roundtrip"),
-                "list_us": us("production_push_config/list_roundtrip"),
-                "delete_us": us("production_push_config/delete_roundtrip"),
-            },
-        },
-        "advanced": {
-            "tenant_resolvers": [
-                {"resolver": r, "ns": ns(f"advanced_tenant_resolver/{k}")}
-                for r, k in [("header miss", "header_resolver_miss"), ("bearer", "bearer_resolver"),
-                             ("header", "header_resolver"), ("bearer+map", "bearer_resolver_with_mapper"),
-                             ("path", "path_resolver")]
-            ],
-            "agent_card_hot_reload": {
-                "read_ns": ns("advanced_agent_card_hot_reload/read_current_card"),
-                "swap_read_ns": ns("advanced_agent_card_hot_reload/swap_and_read"),
-                "swap_complex_us": us("advanced_agent_card_hot_reload/swap_complex_card"),
-            },
-            "discovery_us": us("advanced_agent_card_discovery/well_known_endpoint"),
-            "extended_card_us": us("advanced_extended_agent_card/get_extended_card_roundtrip"),
-            "subscribe_fanout": [
-                {"subscribers": s, "ms": ms(f"advanced_subscribe_fanout/concurrent_subscribers/{s}")}
-                for s in [1, 5, 10]
-            ],
-            "artifact_accumulation": [
-                {"depth": d,
-                 "clone_us": us(f"advanced_artifact_accumulation/task_clone_at_depth/{d}"),
-                 "save_us": us(f"advanced_artifact_accumulation/store_save_at_depth/{d}")}
-                for d in [0, 10, 50, 100, 500]
-            ],
-            "pagination_walk": [
-                {"config": c, "us": us(f"advanced_pagination_walk/{k}")}
-                for c, k in [("100 unfiltered", "unfiltered/100_tasks_page_25"),
-                             ("100 filtered", "filtered/100_tasks_page_25"),
-                             ("1K unfiltered", "unfiltered/1000_tasks_page_50"),
-                             ("1K filtered", "filtered/1000_tasks_page_50")]
-            ],
-        },
-        "errors": {
-            "happy_path_ms": ms("errors_happy_vs_error/happy_path"),
-            "error_path_ms": ms("errors_happy_vs_error/error_path"),
-            "invalid_json_us": us("errors_malformed_request/invalid_json"),
-            "wrong_content_type_us": us("errors_malformed_request/wrong_content_type"),
-            "task_not_found_us": us("errors_task_not_found/get_nonexistent_task"),
-        },
-        "lifecycle": {
-            "send_complete_ms": ms("lifecycle_e2e/send_and_complete"),
-            "stream_drain_ms": ms("lifecycle_e2e/stream_and_drain"),
-            "store_save_ns": ns("lifecycle_store_save/single_task"),
-            "store_get_ns": ns("lifecycle_store_get/lookup_in_1000"),
-            "store_list_us": us("lifecycle_store_list/filtered_page_50_of_250"),
-            "queue_write_read": [
-                {"n": n, "us": us(f"lifecycle_queue/write_read/{n}")}
-                for n in [1, 10, 50, 100]
-            ],
-        },
-        "all_benchmarks": benchmarks,
+        "metadata": metadata,
+        "highlights": highlights,
+        "transport": transport,
+        "connection_reuse": connection_reuse,
+        "concurrency": concurrency,
+        "serde": serde,
+        "backpressure": backpressure,
+        "data_volume": data_volume,
+        "memory": memory,
+        "cross_language": cross_language,
+        "enterprise": enterprise,
+        "production": production,
+        "advanced": advanced,
+        "errors": errors,
+        "lifecycle": lifecycle,
+        "all_benchmarks": all_benchmarks,
     }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Extract criterion benchmarks to JSON")
-    parser.add_argument("--criterion-dir", default="target/criterion",
-                        help="Path to criterion output directory")
-    parser.add_argument("--output", "-o", default=None,
-                        help="Output file (default: stdout)")
-    parser.add_argument("--pretty", action="store_true", default=True,
-                        help="Pretty-print JSON output")
+def _find_prefix(benchmarks: Dict[str, Dict[str, float]], prefix: str) -> Optional[str]:
+    """Find the first benchmark key that starts with the given prefix.
+
+    Criterion uses BenchmarkId::new("task/serialize", byte_len) which produces
+    a directory like protocol_type_serde/task_serialize/<byte_len>. Since the
+    byte length varies, we search by prefix.
+    """
+    for key in sorted(benchmarks):
+        if key.startswith(prefix):
+            return key
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Extract criterion benchmark results into structured JSON."
+    )
+    parser.add_argument(
+        "--criterion-dir",
+        type=Path,
+        default=None,
+        help="Path to criterion output directory (default: target/criterion/)",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
+        help="Output JSON file path (default: stdout)",
+    )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        default=True,
+        help="Pretty-print JSON output (default: true)",
+    )
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Compact JSON output (overrides --pretty)",
+    )
     args = parser.parse_args()
 
-    criterion_dir = Path(args.criterion_dir)
+    # Resolve criterion directory
+    if args.criterion_dir:
+        criterion_dir = args.criterion_dir.resolve()
+    else:
+        # Walk up from script location to find repo root
+        script_dir = Path(__file__).resolve().parent
+        repo_root = script_dir.parent.parent
+        criterion_dir = repo_root / "target" / "criterion"
+
     if not criterion_dir.is_dir():
-        print(f"Error: criterion directory not found: {criterion_dir}", file=sys.stderr)
-        print("Run benchmarks first: cargo bench -p a2a-benchmarks", file=sys.stderr)
+        print(
+            f"Error: No criterion results found at {criterion_dir}\n"
+            "Run benchmarks first: cargo bench -p a2a-benchmarks",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
+    # Collect and build
     benchmarks = collect_benchmarks(criterion_dir)
     if not benchmarks:
-        print(f"Error: no benchmark results found in {criterion_dir}", file=sys.stderr)
-        sys.exit(1)
+        print(
+            f"Warning: No estimates.json files found in {criterion_dir}",
+            file=sys.stderr,
+        )
 
-    categories = categorize(benchmarks)
-    data = build_dashboard_data(benchmarks, categories)
-    json_str = json.dumps(data, indent=2 if args.pretty else None, ensure_ascii=False)
+    data = build_dashboard_data(benchmarks)
+
+    # Output
+    indent = None if args.compact else 2
+    json_str = json.dumps(data, indent=indent, ensure_ascii=False)
 
     if args.output:
-        Path(args.output).write_text(json_str + "\n")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json_str + "\n", encoding="utf-8")
         print(f"Wrote {len(benchmarks)} benchmarks to {args.output}", file=sys.stderr)
     else:
         print(json_str)
