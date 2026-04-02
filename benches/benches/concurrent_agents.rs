@@ -167,7 +167,7 @@ fn bench_concurrent_store(c: &mut Criterion) {
                         handles.push(tokio::spawn(async move {
                             let task = fixtures::completed_task(i);
                             let id = task.id.clone();
-                            s.save(task).await.unwrap();
+                            s.save(&task).await.unwrap();
                             s.get(&id).await.unwrap();
                         }));
                     }

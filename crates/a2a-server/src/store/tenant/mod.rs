@@ -25,7 +25,7 @@
 //! let tenant = "acme-corp";
 //! TenantContext::scope(tenant, async {
 //!     // All store operations here are scoped to "acme-corp"
-//!     // store.save(task).await;
+//!     // store.save(&task).await;
 //! }).await;
 //! # }
 //! ```

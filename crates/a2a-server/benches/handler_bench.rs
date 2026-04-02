@@ -58,7 +58,7 @@ fn bench_task_store_save(c: &mut Criterion) {
         // violating measurement independence.
         let task = sample_task(0);
         b.iter(|| {
-            rt.block_on(store.save(black_box(task.clone()))).unwrap();
+            rt.block_on(store.save(black_box(&task))).unwrap();
         });
     });
 }
@@ -72,7 +72,7 @@ fn bench_task_store_get(c: &mut Criterion) {
     let store = InMemoryTaskStore::new();
     // Pre-populate with 100 tasks.
     for i in 0..100 {
-        rt.block_on(store.save(sample_task(i))).unwrap();
+        rt.block_on(store.save(&sample_task(i))).unwrap();
     }
     let target_id = TaskId::new("task-bench-0050");
 
@@ -98,7 +98,7 @@ fn bench_task_store_list(c: &mut Criterion) {
         } else {
             task.context_id = ContextId::new("ctx-odd");
         }
-        rt.block_on(store.save(task)).unwrap();
+        rt.block_on(store.save(&task)).unwrap();
     }
 
     let params = ListTasksParams {

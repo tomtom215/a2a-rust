@@ -97,7 +97,7 @@ fn bench_multi_tenant_store(c: &mut Criterion) {
                                     format!("tenant-{t}"),
                                     async move {
                                         let task = fixtures::completed_task(t);
-                                        s.save(task).await.unwrap();
+                                        s.save(&task).await.unwrap();
                                     },
                                 )
                                 .await;
@@ -126,7 +126,7 @@ fn bench_multi_tenant_store(c: &mut Criterion) {
                         a2a_protocol_server::store::TenantContext::scope(
                             format!("tenant-{t}"),
                             async move {
-                                s.save(fixtures::completed_task(t)).await.unwrap();
+                                s.save(&fixtures::completed_task(t)).await.unwrap();
                             },
                         )
                         .await;
@@ -248,7 +248,7 @@ fn bench_eviction_pressure(c: &mut Criterion) {
                 let store = InMemoryTaskStore::with_config(config);
                 // Fill to capacity with terminal tasks.
                 for i in 0..cap {
-                    rt.block_on(store.save(fixtures::completed_task(i)))
+                    rt.block_on(store.save(&fixtures::completed_task(i)))
                         .unwrap();
                 }
                 // Wait for TTL to expire so eviction has work to do.
@@ -256,7 +256,7 @@ fn bench_eviction_pressure(c: &mut Criterion) {
 
                 let task = fixtures::completed_task(cap + 1);
                 b.iter(|| {
-                    rt.block_on(store.save(criterion::black_box(task.clone())))
+                    rt.block_on(store.save(criterion::black_box(&task)))
                         .unwrap();
                 });
             },
@@ -274,7 +274,7 @@ fn bench_eviction_pressure(c: &mut Criterion) {
             };
             let store = InMemoryTaskStore::with_config(config);
             for i in 0..cap {
-                rt.block_on(store.save(fixtures::completed_task(i)))
+                rt.block_on(store.save(&fixtures::completed_task(i)))
                     .unwrap();
             }
             // Wait for TTL to expire.
@@ -398,7 +398,7 @@ fn bench_read_write_mix(c: &mut Criterion) {
     let populate_rt = current_thread_rt();
     for i in 0..10_000 {
         populate_rt
-            .block_on(store.save(fixtures::completed_task(i)))
+            .block_on(store.save(&fixtures::completed_task(i)))
             .unwrap();
     }
 
@@ -437,7 +437,7 @@ fn bench_read_write_mix(c: &mut Criterion) {
                             let s = Arc::clone(&store);
                             handles.push(tokio::spawn(async move {
                                 let task = fixtures::completed_task(i);
-                                s.save(task).await.unwrap();
+                                s.save(&task).await.unwrap();
                             }));
                         }
                         for handle in handles {
@@ -486,8 +486,7 @@ fn bench_large_history(c: &mut Criterion) {
         let store = InMemoryTaskStore::new();
         group.bench_with_input(BenchmarkId::new("store_save", turns), &task, |b, task| {
             b.iter(|| {
-                rt.block_on(store.save(criterion::black_box(task.clone())))
-                    .unwrap();
+                rt.block_on(store.save(criterion::black_box(task))).unwrap();
             });
         });
     }

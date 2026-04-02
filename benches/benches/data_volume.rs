@@ -57,7 +57,7 @@ fn populate_store(rt: &tokio::runtime::Runtime, store: &InMemoryTaskStore, n: us
         } else {
             task.context_id = ContextId::new("ctx-odd");
         }
-        rt.block_on(store.save(task)).unwrap();
+        rt.block_on(store.save(&task)).unwrap();
     }
 }
 
@@ -199,7 +199,8 @@ fn bench_save_at_scale(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("after_prefill", pre_fill), &(), |b, _| {
             b.iter(|| {
                 let task = fixtures::completed_task(counter);
-                rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                rt.block_on(store.save(criterion::black_box(&task)))
+                    .unwrap();
                 counter += 1;
             });
         });
@@ -269,7 +270,8 @@ fn bench_store_with_history(c: &mut Criterion) {
                 let mut counter = 0usize;
                 b.iter(|| {
                     let task = fixtures::task_with_history(counter, turns);
-                    rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                    rt.block_on(store.save(criterion::black_box(&task)))
+                        .unwrap();
                     counter += 1;
                 });
             },

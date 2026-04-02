@@ -52,7 +52,7 @@ pub(super) async fn process_event_bg(
                     "invalid state transition rejected (background); marking task as failed"
                 );
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                if let Err(_e) = task_store.save(last_task.clone()).await {
+                if let Err(_e) = task_store.save(last_task).await {
                     trace_error!(
                         task_id = %task_id,
                         error = %_e,
@@ -68,7 +68,7 @@ pub(super) async fn process_event_bg(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            if let Err(_e) = task_store.save(last_task.clone()).await {
+            if let Err(_e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     error = %_e,
@@ -116,7 +116,7 @@ pub(super) async fn process_event_bg(
                             }
                         }
                     }
-                    if let Err(_e) = task_store.save(last_task.clone()).await {
+                    if let Err(_e) = task_store.save(last_task).await {
                         trace_error!(
                             task_id = %task_id,
                             error = %_e,
@@ -149,7 +149,7 @@ pub(super) async fn process_event_bg(
                 return;
             }
             artifacts.push(update.artifact.clone());
-            if let Err(_e) = task_store.save(last_task.clone()).await {
+            if let Err(_e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     error = %_e,
@@ -166,7 +166,7 @@ pub(super) async fn process_event_bg(
         Ok(StreamResponse::Task(task)) => {
             let prev = last_task.clone();
             *last_task = task;
-            if let Err(_e) = task_store.save(last_task.clone()).await {
+            if let Err(_e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     error = %_e,
@@ -179,7 +179,7 @@ pub(super) async fn process_event_bg(
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            if let Err(_save_err) = task_store.save(last_task.clone()).await {
+            if let Err(_save_err) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     original_error = %_e,
@@ -250,7 +250,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -282,7 +282,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Completed))
+            .save(&make_task("t1", TaskState::Completed))
             .await
             .unwrap();
         let mut last_task = make_task("t1", TaskState::Completed);
@@ -311,7 +311,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Working))
+            .save(&make_task("t1", TaskState::Working))
             .await
             .unwrap();
         let mut last_task = make_task("t1", TaskState::Working);
@@ -346,7 +346,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Working))
+            .save(&make_task("t1", TaskState::Working))
             .await
             .unwrap();
         let mut last_task = make_task("t1", TaskState::Working);
@@ -377,7 +377,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         let mut last_task = make_task("t1", TaskState::Submitted);
@@ -422,7 +422,7 @@ mod tests {
     impl crate::store::TaskStore for FailingSaveStore {
         fn save<'a>(
             &'a self,
-            _task: Task,
+            _task: &'a Task,
         ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
         {
             Box::pin(async { Err(A2aError::internal("simulated save failure")) })
@@ -447,7 +447,7 @@ mod tests {
         }
         fn insert_if_absent<'a>(
             &'a self,
-            task: Task,
+            task: &'a Task,
         ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
             self.inner.insert_if_absent(task)
         }
@@ -468,7 +468,7 @@ mod tests {
         // Seed the inner store via insert_if_absent (which delegates to inner).
         task_store
             .inner
-            .save(make_task("t-revert", TaskState::Submitted))
+            .save(&make_task("t-revert", TaskState::Submitted))
             .await
             .unwrap();
         let mut last_task = make_task("t-revert", TaskState::Submitted);
@@ -502,7 +502,7 @@ mod tests {
 
         task_store
             .inner
-            .save(make_task("t-art-revert", TaskState::Working))
+            .save(&make_task("t-art-revert", TaskState::Working))
             .await
             .unwrap();
         let mut last_task = make_task("t-art-revert", TaskState::Working);
@@ -534,7 +534,7 @@ mod tests {
 
         task_store
             .inner
-            .save(make_task("t-snap-revert", TaskState::Submitted))
+            .save(&make_task("t-snap-revert", TaskState::Submitted))
             .await
             .unwrap();
         let mut last_task = make_task("t-snap-revert", TaskState::Submitted);
@@ -567,7 +567,7 @@ mod tests {
 
         task_store
             .inner
-            .save(make_task("t-err-revert", TaskState::Working))
+            .save(&make_task("t-err-revert", TaskState::Working))
             .await
             .unwrap();
         let mut last_task = make_task("t-err-revert", TaskState::Working);
@@ -602,7 +602,7 @@ mod tests {
 
         task_store
             .inner
-            .save(make_task("t-inv-fail", TaskState::Completed))
+            .save(&make_task("t-inv-fail", TaskState::Completed))
             .await
             .unwrap();
         let mut last_task = make_task("t-inv-fail", TaskState::Completed);
@@ -638,7 +638,7 @@ mod tests {
         let task_id = TaskId::new("t-limit");
 
         task_store
-            .save(make_task("t-limit", TaskState::Working))
+            .save(&make_task("t-limit", TaskState::Working))
             .await
             .unwrap();
         let mut last_task = make_task("t-limit", TaskState::Working);

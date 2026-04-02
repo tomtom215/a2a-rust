@@ -44,7 +44,7 @@ async fn save_and_get_roundtrip() {
     let task = make_task("t1", "ctx1", TaskState::Submitted);
 
     TenantContext::scope("acme", async {
-        store.save(task.clone()).await.unwrap();
+        store.save(&task).await.unwrap();
         let fetched = store.get(&TaskId::new("t1")).await.unwrap();
         assert!(fetched.is_some());
         let fetched = fetched.unwrap();
@@ -77,7 +77,7 @@ async fn save_upserts_existing() {
     TenantContext::scope("acme", async {
         // Save initial task as Submitted.
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         let fetched = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
@@ -85,7 +85,7 @@ async fn save_upserts_existing() {
 
         // Overwrite with Working state.
         store
-            .save(make_task("t1", "ctx1", TaskState::Working))
+            .save(&make_task("t1", "ctx1", TaskState::Working))
             .await
             .unwrap();
         let fetched = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
@@ -107,11 +107,11 @@ async fn insert_if_absent_returns_true_then_false() {
         let task = make_task("t1", "ctx1", TaskState::Submitted);
 
         // First insert succeeds.
-        let inserted = store.insert_if_absent(task.clone()).await.unwrap();
+        let inserted = store.insert_if_absent(&task).await.unwrap();
         assert!(inserted, "first insert should return true");
 
         // Second insert with same id returns false.
-        let inserted_again = store.insert_if_absent(task).await.unwrap();
+        let inserted_again = store.insert_if_absent(&task).await.unwrap();
         assert!(!inserted_again, "duplicate insert should return false");
 
         // Task should still exist.
@@ -129,7 +129,7 @@ async fn delete_removes_task() {
 
     TenantContext::scope("acme", async {
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -155,7 +155,7 @@ async fn count_reflects_stored_tasks() {
         // Save 3 tasks.
         for i in 1..=3 {
             store
-                .save(make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+                .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -176,15 +176,15 @@ async fn list_returns_all_tasks() {
 
     TenantContext::scope("acme", async {
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx2", TaskState::Working))
+            .save(&make_task("t2", "ctx2", TaskState::Working))
             .await
             .unwrap();
         store
-            .save(make_task("t3", "ctx1", TaskState::Completed))
+            .save(&make_task("t3", "ctx1", TaskState::Completed))
             .await
             .unwrap();
 
@@ -204,15 +204,15 @@ async fn list_filters_by_context_id() {
 
     TenantContext::scope("acme", async {
         store
-            .save(make_task("t1", "ctx-a", TaskState::Submitted))
+            .save(&make_task("t1", "ctx-a", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx-b", TaskState::Submitted))
+            .save(&make_task("t2", "ctx-b", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t3", "ctx-a", TaskState::Working))
+            .save(&make_task("t3", "ctx-a", TaskState::Working))
             .await
             .unwrap();
 
@@ -237,15 +237,15 @@ async fn list_filters_by_status() {
 
     TenantContext::scope("acme", async {
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx1", TaskState::Working))
+            .save(&make_task("t2", "ctx1", TaskState::Working))
             .await
             .unwrap();
         store
-            .save(make_task("t3", "ctx1", TaskState::Working))
+            .save(&make_task("t3", "ctx1", TaskState::Working))
             .await
             .unwrap();
 
@@ -272,7 +272,7 @@ async fn list_paginates_with_page_size() {
         // Insert 5 tasks with alphabetically ordered IDs.
         for i in 1..=5 {
             store
-                .save(make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+                .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -301,7 +301,7 @@ async fn list_paginates_with_page_token() {
     TenantContext::scope("acme", async {
         for i in 1..=5 {
             store
-                .save(make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+                .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -359,7 +359,7 @@ async fn list_page_size_zero_uses_default() {
         // Insert 3 tasks.
         for i in 1..=3 {
             store
-                .save(make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
+                .save(&make_task(&format!("t{i}"), "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -385,7 +385,7 @@ async fn tenant_isolation_save_and_get() {
 
     // Tenant A saves a task.
     TenantContext::scope("tenant-a", async {
-        store.save(task).await.unwrap();
+        store.save(&task).await.unwrap();
     })
     .await;
 
@@ -414,11 +414,11 @@ async fn tenant_isolation_list() {
     // Tenant A saves 2 tasks.
     TenantContext::scope("tenant-a", async {
         store
-            .save(make_task("a1", "ctx1", TaskState::Submitted))
+            .save(&make_task("a1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("a2", "ctx1", TaskState::Working))
+            .save(&make_task("a2", "ctx1", TaskState::Working))
             .await
             .unwrap();
     })
@@ -427,7 +427,7 @@ async fn tenant_isolation_list() {
     // Tenant B saves 1 task.
     TenantContext::scope("tenant-b", async {
         store
-            .save(make_task("b1", "ctx1", TaskState::Submitted))
+            .save(&make_task("b1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
     })
@@ -462,7 +462,7 @@ async fn tenant_isolation_count() {
     TenantContext::scope("tenant-a", async {
         for i in 1..=3 {
             store
-                .save(make_task(&format!("a{i}"), "ctx1", TaskState::Submitted))
+                .save(&make_task(&format!("a{i}"), "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -473,7 +473,7 @@ async fn tenant_isolation_count() {
     // Tenant B saves 1 task.
     TenantContext::scope("tenant-b", async {
         store
-            .save(make_task("b1", "ctx1", TaskState::Submitted))
+            .save(&make_task("b1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         assert_eq!(store.count().await.unwrap(), 1);
@@ -496,7 +496,7 @@ async fn tenant_isolation_delete() {
     // Tenant A saves a task.
     TenantContext::scope("tenant-a", async {
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
     })
@@ -525,7 +525,7 @@ async fn tenant_isolation_insert_if_absent() {
     // Tenant A inserts task with id "t1".
     let inserted_a = TenantContext::scope("tenant-a", async {
         let task = make_task("t1", "ctx1", TaskState::Submitted);
-        store.insert_if_absent(task).await.unwrap()
+        store.insert_if_absent(&task).await.unwrap()
     })
     .await;
     assert!(inserted_a, "tenant-a first insert should return true");
@@ -534,7 +534,7 @@ async fn tenant_isolation_insert_if_absent() {
     // the primary key is (tenant_id, id).
     let inserted_b = TenantContext::scope("tenant-b", async {
         let task = make_task("t1", "ctx1", TaskState::Working);
-        store.insert_if_absent(task).await.unwrap()
+        store.insert_if_absent(&task).await.unwrap()
     })
     .await;
     assert!(

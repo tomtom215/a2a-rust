@@ -43,7 +43,7 @@ async fn list_with_page_size_truncates() {
     let store = InMemoryTaskStore::new();
     for i in 0..10 {
         store
-            .save(make_task(
+            .save(&make_task(
                 &format!("task-{i:02}"),
                 "ctx",
                 TaskState::Working,
@@ -75,7 +75,7 @@ async fn list_with_page_token_returns_next_page() {
     let store = InMemoryTaskStore::new();
     for i in 0..10 {
         store
-            .save(make_task(
+            .save(&make_task(
                 &format!("task-{i:02}"),
                 "ctx",
                 TaskState::Working,
@@ -114,7 +114,7 @@ async fn list_with_page_token_returns_next_page() {
 async fn list_with_invalid_page_token_returns_empty() {
     let store = InMemoryTaskStore::new();
     store
-        .save(make_task("task-1", "ctx", TaskState::Working))
+        .save(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -131,7 +131,7 @@ async fn list_last_page_has_no_next_token() {
     let store = InMemoryTaskStore::new();
     for i in 0..3 {
         store
-            .save(make_task(&format!("task-{i}"), "ctx", TaskState::Working))
+            .save(&make_task(&format!("task-{i}"), "ctx", TaskState::Working))
             .await
             .unwrap();
     }
@@ -151,15 +151,15 @@ async fn list_last_page_has_no_next_token() {
 async fn list_filters_by_context_id() {
     let store = InMemoryTaskStore::new();
     store
-        .save(make_task("task-1", "ctx-a", TaskState::Working))
+        .save(&make_task("task-1", "ctx-a", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-2", "ctx-b", TaskState::Working))
+        .save(&make_task("task-2", "ctx-b", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-3", "ctx-a", TaskState::Completed))
+        .save(&make_task("task-3", "ctx-a", TaskState::Completed))
         .await
         .unwrap();
 
@@ -178,15 +178,15 @@ async fn list_filters_by_context_id() {
 async fn list_filters_by_status() {
     let store = InMemoryTaskStore::new();
     store
-        .save(make_task("task-1", "ctx", TaskState::Working))
+        .save(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-2", "ctx", TaskState::Completed))
+        .save(&make_task("task-2", "ctx", TaskState::Completed))
         .await
         .unwrap();
     store
-        .save(make_task("task-3", "ctx", TaskState::Working))
+        .save(&make_task("task-3", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -202,15 +202,15 @@ async fn list_filters_by_status() {
 async fn list_filters_by_context_and_status() {
     let store = InMemoryTaskStore::new();
     store
-        .save(make_task("task-1", "ctx-a", TaskState::Working))
+        .save(&make_task("task-1", "ctx-a", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-2", "ctx-a", TaskState::Completed))
+        .save(&make_task("task-2", "ctx-a", TaskState::Completed))
         .await
         .unwrap();
     store
-        .save(make_task("task-3", "ctx-b", TaskState::Working))
+        .save(&make_task("task-3", "ctx-b", TaskState::Working))
         .await
         .unwrap();
 
@@ -237,21 +237,21 @@ async fn capacity_eviction_removes_oldest_terminal_tasks() {
 
     // Add 3 terminal tasks.
     store
-        .save(make_task("old-1", "ctx", TaskState::Completed))
+        .save(&make_task("old-1", "ctx", TaskState::Completed))
         .await
         .unwrap();
     store
-        .save(make_task("old-2", "ctx", TaskState::Failed))
+        .save(&make_task("old-2", "ctx", TaskState::Failed))
         .await
         .unwrap();
     store
-        .save(make_task("old-3", "ctx", TaskState::Completed))
+        .save(&make_task("old-3", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
     // Add a 4th task — should trigger eviction of oldest.
     store
-        .save(make_task("new-1", "ctx", TaskState::Working))
+        .save(&make_task("new-1", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -271,11 +271,11 @@ async fn save_updates_existing_task() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("task-1", "ctx", TaskState::Working))
+        .save(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-1", "ctx", TaskState::Completed))
+        .save(&make_task("task-1", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
@@ -290,7 +290,7 @@ async fn very_large_page_size_returns_all_tasks() {
     let store = InMemoryTaskStore::new();
     for i in 0..5 {
         store
-            .save(make_task(&format!("task-{i}"), "ctx", TaskState::Working))
+            .save(&make_task(&format!("task-{i}"), "ctx", TaskState::Working))
             .await
             .unwrap();
     }
@@ -320,7 +320,7 @@ async fn ttl_eviction_removes_terminal_tasks() {
     let store = InMemoryTaskStore::with_config(config);
 
     store
-        .save(make_task("task-old", "ctx", TaskState::Completed))
+        .save(&make_task("task-old", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
@@ -329,7 +329,7 @@ async fn ttl_eviction_removes_terminal_tasks() {
 
     // Save another task.
     store
-        .save(make_task("task-new", "ctx", TaskState::Working))
+        .save(&make_task("task-new", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -353,11 +353,11 @@ async fn count_tracks_inserts_and_deletes() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("task-1", "ctx", TaskState::Working))
+        .save(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("task-2", "ctx", TaskState::Working))
+        .save(&make_task("task-2", "ctx", TaskState::Working))
         .await
         .unwrap();
     assert_eq!(store.count().await.unwrap(), 2);
@@ -371,14 +371,14 @@ async fn count_not_affected_by_update() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("task-1", "ctx", TaskState::Working))
+        .save(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
     assert_eq!(store.count().await.unwrap(), 1);
 
     // Update same task — count should stay at 1.
     store
-        .save(make_task("task-1", "ctx", TaskState::Completed))
+        .save(&make_task("task-1", "ctx", TaskState::Completed))
         .await
         .unwrap();
     assert_eq!(store.count().await.unwrap(), 1);
@@ -392,17 +392,17 @@ async fn multi_tenant_context_isolation() {
 
     // Tenant A tasks (context "tenant-a").
     store
-        .save(make_task("a-task-1", "tenant-a", TaskState::Working))
+        .save(&make_task("a-task-1", "tenant-a", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("a-task-2", "tenant-a", TaskState::Completed))
+        .save(&make_task("a-task-2", "tenant-a", TaskState::Completed))
         .await
         .unwrap();
 
     // Tenant B tasks (context "tenant-b").
     store
-        .save(make_task("b-task-1", "tenant-b", TaskState::Working))
+        .save(&make_task("b-task-1", "tenant-b", TaskState::Working))
         .await
         .unwrap();
 
@@ -433,11 +433,11 @@ async fn multi_tenant_delete_does_not_affect_other_tenants() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("a-1", "tenant-a", TaskState::Working))
+        .save(&make_task("a-1", "tenant-a", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("b-1", "tenant-b", TaskState::Working))
+        .save(&make_task("b-1", "tenant-b", TaskState::Working))
         .await
         .unwrap();
 
@@ -458,7 +458,7 @@ async fn insert_if_absent_returns_correct_count() {
     let store = InMemoryTaskStore::new();
 
     let inserted = store
-        .insert_if_absent(make_task("task-1", "ctx", TaskState::Submitted))
+        .insert_if_absent(&make_task("task-1", "ctx", TaskState::Submitted))
         .await
         .unwrap();
     assert!(inserted);
@@ -466,7 +466,7 @@ async fn insert_if_absent_returns_correct_count() {
 
     // Try inserting same ID again.
     let inserted = store
-        .insert_if_absent(make_task("task-1", "ctx", TaskState::Working))
+        .insert_if_absent(&make_task("task-1", "ctx", TaskState::Working))
         .await
         .unwrap();
     assert!(!inserted);

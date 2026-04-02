@@ -34,7 +34,7 @@ async fn tenant_task_store_isolation() {
 
     // Tenant A saves a task
     TenantContext::scope("tenant-a", async {
-        store.save(make_task("task-1")).await.unwrap();
+        store.save(&make_task("task-1")).await.unwrap();
     })
     .await;
 
@@ -58,12 +58,12 @@ async fn tenant_task_store_same_id_different_tenants() {
     let store = TenantAwareInMemoryTaskStore::new();
 
     TenantContext::scope("alpha", async {
-        store.save(make_task("shared-id")).await.unwrap();
+        store.save(&make_task("shared-id")).await.unwrap();
     })
     .await;
 
     TenantContext::scope("beta", async {
-        store.save(make_task("shared-id")).await.unwrap();
+        store.save(&make_task("shared-id")).await.unwrap();
     })
     .await;
 
@@ -79,13 +79,13 @@ async fn tenant_task_store_list_isolation() {
     let store = TenantAwareInMemoryTaskStore::new();
 
     TenantContext::scope("t1", async {
-        store.save(make_task("t1-task-a")).await.unwrap();
-        store.save(make_task("t1-task-b")).await.unwrap();
+        store.save(&make_task("t1-task-a")).await.unwrap();
+        store.save(&make_task("t1-task-b")).await.unwrap();
     })
     .await;
 
     TenantContext::scope("t2", async {
-        store.save(make_task("t2-task-a")).await.unwrap();
+        store.save(&make_task("t2-task-a")).await.unwrap();
     })
     .await;
 
@@ -108,7 +108,7 @@ async fn tenant_task_store_delete_isolation() {
     let store = TenantAwareInMemoryTaskStore::new();
 
     TenantContext::scope("x", async {
-        store.save(make_task("task-del")).await.unwrap();
+        store.save(&make_task("task-del")).await.unwrap();
     })
     .await;
 
@@ -132,21 +132,21 @@ async fn tenant_task_store_insert_if_absent_isolation() {
 
     // Tenant A inserts
     let inserted = TenantContext::scope("a", async {
-        store.insert_if_absent(make_task("dup")).await.unwrap()
+        store.insert_if_absent(&make_task("dup")).await.unwrap()
     })
     .await;
     assert!(inserted);
 
     // Tenant B also inserts same ID — succeeds (different tenant)
     let inserted = TenantContext::scope("b", async {
-        store.insert_if_absent(make_task("dup")).await.unwrap()
+        store.insert_if_absent(&make_task("dup")).await.unwrap()
     })
     .await;
     assert!(inserted);
 
     // Tenant A tries again — fails
     let inserted = TenantContext::scope("a", async {
-        store.insert_if_absent(make_task("dup")).await.unwrap()
+        store.insert_if_absent(&make_task("dup")).await.unwrap()
     })
     .await;
     assert!(!inserted);
@@ -157,7 +157,7 @@ async fn tenant_task_store_default_tenant() {
     let store = TenantAwareInMemoryTaskStore::new();
 
     // No tenant context → default "" partition
-    store.save(make_task("no-tenant")).await.unwrap();
+    store.save(&make_task("no-tenant")).await.unwrap();
     let result = store.get(&TaskId::new("no-tenant")).await.unwrap();
     assert!(result.is_some());
 
@@ -176,11 +176,11 @@ async fn tenant_task_store_max_tenants() {
         max_tenants: 2,
     });
 
-    TenantContext::scope("t1", async { store.save(make_task("a")).await.unwrap() }).await;
-    TenantContext::scope("t2", async { store.save(make_task("b")).await.unwrap() }).await;
+    TenantContext::scope("t1", async { store.save(&make_task("a")).await.unwrap() }).await;
+    TenantContext::scope("t2", async { store.save(&make_task("b")).await.unwrap() }).await;
 
     // Third tenant exceeds limit
-    let result = TenantContext::scope("t3", async { store.save(make_task("c")).await }).await;
+    let result = TenantContext::scope("t3", async { store.save(&make_task("c")).await }).await;
     assert!(result.is_err());
 }
 
@@ -189,10 +189,10 @@ async fn tenant_task_store_tenant_count() {
     let store = TenantAwareInMemoryTaskStore::new();
     assert_eq!(store.tenant_count().await, 0);
 
-    TenantContext::scope("a", async { store.save(make_task("1")).await.unwrap() }).await;
+    TenantContext::scope("a", async { store.save(&make_task("1")).await.unwrap() }).await;
     assert_eq!(store.tenant_count().await, 1);
 
-    TenantContext::scope("b", async { store.save(make_task("2")).await.unwrap() }).await;
+    TenantContext::scope("b", async { store.save(&make_task("2")).await.unwrap() }).await;
     assert_eq!(store.tenant_count().await, 2);
 }
 
@@ -201,7 +201,7 @@ async fn tenant_task_store_prune_empty() {
     let store = TenantAwareInMemoryTaskStore::new();
 
     TenantContext::scope("prune-me", async {
-        store.save(make_task("t1")).await.unwrap();
+        store.save(&make_task("t1")).await.unwrap();
         store.delete(&TaskId::new("t1")).await.unwrap();
     })
     .await;

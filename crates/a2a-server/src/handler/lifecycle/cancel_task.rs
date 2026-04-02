@@ -92,7 +92,7 @@ impl RequestHandler {
 
             let mut updated = current;
             updated.status = TaskStatus::with_timestamp(TaskState::Canceled);
-            self.task_store.save(updated).await?;
+            self.task_store.save(&updated).await?;
             // Re-read to return the authoritative final state.
             let final_task = self
                 .task_store
@@ -179,7 +179,7 @@ mod tests {
     async fn cancel_task_terminal_state_returns_not_cancelable() {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let task = make_completed_task("t-cancel-terminal");
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = CancelTaskParams {
             tenant: None,
@@ -199,7 +199,7 @@ mod tests {
             .build()
             .unwrap();
         let task = make_submitted_task("t-cancel-active");
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = CancelTaskParams {
             tenant: None,

@@ -67,7 +67,7 @@ impl Default for TenantStoreConfig {
 ///         artifacts: None,
 ///         metadata: None,
 ///     };
-///     store.save(task).await.unwrap();
+///     store.save(&task).await.unwrap();
 /// }).await;
 ///
 /// // Tenant B cannot see tenant A's task
@@ -187,7 +187,10 @@ impl TenantAwareInMemoryTaskStore {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareInMemoryTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let store = self.get_store().await?;
             store.save(task).await
@@ -220,7 +223,7 @@ impl TaskStore for TenantAwareInMemoryTaskStore {
 
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let store = self.get_store().await?;
@@ -314,7 +317,7 @@ mod tests {
         // Tenant A saves a task.
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -344,11 +347,11 @@ mod tests {
 
         TenantContext::scope("alpha", async {
             store
-                .save(make_task("a1", TaskState::Submitted))
+                .save(&make_task("a1", TaskState::Submitted))
                 .await
                 .unwrap();
             store
-                .save(make_task("a2", TaskState::Working))
+                .save(&make_task("a2", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -356,7 +359,7 @@ mod tests {
 
         TenantContext::scope("beta", async {
             store
-                .save(make_task("b1", TaskState::Submitted))
+                .save(&make_task("b1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -387,7 +390,7 @@ mod tests {
 
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -416,7 +419,7 @@ mod tests {
         // Same task ID in different tenants should both succeed.
         let inserted_a = TenantContext::scope("tenant-a", async {
             store
-                .insert_if_absent(make_task("shared-id", TaskState::Submitted))
+                .insert_if_absent(&make_task("shared-id", TaskState::Submitted))
                 .await
                 .unwrap()
         })
@@ -425,7 +428,7 @@ mod tests {
 
         let inserted_b = TenantContext::scope("tenant-b", async {
             store
-                .insert_if_absent(make_task("shared-id", TaskState::Working))
+                .insert_if_absent(&make_task("shared-id", TaskState::Working))
                 .await
                 .unwrap()
         })
@@ -442,11 +445,11 @@ mod tests {
 
         TenantContext::scope("x", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
             store
-                .save(make_task("t2", TaskState::Submitted))
+                .save(&make_task("t2", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -454,7 +457,7 @@ mod tests {
 
         TenantContext::scope("y", async {
             store
-                .save(make_task("t3", TaskState::Submitted))
+                .save(&make_task("t3", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -476,7 +479,7 @@ mod tests {
 
         TenantContext::scope("a", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -485,7 +488,7 @@ mod tests {
 
         TenantContext::scope("b", async {
             store
-                .save(make_task("t2", TaskState::Submitted))
+                .save(&make_task("t2", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -504,14 +507,14 @@ mod tests {
         // Fill up to the limit.
         TenantContext::scope("t1", async {
             store
-                .save(make_task("task-a", TaskState::Submitted))
+                .save(&make_task("task-a", TaskState::Submitted))
                 .await
                 .unwrap();
         })
         .await;
         TenantContext::scope("t2", async {
             store
-                .save(make_task("task-b", TaskState::Submitted))
+                .save(&make_task("task-b", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -519,7 +522,7 @@ mod tests {
 
         // Third tenant should be rejected.
         let result = TenantContext::scope("t3", async {
-            store.save(make_task("task-c", TaskState::Submitted)).await
+            store.save(&make_task("task-c", TaskState::Submitted)).await
         })
         .await;
         assert!(
@@ -538,12 +541,12 @@ mod tests {
 
         TenantContext::scope("only", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
             // Second save to existing tenant should work fine.
             store
-                .save(make_task("t2", TaskState::Working))
+                .save(&make_task("t2", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -561,7 +564,7 @@ mod tests {
 
         // No TenantContext::scope — should use "" as tenant.
         store
-            .save(make_task("default-task", TaskState::Submitted))
+            .save(&make_task("default-task", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -590,14 +593,14 @@ mod tests {
 
         TenantContext::scope("keep", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
         .await;
         TenantContext::scope("remove", async {
             store
-                .save(make_task("t2", TaskState::Submitted))
+                .save(&make_task("t2", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -640,14 +643,14 @@ mod tests {
         // Populate two tenants
         TenantContext::scope("t1", async {
             store
-                .save(make_task("task-a", TaskState::Completed))
+                .save(&make_task("task-a", TaskState::Completed))
                 .await
                 .unwrap();
         })
         .await;
         TenantContext::scope("t2", async {
             store
-                .save(make_task("task-b", TaskState::Working))
+                .save(&make_task("task-b", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -667,12 +670,12 @@ mod tests {
         // First access creates the store for this tenant.
         TenantContext::scope("racer", async {
             store
-                .save(make_task("t1", TaskState::Submitted))
+                .save(&make_task("t1", TaskState::Submitted))
                 .await
                 .unwrap();
             // Second access should use the existing store (fast path).
             store
-                .save(make_task("t2", TaskState::Working))
+                .save(&make_task("t2", TaskState::Working))
                 .await
                 .unwrap();
 

@@ -359,8 +359,7 @@ fn bench_artifact_accumulation(c: &mut Criterion) {
             &task,
             |b, task| {
                 b.iter(|| {
-                    rt.block_on(store.save(criterion::black_box(task.clone())))
-                        .unwrap();
+                    rt.block_on(store.save(criterion::black_box(task))).unwrap();
                 });
             },
         );
@@ -390,7 +389,7 @@ fn bench_pagination_walk(c: &mut Criterion) {
             } else {
                 task.context_id = ContextId::new("ctx-odd");
             }
-            rt.block_on(store.save(task)).unwrap();
+            rt.block_on(store.save(&task)).unwrap();
         }
 
         let n_pages = n_tasks.div_ceil(page_size as usize);

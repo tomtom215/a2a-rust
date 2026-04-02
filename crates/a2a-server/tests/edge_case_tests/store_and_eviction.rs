@@ -31,7 +31,7 @@ async fn task_store_eviction_on_write() {
             artifacts: None,
             metadata: None,
         };
-        a2a_protocol_server::TaskStore::save(&store, task)
+        a2a_protocol_server::TaskStore::save(&store, &task)
             .await
             .unwrap();
     }
@@ -85,7 +85,7 @@ async fn task_store_background_eviction() {
         artifacts: None,
         metadata: None,
     };
-    a2a_protocol_server::TaskStore::save(&store, task)
+    a2a_protocol_server::TaskStore::save(&store, &task)
         .await
         .unwrap();
 

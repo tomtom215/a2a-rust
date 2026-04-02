@@ -8,7 +8,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] — Unreleased
+
+### Breaking Changes
+
+- **`TaskStore::save()` and `TaskStore::insert_if_absent()` now accept `&Task`
+  instead of owned `Task`** — This eliminates forced `.clone()` at every call
+  site. Store implementations that need ownership (e.g., `InMemoryTaskStore`)
+  clone internally; database-backed stores (`SqliteTaskStore`,
+  `PostgresTaskStore`) borrow fields directly and never clone.
+
+  **Migration guide:**
+  ```rust
+  // Before (0.4.x):
+  store.save(task.clone()).await?;
+  store.insert_if_absent(task).await?;
+
+  // After (0.5.0):
+  store.save(&task).await?;
+  store.insert_if_absent(&task).await?;
+  ```
+
+  Custom `TaskStore` implementations must update their method signatures:
+  ```rust
+  // Before:
+  fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+  // After:
+  fn save<'a>(&'a self, task: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+  ```
+
+- **Version bump: 0.4.1 → 0.5.0** — All four crates (`a2a-protocol-types`,
+  `a2a-protocol-client`, `a2a-protocol-server`, `a2a-protocol-sdk`) are bumped
+  to 0.5.0 to signal the breaking `TaskStore` trait change.
 
 ### Performance
 

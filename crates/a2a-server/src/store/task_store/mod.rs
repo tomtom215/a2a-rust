@@ -47,7 +47,7 @@ pub use in_memory::InMemoryTaskStore;
 /// struct NullStore;
 ///
 /// impl TaskStore for NullStore {
-///     fn save<'a>(&'a self, _task: Task)
+///     fn save<'a>(&'a self, _task: &'a Task)
 ///         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>
 ///     {
 ///         Box::pin(async { Ok(()) })
@@ -65,7 +65,7 @@ pub use in_memory::InMemoryTaskStore;
 ///         Box::pin(async { Ok(TaskListResponse::new(vec![])) })
 ///     }
 ///
-///     fn insert_if_absent<'a>(&'a self, _task: Task)
+///     fn insert_if_absent<'a>(&'a self, _task: &'a Task)
 ///         -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>
 ///     {
 ///         Box::pin(async { Ok(true) })
@@ -84,7 +84,10 @@ pub trait TaskStore: Send + Sync + 'static {
     /// # Errors
     ///
     /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
     /// Retrieves a task by its ID, returning `None` if not found.
     ///
@@ -116,7 +119,7 @@ pub trait TaskStore: Send + Sync + 'static {
     /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
 
     /// Deletes a task by its ID.
@@ -154,7 +157,7 @@ mod tests {
     impl TaskStore for MinimalStore {
         fn save<'a>(
             &'a self,
-            _task: Task,
+            _task: &'a Task,
         ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
             Box::pin(async { Ok(()) })
         }
@@ -175,7 +178,7 @@ mod tests {
 
         fn insert_if_absent<'a>(
             &'a self,
-            _task: Task,
+            _task: &'a Task,
         ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
             Box::pin(async { Ok(true) })
         }
@@ -243,7 +246,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        store.save(task.clone()).await.expect("save should succeed");
+        store.save(&task).await.expect("save should succeed");
         // MinimalStore is a no-op store, so get should return None.
         assert!(
             store.get(&TaskId::new("test")).await.unwrap().is_none(),
@@ -255,7 +258,7 @@ mod tests {
             "MinimalStore list should return empty"
         );
         assert!(
-            store.insert_if_absent(task).await.unwrap(),
+            store.insert_if_absent(&task).await.unwrap(),
             "insert_if_absent should return true"
         );
         store

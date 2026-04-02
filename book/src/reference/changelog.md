@@ -36,7 +36,16 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
-## Unreleased (v0.4.2)
+## Unreleased (v0.5.0)
+
+### Breaking Changes
+
+- **`TaskStore::save()` and `insert_if_absent()` now take `&Task` instead of
+  owned `Task`** — Eliminates forced clones at every save call site. Custom
+  `TaskStore` implementations must update their method signatures. See
+  [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md)
+  for migration guide.
+- **Version bump: 0.4.1 → 0.5.0** across all four crates.
 
 ### Performance
 

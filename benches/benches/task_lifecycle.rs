@@ -65,7 +65,7 @@ fn bench_store_save(c: &mut Criterion) {
         // by changing HashMap distribution across iterations.
         let task = fixtures::completed_task(0);
         b.iter(|| {
-            rt.block_on(store.save(black_box(task.clone()))).unwrap();
+            rt.block_on(store.save(black_box(&task))).unwrap();
         });
     });
 
@@ -80,7 +80,7 @@ fn bench_store_get(c: &mut Criterion) {
 
     // Pre-populate
     for i in 0..1000 {
-        rt.block_on(store.save(fixtures::completed_task(i)))
+        rt.block_on(store.save(&fixtures::completed_task(i)))
             .unwrap();
     }
 
@@ -112,7 +112,7 @@ fn bench_store_list(c: &mut Criterion) {
         } else {
             task.context_id = ContextId::new("ctx-odd");
         }
-        rt.block_on(store.save(task)).unwrap();
+        rt.block_on(store.save(&task)).unwrap();
     }
 
     let mut group = c.benchmark_group("lifecycle/store/list");

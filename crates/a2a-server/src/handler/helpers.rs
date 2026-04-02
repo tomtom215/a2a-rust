@@ -272,13 +272,13 @@ mod tests {
             // Save a terminal task first (sorts first alphabetically: "aaa-...")
             handler
                 .task_store
-                .save(make_task("aaa-completed", "ctx-1", TaskState::Completed))
+                .save(&make_task("aaa-completed", "ctx-1", TaskState::Completed))
                 .await
                 .unwrap();
             // Save a non-terminal task (sorts after: "bbb-...")
             handler
                 .task_store
-                .save(make_task("bbb-working", "ctx-1", TaskState::Working))
+                .save(&make_task("bbb-working", "ctx-1", TaskState::Working))
                 .await
                 .unwrap();
 
@@ -300,7 +300,7 @@ mod tests {
 
             handler
                 .task_store
-                .save(make_task("task-done", "ctx-2", TaskState::Completed))
+                .save(&make_task("task-done", "ctx-2", TaskState::Completed))
                 .await
                 .unwrap();
 
@@ -318,17 +318,17 @@ mod tests {
 
             handler
                 .task_store
-                .save(make_task("aaa-failed", "ctx-3", TaskState::Failed))
+                .save(&make_task("aaa-failed", "ctx-3", TaskState::Failed))
                 .await
                 .unwrap();
             handler
                 .task_store
-                .save(make_task("bbb-submitted", "ctx-3", TaskState::Submitted))
+                .save(&make_task("bbb-submitted", "ctx-3", TaskState::Submitted))
                 .await
                 .unwrap();
             handler
                 .task_store
-                .save(make_task("ccc-working", "ctx-3", TaskState::Working))
+                .save(&make_task("ccc-working", "ctx-3", TaskState::Working))
                 .await
                 .unwrap();
 
