@@ -147,6 +147,12 @@ printf "**Last updated:** %s  \n" "$TIMESTAMP" >> "$OUTPUT_FILE"
 printf "**Rust version:** %s  \n" "$(rustc --version 2>/dev/null || echo 'unknown')" >> "$OUTPUT_FILE"
 printf "**Platform:** %s  \n\n" "$(uname -s)-$(uname -m)" >> "$OUTPUT_FILE"
 
+cat >> "$OUTPUT_FILE" <<'DASH_LINK'
+> **Interactive dashboard**: See the [Benchmark Dashboard](dashboard.md) for
+> charts, visual comparisons, and drill-down analysis of these results.
+
+DASH_LINK
+
 # ── Transport Throughput ──────────────────────────────────────────────────
 
 cat >> "$OUTPUT_FILE" <<'SECTION'

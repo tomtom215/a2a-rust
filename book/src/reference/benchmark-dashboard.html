@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- a2a-rust benchmark dashboard — generated at build time -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>a2a-rust Benchmark Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0c0c0e;--surface:#141417;--border:#232329;--cyan:#00e5cc;--amber:#f5a623;
+--green:#00d68f;--rose:#ff6b8a;--violet:#b18cfe;--blue:#5b9cf6;--text:#eaeaed;
+--text-sec:#9898a4;--text-muted:#56565f;--radius:8px}
+body{font-family:'Space Grotesk',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+.mono{font-family:'JetBrains Mono',monospace}
+a{color:var(--cyan)}
+/* Layout */
+.wrap{max-width:1280px;margin:0 auto;padding:0 1rem}
+header{padding:1.5rem 0;border-bottom:1px solid var(--border)}
+header h1{font-size:1.5rem;font-weight:700;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+.badge{font-size:.75rem;padding:2px 8px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--text-sec)}
+.subtitle{color:var(--text-sec);font-size:.85rem;margin-top:.25rem}
+/* Tabs */
+.tabs{display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--border);margin:1rem 0;-webkit-overflow-scrolling:touch}
+.tabs button{background:none;border:none;color:var(--text-sec);padding:.6rem 1rem;font:inherit;font-size:.85rem;cursor:pointer;
+  white-space:nowrap;border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.tabs button:hover,.tabs button:focus-visible{color:var(--text)}
+.tabs button[aria-selected="true"]{color:var(--cyan);border-bottom-color:var(--cyan)}
+.tabs button:focus-visible{outline:2px solid var(--cyan);outline-offset:-2px;border-radius:4px 4px 0 0}
+.tab-panel{display:none;padding:1rem 0}
+.tab-panel.active{display:block}
+/* Grid */
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.grid-wide{grid-template-columns:repeat(auto-fill,minmax(360px,1fr))}
+/* Cards & Metrics */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:1rem;overflow:hidden}
+.card h3{font-size:.8rem;color:var(--text-sec);text-transform:uppercase;letter-spacing:.04em;margin-bottom:.75rem}
+.metric{text-align:center;padding:.75rem .5rem}
+.metric .value{font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:600}
+.metric .label{font-size:.75rem;color:var(--text-sec);margin-top:.25rem}
+.metric-sm .value{font-size:1.1rem}
+.chart-wrap{position:relative;width:100%;aspect-ratio:16/10}
+/* Footer */
+footer{border-top:1px solid var(--border);padding:1.5rem 0;margin-top:2rem;color:var(--text-muted);font-size:.75rem;text-align:center}
+/* Responsive */
+@media(max-width:640px){
+  .grid,.grid-wide{grid-template-columns:1fr}
+  header h1{font-size:1.2rem}
+  .metric .value{font-size:1.3rem}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>a2a-rust Benchmarks <span class="badge" id="hdr-version"></span> <span class="badge" id="hdr-count"></span></h1>
+    <p class="subtitle" id="hdr-meta"></p>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Benchmark categories" id="tablist"></nav>
+  <main id="panels"></main>
+  <footer>Benchmarks collected with Criterion.rs on isolated runners. Lower is better unless noted. Methodology: each measurement is the median of 100+ iterations after warm-up.</footer>
+</div>
+<script>
+"use strict";
+const D = {
+  "metadata": {
+    "timestamp": "2026-04-02 01:01 UTC",
+    "rust_version": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+    "platform": "Linux-x86_64",
+    "total_benchmarks": 55,
+    "total_categories": 4
+  },
+  "highlights": {
+    "serde_floor_ns": 0,
+    "roundtrip_reused_ms": 0.0,
+    "roundtrip_new_ms": 0.0,
+    "concurrent_64_sends_ms": 0.0,
+    "concurrent_1_send_ms": 0.0,
+    "error_path_ms": 0.0,
+    "happy_path_ms": 0.0,
+    "agent_burst_100_ms": 0.0,
+    "agent_burst_10_ms": 0.0
+  },
+  "transport": {
+    "jsonrpc_send_ms": 0.0,
+    "jsonrpc_stream_ms": 0.0,
+    "rest_send_ms": 0.0,
+    "rest_stream_ms": 0.0,
+    "payload_scaling": [
+      {
+        "size": "64B",
+        "ms": 0.0
+      },
+      {
+        "size": "256B",
+        "ms": 0.0
+      },
+      {
+        "size": "1KB",
+        "ms": 0.0
+      },
+      {
+        "size": "4KB",
+        "ms": 0.0
+      },
+      {
+        "size": "16KB",
+        "ms": 0.0
+      },
+      {
+        "size": "100KB",
+        "ms": 0.0
+      },
+      {
+        "size": "1MB",
+        "ms": 0.0
+      }
+    ]
+  },
+  "connection_reuse": {
+    "reused_ms": 0.0,
+    "new_per_request_ms": 0.0
+  },
+  "concurrency": [
+    {
+      "c": 1,
+      "sends": 0.0,
+      "streams": 0.0,
+      "store": 0.0
+    },
+    {
+      "c": 4,
+      "sends": 0.0,
+      "streams": 0.0,
+      "store": 0.0
+    },
+    {
+      "c": 16,
+      "sends": 0.0,
+      "streams": 0.0,
+      "store": 0.0
+    },
+    {
+      "c": 64,
+      "sends": 0.0,
+      "streams": 0.0,
+      "store": 0.0
+    }
+  ],
+  "serde": {
+    "types": [
+      {
+        "type": "AgentCard ser",
+        "ns": 0
+      },
+      {
+        "type": "AgentCard de",
+        "ns": 0
+      },
+      {
+        "type": "Task ser",
+        "ns": 0
+      },
+      {
+        "type": "Task de",
+        "ns": 0
+      },
+      {
+        "type": "Message ser",
+        "ns": 0
+      },
+      {
+        "type": "Message de",
+        "ns": 0
+      },
+      {
+        "type": "status_update ser",
+        "ns": 0
+      },
+      {
+        "type": "status_update de",
+        "ns": 0
+      },
+      {
+        "type": "artifact_update ser",
+        "ns": 0
+      },
+      {
+        "type": "artifact_update de",
+        "ns": 0
+      },
+      {
+        "type": "request envelope ser",
+        "ns": 0
+      },
+      {
+        "type": "request envelope de",
+        "ns": 0
+      },
+      {
+        "type": "response envelope ser",
+        "ns": 0
+      },
+      {
+        "type": "response envelope de",
+        "ns": 0
+      }
+    ],
+    "batch": [
+      {
+        "count": 1,
+        "ser_us": 0.0,
+        "de_us": 0.0
+      },
+      {
+        "count": 10,
+        "ser_us": 0.0,
+        "de_us": 0.0
+      },
+      {
+        "count": 50,
+        "ser_us": 0.0,
+        "de_us": 0.0
+      },
+      {
+        "count": 100,
+        "ser_us": 0.0,
+        "de_us": 0.0
+      }
+    ],
+    "interceptors": [
+      {
+        "n": 0,
+        "us": 0.0
+      },
+      {
+        "n": 1,
+        "us": 0.0
+      },
+      {
+        "n": 5,
+        "us": 0.0
+      },
+      {
+        "n": 10,
+        "us": 0.0
+      }
+    ],
+    "payload_scaling": [
+      {
+        "size": "64B",
+        "to_vec_ns": 157,
+        "ser_buffer_ns": 108,
+        "from_slice_ns": 322,
+        "from_str_ns": 238
+      },
+      {
+        "size": "256B",
+        "to_vec_ns": 247,
+        "ser_buffer_ns": 184,
+        "from_slice_ns": 348,
+        "from_str_ns": 252
+      },
+      {
+        "size": "1KB",
+        "to_vec_ns": 565,
+        "ser_buffer_ns": 492,
+        "from_slice_ns": 491,
+        "from_str_ns": 374
+      },
+      {
+        "size": "4KB",
+        "to_vec_ns": 1616,
+        "ser_buffer_ns": 1598,
+        "from_slice_ns": 1095,
+        "from_str_ns": 855
+      },
+      {
+        "size": "16KB",
+        "to_vec_ns": 6168,
+        "ser_buffer_ns": 6071,
+        "from_slice_ns": 3280,
+        "from_str_ns": 2476
+      },
+      {
+        "size": "100KB",
+        "to_vec_ns": 38302,
+        "ser_buffer_ns": 40366,
+        "from_slice_ns": 20207,
+        "from_str_ns": 15490
+      },
+      {
+        "size": "1MB",
+        "to_vec_ns": 408521,
+        "ser_buffer_ns": 470700,
+        "from_slice_ns": 210944,
+        "from_str_ns": 158193
+      }
+    ]
+  },
+  "backpressure": {
+    "stream_volume": [
+      {
+        "events": "3",
+        "ms": 2.27
+      },
+      {
+        "events": "7",
+        "ms": 2.37
+      },
+      {
+        "events": "27",
+        "ms": 2.47
+      },
+      {
+        "events": "52",
+        "ms": 2.79
+      },
+      {
+        "events": "252",
+        "ms": 21.54
+      },
+      {
+        "events": "502",
+        "ms": 103.74
+      }
+    ],
+    "slow_consumer": {
+      "fast_ms": 0.0,
+      "delay_1ms_ms": 0.0,
+      "delay_5ms_ms": 0.0
+    },
+    "concurrent_streams": [
+      {
+        "streams": 1,
+        "ms": 0.0
+      },
+      {
+        "streams": 4,
+        "ms": 0.0
+      },
+      {
+        "streams": 16,
+        "ms": 0.0
+      }
+    ],
+    "timer_cal": {
+      "sleep_1ms_actual_ms": 0.0,
+      "sleep_5ms_actual_ms": 0.0
+    }
+  },
+  "data_volume": {
+    "get": [
+      {
+        "volume": "1K",
+        "ns": 514
+      },
+      {
+        "volume": "10K",
+        "ns": 524
+      },
+      {
+        "volume": "100K",
+        "ns": 317
+      }
+    ],
+    "list": [
+      {
+        "volume": "1K",
+        "us": 0.0
+      },
+      {
+        "volume": "10K",
+        "us": 0.0
+      },
+      {
+        "volume": "100K",
+        "us": 0.0
+      }
+    ],
+    "save": [
+      {
+        "prefill": "0",
+        "us": 2.7
+      },
+      {
+        "prefill": "1K",
+        "us": 2.3
+      },
+      {
+        "prefill": "10K",
+        "us": 2.3
+      },
+      {
+        "prefill": "50K",
+        "us": 2.3
+      }
+    ],
+    "history_depth": [
+      {
+        "turns": 1,
+        "us": 2.2
+      },
+      {
+        "turns": 5,
+        "us": 3.8
+      },
+      {
+        "turns": 10,
+        "us": 7.6
+      },
+      {
+        "turns": 20,
+        "us": 13.1
+      },
+      {
+        "turns": 50,
+        "us": 29.9
+      }
+    ]
+  },
+  "memory": {
+    "alloc_counts": {
+      "task_ser": 0,
+      "task_de": 0,
+      "agent_card_ser": 0,
+      "agent_card_de": 0
+    },
+    "bytes_per_payload": [
+      {
+        "payload": "64B",
+        "bytes": 180
+      },
+      {
+        "payload": "256B",
+        "bytes": 361
+      },
+      {
+        "payload": "1KB",
+        "bytes": 1014
+      },
+      {
+        "payload": "4KB",
+        "bytes": 3281
+      },
+      {
+        "payload": "16KB",
+        "bytes": 12311
+      }
+    ],
+    "history_allocs": [
+      {
+        "turns": 1,
+        "ser": 0,
+        "de": 0
+      },
+      {
+        "turns": 5,
+        "ser": 0,
+        "de": 0
+      },
+      {
+        "turns": 10,
+        "ser": 0,
+        "de": 0
+      },
+      {
+        "turns": 20,
+        "ser": 0,
+        "de": 0
+      },
+      {
+        "turns": 50,
+        "ser": 0,
+        "de": 0
+      }
+    ]
+  },
+  "cross_language": {
+    "echo_roundtrip_ms": 0.0,
+    "stream_events_ms": 0.0,
+    "serialize_ns": 0,
+    "concurrent_50_ms": 0.0,
+    "minimal_overhead_ms": 0.0
+  },
+  "enterprise": {
+    "tenant_isolation": [
+      {
+        "tenants": 1,
+        "ns": 0
+      },
+      {
+        "tenants": 10,
+        "ns": 0
+      },
+      {
+        "tenants": 50,
+        "ns": 0
+      },
+      {
+        "tenants": 100,
+        "ns": 0
+      }
+    ],
+    "rw_mix": [
+      {
+        "mix": "100R/0W",
+        "us": 0.0
+      },
+      {
+        "mix": "75R/25W",
+        "us": 0.0
+      },
+      {
+        "mix": "50R/50W",
+        "us": 0.0
+      },
+      {
+        "mix": "25R/75W",
+        "us": 0.0
+      },
+      {
+        "mix": "0R/100W",
+        "us": 0.0
+      }
+    ],
+    "cors_preflight_us": 0.0,
+    "cancel_task_ms": 0.0,
+    "rate_limit_ms": 0.0,
+    "no_rate_limit_ms": 0.0,
+    "metadata_rejection_us": 0.0,
+    "eviction": [
+      {
+        "size": "100",
+        "save_ns": 0,
+        "sweep_ns": 0
+      },
+      {
+        "size": "1K",
+        "save_ns": 0,
+        "sweep_ns": 0
+      },
+      {
+        "size": "10K",
+        "save_ns": 0,
+        "sweep_ns": 0
+      }
+    ],
+    "large_history": [
+      {
+        "turns": 100,
+        "ser_us": 0.0,
+        "de_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "turns": 200,
+        "ser_us": 0.0,
+        "de_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "turns": 500,
+        "ser_us": 0.0,
+        "de_us": 0.0,
+        "save_us": 0.0
+      }
+    ]
+  },
+  "production": {
+    "agent_burst": [
+      {
+        "agents": 10,
+        "ms": 0.0
+      },
+      {
+        "agents": 50,
+        "ms": 0.0
+      },
+      {
+        "agents": 100,
+        "ms": 0.0
+      }
+    ],
+    "orchestration_7step_ms": 0.0,
+    "subscribe_reconnect_ms": 0.0,
+    "cold_start_us": 0.0,
+    "steady_state_ms": 0.0,
+    "cancel_subscribe_race_us": 0.0,
+    "dispatch_direct_ms": 0.0,
+    "dispatch_http_ms": 0.0,
+    "push_config": {
+      "set_us": 0.0,
+      "get_us": 0.0,
+      "list_us": 0.0,
+      "delete_us": 0.0
+    }
+  },
+  "advanced": {
+    "tenant_resolvers": [
+      {
+        "resolver": "header miss",
+        "ns": 0
+      },
+      {
+        "resolver": "bearer",
+        "ns": 0
+      },
+      {
+        "resolver": "header",
+        "ns": 0
+      },
+      {
+        "resolver": "bearer+map",
+        "ns": 0
+      },
+      {
+        "resolver": "path",
+        "ns": 0
+      }
+    ],
+    "agent_card_hot_reload": {
+      "read_ns": 0,
+      "swap_read_ns": 0,
+      "swap_complex_us": 0.0
+    },
+    "discovery_us": 0.0,
+    "extended_card_us": 0.0,
+    "subscribe_fanout": [
+      {
+        "subscribers": 1,
+        "ms": 0.0
+      },
+      {
+        "subscribers": 5,
+        "ms": 0.0
+      },
+      {
+        "subscribers": 10,
+        "ms": 0.0
+      }
+    ],
+    "artifact_accumulation": [
+      {
+        "depth": 0,
+        "clone_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "depth": 10,
+        "clone_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "depth": 50,
+        "clone_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "depth": 100,
+        "clone_us": 0.0,
+        "save_us": 0.0
+      },
+      {
+        "depth": 500,
+        "clone_us": 0.0,
+        "save_us": 0.0
+      }
+    ],
+    "pagination_walk": [
+      {
+        "config": "100 unfiltered",
+        "us": 0.0
+      },
+      {
+        "config": "100 filtered",
+        "us": 0.0
+      },
+      {
+        "config": "1K unfiltered",
+        "us": 0.0
+      },
+      {
+        "config": "1K filtered",
+        "us": 0.0
+      }
+    ]
+  },
+  "errors": {
+    "happy_path_ms": 0.0,
+    "error_path_ms": 0.0,
+    "invalid_json_us": 0.0,
+    "wrong_content_type_us": 0.0,
+    "task_not_found_us": 0.0
+  },
+  "lifecycle": {
+    "send_complete_ms": 0.0,
+    "stream_drain_ms": 0.0,
+    "store_save_ns": 0,
+    "store_get_ns": 0,
+    "store_list_us": 0.0,
+    "queue_write_read": [
+      {
+        "n": 1,
+        "us": 0.0
+      },
+      {
+        "n": 10,
+        "us": 0.0
+      },
+      {
+        "n": 50,
+        "us": 0.0
+      },
+      {
+        "n": 100,
+        "us": 0.0
+      }
+    ]
+  },
+  "all_benchmarks": [
+    {
+      "name": "backpressure_stream_volume/252_events",
+      "median_ns": 21541715.222222224,
+      "ci_lower_ns": 20831246.888888888,
+      "ci_upper_ns": 22257718.777777776,
+      "human": "21.54 ms"
+    },
+    {
+      "name": "backpressure_stream_volume/27_events",
+      "median_ns": 2469005.9778008694,
+      "ci_lower_ns": 2438940.154784483,
+      "ci_upper_ns": 2520736.8945454545,
+      "human": "2.47 ms"
+    },
+    {
+      "name": "backpressure_stream_volume/3_events",
+      "median_ns": 2271694.7891812865,
+      "ci_lower_ns": 2254820.6481481483,
+      "ci_upper_ns": 2305053.718639263,
+      "human": "2.27 ms"
+    },
+    {
+      "name": "backpressure_stream_volume/502_events",
+      "median_ns": 103742550.33333333,
+      "ci_lower_ns": 100921649.33333333,
+      "ci_upper_ns": 107848158.33333333,
+      "human": "103.74 ms"
+    },
+    {
+      "name": "backpressure_stream_volume/52_events",
+      "median_ns": 2787320.196153846,
+      "ci_lower_ns": 2734989.2363636363,
+      "ci_upper_ns": 2815424.888888889,
+      "human": "2.79 ms"
+    },
+    {
+      "name": "backpressure_stream_volume/7_events",
+      "median_ns": 2367581.678004535,
+      "ci_lower_ns": 2327402.0625,
+      "ci_upper_ns": 2399745.3571428573,
+      "human": "2.37 ms"
+    },
+    {
+      "name": "data_volume_concurrent_reads/get/1",
+      "median_ns": 45282.24728686386,
+      "ci_lower_ns": 44937.454545454544,
+      "ci_upper_ns": 45831.569106618015,
+      "human": "45.3 µs"
+    },
+    {
+      "name": "data_volume_concurrent_reads/get/16",
+      "median_ns": 86628.33619424883,
+      "ci_lower_ns": 85679.29166666667,
+      "ci_upper_ns": 87753.42361111111,
+      "human": "86.6 µs"
+    },
+    {
+      "name": "data_volume_concurrent_reads/get/4",
+      "median_ns": 39718.01561057217,
+      "ci_lower_ns": 39226.37702177372,
+      "ci_upper_ns": 39997.11002218935,
+      "human": "39.7 µs"
+    },
+    {
+      "name": "data_volume_concurrent_reads/get/64",
+      "median_ns": 135793.26820054947,
+      "ci_lower_ns": 134857.16964285713,
+      "ci_upper_ns": 136552.83881578947,
+      "human": "135.8 µs"
+    },
+    {
+      "name": "data_volume_get/lookup/1000",
+      "median_ns": 514.3802512120765,
+      "ci_lower_ns": 512.7532437090658,
+      "ci_upper_ns": 517.4169408667857,
+      "human": "514 ns"
+    },
+    {
+      "name": "data_volume_get/lookup/10000",
+      "median_ns": 524.1359575355157,
+      "ci_lower_ns": 520.4764468196038,
+      "ci_upper_ns": 528.9324274417796,
+      "human": "524 ns"
+    },
+    {
+      "name": "data_volume_get/lookup/100000",
+      "median_ns": 317.85350714513265,
+      "ci_lower_ns": 315.83632598685165,
+      "ci_upper_ns": 319.89864245922183,
+      "human": "318 ns"
+    },
+    {
+      "name": "data_volume_history_depth/save_with_turns/1",
+      "median_ns": 2183.2569987010106,
+      "ci_lower_ns": 2057.8537315612675,
+      "ci_upper_ns": 2203.390088170997,
+      "human": "2.2 µs"
+    },
+    {
+      "name": "data_volume_history_depth/save_with_turns/10",
+      "median_ns": 7618.141420907175,
+      "ci_lower_ns": 7585.61191070834,
+      "ci_upper_ns": 7659.717444717445,
+      "human": "7.6 µs"
+    },
+    {
+      "name": "data_volume_history_depth/save_with_turns/20",
+      "median_ns": 13140.990398350456,
+      "ci_lower_ns": 12744.305608206374,
+      "ci_upper_ns": 13426.92417500927,
+      "human": "13.1 µs"
+    },
+    {
+      "name": "data_volume_history_depth/save_with_turns/5",
+      "median_ns": 3839.7491142392037,
+      "ci_lower_ns": 3800.449713800963,
+      "ci_upper_ns": 3856.3893008474574,
+      "human": "3.8 µs"
+    },
+    {
+      "name": "data_volume_history_depth/save_with_turns/50",
+      "median_ns": 29857.5130407031,
+      "ci_lower_ns": 27317.87532627866,
+      "ci_upper_ns": 30660.978622878334,
+      "human": "29.9 µs"
+    },
+    {
+      "name": "data_volume_save/after_prefill/0",
+      "median_ns": 2710.4418110109664,
+      "ci_lower_ns": 2661.8743464936,
+      "ci_upper_ns": 2758.3895936105237,
+      "human": "2.7 µs"
+    },
+    {
+      "name": "data_volume_save/after_prefill/1000",
+      "median_ns": 2295.0957063661285,
+      "ci_lower_ns": 2277.7040511727078,
+      "ci_upper_ns": 2342.3014479839608,
+      "human": "2.3 µs"
+    },
+    {
+      "name": "data_volume_save/after_prefill/10000",
+      "median_ns": 2328.6534514925374,
+      "ci_lower_ns": 2300.850546311505,
+      "ci_upper_ns": 2359.539054726368,
+      "human": "2.3 µs"
+    },
+    {
+      "name": "data_volume_save/after_prefill/50000",
+      "median_ns": 2314.3057633855506,
+      "ci_lower_ns": 2294.2120645312134,
+      "ci_upper_ns": 2330.9069982949068,
+      "human": "2.3 µs"
+    },
+    {
+      "name": "memory_bytes_per_payload/serialize_bytes/1024",
+      "median_ns": 1014.2275460924784,
+      "ci_lower_ns": 1012.563133640553,
+      "ci_upper_ns": 1018.5440222282054,
+      "human": "1.0 µs"
+    },
+    {
+      "name": "memory_bytes_per_payload/serialize_bytes/16384",
+      "median_ns": 12311.72723953262,
+      "ci_lower_ns": 12269.0156366344,
+      "ci_upper_ns": 12369.566349025743,
+      "human": "12.3 µs"
+    },
+    {
+      "name": "memory_bytes_per_payload/serialize_bytes/256",
+      "median_ns": 361.0179898343991,
+      "ci_lower_ns": 359.9101988976755,
+      "ci_upper_ns": 361.99399626168224,
+      "human": "361 ns"
+    },
+    {
+      "name": "memory_bytes_per_payload/serialize_bytes/4096",
+      "median_ns": 3281.113917525773,
+      "ci_lower_ns": 3272.7123,
+      "ci_upper_ns": 3291.2336111111113,
+      "human": "3.3 µs"
+    },
+    {
+      "name": "memory_bytes_per_payload/serialize_bytes/64",
+      "median_ns": 180.37242722212082,
+      "ci_lower_ns": 179.42079548485827,
+      "ci_upper_ns": 181.44531584736603,
+      "human": "180 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/1024",
+      "median_ns": 491.1060413004561,
+      "ci_lower_ns": 488.65133859909804,
+      "ci_upper_ns": 494.354337665418,
+      "human": "491 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/102400",
+      "median_ns": 20207.60602836879,
+      "ci_lower_ns": 20071.77640801001,
+      "ci_upper_ns": 20429.66767830588,
+      "human": "20.2 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/1048576",
+      "median_ns": 210944.73555555556,
+      "ci_lower_ns": 209191.1063736264,
+      "ci_upper_ns": 212273.9358490566,
+      "human": "210.9 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/16384",
+      "median_ns": 3280.1349112474413,
+      "ci_lower_ns": 3267.211926910299,
+      "ci_upper_ns": 3297.052670835776,
+      "human": "3.3 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/256",
+      "median_ns": 348.73457499168865,
+      "ci_lower_ns": 347.3560899688288,
+      "ci_upper_ns": 350.04179007146155,
+      "human": "349 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/4096",
+      "median_ns": 1095.7302927927926,
+      "ci_lower_ns": 1091.5684523809523,
+      "ci_upper_ns": 1100.9172726836832,
+      "human": "1.1 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_slice/64",
+      "median_ns": 322.8142112178698,
+      "ci_lower_ns": 321.24354388159264,
+      "ci_upper_ns": 325.4437491065396,
+      "human": "323 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/1024",
+      "median_ns": 374.9711324421691,
+      "ci_lower_ns": 373.73765783227293,
+      "ci_upper_ns": 378.0406305867057,
+      "human": "375 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/102400",
+      "median_ns": 15490.997118628187,
+      "ci_lower_ns": 15438.925139925374,
+      "ci_upper_ns": 15538.074084051725,
+      "human": "15.5 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/1048576",
+      "median_ns": 158193.92015995586,
+      "ci_lower_ns": 157287.18181818182,
+      "ci_upper_ns": 159049.9571969697,
+      "human": "158.2 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/16384",
+      "median_ns": 2476.3465357556324,
+      "ci_lower_ns": 2463.8454677302393,
+      "ci_upper_ns": 2492.167782938408,
+      "human": "2.5 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/256",
+      "median_ns": 252.97713208956168,
+      "ci_lower_ns": 251.26435344624238,
+      "ci_upper_ns": 255.22103658536585,
+      "human": "253 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/4096",
+      "median_ns": 855.1251053503593,
+      "ci_lower_ns": 848.136302274366,
+      "ci_upper_ns": 860.9798603651988,
+      "human": "855 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/from_str/64",
+      "median_ns": 238.57596477769255,
+      "ci_lower_ns": 237.35317539876704,
+      "ci_upper_ns": 239.3494405431132,
+      "human": "239 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/1024",
+      "median_ns": 492.31731483676276,
+      "ci_lower_ns": 489.1833241045143,
+      "ci_upper_ns": 494.4247359919297,
+      "human": "492 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/102400",
+      "median_ns": 40366.805,
+      "ci_lower_ns": 40209.96891891892,
+      "ci_upper_ns": 40595.26712643678,
+      "human": "40.4 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/1048576",
+      "median_ns": 470700.81990581646,
+      "ci_lower_ns": 468247.18055555556,
+      "ci_upper_ns": 473362.90338164254,
+      "human": "470.7 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/16384",
+      "median_ns": 6071.6548876857305,
+      "ci_lower_ns": 6042.302666845349,
+      "ci_upper_ns": 6110.634211906635,
+      "human": "6.1 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/256",
+      "median_ns": 184.99678639214895,
+      "ci_lower_ns": 184.0014476291558,
+      "ci_upper_ns": 186.45198253330784,
+      "human": "185 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/4096",
+      "median_ns": 1598.945757070604,
+      "ci_lower_ns": 1594.71157631061,
+      "ci_upper_ns": 1606.2298958230635,
+      "human": "1.6 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/ser_buffer/64",
+      "median_ns": 108.25045398948309,
+      "ci_lower_ns": 107.9542123084812,
+      "ci_upper_ns": 108.88107859501383,
+      "human": "108 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/1024",
+      "median_ns": 565.139022620572,
+      "ci_lower_ns": 561.4542848200313,
+      "ci_upper_ns": 566.2518309859155,
+      "human": "565 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/102400",
+      "median_ns": 38302.321342383104,
+      "ci_lower_ns": 38130.63028422195,
+      "ci_upper_ns": 38438.53576248313,
+      "human": "38.3 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/1048576",
+      "median_ns": 408521.665497076,
+      "ci_lower_ns": 405429.84567901236,
+      "ci_upper_ns": 411609.4,
+      "human": "408.5 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/16384",
+      "median_ns": 6168.979909591275,
+      "ci_lower_ns": 6151.444866385373,
+      "ci_upper_ns": 6209.186238548706,
+      "human": "6.2 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/256",
+      "median_ns": 247.36826388786534,
+      "ci_lower_ns": 245.9912431837614,
+      "ci_upper_ns": 248.23339635391753,
+      "human": "247 ns"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/4096",
+      "median_ns": 1616.018064731621,
+      "ci_lower_ns": 1609.2037643207855,
+      "ci_upper_ns": 1621.4196866962825,
+      "human": "1.6 µs"
+    },
+    {
+      "name": "protocol_payload_scaling/to_vec/64",
+      "median_ns": 157.07039592762408,
+      "ci_lower_ns": 155.52614557500283,
+      "ci_upper_ns": 157.74974724497017,
+      "human": "157 ns"
+    }
+  ]
+};
+const DASH = "\u2014";
+const COLORS = {cyan:"#00e5cc",amber:"#f5a623",green:"#00d68f",rose:"#ff6b8a",violet:"#b18cfe",blue:"#5b9cf6"};
+const COLOR_LIST = [COLORS.cyan,COLORS.amber,COLORS.green,COLORS.rose,COLORS.violet,COLORS.blue];
+
+/* --- Helpers --- */
+function safe(fn,fallback){try{const v=fn();return v!=null&&v!==0?v:fallback}catch{return fallback}}
+function $(s,p){return(p||document).querySelector(s)}
+function el(tag,cls,html){const e=document.createElement(tag);if(cls)e.className=cls;if(html)e.innerHTML=html;return e}
+function fmt(v,unit){if(v==null||v===DASH)return DASH;const n=Number(v);if(isNaN(n))return DASH;return n<1?n.toFixed(3)+unit:n<100?n.toFixed(2)+unit:n.toFixed(1)+unit}
+
+function metricBox(label,value,unit,color){
+  const d=el("div","metric");
+  d.innerHTML=`<div class="value mono" style="color:${color||COLORS.cyan}">${fmt(value,unit||"")}</div><div class="label">${label}</div>`;
+  return d;
+}
+function card(title){const c=el("div","card");if(title){const h=el("h3","",title);c.appendChild(h)}return c}
+function chartCard(title){const c=card(title);const w=el("div","chart-wrap");const cv=document.createElement("canvas");w.appendChild(cv);c.appendChild(w);return{card:c,canvas:cv}}
+
+/* --- Chart helpers --- */
+Chart.defaults.color="#9898a4";Chart.defaults.borderColor="#232329";
+Chart.defaults.font.family="'Space Grotesk',system-ui,sans-serif";Chart.defaults.font.size=11;
+Chart.defaults.plugins.legend.labels.boxWidth=12;Chart.defaults.plugins.legend.labels.padding=12;
+Chart.defaults.scale = Chart.defaults.scale || {};
+
+function barChart(canvas,labels,datasets,opts){
+  return new Chart(canvas,{type:"bar",data:{labels,datasets:datasets.map((ds,i)=>({
+    label:ds.label,data:ds.data,backgroundColor:ds.color||COLOR_LIST[i%COLOR_LIST.length],
+    borderRadius:3,maxBarThickness:40,...(ds.extra||{})
+  }))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:datasets.length>1}},
+    scales:{y:{beginAtZero:true,title:{display:!!(opts&&opts.yLabel),text:(opts&&opts.yLabel)||""},grid:{color:"#232329"}},
+      x:{grid:{display:false}}},...(opts||{})}});
+}
+function lineChart(canvas,labels,datasets,opts){
+  return new Chart(canvas,{type:"line",data:{labels,datasets:datasets.map((ds,i)=>({
+    label:ds.label,data:ds.data,borderColor:ds.color||COLOR_LIST[i%COLOR_LIST.length],
+    backgroundColor:"transparent",tension:.3,pointRadius:3,borderWidth:2,...(ds.extra||{})
+  }))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:datasets.length>1}},
+    scales:{y:{beginAtZero:true,title:{display:!!(opts&&opts.yLabel),text:(opts&&opts.yLabel)||""},grid:{color:"#232329"}},
+      x:{grid:{display:false}}},...(opts||{})}});
+}
+
+/* --- Tabs --- */
+const TABS=[
+  {id:"overview",label:"Overview"},
+  {id:"transport",label:"Transport & Concurrency"},
+  {id:"serde",label:"Serde & Protocol"},
+  {id:"scale",label:"Data Volume"},
+  {id:"enterprise",label:"Enterprise"},
+  {id:"production",label:"Production"},
+  {id:"memory",label:"Memory"}
+];
+function initTabs(){
+  const tl=$("#tablist"),pn=$("#panels");
+  TABS.forEach((t,i)=>{
+    const btn=el("button","",t.label);
+    btn.setAttribute("role","tab");btn.setAttribute("aria-selected",i===0?"true":"false");
+    btn.setAttribute("aria-controls","panel-"+t.id);btn.id="tab-"+t.id;btn.tabIndex=i===0?0:-1;
+    btn.addEventListener("click",()=>activate(t.id));
+    tl.appendChild(btn);
+    const panel=el("div","tab-panel"+(i===0?" active":""));
+    panel.id="panel-"+t.id;panel.setAttribute("role","tabpanel");
+    panel.setAttribute("aria-labelledby","tab-"+t.id);
+    if(i!==0)panel.setAttribute("hidden","");
+    pn.appendChild(panel);
+  });
+  tl.addEventListener("keydown",e=>{
+    const keys=["ArrowLeft","ArrowRight","Home","End"];if(!keys.includes(e.key))return;
+    e.preventDefault();const btns=[...tl.querySelectorAll("[role=tab]")];
+    let idx=btns.findIndex(b=>b.getAttribute("aria-selected")==="true");
+    if(e.key==="ArrowRight")idx=(idx+1)%btns.length;
+    else if(e.key==="ArrowLeft")idx=(idx-1+btns.length)%btns.length;
+    else if(e.key==="Home")idx=0;else idx=btns.length-1;
+    activate(TABS[idx].id);btns[idx].focus();
+  });
+}
+function activate(id){
+  document.querySelectorAll("[role=tab]").forEach(b=>{b.setAttribute("aria-selected","false");b.tabIndex=-1});
+  document.querySelectorAll(".tab-panel").forEach(p=>{p.classList.remove("active");p.setAttribute("hidden","")});
+  const tab=$("#tab-"+id);tab.setAttribute("aria-selected","true");tab.tabIndex=0;
+  const panel=$("#panel-"+id);panel.classList.add("active");panel.removeAttribute("hidden");
+}
+
+/* --- Tab Builders --- */
+function buildOverview(p){
+  const h=D.highlights||{},m=D.metadata||{},err=D.errors||{},lc=D.lifecycle||{},cl=D.cross_language||{};
+  const g=el("div","grid");
+  g.appendChild(metricBox("Serde floor",safe(()=>h.serde_floor_ns),"ns",COLORS.cyan));
+  g.appendChild(metricBox("Roundtrip (reused)",safe(()=>h.roundtrip_reused_ms),"ms",COLORS.green));
+  g.appendChild(metricBox("64-conn sends",safe(()=>h.concurrent_64_sends_ms),"ms",COLORS.amber));
+  g.appendChild(metricBox("Single send",safe(()=>h.concurrent_1_send_ms),"ms",COLORS.blue));
+  g.appendChild(metricBox("Happy path",safe(()=>err.happy_path_ms||h.happy_path_ms),"ms",COLORS.green));
+  g.appendChild(metricBox("Error path",safe(()=>err.error_path_ms||h.error_path_ms),"ms",COLORS.rose));
+  g.appendChild(metricBox("Agent burst (100)",safe(()=>h.agent_burst_100_ms),"ms",COLORS.violet));
+  g.appendChild(metricBox("Send complete",safe(()=>lc.send_complete_ms),"ms",COLORS.cyan));
+  g.appendChild(metricBox("Stream drain",safe(()=>lc.stream_drain_ms),"ms",COLORS.amber));
+  g.appendChild(metricBox("Echo roundtrip",safe(()=>cl.echo_roundtrip_ms),"ms",COLORS.green));
+  p.appendChild(g);
+  // payload scaling overview chart
+  const ps=safe(()=>D.transport.payload_scaling,[]);
+  if(ps.length){const{card:c,canvas:cv}=chartCard("Payload Scaling (transport)");
+    lineChart(cv,ps.map(r=>r.size),[{label:"ms",data:ps.map(r=>r.ms),color:COLORS.cyan}],{yLabel:"ms"});
+    const w=el("div","grid-wide");w.style.marginTop="1rem";w.appendChild(c);p.appendChild(w)}
+}
+
+function buildTransport(p){
+  const t=D.transport||{},cr=D.connection_reuse||{},con=D.concurrency||[];
+  // Transport latencies
+  const g=el("div","grid");
+  g.appendChild(metricBox("JSON-RPC send",safe(()=>t.jsonrpc_send_ms),"ms",COLORS.cyan));
+  g.appendChild(metricBox("JSON-RPC stream",safe(()=>t.jsonrpc_stream_ms),"ms",COLORS.green));
+  g.appendChild(metricBox("REST send",safe(()=>t.rest_send_ms),"ms",COLORS.amber));
+  g.appendChild(metricBox("REST stream",safe(()=>t.rest_stream_ms),"ms",COLORS.rose));
+  g.appendChild(metricBox("Conn reused",safe(()=>cr.reused_ms),"ms",COLORS.green));
+  g.appendChild(metricBox("Conn new/req",safe(()=>cr.new_per_request_ms),"ms",COLORS.rose));
+  p.appendChild(g);
+  // Concurrency chart
+  if(con.length){
+    const{card:c,canvas:cv}=chartCard("Concurrency Scaling");
+    barChart(cv,con.map(r=>r.c+"c"),[
+      {label:"Sends",data:con.map(r=>r.sends),color:COLORS.cyan},
+      {label:"Streams",data:con.map(r=>r.streams),color:COLORS.amber},
+      {label:"Store",data:con.map(r=>r.store),color:COLORS.violet}
+    ],{yLabel:"ms"});
+    const w=el("div","grid-wide");w.style.marginTop="1rem";w.appendChild(c);p.appendChild(w);
+  }
+}
+
+function buildSerde(p){
+  const s=D.serde||{};
+  // Type-level serde
+  const types=safe(()=>s.types,[]);
+  if(types.length){const{card:c,canvas:cv}=chartCard("Serde by Type (ns)");
+    barChart(cv,types.map(r=>r.type),[{label:"ns",data:types.map(r=>r.ns),color:COLORS.cyan}],{yLabel:"ns"});
+    p.appendChild(c);c.style.marginBottom="1rem";}
+  // Batch
+  const batch=safe(()=>s.batch,[]);
+  if(batch.length){const{card:c,canvas:cv}=chartCard("Batch Serde");
+    barChart(cv,batch.map(r=>"n="+r.count),[
+      {label:"Serialize (us)",data:batch.map(r=>r.ser_us),color:COLORS.green},
+      {label:"Deserialize (us)",data:batch.map(r=>r.de_us),color:COLORS.rose}
+    ],{yLabel:"\u00b5s"});p.appendChild(c);c.style.marginBottom="1rem";}
+  // Interceptors
+  const ic=safe(()=>s.interceptors,[]);
+  if(ic.length){const{card:c,canvas:cv}=chartCard("Interceptor Chain");
+    lineChart(cv,ic.map(r=>r.n),[{label:"\u00b5s",data:ic.map(r=>r.us),color:COLORS.violet}],{yLabel:"\u00b5s"});
+    p.appendChild(c);c.style.marginBottom="1rem";}
+  // Payload scaling
+  const ps=safe(()=>s.payload_scaling,[]);
+  if(ps.length){const{card:c,canvas:cv}=chartCard("Payload Serde Scaling");
+    lineChart(cv,ps.map(r=>r.size),[
+      {label:"to_vec (ns)",data:ps.map(r=>r.to_vec_ns),color:COLORS.cyan},
+      {label:"ser_buffer (ns)",data:ps.map(r=>r.ser_buffer_ns),color:COLORS.green},
+      {label:"from_slice (ns)",data:ps.map(r=>r.from_slice_ns),color:COLORS.amber},
+      {label:"from_str (ns)",data:ps.map(r=>r.from_str_ns),color:COLORS.rose}
+    ],{yLabel:"ns"});p.appendChild(c);}
+}
+
+function buildScale(p){
+  const dv=D.data_volume||{},bp=D.backpressure||{};
+  const g=el("div","grid-wide");
+  // Get
+  const gd=safe(()=>dv.get,[]);
+  if(gd.length){const{card:c,canvas:cv}=chartCard("Get by Volume");
+    barChart(cv,gd.map(r=>r.volume),[{label:"ns",data:gd.map(r=>r.ns),color:COLORS.cyan}],{yLabel:"ns"});g.appendChild(c);}
+  // List
+  const ld=safe(()=>dv.list,[]);
+  if(ld.length){const{card:c,canvas:cv}=chartCard("List by Volume");
+    barChart(cv,ld.map(r=>r.volume),[{label:"\u00b5s",data:ld.map(r=>r.us),color:COLORS.amber}],{yLabel:"\u00b5s"});g.appendChild(c);}
+  // Save
+  const sd=safe(()=>dv.save,[]);
+  if(sd.length){const{card:c,canvas:cv}=chartCard("Save (prefill)");
+    barChart(cv,sd.map(r=>r.prefill),[{label:"\u00b5s",data:sd.map(r=>r.us),color:COLORS.green}],{yLabel:"\u00b5s"});g.appendChild(c);}
+  // History depth
+  const hd=safe(()=>dv.history_depth,[]);
+  if(hd.length){const{card:c,canvas:cv}=chartCard("History Depth");
+    lineChart(cv,hd.map(r=>r.turns),[{label:"\u00b5s",data:hd.map(r=>r.us),color:COLORS.violet}],{yLabel:"\u00b5s"});g.appendChild(c);}
+  p.appendChild(g);
+  // Backpressure stream volume
+  const sv=safe(()=>bp.stream_volume,[]);
+  if(sv.length){const{card:c,canvas:cv}=chartCard("Stream Volume (backpressure)");
+    lineChart(cv,sv.map(r=>r.events),[{label:"ms",data:sv.map(r=>r.ms),color:COLORS.rose}],{yLabel:"ms"});
+    c.style.marginTop="1rem";p.appendChild(c);}
+}
+
+function buildEnterprise(p){
+  const e=D.enterprise||{},adv=D.advanced||{};
+  const g=el("div","grid");
+  g.appendChild(metricBox("CORS preflight",safe(()=>e.cors_preflight_us),"\u00b5s",COLORS.cyan));
+  p.appendChild(g);
+  const gw=el("div","grid-wide");gw.style.marginTop="1rem";
+  // Tenant isolation
+  const ti=safe(()=>e.tenant_isolation,[]);
+  if(ti.length){const{card:c,canvas:cv}=chartCard("Tenant Isolation");
+    barChart(cv,ti.map(r=>r.tenants+"t"),[{label:"ns",data:ti.map(r=>r.ns),color:COLORS.cyan}],{yLabel:"ns"});gw.appendChild(c);}
+  // R/W mix
+  const rw=safe(()=>e.rw_mix,[]);
+  if(rw.length){const{card:c,canvas:cv}=chartCard("Read/Write Mix");
+    barChart(cv,rw.map(r=>r.mix),[{label:"\u00b5s",data:rw.map(r=>r.us),color:COLORS.amber}],{yLabel:"\u00b5s"});gw.appendChild(c);}
+  // Tenant resolvers
+  const tr=safe(()=>adv.tenant_resolvers,[]);
+  if(tr.length){const{card:c,canvas:cv}=chartCard("Tenant Resolvers");
+    barChart(cv,tr.map(r=>r.resolver),[{label:"ns",data:tr.map(r=>r.ns),color:COLORS.green}],{yLabel:"ns"});gw.appendChild(c);}
+  // Artifact accumulation
+  const aa=safe(()=>adv.artifact_accumulation,[]);
+  if(aa.length){const{card:c,canvas:cv}=chartCard("Artifact Accumulation");
+    lineChart(cv,aa.map(r=>"d="+r.depth),[
+      {label:"clone (\u00b5s)",data:aa.map(r=>r.clone_us),color:COLORS.rose},
+      {label:"save (\u00b5s)",data:aa.map(r=>r.save_us),color:COLORS.violet}
+    ],{yLabel:"\u00b5s"});gw.appendChild(c);}
+  // Subscribe fanout
+  const sf=safe(()=>adv.subscribe_fanout,[]);
+  if(sf.length){const{card:c,canvas:cv}=chartCard("Subscribe Fanout");
+    lineChart(cv,sf.map(r=>r.subscribers),[{label:"ms",data:sf.map(r=>r.ms),color:COLORS.blue}],{yLabel:"ms"});gw.appendChild(c);}
+  p.appendChild(gw);
+}
+
+function buildProduction(p){
+  const pr=D.production||{},adv=D.advanced||{};
+  const g=el("div","grid");
+  g.appendChild(metricBox("Orchestration (7-step)",safe(()=>pr.orchestration_7step_ms),"ms",COLORS.cyan));
+  g.appendChild(metricBox("Cold start",safe(()=>pr.cold_start_us),"\u00b5s",COLORS.amber));
+  g.appendChild(metricBox("Steady state",safe(()=>pr.steady_state_ms),"ms",COLORS.green));
+  p.appendChild(g);
+  const gw=el("div","grid-wide");gw.style.marginTop="1rem";
+  // Agent burst
+  const ab=safe(()=>pr.agent_burst,[]);
+  if(ab.length){const{card:c,canvas:cv}=chartCard("Agent Burst Scaling");
+    lineChart(cv,ab.map(r=>r.agents),[{label:"ms",data:ab.map(r=>r.ms),color:COLORS.cyan}],{yLabel:"ms"});gw.appendChild(c);}
+  // Pagination walk
+  const pw=safe(()=>adv.pagination_walk,[]);
+  if(pw.length){const{card:c,canvas:cv}=chartCard("Pagination Walk");
+    barChart(cv,pw.map(r=>r.config),[{label:"\u00b5s",data:pw.map(r=>r.us),color:COLORS.violet}],{yLabel:"\u00b5s"});gw.appendChild(c);}
+  p.appendChild(gw);
+}
+
+function buildMemory(p){
+  const mem=D.memory||{};
+  const ac=safe(()=>mem.alloc_counts,{});
+  const g=el("div","grid");
+  g.appendChild(metricBox("Task ser allocs",safe(()=>ac.task_ser),"",COLORS.cyan));
+  g.appendChild(metricBox("Task de allocs",safe(()=>ac.task_de),"",COLORS.amber));
+  g.appendChild(metricBox("AgentCard ser",safe(()=>ac.agent_card_ser),"",COLORS.green));
+  g.appendChild(metricBox("AgentCard de",safe(()=>ac.agent_card_de),"",COLORS.rose));
+  p.appendChild(g);
+  const gw=el("div","grid-wide");gw.style.marginTop="1rem";
+  // Bytes per payload
+  const bp=safe(()=>mem.bytes_per_payload,[]);
+  if(bp.length){const{card:c,canvas:cv}=chartCard("Bytes per Payload");
+    barChart(cv,bp.map(r=>r.payload),[{label:"bytes",data:bp.map(r=>r.bytes),color:COLORS.violet}],{yLabel:"bytes"});gw.appendChild(c);}
+  // History allocs
+  const ha=safe(()=>mem.history_allocs,[]);
+  if(ha.length){const{card:c,canvas:cv}=chartCard("History Allocations");
+    lineChart(cv,ha.map(r=>r.turns),[
+      {label:"ser",data:ha.map(r=>r.ser),color:COLORS.cyan},
+      {label:"de",data:ha.map(r=>r.de),color:COLORS.rose}
+    ],{yLabel:"allocs"});gw.appendChild(c);}
+  p.appendChild(gw);
+}
+
+/* --- Init --- */
+const builders={overview:buildOverview,transport:buildTransport,serde:buildSerde,
+  scale:buildScale,enterprise:buildEnterprise,production:buildProduction,memory:buildMemory};
+
+function init(){
+  try{
+    const m=D.metadata||{};
+    const hv=$("#hdr-version");if(hv)hv.textContent=safe(()=>m.rust_version,"");
+    const hc=$("#hdr-count");if(hc)hc.textContent=safe(()=>m.total_benchmarks+" benchmarks","");
+    const hm=$("#hdr-meta");if(hm)hm.textContent=[safe(()=>m.platform,""),safe(()=>m.timestamp,"")].filter(Boolean).join(" \u00b7 ");
+    initTabs();
+    TABS.forEach(t=>{const panel=$("#panel-"+t.id);if(panel&&builders[t.id])builders[t.id](panel)});
+  }catch(err){
+    document.body.innerHTML=`<div style="padding:2rem;color:#ff6b8a;font-family:monospace"><h2>Dashboard Error</h2><pre>${err.stack||err}</pre></div>`;
+  }
+}
+if(typeof D==="object")init();
+else document.body.innerHTML='<p style="padding:2rem;color:var(--text-sec)">No benchmark data loaded. Build with: <code>cargo bench --features dashboard</code></p>';
+</script>
+</body>
+</html>
