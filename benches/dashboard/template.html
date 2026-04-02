@@ -127,14 +127,15 @@ function hbarChart(cv,labels,datasets,opts){
       y:{grid:{display:false},ticks:{font:{size:9}}}}}});}
 
 function lineChart(cv,labels,datasets,opts){
+  var yScale={beginAtZero:true,title:{display:!!(opts&&opts.yLabel),text:(opts&&opts.yLabel)||"",font:{size:10}},
+    grid:{color:"#1e1e24"},ticks:{font:{size:9}}};
+  if(opts&&opts.log){yScale.type="logarithmic";delete yScale.beginAtZero;yScale.ticks.callback=function(v){if(v>=1e6)return(v/1e6).toFixed(0)+"M";if(v>=1e3)return(v/1e3).toFixed(0)+"K";return v};}
   return new Chart(cv,{type:"line",data:{labels,datasets:datasets.map(function(ds,i){return{
     label:ds.label,data:ds.data,borderColor:ds.color||CL[i%CL.length],
     backgroundColor:"transparent",tension:.3,pointRadius:2,borderWidth:1.5}})},
     options:{responsive:true,maintainAspectRatio:false,
     plugins:{legend:{display:datasets.length>1,labels:{font:{size:10}}}},
-    scales:{y:{beginAtZero:true,title:{display:!!(opts&&opts.yLabel),text:(opts&&opts.yLabel)||"",font:{size:10}},
-      grid:{color:"#1e1e24"},ticks:{font:{size:9}}},
-      x:{grid:{display:false},ticks:{font:{size:9}}}}}});}
+    scales:{y:yScale,x:{grid:{display:false},ticks:{font:{size:9}}}}}});}
 
 const TABS=[
   {id:"overview",label:"Overview"},
@@ -276,7 +277,7 @@ function buildSerde(p){
       {label:"ser_buffer (ns)",data:ps.map(function(x){return x.ser_buffer_ns}),color:C.green},
       {label:"from_slice (ns)",data:ps.map(function(x){return x.from_slice_ns}),color:C.amber},
       {label:"from_str (ns)",data:ps.map(function(x){return x.from_str_ns}),color:C.rose}
-    ],{yLabel:"ns"});
+    ],{yLabel:"ns (log scale)",log:true});
     var w=el("div","grid-full");w.style.marginTop=".75rem";w.appendChild(r4.card);p.appendChild(w);
   }
 }
@@ -289,14 +290,19 @@ function buildConcurrency(p){
   p.appendChild(g);
 
   if(con.length){
-    var gw=el("div","grid-full");gw.style.marginTop=".75rem";
-    var r=chartCard("Concurrency Scaling","chart-wrap-sm");
+    var gw=el("div","grid-wide");gw.style.marginTop=".75rem";
+    var r=chartCard("Concurrency: Transport (sends + streams)","chart-wrap-sm");
     barChart(r.canvas,con.map(function(x){return x.c+"c"}),[
       {label:"Sends (ms)",data:con.map(function(x){return x.sends}),color:C.cyan},
-      {label:"Streams (ms)",data:con.map(function(x){return x.streams}),color:C.amber},
-      {label:"Store (ms)",data:con.map(function(x){return x.store}),color:C.violet}
+      {label:"Streams (ms)",data:con.map(function(x){return x.streams}),color:C.amber}
     ],{yLabel:"ms"});
-    gw.appendChild(r.card);p.appendChild(gw);
+    gw.appendChild(r.card);
+    var r2=chartCard("Concurrency: Store (save + get)","chart-wrap-sm");
+    barChart(r2.canvas,con.map(function(x){return x.c+"c"}),[
+      {label:"Store (\u00b5s)",data:con.map(function(x){return x.store*1000}),color:C.violet}
+    ],{yLabel:"\u00b5s"});
+    gw.appendChild(r2.card);
+    p.appendChild(gw);
   }
 }
 
@@ -381,7 +387,7 @@ function buildEnterprise(p){
   var ti=safe(function(){return e.tenant_isolation},[]);
   if(ti.length){
     var r=chartCard("Multi-Tenant Isolation","chart-wrap-sm");
-    barChart(r.canvas,ti.map(function(x){return x.tenants+" tenants"}),[{label:"ns",data:ti.map(function(x){return x.ns}),color:C.cyan}],{yLabel:"ns"});
+    barChart(r.canvas,ti.map(function(x){return x.tenants+" tenants"}),[{label:"\u00b5s",data:ti.map(function(x){return x.ns/1000}),color:C.cyan}],{yLabel:"\u00b5s"});
     gw.appendChild(r.card);
   }
   var rw=safe(function(){return e.rw_mix},[]);
@@ -509,13 +515,13 @@ function buildMemory(p){
   var gw=el("div","grid-wide");gw.style.marginTop=".75rem";
   var bp=safe(function(){return mem.bytes_per_payload},[]);
   if(bp.length){
-    var r=chartCard("Serialized Bytes per Payload Size","chart-wrap-sm");
-    barChart(r.canvas,bp.map(function(x){return x.payload}),[{label:"ns (timing)",data:bp.map(function(x){return x.bytes}),color:C.violet}],{yLabel:"ns"});
+    var r=chartCard("Serialize Timing by Payload Size","chart-wrap-sm");
+    barChart(r.canvas,bp.map(function(x){return x.payload}),[{label:"ns",data:bp.map(function(x){return x.bytes}),color:C.violet}],{yLabel:"ns"});
     gw.appendChild(r.card);
   }
   var ha=safe(function(){return mem.history_allocs},[]);
   if(ha.length){
-    var r2=chartCard("History Allocation Scaling","chart-wrap-sm");
+    var r2=chartCard("History Serde Timing by Depth","chart-wrap-sm");
     lineChart(r2.canvas,ha.map(function(x){return x.turns+" turns"}),[
       {label:"Serialize (ns)",data:ha.map(function(x){return x.ser}),color:C.cyan},
       {label:"Deserialize (ns)",data:ha.map(function(x){return x.de}),color:C.rose}
