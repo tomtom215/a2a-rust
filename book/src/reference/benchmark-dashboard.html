@@ -2978,6 +2978,7 @@ function buildProduction(p){
   g.appendChild(metricBox("Cancel/subscribe race",safe(function(){return pr.cancel_subscribe_race_us}),"\u00b5s",C.violet));
   g.appendChild(metricBox("Dispatch direct",safe(function(){return pr.dispatch_direct_ms}),"ms",C.blue));
   g.appendChild(metricBox("Dispatch HTTP",safe(function(){return pr.dispatch_http_ms}),"ms",C.teal));
+  g.appendChild(metricBox("Serialize (cross-lang)",safe(function(){return cl.serialize_ns}),"ns",C.slate));
   p.appendChild(g);
 
   var pc=safe(function(){return pr.push_config},{});
@@ -2998,10 +2999,10 @@ function buildProduction(p){
     gw.appendChild(r.card);
   }
   if(cl.echo_roundtrip_ms||cl.serialize_ns){
-    var r2=chartCard("Cross-Language Baselines","chart-wrap-sm");
-    var clLabels=["Echo RT","Stream","Serialize","Concurrent 50","Minimal"];
+    var r2=chartCard("Cross-Language Baselines (Rust)","chart-wrap-sm");
+    var clLabels=["Echo RT","Stream","Concurrent 50","Minimal"];
     var clData=[safe(function(){return cl.echo_roundtrip_ms},0),safe(function(){return cl.stream_events_ms},0),
-      safe(function(){return cl.serialize_ns/1e6},0),safe(function(){return cl.concurrent_50_ms},0),
+      safe(function(){return cl.concurrent_50_ms},0),
       safe(function(){return cl.minimal_overhead_ms},0)];
     barChart(r2.canvas,clLabels,[{label:"ms",data:clData,color:C.green}],{yLabel:"ms"});
     gw.appendChild(r2.card);
