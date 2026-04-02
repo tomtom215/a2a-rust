@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deserialization (~15-25% fewer allocations).
 - **SSE frame building uses thread-local reusable buffer** — Amortized 0
   allocations per event vs previous 1 allocation per event.
-- **237 benchmarks, zero panics, zero errors** — Cleanest benchmark run in
+- **267 benchmarks, zero panics, zero errors** — Cleanest benchmark run in
   project history. All 13 benchmark suites (transport, protocol, lifecycle,
   concurrency, cross-language, realistic, error paths, backpressure, data
   volume, memory, enterprise, production, advanced) pass with zero failures.
@@ -94,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for 5 additional benchmark groups based on CI analysis: `transport/payload_scaling`
   (8s→10s), `concurrent/sends` (18s→30s), `realistic/payload_complexity` (10s→15s),
   `realistic/connection` (10s→15s), `enterprise/client_interceptors` (8s→10s).
-  All 237 benchmarks now complete within their budget on CI runners.
+  All 267 benchmarks now complete within their budget on CI runners.
 - **Push config benchmark per-task limit** — `production/push_config/set_roundtrip`
   and `delete_roundtrip` now upsert a pre-created config instead of creating new
   configs each iteration, preventing `push config limit exceeded` panics during

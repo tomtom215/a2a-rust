@@ -374,7 +374,7 @@ returns `true` for terminal states.
 
 ## Performance Benchmarks
 
-The `benches/` directory contains **237 Criterion.rs benchmarks** across 13 suites
+The `benches/` directory contains **267 Criterion.rs benchmarks** across 13 suites
 measuring SDK overhead independently of agent logic:
 
 | Suite | Coverage |

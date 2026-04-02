@@ -8,7 +8,7 @@ The `TaskStore` trait defines how tasks are persisted:
 
 ```rust
 pub trait TaskStore: Send + Sync + 'static {
-    fn save<'a>(&'a self, task: Task)
+    fn save<'a>(&'a self, task: &'a Task)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
 
     fn get<'a>(&'a self, id: &'a TaskId)
@@ -17,7 +17,7 @@ pub trait TaskStore: Send + Sync + 'static {
     fn list<'a>(&'a self, params: &'a ListTasksParams)
         -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>>;
 
-    fn insert_if_absent<'a>(&'a self, task: Task)
+    fn insert_if_absent<'a>(&'a self, task: &'a Task)
         -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>>;
 
     fn delete<'a>(&'a self, id: &'a TaskId)
@@ -67,7 +67,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.4", features = ["sqlite"] }
+a2a-protocol-server = { version = "0.5", features = ["sqlite"] }
 ```
 
 ```rust

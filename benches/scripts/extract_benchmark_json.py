@@ -161,7 +161,7 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
 
     # -- highlights --------------------------------------------------------
     highlights = {
-        "serde_floor_ns": _ns(benchmarks, "protocol_type_serde/agent_card/serialize"),
+        "serde_floor_ns": _ns(benchmarks, "protocol_type_serde/agent_card_serialize"),
         "roundtrip_reused_ms": _ms(benchmarks, "realistic_connection/reused_client"),
         "roundtrip_new_ms": _ms(benchmarks, "realistic_connection/new_client_per_request"),
         "concurrent_64_sends_ms": _ms(benchmarks, "concurrent_sends/jsonrpc/64"),
@@ -335,7 +335,11 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
     }
 
     # -- memory ------------------------------------------------------------
-    alloc_counts = {
+    # Note: These benchmarks use iter_custom() which returns wall-clock time.
+    # Criterion reports the timing (ns), not allocation counts. Allocation
+    # counts are verified internally via assertions. The values here are
+    # timing in nanoseconds under the counting allocator overhead.
+    alloc_timing = {
         "task_ser": _ns(benchmarks, "memory_serialize/task_alloc_count"),
         "task_de": _ns(benchmarks, "memory_deserialize/task_alloc_count"),
         "agent_card_ser": _ns(benchmarks, "memory_serialize/agent_card_alloc_count"),
@@ -358,7 +362,7 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
         })
 
     memory = {
-        "alloc_counts": alloc_counts,
+        "alloc_timing": alloc_timing,
         "bytes_per_payload": bytes_per_payload,
         "history_allocs": history_allocs,
     }
@@ -499,6 +503,11 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
         "pagination_walk": pagination_walk,
     }
 
+    # -- concurrent_mixed --------------------------------------------------
+    concurrent_mixed = {
+        "send_then_get_ms": _ms(benchmarks, "concurrent_mixed/send_then_get"),
+    }
+
     # -- errors ------------------------------------------------------------
     errors = {
         "happy_path_ms": _ms(benchmarks, "errors_happy_vs_error/happy_path"),
@@ -552,6 +561,7 @@ def build_dashboard_data(benchmarks: Dict[str, Dict[str, float]]) -> Dict[str, A
         "enterprise": enterprise,
         "production": production,
         "advanced": advanced,
+        "concurrent_mixed": concurrent_mixed,
         "errors": errors,
         "lifecycle": lifecycle,
         "all_benchmarks": all_benchmarks,

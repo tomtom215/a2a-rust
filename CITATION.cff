@@ -12,7 +12,7 @@ authors:
 repository-code: "https://github.com/tomtom215/a2a-rust"
 url: "https://github.com/tomtom215/a2a-rust"
 license: Apache-2.0
-version: "0.3.0"
+version: "0.5.0"
 date-released: "2026-03-19"
 keywords:
   - a2a

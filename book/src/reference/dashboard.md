@@ -17,13 +17,16 @@ Benchmark Dashboard &rarr;
 
 | Tab | Contents |
 |-----|----------|
-| **Overview** | Key performance highlights, cross-language baseline |
-| **Transport & Concurrency** | HTTP round-trip latency, payload scaling, concurrency curves |
-| **Serde & Protocol** | Per-type serialization cost, batch scaling, `SerBuffer` vs `to_vec` comparison |
-| **Data Volume** | Store operations at 1K-100K tasks, pagination index speedup |
-| **Enterprise** | Multi-tenant isolation, rate limiting, CORS, eviction, large histories |
-| **Production** | Agent burst scaling, E2E orchestration, cold start, push config CRUD |
-| **Memory** | Heap allocation counts, bytes per payload, history depth scaling |
+| **Overview** | Key performance highlights, payload scaling, event queue throughput |
+| **Transport** | HTTP round-trip latency, JSON-RPC vs REST, connection reuse, error paths |
+| **Serde** | Per-type serialization cost, batch scaling, `SerBuffer` vs `to_vec`, interceptor overhead |
+| **Concurrency** | Sends, streams, and store operations at 1-64 concurrent connections |
+| **Data Volume** | Store operations at 1K-100K tasks, history depth scaling |
+| **Backpressure** | Stream volume, slow consumer impact, concurrent streams, timer calibration |
+| **Enterprise** | Multi-tenant isolation, CORS, rate limiting, eviction, large histories, pagination |
+| **Production** | Agent burst scaling, E2E orchestration, cold start, push config CRUD, cross-language |
+| **Memory** | Allocation timing under counting allocator, bytes per payload, history scaling |
+| **All Results** | Searchable table of all 267 individual benchmark measurements |
 
 ## Methodology
 
