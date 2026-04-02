@@ -210,6 +210,18 @@ fn bench_payload_complexity(c: &mut Criterion) {
 }
 
 // ── Connection reuse vs new connection ──────────────────────────────────────
+//
+// Connection reuse saves ~140µs (9%) on loopback. On real networks with TLS,
+// the savings would be 10-50ms (TLS handshake dominates), making connection
+// reuse **critical** for production deployments.
+//
+// Best practice: Create one `A2aClient` at startup and share it via `Arc`
+// across all request handlers. The client uses hyper's connection pool
+// internally and is safe to share across threads.
+//
+// NOTE: These benchmarks use plaintext HTTP. A TLS benchmark variant would
+// quantify the real-world connection reuse impact more accurately, but
+// requires a self-signed cert setup that adds complexity to CI.
 
 fn bench_connection_reuse(c: &mut Criterion) {
     let runtime = rt();

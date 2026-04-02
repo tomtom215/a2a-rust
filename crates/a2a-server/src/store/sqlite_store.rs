@@ -152,12 +152,15 @@ fn to_a2a_error(e: sqlx::Error) -> A2aError {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for SqliteTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_string(&task)
+            let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
             sqlx::query(
@@ -280,13 +283,13 @@ impl TaskStore for SqliteTaskStore {
 
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_string(&task)
+            let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
             let result = sqlx::query(
@@ -357,7 +360,7 @@ mod tests {
     async fn save_and_get_round_trip() {
         let store = make_store().await;
         let task = make_task("t1", "ctx1", TaskState::Submitted);
-        store.save(task.clone()).await.expect("save should succeed");
+        store.save(&task).await.expect("save should succeed");
 
         let retrieved = store
             .get(&TaskId::new("t1"))
@@ -394,10 +397,13 @@ mod tests {
     async fn save_overwrites_existing_task() {
         let store = make_store().await;
         let task1 = make_task("t1", "ctx1", TaskState::Submitted);
-        store.save(task1).await.expect("first save should succeed");
+        store.save(&task1).await.expect("first save should succeed");
 
         let task2 = make_task("t1", "ctx1", TaskState::Working);
-        store.save(task2).await.expect("second save should succeed");
+        store
+            .save(&task2)
+            .await
+            .expect("second save should succeed");
 
         let retrieved = store.get(&TaskId::new("t1")).await.unwrap().unwrap();
         assert_eq!(
@@ -412,7 +418,7 @@ mod tests {
         let store = make_store().await;
         let task = make_task("t1", "ctx1", TaskState::Submitted);
         let inserted = store
-            .insert_if_absent(task)
+            .insert_if_absent(&task)
             .await
             .expect("insert_if_absent should succeed");
         assert!(
@@ -425,11 +431,11 @@ mod tests {
     async fn insert_if_absent_returns_false_for_existing_task() {
         let store = make_store().await;
         let task = make_task("t1", "ctx1", TaskState::Submitted);
-        store.save(task.clone()).await.unwrap();
+        store.save(&task).await.unwrap();
 
         let duplicate = make_task("t1", "ctx1", TaskState::Working);
         let inserted = store
-            .insert_if_absent(duplicate)
+            .insert_if_absent(&duplicate)
             .await
             .expect("insert_if_absent should succeed");
         assert!(
@@ -450,7 +456,7 @@ mod tests {
     async fn delete_removes_task() {
         let store = make_store().await;
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -483,11 +489,11 @@ mod tests {
         );
 
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx1", TaskState::Working))
+            .save(&make_task("t2", "ctx1", TaskState::Working))
             .await
             .unwrap();
         assert_eq!(
@@ -508,11 +514,11 @@ mod tests {
     async fn list_all_tasks() {
         let store = make_store().await;
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx2", TaskState::Working))
+            .save(&make_task("t2", "ctx2", TaskState::Working))
             .await
             .unwrap();
 
@@ -525,15 +531,15 @@ mod tests {
     async fn list_filter_by_context_id() {
         let store = make_store().await;
         store
-            .save(make_task("t1", "ctx-a", TaskState::Submitted))
+            .save(&make_task("t1", "ctx-a", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx-b", TaskState::Submitted))
+            .save(&make_task("t2", "ctx-b", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t3", "ctx-a", TaskState::Working))
+            .save(&make_task("t3", "ctx-a", TaskState::Working))
             .await
             .unwrap();
 
@@ -553,15 +559,15 @@ mod tests {
     async fn list_filter_by_status() {
         let store = make_store().await;
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", "ctx1", TaskState::Working))
+            .save(&make_task("t2", "ctx1", TaskState::Working))
             .await
             .unwrap();
         store
-            .save(make_task("t3", "ctx1", TaskState::Working))
+            .save(&make_task("t3", "ctx1", TaskState::Working))
             .await
             .unwrap();
 
@@ -579,7 +585,7 @@ mod tests {
         // Insert tasks with sorted IDs to ensure deterministic ordering
         for i in 0..5 {
             store
-                .save(make_task(
+                .save(&make_task(
                     &format!("task-{i:03}"),
                     "ctx1",
                     TaskState::Submitted,

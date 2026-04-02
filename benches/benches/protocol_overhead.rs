@@ -216,6 +216,59 @@ fn bench_batch_serde(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Payload scaling isolation (pure serde, no transport) ───────────────────
+//
+// Measures serialization cost in isolation across payload sizes from 64B to
+// 1MB. These benchmarks are the correct regression detection target for serde
+// performance changes — transport benchmarks are dominated by HTTP round-trip
+// overhead and cannot detect serde regressions below ~50µs.
+//
+// Also compares `serde_json::to_vec` (allocates new buffer each call) vs
+// `SerBuffer::serialize` (reuses thread-local buffer) to quantify the buffer
+// reuse benefit.
+
+fn bench_payload_scaling_isolation(c: &mut Criterion) {
+    let mut group = c.benchmark_group("protocol/payload_scaling");
+
+    let sizes: &[usize] = &[64, 256, 1024, 4096, 16384, 102_400, 1_048_576];
+
+    for &size in sizes {
+        let msg = fixtures::user_message(&"x".repeat(size));
+        let msg_bytes = serde_json::to_vec(&msg).unwrap();
+        group.throughput(Throughput::Bytes(msg_bytes.len() as u64));
+
+        // Standard serde_json::to_vec (new allocation per call)
+        group.bench_with_input(BenchmarkId::new("to_vec", size), &msg, |b, msg| {
+            b.iter(|| serde_json::to_vec(black_box(msg)).unwrap());
+        });
+
+        // SerBuffer (reused thread-local buffer)
+        group.bench_with_input(BenchmarkId::new("ser_buffer", size), &msg, |b, msg| {
+            b.iter(|| {
+                a2a_protocol_types::serde_helpers::SerBuffer::serialize(black_box(msg)).unwrap()
+            });
+        });
+
+        // Deserialization: from_slice vs from_str (borrowed path)
+        group.bench_with_input(
+            BenchmarkId::new("from_slice", size),
+            &msg_bytes,
+            |b, bytes| {
+                b.iter(|| serde_json::from_slice::<Message>(black_box(bytes)).unwrap());
+            },
+        );
+
+        let msg_str = String::from_utf8(msg_bytes.clone()).unwrap();
+        group.bench_with_input(BenchmarkId::new("from_str", size), &msg_str, |b, s| {
+            b.iter(|| {
+                a2a_protocol_types::serde_helpers::deser_from_str::<Message>(black_box(s)).unwrap()
+            });
+        });
+    }
+
+    group.finish();
+}
+
 // ── Criterion groups ────────────────────────────────────────────────────────
 
 criterion_group!(
@@ -224,5 +277,6 @@ criterion_group!(
     bench_type_serde,
     bench_stream_events,
     bench_batch_serde,
+    bench_payload_scaling_isolation,
 );
 criterion_main!(benches);

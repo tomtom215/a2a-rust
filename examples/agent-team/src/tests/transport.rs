@@ -443,14 +443,14 @@ pub async fn test_tenant_id_independence(_ctx: &TestContext) -> TestResult {
     TenantContext::scope("alpha".to_string(), {
         let store = store.clone();
         let task = task_a.clone();
-        async move { store.save(task).await.unwrap() }
+        async move { store.save(&task).await.unwrap() }
     })
     .await;
 
     TenantContext::scope("beta".to_string(), {
         let store = store.clone();
         let task = task_b.clone();
-        async move { store.save(task).await.unwrap() }
+        async move { store.save(&task).await.unwrap() }
     })
     .await;
 
@@ -494,7 +494,7 @@ pub async fn test_tenant_count(_ctx: &TestContext) -> TestResult {
         let store = store.clone();
         TenantContext::scope(format!("tenant-{i}"), async move {
             store
-                .save(Task {
+                .save(&Task {
                     id: TaskId::new(format!("t-{i}")),
                     context_id: a2a_protocol_types::task::ContextId::new("ctx"),
                     status: TaskStatus::new(TaskState::Completed),

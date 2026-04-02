@@ -37,7 +37,7 @@ async fn new_task_store() -> SqliteTaskStore {
 async fn task_save_and_get() -> A2aResult<()> {
     let store = new_task_store().await;
     let task = make_task("t1", "ctx1");
-    store.save(task.clone()).await?;
+    store.save(&task).await?;
     let got = store.get(&TaskId("t1".into())).await?;
     assert!(got.is_some());
     assert_eq!(got.unwrap().id.0, "t1");
@@ -56,10 +56,10 @@ async fn task_get_missing() -> A2aResult<()> {
 async fn task_save_upsert() -> A2aResult<()> {
     let store = new_task_store().await;
     let mut task = make_task("t1", "ctx1");
-    store.save(task.clone()).await?;
+    store.save(&task).await?;
 
     task.status = TaskStatus::new(TaskState::Working);
-    store.save(task).await?;
+    store.save(&task).await?;
 
     let got = store.get(&TaskId("t1".into())).await?.unwrap();
     assert_eq!(got.status.state, TaskState::Working);
@@ -71,15 +71,15 @@ async fn task_insert_if_absent() -> A2aResult<()> {
     let store = new_task_store().await;
     let task = make_task("t1", "ctx1");
 
-    assert!(store.insert_if_absent(task.clone()).await?);
-    assert!(!store.insert_if_absent(task).await?);
+    assert!(store.insert_if_absent(&task).await?);
+    assert!(!store.insert_if_absent(&task).await?);
     Ok(())
 }
 
 #[tokio::test]
 async fn task_delete() -> A2aResult<()> {
     let store = new_task_store().await;
-    store.save(make_task("t1", "ctx1")).await?;
+    store.save(&make_task("t1", "ctx1")).await?;
     store.delete(&TaskId("t1".into())).await?;
     assert!(store.get(&TaskId("t1".into())).await?.is_none());
     Ok(())
@@ -88,9 +88,9 @@ async fn task_delete() -> A2aResult<()> {
 #[tokio::test]
 async fn task_list_basic() -> A2aResult<()> {
     let store = new_task_store().await;
-    store.save(make_task("a", "ctx1")).await?;
-    store.save(make_task("b", "ctx1")).await?;
-    store.save(make_task("c", "ctx2")).await?;
+    store.save(&make_task("a", "ctx1")).await?;
+    store.save(&make_task("b", "ctx1")).await?;
+    store.save(&make_task("c", "ctx2")).await?;
 
     let all = store.list(&ListTasksParams::default()).await?;
     assert_eq!(all.tasks.len(), 3);
@@ -109,7 +109,7 @@ async fn task_list_basic() -> A2aResult<()> {
 async fn task_list_pagination() -> A2aResult<()> {
     let store = new_task_store().await;
     for i in 0..5 {
-        store.save(make_task(&format!("t{i:02}"), "ctx")).await?;
+        store.save(&make_task(&format!("t{i:02}"), "ctx")).await?;
     }
 
     let page1 = store

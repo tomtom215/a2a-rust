@@ -277,7 +277,7 @@ impl RequestHandler {
             );
         }
 
-        self.task_store.save(task.clone()).await?;
+        self.task_store.save(&task).await?;
 
         // Release the per-context lock now that the task is saved. Subsequent
         // requests for this context_id will find the task via find_task_by_context.
@@ -644,7 +644,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send a message with the same context_id but a different task_id.
         let mut params = make_params(Some("ctx-existing"));
@@ -787,7 +787,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send message with the same context_id — should find the stored task.
         let params = make_params(Some("continue-ctx"));
@@ -815,7 +815,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send message with explicit task_id targeting the terminal task.
         let mut params = make_params(Some("done-ctx"));
@@ -844,7 +844,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send message to the same context WITHOUT task_id — should succeed.
         let params = make_params(Some("reuse-ctx"));
@@ -890,7 +890,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send a message with a new context_id but the same task_id.
         let mut params = make_params(Some("brand-new-ctx"));
@@ -1149,7 +1149,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         // Send a continuation message with the same context_id and task_id.
         let mut params = make_params(Some("ctx-input"));

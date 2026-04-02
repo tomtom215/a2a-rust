@@ -121,7 +121,7 @@ mod tests {
     async fn get_task_found_returns_task() {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let task = make_completed_task("t-get-1");
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = TaskQueryParams {
             tenant: None,
@@ -187,7 +187,7 @@ mod tests {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         handler
             .task_store
-            .save(make_task_with_history("t-hl-0", 5))
+            .save(&make_task_with_history("t-hl-0", 5))
             .await
             .unwrap();
 
@@ -209,7 +209,7 @@ mod tests {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         handler
             .task_store
-            .save(make_task_with_history("t-hl-2", 5))
+            .save(&make_task_with_history("t-hl-2", 5))
             .await
             .unwrap();
 
@@ -245,7 +245,7 @@ mod tests {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         handler
             .task_store
-            .save(make_task_with_history("t-hl-big", 3))
+            .save(&make_task_with_history("t-hl-big", 3))
             .await
             .unwrap();
 
@@ -268,7 +268,7 @@ mod tests {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         handler
             .task_store
-            .save(make_task_with_history("t-hl-none", 5))
+            .save(&make_task_with_history("t-hl-none", 5))
             .await
             .unwrap();
 

@@ -137,7 +137,7 @@ impl RequestHandler {
                                     );
                                     if !last_task.status.state.is_terminal() {
                                         last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                        if let Err(_e) = task_store.save(last_task.clone()).await {
+                                        if let Err(_e) = task_store.save(&last_task).await {
                                             trace_error!(
                                                 task_id = %task_id,
                                                 "background processor: task store save failed after executor panic"

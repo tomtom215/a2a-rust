@@ -47,7 +47,7 @@ async fn concurrency_reads_while_writing_to_task_store() {
     // Pre-populate some tasks.
     for i in 0..5 {
         store
-            .save(make_task(&format!("pre-{i}"), "ctx", TaskState::Completed))
+            .save(&make_task(&format!("pre-{i}"), "ctx", TaskState::Completed))
             .await
             .unwrap();
     }
@@ -58,7 +58,7 @@ async fn concurrency_reads_while_writing_to_task_store() {
     for i in 0..10 {
         let s = Arc::clone(&store);
         handles.push(tokio::spawn(async move {
-            s.save(make_task(&format!("w-{i}"), "ctx", TaskState::Working))
+            s.save(&make_task(&format!("w-{i}"), "ctx", TaskState::Working))
                 .await
                 .expect("concurrent save");
         }));

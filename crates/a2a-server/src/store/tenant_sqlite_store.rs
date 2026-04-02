@@ -140,13 +140,16 @@ fn to_a2a_error(e: &sqlx::Error) -> A2aError {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for TenantAwareSqliteTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::current();
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_string(&task)
+            let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
             sqlx::query(
@@ -266,14 +269,14 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let tenant = TenantContext::current();
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_string(&task)
+            let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("serialize: {e}")))?;
 
             let result = sqlx::query(
@@ -351,7 +354,7 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("acme", async {
             store
-                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .save(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
             let task = store.get(&TaskId::new("t1")).await.unwrap();
@@ -369,7 +372,7 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .save(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -387,11 +390,11 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .save(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
             store
-                .save(make_task("t2", "ctx1", TaskState::Working))
+                .save(&make_task("t2", "ctx1", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -399,7 +402,7 @@ mod tests {
 
         TenantContext::scope("tenant-b", async {
             store
-                .save(make_task("t3", "ctx1", TaskState::Submitted))
+                .save(&make_task("t3", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -431,11 +434,11 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .save(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
             store
-                .save(make_task("t2", "ctx1", TaskState::Working))
+                .save(&make_task("t2", "ctx1", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -459,7 +462,7 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", "ctx1", TaskState::Submitted))
+                .save(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -486,7 +489,7 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             store
-                .save(make_task("t1", "ctx-a", TaskState::Submitted))
+                .save(&make_task("t1", "ctx-a", TaskState::Submitted))
                 .await
                 .unwrap();
         })
@@ -494,7 +497,7 @@ mod tests {
 
         TenantContext::scope("tenant-b", async {
             store
-                .save(make_task("t1", "ctx-b", TaskState::Working))
+                .save(&make_task("t1", "ctx-b", TaskState::Working))
                 .await
                 .unwrap();
         })
@@ -528,13 +531,13 @@ mod tests {
         let store = make_store().await;
         TenantContext::scope("tenant-a", async {
             let inserted = store
-                .insert_if_absent(make_task("t1", "ctx1", TaskState::Submitted))
+                .insert_if_absent(&make_task("t1", "ctx1", TaskState::Submitted))
                 .await
                 .unwrap();
             assert!(inserted, "first insert should succeed");
 
             let inserted = store
-                .insert_if_absent(make_task("t1", "ctx1", TaskState::Working))
+                .insert_if_absent(&make_task("t1", "ctx1", TaskState::Working))
                 .await
                 .unwrap();
             assert!(!inserted, "duplicate insert in same tenant should fail");
@@ -544,7 +547,7 @@ mod tests {
         // Same task ID in different tenant should succeed
         TenantContext::scope("tenant-b", async {
             let inserted = store
-                .insert_if_absent(make_task("t1", "ctx1", TaskState::Working))
+                .insert_if_absent(&make_task("t1", "ctx1", TaskState::Working))
                 .await
                 .unwrap();
             assert!(
@@ -561,7 +564,7 @@ mod tests {
         TenantContext::scope("tenant-a", async {
             for i in 0..5 {
                 store
-                    .save(make_task(
+                    .save(&make_task(
                         &format!("task-{i:03}"),
                         "ctx1",
                         TaskState::Submitted,
@@ -609,7 +612,7 @@ mod tests {
         let store = make_store().await;
         // No TenantContext::scope wrapper - should use "" as tenant
         store
-            .save(make_task("t1", "ctx1", TaskState::Submitted))
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
             .await
             .unwrap();
         let task = store.get(&TaskId::new("t1")).await.unwrap();

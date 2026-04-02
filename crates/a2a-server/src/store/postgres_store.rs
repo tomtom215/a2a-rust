@@ -140,12 +140,15 @@ fn to_a2a_error(e: sqlx::Error) -> A2aError {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for PostgresTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_value(&task)
+            let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
             sqlx::query(
@@ -265,13 +268,13 @@ impl TaskStore for PostgresTaskStore {
 
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let id = task.id.0.as_str();
             let context_id = task.context_id.0.as_str();
             let state = task.status.state.to_string();
-            let data = serde_json::to_value(&task)
+            let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
             let result = sqlx::query(

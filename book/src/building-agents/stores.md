@@ -102,7 +102,7 @@ let store = Arc::new(TenantAwareInMemoryTaskStore::new());
 TenantContext::scope("tenant-alpha".to_string(), {
     let store = store.clone();
     async move {
-        store.save(task).await.unwrap();
+        store.save(&task).await.unwrap();
     }
 }).await;
 

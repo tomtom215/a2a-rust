@@ -13,7 +13,7 @@ async fn task_store_save_and_get_roundtrip() {
     let store = InMemoryTaskStore::new();
     let task = make_task("t1", "ctx-1", TaskState::Working);
 
-    store.save(task.clone()).await.expect("save");
+    store.save(&task).await.expect("save");
 
     let fetched = store
         .get(&TaskId::new("t1"))
@@ -41,15 +41,15 @@ async fn task_store_list_with_context_id_filter() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("t1", "ctx-a", TaskState::Working))
+        .save(&make_task("t1", "ctx-a", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("t2", "ctx-b", TaskState::Working))
+        .save(&make_task("t2", "ctx-b", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("t3", "ctx-a", TaskState::Completed))
+        .save(&make_task("t3", "ctx-a", TaskState::Completed))
         .await
         .unwrap();
 
@@ -73,15 +73,15 @@ async fn task_store_list_with_status_filter() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("t1", "ctx", TaskState::Working))
+        .save(&make_task("t1", "ctx", TaskState::Working))
         .await
         .unwrap();
     store
-        .save(make_task("t2", "ctx", TaskState::Completed))
+        .save(&make_task("t2", "ctx", TaskState::Completed))
         .await
         .unwrap();
     store
-        .save(make_task("t3", "ctx", TaskState::Completed))
+        .save(&make_task("t3", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
@@ -109,7 +109,7 @@ async fn task_store_list_with_page_size_limit() {
 
     for i in 0..10 {
         store
-            .save(make_task(&format!("t{i:02}"), "ctx", TaskState::Working))
+            .save(&make_task(&format!("t{i:02}"), "ctx", TaskState::Working))
             .await
             .unwrap();
     }
@@ -137,7 +137,7 @@ async fn task_store_delete_removes_task() {
     let store = InMemoryTaskStore::new();
 
     store
-        .save(make_task("t1", "ctx", TaskState::Working))
+        .save(&make_task("t1", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -165,7 +165,7 @@ async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
 
     // Save a completed task.
     store
-        .save(make_task("old", "ctx", TaskState::Completed))
+        .save(&make_task("old", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
@@ -174,7 +174,7 @@ async fn task_store_ttl_eviction_removes_expired_terminal_tasks() {
 
     // Save another task.
     store
-        .save(make_task("new", "ctx", TaskState::Working))
+        .save(&make_task("new", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -205,7 +205,7 @@ async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
 
     // Save a working (non-terminal) task.
     store
-        .save(make_task("working", "ctx", TaskState::Working))
+        .save(&make_task("working", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -213,7 +213,7 @@ async fn task_store_ttl_eviction_spares_non_terminal_tasks() {
 
     // Save another task.
     store
-        .save(make_task("trigger", "ctx", TaskState::Working))
+        .save(&make_task("trigger", "ctx", TaskState::Working))
         .await
         .unwrap();
 
@@ -239,21 +239,21 @@ async fn task_store_capacity_eviction_removes_oldest_terminal_tasks() {
 
     // Fill the store with terminal tasks.
     store
-        .save(make_task("t1", "ctx", TaskState::Completed))
+        .save(&make_task("t1", "ctx", TaskState::Completed))
         .await
         .unwrap();
     store
-        .save(make_task("t2", "ctx", TaskState::Failed))
+        .save(&make_task("t2", "ctx", TaskState::Failed))
         .await
         .unwrap();
     store
-        .save(make_task("t3", "ctx", TaskState::Completed))
+        .save(&make_task("t3", "ctx", TaskState::Completed))
         .await
         .unwrap();
 
     // Adding a 4th task should trigger capacity eviction of the oldest terminal.
     store
-        .save(make_task("t4", "ctx", TaskState::Working))
+        .save(&make_task("t4", "ctx", TaskState::Working))
         .await
         .unwrap();
 

@@ -24,6 +24,10 @@ benches/results/*.json
 benches/results/*.md
 !benches/results/.gitkeep
 
+# Python bytecode cache
+__pycache__/
+*.pyc
+
 # ITK agent build artifacts
 node_modules/
 itk/agents/go-agent/go-agent

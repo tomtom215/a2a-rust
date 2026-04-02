@@ -15,7 +15,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_push_sender` | `impl PushSender` | None | Webhook delivery implementation |
 | `with_interceptor` | `impl ServerInterceptor` | Empty chain | Server middleware |
 | `with_executor_timeout` | `Duration` | None | Max time for executor completion |
-| `with_event_queue_capacity` | `usize` | 64 | Bounded channel size per stream |
+| `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | Unbounded | Limit concurrent SSE connections |
 | `with_event_queue_write_timeout` | `Duration` | 5s | Write timeout for event queue sends |

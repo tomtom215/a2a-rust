@@ -123,7 +123,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = TaskIdParams {
             tenant: None,
@@ -150,7 +150,7 @@ mod tests {
             artifacts: None,
             metadata: None,
         };
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = TaskIdParams {
             tenant: None,

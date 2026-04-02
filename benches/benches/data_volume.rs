@@ -57,7 +57,7 @@ fn populate_store(rt: &tokio::runtime::Runtime, store: &InMemoryTaskStore, n: us
         } else {
             task.context_id = ContextId::new("ctx-odd");
         }
-        rt.block_on(store.save(task)).unwrap();
+        rt.block_on(store.save(&task)).unwrap();
     }
 }
 
@@ -100,6 +100,17 @@ fn bench_get_at_scale(c: &mut Criterion) {
                 TaskId::new(format!("task-bench-{idx:06}"))
             })
             .collect();
+
+        // Cache-busting: allocate and iterate a large unrelated Vec between
+        // populate and measure to flush L1/L2 caches. Without this, the 100K
+        // case fills caches with HashMap bucket data during populate_store()
+        // that overlaps with lookup keys, producing artificially fast (~231ns)
+        // results vs the representative ~450ns at 1K/10K.
+        let cache_buster: Vec<u8> = vec![0xABu8; 4 * 1024 * 1024]; // 4MB > L3 on most CPUs
+        for chunk in cache_buster.chunks(64) {
+            std::hint::black_box(chunk);
+        }
+        drop(cache_buster);
 
         group.bench_with_input(BenchmarkId::new("lookup", n), &(), |b, _| {
             let mut key_idx = 0usize;
@@ -188,7 +199,8 @@ fn bench_save_at_scale(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("after_prefill", pre_fill), &(), |b, _| {
             b.iter(|| {
                 let task = fixtures::completed_task(counter);
-                rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                rt.block_on(store.save(criterion::black_box(&task)))
+                    .unwrap();
                 counter += 1;
             });
         });
@@ -258,7 +270,8 @@ fn bench_store_with_history(c: &mut Criterion) {
                 let mut counter = 0usize;
                 b.iter(|| {
                     let task = fixtures::task_with_history(counter, turns);
-                    rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                    rt.block_on(store.save(criterion::black_box(&task)))
+                        .unwrap();
                     counter += 1;
                 });
             },

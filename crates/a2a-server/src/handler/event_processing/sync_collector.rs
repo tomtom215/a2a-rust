@@ -71,7 +71,7 @@ impl RequestHandler {
                             );
                             if !last_task.status.state.is_terminal() {
                                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                self.task_store.save(last_task.clone()).await?;
+                                self.task_store.save(&last_task).await?;
                             }
                         }
                         // Continue to drain remaining events from the queue.
@@ -120,7 +120,7 @@ impl RequestHandler {
                     message: update.status.message.clone(),
                     timestamp: update.status.timestamp.clone(),
                 };
-                self.task_store.save(last_task.clone()).await?;
+                self.task_store.save(last_task).await?;
                 self.deliver_push(task_id, stream_resp).await;
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
@@ -159,7 +159,7 @@ impl RequestHandler {
                                 }
                             }
                         }
-                        if let Err(e) = self.task_store.save(last_task.clone()).await {
+                        if let Err(e) = self.task_store.save(last_task).await {
                             // Revert: truncate parts and restore metadata.
                             if let Some(existing) = last_task.artifacts.as_mut().and_then(|arts| {
                                 arts.iter_mut().find(|a| a.id == update.artifact.id)
@@ -183,20 +183,20 @@ impl RequestHandler {
                     );
                 } else {
                     artifacts.push(update.artifact.clone());
-                    self.task_store.save(last_task.clone()).await?;
+                    self.task_store.save(last_task).await?;
                     self.deliver_push(task_id, stream_resp).await;
                 }
             }
             Ok(StreamResponse::Task(task)) => {
                 *last_task = task;
-                self.task_store.save(last_task.clone()).await?;
+                self.task_store.save(last_task).await?;
             }
             Ok(StreamResponse::Message(_) | _) => {
                 // Messages and future stream response variants — continue.
             }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                self.task_store.save(last_task.clone()).await?;
+                self.task_store.save(last_task).await?;
                 return Err(ServerError::Protocol(e));
             }
         }
@@ -303,7 +303,7 @@ mod tests {
         let task_id = TaskId::new("t1");
 
         task_store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -344,7 +344,7 @@ mod tests {
 
         // Task is already Completed.
         task_store
-            .save(make_task("t-invalid-trans", TaskState::Completed))
+            .save(&make_task("t-invalid-trans", TaskState::Completed))
             .await
             .unwrap();
 
@@ -388,7 +388,7 @@ mod tests {
         let task_id = TaskId::new("t-art");
 
         task_store
-            .save(make_task("t-art", TaskState::Working))
+            .save(&make_task("t-art", TaskState::Working))
             .await
             .unwrap();
 
@@ -430,7 +430,7 @@ mod tests {
         let task_id = TaskId::new("t-snap");
 
         task_store
-            .save(make_task("t-snap", TaskState::Submitted))
+            .save(&make_task("t-snap", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -467,7 +467,7 @@ mod tests {
         let task_id = TaskId::new("t-msg");
 
         task_store
-            .save(make_task("t-msg", TaskState::Working))
+            .save(&make_task("t-msg", TaskState::Working))
             .await
             .unwrap();
 
@@ -511,7 +511,7 @@ mod tests {
         let task_id = TaskId::new("t-err-evt");
 
         task_store
-            .save(make_task("t-err-evt", TaskState::Working))
+            .save(&make_task("t-err-evt", TaskState::Working))
             .await
             .unwrap();
 
@@ -576,7 +576,7 @@ mod tests {
         let task_id = TaskId::new("t-push");
 
         task_store
-            .save(make_task("t-push", TaskState::Submitted))
+            .save(&make_task("t-push", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -635,7 +635,7 @@ mod tests {
         let task_id = TaskId::new("t-drain");
 
         task_store
-            .save(make_task("t-drain", TaskState::Submitted))
+            .save(&make_task("t-drain", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -692,7 +692,7 @@ mod tests {
         let task_id = TaskId::new("t-panic");
 
         task_store
-            .save(make_task("t-panic", TaskState::Submitted))
+            .save(&make_task("t-panic", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -743,7 +743,7 @@ mod tests {
         let task_id = TaskId::new("t-art-limit");
 
         task_store
-            .save(make_task("t-art-limit", TaskState::Working))
+            .save(&make_task("t-art-limit", TaskState::Working))
             .await
             .unwrap();
 
@@ -819,7 +819,7 @@ mod tests {
         let task_id = TaskId::new("t-push-fail");
 
         task_store
-            .save(make_task("t-push-fail", TaskState::Submitted))
+            .save(&make_task("t-push-fail", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -876,7 +876,7 @@ mod tests {
 
         // Seed initial task.
         task_store
-            .save(make_task("t-collect", TaskState::Submitted))
+            .save(&make_task("t-collect", TaskState::Submitted))
             .await
             .unwrap();
 

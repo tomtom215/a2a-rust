@@ -130,7 +130,7 @@ mod tests {
     async fn list_tasks_returns_saved_task() {
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
         let task = make_completed_task("t-list-1");
-        handler.task_store.save(task).await.unwrap();
+        handler.task_store.save(&task).await.unwrap();
 
         let params = ListTasksParams::default();
         let result = handler

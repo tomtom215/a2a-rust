@@ -39,7 +39,7 @@ The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand 
 3. Commits the updated results page to `main` via `github-actions[bot]`
 4. Archives the full criterion HTML reports (violin plots, comparison overlays) as workflow artifacts with 30-day retention
 
-The 13 benchmark suites cover: transport throughput, protocol overhead, task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling, memory overhead, enterprise scenarios, production scenarios, and advanced scenarios.
+The 13 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, and advanced scenarios.
 
 The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit on pushes to `main` and PRs. It tests the echo-agent (self-test) and runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations with both JSON-RPC and REST bindings.
 

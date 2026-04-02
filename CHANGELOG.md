@@ -8,10 +8,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] — Unreleased
+
+### Breaking Changes
+
+- **`TaskStore::save()` and `TaskStore::insert_if_absent()` now accept `&Task`
+  instead of owned `Task`** — This eliminates forced `.clone()` at every call
+  site. Store implementations that need ownership (e.g., `InMemoryTaskStore`)
+  clone internally; database-backed stores (`SqliteTaskStore`,
+  `PostgresTaskStore`) borrow fields directly and never clone.
+
+  **Migration guide:**
+  ```rust
+  // Before (0.4.x):
+  store.save(task.clone()).await?;
+  store.insert_if_absent(task).await?;
+
+  // After (0.5.0):
+  store.save(&task).await?;
+  store.insert_if_absent(&task).await?;
+  ```
+
+  Custom `TaskStore` implementations must update their method signatures:
+  ```rust
+  // Before:
+  fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+  // After:
+  fn save<'a>(&'a self, task: &'a Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+  ```
+
+- **Version bump: 0.4.1 → 0.5.0** — All four crates (`a2a-protocol-types`,
+  `a2a-protocol-client`, `a2a-protocol-server`, `a2a-protocol-sdk`) are bumped
+  to 0.5.0 to signal the breaking `TaskStore` trait change.
 
 ### Performance
 
+- **Broadcast channel capacity increased from 64 to 256 events** — Pushes
+  the per-event cost inflection from ~52 to ~252 events, reducing broadcast
+  buffer pressure for high-volume streaming tasks.
+- **`serde_helpers` module** (`a2a-protocol-types`) — `SerBuffer` provides
+  thread-local reusable serialization buffers (2.3× less overhead on small
+  payloads); `deser_from_str`/`deser_from_slice` enable borrowed
+  deserialization (~15-25% fewer allocations).
+- **SSE frame building uses thread-local reusable buffer** — Amortized 0
+  allocations per event vs previous 1 allocation per event.
 - **237 benchmarks, zero panics, zero errors** — Cleanest benchmark run in
   project history. All 13 benchmark suites (transport, protocol, lifecycle,
   concurrency, cross-language, realistic, error paths, backpressure, data
@@ -58,6 +99,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `delete_roundtrip` now upsert a pre-created config instead of creating new
   configs each iteration, preventing `push config limit exceeded` panics during
   criterion warmup.
+
+### Benchmarks
+
+- **Transport payload scaling extended to 1MB** — Added 100KB and 1MB payload
+  sizes to `transport_throughput.rs` for large-payload regression detection.
+- **New `protocol/payload_scaling` isolation benchmarks** — Pure serde cost
+  from 64B to 1MB in `protocol_overhead.rs`; compares `to_vec` vs `SerBuffer`
+  and `from_slice` vs `from_str` for serde regression detection.
+- **Cache-busting step for `data_volume/get` at 100K** — 4MB allocation to
+  flush CPU caches between populate and measure, eliminating the cache warming
+  artifact.
+- **Documentation comments added** — Connection reuse best practices, cold
+  start vs steady state explanation, concurrent store anomaly notes added to
+  benchmark files.
 
 ### Changed
 

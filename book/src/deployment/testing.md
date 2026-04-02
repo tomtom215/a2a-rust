@@ -380,7 +380,7 @@ measuring SDK overhead independently of agent logic:
 | Suite | Coverage |
 |-------|----------|
 | Transport Throughput | HTTP round-trip, payload scaling, SSE streaming drain |
-| Protocol Overhead | Serde ser/de per A2A type, JSON-RPC envelope, batch scaling |
+| Protocol Overhead | Serde ser/de per A2A type, JSON-RPC envelope, batch scaling, payload scaling (64B-1MB, `to_vec` vs `SerBuffer`, `from_slice` vs `from_str`) |
 | Task Lifecycle | TaskStore save/get/list, EventQueue throughput, E2E lifecycle |
 | Concurrent Agents | 1–64 parallel sends/streams, store contention, mixed workloads |
 | Cross-Language | Standardized workloads reproducible across all A2A SDK languages |

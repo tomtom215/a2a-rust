@@ -52,6 +52,7 @@ pub mod params;
 pub mod push;
 pub mod responses;
 pub mod security;
+pub mod serde_helpers;
 #[cfg(feature = "signing")]
 pub mod signing;
 pub mod task;
@@ -84,6 +85,7 @@ pub use security::{
     NamedSecuritySchemes, OAuth2SecurityScheme, OAuthFlows, OpenIdConnectSecurityScheme,
     PasswordOAuthFlow, SecurityRequirement, SecurityScheme, StringList,
 };
+pub use serde_helpers::{deser_from_slice, deser_from_str, SerBuffer};
 pub use task::{ContextId, Task, TaskId, TaskState, TaskStatus, TaskVersion};
 
 // ── Utilities ─────────────────────────────────────────────────────────────

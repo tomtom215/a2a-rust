@@ -58,5 +58,6 @@
 - [Architecture Decision Records](./reference/adrs.md)
 - [Configuration Reference](./reference/configuration.md)
 - [Benchmark Results](./reference/benchmarks.md)
+- [Benchmark Dashboard](./reference/dashboard.md)
 - [API Quick Reference](./reference/api-reference.md)
 - [Changelog](./reference/changelog.md)

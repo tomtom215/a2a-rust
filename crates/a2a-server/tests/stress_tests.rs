@@ -339,7 +339,7 @@ async fn task_store_eviction_under_load() {
             artifacts: None,
             metadata: None,
         };
-        store.save(task).await.unwrap();
+        store.save(&task).await.unwrap();
     }
 
     // Run eviction.
@@ -383,7 +383,7 @@ async fn concurrent_multi_tenant_isolation() {
                         artifacts: None,
                         metadata: None,
                     };
-                    store.save(task).await.unwrap();
+                    store.save(&task).await.unwrap();
                 },
             )));
         }

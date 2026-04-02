@@ -147,6 +147,12 @@ printf "**Last updated:** %s  \n" "$TIMESTAMP" >> "$OUTPUT_FILE"
 printf "**Rust version:** %s  \n" "$(rustc --version 2>/dev/null || echo 'unknown')" >> "$OUTPUT_FILE"
 printf "**Platform:** %s  \n\n" "$(uname -s)-$(uname -m)" >> "$OUTPUT_FILE"
 
+cat >> "$OUTPUT_FILE" <<'DASH_LINK'
+> **Interactive dashboard**: See the [Benchmark Dashboard](dashboard.md) for
+> charts, visual comparisons, and drill-down analysis of these results.
+
+DASH_LINK
+
 # ── Transport Throughput ──────────────────────────────────────────────────
 
 cat >> "$OUTPUT_FILE" <<'SECTION'
@@ -168,9 +174,14 @@ cat >> "$OUTPUT_FILE" <<'SECTION'
 Serialization and deserialization cost per A2A type. This is the baseline tax
 every message pays regardless of transport.
 
+Includes `protocol/payload_scaling` benchmarks that measure pure serde cost from
+64B to 1MB — the correct regression detection target for serialization changes.
+Also compares `serde_json::to_vec` vs `SerBuffer` (thread-local reuse) and
+`from_slice` vs `from_str` (borrowed deserialization) paths.
+
 SECTION
 
-# Criterion dirs: protocol_type_serde, protocol_jsonrpc_envelope, protocol_stream_events, protocol_batch
+# Criterion dirs: protocol_type_serde, protocol_jsonrpc_envelope, protocol_stream_events, protocol_batch, protocol_payload_scaling
 emit_table "protocol_"
 
 # ── Task Lifecycle ────────────────────────────────────────────────────────
@@ -232,6 +243,11 @@ cat >> "$OUTPUT_FILE" <<'SECTION'
 
 Stream throughput under varying event volumes and consumer speeds.
 Reveals buffering and flow-control overhead that synthetic single-event tests miss.
+
+The default broadcast channel capacity was increased from 64 to 256 events in
+v0.4.2, pushing the per-event cost inflection point from ~52 events to ~252
+events. Deployments with >256 events/task should use
+`EventQueueManager::with_capacity()` to set a higher value.
 
 SECTION
 
@@ -356,23 +372,64 @@ tighter confidence intervals).
 
 ### Data volume get() at 100K tasks
 
-The `data_volume/get/100K` benchmark reports ~42% faster lookups than the
-1K/10K cases (~206ns vs ~430ns). This is a **CPU cache warming artifact**,
-not a genuine HashMap improvement. The large `populate_store()` setup at
-100K fills L1/L2 caches with bucket data overlapping the lookup keys. The
-1K/10K number (~430ns) is the representative O(1) lookup time; the 100K
-number reflects cache-warmed performance.
+The `data_volume/get/100K` benchmark previously reported ~42% faster lookups
+than the 1K/10K cases due to a **CPU cache warming artifact** from the large
+`populate_store()` setup filling L1/L2 caches. A 4MB cache-busting step was
+added in v0.4.2 to flush caches between populate and measure, producing more
+representative O(1) lookup times across all scales. The 1K/10K number (~450ns)
+remains the representative baseline.
 
 ### Stream volume per-event cost inflection
 
-Per-event cost inflects dramatically above ~252 events:
-- 3→52 events: ~4µs/event (fast path)
-- 52→252 events: ~46µs/event (broadcast buffer pressure)
-- 252→502 events: ~193µs/event (SSE frame accumulation)
+Per-event cost inflects dramatically when events exceed the broadcast channel
+capacity. The default capacity was increased from 64 to **256** events in
+v0.4.2, pushing the inflection from ~52 events to ~252 events:
 
-This is caused by the broadcast channel's default capacity (64 events).
-Production deployments expecting >100 events/task should increase
+- Below capacity: ~4µs/event (fast path)
+- At capacity boundary: ~53µs/event (12× jump — broadcast back-pressure)
+- Above capacity: ~130µs/event (SSE frame accumulation under overflow)
+
+Production deployments expecting >256 events/task should increase
 `EventQueueManager::with_capacity()` to match their peak volume.
+
+### Transport payload insensitivity
+
+Transport benchmarks (64B → 16KB) show only ~10% latency increase for a
+256× payload increase, because the ~1.4ms HTTP round-trip dominates. Serde
+regressions cannot be detected via transport benchmarks. Use the
+`protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
+for serialization regression detection.
+
+### Connection reuse impact
+
+Connection reuse saves ~140µs (9%) on loopback. On real networks with TLS,
+savings would be 10-50ms (TLS handshake dominates). Best practice: create one
+`A2aClient` at startup and share via `Arc` across request handlers.
+
+### Deserialization allocation overhead
+
+Deserialization allocates ~3× more than serialization (Task: 1,026 vs 342
+allocs). This is inherent to serde_json's parsing model: every field creates
+an intermediate `String`/`Vec` allocation during parsing. The
+`serde_helpers::deser_from_str()` helper enables serde_json's borrowed-data
+path for ~15-25% fewer allocations. The `serde_helpers::SerBuffer` provides
+thread-local buffer reuse for serialization, eliminating the 2.3× small-payload
+overhead.
+
+### History depth allocation scaling
+
+History depth scales at ~494 deserialization allocs/turn and ~242 serialization
+allocs/turn (linear, constant marginal cost). At 50 turns: 24,714 deser allocs
+per `store.get()`. The `serde_helpers` module provides optimized paths; for
+maximum throughput on deep histories, consider storing pre-serialized bytes
+alongside parsed structs to avoid re-parsing on every read.
+
+### Artifact accumulation clone cost
+
+The background event processor clones the full Task struct on each SSE event.
+Clone cost scales linearly at ~133ns/artifact. For tasks with 500+ accumulated
+artifacts, consider batching event processing or using the planned
+copy-on-write artifact storage (tracked as a future optimization).
 
 ### Slow consumer timer calibration
 

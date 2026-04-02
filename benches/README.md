@@ -27,8 +27,8 @@ cargo bench -p a2a-benchmarks --bench transport_throughput
 
 | Module | File | What it measures |
 |--------|------|------------------|
-| **Transport Throughput** | `transport_throughput.rs` | Messages/sec, bytes/sec through JSON-RPC and REST HTTP transports; SSE streaming drain latency; payload size scaling |
-| **Protocol Overhead** | `protocol_overhead.rs` | Serde ser/de cost per A2A type (AgentCard, Task, Message, StreamResponse); JSON-RPC envelope overhead; batch scaling |
+| **Transport Throughput** | `transport_throughput.rs` | Messages/sec, bytes/sec through JSON-RPC and REST HTTP transports; SSE streaming drain latency; payload size scaling (up to 1MB) |
+| **Protocol Overhead** | `protocol_overhead.rs` | Serde ser/de cost per A2A type (AgentCard, Task, Message, StreamResponse); JSON-RPC envelope overhead; batch scaling; `protocol/payload_scaling` isolation benchmarks (64B–1MB, `to_vec` vs `SerBuffer`, `from_slice` vs `from_str`) |
 | **Task Lifecycle** | `task_lifecycle.rs` | TaskStore save/get/list latency; EventQueue write→read throughput; end-to-end create→working→completed via HTTP |
 | **Concurrent Agents** | `concurrent_agents.rs` | N simultaneous sends/streams (1, 4, 16, 64); store contention; mixed send+get workloads |
 | **Cross-Language** | `cross_language.rs` | Standardized workloads reproducible across all A2A SDK languages (Python, Go, JS, Java, C#/.NET) |
@@ -129,14 +129,18 @@ These notes help interpret benchmark results accurately:
   Production code uses `sleep` + reset (not `interval`) and `yield_now()`
   to minimize the impact.
 
-- **`data_volume/get/100K` anomaly**: Reports ~42% faster lookups than 1K/10K
-  due to CPU cache warming from the large `populate_store()` setup — not a
-  genuine HashMap improvement. The 1K/10K number (~430ns) is representative.
+- **`data_volume/get/100K` anomaly** (mitigated): Previously reported ~42%
+  faster lookups than 1K/10K due to CPU cache warming from `populate_store()`.
+  A 4MB cache-busting allocation now flushes CPU caches between populate and
+  measure, producing more representative results. The 1K/10K number (~430ns)
+  remains the baseline for comparison.
 
 - **Stream volume per-event cost inflection**: Per-event cost jumps from ~4µs
-  to ~193µs above 252 events due to broadcast channel buffer pressure (default
-  capacity: 64). Production deployments with >100 events/task should increase
-  `EventQueueManager::with_capacity()`.
+  to ~193µs above ~252 events due to broadcast channel buffer pressure (default
+  capacity: 256, increased from 64). Production deployments with >250
+  events/task should increase `EventQueueManager::with_capacity()`. The
+  `serde_helpers::SerBuffer` module can further reduce per-event serialization
+  overhead via thread-local buffer reuse.
 
 - **Slow consumer timer calibration**: On CI runners, `tokio::time::sleep(1ms)`
   ≈ 2.09ms actual. Use `backpressure/timer_calibration` results to interpret

@@ -24,7 +24,7 @@ async fn concurrent_save_to_same_task_id() {
                 artifacts: None,
                 metadata: None,
             };
-            a2a_protocol_server::TaskStore::save(store.as_ref(), task)
+            a2a_protocol_server::TaskStore::save(store.as_ref(), &task)
                 .await
                 .unwrap();
         }));
@@ -112,7 +112,7 @@ async fn insert_if_absent_atomicity() {
                 artifacts: None,
                 metadata: None,
             };
-            a2a_protocol_server::TaskStore::insert_if_absent(store.as_ref(), task)
+            a2a_protocol_server::TaskStore::insert_if_absent(store.as_ref(), &task)
                 .await
                 .unwrap()
         }));

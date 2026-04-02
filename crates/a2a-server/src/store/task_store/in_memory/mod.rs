@@ -240,8 +240,12 @@ impl InMemoryTaskStore {
 
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for InMemoryTaskStore {
-    fn save<'a>(&'a self, task: Task) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
+            let task = task.clone();
             trace_debug!(task_id = %task.id, state = ?task.status.state, "saving task");
 
             // Insert under write lock, then release immediately.
@@ -394,9 +398,10 @@ impl TaskStore for InMemoryTaskStore {
 
     fn insert_if_absent<'a>(
         &'a self,
-        task: Task,
+        task: &'a Task,
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
+            let task = task.clone();
             let (inserted, needs_eviction) = {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
@@ -487,7 +492,7 @@ mod tests {
     async fn save_and_get_returns_task() {
         let store = InMemoryTaskStore::new();
         let task = make_task("t1", TaskState::Submitted);
-        store.save(task.clone()).await.unwrap();
+        store.save(&task).await.unwrap();
 
         let fetched = store.get(&TaskId::new("t1")).await.unwrap();
         assert!(fetched.is_some(), "saved task should be retrievable");
@@ -505,11 +510,11 @@ mod tests {
     async fn save_overwrites_existing_task() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t1", TaskState::Working))
+            .save(&make_task("t1", TaskState::Working))
             .await
             .unwrap();
 
@@ -525,7 +530,7 @@ mod tests {
     async fn delete_removes_task() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         store.delete(&TaskId::new("t1")).await.unwrap();
@@ -547,7 +552,7 @@ mod tests {
     async fn insert_if_absent_inserts_new_task() {
         let store = InMemoryTaskStore::new();
         let inserted = store
-            .insert_if_absent(make_task("t1", TaskState::Submitted))
+            .insert_if_absent(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         assert!(inserted, "first insert should succeed");
@@ -560,12 +565,12 @@ mod tests {
     async fn insert_if_absent_rejects_duplicate() {
         let store = InMemoryTaskStore::new();
         store
-            .insert_if_absent(make_task("t1", TaskState::Submitted))
+            .insert_if_absent(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
         let second = store
-            .insert_if_absent(make_task("t1", TaskState::Working))
+            .insert_if_absent(&make_task("t1", TaskState::Working))
             .await
             .unwrap();
         assert!(!second, "duplicate insert should return false");
@@ -591,11 +596,11 @@ mod tests {
     async fn count_reflects_saves_and_deletes() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", TaskState::Working))
+            .save(&make_task("t2", TaskState::Working))
             .await
             .unwrap();
         assert_eq!(store.count().await.unwrap(), 2);
@@ -619,15 +624,15 @@ mod tests {
     async fn list_returns_all_tasks_sorted_by_id() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("c", TaskState::Submitted))
+            .save(&make_task("c", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("a", TaskState::Working))
+            .save(&make_task("a", TaskState::Working))
             .await
             .unwrap();
         store
-            .save(make_task("b", TaskState::Completed))
+            .save(&make_task("b", TaskState::Completed))
             .await
             .unwrap();
 
@@ -641,15 +646,15 @@ mod tests {
     async fn list_filters_by_context_id() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task_with_ctx("t1", "ctx-a", TaskState::Submitted))
+            .save(&make_task_with_ctx("t1", "ctx-a", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task_with_ctx("t2", "ctx-b", TaskState::Submitted))
+            .save(&make_task_with_ctx("t2", "ctx-b", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task_with_ctx("t3", "ctx-a", TaskState::Working))
+            .save(&make_task_with_ctx("t3", "ctx-a", TaskState::Working))
             .await
             .unwrap();
 
@@ -666,15 +671,15 @@ mod tests {
     async fn list_filters_by_status() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
         store
-            .save(make_task("t2", TaskState::Working))
+            .save(&make_task("t2", TaskState::Working))
             .await
             .unwrap();
         store
-            .save(make_task("t3", TaskState::Submitted))
+            .save(&make_task("t3", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -691,7 +696,7 @@ mod tests {
         let store = InMemoryTaskStore::new();
         for i in 0..5 {
             store
-                .save(make_task(&format!("t{i:02}"), TaskState::Submitted))
+                .save(&make_task(&format!("t{i:02}"), TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -734,7 +739,7 @@ mod tests {
     async fn list_invalid_page_token_returns_empty() {
         let store = InMemoryTaskStore::new();
         store
-            .save(make_task("t1", TaskState::Submitted))
+            .save(&make_task("t1", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -754,7 +759,7 @@ mod tests {
         let store = InMemoryTaskStore::new();
         for i in 0..60 {
             store
-                .save(make_task(&format!("t{i:03}"), TaskState::Submitted))
+                .save(&make_task(&format!("t{i:03}"), TaskState::Submitted))
                 .await
                 .unwrap();
         }
@@ -786,12 +791,12 @@ mod tests {
 
         // Save a completed (terminal) task.
         store
-            .save(make_task("terminal", TaskState::Completed))
+            .save(&make_task("terminal", TaskState::Completed))
             .await
             .unwrap();
         // Save a non-terminal task.
         store
-            .save(make_task("active", TaskState::Working))
+            .save(&make_task("active", TaskState::Working))
             .await
             .unwrap();
 
@@ -822,7 +827,7 @@ mod tests {
         let store = InMemoryTaskStore::with_config(config);
 
         store
-            .save(make_task("t1", TaskState::Completed))
+            .save(&make_task("t1", TaskState::Completed))
             .await
             .unwrap();
         store.run_eviction().await;
@@ -847,18 +852,18 @@ mod tests {
 
         // Save 3 completed tasks; the oldest should be evicted when capacity is exceeded.
         store
-            .save(make_task("oldest", TaskState::Completed))
+            .save(&make_task("oldest", TaskState::Completed))
             .await
             .unwrap();
         // Small sleep to ensure ordering by last_updated.
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("middle", TaskState::Completed))
+            .save(&make_task("middle", TaskState::Completed))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("newest", TaskState::Completed))
+            .save(&make_task("newest", TaskState::Completed))
             .await
             .unwrap();
 
@@ -889,17 +894,17 @@ mod tests {
 
         // 1 active + 1 terminal, then add a third.
         store
-            .save(make_task("active", TaskState::Working))
+            .save(&make_task("active", TaskState::Working))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("done", TaskState::Completed))
+            .save(&make_task("done", TaskState::Completed))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("new", TaskState::Submitted))
+            .save(&make_task("new", TaskState::Submitted))
             .await
             .unwrap();
 
@@ -930,17 +935,17 @@ mod tests {
         // 3 non-terminal tasks — eviction must evict oldest non-terminal
         // to enforce the hard capacity limit.
         store
-            .save(make_task("oldest-active", TaskState::Working))
+            .save(&make_task("oldest-active", TaskState::Working))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("middle-active", TaskState::Submitted))
+            .save(&make_task("middle-active", TaskState::Submitted))
             .await
             .unwrap();
         tokio::time::sleep(Duration::from_millis(2)).await;
         store
-            .save(make_task("newest-active", TaskState::Working))
+            .save(&make_task("newest-active", TaskState::Working))
             .await
             .unwrap();
 
