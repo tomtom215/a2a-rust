@@ -2705,6 +2705,12 @@ function activate(id){
   document.querySelectorAll(".tab-panel").forEach(function(p){p.classList.remove("active");p.setAttribute("hidden","")});
   var tab=$("#tab-"+id);tab.setAttribute("aria-selected","true");tab.tabIndex=0;
   var panel=$("#panel-"+id);panel.classList.add("active");panel.removeAttribute("hidden");
+  /* Trigger Chart.js resize after layout reflow for charts created in hidden panels */
+  requestAnimationFrame(function(){
+    panel.querySelectorAll("canvas").forEach(function(cv){
+      var ci=Chart.getChart(cv);if(ci)ci.resize();
+    });
+  });
 }
 
 /* --- Overview --- */
