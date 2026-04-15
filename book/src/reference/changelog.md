@@ -36,6 +36,17 @@ a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protoco
 
 This ensures each crate's dependencies are available before it publishes.
 
+## v0.5.1 (2026-04-15)
+
+### Security
+
+- **`rustls-webpki` upgraded to 0.103.12** — Fixes
+  [RUSTSEC-2026-0098](https://rustsec.org/advisories/RUSTSEC-2026-0098.html)
+  ([GHSA-965h-392x-2mh5](https://github.com/rustls/webpki/security/advisories/GHSA-965h-392x-2mh5)):
+  URI name constraints were incorrectly accepted during X.509 path validation.
+  Reaches `a2a-protocol-client` transitively via `rustls` when the
+  `tls-rustls` feature is enabled. No API changes — drop-in update.
+
 ## Unreleased (v0.5.0)
 
 ### Breaking Changes

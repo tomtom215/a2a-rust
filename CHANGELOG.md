@@ -8,6 +8,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-04-15
+
+### Security
+
+- **`rustls-webpki` upgraded to 0.103.12** — Fixes RUSTSEC-2026-0098
+  ([GHSA-965h-392x-2mh5](https://github.com/rustls/webpki/security/advisories/GHSA-965h-392x-2mh5)):
+  name constraints for URI names were incorrectly accepted during X.509 path
+  validation, which could allow a CA with URI `NameConstraints` to be bypassed
+  for certificates it should have been restricted from issuing. The bug
+  affected all rustls-webpki releases in the 0.103.x line through 0.103.11 and
+  reaches `a2a-protocol-client` transitively via `rustls` → `hyper-rustls`
+  / `tokio-rustls` whenever the `tls-rustls` feature is enabled.
+
+  Exploitability in practice requires a trust chain whose CA uses URI name
+  constraints — uncommon in the public Web PKI (Mozilla/`webpki-roots`), but
+  possible for consumers wiring a private or enterprise CA bundle into the
+  client. Out of caution this is shipped as a dedicated patch release so
+  downstreams can pick it up without waiting for unrelated changes.
+
+  No code changes are required by consumers; `cargo update -p rustls-webpki`
+  on existing lockfiles is sufficient for anyone not yet moving to 0.5.1.
+
 ## [0.5.0] — Unreleased
 
 ### Breaking Changes
