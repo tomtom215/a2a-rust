@@ -5,16 +5,29 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>a2a-rust Benchmark Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<meta name="robots" content="index,follow">
+<meta name="description" content="Interactive benchmark dashboard for a2a-rust — transport, protocol, lifecycle, concurrency, and realistic workload measurements for the A2A protocol Rust SDK.">
+<!--
+  Vendored assets only — no external CDN or font request. Corporate egress
+  proxies routinely block fonts.googleapis.com and cdn.jsdelivr.net; fetching
+  them at runtime used to break this page for enterprise visitors. See
+  book/static/vendor/README.md for upstream / license / update instructions.
+-->
+<script src="../vendor/chart.umd.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#0c0c0e;--surface:#141417;--border:#232329;--cyan:#00e5cc;--amber:#f5a623;
 --green:#00d68f;--rose:#ff6b8a;--violet:#b18cfe;--blue:#5b9cf6;--text:#eaeaed;
 --text-sec:#9898a4;--text-muted:#56565f;--radius:8px}
-body{font-family:'Space Grotesk',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
-.mono{font-family:'JetBrains Mono',monospace}
+/*
+  Font stack: system UI fonts only. Previously the dashboard loaded Space
+  Grotesk and JetBrains Mono from fonts.googleapis.com, but that CDN is
+  widely blocked on corporate networks and the dashboard degraded silently
+  to an invisible fallback chain. System fonts render on every OS without a
+  network round-trip.
+*/
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;min-height:100vh}
+.mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
 a{color:var(--cyan)}
 .wrap{max-width:1280px;margin:0 auto;padding:0 1rem}
 header{padding:1.25rem 0;border-bottom:1px solid var(--border)}

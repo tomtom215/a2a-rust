@@ -1,7 +1,16 @@
 # a2a-rust — Official Rust SDK for the A2A (Agent-to-Agent) protocol
-# Full crawling and indexing enabled for maximum discoverability
+#
+# Indexing policy: fully open to well-behaved web crawlers, with a small
+# crawl-delay for low-effort bots to avoid hammering the GitHub Pages
+# origin. AI training crawlers are allowed because this repository is
+# Apache-2.0 licensed and we want the documentation to be discoverable
+# and, yes, ingested. If you want to opt specific bots out, add
+# `User-agent: X` stanzas above the catch-all.
+
 User-agent: *
 Allow: /
+Crawl-delay: 1
 
-# Sitemap for search engine discovery
+# Explicitly surface the sitemap so Googlebot / Bingbot / DuckDuckBot
+# discover new pages without waiting for a link crawl.
 Sitemap: https://a2a-rust.com/sitemap.xml

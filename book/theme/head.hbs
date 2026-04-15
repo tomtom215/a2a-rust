@@ -1,22 +1,53 @@
-<!-- SEO and OpenGraph meta tags for a2a-rust documentation -->
-<meta name="description" content="a2a-rust: Official Rust SDK for the A2A (Agent-to-Agent) protocol. Build interoperable AI agents with type-safe, async Rust.">
-<meta name="keywords" content="A2A, Agent-to-Agent, Rust, SDK, protocol, AI agents, interoperability, async, tokio, crates.io">
-<meta name="author" content="Tom F.">
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  SEO, Open Graph, Twitter Card and schema.org metadata for a2a-rust docs.
 
-<!-- OpenGraph (Facebook, LinkedIn, Slack, Discord) -->
+  Notes on choices:
+  - Canonical URL, og:url and Twitter URL all reference https://a2a-rust.com/
+    to match book.toml `site-url` and book/static/sitemap.xml. Keep these in
+    sync — a mismatch causes Google Search Console coverage warnings.
+  - Twitter card is `summary_large_image` so cards render with the full
+    preview image on X/Twitter, LinkedIn, Slack, and Discord. The image is
+    vendored at /og-image.png (see book/static/) so there is no cross-origin
+    fetch at crawl time.
+  - JSON-LD uses both SoftwareSourceCode and SoftwareApplication with
+    applicationCategory "DeveloperApplication" so search engines surface the
+    project in developer-tool carousels.
+  - hreflang is set to `en` with a self-referential `x-default`; add more
+    variants if/when translations exist.
+  - robots `max-snippet:-1, max-image-preview:large` gives search engines
+    permission to show the full description and large preview in results.
+-->
+
+<meta name="description" content="a2a-rust: Official Rust SDK for the A2A (Agent-to-Agent) protocol. Build interoperable AI agents with type-safe, async Rust.">
+<meta name="keywords" content="A2A, Agent-to-Agent, Rust, SDK, protocol, AI agents, interoperability, async, tokio, crates.io, multi-agent, agentic, LLM, gRPC, JSON-RPC, REST, SSE, WebSocket">
+<meta name="author" content="Tom F.">
+<meta name="robots" content="index,follow,max-snippet:-1,max-image-preview:large,max-video-preview:-1">
+<meta name="googlebot" content="index,follow">
+
+<!-- Open Graph (Facebook, LinkedIn, Slack, Discord) -->
 <meta property="og:type" content="website">
 <meta property="og:title" content="a2a-rust — Official Rust A2A SDK">
 <meta property="og:description" content="Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0. Build interoperable AI agents with type-safe, async Rust.">
 <meta property="og:url" content="https://a2a-rust.com/">
 <meta property="og:site_name" content="a2a-rust">
+<meta property="og:image" content="https://a2a-rust.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="a2a-rust — Rust SDK for the Agent-to-Agent protocol">
+<meta property="og:locale" content="en_US">
 
 <!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="a2a-rust — Official Rust A2A SDK">
 <meta name="twitter:description" content="Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0. Build interoperable AI agents with type-safe, async Rust.">
+<meta name="twitter:image" content="https://a2a-rust.com/og-image.png">
+<meta name="twitter:image:alt" content="a2a-rust — Rust SDK for the Agent-to-Agent protocol">
 
-<!-- Canonical URL -->
+<!-- Canonical and alternate URLs -->
 <link rel="canonical" href="https://a2a-rust.com/">
+<link rel="alternate" hreflang="en" href="https://a2a-rust.com/">
+<link rel="alternate" hreflang="x-default" href="https://a2a-rust.com/">
 
 <!-- Structured Data (JSON-LD) for search engines -->
 <script type="application/ld+json">
@@ -24,12 +55,30 @@
   "@context": "https://schema.org",
   "@type": "SoftwareSourceCode",
   "name": "a2a-rust",
-  "description": "Official Rust SDK for the A2A (Agent-to-Agent) protocol",
+  "alternateName": "a2a-protocol-sdk",
+  "description": "Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0, providing types, server framework, and client library for building interoperable AI agent systems.",
   "url": "https://a2a-rust.com/",
   "codeRepository": "https://github.com/tomtom215/a2a-rust",
-  "programmingLanguage": "Rust",
+  "programmingLanguage": {
+    "@type": "ComputerLanguage",
+    "name": "Rust"
+  },
   "license": "https://opensource.org/licenses/Apache-2.0",
   "runtimePlatform": "Rust 1.93+",
-  "applicationCategory": "Developer Tools"
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Linux, macOS, Windows",
+  "author": {
+    "@type": "Person",
+    "name": "Tom F.",
+    "url": "https://github.com/tomtom215"
+  },
+  "keywords": [
+    "agent-to-agent",
+    "a2a-protocol",
+    "rust",
+    "sdk",
+    "multi-agent",
+    "agentic"
+  ]
 }
 </script>

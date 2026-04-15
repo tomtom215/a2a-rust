@@ -36,8 +36,23 @@ jobs:
       - name: Build book
         run: mdbook build book
 
-      - name: Copy static files (robots.txt, sitemap.xml)
-        run: cp book/static/robots.txt book/static/sitemap.xml book/book/
+      - name: Copy static assets into build output
+        # Mirrors everything under `book/static/` into the built site so that
+        # crawlable files (robots.txt, sitemap.xml) and vendored assets
+        # (book/static/vendor/*) land at their expected URLs. Vendoring is
+        # intentional: corp egress proxies block fonts.googleapis.com and
+        # cdn.jsdelivr.net, and fetching them at runtime used to silently
+        # break the benchmark dashboard for enterprise visitors.
+        run: |
+          set -euo pipefail
+          # --no-preserve=mode because the runner's umask flips some bits that
+          # `cp -a` otherwise preserves and trips GitHub Pages permission checks.
+          cp -r --no-preserve=mode book/static/. book/book/
+          # Sanity-check the critical files landed where they are expected.
+          test -f book/book/robots.txt
+          test -f book/book/sitemap.xml
+          test -f book/book/vendor/chart.umd.min.js
+          test -f book/book/reference/benchmark-dashboard.html
 
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
