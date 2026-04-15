@@ -41,13 +41,13 @@ than enforced on every commit.
 
 The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand (`workflow_dispatch`) and on pushes to `main` that affect benchmark or SDK code. It:
 
-1. Builds and runs all 13 benchmark suites (267 benchmarks total) individually via Criterion.rs
+1. Builds and runs all 14 benchmark suites (275 benchmarks total) individually via Criterion.rs
 2. Auto-generates the [benchmark results page](../reference/benchmarks.md) via `benches/scripts/generate_book_page.sh`
 3. Auto-generates the [interactive benchmark dashboard](../reference/dashboard.md) via `benches/scripts/generate_dashboard.sh`
 4. Commits the updated results page and dashboard to `main` via `github-actions[bot]`
 5. Archives the full criterion HTML reports (violin plots, comparison overlays) as workflow artifacts with 30-day retention
 
-The 13 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, and advanced scenarios.
+The 14 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, advanced scenarios, and — new in this release — **agent-level latency under fault** via an in-process 5-hop coordinator chain with fault injection at every link. The last suite is the first benchmark on this page that does not measure SDK-layer overhead; see the [Agent-Level Latency Under Fault](../reference/benchmarks.md#agent-level-latency-under-fault) section for the honest caveats.
 
 The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit on pushes to `main` and PRs. It tests the echo-agent (self-test) and runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations with both JSON-RPC and REST bindings.
 
