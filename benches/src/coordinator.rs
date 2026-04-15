@@ -51,9 +51,10 @@ use a2a_protocol_server::streaming::EventQueueWriter;
 /// [`crate::fault_transport::FaultInjectingTransport`] so faults can be
 /// injected on a per-hop basis.
 ///
-/// Retries at each hop are capped by [`ChainHopExecutor::max_retries`]. On
-/// retry exhaustion the hop emits a `Failed` status and returns an error
-/// so the coordinator chain surfaces the failure end-to-end.
+/// Retries at each hop are capped by the value passed to
+/// [`ChainHopExecutor::with_max_retries`]. On retry exhaustion the hop
+/// emits a `Failed` status and returns an error so the coordinator chain
+/// surfaces the failure end-to-end.
 pub struct ChainHopExecutor {
     /// Client used to delegate to the next hop in the chain.
     next: Arc<A2aClient>,
