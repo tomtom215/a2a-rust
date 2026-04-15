@@ -15,7 +15,7 @@
 //! to prevent HTTP header injection.
 
 use std::future::Future;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
@@ -255,9 +255,19 @@ pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
 ///
 /// First runs synchronous [`validate_webhook_url`] checks, then resolves the
 /// hostname via DNS and checks ALL resolved IP addresses against private/loopback
-/// ranges. This prevents DNS rebinding attacks where a hostname initially resolves
-/// to a public IP but later resolves to a private IP.
-pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<()> {
+/// ranges.
+///
+/// Returns the first validated [`SocketAddr`] (for IP pinning at connect time)
+/// when the URL uses a hostname, or `None` when the URL already contains a
+/// literal IP (in which case no pinning is needed because no DNS resolution
+/// will happen). A `None` return still means validation passed.
+///
+/// This is the core of the DNS-rebinding defence. Callers that actually
+/// establish a connection after validation **must** use the returned
+/// `SocketAddr` (not the original URL) to connect, so that the request does
+/// not re-enter DNS resolution in the HTTP client — which is where a
+/// rebinding attacker would otherwise flip the record to a private IP.
+pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<Option<SocketAddr>> {
     // Run synchronous checks first.
     validate_webhook_url(url)?;
 
@@ -274,8 +284,9 @@ pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<()> {
     let host_bare = host.trim_start_matches('[').trim_end_matches(']');
 
     // If the host is already a literal IP, validate_webhook_url already checked it.
+    // No DNS will happen at connect time, so no pinning is needed.
     if host_bare.parse::<IpAddr>().is_ok() {
-        return Ok(());
+        return Ok(None);
     }
 
     // Resolve the hostname and check all resulting IPs.
@@ -294,24 +305,81 @@ pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<()> {
         ))
     })?;
 
-    let mut found_any = false;
+    let mut pinned: Option<SocketAddr> = None;
     for socket_addr in resolved {
-        found_any = true;
         let ip = socket_addr.ip();
         if is_private_ip(ip) {
             return Err(A2aError::invalid_params(format!(
                 "webhook URL hostname {host_bare} resolves to private/loopback address: {ip}"
             )));
         }
+        if pinned.is_none() {
+            pinned = Some(socket_addr);
+        }
     }
 
-    if !found_any {
-        return Err(A2aError::invalid_params(format!(
-            "webhook URL hostname {host_bare} did not resolve to any addresses"
-        )));
-    }
+    pinned
+        .ok_or_else(|| {
+            A2aError::invalid_params(format!(
+                "webhook URL hostname {host_bare} did not resolve to any addresses"
+            ))
+        })
+        .map(Some)
+}
 
-    Ok(())
+/// Rewrites a webhook URL so that the host component is replaced with the
+/// given literal [`SocketAddr`], preserving scheme, path, and query.
+///
+/// Used after [`validate_webhook_url_with_dns`] returns a validated
+/// `SocketAddr` so the outgoing request connects to the exact IP that was
+/// validated — not whatever the HTTP client's own resolver returns seconds
+/// later. This is the pin half of the DNS-rebinding defence; the caller is
+/// responsible for setting the `Host` header to the original hostname so
+/// HTTP vhost routing still works at the remote end.
+fn rewrite_uri_with_pinned_addr(url: &str, pinned: SocketAddr) -> A2aResult<hyper::Uri> {
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
+
+    let scheme = uri
+        .scheme_str()
+        .ok_or_else(|| A2aError::invalid_params("webhook URL missing scheme"))?;
+
+    // IPv6 literals must be bracketed in the URI authority.
+    let host_str = match pinned.ip() {
+        IpAddr::V4(v4) => v4.to_string(),
+        IpAddr::V6(v6) => format!("[{v6}]"),
+    };
+
+    let path_and_query = uri
+        .path_and_query()
+        .map_or_else(|| "/".to_string(), std::string::ToString::to_string);
+
+    let rewritten = format!(
+        "{scheme}://{host_str}:{port}{path_and_query}",
+        port = pinned.port()
+    );
+
+    rewritten
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("could not rewrite webhook URL: {e}")))
+}
+
+/// Extracts the original `Host` header value (`host[:port]`) from a webhook URL.
+///
+/// Used with [`rewrite_uri_with_pinned_addr`] so the remote server still sees
+/// the original hostname for vhost routing even though the connection is
+/// dialled directly to the pinned IP.
+fn host_header_from_url(url: &str) -> A2aResult<String> {
+    let uri: hyper::Uri = url
+        .parse()
+        .map_err(|e| A2aError::invalid_params(format!("invalid webhook URL: {e}")))?;
+    let host = uri
+        .host()
+        .ok_or_else(|| A2aError::invalid_params("webhook URL missing host"))?;
+    Ok(uri
+        .port_u16()
+        .map_or_else(|| host.to_string(), |port| format!("{host}:{port}")))
 }
 
 /// Validates that a header value contains no CR/LF characters.
@@ -340,9 +408,27 @@ impl PushSender for HttpPushSender {
             trace_info!(url, "delivering push notification");
 
             // SSRF protection: reject private/loopback addresses (with DNS resolution).
-            if !self.allow_private_urls {
-                validate_webhook_url_with_dns(url).await?;
-            }
+            //
+            // `pinned_addr` is the specific IP that validation checked. If it is
+            // `Some`, we rewrite the outgoing URI to use that literal IP and
+            // restore the original hostname via an explicit `Host:` header,
+            // which closes the DNS-rebinding TOCTOU window between validation
+            // and the HTTP client's own resolver. See
+            // `rewrite_uri_with_pinned_addr` for the details.
+            let pinned_addr = if self.allow_private_urls {
+                None
+            } else {
+                validate_webhook_url_with_dns(url).await?
+            };
+
+            let (pinned_uri, pinned_host_header) = if let Some(addr) = pinned_addr {
+                (
+                    Some(rewrite_uri_with_pinned_addr(url, addr)?),
+                    Some(host_header_from_url(url)?),
+                )
+            } else {
+                (None, None)
+            };
 
             // Header injection protection: validate credentials.
             if let Some(ref auth) = config.authentication {
@@ -362,8 +448,16 @@ impl PushSender for HttpPushSender {
             for attempt in 0..self.retry_policy.max_attempts {
                 let mut builder = hyper::Request::builder()
                     .method(hyper::Method::POST)
-                    .uri(url)
                     .header("content-type", "application/json");
+
+                if let Some(uri) = pinned_uri.as_ref() {
+                    builder = builder.uri(uri.clone());
+                    if let Some(host) = pinned_host_header.as_deref() {
+                        builder = builder.header("host", host);
+                    }
+                } else {
+                    builder = builder.uri(url);
+                }
 
                 // Set authentication headers from config.
                 if let Some(ref auth) = config.authentication {
@@ -682,8 +776,59 @@ mod tests {
 
     #[tokio::test]
     async fn dns_accepts_ip_literal_public() {
-        // A public IP literal should pass (no DNS needed).
+        // A public IP literal should pass (no DNS needed), and must return
+        // `None` for the pinned address because no DNS resolution happens.
         let result = validate_webhook_url_with_dns("https://203.0.113.1/webhook").await;
-        assert!(result.is_ok(), "public IP literal should be accepted");
+        assert!(
+            matches!(result, Ok(None)),
+            "public IP literal should be accepted with no pinning (got {result:?})",
+        );
+    }
+
+    // ── rewrite_uri_with_pinned_addr / host_header_from_url ──────────────
+
+    #[test]
+    fn rewrite_uri_preserves_scheme_path_and_query() {
+        let pinned: SocketAddr = "203.0.113.1:8080".parse().unwrap();
+        let rewritten =
+            rewrite_uri_with_pinned_addr("http://example.com:8080/webhook?x=1", pinned).unwrap();
+        assert_eq!(rewritten.to_string(), "http://203.0.113.1:8080/webhook?x=1",);
+    }
+
+    #[test]
+    fn rewrite_uri_uses_ipv6_brackets() {
+        let pinned: SocketAddr = "[2001:db8::1]:443".parse().unwrap();
+        let rewritten =
+            rewrite_uri_with_pinned_addr("https://example.com/webhook", pinned).unwrap();
+        // IPv6 literals must be bracketed in the URI authority.
+        assert!(
+            rewritten.to_string().contains("[2001:db8::1]:443"),
+            "IPv6 literal should be bracketed: {rewritten}",
+        );
+    }
+
+    #[test]
+    fn rewrite_uri_default_path_when_missing() {
+        let pinned: SocketAddr = "203.0.113.1:80".parse().unwrap();
+        let rewritten = rewrite_uri_with_pinned_addr("http://example.com", pinned).unwrap();
+        assert_eq!(rewritten.to_string(), "http://203.0.113.1:80/");
+    }
+
+    #[test]
+    fn host_header_includes_port_when_present() {
+        let host = host_header_from_url("http://example.com:8080/webhook").unwrap();
+        assert_eq!(host, "example.com:8080");
+    }
+
+    #[test]
+    fn host_header_omits_default_port() {
+        let host = host_header_from_url("https://example.com/webhook").unwrap();
+        assert_eq!(host, "example.com");
+    }
+
+    #[test]
+    fn host_header_from_url_rejects_missing_host() {
+        let result = host_header_from_url("http:///path");
+        assert!(result.is_err());
     }
 }

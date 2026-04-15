@@ -81,7 +81,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` (on-demand CI workflow) |
+| **Mutation-tested** | Audited with `cargo-mutants`; the workflow is wired to fail on surviving mutants and is run on-demand via `workflow_dispatch` (not gated on every PR) |
 | **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; zero `unsafe` blocks |
 
 ## Crate Structure

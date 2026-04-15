@@ -4,7 +4,7 @@
 [package]
 name        = "rig-a2a-agent"
 version     = "0.0.0"
-description = "Example: wrapping a rig AI agent behind the A2A protocol"
+description = "Template for wrapping a rig AI agent behind the A2A protocol (ships with a mock completion; add rig-core and replace run_rig_completion to use a real LLM)"
 publish     = false
 
 edition.workspace    = true

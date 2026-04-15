@@ -1,7 +1,17 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Rig Agent — AI Framework Integration
+# Rig Integration Template
+
+> **This is an integration *template*, not a working rig agent.** The example
+> compiles and runs standalone because `rig` is intentionally **not** listed as
+> a dependency — this lets the template build in any environment without
+> pulling in an LLM SDK or requiring API keys. The `run_rig_completion()`
+> function returns a mock echo-style response by default. To turn this into a
+> real rig agent, add `rig-core` (or the provider crate of your choice) to
+> `Cargo.toml` and paste the snippet below into `run_rig_completion()`. The
+> A2A plumbing — status transitions, artifact emission, streaming — is
+> production-ready as shipped; only the LLM call is stubbed.
 
 Demonstrates how to wrap a [rig](https://github.com/0xPlaygrounds/rig) AI agent behind the A2A protocol. Shows the integration pattern for bridging rig's completion-based model with A2A's event-based streaming model.
 
@@ -20,17 +30,28 @@ A2A Client ──→ A2A Server (JSON-RPC)
 ## Running
 
 ```bash
-# With mock completion (no API key needed):
+# Template mode — echoes the user's text. No rig dependency, no API key:
 cargo run -p rig-a2a-agent
 
-# With a real rig provider (uncomment the code in run_rig_completion):
+# Real rig mode — after you follow "How to connect a real rig agent" below
+# (adding the rig dependency and replacing the mock body):
 export OPENAI_API_KEY=sk-...
 cargo run -p rig-a2a-agent
 ```
 
 ## How to connect a real rig agent
 
-The example ships with a mock completion for zero-dependency demo purposes. To connect a real LLM, replace the body of `RigAgentExecutor::run_rig_completion()`:
+The example ships with a mock completion for zero-dependency demo purposes. To
+connect a real LLM, do two things:
+
+1. Add the rig dependency to `examples/rig-agent/Cargo.toml`:
+
+   ```toml
+   [dependencies]
+   rig-core = "0.x"   # or the provider crate you prefer
+   ```
+
+2. Replace the body of `RigAgentExecutor::run_rig_completion()`:
 
 ### OpenAI
 

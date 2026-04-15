@@ -20,17 +20,24 @@ The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
 - Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
 
+<a id="mutation-testing-workflow"></a>
 The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separately:
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
 | **Full sweep** | On-demand (`workflow_dispatch`) | All library crates |
 
-Nightly schedule and PR-gate triggers are currently disabled to save CI time.
+Nightly schedule and PR-gate triggers are currently commented out to save CI
+time — a full sweep can take 100+ minutes per crate, and a2a-server alone
+generates 200–400 mutants. The workflow is run manually against `main` when
+test effectiveness is being audited.
 
 The full sweep produces a mutation report artifact with caught/missed/unviable
-counts and a mutation score. Zero missed mutants is required — any surviving
-mutant fails the build.
+counts and a mutation score. The workflow is configured to fail on surviving
+mutants, so when it is invoked a clean run confirms that every caught mutant
+is covered by at least one test. Because it is not wired as a blocking PR
+gate today, the zero-surviving-mutants property is audited on-demand rather
+than enforced on every commit.
 
 The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand (`workflow_dispatch`) and on pushes to `main` that affect benchmark or SDK code. It:
 
