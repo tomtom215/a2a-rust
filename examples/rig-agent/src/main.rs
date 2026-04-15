@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! Example: Wrapping a `rig` AI agent behind the A2A protocol.
+//! Template: wrapping a `rig` AI agent behind the A2A protocol.
 //!
-//! This demonstrates how to integrate the Rust `rig` AI framework
-//! (<https://github.com/0xPlaygrounds/rig>) with the A2A protocol.
+//! **This is an integration template, not a working rig agent.** It compiles
+//! and runs without listing `rig` as a dependency, so the example builds in
+//! any environment. [`RigAgentExecutor::run_rig_completion`] returns a mock
+//! echo-style response; to turn it into a real rig agent, add `rig-core` to
+//! `Cargo.toml` and replace the body of that function with the snippet from
+//! the README. The A2A plumbing around it — status transitions, artifact
+//! emission, streaming — is production-ready as shipped.
+//!
+//! See <https://github.com/0xPlaygrounds/rig> for the rig project.
 //!
 //! # Architecture
 //!
@@ -227,12 +234,13 @@ async fn start_server(handler: Arc<a2a_protocol_server::handler::RequestHandler>
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Rig + A2A Agent Example");
-    println!("=======================");
+    println!("Rig + A2A Integration Template");
+    println!("===============================");
     println!();
-    println!("This example shows how to wrap a rig AI agent behind the A2A protocol.");
-    println!("Replace the mock completion in RigAgentExecutor::run_rig_completion()");
-    println!("with your actual rig agent for real LLM integration.");
+    println!("NOTE: this is a TEMPLATE. It is not a working rig agent.");
+    println!("      run_rig_completion() returns a mock echo response.");
+    println!("      To use a real LLM, add rig-core to Cargo.toml and");
+    println!("      replace the body of RigAgentExecutor::run_rig_completion().");
     println!();
 
     let executor = RigAgentExecutor::new("rig-demo-agent");

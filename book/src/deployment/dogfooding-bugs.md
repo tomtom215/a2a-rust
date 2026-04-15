@@ -565,7 +565,9 @@ Auth interceptor headers were applied to JSON-RPC and REST HTTP requests but not
 
 **Why tests missed it:** Tests use static IPs or localhost. DNS rebinding requires a specially configured DNS server.
 
-**Fix:** Added `validate_webhook_url_with_dns()` that resolves DNS before IP validation, using the resolved IP for both validation and the subsequent HTTP request.
+**Fix (initial):** Added `validate_webhook_url_with_dns()` that resolves DNS before IP validation and checks every resolved IP against the private/loopback ranges.
+
+**Fix (hardening, 2026-04-15):** The initial fix validated a set of IPs but still allowed the HTTP client to re-resolve the hostname on connect, leaving a narrow TOCTOU window. `validate_webhook_url_with_dns()` now returns the specific `SocketAddr` it validated, and `HttpPushSender::send()` rewrites the outgoing URI so the request connects directly to the literal pinned IP (`http://<validated-ip>:<port>/…`) with the original hostname preserved via an explicit `Host:` header. This closes the window: the HTTP client sees an IP literal and never re-enters DNS resolution, so a rebinding attacker cannot flip the record between validation and connect. See `crates/a2a-server/src/push/sender.rs:rewrite_uri_with_pinned_addr` and the `rewrite_uri_*` / `host_header_*` tests.
 
 ### Bug H7: Retry Transport Deep-Clones serde_json::Value Per Attempt
 

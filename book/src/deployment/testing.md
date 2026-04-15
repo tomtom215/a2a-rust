@@ -230,16 +230,19 @@ class of bug, and the gaps between layers are where production incidents hide:
 | **Mutation tests** | Your assertions detect real code changes | Protocol-level emergent behavior |
 
 **The a2a-rust experience:** After building ~1,630 unit/integration/property/fuzz
-tests (with feature flags), an exhaustive E2E dogfood suite that caught 65 real bugs across 12
+tests (with feature flags), an exhaustive E2E dogfood suite that caught 68 real bugs across 13
 documented passes, and achieving full green CI — **mutation testing still found gaps.** Tests
 that looked comprehensive were silently missing assertions on return values,
 boundary conditions, and delegation correctness. The suite was green, but mutants
 survived because no test *verified* the specific behavior being mutated.
 
-This is why mutation testing is a required quality gate: it is the only technique
-that measures test *effectiveness* rather than test *existence*. Every other
-technique answers "does the code work?" — mutation testing answers "would the
-tests catch it if the code broke?"
+This is why mutation testing is an important quality signal: it is the only
+technique that measures test *effectiveness* rather than test *existence*. Every
+other technique answers "does the code work?" — mutation testing answers "would
+the tests catch it if the code broke?" In this repo the full sweep is run
+on-demand via the `workflow_dispatch` trigger on `.github/workflows/mutants.yml`
+rather than as a blocking PR gate, because a full sweep can take 100+ minutes
+per crate. See [CI/CD](./cicd.md#mutation-testing-workflow) for the full policy.
 
 ## Mutation Testing
 

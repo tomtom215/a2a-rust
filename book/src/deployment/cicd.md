@@ -20,27 +20,34 @@ The **Coverage** workflow (`.github/workflows/coverage.yml`) runs on pushes to `
 - Uses `cargo-llvm-cov` for source-based coverage instrumentation
 - Generates LCOV reports and uploads to [Codecov](https://codecov.io/gh/tomtom215/a2a-rust)
 
+<a id="mutation-testing-workflow"></a>
 The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separately:
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
 | **Full sweep** | On-demand (`workflow_dispatch`) | All library crates |
 
-Nightly schedule and PR-gate triggers are currently disabled to save CI time.
+Nightly schedule and PR-gate triggers are currently commented out to save CI
+time — a full sweep can take 100+ minutes per crate, and a2a-server alone
+generates 200–400 mutants. The workflow is run manually against `main` when
+test effectiveness is being audited.
 
 The full sweep produces a mutation report artifact with caught/missed/unviable
-counts and a mutation score. Zero missed mutants is required — any surviving
-mutant fails the build.
+counts and a mutation score. The workflow is configured to fail on surviving
+mutants, so when it is invoked a clean run confirms that every caught mutant
+is covered by at least one test. Because it is not wired as a blocking PR
+gate today, the zero-surviving-mutants property is audited on-demand rather
+than enforced on every commit.
 
 The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand (`workflow_dispatch`) and on pushes to `main` that affect benchmark or SDK code. It:
 
-1. Builds and runs all 13 benchmark suites (267 benchmarks total) individually via Criterion.rs
+1. Builds and runs all 14 benchmark suites (275 benchmarks total) individually via Criterion.rs
 2. Auto-generates the [benchmark results page](../reference/benchmarks.md) via `benches/scripts/generate_book_page.sh`
 3. Auto-generates the [interactive benchmark dashboard](../reference/dashboard.md) via `benches/scripts/generate_dashboard.sh`
 4. Commits the updated results page and dashboard to `main` via `github-actions[bot]`
 5. Archives the full criterion HTML reports (violin plots, comparison overlays) as workflow artifacts with 30-day retention
 
-The 13 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, and advanced scenarios.
+The 14 benchmark suites cover: transport throughput (payload scaling to 1MB), protocol overhead (including `protocol/payload_scaling` isolation benchmarks for serde regression detection), task lifecycle, concurrent agents, cross-language comparison, realistic workloads, error paths, streaming and backpressure, data volume scaling (with cache-busting), memory overhead, enterprise scenarios, production scenarios, advanced scenarios, and — new in this release — **agent-level latency under fault** via an in-process 5-hop coordinator chain with fault injection at every link. The last suite is the first benchmark on this page that does not measure SDK-layer overhead; see the [Agent-Level Latency Under Fault](../reference/benchmarks.md#agent-level-latency-under-fault) section for the honest caveats.
 
 The **TCK** workflow (`.github/workflows/tck.yml`) runs the Technology Compatibility Kit on pushes to `main` and PRs. It tests the echo-agent (self-test) and runs cross-language conformance tests against Python, JavaScript, Go, and Java agent implementations with both JSON-RPC and REST bindings.
 

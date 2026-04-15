@@ -81,7 +81,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | Zero surviving mutants enforced via `cargo-mutants` (on-demand CI workflow) |
+| **Mutation-tested** | Audited with `cargo-mutants`; the workflow is wired to fail on surviving mutants and is run on-demand via `workflow_dispatch` (not gated on every PR) |
 | **No `unsafe`** | `#![deny(unsafe_op_in_unsafe_fn)]` in every crate; zero `unsafe` blocks |
 
 ## Crate Structure
@@ -297,9 +297,11 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (267 benchmarks across 13 suites — transport, protocol,
+# Run benchmarks (275 benchmarks across 14 suites — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
-# data volume, memory, enterprise, production, and advanced scenarios)
+# data volume, memory, enterprise, production, advanced scenarios, and
+# coordinator chain under fault — the last is the only agent-level one,
+# see book/src/reference/benchmarks.md for caveats on how to read it)
 cargo bench -p a2a-benchmarks
 
 # Mutation testing (requires cargo-mutants)

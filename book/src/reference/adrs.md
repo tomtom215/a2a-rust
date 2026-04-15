@@ -83,9 +83,9 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
 
-**Decision:** Adopt `cargo-mutants` as a mandatory quality gate with zero surviving mutants required across all library crates. CI runs on-demand via `workflow_dispatch` (nightly schedule and PR-gate triggers are currently disabled to save CI time). Configuration is centralized in `mutants.toml`.
+**Decision:** Adopt `cargo-mutants` as a test-effectiveness quality signal, audited on-demand against all library crates. The CI workflow is configured to fail on surviving mutants, so when invoked a clean run confirms zero survivors — but it runs via `workflow_dispatch` rather than on every PR, because a full sweep can take 100+ minutes per crate and `a2a-server` alone generates 200–400 mutants. Nightly schedule and PR-gate triggers are commented out in `.github/workflows/mutants.yml` and will be re-enabled when iteration stabilises. Configuration is centralized in `mutants.toml`.
 
-**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The compute cost is managed through on-demand scheduling and exclusion of unproductive targets.
+**Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The tradeoff is CI time: making it a blocking PR gate is punitive given current compute budgets, so it is treated as an on-demand audit that *enforces* zero survivors when it runs, rather than a per-commit gate.
 
 ## ADR 0007: Axum Integration and TCK Wire Format Tests
 
@@ -99,6 +99,16 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Rationale:** TCK tests catch interop regressions before release. Axum integration reduces server setup from ~25 lines to 3 while remaining optional (the raw hyper `serve()` API is unchanged).
 
+## ADR 0008: Object-Safe `AgentExecutor` Trait Shape
+
+**Status:** Accepted
+
+**Context:** `AgentExecutor` is the primary extension point users implement. The obvious question a reader asks when opening `executor.rs` is: *why not `async fn execute(...)`?* — every method returns `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>`, and every example in the repo wraps bodies with `Box::pin(async move { ... })` or uses the `boxed_future` / `agent_executor!` helpers.
+
+**Decision:** Keep `AgentExecutor` as a manual `Pin<Box<dyn Future + Send + 'a>>` trait (object-safe), and ship two ergonomic helpers (`boxed_future` and the `agent_executor!` macro) to compensate for the call-site noise. `RequestHandler` stores the executor as `Arc<dyn AgentExecutor>`, which keeps `RequestHandler`, every dispatcher, the Axum integration, and the builder API **non-generic**.
+
+**Rationale:** Async-fn-in-trait is stable since Rust 1.75 but produces per-impl anonymous future types that are **not object-safe on stable**. Using `async fn execute` would force `RequestHandler<E>` to become generic, and that generic parameter would then leak through every dispatcher, the Axum layer, `A2aRouter`, and the builder API. The `async-trait` crate produces exactly the same `Pin<Box<dyn Future>>` shape we have now but hides the heap allocation and forces a proc-macro dep on every downstream user — a non-starter given ADR 0002. The manual shape is honest about the cost (one `Box::pin` allocation per call, deep in the noise relative to network RTT) and keeps the public API free of trait-erasure machinery. The `agent_executor!` macro gives trivial executors the same ergonomics as `async fn` without introducing a second trait. See [ADR 0008 full document](https://github.com/tomtom215/a2a-rust/blob/main/docs/adr/0008-agent-executor-trait-shape.md) for the full alternatives analysis and the revisit trigger.
+
 ## Summary
 
 | ADR | Key Decision |
@@ -108,8 +118,9 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 | 0003 | Tokio as mandatory runtime |
 | 0004 | Three-layer architecture (dispatcher → handler → executor) |
 | 0005 | In-tree SSE parser/emitter, zero additional deps |
-| 0006 | `cargo-mutants` as mandatory quality gate, zero surviving mutants |
+| 0006 | `cargo-mutants` as on-demand test-effectiveness audit |
 | 0007 | Axum integration + TCK wire format conformance tests |
+| 0008 | `AgentExecutor` kept object-safe so `RequestHandler` stays non-generic |
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.
 
