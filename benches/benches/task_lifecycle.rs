@@ -23,7 +23,8 @@
 //! - Agent logic execution time
 //! - Network latency (loopback only for integration tests)
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use a2a_benchmarks::executor::EchoExecutor;
 use a2a_benchmarks::fixtures;

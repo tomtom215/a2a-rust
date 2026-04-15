@@ -21,7 +21,8 @@
 //! - Network I/O (pure in-memory serialization)
 //! - Transport dispatch overhead (see `transport_throughput`)
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 use a2a_benchmarks::fixtures;
 

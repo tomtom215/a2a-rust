@@ -277,7 +277,7 @@ mod tests {
     // ── Observable-effect tests ─────────────────────────────────────────────
 
     use opentelemetry::metrics::MeterProvider;
-    use opentelemetry_sdk::metrics::data::{ResourceMetrics, Sum};
+    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData, ResourceMetrics};
     use opentelemetry_sdk::metrics::reader::MetricReader;
     use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
     use opentelemetry_sdk::Resource;
@@ -306,14 +306,17 @@ mod tests {
         fn collect(
             &self,
             rm: &mut ResourceMetrics,
-        ) -> opentelemetry_sdk::metrics::MetricResult<()> {
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
             self.0.collect(rm)
         }
         fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
             self.0.force_flush()
         }
-        fn shutdown(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.shutdown()
+        fn shutdown_with_timeout(
+            &self,
+            timeout: std::time::Duration,
+        ) -> opentelemetry_sdk::error::OTelSdkResult {
+            self.0.shutdown_with_timeout(timeout)
         }
         fn temporality(
             &self,
@@ -336,20 +339,17 @@ mod tests {
     }
 
     fn collect_metrics(reader: &CloneableReader) -> ResourceMetrics {
-        let mut rm = ResourceMetrics {
-            resource: Resource::builder().build(),
-            scope_metrics: vec![],
-        };
+        let mut rm = ResourceMetrics::default();
         reader.collect(&mut rm).expect("collect");
         rm
     }
 
     fn find_sum_u64(rm: &ResourceMetrics, name: &str) -> u64 {
-        for scope in &rm.scope_metrics {
-            for metric in &scope.metrics {
-                if metric.name == name {
-                    if let Some(sum) = metric.data.as_any().downcast_ref::<Sum<u64>>() {
-                        return sum.data_points.iter().map(|dp| dp.value).sum();
+        for scope in rm.scope_metrics() {
+            for metric in scope.metrics() {
+                if metric.name() == name {
+                    if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
+                        return sum.data_points().map(|dp| dp.value()).sum();
                     }
                 }
             }
@@ -392,18 +392,16 @@ mod tests {
 
     #[test]
     fn on_latency_records_histogram() {
-        use opentelemetry_sdk::metrics::data::Histogram as DataHistogram;
-
         let (metrics, reader) = metrics_with_reader();
         metrics.on_latency("test/method", Duration::from_millis(42));
         let rm = collect_metrics(&reader);
 
         let mut found = false;
-        for scope in &rm.scope_metrics {
-            for metric in &scope.metrics {
-                if metric.name == "a2a.server.latency" {
-                    if let Some(hist) = metric.data.as_any().downcast_ref::<DataHistogram<f64>>() {
-                        let count: u64 = hist.data_points.iter().map(|dp| dp.count).sum();
+        for scope in rm.scope_metrics() {
+            for metric in scope.metrics() {
+                if metric.name() == "a2a.server.latency" {
+                    if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data() {
+                        let count: u64 = hist.data_points().map(|dp| dp.count()).sum();
                         assert!(count > 0, "histogram should have recorded a value");
                         found = true;
                     }
@@ -415,18 +413,16 @@ mod tests {
 
     #[test]
     fn on_queue_depth_records_gauge() {
-        use opentelemetry_sdk::metrics::data::Gauge as DataGauge;
-
         let (metrics, reader) = metrics_with_reader();
         metrics.on_queue_depth_change(42);
         let rm = collect_metrics(&reader);
 
         let mut found = false;
-        for scope in &rm.scope_metrics {
-            for metric in &scope.metrics {
-                if metric.name == "a2a.server.queue_depth" {
-                    if let Some(gauge) = metric.data.as_any().downcast_ref::<DataGauge<u64>>() {
-                        let val: u64 = gauge.data_points.iter().map(|dp| dp.value).sum();
+        for scope in rm.scope_metrics() {
+            for metric in scope.metrics() {
+                if metric.name() == "a2a.server.queue_depth" {
+                    if let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data() {
+                        let val: u64 = gauge.data_points().map(|dp| dp.value()).sum();
                         assert_eq!(val, 42, "gauge should record 42");
                         found = true;
                     }

@@ -11,7 +11,7 @@ fn main() {
         let proto_file = proto_dir.join("a2a.proto");
         println!("cargo:rerun-if-changed={}", proto_file.display());
         println!("cargo:rerun-if-changed={}", proto_dir.display());
-        tonic_build::configure()
+        tonic_prost_build::configure()
             .build_server(false)
             .build_client(true)
             .compile_protos(&[&proto_file], &[&proto_dir])

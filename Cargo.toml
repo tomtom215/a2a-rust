@@ -48,10 +48,12 @@ uuid = { version = ">=1.8, <2", features = ["v4"] }
 tracing = { version = ">=0.1.40, <0.2" }
 
 # gRPC (optional — behind `grpc` feature flag)
-tonic        = { version = "0.12" }
-prost        = { version = "0.13" }
-tonic-build  = { version = "0.12" }
-tokio-stream = { version = "0.1" }
+tonic             = { version = "0.14" }
+prost             = { version = "0.14" }
+tonic-build       = { version = "0.14" }
+tonic-prost       = { version = "0.14" }
+tonic-prost-build = { version = "0.14" }
+tokio-stream      = { version = "0.1" }
 
 # SQLite (optional — behind `sqlite` feature flag)
 [workspace.dependencies.sqlx]
@@ -60,7 +62,7 @@ default-features = false
 features = ["runtime-tokio", "sqlite"]
 
 [workspace.dependencies.criterion]
-version = "0.5"
+version = "0.8"
 features = ["html_reports"]
 
 [profile.release]

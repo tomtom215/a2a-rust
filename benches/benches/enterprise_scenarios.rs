@@ -171,7 +171,7 @@ fn bench_push_config_store(c: &mut Criterion) {
         let config =
             TaskPushNotificationConfig::new("task-bench-001", "https://hooks.example.com/webhook");
         b.iter(|| {
-            rt.block_on(store.set(criterion::black_box(config.clone())))
+            rt.block_on(store.set(std::hint::black_box(config.clone())))
                 .unwrap();
         });
     });
@@ -194,8 +194,8 @@ fn bench_push_config_store(c: &mut Criterion) {
         let (task_id, config_id) = &config_ids[0];
         b.iter(|| {
             rt.block_on(store.get(
-                criterion::black_box(task_id),
-                criterion::black_box(config_id),
+                std::hint::black_box(task_id),
+                std::hint::black_box(config_id),
             ))
             .unwrap();
         });
@@ -214,7 +214,7 @@ fn bench_push_config_store(c: &mut Criterion) {
                 rt.block_on(store.set(config)).unwrap();
             }
             b.iter(|| {
-                rt.block_on(store.list(criterion::black_box("task-list-bench")))
+                rt.block_on(store.list(std::hint::black_box("task-list-bench")))
                     .unwrap();
             });
         });
@@ -256,7 +256,7 @@ fn bench_eviction_pressure(c: &mut Criterion) {
 
                 let task = fixtures::completed_task(cap + 1);
                 b.iter(|| {
-                    rt.block_on(store.save(criterion::black_box(&task)))
+                    rt.block_on(store.save(std::hint::black_box(&task)))
                         .unwrap();
                 });
             },
@@ -465,14 +465,14 @@ fn bench_large_history(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         group.bench_with_input(BenchmarkId::new("serialize", turns), &task, |b, task| {
-            b.iter(|| serde_json::to_vec(criterion::black_box(task)).unwrap());
+            b.iter(|| serde_json::to_vec(std::hint::black_box(task)).unwrap());
         });
         group.bench_with_input(
             BenchmarkId::new("deserialize", turns),
             &bytes,
             |b, bytes| {
                 b.iter(|| {
-                    serde_json::from_slice::<a2a_protocol_types::task::Task>(criterion::black_box(
+                    serde_json::from_slice::<a2a_protocol_types::task::Task>(std::hint::black_box(
                         bytes,
                     ))
                     .unwrap()
@@ -486,7 +486,7 @@ fn bench_large_history(c: &mut Criterion) {
         let store = InMemoryTaskStore::new();
         group.bench_with_input(BenchmarkId::new("store_save", turns), &task, |b, task| {
             b.iter(|| {
-                rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                rt.block_on(store.save(std::hint::black_box(task))).unwrap();
             });
         });
     }

@@ -50,6 +50,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
         .push(rcgen::DnType::CommonName, "Test CA");
     let ca_key = rcgen::KeyPair::generate().unwrap();
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let ca_issuer = rcgen::Issuer::new(ca_params, ca_key);
 
     // Generate server cert signed by CA
     let mut server_params = rcgen::CertificateParams::new(vec![san.into()]).unwrap();
@@ -57,9 +58,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, san);
     let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params
-        .signed_by(&server_key, &ca_cert, &ca_key)
-        .unwrap();
+    let server_cert = server_params.signed_by(&server_key, &ca_issuer).unwrap();
 
     TestCerts {
         ca_cert_der: ca_cert.der().clone(),
@@ -272,6 +271,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .push(rcgen::DnType::CommonName, "mTLS Test CA");
     let ca_key = rcgen::KeyPair::generate().unwrap();
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let ca_issuer = rcgen::Issuer::new(ca_params, ca_key);
 
     // Server cert
     let mut server_params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
@@ -279,9 +279,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "localhost");
     let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params
-        .signed_by(&server_key, &ca_cert, &ca_key)
-        .unwrap();
+    let server_cert = server_params.signed_by(&server_key, &ca_issuer).unwrap();
 
     // Client cert
     let mut client_params = rcgen::CertificateParams::new(vec![]).unwrap();
@@ -289,9 +287,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "test-client");
     let client_key = rcgen::KeyPair::generate().unwrap();
-    let client_cert = client_params
-        .signed_by(&client_key, &ca_cert, &ca_key)
-        .unwrap();
+    let client_cert = client_params.signed_by(&client_key, &ca_issuer).unwrap();
 
     MtlsCerts {
         ca_cert_der: ca_cert.der().clone(),
@@ -422,7 +418,8 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "Rogue CA");
     let rogue_ca_key = rcgen::KeyPair::generate().unwrap();
-    let rogue_ca_cert = rogue_ca_params.self_signed(&rogue_ca_key).unwrap();
+    let _rogue_ca_cert = rogue_ca_params.self_signed(&rogue_ca_key).unwrap();
+    let rogue_ca_issuer = rcgen::Issuer::new(rogue_ca_params, rogue_ca_key);
 
     let mut rogue_client_params = rcgen::CertificateParams::new(vec![]).unwrap();
     rogue_client_params
@@ -430,7 +427,7 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
         .push(rcgen::DnType::CommonName, "rogue-client");
     let rogue_client_key = rcgen::KeyPair::generate().unwrap();
     let rogue_client_cert = rogue_client_params
-        .signed_by(&rogue_client_key, &rogue_ca_cert, &rogue_ca_key)
+        .signed_by(&rogue_client_key, &rogue_ca_issuer)
         .unwrap();
 
     // Build client with correct server CA trust but rogue client cert.
