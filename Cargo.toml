@@ -48,12 +48,17 @@ uuid = { version = ">=1.8, <2", features = ["v4"] }
 tracing = { version = ">=0.1.40, <0.2" }
 
 # gRPC (optional — behind `grpc` feature flag)
-tonic             = { version = "0.14" }
-prost             = { version = "0.14" }
-tonic-build       = { version = "0.14" }
-tonic-prost       = { version = "0.14" }
-tonic-prost-build = { version = "0.14" }
-tokio-stream      = { version = "0.1" }
+tonic              = { version = "0.14" }
+prost              = { version = "0.14" }
+tonic-build        = { version = "0.14" }
+tonic-prost        = { version = "0.14" }
+tonic-prost-build  = { version = "0.14" }
+tokio-stream       = { version = "0.1" }
+# Ships prebuilt `protoc` binaries for linux/{x86,aarch64}, macos/{x86,aarch64},
+# and windows x86_64. Used by the grpc-feature build scripts so that contributors
+# and CI runners do not need to install protobuf-compiler manually — a clean
+# `cargo build --features grpc` works out of the box.
+protoc-bin-vendored = { version = "3" }
 
 # SQLite (optional — behind `sqlite` feature flag)
 [workspace.dependencies.sqlx]

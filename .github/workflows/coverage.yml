@@ -39,10 +39,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Install protoc (for gRPC feature)
-        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
-        with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # protoc is bundled via the `protoc-bin-vendored` crate (see the
+      # grpc build scripts in crates/a2a-client and crates/a2a-server).
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked

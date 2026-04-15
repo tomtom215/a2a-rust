@@ -29,7 +29,7 @@ postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`.
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored"]
 ## Enable OpenTelemetry integration for native OTLP export of traces and metrics.
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
@@ -64,7 +64,8 @@ opentelemetry-otlp = { version = "0.31", optional = true, default-features = fal
 axum = { version = "0.8", optional = true, default-features = false, features = ["json", "query", "tokio"] }
 
 [build-dependencies]
-tonic-prost-build = { workspace = true, optional = true }
+tonic-prost-build   = { workspace = true, optional = true }
+protoc-bin-vendored = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

@@ -71,8 +71,26 @@ fn generate_test_certs(san: &str) -> TestCerts {
 
 // ── TLS server helper ───────────────────────────────────────────────────────
 
+/// Returns an [`Arc`] to the `ring`-backed rustls [`CryptoProvider`] used by
+/// every TLS server and client in this integration-test file.
+///
+/// Why this exists: when `cargo test --workspace --all-features` is used,
+/// feature unification pulls in both `ring` (via `a2a-protocol-client`) and
+/// `aws-lc-rs` (via `rustls-platform-verifier` from a transitive dep in
+/// `a2a-protocol-server`'s otel/grpc feature graph). rustls 0.23 panics when
+/// there is more than one provider in the binary and you call the default
+/// [`rustls::ServerConfig::builder`] / [`rustls::ClientConfig::builder`],
+/// so we construct every config with an explicit provider via the
+/// `_with_provider` entry points. This mirrors what
+/// `crates/a2a-client/src/tls.rs` does in production code.
+fn test_ring_provider() -> std::sync::Arc<rustls::crypto::CryptoProvider> {
+    std::sync::Arc::new(rustls::crypto::ring::default_provider())
+}
+
 async fn start_tls_server(certs: &TestCerts) -> SocketAddr {
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = rustls::ServerConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_no_client_auth()
         .with_single_cert(
             vec![certs.server_cert_der.clone()],
@@ -305,11 +323,16 @@ fn generate_mtls_certs() -> MtlsCerts {
 async fn start_mtls_server(certs: &MtlsCerts) -> SocketAddr {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
-    let client_auth = rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
-        .build()
-        .unwrap();
+    let client_auth = rustls::server::WebPkiClientVerifier::builder_with_provider(
+        Arc::new(root_store),
+        test_ring_provider(),
+    )
+    .build()
+    .unwrap();
 
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = rustls::ServerConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_client_cert_verifier(client_auth)
         .with_single_cert(
             vec![certs.server_cert_der.clone()],
@@ -351,7 +374,9 @@ async fn mtls_client_with_valid_cert_succeeds() {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
 
-    let client_config = rustls::ClientConfig::builder()
+    let client_config = rustls::ClientConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_root_certificates(root_store)
         .with_client_auth_cert(
             vec![certs.client_cert_der.clone()],
@@ -434,7 +459,9 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
 
-    let client_config = rustls::ClientConfig::builder()
+    let client_config = rustls::ClientConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_root_certificates(root_store)
         .with_client_auth_cert(
             vec![rogue_client_cert.der().clone()],

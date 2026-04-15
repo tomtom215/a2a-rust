@@ -277,7 +277,10 @@ mod tests {
     // ── Observable-effect tests ─────────────────────────────────────────────
 
     use opentelemetry::metrics::MeterProvider;
-    use opentelemetry_sdk::metrics::data::{AggregatedMetrics, MetricData, ResourceMetrics};
+    use opentelemetry_sdk::metrics::data::{
+        AggregatedMetrics, GaugeDataPoint, HistogramDataPoint, MetricData, ResourceMetrics,
+        SumDataPoint,
+    };
     use opentelemetry_sdk::metrics::reader::MetricReader;
     use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
     use opentelemetry_sdk::Resource;
@@ -303,10 +306,7 @@ mod tests {
         ) {
             self.0.register_pipeline(pipeline);
         }
-        fn collect(
-            &self,
-            rm: &mut ResourceMetrics,
-        ) -> opentelemetry_sdk::error::OTelSdkResult {
+        fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry_sdk::error::OTelSdkResult {
             self.0.collect(rm)
         }
         fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
@@ -349,7 +349,7 @@ mod tests {
             for metric in scope.metrics() {
                 if metric.name() == name {
                     if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
-                        return sum.data_points().map(|dp| dp.value()).sum();
+                        return sum.data_points().map(SumDataPoint::value).sum();
                     }
                 }
             }
@@ -401,7 +401,7 @@ mod tests {
             for metric in scope.metrics() {
                 if metric.name() == "a2a.server.latency" {
                     if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data() {
-                        let count: u64 = hist.data_points().map(|dp| dp.count()).sum();
+                        let count: u64 = hist.data_points().map(HistogramDataPoint::count).sum();
                         assert!(count > 0, "histogram should have recorded a value");
                         found = true;
                     }
@@ -422,7 +422,7 @@ mod tests {
             for metric in scope.metrics() {
                 if metric.name() == "a2a.server.queue_depth" {
                     if let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data() {
-                        let val: u64 = gauge.data_points().map(|dp| dp.value()).sum();
+                        let val: u64 = gauge.data_points().map(GaugeDataPoint::value).sum();
                         assert_eq!(val, 42, "gauge should record 42");
                         found = true;
                     }

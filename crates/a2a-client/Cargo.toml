@@ -27,7 +27,7 @@ tracing = ["dep:tracing"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`.
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored"]
 
 [dependencies]
 a2a-protocol-types = { version = "0.5.1", path = "../a2a-types" }
@@ -50,7 +50,8 @@ prost          = { workspace = true, optional = true }
 tokio-stream   = { workspace = true, optional = true }
 
 [build-dependencies]
-tonic-prost-build = { workspace = true, optional = true }
+tonic-prost-build   = { workspace = true, optional = true }
+protoc-bin-vendored = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

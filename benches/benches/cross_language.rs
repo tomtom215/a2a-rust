@@ -50,8 +50,8 @@
 
 use std::sync::Arc;
 
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
 
 use a2a_benchmarks::executor::EchoExecutor;
 use a2a_benchmarks::executor::NoopExecutor;

@@ -11,6 +11,20 @@ fn main() {
         let proto_file = proto_dir.join("a2a.proto");
         println!("cargo:rerun-if-changed={}", proto_file.display());
         println!("cargo:rerun-if-changed={}", proto_dir.display());
+
+        // Point `prost-build` (the transitive dep of `tonic-prost-build`) at
+        // the protoc binary vendored by `protoc-bin-vendored`, unless the user
+        // has set `PROTOC` themselves. This lets `cargo build --features grpc`
+        // work on a clean machine without any `apt-get install
+        // protobuf-compiler` / `brew install protobuf` / choco step. CI jobs
+        // that want to use a system protoc can still set `PROTOC=...` to
+        // override.
+        if std::env::var_os("PROTOC").is_none() {
+            if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
+                std::env::set_var("PROTOC", path);
+            }
+        }
+
         tonic_prost_build::configure()
             .build_server(true)
             .build_client(false)

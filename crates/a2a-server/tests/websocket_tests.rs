@@ -265,7 +265,9 @@ async fn ws_ping_pong() {
         .await
         .unwrap();
 
-    ws.send(WsMessage::Ping(vec![1, 2, 3].into())).await.unwrap();
+    ws.send(WsMessage::Ping(vec![1, 2, 3].into()))
+        .await
+        .unwrap();
 
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
