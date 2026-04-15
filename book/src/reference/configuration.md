@@ -32,6 +32,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `max_token_age` | `Duration` | 1 hour | Stale token eviction age |
 | `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
+| `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by

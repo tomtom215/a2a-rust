@@ -50,6 +50,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
         .push(rcgen::DnType::CommonName, "Test CA");
     let ca_key = rcgen::KeyPair::generate().unwrap();
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let ca_issuer = rcgen::Issuer::new(ca_params, ca_key);
 
     // Generate server cert signed by CA
     let mut server_params = rcgen::CertificateParams::new(vec![san.into()]).unwrap();
@@ -57,9 +58,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, san);
     let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params
-        .signed_by(&server_key, &ca_cert, &ca_key)
-        .unwrap();
+    let server_cert = server_params.signed_by(&server_key, &ca_issuer).unwrap();
 
     TestCerts {
         ca_cert_der: ca_cert.der().clone(),
@@ -72,8 +71,26 @@ fn generate_test_certs(san: &str) -> TestCerts {
 
 // ── TLS server helper ───────────────────────────────────────────────────────
 
+/// Returns an [`Arc`] to the `ring`-backed rustls [`CryptoProvider`] used by
+/// every TLS server and client in this integration-test file.
+///
+/// Why this exists: when `cargo test --workspace --all-features` is used,
+/// feature unification pulls in both `ring` (via `a2a-protocol-client`) and
+/// `aws-lc-rs` (via `rustls-platform-verifier` from a transitive dep in
+/// `a2a-protocol-server`'s otel/grpc feature graph). rustls 0.23 panics when
+/// there is more than one provider in the binary and you call the default
+/// [`rustls::ServerConfig::builder`] / [`rustls::ClientConfig::builder`],
+/// so we construct every config with an explicit provider via the
+/// `_with_provider` entry points. This mirrors what
+/// `crates/a2a-client/src/tls.rs` does in production code.
+fn test_ring_provider() -> std::sync::Arc<rustls::crypto::CryptoProvider> {
+    std::sync::Arc::new(rustls::crypto::ring::default_provider())
+}
+
 async fn start_tls_server(certs: &TestCerts) -> SocketAddr {
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = rustls::ServerConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_no_client_auth()
         .with_single_cert(
             vec![certs.server_cert_der.clone()],
@@ -272,6 +289,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .push(rcgen::DnType::CommonName, "mTLS Test CA");
     let ca_key = rcgen::KeyPair::generate().unwrap();
     let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+    let ca_issuer = rcgen::Issuer::new(ca_params, ca_key);
 
     // Server cert
     let mut server_params = rcgen::CertificateParams::new(vec!["localhost".into()]).unwrap();
@@ -279,9 +297,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "localhost");
     let server_key = rcgen::KeyPair::generate().unwrap();
-    let server_cert = server_params
-        .signed_by(&server_key, &ca_cert, &ca_key)
-        .unwrap();
+    let server_cert = server_params.signed_by(&server_key, &ca_issuer).unwrap();
 
     // Client cert
     let mut client_params = rcgen::CertificateParams::new(vec![]).unwrap();
@@ -289,9 +305,7 @@ fn generate_mtls_certs() -> MtlsCerts {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "test-client");
     let client_key = rcgen::KeyPair::generate().unwrap();
-    let client_cert = client_params
-        .signed_by(&client_key, &ca_cert, &ca_key)
-        .unwrap();
+    let client_cert = client_params.signed_by(&client_key, &ca_issuer).unwrap();
 
     MtlsCerts {
         ca_cert_der: ca_cert.der().clone(),
@@ -309,11 +323,16 @@ fn generate_mtls_certs() -> MtlsCerts {
 async fn start_mtls_server(certs: &MtlsCerts) -> SocketAddr {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
-    let client_auth = rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
-        .build()
-        .unwrap();
+    let client_auth = rustls::server::WebPkiClientVerifier::builder_with_provider(
+        Arc::new(root_store),
+        test_ring_provider(),
+    )
+    .build()
+    .unwrap();
 
-    let server_config = rustls::ServerConfig::builder()
+    let server_config = rustls::ServerConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_client_cert_verifier(client_auth)
         .with_single_cert(
             vec![certs.server_cert_der.clone()],
@@ -355,7 +374,9 @@ async fn mtls_client_with_valid_cert_succeeds() {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
 
-    let client_config = rustls::ClientConfig::builder()
+    let client_config = rustls::ClientConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_root_certificates(root_store)
         .with_client_auth_cert(
             vec![certs.client_cert_der.clone()],
@@ -422,7 +443,8 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
         .distinguished_name
         .push(rcgen::DnType::CommonName, "Rogue CA");
     let rogue_ca_key = rcgen::KeyPair::generate().unwrap();
-    let rogue_ca_cert = rogue_ca_params.self_signed(&rogue_ca_key).unwrap();
+    let _rogue_ca_cert = rogue_ca_params.self_signed(&rogue_ca_key).unwrap();
+    let rogue_ca_issuer = rcgen::Issuer::new(rogue_ca_params, rogue_ca_key);
 
     let mut rogue_client_params = rcgen::CertificateParams::new(vec![]).unwrap();
     rogue_client_params
@@ -430,14 +452,16 @@ async fn mtls_client_with_wrong_ca_cert_is_rejected() {
         .push(rcgen::DnType::CommonName, "rogue-client");
     let rogue_client_key = rcgen::KeyPair::generate().unwrap();
     let rogue_client_cert = rogue_client_params
-        .signed_by(&rogue_client_key, &rogue_ca_cert, &rogue_ca_key)
+        .signed_by(&rogue_client_key, &rogue_ca_issuer)
         .unwrap();
 
     // Build client with correct server CA trust but rogue client cert.
     let mut root_store = rustls::RootCertStore::empty();
     root_store.add(certs.ca_cert_der.clone()).unwrap();
 
-    let client_config = rustls::ClientConfig::builder()
+    let client_config = rustls::ClientConfig::builder_with_provider(test_ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports default protocol versions")
         .with_root_certificates(root_store)
         .with_client_auth_cert(
             vec![rogue_client_cert.der().clone()],

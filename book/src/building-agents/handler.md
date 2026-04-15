@@ -99,6 +99,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `max_token_age` | `Duration` | 1 hour | Maximum age for cancellation tokens |
 | `push_delivery_timeout` | `Duration` | 5 seconds | Timeout for individual push webhook deliveries |
 | `max_artifacts_per_task` | `usize` | 1000 | Maximum artifacts per task (prevents unbounded growth) |
+| `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
 
 ### Build-Time Validation
 
@@ -160,7 +161,7 @@ use a2a_protocol_sdk::server::TaskStore;
 struct PostgresTaskStore { /* ... */ }
 
 impl TaskStore for PostgresTaskStore {
-    // Implement get, put, list, delete...
+    // Implement save, get, list, insert_if_absent, delete...
 }
 
 RequestHandlerBuilder::new(executor)

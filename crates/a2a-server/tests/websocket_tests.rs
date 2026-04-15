@@ -171,7 +171,7 @@ async fn ws_send_message_returns_task() {
         serde_json::to_value(make_send_params()).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json)).await.unwrap();
+    ws.send(WsMessage::Text(json.into())).await.unwrap();
 
     let msg = ws.next().await.unwrap().unwrap();
     let text = msg.into_text().unwrap();
@@ -199,7 +199,7 @@ async fn ws_streaming_sends_multiple_frames() {
         serde_json::to_value(make_send_params()).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json)).await.unwrap();
+    ws.send(WsMessage::Text(json.into())).await.unwrap();
 
     // Collect frames until we get the final stream_complete response.
     let mut frames = Vec::new();
@@ -235,7 +235,7 @@ async fn ws_unknown_method_returns_error() {
         serde_json::Value::Null,
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json)).await.unwrap();
+    ws.send(WsMessage::Text(json.into())).await.unwrap();
 
     let msg = ws.next().await.unwrap().unwrap();
     let text = msg.into_text().unwrap();
@@ -265,7 +265,9 @@ async fn ws_ping_pong() {
         .await
         .unwrap();
 
-    ws.send(WsMessage::Ping(vec![1, 2, 3])).await.unwrap();
+    ws.send(WsMessage::Ping(vec![1, 2, 3].into()))
+        .await
+        .unwrap();
 
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(2), async {
         loop {
@@ -291,7 +293,7 @@ async fn ws_multiple_requests_on_same_connection() {
             serde_json::to_value(make_send_params()).unwrap(),
         );
         let json = serde_json::to_string(&rpc_req).unwrap();
-        ws.send(WsMessage::Text(json)).await.unwrap();
+        ws.send(WsMessage::Text(json.into())).await.unwrap();
     }
 
     // Collect 3 responses (may arrive in any order).

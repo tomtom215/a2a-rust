@@ -12,6 +12,10 @@ create-missing = false
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "ayu"
+# site-url is consumed by mdbook to emit <link rel="canonical"> and absolute
+# URLs in generated pages. Must stay in sync with theme/head.hbs og:url,
+# book/static/sitemap.xml locations, and book/static/robots.txt Sitemap line.
+site-url = "https://a2a-rust.com/"
 git-repository-url = "https://github.com/tomtom215/a2a-rust"
 edit-url-template = "https://github.com/tomtom215/a2a-rust/edit/main/book/{path}"
 additional-css = ["theme/custom.css"]

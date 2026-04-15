@@ -349,7 +349,7 @@ async fn stream_events(
                 };
                 let json = serde_json::to_string(&envelope).unwrap_or_default();
                 let mut w = writer.lock().await;
-                if w.send(WsMessage::Text(json)).await.is_err() {
+                if w.send(WsMessage::Text(json.into())).await.is_err() {
                     return; // Client disconnected
                 }
                 drop(w);
@@ -416,7 +416,7 @@ async fn dispatch_simple<'a, F>(
 async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
     let json = serde_json::to_string(value).unwrap_or_default();
     let mut w = writer.lock().await;
-    let _ = w.send(WsMessage::Text(json)).await;
+    let _ = w.send(WsMessage::Text(json.into())).await;
     drop(w);
 }
 
@@ -545,7 +545,10 @@ mod tests {
             .expect("timeout waiting for WS frame")
             .expect("stream ended")
             .expect("ws error");
-        msg.into_text().expect("not a text frame")
+        msg.into_text()
+            .expect("not a text frame")
+            .as_str()
+            .to_owned()
     }
 
     fn send_message_json(id: &str) -> String {
@@ -570,7 +573,7 @@ mod tests {
         let addr = spawn_ws_server().await;
         let mut ws = ws_connect(addr).await;
 
-        ws.send(WsMessage::Text(send_message_json("sm-1")))
+        ws.send(WsMessage::Text(send_message_json("sm-1").into()))
             .await
             .unwrap();
 
@@ -594,7 +597,7 @@ mod tests {
             "params": {"id": "nonexistent"}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -614,7 +617,7 @@ mod tests {
             "params": {}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -635,7 +638,7 @@ mod tests {
             "params": {"id": "nonexistent"}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -655,7 +658,7 @@ mod tests {
             "params": {"id": "nonexistent"}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -675,7 +678,7 @@ mod tests {
             "params": {}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -712,7 +715,7 @@ mod tests {
 
         // Create a message > 4MB
         let big = "x".repeat(4 * 1024 * 1024 + 1);
-        ws.send(WsMessage::Text(big)).await.unwrap();
+        ws.send(WsMessage::Text(big.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -730,7 +733,7 @@ mod tests {
         let addr = spawn_ws_server().await;
         let mut ws = ws_connect(addr).await;
 
-        ws.send(WsMessage::Ping(vec![42, 43])).await.unwrap();
+        ws.send(WsMessage::Ping(vec![42, 43].into())).await.unwrap();
 
         let pong = tokio::time::timeout(std::time::Duration::from_secs(3), async {
             loop {
@@ -759,7 +762,7 @@ mod tests {
             "params": {"wrong_field": 123}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -788,7 +791,7 @@ mod tests {
             }
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         // Collect frames until stream_complete
         let mut frames = Vec::new();
@@ -829,7 +832,7 @@ mod tests {
             "params": {"not_message": true}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -852,7 +855,7 @@ mod tests {
             "params": {}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -875,7 +878,7 @@ mod tests {
             "params": {"wrong": 1}
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -898,7 +901,7 @@ mod tests {
             }
         })
         .to_string();
-        ws.send(WsMessage::Text(req)).await.unwrap();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();

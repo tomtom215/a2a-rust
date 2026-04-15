@@ -194,8 +194,8 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 
 | Function | Description |
 |----------|-------------|
-| `serve(addr, dispatcher)` | Bind + accept loop (blocking) |
-| `serve_with_addr(addr, dispatcher)` | Bind + spawn, returns `SocketAddr` |
+| `serve(addr, dispatcher) -> io::Result<()>` | `async` — binds and drives the accept loop until the future is dropped |
+| `serve_with_addr(addr, dispatcher) -> io::Result<SocketAddr>` | `async` — binds, spawns the accept loop, returns the bound `SocketAddr` (useful for port-0 in tests) |
 
 ### Built-in Implementations
 
@@ -218,20 +218,24 @@ A condensed overview of all public types, traits, and functions across the a2a-r
 | `StaticAgentCardHandler` | Static agent card with HTTP caching |
 | `DynamicAgentCardHandler` | Dynamic agent card with producer |
 | `HotReloadAgentCardHandler` | Agent card with live reloading |
+| `HeaderTenantResolver` | `TenantResolver` that reads a configurable request header |
+| `BearerTokenTenantResolver` | `TenantResolver` that extracts tenant claims from a JWT bearer token |
+| `PathSegmentTenantResolver` | `TenantResolver` that parses tenant from a configurable path segment |
 | `RateLimitInterceptor` | Per-caller rate limiting interceptor |
+| `HttpPushSender` | HTTP webhook delivery with SSRF protection (built-in `PushSender` impl) |
 | `NoopMetrics` | No-op metrics implementation (default) |
 | `OtelMetrics` | OpenTelemetry metrics (`otel` feature) |
 
 ### Streaming
 
-| Type | Description |
-|------|-------------|
-| `EventEmitter` | Ergonomic event emission helper |
-| `EventQueueWriter` | Write events to a stream |
-| `EventQueueReader` | Read events from a stream |
-| `EventQueueManager` | Manages stream lifecycle |
-| `InMemoryQueueWriter` | Bounded channel writer |
-| `InMemoryQueueReader` | Bounded channel reader |
+| Name | Kind | Description |
+|------|------|-------------|
+| `EventEmitter` | struct | Ergonomic event emission helper (wraps an `EventQueueWriter`) |
+| `EventQueueWriter` | trait | Write events to a task's event stream |
+| `EventQueueReader` | trait | Read events from a task's event stream |
+| `EventQueueManager` | struct | Per-task queue lifecycle manager (create / lookup / destroy) |
+| `InMemoryQueueWriter` | struct | Bounded-channel `EventQueueWriter` implementation |
+| `InMemoryQueueReader` | struct | Bounded-channel `EventQueueReader` implementation |
 
 ### Configuration
 

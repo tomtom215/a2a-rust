@@ -11,7 +11,6 @@ use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams {
     tenant: None,
-    context_id: None,
     message: Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
         role: MessageRole::User,
@@ -66,7 +65,6 @@ use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams {
     tenant: None,
-    context_id: None,
     message: make_message("Translate to French"),
     configuration: Some(SendMessageConfiguration {
         accepted_output_modes: vec!["text/plain".into()],
@@ -94,7 +92,6 @@ let first_response = client.send_message(MessageSendParams {
         extensions: None,
         metadata: None,
     },
-    context_id: None,
     tenant: None,
     configuration: None,
     metadata: None,
@@ -107,7 +104,7 @@ let context_id = if let SendMessageResponse::Task(task) = &first_response {
     None
 };
 
-// Continue the conversation
+// Continue the conversation — put context_id on the Message itself
 let follow_up = client.send_message(MessageSendParams {
     message: Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
@@ -119,7 +116,6 @@ let follow_up = client.send_message(MessageSendParams {
         extensions: None,
         metadata: None,
     },
-    context_id: context_id,
     tenant: None,
     configuration: None,
     metadata: None,
@@ -147,7 +143,8 @@ let message = Message {
     role: MessageRole::User,
     parts: vec![
         Part::text("Analyze this image:"),
-        Part::file_uri("https://example.com/chart.png"),
+        Part::url("https://example.com/chart.png")
+            .with_media_type("image/png"),
         Part::data(serde_json::json!({
             "analysis_type": "detailed",
             "language": "en"

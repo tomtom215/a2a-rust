@@ -11,7 +11,18 @@ fn main() {
         let proto_file = proto_dir.join("a2a.proto");
         println!("cargo:rerun-if-changed={}", proto_file.display());
         println!("cargo:rerun-if-changed={}", proto_dir.display());
-        tonic_build::configure()
+
+        // Point `prost-build` (the transitive dep of `tonic-prost-build`) at
+        // the protoc binary vendored by `protoc-bin-vendored`, unless the user
+        // has set `PROTOC` themselves. See the matching comment in
+        // crates/a2a-server/build.rs for the rationale.
+        if std::env::var_os("PROTOC").is_none() {
+            if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
+                std::env::set_var("PROTOC", path);
+            }
+        }
+
+        tonic_prost_build::configure()
             .build_server(false)
             .build_client(true)
             .compile_protos(&[&proto_file], &[&proto_dir])

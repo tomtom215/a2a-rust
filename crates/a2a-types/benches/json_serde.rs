@@ -5,7 +5,8 @@
 
 //! Benchmarks for JSON serialization and deserialization of A2A types.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};

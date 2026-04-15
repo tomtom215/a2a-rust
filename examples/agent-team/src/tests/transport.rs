@@ -55,7 +55,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
         serde_json::to_value(&params).unwrap(),
     );
     let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json)).await.unwrap();
+    ws.send(WsMessage::Text(json.into())).await.unwrap();
 
     // Read response.
     let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
@@ -117,9 +117,11 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
         "SendStreamingMessage",
         serde_json::to_value(&params).unwrap(),
     );
-    ws.send(WsMessage::Text(serde_json::to_string(&rpc_req).unwrap()))
-        .await
-        .unwrap();
+    ws.send(WsMessage::Text(
+        serde_json::to_string(&rpc_req).unwrap().into(),
+    ))
+    .await
+    .unwrap();
 
     // Collect frames.
     let mut frame_count = 0;

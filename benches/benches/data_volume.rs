@@ -116,7 +116,7 @@ fn bench_get_at_scale(c: &mut Criterion) {
             let mut key_idx = 0usize;
             b.iter(|| {
                 let target = &targets[key_idx % NUM_LOOKUP_KEYS];
-                rt.block_on(store.get(criterion::black_box(target)))
+                rt.block_on(store.get(std::hint::black_box(target)))
                     .unwrap();
                 key_idx = key_idx.wrapping_add(1);
             });
@@ -153,7 +153,7 @@ fn bench_list_at_scale(c: &mut Criterion) {
         group.throughput(Throughput::Elements(50));
         group.bench_with_input(BenchmarkId::new("filtered_page_50", n), &(), |b, _| {
             b.iter(|| {
-                rt.block_on(store.list(criterion::black_box(&params)))
+                rt.block_on(store.list(std::hint::black_box(&params)))
                     .unwrap();
             });
         });
@@ -199,7 +199,7 @@ fn bench_save_at_scale(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("after_prefill", pre_fill), &(), |b, _| {
             b.iter(|| {
                 let task = fixtures::completed_task(counter);
-                rt.block_on(store.save(criterion::black_box(&task)))
+                rt.block_on(store.save(std::hint::black_box(&task)))
                     .unwrap();
                 counter += 1;
             });
@@ -270,7 +270,7 @@ fn bench_store_with_history(c: &mut Criterion) {
                 let mut counter = 0usize;
                 b.iter(|| {
                     let task = fixtures::task_with_history(counter, turns);
-                    rt.block_on(store.save(criterion::black_box(&task)))
+                    rt.block_on(store.save(std::hint::black_box(&task)))
                         .unwrap();
                     counter += 1;
                 });

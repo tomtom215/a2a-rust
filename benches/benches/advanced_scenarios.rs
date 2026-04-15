@@ -83,7 +83,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
     group.bench_function("header_resolver", |b| {
         let resolver = HeaderTenantResolver::default();
         let ctx = make_ctx(vec![("x-tenant-id", "tenant-acme-corp")]);
-        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
+        b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
     // BearerTokenTenantResolver: extract Authorization header
@@ -93,7 +93,7 @@ fn bench_tenant_resolver(c: &mut Criterion) {
             "authorization",
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.tenant-12345",
         )]);
-        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
+        b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
     // BearerTokenTenantResolver with mapper: extract + transform
@@ -106,21 +106,21 @@ fn bench_tenant_resolver(c: &mut Criterion) {
             "authorization",
             "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.tenant-12345",
         )]);
-        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
+        b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
     // PathSegmentTenantResolver: extract from URL path
     group.bench_function("path_resolver", |b| {
         let resolver = PathSegmentTenantResolver::new(2); // /api/v1/{tenant}/...
         let ctx = make_ctx(vec![("path", "/api/v1/tenant-acme-corp/tasks")]);
-        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
+        b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
     // Missing header (fast rejection path)
     group.bench_function("header_resolver_miss", |b| {
         let resolver = HeaderTenantResolver::default();
         let ctx = CallContext::new("message/send"); // no headers
-        b.iter(|| rt.block_on(resolver.resolve(criterion::black_box(&ctx))));
+        b.iter(|| rt.block_on(resolver.resolve(std::hint::black_box(&ctx))));
     });
 
     group.finish();
@@ -161,7 +161,7 @@ fn bench_agent_card_hot_reload(c: &mut Criterion) {
     group.bench_function("swap_complex_card", |b| {
         let complex = fixtures::complex_agent_card("https://bench.example.com", 100);
         b.iter(|| {
-            handler.update(criterion::black_box(complex.clone()));
+            handler.update(std::hint::black_box(complex.clone()));
         });
     });
 
@@ -324,7 +324,7 @@ fn bench_artifact_accumulation(c: &mut Criterion) {
             &task,
             |b, task| {
                 b.iter(|| {
-                    let _ = criterion::black_box(task.clone());
+                    let _ = std::hint::black_box(task.clone());
                 });
             },
         );
@@ -359,7 +359,7 @@ fn bench_artifact_accumulation(c: &mut Criterion) {
             &task,
             |b, task| {
                 b.iter(|| {
-                    rt.block_on(store.save(criterion::black_box(task))).unwrap();
+                    rt.block_on(store.save(std::hint::black_box(task))).unwrap();
                 });
             },
         );

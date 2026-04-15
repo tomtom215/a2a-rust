@@ -162,8 +162,11 @@ impl RequestHandlerBuilder {
 
     /// Sets the event queue channel capacity for streaming.
     ///
-    /// Defaults to 64 items. Higher values allow more events to be buffered
-    /// before backpressure is applied.
+    /// Defaults to [`DEFAULT_QUEUE_CAPACITY`] (256 items). Higher values allow
+    /// more events to be buffered before backpressure is applied. Lower values
+    /// reduce memory footprint at the cost of earlier slow-consumer stalls.
+    ///
+    /// [`DEFAULT_QUEUE_CAPACITY`]: crate::streaming::event_queue::DEFAULT_QUEUE_CAPACITY
     #[must_use]
     pub const fn with_event_queue_capacity(mut self, capacity: usize) -> Self {
         self.event_queue_capacity = Some(capacity);

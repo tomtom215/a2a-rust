@@ -89,7 +89,7 @@ fn bench_happy_vs_error(c: &mut Criterion) {
             let result = error_client
                 .send_message(fixtures::send_params("fail"))
                 .await;
-            criterion::black_box(&result);
+            std::hint::black_box(&result);
         });
     });
 

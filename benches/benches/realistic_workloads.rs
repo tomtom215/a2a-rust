@@ -323,12 +323,12 @@ fn bench_complex_agent_card(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         group.bench_with_input(BenchmarkId::new("serialize", n), &card, |b, card| {
-            b.iter(|| serde_json::to_vec(criterion::black_box(card)).unwrap());
+            b.iter(|| serde_json::to_vec(std::hint::black_box(card)).unwrap());
         });
         group.bench_with_input(BenchmarkId::new("deserialize", n), &bytes, |b, bytes| {
             b.iter(|| {
                 serde_json::from_slice::<a2a_protocol_types::agent_card::AgentCard>(
-                    criterion::black_box(bytes),
+                    std::hint::black_box(bytes),
                 )
                 .unwrap()
             });
@@ -350,14 +350,14 @@ fn bench_conversation_history_serde(c: &mut Criterion) {
         group.throughput(Throughput::Bytes(bytes.len() as u64));
 
         group.bench_with_input(BenchmarkId::new("serialize", turns), &task, |b, task| {
-            b.iter(|| serde_json::to_vec(criterion::black_box(task)).unwrap());
+            b.iter(|| serde_json::to_vec(std::hint::black_box(task)).unwrap());
         });
         group.bench_with_input(
             BenchmarkId::new("deserialize", turns),
             &bytes,
             |b, bytes| {
                 b.iter(|| {
-                    serde_json::from_slice::<a2a_protocol_types::task::Task>(criterion::black_box(
+                    serde_json::from_slice::<a2a_protocol_types::task::Task>(std::hint::black_box(
                         bytes,
                     ))
                     .unwrap()

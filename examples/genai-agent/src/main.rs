@@ -95,7 +95,7 @@ impl AgentExecutor for GenaiAgentExecutor {
 
             let response_text = match self.client.exec_chat(&self.model, chat_req, None).await {
                 Ok(response) => response
-                    .content_text_as_str()
+                    .first_text()
                     .unwrap_or("[no response text]")
                     .to_string(),
                 Err(e) => format!("LLM error: {e}"),

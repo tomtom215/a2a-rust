@@ -15,6 +15,7 @@
 //! a [`rustls::ClientConfig`] with additional trust anchors, then pass it to
 //! the client builder.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use http_body_util::Full;
@@ -22,17 +23,44 @@ use hyper::body::Bytes;
 use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+use rustls::crypto::CryptoProvider;
 use rustls::ClientConfig;
 
 /// Type alias for the HTTPS-capable hyper client.
 pub type HttpsClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
 
+/// Returns an [`Arc`] to the `ring`-backed [`CryptoProvider`] that the
+/// a2a-rust client uses for every TLS handshake.
+///
+/// Why this exists: starting in rustls 0.23, when *more than one* crypto
+/// provider is compiled into the process (for example, `ring` from our own
+/// Cargo.toml plus `aws-lc-rs` pulled in transitively through
+/// `rustls-platform-verifier` used by downstream crates), calling
+/// [`ClientConfig::builder`] panics with a
+/// `Could not automatically determine the process-level CryptoProvider`
+/// error because rustls refuses to pick one for you. Passing the provider
+/// explicitly via [`ClientConfig::builder_with_provider`] makes the
+/// client fully deterministic regardless of what else is in the dep graph.
+fn ring_provider() -> Arc<CryptoProvider> {
+    Arc::new(rustls::crypto::ring::default_provider())
+}
+
 /// Builds a default [`ClientConfig`] with Mozilla root certificates.
 ///
-/// Uses TLS 1.2+ with ring as the crypto provider.
+/// Uses TLS 1.2+ with `ring` as the crypto provider, selected explicitly
+/// (see [`ring_provider`] for the rationale).
+///
+/// # Panics
+///
+/// Panics only if the `ring` crypto provider does not support the rustls
+/// default protocol versions (TLS 1.2 and 1.3). Both are supported for
+/// every `ring` version this crate is pinned against, so in practice this
+/// function is infallible.
 #[must_use]
 pub fn default_tls_config() -> ClientConfig {
-    ClientConfig::builder()
+    ClientConfig::builder_with_provider(ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports the rustls default protocol versions")
         .with_root_certificates(root_cert_store())
         .with_no_client_auth()
 }
@@ -40,8 +68,14 @@ pub fn default_tls_config() -> ClientConfig {
 /// Builds a [`ClientConfig`] with extra CA certificates added to the
 /// Mozilla root store.
 ///
-/// Use this for enterprise environments with internal PKI. Returns
-/// the number of certificates that failed to load (if any).
+/// Use this for enterprise environments with internal PKI. Uses `ring`
+/// as the explicit crypto provider — see [`default_tls_config`] for why.
+///
+/// # Panics
+///
+/// Same as [`default_tls_config`]: panics only if the `ring` crypto
+/// provider does not support the rustls default protocol versions, which
+/// is unreachable for supported `ring` versions.
 #[must_use]
 pub fn tls_config_with_extra_roots(
     certs: Vec<rustls_pki_types::CertificateDer<'static>>,
@@ -52,7 +86,9 @@ pub fn tls_config_with_extra_roots(
             trace_warn!(error = %_err, "failed to add custom CA certificate to root store");
         }
     }
-    ClientConfig::builder()
+    ClientConfig::builder_with_provider(ring_provider())
+        .with_safe_default_protocol_versions()
+        .expect("ring provider supports the rustls default protocol versions")
         .with_root_certificates(store)
         .with_no_client_auth()
 }

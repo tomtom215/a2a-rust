@@ -177,7 +177,11 @@ impl WebSocketTransport {
                     let mut map = pending_for_writer.lock().await;
                     map.insert(cmd.request_id, cmd.pending);
                 }
-                if ws_writer.send(WsMessage::Text(cmd.text)).await.is_err() {
+                if ws_writer
+                    .send(WsMessage::Text(cmd.text.into()))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -191,7 +195,7 @@ impl WebSocketTransport {
             loop {
                 match ws_reader.next().await {
                     Some(Ok(WsMessage::Text(text))) => {
-                        route_frame(&pending_for_reader, &text).await;
+                        route_frame(&pending_for_reader, text.as_str()).await;
                     }
                     Some(Ok(WsMessage::Close(_))) | None => break,
                     // Pong is handled automatically by tungstenite; other frames ignored

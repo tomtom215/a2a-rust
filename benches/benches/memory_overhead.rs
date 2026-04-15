@@ -136,7 +136,7 @@ fn bench_serialize_allocs(c: &mut Criterion) {
     let card = fixtures::agent_card("https://bench.example.com");
     // Pre-measure allocation count for verification
     let expected_card_allocs = measure_allocs(|| {
-        let _ = serde_json::to_vec(criterion::black_box(&card));
+        let _ = serde_json::to_vec(std::hint::black_box(&card));
     })
     .alloc_count;
     group.bench_function("agent_card_alloc_count", |b| {
@@ -145,7 +145,7 @@ fn bench_serialize_allocs(c: &mut Criterion) {
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
-                    let _ = serde_json::to_vec(criterion::black_box(&card));
+                    let _ = serde_json::to_vec(std::hint::black_box(&card));
                 });
                 total_allocs += snap.alloc_count;
             }
@@ -162,7 +162,7 @@ fn bench_serialize_allocs(c: &mut Criterion) {
     // Task with history
     let task = fixtures::completed_task(0);
     let expected_task_allocs = measure_allocs(|| {
-        let _ = serde_json::to_vec(criterion::black_box(&task));
+        let _ = serde_json::to_vec(std::hint::black_box(&task));
     })
     .alloc_count;
     group.bench_function("task_alloc_count", |b| {
@@ -171,7 +171,7 @@ fn bench_serialize_allocs(c: &mut Criterion) {
             let mut total_allocs = 0u64;
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
-                    let _ = serde_json::to_vec(criterion::black_box(&task));
+                    let _ = serde_json::to_vec(std::hint::black_box(&task));
                 });
                 total_allocs += snap.alloc_count;
             }
@@ -196,7 +196,7 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
     let card = fixtures::agent_card("https://bench.example.com");
     let card_bytes = serde_json::to_vec(&card).unwrap();
     let expected_card_allocs = measure_allocs(|| {
-        let _: AgentCard = serde_json::from_slice(criterion::black_box(&card_bytes)).unwrap();
+        let _: AgentCard = serde_json::from_slice(std::hint::black_box(&card_bytes)).unwrap();
     })
     .alloc_count;
     group.bench_function("agent_card_alloc_count", |b| {
@@ -206,7 +206,7 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
                     let _: AgentCard =
-                        serde_json::from_slice(criterion::black_box(&card_bytes)).unwrap();
+                        serde_json::from_slice(std::hint::black_box(&card_bytes)).unwrap();
                 });
                 total_allocs += snap.alloc_count;
             }
@@ -223,7 +223,7 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
     let task = fixtures::completed_task(0);
     let task_bytes = serde_json::to_vec(&task).unwrap();
     let expected_task_allocs = measure_allocs(|| {
-        let _: Task = serde_json::from_slice(criterion::black_box(&task_bytes)).unwrap();
+        let _: Task = serde_json::from_slice(std::hint::black_box(&task_bytes)).unwrap();
     })
     .alloc_count;
     group.bench_function("task_alloc_count", |b| {
@@ -233,7 +233,7 @@ fn bench_deserialize_allocs(c: &mut Criterion) {
             for _ in 0..iters {
                 let snap = measure_allocs(|| {
                     let _: Task =
-                        serde_json::from_slice(criterion::black_box(&task_bytes)).unwrap();
+                        serde_json::from_slice(std::hint::black_box(&task_bytes)).unwrap();
                 });
                 total_allocs += snap.alloc_count;
             }
@@ -260,7 +260,7 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
         let task = fixtures::task_with_history(0, turns);
 
         let expected_ser_allocs = measure_allocs(|| {
-            let _ = serde_json::to_vec(criterion::black_box(&task));
+            let _ = serde_json::to_vec(std::hint::black_box(&task));
         })
         .alloc_count;
         group.bench_with_input(
@@ -272,7 +272,7 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
                     let mut total_allocs = 0u64;
                     for _ in 0..iters {
                         let snap = measure_allocs(|| {
-                            let _ = serde_json::to_vec(criterion::black_box(task));
+                            let _ = serde_json::to_vec(std::hint::black_box(task));
                         });
                         total_allocs += snap.alloc_count;
                     }
@@ -290,7 +290,7 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
 
         let task_bytes = serde_json::to_vec(&task).unwrap();
         let expected_de_allocs = measure_allocs(|| {
-            let _: Task = serde_json::from_slice(criterion::black_box(&task_bytes)).unwrap();
+            let _: Task = serde_json::from_slice(std::hint::black_box(&task_bytes)).unwrap();
         })
         .alloc_count;
         group.bench_with_input(
@@ -303,7 +303,7 @@ fn bench_history_alloc_scaling(c: &mut Criterion) {
                     for _ in 0..iters {
                         let snap = measure_allocs(|| {
                             let _: Task =
-                                serde_json::from_slice(criterion::black_box(bytes)).unwrap();
+                                serde_json::from_slice(std::hint::black_box(bytes)).unwrap();
                         });
                         total_allocs += snap.alloc_count;
                     }
@@ -333,7 +333,7 @@ fn bench_alloc_bytes_scaling(c: &mut Criterion) {
         let msg = fixtures::user_message(&"x".repeat(size));
 
         let expected_bytes = measure_allocs(|| {
-            let _ = serde_json::to_vec(criterion::black_box(&msg));
+            let _ = serde_json::to_vec(std::hint::black_box(&msg));
         })
         .alloc_bytes;
         group.bench_with_input(BenchmarkId::new("serialize_bytes", size), &msg, |b, msg| {
@@ -342,7 +342,7 @@ fn bench_alloc_bytes_scaling(c: &mut Criterion) {
                 let mut total_bytes = 0u64;
                 for _ in 0..iters {
                     let snap = measure_allocs(|| {
-                        let _ = serde_json::to_vec(criterion::black_box(msg));
+                        let _ = serde_json::to_vec(std::hint::black_box(msg));
                     });
                     total_bytes += snap.alloc_bytes;
                 }
