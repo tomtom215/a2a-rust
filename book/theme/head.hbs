@@ -3,20 +3,24 @@
   SEO, Open Graph, Twitter Card and schema.org metadata for a2a-rust docs.
 
   Notes on choices:
-  - Canonical URL, og:url and Twitter URL all reference https://a2a-rust.com/
-    to match book.toml `site-url` and book/static/sitemap.xml. Keep these in
-    sync — a mismatch causes Google Search Console coverage warnings.
+  - Canonical URL, og:url, and twitter:url start as seed values pointing at
+    the site root and are rewritten to the current page URL by the inline
+    script below. Google Search Console previously flagged introduction.html
+    with "Duplicate without user-selected canonical" because every page had
+    the same hardcoded canonical pointing to `/`. mdbook's Handlebars pipeline
+    does not expose string-manipulation helpers, so a pure server-rendered
+    per-page canonical is not feasible from a user `head.hbs` override —
+    JS injection is the pragmatic fix. Googlebot and Bingbot are both
+    Chromium-based and honour JS-written canonical/og:url values; pre-render
+    crawlers that do not execute JS fall back to the site root, which is
+    strictly better than a wrong per-page canonical.
   - Twitter card is `summary_large_image` so cards render with the full
-    preview image on X/Twitter, LinkedIn, Slack, and Discord. The image is
-    vendored at /og-image.png (see book/static/) so there is no cross-origin
-    fetch at crawl time.
-  - JSON-LD uses both SoftwareSourceCode and SoftwareApplication with
-    applicationCategory "DeveloperApplication" so search engines surface the
-    project in developer-tool carousels.
-  - hreflang is set to `en` with a self-referential `x-default`; add more
-    variants if/when translations exist.
-  - robots `max-snippet:-1, max-image-preview:large` gives search engines
-    permission to show the full description and large preview in results.
+    preview image on X/Twitter, LinkedIn, Slack, and Discord.
+  - JSON-LD describes the project as a whole and legitimately uses the site
+    root as its `url`, so it is NOT rewritten per-page.
+  - `robots` meta includes `max-snippet:-1, max-image-preview:large,
+    max-video-preview:-1` to permit full descriptions and large preview
+    cards in SERPs.
 -->
 
 <meta name="description" content="a2a-rust: Official Rust SDK for the A2A (Agent-to-Agent) protocol. Build interoperable AI agents with type-safe, async Rust.">
@@ -29,7 +33,7 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="a2a-rust — Official Rust A2A SDK">
 <meta property="og:description" content="Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0. Build interoperable AI agents with type-safe, async Rust.">
-<meta property="og:url" content="https://a2a-rust.com/">
+<meta property="og:url" id="a2a-og-url" content="https://a2a-rust.com/">
 <meta property="og:site_name" content="a2a-rust">
 <meta property="og:image" content="https://a2a-rust.com/og-image.png">
 <meta property="og:image:width" content="1200">
@@ -41,15 +45,39 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="a2a-rust — Official Rust A2A SDK">
 <meta name="twitter:description" content="Pure Rust implementation of the A2A (Agent-to-Agent) protocol v1.0. Build interoperable AI agents with type-safe, async Rust.">
+<meta name="twitter:url" id="a2a-twitter-url" content="https://a2a-rust.com/">
 <meta name="twitter:image" content="https://a2a-rust.com/og-image.png">
 <meta name="twitter:image:alt" content="a2a-rust — Rust SDK for the Agent-to-Agent protocol">
 
-<!-- Canonical and alternate URLs -->
-<link rel="canonical" href="https://a2a-rust.com/">
+<!-- Canonical and alternate URLs. Per-page canonical is set by the script below. -->
+<link rel="canonical" id="a2a-canonical" href="https://a2a-rust.com/">
 <link rel="alternate" hreflang="en" href="https://a2a-rust.com/">
 <link rel="alternate" hreflang="x-default" href="https://a2a-rust.com/">
 
-<!-- Structured Data (JSON-LD) for search engines -->
+<script>
+  // Rewrite canonical / og:url / twitter:url to the current page URL. See the
+  // comment block at the top of this file for why this is JS-driven instead
+  // of server-rendered. Runs synchronously before the first paint so crawlers
+  // that execute JS (Googlebot, Bingbot) pick up the correct values on their
+  // rendering pass.
+  (function () {
+    var origin = "https://a2a-rust.com";
+    var path = window.location.pathname || "/";
+    // `/print.html` is excluded by a noindex meta tag emitted by mdbook, so
+    // we still want the canonical to reflect its real URL if for some reason
+    // a crawler reaches it — that just lets Google dedupe correctly.
+    var canonicalUrl = origin + path;
+    var canonicalEl = document.getElementById("a2a-canonical");
+    if (canonicalEl) canonicalEl.href = canonicalUrl;
+    var ogUrlEl = document.getElementById("a2a-og-url");
+    if (ogUrlEl) ogUrlEl.setAttribute("content", canonicalUrl);
+    var twUrlEl = document.getElementById("a2a-twitter-url");
+    if (twUrlEl) twUrlEl.setAttribute("content", canonicalUrl);
+  })();
+</script>
+
+<!-- Structured Data (JSON-LD) for search engines. Describes the project as a
+     whole; `url` legitimately points to the root and is NOT rewritten. -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",

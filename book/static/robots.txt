@@ -9,6 +9,16 @@
 
 User-agent: *
 Allow: /
+
+# mdbook's `print.html` aggregates every chapter into one huge page as a
+# print-friendly alternative view. mdbook already emits a `<meta
+# name="robots" content="noindex">` on it, but disallowing the URL here
+# stops crawlers from wasting budget on it in the first place and
+# eliminates the "Excluded by noindex tag" warning in Google Search
+# Console. The page is still reachable by humans who click "Print this
+# book" in the sidebar.
+Disallow: /print.html
+
 Crawl-delay: 1
 
 # Explicitly surface the sitemap so Googlebot / Bingbot / DuckDuckBot
