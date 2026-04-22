@@ -20,6 +20,8 @@
 //! - 1: One or more tests failed
 //! - 2: Configuration error
 
+#![forbid(unsafe_code)]
+
 use std::process::ExitCode;
 
 mod runner;

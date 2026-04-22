@@ -56,7 +56,7 @@
 //! [`ServerInterceptor`].
 
 #![deny(missing_docs)]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![forbid(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 

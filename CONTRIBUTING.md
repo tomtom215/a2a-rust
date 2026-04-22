@@ -38,10 +38,14 @@ Each crate's `lib.rs` must include:
 
 ```rust
 #![deny(missing_docs)]
-#![deny(unsafe_op_in_unsafe_fn)]
+#![forbid(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
 ```
+
+`forbid(unsafe_code)` is a compiler-level guarantee that no `unsafe` block,
+`unsafe fn`, or `unsafe impl` can ever be introduced without first removing
+this attribute — which would have to appear in a PR diff and be reviewed.
 
 ### No `unwrap()` in library code
 
@@ -51,8 +55,13 @@ violate at runtime (documented with `// SAFETY:` style comment).
 
 ### `unsafe` blocks
 
-Every `unsafe` block must be preceded by a `// SAFETY:` comment explaining
-exactly why the invariants required by the unsafe operation are upheld.
+Library crates are under `#![forbid(unsafe_code)]`; introducing an `unsafe`
+block in one of the published crates is a compile error. The only
+`unsafe`-bearing file in the repository is the counting global allocator in
+`benches/benches/memory_overhead.rs`, where the `GlobalAlloc` trait cannot
+be implemented safely. Any `unsafe` block in that file must be preceded by
+a `// SAFETY:` comment explaining exactly why the invariants required by
+the unsafe operation are upheld.
 
 ---
 

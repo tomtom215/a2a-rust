@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F.
 #
-# Benchmark suite — runs criterion benchmarks, generates book page, and commits results.
+# Benchmark suite — runs criterion benchmarks, generates book page, and
+# commits results. Also provides a PR regression-gate job that compares
+# PR benchmarks against the base branch and fails CI if any per-transport
+# benchmark regresses beyond the configured threshold.
 #
-# Trigger: on-demand (workflow_dispatch) and pushes to main.
-# After benchmarks complete, the results page is committed to main,
-# which triggers the docs workflow to rebuild GitHub Pages.
+# Trigger:
+#   - workflow_dispatch / push to main → full criterion run + book publish.
+#   - pull_request → regression-gate job only (fast subset, fails on
+#     regression beyond `benches/scripts/check_regression.py --threshold`).
 
 name: Benchmarks
 
@@ -18,6 +22,14 @@ on:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "benches/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/benchmarks.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +46,10 @@ permissions:
 jobs:
   bench:
     name: Run Benchmarks
+    # Full criterion sweep + book publish only runs on manual dispatch or
+    # pushes to main. Pull requests are covered by the regression-gate job
+    # below, which runs a focused subset against the base branch.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -122,3 +138,96 @@ jobs:
           name: criterion-reports
           path: target/criterion/
           retention-days: 30
+
+  # ── Regression gate (pull requests) ────────────────────────────────────
+  #
+  # Runs a focused subset of the criterion suite twice — once on the
+  # base branch to establish a baseline, once on the PR to measure
+  # change — then fails the job if any benchmark's median regressed
+  # beyond the threshold in `check_regression.py` (25 % by default).
+  #
+  # Scope: we deliberately restrict the PR gate to `transport_throughput`
+  # and `protocol_overhead` — the two benchmarks that exercise the
+  # per-transport critical path and serde hot loop. Running the full
+  # suite twice inside a 60-minute PR job is not realistic, and those
+  # two modules cover the surface area most likely to regress from
+  # routine code changes. The full suite still runs on pushes to
+  # `main` via the `bench` job above.
+  bench-regression:
+    name: Regression Gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # full history — we check out the base branch
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # Build the benches once up front so both baseline and PR runs
+      # share the compiled benchmark binaries (incremental compilation
+      # still works across the `git checkout` because the benches crate
+      # depends on workspace crates by path, not Cargo.lock revision).
+      - name: Pre-build benches
+        run: cargo bench -p a2a-benchmarks --no-run
+
+      - name: Save baseline from base branch
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF" --depth=1
+          git checkout "origin/$BASE_REF" --
+          echo "::group::Baseline benchmarks (base: $BASE_REF)"
+          cargo bench -p a2a-benchmarks --bench transport_throughput \
+            -- --save-baseline pr-base --warm-up-time 1 --measurement-time 3
+          cargo bench -p a2a-benchmarks --bench protocol_overhead \
+            -- --save-baseline pr-base --warm-up-time 1 --measurement-time 3
+          echo "::endgroup::"
+
+      - name: Compare PR against baseline
+        id: compare
+        run: |
+          set -euo pipefail
+          git checkout "${{ github.event.pull_request.head.sha }}" --
+          echo "::group::PR benchmarks vs pr-base"
+          # --baseline <name> makes criterion emit change reports under
+          # target/criterion/*/change/estimates.json, which the regression
+          # script then reads.
+          cargo bench -p a2a-benchmarks --bench transport_throughput \
+            -- --baseline pr-base --warm-up-time 1 --measurement-time 3
+          cargo bench -p a2a-benchmarks --bench protocol_overhead \
+            -- --baseline pr-base --warm-up-time 1 --measurement-time 3
+          echo "::endgroup::"
+
+          echo "::group::Regression analysis"
+          python3 benches/scripts/check_regression.py \
+            --target-dir target/criterion \
+            --threshold 0.25 \
+            | tee /tmp/regression.txt
+          echo "::endgroup::"
+
+      - name: Report outcome
+        if: always()
+        run: |
+          {
+            echo "# Benchmark Regression Gate"
+            echo ""
+            echo "Compared this PR against \`${{ github.base_ref }}\` on \`transport_throughput\` and \`protocol_overhead\`."
+            echo "Threshold: **25 %** (tolerates typical GitHub-runner noise)."
+            echo ""
+            if [ -f /tmp/regression.txt ]; then
+              echo '```'
+              cat /tmp/regression.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload criterion reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: criterion-reports-pr
+          path: target/criterion/
+          retention-days: 14

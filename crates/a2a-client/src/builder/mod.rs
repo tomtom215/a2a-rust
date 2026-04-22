@@ -46,6 +46,11 @@ use crate::transport::Transport;
 /// The major protocol version supported by this client.
 ///
 /// Used to warn when an agent card advertises an incompatible version.
+/// The `allow(dead_code)` is needed because the only consumer is the
+/// tracing-feature-gated warn in [`ClientBuilder::from_card`]; tests still
+/// reference this constant so a `cfg(feature = "tracing")` gate would be
+/// wrong.
+#[allow(dead_code)]
 pub(crate) const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
 
 /// Returns the mismatched major-version string when `protocol_version`
@@ -62,6 +67,7 @@ pub(crate) const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
 /// an unkillable mutant (deleting the `!` produces a semantically opposite
 /// warning, which is not detectable via test assertions since the only
 /// effect is a tracing emit).
+#[allow(dead_code)] // Only used when the `tracing` feature is enabled.
 pub(crate) fn protocol_version_mismatch(protocol_version: &str) -> Option<&str> {
     if protocol_version.is_empty() {
         return None;
