@@ -143,8 +143,15 @@ jobs:
   #
   # Runs a focused subset of the criterion suite twice — once on the
   # base branch to establish a baseline, once on the PR to measure
-  # change — then fails the job if any benchmark's median regressed
-  # beyond the threshold in `check_regression.py` (25 % by default).
+  # change — then fails the job if any benchmark's median regression
+  # passes the statistical test in `check_regression.py`.
+  #
+  # Statistical test: a benchmark is flagged as a regression only when
+  # the *lower* bound of criterion's 95 % confidence interval on the
+  # median change exceeds the threshold (25 % by default). Gating on
+  # the point estimate alone produced false positives on GitHub-runner
+  # noise (15–25 % variance is common on small benches); requiring the
+  # whole CI to sit above the threshold gives us a high-signal gate.
   #
   # Scope: we deliberately restrict the PR gate to `transport_throughput`
   # and `protocol_overhead` — the two benchmarks that exercise the
@@ -175,30 +182,42 @@ jobs:
 
       - name: Save baseline from base branch
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           BASE_REF="${{ github.base_ref }}"
-          git fetch origin "$BASE_REF" --depth=1
+          # `actions/checkout` above was called with fetch-depth: 0, so the
+          # base branch is already in our local refs — no additional fetch
+          # needed. A shallow `git fetch --depth=1` here would actively
+          # conflict with that full clone.
           git checkout "origin/$BASE_REF" --
           echo "::group::Baseline benchmarks (base: $BASE_REF)"
-          cargo bench -p a2a-benchmarks --bench transport_throughput \
-            -- --save-baseline pr-base --warm-up-time 1 --measurement-time 3
-          cargo bench -p a2a-benchmarks --bench protocol_overhead \
-            -- --save-baseline pr-base --warm-up-time 1 --measurement-time 3
+          # --sample-size 30 keeps the full bench run well under 15 min per
+          # branch on a shared runner (two full bench matrices fit inside
+          # the 60-min job budget with headroom for compilation). Default
+          # is 100 which would blow past the budget for these two modules.
+          cargo bench -p a2a-benchmarks --bench transport_throughput -- \
+            --save-baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          cargo bench -p a2a-benchmarks --bench protocol_overhead -- \
+            --save-baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
           echo "::endgroup::"
 
       - name: Compare PR against baseline
         id: compare
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           git checkout "${{ github.event.pull_request.head.sha }}" --
           echo "::group::PR benchmarks vs pr-base"
-          # --baseline <name> makes criterion emit change reports under
-          # target/criterion/*/change/estimates.json, which the regression
-          # script then reads.
-          cargo bench -p a2a-benchmarks --bench transport_throughput \
-            -- --baseline pr-base --warm-up-time 1 --measurement-time 3
-          cargo bench -p a2a-benchmarks --bench protocol_overhead \
-            -- --baseline pr-base --warm-up-time 1 --measurement-time 3
+          cargo bench -p a2a-benchmarks --bench transport_throughput -- \
+            --baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          cargo bench -p a2a-benchmarks --bench protocol_overhead -- \
+            --baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          echo "::endgroup::"
+
+          echo "::group::Criterion change-file inventory"
+          # Surface what criterion actually produced — helps diagnose
+          # "no change files found" errors (bench rename, criterion
+          # version bump, etc.) from the CI log alone.
+          find target/criterion -name "estimates.json" -path "*/change/*" \
+            | sort | head -50
           echo "::endgroup::"
 
           echo "::group::Regression analysis"
