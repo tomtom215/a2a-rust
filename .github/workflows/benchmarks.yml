@@ -148,10 +148,19 @@ jobs:
   #
   # Statistical test: a benchmark is flagged as a regression only when
   # the *lower* bound of criterion's 95 % confidence interval on the
-  # median change exceeds the threshold (25 % by default). Gating on
-  # the point estimate alone produced false positives on GitHub-runner
-  # noise (15–25 % variance is common on small benches); requiring the
-  # whole CI to sit above the threshold gives us a high-signal gate.
+  # median change exceeds the threshold. Gating on the point estimate
+  # alone produced false positives on GitHub-runner noise (15-25 %
+  # variance is common on small benches); requiring the whole CI to
+  # sit above the threshold gives a much higher-signal gate.
+  #
+  # Threshold: 50 % — not 25. Observation showed that even tight-CI
+  # regressions of ~25-30 % appear on pristine code due to
+  # GitHub-runner heterogeneity (CPU frequency, thermal throttling,
+  # LTO-driven inlining shifts from unrelated code). A 50 % threshold
+  # tolerates those systematic effects while still catching the
+  # regressions worth blocking: accidental O(n²) loops, allocator
+  # thrash, lost inlining in hot paths, etc. See
+  # `book/src/reference/regression-gate.md` for the full analysis.
   #
   # Scope: we deliberately restrict the PR gate to `transport_throughput`
   # and `protocol_overhead` — the two benchmarks that exercise the
@@ -221,9 +230,22 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::Regression analysis"
+          # Threshold is set to 50% rather than the tighter 25% that the
+          # documentation comment above discusses, because experience on
+          # this repo has shown that GitHub-hosted runners occasionally
+          # produce *tight-CI* regressions of ~25-30% on individual
+          # benches even when the benchmarked code is provably unchanged
+          # (suspected: runner-to-runner CPU frequency / thermal
+          # differences, or LTO inlining shifts caused by compiling
+          # additional test code in sibling crates). See
+          # `book/src/reference/regression-gate.md` for the full
+          # analysis. 50% still catches the regressions we want to
+          # block — accidental O(n²) loops, allocator thrash, lost
+          # inlining in hot paths — while staying honest about CI
+          # noise. Change when moving to self-hosted runners.
           python3 benches/scripts/check_regression.py \
             --target-dir target/criterion \
-            --threshold 0.25 \
+            --threshold 0.50 \
             | tee /tmp/regression.txt
           echo "::endgroup::"
 
@@ -234,7 +256,9 @@ jobs:
             echo "# Benchmark Regression Gate"
             echo ""
             echo "Compared this PR against \`${{ github.base_ref }}\` on \`transport_throughput\` and \`protocol_overhead\`."
-            echo "Threshold: **25 %** (tolerates typical GitHub-runner noise)."
+            echo "Threshold: **50 %** (95 % CI lower bound of the median)."
+            echo ""
+            echo "See [book/src/reference/regression-gate.md](../book/src/reference/regression-gate.md) for why the threshold is this forgiving on GitHub-hosted runners."
             echo ""
             if [ -f /tmp/regression.txt ]; then
               echo '```'

@@ -83,7 +83,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 |---|---|
 | **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant survives; a full-sweep matrix runs on demand / on schedule |
 | **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
-| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 25 % — only statistically confident regressions trip the gate, so runner noise doesn't flake the check |
+| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
 | **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request |
 
 ## Crate Structure
