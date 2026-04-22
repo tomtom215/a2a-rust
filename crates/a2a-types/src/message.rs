@@ -753,4 +753,131 @@ mod tests {
         assert!(p.filename.is_none());
         assert!(p.media_type.is_none());
     }
+
+    // ── Part deserialization: metadata, filename, mediaType passthrough ───
+
+    /// The `"metadata"` match arm in the `FieldVisitor` must populate the
+    /// metadata field. Deleting the arm would route metadata to `Field::Unknown`
+    /// and silently discard the JSON value — detectable by round-trip.
+    #[test]
+    fn part_deserialize_populates_metadata() {
+        let json = r#"{"text":"hi","metadata":{"source":"agent","score":0.9}}"#;
+        let part: Part = serde_json::from_str(json).expect("deserialize");
+        let meta = part.metadata.expect("metadata must be Some");
+        assert_eq!(meta["source"], "agent");
+        assert_eq!(meta["score"], 0.9);
+    }
+
+    #[test]
+    fn part_deserialize_metadata_duplicate_errors() {
+        let json = r#"{"text":"hi","metadata":{"a":1},"metadata":{"b":2}}"#;
+        let result: Result<Part, _> = serde_json::from_str(json);
+        assert!(
+            result.is_err(),
+            "duplicate metadata field must error: {result:?}"
+        );
+    }
+
+    // ── PartVisitor::expecting test ───────────────────────────────────────
+    //
+    // When a non-map JSON value is given, serde surfaces the visitor's
+    // expecting() text as the "expected Y" part of an invalid-type error.
+    // A mutation that empties expecting will remove that text.
+
+    #[test]
+    fn part_deserialize_non_map_error_mentions_part_object() {
+        let err = serde_json::from_str::<Part>("42").expect_err("number is not a Part");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Part object"),
+            "expected error to describe Part object, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn part_deserialize_string_error_mentions_part_object() {
+        let err =
+            serde_json::from_str::<Part>("\"hello\"").expect_err("string is not a Part");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Part object"),
+            "expected error to describe Part object, got: {msg}"
+        );
+    }
+
+    // ── FieldVisitor::expecting test ──────────────────────────────────────
+    //
+    // JSON always provides string map keys, so FieldVisitor::visit_str is
+    // the only path hit by JSON. To exercise `expecting()` we construct a
+    // MapDeserializer whose keys are u64 — forcing the default visit_u64
+    // fallback that builds an error using expecting().
+
+    #[test]
+    fn field_visitor_expecting_describes_field_name() {
+        use serde::de::value::MapDeserializer;
+        use serde::Deserialize;
+
+        // u64 keys force FieldVisitor's default visit_u64 fallback, which
+        // raises invalid_type with the text from expecting().
+        // Both key and value must implement IntoDeserializer with matching
+        // error type — primitives share serde::de::value::Error.
+        let pairs: Vec<(u64, String)> = vec![(1_u64, "hi".to_string())];
+        let de = MapDeserializer::<_, serde::de::value::Error>::new(pairs.into_iter());
+        let err = Part::deserialize(de).expect_err("u64 keys must fail field parsing");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Part field name"),
+            "FieldVisitor expecting must describe 'a Part field name': {msg}"
+        );
+    }
+
+    // ── FileContent::validate tests ───────────────────────────────────────
+    //
+    // Spec: validate() returns Ok iff at least one of bytes/uri is set.
+    // Mutations to address:
+    //  - && → ||: would return Err whenever EITHER is None (instead of both).
+    //  - body → Ok(()): would never return Err even when both are None.
+
+    #[test]
+    fn file_content_validate_errors_when_both_none() {
+        let fc = FileContent {
+            name: Some("x".into()),
+            mime_type: Some("text/plain".into()),
+            bytes: None,
+            uri: None,
+        };
+        let err = fc.validate().expect_err("must error with neither set");
+        assert!(err.contains("bytes") && err.contains("uri"));
+    }
+
+    #[test]
+    fn file_content_validate_ok_when_bytes_only() {
+        let fc = FileContent::from_bytes("aGVsbG8=");
+        assert!(
+            fc.validate().is_ok(),
+            "bytes alone must be sufficient: {:?}",
+            fc.validate()
+        );
+    }
+
+    #[test]
+    fn file_content_validate_ok_when_uri_only() {
+        let fc = FileContent::from_uri("https://example.com/a.png");
+        assert!(
+            fc.validate().is_ok(),
+            "uri alone must be sufficient: {:?}",
+            fc.validate()
+        );
+    }
+
+    #[test]
+    fn file_content_validate_ok_when_both_set() {
+        let fc = FileContent {
+            name: None,
+            mime_type: None,
+            bytes: Some("YWJj".into()),
+            uri: Some("https://example.com/a".into()),
+        };
+        assert!(fc.validate().is_ok(), "both set must be ok");
+    }
 }

@@ -363,6 +363,35 @@ mod tests {
         assert!(serde_json::from_str::<JsonRpcVersion>("\" 2.0\"").is_err());
     }
 
+    /// The `expecting()` message of `VersionVisitor` must describe the
+    /// accepted input (`"2.0"`). When a non-string type is deserialized,
+    /// serde surfaces that description in its error, so we can assert on it.
+    /// A mutation that empties the expecting body (returning `Ok(())`) would
+    /// produce an error without the expected text.
+    #[test]
+    fn version_visitor_expecting_describes_2_0() {
+        let err = serde_json::from_str::<JsonRpcVersion>("42")
+            .expect_err("must error on number input");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("2.0"),
+            "expected error to describe expected value \"2.0\", got: {msg}"
+        );
+    }
+
+    #[test]
+    fn version_visitor_expecting_describes_string() {
+        let err = serde_json::from_str::<JsonRpcVersion>("null")
+            .expect_err("must error on null input");
+        let msg = err.to_string();
+        // Must at least mention "string" or "2.0" somewhere; empty expecting
+        // would leave the error phrasing vacuous.
+        assert!(
+            msg.contains("string") || msg.contains("2.0"),
+            "expected error mentioning 'string' or '2.0', got: {msg}"
+        );
+    }
+
     // ── JsonRpcRequest::new ───────────────────────────────────────────────
 
     #[test]

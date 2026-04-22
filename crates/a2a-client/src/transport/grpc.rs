@@ -394,10 +394,15 @@ impl Transport for GrpcTransport {
 /// Reads gRPC streaming responses and feeds them to the `EventStream`
 /// channel as SSE-formatted data lines. This reuses the existing SSE
 /// parser in `EventStream`, matching the WebSocket transport approach.
-async fn grpc_stream_reader_task(
-    mut stream: tonic::Streaming<JsonPayload>,
+///
+/// Generic over the concrete stream type so tests can substitute an in-memory
+/// `futures::stream::iter(...)` without a live gRPC connection.
+async fn grpc_stream_reader_task<S>(
+    mut stream: S,
     tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
-) {
+) where
+    S: tonic::codegen::tokio_stream::Stream<Item = Result<JsonPayload, tonic::Status>> + Unpin,
+{
     use tonic::codegen::tokio_stream::StreamExt;
 
     loop {
@@ -459,6 +464,9 @@ fn validate_url(url: &str) -> ClientResult<()> {
 }
 
 const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::ErrorCode {
+    // DeadlineExceeded and Cancelled fall through to the wildcard arm because
+    // both map to InternalError. A dedicated arm would be redundant with the
+    // wildcard — cargo-mutants flags redundant arms as "equivalent mutants".
     match code {
         tonic::Code::NotFound => a2a_protocol_types::ErrorCode::TaskNotFound,
         tonic::Code::InvalidArgument
@@ -467,9 +475,6 @@ const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::Error
         | tonic::Code::ResourceExhausted => a2a_protocol_types::ErrorCode::InvalidParams,
         tonic::Code::Unimplemented => a2a_protocol_types::ErrorCode::MethodNotFound,
         tonic::Code::FailedPrecondition => a2a_protocol_types::ErrorCode::TaskNotCancelable,
-        tonic::Code::DeadlineExceeded | tonic::Code::Cancelled => {
-            a2a_protocol_types::ErrorCode::InternalError
-        }
         _ => a2a_protocol_types::ErrorCode::InternalError,
     }
 }
@@ -659,5 +664,152 @@ mod tests {
             matches!(err, ClientError::Protocol(_)),
             "other codes should map to Protocol, got: {err:?}"
         );
+    }
+
+    // ── grpc_stream_reader_task tests ─────────────────────────────────────
+    //
+    // The task is generic over `Stream<Item = Result<JsonPayload, Status>>`
+    // so we can drive it with an in-memory stream, no network needed. This
+    // catches the "replace function with ()" mutation — an empty body would
+    // never emit anything into `tx`.
+
+    #[tokio::test]
+    async fn grpc_stream_reader_task_forwards_payload_as_sse() {
+        let payloads = vec![Ok(JsonPayload {
+            data: br#"{"status":{"state":"working"}}"#.to_vec(),
+        })];
+        let stream = tonic::codegen::tokio_stream::iter(payloads);
+        let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
+
+        grpc_stream_reader_task(stream, tx).await;
+
+        let first = rx.recv().await.expect("expected one chunk");
+        let bytes = first.expect("expected Ok chunk");
+        let text = std::str::from_utf8(&bytes).expect("utf8");
+        assert!(
+            text.starts_with("data: "),
+            "chunk must be SSE-framed: {text}"
+        );
+        assert!(
+            text.contains("\"jsonrpc\":\"2.0\""),
+            "chunk must be JSON-RPC envelope: {text}"
+        );
+        assert!(
+            text.contains("\"working\""),
+            "chunk must include inner payload: {text}"
+        );
+        // Stream ended → task exits → channel closes.
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn grpc_stream_reader_task_forwards_multiple_payloads() {
+        let payloads = vec![
+            Ok(JsonPayload {
+                data: br#"{"n":1}"#.to_vec(),
+            }),
+            Ok(JsonPayload {
+                data: br#"{"n":2}"#.to_vec(),
+            }),
+            Ok(JsonPayload {
+                data: br#"{"n":3}"#.to_vec(),
+            }),
+        ];
+        let stream = tonic::codegen::tokio_stream::iter(payloads);
+        let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
+
+        grpc_stream_reader_task(stream, tx).await;
+
+        let mut received = 0;
+        while let Some(item) = rx.recv().await {
+            assert!(item.is_ok());
+            received += 1;
+        }
+        assert_eq!(received, 3, "all three payloads must be forwarded");
+    }
+
+    #[tokio::test]
+    async fn grpc_stream_reader_task_maps_status_error_to_protocol_error() {
+        let payloads: Vec<Result<JsonPayload, tonic::Status>> =
+            vec![Err(tonic::Status::not_found("missing"))];
+        let stream = tonic::codegen::tokio_stream::iter(payloads);
+        let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
+
+        grpc_stream_reader_task(stream, tx).await;
+
+        let chunk = rx.recv().await.expect("expected an error chunk");
+        match chunk {
+            Err(ClientError::Protocol(a2a)) => {
+                assert_eq!(a2a.code, a2a_protocol_types::ErrorCode::TaskNotFound);
+                assert!(a2a.message.contains("missing"));
+            }
+            other => panic!("expected Protocol(TaskNotFound), got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn grpc_stream_reader_task_handles_invalid_utf8() {
+        let payloads: Vec<Result<JsonPayload, tonic::Status>> = vec![Ok(JsonPayload {
+            // Invalid UTF-8: bare continuation byte
+            data: vec![0xff, 0xfe, 0xfd],
+        })];
+        let stream = tonic::codegen::tokio_stream::iter(payloads);
+        let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
+
+        grpc_stream_reader_task(stream, tx).await;
+
+        let chunk = rx.recv().await.expect("expected an error chunk");
+        match chunk {
+            Err(ClientError::Transport(msg)) => {
+                assert!(msg.contains("UTF-8"), "msg should mention UTF-8: {msg}");
+            }
+            other => panic!("expected Transport error, got {other:?}"),
+        }
+    }
+
+    // ── GrpcTransport::endpoint test via lazy channel ─────────────────────
+    //
+    // Construct a GrpcTransport without a live server using `connect_lazy`,
+    // which defers the actual TCP handshake until first RPC. This lets us
+    // verify that `endpoint()` echoes the string we passed in — killing the
+    // `replace ... with ""` and `with "xyzzy"` mutations.
+
+    #[tokio::test]
+    async fn grpc_transport_endpoint_returns_input_url() {
+        let endpoint_str = "http://localhost:50055".to_string();
+        let channel = tonic::transport::Channel::from_shared(endpoint_str.clone())
+            .expect("valid endpoint")
+            .connect_lazy();
+        let transport = GrpcTransport {
+            inner: Arc::new(Inner {
+                channel,
+                endpoint: endpoint_str.clone(),
+                config: GrpcTransportConfig::default(),
+            }),
+        };
+        assert_eq!(transport.endpoint(), endpoint_str);
+    }
+
+    #[tokio::test]
+    async fn grpc_transport_endpoint_preserves_distinct_urls() {
+        let a = "http://example.com:1234".to_string();
+        let b = "https://other.test:9000".to_string();
+        let mk = |s: String| {
+            let ch = tonic::transport::Channel::from_shared(s.clone())
+                .unwrap()
+                .connect_lazy();
+            GrpcTransport {
+                inner: Arc::new(Inner {
+                    channel: ch,
+                    endpoint: s,
+                    config: GrpcTransportConfig::default(),
+                }),
+            }
+        };
+        let ta = mk(a.clone());
+        let tb = mk(b.clone());
+        assert_eq!(ta.endpoint(), a);
+        assert_eq!(tb.endpoint(), b);
+        assert_ne!(ta.endpoint(), tb.endpoint());
     }
 }

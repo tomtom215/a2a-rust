@@ -46,8 +46,36 @@ use crate::transport::Transport;
 /// The major protocol version supported by this client.
 ///
 /// Used to warn when an agent card advertises an incompatible version.
-#[cfg(feature = "tracing")]
-const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
+pub(crate) const SUPPORTED_PROTOCOL_MAJOR: u32 = 1;
+
+/// Returns the mismatched major-version string when `protocol_version`
+/// advertises a major that differs from [`SUPPORTED_PROTOCOL_MAJOR`].
+///
+/// Empty strings are treated as "unknown" and considered compatible
+/// (returning `None`) so we don't flag agent cards that omit the field.
+/// Unparseable versions are treated as incompatible.
+///
+/// Returning the original string lets callers emit a tracing warning that
+/// includes the offending value, and — importantly — gives the function an
+/// observable return value so tests can differentiate compatibility cases
+/// directly, avoiding the `!compat()` negation that would otherwise create
+/// an unkillable mutant (deleting the `!` produces a semantically opposite
+/// warning, which is not detectable via test assertions since the only
+/// effect is a tracing emit).
+pub(crate) fn protocol_version_mismatch(protocol_version: &str) -> Option<&str> {
+    if protocol_version.is_empty() {
+        return None;
+    }
+    let major = protocol_version
+        .split('.')
+        .next()
+        .and_then(|s| s.parse::<u32>().ok());
+    if major == Some(SUPPORTED_PROTOCOL_MAJOR) {
+        None
+    } else {
+        Some(protocol_version)
+    }
+}
 
 // ── ClientBuilder ─────────────────────────────────────────────────────────────
 
@@ -98,24 +126,13 @@ impl ClientBuilder {
 
         // Warn if agent advertises a different major version than we support.
         #[cfg(feature = "tracing")]
-        if let Some(version) = card
-            .supported_interfaces
-            .first()
-            .map(|i| i.protocol_version.clone())
-            .filter(|v| !v.is_empty())
-        {
-            let major = version
-                .split('.')
-                .next()
-                .and_then(|s| s.parse::<u32>().ok());
-            if major != Some(SUPPORTED_PROTOCOL_MAJOR) {
-                trace_warn!(
-                    agent = %card.name,
-                    protocol_version = %version,
-                    supported_major = SUPPORTED_PROTOCOL_MAJOR,
-                    "agent protocol version may be incompatible with this client"
-                );
-            }
+        if let Some(mismatched) = protocol_version_mismatch(&first.protocol_version) {
+            trace_warn!(
+                agent = %card.name,
+                protocol_version = %mismatched,
+                supported_major = SUPPORTED_PROTOCOL_MAJOR,
+                "agent protocol version may be incompatible with this client"
+            );
         }
 
         Ok(Self {
@@ -399,6 +416,110 @@ mod tests {
 
         let builder = ClientBuilder::from_card(&card).unwrap();
         assert_eq!(builder.endpoint, "http://localhost:9091");
+    }
+
+    // ── protocol_version_mismatch tests ───────────────────────────────────
+
+    #[test]
+    fn version_mismatch_matching_major_returns_none() {
+        assert_eq!(protocol_version_mismatch("1.0.0"), None);
+        assert_eq!(protocol_version_mismatch("1.2.3"), None);
+        assert_eq!(protocol_version_mismatch("1"), None);
+    }
+
+    #[test]
+    fn version_mismatch_returns_original_on_mismatch() {
+        assert_eq!(protocol_version_mismatch("0.5.0"), Some("0.5.0"));
+        assert_eq!(protocol_version_mismatch("2.0.0"), Some("2.0.0"));
+        assert_eq!(protocol_version_mismatch("99.0.0"), Some("99.0.0"));
+    }
+
+    #[test]
+    fn version_mismatch_empty_is_compatible() {
+        // Empty string means "unknown", treated as compatible to avoid noise.
+        assert_eq!(protocol_version_mismatch(""), None);
+    }
+
+    #[test]
+    fn version_mismatch_unparseable_is_incompatible() {
+        assert_eq!(
+            protocol_version_mismatch("not-a-version"),
+            Some("not-a-version")
+        );
+        assert_eq!(protocol_version_mismatch("v1.0.0"), Some("v1.0.0"));
+        assert_eq!(protocol_version_mismatch("1-preview"), Some("1-preview"));
+    }
+
+    // ── tenant propagation from AgentCard ─────────────────────────────────
+    //
+    // from_card MUST copy `AgentInterface.tenant` into ClientConfig.tenant.
+    // The mutation `delete field tenant from struct ClientConfig expression`
+    // would leave tenant at its default (None).
+
+    #[test]
+    fn builder_from_card_preserves_tenant() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            url: None,
+            name: "multi-tenant".into(),
+            version: "1.0".into(),
+            description: "Multi-tenant agent".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9092".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: Some("tenant-42".into()),
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let builder = ClientBuilder::from_card(&card).expect("from_card");
+        assert_eq!(
+            builder.config.tenant.as_deref(),
+            Some("tenant-42"),
+            "tenant from AgentInterface must be propagated to ClientConfig"
+        );
+    }
+
+    #[test]
+    fn builder_from_card_none_tenant_stays_none() {
+        use a2a_protocol_types::{AgentCapabilities, AgentCard, AgentInterface};
+
+        let card = AgentCard {
+            url: None,
+            name: "no-tenant".into(),
+            version: "1.0".into(),
+            description: String::new(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:9093".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        };
+
+        let builder = ClientBuilder::from_card(&card).expect("from_card");
+        assert!(builder.config.tenant.is_none());
     }
 
     /// Covers lines 150-153 (`with_connection_timeout`) and 221-224 (`with_retry_policy`).

@@ -35,6 +35,18 @@ use crate::error::{ClientError, ClientResult};
 /// The standard well-known path for agent card discovery.
 pub const AGENT_CARD_PATH: &str = "/.well-known/agent-card.json";
 
+/// Maximum size (in bytes) of an agent card response body. 2 MiB — more than
+/// enough for legitimate cards and a defensive cap against OOM from a
+/// compromised endpoint.
+pub(crate) const MAX_CARD_BODY_SIZE: u64 = 2 * 1024 * 1024;
+
+/// Returns `true` when `len` is strictly greater than `max`. Extracted so that
+/// the boundary condition is directly testable — a size exactly equal to the
+/// maximum is allowed.
+pub(crate) const fn exceeds_card_body_size(len: u64, max: u64) -> bool {
+    len > max
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Fetches the [`AgentCard`] from the standard well-known path.
@@ -260,10 +272,10 @@ async fn fetch_card_with_metadata(
     // FIX(H8): Check Content-Length before reading the body to prevent OOM
     // from a compromised card endpoint sending an arbitrarily large response.
     // 2 MiB — generous for agent cards
-    let max_card_body_size: u64 = 2 * 1024 * 1024;
+    let max_card_body_size: u64 = MAX_CARD_BODY_SIZE;
     if let Some(cl) = resp.headers().get(header::CONTENT_LENGTH) {
         if let Ok(len) = cl.to_str().unwrap_or("0").parse::<u64>() {
-            if len > max_card_body_size {
+            if exceeds_card_body_size(len, max_card_body_size) {
                 return Err(ClientError::Transport(format!(
                     "agent card response too large: {len} bytes exceeds {max_card_body_size} byte limit"
                 )));
@@ -279,7 +291,7 @@ async fn fetch_card_with_metadata(
 
     // FIX(H8): Also check after reading for chunked/streaming responses
     // that don't include Content-Length.
-    if body_bytes.len() as u64 > max_card_body_size {
+    if exceeds_card_body_size(body_bytes.len() as u64, max_card_body_size) {
         return Err(ClientError::Transport(format!(
             "agent card response too large: {} bytes exceeds {max_card_body_size} byte limit",
             body_bytes.len()
@@ -1001,5 +1013,36 @@ mod tests {
         let (card, _, last_modified) = fetch_card_with_metadata(&url, Some(&cached)).await.unwrap();
         assert_eq!(card.name, "lm-cached");
         assert_eq!(last_modified, Some("Mon, 01 Jan 2026 00:00:00 GMT".into()));
+    }
+
+    // ── exceeds_card_body_size boundary tests ─────────────────────────────
+
+    #[test]
+    fn exceeds_card_body_size_over_limit() {
+        assert!(exceeds_card_body_size(MAX_CARD_BODY_SIZE + 1, MAX_CARD_BODY_SIZE));
+    }
+
+    /// Boundary case: a body exactly equal to the limit MUST be allowed
+    /// (not "exceeding"). This catches the `>` → `>=` mutation.
+    #[test]
+    fn exceeds_card_body_size_exactly_at_limit_is_ok() {
+        assert!(!exceeds_card_body_size(MAX_CARD_BODY_SIZE, MAX_CARD_BODY_SIZE));
+    }
+
+    #[test]
+    fn exceeds_card_body_size_under_limit() {
+        assert!(!exceeds_card_body_size(0, MAX_CARD_BODY_SIZE));
+        assert!(!exceeds_card_body_size(1024, MAX_CARD_BODY_SIZE));
+        assert!(!exceeds_card_body_size(
+            MAX_CARD_BODY_SIZE - 1,
+            MAX_CARD_BODY_SIZE
+        ));
+    }
+
+    #[test]
+    fn exceeds_card_body_size_custom_limit() {
+        assert!(exceeds_card_body_size(11, 10));
+        assert!(!exceeds_card_body_size(10, 10));
+        assert!(!exceeds_card_body_size(9, 10));
     }
 }

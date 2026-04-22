@@ -568,4 +568,391 @@ mod tests {
         let s = err.to_string();
         assert_eq!(s, "[-32700] bad json");
     }
+
+    // ── a2a_reason tests ──────────────────────────────────────────────────
+    //
+    // Each A2A-specific variant MUST return a distinct, specific reason string.
+    // Standard JSON-RPC variants MUST return None. Exhaustive coverage is
+    // required so mutations that delete match arms or collapse the function
+    // into a constant are detected.
+
+    #[test]
+    fn a2a_reason_task_not_found() {
+        assert_eq!(
+            ErrorCode::TaskNotFound.a2a_reason(),
+            Some("TASK_NOT_FOUND")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_task_not_cancelable() {
+        assert_eq!(
+            ErrorCode::TaskNotCancelable.a2a_reason(),
+            Some("TASK_NOT_CANCELABLE")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_push_notification_not_supported() {
+        assert_eq!(
+            ErrorCode::PushNotificationNotSupported.a2a_reason(),
+            Some("PUSH_NOTIFICATION_NOT_SUPPORTED")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_unsupported_operation() {
+        assert_eq!(
+            ErrorCode::UnsupportedOperation.a2a_reason(),
+            Some("UNSUPPORTED_OPERATION")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_content_type_not_supported() {
+        assert_eq!(
+            ErrorCode::ContentTypeNotSupported.a2a_reason(),
+            Some("CONTENT_TYPE_NOT_SUPPORTED")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_invalid_agent_response() {
+        assert_eq!(
+            ErrorCode::InvalidAgentResponse.a2a_reason(),
+            Some("INVALID_AGENT_RESPONSE")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_extended_agent_card_not_configured() {
+        assert_eq!(
+            ErrorCode::ExtendedAgentCardNotConfigured.a2a_reason(),
+            Some("EXTENDED_AGENT_CARD_NOT_CONFIGURED")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_extension_support_required() {
+        assert_eq!(
+            ErrorCode::ExtensionSupportRequired.a2a_reason(),
+            Some("EXTENSION_SUPPORT_REQUIRED")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_version_not_supported() {
+        assert_eq!(
+            ErrorCode::VersionNotSupported.a2a_reason(),
+            Some("VERSION_NOT_SUPPORTED")
+        );
+    }
+
+    #[test]
+    fn a2a_reason_none_for_standard_jsonrpc_errors() {
+        assert_eq!(ErrorCode::ParseError.a2a_reason(), None);
+        assert_eq!(ErrorCode::InvalidRequest.a2a_reason(), None);
+        assert_eq!(ErrorCode::MethodNotFound.a2a_reason(), None);
+        assert_eq!(ErrorCode::InvalidParams.a2a_reason(), None);
+        assert_eq!(ErrorCode::InternalError.a2a_reason(), None);
+    }
+
+    #[test]
+    fn a2a_reason_all_a2a_variants_distinct_and_non_empty() {
+        let reasons: &[&str] = &[
+            ErrorCode::TaskNotFound.a2a_reason().unwrap(),
+            ErrorCode::TaskNotCancelable.a2a_reason().unwrap(),
+            ErrorCode::PushNotificationNotSupported.a2a_reason().unwrap(),
+            ErrorCode::UnsupportedOperation.a2a_reason().unwrap(),
+            ErrorCode::ContentTypeNotSupported.a2a_reason().unwrap(),
+            ErrorCode::InvalidAgentResponse.a2a_reason().unwrap(),
+            ErrorCode::ExtendedAgentCardNotConfigured
+                .a2a_reason()
+                .unwrap(),
+            ErrorCode::ExtensionSupportRequired.a2a_reason().unwrap(),
+            ErrorCode::VersionNotSupported.a2a_reason().unwrap(),
+        ];
+        // All non-empty.
+        for r in reasons {
+            assert!(!r.is_empty(), "a2a_reason must not be empty: {r}");
+        }
+        // All distinct.
+        let mut sorted: Vec<&str> = reasons.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.len(),
+            reasons.len(),
+            "a2a_reason values must be distinct across variants"
+        );
+    }
+
+    // ── http_status tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn http_status_task_not_found_is_404() {
+        assert_eq!(ErrorCode::TaskNotFound.http_status(), 404);
+    }
+
+    #[test]
+    fn http_status_method_not_found_is_404() {
+        assert_eq!(ErrorCode::MethodNotFound.http_status(), 404);
+    }
+
+    #[test]
+    fn http_status_task_not_cancelable_is_409() {
+        assert_eq!(ErrorCode::TaskNotCancelable.http_status(), 409);
+    }
+
+    #[test]
+    fn http_status_content_type_not_supported_is_415() {
+        assert_eq!(ErrorCode::ContentTypeNotSupported.http_status(), 415);
+    }
+
+    #[test]
+    fn http_status_invalid_agent_response_is_502() {
+        assert_eq!(ErrorCode::InvalidAgentResponse.http_status(), 502);
+    }
+
+    #[test]
+    fn http_status_push_not_supported_is_400() {
+        assert_eq!(ErrorCode::PushNotificationNotSupported.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_unsupported_operation_is_400() {
+        assert_eq!(ErrorCode::UnsupportedOperation.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_extended_card_not_configured_is_400() {
+        assert_eq!(
+            ErrorCode::ExtendedAgentCardNotConfigured.http_status(),
+            400
+        );
+    }
+
+    #[test]
+    fn http_status_extension_support_required_is_400() {
+        assert_eq!(ErrorCode::ExtensionSupportRequired.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_version_not_supported_is_400() {
+        assert_eq!(ErrorCode::VersionNotSupported.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_parse_error_is_400() {
+        assert_eq!(ErrorCode::ParseError.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_invalid_request_is_400() {
+        assert_eq!(ErrorCode::InvalidRequest.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_invalid_params_is_400() {
+        assert_eq!(ErrorCode::InvalidParams.http_status(), 400);
+    }
+
+    #[test]
+    fn http_status_internal_error_is_500() {
+        assert_eq!(ErrorCode::InternalError.http_status(), 500);
+    }
+
+    // ── grpc_status tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn grpc_status_task_not_found_is_not_found() {
+        assert_eq!(ErrorCode::TaskNotFound.grpc_status(), "NOT_FOUND");
+    }
+
+    #[test]
+    fn grpc_status_task_not_cancelable_is_failed_precondition() {
+        assert_eq!(
+            ErrorCode::TaskNotCancelable.grpc_status(),
+            "FAILED_PRECONDITION"
+        );
+    }
+
+    #[test]
+    fn grpc_status_extended_card_not_configured_is_failed_precondition() {
+        assert_eq!(
+            ErrorCode::ExtendedAgentCardNotConfigured.grpc_status(),
+            "FAILED_PRECONDITION"
+        );
+    }
+
+    #[test]
+    fn grpc_status_extension_support_required_is_failed_precondition() {
+        assert_eq!(
+            ErrorCode::ExtensionSupportRequired.grpc_status(),
+            "FAILED_PRECONDITION"
+        );
+    }
+
+    #[test]
+    fn grpc_status_push_not_supported_is_unimplemented() {
+        assert_eq!(
+            ErrorCode::PushNotificationNotSupported.grpc_status(),
+            "UNIMPLEMENTED"
+        );
+    }
+
+    #[test]
+    fn grpc_status_unsupported_operation_is_unimplemented() {
+        assert_eq!(
+            ErrorCode::UnsupportedOperation.grpc_status(),
+            "UNIMPLEMENTED"
+        );
+    }
+
+    #[test]
+    fn grpc_status_version_not_supported_is_unimplemented() {
+        assert_eq!(
+            ErrorCode::VersionNotSupported.grpc_status(),
+            "UNIMPLEMENTED"
+        );
+    }
+
+    #[test]
+    fn grpc_status_method_not_found_is_unimplemented() {
+        assert_eq!(ErrorCode::MethodNotFound.grpc_status(), "UNIMPLEMENTED");
+    }
+
+    #[test]
+    fn grpc_status_content_type_not_supported_is_invalid_argument() {
+        assert_eq!(
+            ErrorCode::ContentTypeNotSupported.grpc_status(),
+            "INVALID_ARGUMENT"
+        );
+    }
+
+    #[test]
+    fn grpc_status_invalid_params_is_invalid_argument() {
+        assert_eq!(ErrorCode::InvalidParams.grpc_status(), "INVALID_ARGUMENT");
+    }
+
+    #[test]
+    fn grpc_status_invalid_request_is_invalid_argument() {
+        assert_eq!(ErrorCode::InvalidRequest.grpc_status(), "INVALID_ARGUMENT");
+    }
+
+    #[test]
+    fn grpc_status_parse_error_is_invalid_argument() {
+        assert_eq!(ErrorCode::ParseError.grpc_status(), "INVALID_ARGUMENT");
+    }
+
+    #[test]
+    fn grpc_status_invalid_agent_response_is_internal() {
+        assert_eq!(ErrorCode::InvalidAgentResponse.grpc_status(), "INTERNAL");
+    }
+
+    #[test]
+    fn grpc_status_internal_error_is_internal() {
+        assert_eq!(ErrorCode::InternalError.grpc_status(), "INTERNAL");
+    }
+
+    #[test]
+    fn grpc_status_never_empty() {
+        let all = [
+            ErrorCode::ParseError,
+            ErrorCode::InvalidRequest,
+            ErrorCode::MethodNotFound,
+            ErrorCode::InvalidParams,
+            ErrorCode::InternalError,
+            ErrorCode::TaskNotFound,
+            ErrorCode::TaskNotCancelable,
+            ErrorCode::PushNotificationNotSupported,
+            ErrorCode::UnsupportedOperation,
+            ErrorCode::ContentTypeNotSupported,
+            ErrorCode::InvalidAgentResponse,
+            ErrorCode::ExtendedAgentCardNotConfigured,
+            ErrorCode::ExtensionSupportRequired,
+            ErrorCode::VersionNotSupported,
+        ];
+        for code in all {
+            assert!(
+                !code.grpc_status().is_empty(),
+                "grpc_status must never be empty for {code:?}"
+            );
+        }
+    }
+
+    // ── error_info_data tests ─────────────────────────────────────────────
+
+    #[test]
+    fn error_info_data_for_a2a_error_has_expected_shape() {
+        let err = A2aError::task_not_found("t1");
+        let data = err.error_info_data(None);
+
+        // Must be a JSON array with one ErrorInfo object.
+        let arr = data.as_array().expect("error_info_data must be an array");
+        assert_eq!(arr.len(), 1);
+        let info = &arr[0];
+        assert_eq!(
+            info["@type"],
+            "type.googleapis.com/google.rpc.ErrorInfo"
+        );
+        assert_eq!(info["reason"], "TASK_NOT_FOUND");
+        assert_eq!(info["domain"], "a2a-protocol.org");
+        assert!(
+            info.get("metadata").is_none(),
+            "metadata must be absent when None is passed"
+        );
+    }
+
+    #[test]
+    fn error_info_data_with_metadata_includes_metadata() {
+        let err = A2aError::task_not_cancelable("t2");
+        let meta = serde_json::json!({"task_id": "t2", "current_state": "completed"});
+        let data = err.error_info_data(Some(meta.clone()));
+
+        let arr = data.as_array().expect("error_info_data must be an array");
+        let info = &arr[0];
+        assert_eq!(info["reason"], "TASK_NOT_CANCELABLE");
+        assert_eq!(info["metadata"], meta);
+    }
+
+    #[test]
+    fn error_info_data_for_standard_jsonrpc_error_is_null() {
+        // Standard JSON-RPC errors have no a2a_reason, so error_info_data
+        // MUST return Null (not Default::default() which would be Null anyway
+        // for serde_json::Value, so we also check the structure is not an
+        // array — Null serializes to `null`, default would be the same, but
+        // the mutation replaces with Default::default() = Null, caught elsewhere).
+        let err = A2aError::parse_error("bad json");
+        let data = err.error_info_data(None);
+        assert!(data.is_null(), "expected null, got {data}");
+    }
+
+    #[test]
+    fn error_info_data_mutation_not_default_value() {
+        // A2A errors MUST produce a non-default (non-null) value.
+        // The Default::default() mutation would return Null, which differs
+        // from the real output for A2A errors (an array).
+        let err = A2aError::unsupported_operation("nope");
+        let data = err.error_info_data(None);
+        assert_ne!(
+            data,
+            serde_json::Value::default(),
+            "A2A error must not produce default serde_json::Value"
+        );
+        assert!(data.is_array(), "A2A error must produce an array");
+    }
+
+    #[test]
+    fn error_info_data_metadata_not_added_when_none() {
+        // Exercise the `if let Some(meta) = metadata` branch with None
+        // to ensure the metadata field is conditionally added.
+        let err = A2aError::version_not_supported("old");
+        let data = err.error_info_data(None);
+        let info = &data[0];
+        assert!(info.get("metadata").is_none());
+        // And confirm adding it works.
+        let with = err.error_info_data(Some(serde_json::json!({"x": 1})));
+        assert_eq!(with[0]["metadata"], serde_json::json!({"x": 1}));
+    }
 }
