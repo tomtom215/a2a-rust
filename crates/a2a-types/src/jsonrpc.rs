@@ -370,8 +370,8 @@ mod tests {
     /// produce an error without the expected text.
     #[test]
     fn version_visitor_expecting_describes_2_0() {
-        let err = serde_json::from_str::<JsonRpcVersion>("42")
-            .expect_err("must error on number input");
+        let err =
+            serde_json::from_str::<JsonRpcVersion>("42").expect_err("must error on number input");
         let msg = err.to_string();
         assert!(
             msg.contains("2.0"),
@@ -381,8 +381,8 @@ mod tests {
 
     #[test]
     fn version_visitor_expecting_describes_string() {
-        let err = serde_json::from_str::<JsonRpcVersion>("null")
-            .expect_err("must error on null input");
+        let err =
+            serde_json::from_str::<JsonRpcVersion>("null").expect_err("must error on null input");
         let msg = err.to_string();
         // Must at least mention "string" or "2.0" somewhere; empty expecting
         // would leave the error phrasing vacuous.

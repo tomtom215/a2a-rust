@@ -35,11 +35,10 @@ allow = [
 db-path   = "~/.cargo/advisory-db"
 db-urls   = ["https://github.com/rustsec/advisory-db"]
 yanked    = "warn"
-ignore    = [
-    # rustls-pemfile is unmaintained but pulled transitively by rig-core → reqwest 0.11;
-    # we cannot upgrade it until rig-core drops reqwest 0.11.
-    "RUSTSEC-2025-0134",
-]
+# No active advisory ignores. Add entries here only when an advisory
+# applies to a transitive dependency we can't upgrade yet — with a
+# short justification and an upgrade-path note.
+ignore    = []
 
 # ---------------------------------------------------------------------------
 # Banned crates

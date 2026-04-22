@@ -1019,14 +1019,20 @@ mod tests {
 
     #[test]
     fn exceeds_card_body_size_over_limit() {
-        assert!(exceeds_card_body_size(MAX_CARD_BODY_SIZE + 1, MAX_CARD_BODY_SIZE));
+        assert!(exceeds_card_body_size(
+            MAX_CARD_BODY_SIZE + 1,
+            MAX_CARD_BODY_SIZE
+        ));
     }
 
     /// Boundary case: a body exactly equal to the limit MUST be allowed
     /// (not "exceeding"). This catches the `>` → `>=` mutation.
     #[test]
     fn exceeds_card_body_size_exactly_at_limit_is_ok() {
-        assert!(!exceeds_card_body_size(MAX_CARD_BODY_SIZE, MAX_CARD_BODY_SIZE));
+        assert!(!exceeds_card_body_size(
+            MAX_CARD_BODY_SIZE,
+            MAX_CARD_BODY_SIZE
+        ));
     }
 
     #[test]

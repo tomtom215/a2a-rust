@@ -796,8 +796,7 @@ mod tests {
 
     #[test]
     fn part_deserialize_string_error_mentions_part_object() {
-        let err =
-            serde_json::from_str::<Part>("\"hello\"").expect_err("string is not a Part");
+        let err = serde_json::from_str::<Part>("\"hello\"").expect_err("string is not a Part");
         let msg = err.to_string();
         assert!(
             msg.contains("Part object"),

@@ -506,7 +506,17 @@ mod tests {
     /// for typical u64 inputs.
     #[test]
     fn jitter_factor_from_bits_always_in_half_to_one() {
-        for bits in [0_u64, 1, 7, 42, 1 << 20, 1 << 50, u64::MAX / 4, u64::MAX / 2, u64::MAX] {
+        for bits in [
+            0_u64,
+            1,
+            7,
+            42,
+            1 << 20,
+            1 << 50,
+            u64::MAX / 4,
+            u64::MAX / 2,
+            u64::MAX,
+        ] {
             let f = jitter_factor_from_bits(bits);
             assert!(
                 (0.5..=1.0).contains(&f),

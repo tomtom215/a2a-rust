@@ -578,10 +578,7 @@ mod tests {
 
     #[test]
     fn a2a_reason_task_not_found() {
-        assert_eq!(
-            ErrorCode::TaskNotFound.a2a_reason(),
-            Some("TASK_NOT_FOUND")
-        );
+        assert_eq!(ErrorCode::TaskNotFound.a2a_reason(), Some("TASK_NOT_FOUND"));
     }
 
     #[test]
@@ -662,7 +659,9 @@ mod tests {
         let reasons: &[&str] = &[
             ErrorCode::TaskNotFound.a2a_reason().unwrap(),
             ErrorCode::TaskNotCancelable.a2a_reason().unwrap(),
-            ErrorCode::PushNotificationNotSupported.a2a_reason().unwrap(),
+            ErrorCode::PushNotificationNotSupported
+                .a2a_reason()
+                .unwrap(),
             ErrorCode::UnsupportedOperation.a2a_reason().unwrap(),
             ErrorCode::ContentTypeNotSupported.a2a_reason().unwrap(),
             ErrorCode::InvalidAgentResponse.a2a_reason().unwrap(),
@@ -726,10 +725,7 @@ mod tests {
 
     #[test]
     fn http_status_extended_card_not_configured_is_400() {
-        assert_eq!(
-            ErrorCode::ExtendedAgentCardNotConfigured.http_status(),
-            400
-        );
+        assert_eq!(ErrorCode::ExtendedAgentCardNotConfigured.http_status(), 400);
     }
 
     #[test]
@@ -892,10 +888,7 @@ mod tests {
         let arr = data.as_array().expect("error_info_data must be an array");
         assert_eq!(arr.len(), 1);
         let info = &arr[0];
-        assert_eq!(
-            info["@type"],
-            "type.googleapis.com/google.rpc.ErrorInfo"
-        );
+        assert_eq!(info["@type"], "type.googleapis.com/google.rpc.ErrorInfo");
         assert_eq!(info["reason"], "TASK_NOT_FOUND");
         assert_eq!(info["domain"], "a2a-protocol.org");
         assert!(
