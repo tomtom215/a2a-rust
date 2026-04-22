@@ -59,6 +59,14 @@
 #![forbid(unsafe_code)]
 #![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(clippy::module_name_repetitions)]
+// `clippy::duration_suboptimal_units` lands in clippy 0.1.95 (stable Rust
+// 1.95) and fires on `Duration::from_secs(3600)` / `_secs(7200)` /
+// `_secs(86400)`, suggesting `Duration::from_hours` / `from_days`. Those
+// constructors were themselves only stabilised in 1.95, so adopting the
+// suggested fix would break our MSRV (1.93). The `unknown_lints` allow
+// silences the "unknown lint name" warning when the lint itself does
+// not yet exist in clippy 0.1.93.
+#![allow(unknown_lints, clippy::duration_suboptimal_units)]
 
 #[macro_use]
 mod trace;
