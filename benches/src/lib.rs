@@ -11,6 +11,8 @@
 //! server startup helpers so that every benchmark file stays focused on
 //! measuring a single dimension of SDK performance.
 
+#![forbid(unsafe_code)]
+
 pub mod coordinator;
 pub mod executor;
 pub mod fault_transport;

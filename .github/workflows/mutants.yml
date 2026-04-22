@@ -24,13 +24,18 @@
 name: Mutation Testing
 
 on:
-  # On-demand only — nightly schedule and PR gate disabled to save CI time.
-  # Re-enable schedule and pull_request triggers when iteration stabilises.
-  #
+  # PRs run the **incremental** job (`mutants-incremental` below): only the
+  # Rust source files changed in the PR are mutated, which fits inside the
+  # per-job timeout without needing a full sweep. The full sweep across
+  # every crate (`mutants-crate`) is gated on the matrix itself (`if:
+  # github.event_name != 'pull_request'`) so incremental runs on PRs and
+  # the full sweep runs on schedule / workflow_dispatch.
+  pull_request:
+    branches: ["main"]
+  # Full sweep runs manually or on-demand. A nightly schedule is available
+  # below but disabled to save CI minutes — uncomment to re-enable.
   # schedule:
   #   - cron: "0 3 * * *" # 03:00 UTC daily
-  # pull_request:
-  #   branches: ["main"]
   workflow_dispatch:
     inputs:
       package:
@@ -53,22 +58,52 @@ jobs:
   # When a specific package is provided via workflow_dispatch, only that
   # package's job runs (the others are skipped via the `if` condition).
   mutants-crate:
-    name: "Mutants (${{ matrix.crate }})"
+    name: "Mutants (${{ matrix.name }})"
+    # Full-sweep matrix runs only on manual dispatch or (if re-enabled) the
+    # nightly schedule. Pull requests are covered by the incremental job
+    # below, which fits inside the per-job timeout by mutating only changed
+    # files.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     strategy:
       fail-fast: false   # Don't cancel other crates if one fails
       matrix:
+        # a2a-server has > 1,600 mutants and cannot finish inside a single
+        # 2-hour job even at 4-way intra-crate parallelism — so we shard it
+        # across 4 separate runners. The `shard` value is passed verbatim to
+        # cargo-mutants' `--shard K/N` flag (cargo-mutants will split mutants
+        # deterministically across shards). Other crates run as a single
+        # shard (K=0/N=1 ≡ no sharding).
         include:
           - crate: a2a-protocol-types
             short: a2a-types
+            name: a2a-types
+            shard: "0/1"
           - crate: a2a-protocol-client
             short: a2a-client
+            name: a2a-client
+            shard: "0/1"
           - crate: a2a-protocol-server
             short: a2a-server
+            name: a2a-server shard 1/4
+            shard: "0/4"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 2/4
+            shard: "1/4"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 3/4
+            shard: "2/4"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 4/4
+            shard: "3/4"
           - crate: a2a-protocol-sdk
             short: a2a-sdk
+            name: a2a-sdk
+            shard: "0/1"
     steps:
       # Skip this matrix entry if a specific package was requested and it
       # doesn't match this crate.
@@ -82,6 +117,10 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+          # Shard-safe artifact name (GitHub disallows `/` in artifact names).
+          SHARD_TAG="${{ matrix.shard }}"
+          SHARD_TAG="${SHARD_TAG//\//-}"
+          echo "shard_tag=${SHARD_TAG}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         if: steps.check.outputs.skip == 'false'
@@ -99,16 +138,21 @@ jobs:
         run: cargo install cargo-mutants
 
       # ── Run mutants for this crate ───────────────────────────────────────
-      - name: "Run mutation tests: ${{ matrix.crate }}"
+      - name: "Run mutation tests: ${{ matrix.name }}"
         id: mutants
         if: steps.check.outputs.skip == 'false'
         run: |
-          echo "::group::cargo-mutants execution log (${{ matrix.crate }})"
+          echo "::group::cargo-mutants execution log (${{ matrix.name }})"
 
           set +e
+          # Per-mutant timeout is controlled via `cap_timeout` in
+          # mutants.toml (raised from 120 → 300 because the a2a-server
+          # baseline test suite alone takes ~60s on GitHub-hosted runners;
+          # at 3x the auto-computed timeout already exceeds 120, so the
+          # previous cap was masking real CAUGHT results as TIMEOUT).
           cargo mutants -p ${{ matrix.crate }} \
             --output mutants.out \
-            --timeout 120 \
+            --shard ${{ matrix.shard }} \
             --jobs 4 \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
@@ -194,7 +238,9 @@ jobs:
         if: always() && steps.check.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutation-report-${{ matrix.short }}
+          # Include the shard tag so sharded jobs (a2a-server) don't collide
+          # on the same artifact name.
+          name: mutation-report-${{ matrix.short }}-${{ steps.check.outputs.shard_tag }}
           path: |
             mutants.out/
             /tmp/mutants-run.log
@@ -233,14 +279,36 @@ jobs:
             echo "|-------|-------:|-------:|--------:|------:|"
           } > /tmp/summary.md
 
+          # Sum stats per base crate, merging shards (e.g. a2a-server-0-4
+          # and a2a-server-1-4 both roll up into the `a2a-server` row).
+          declare -A CRATE_CAUGHT
+          declare -A CRATE_MISSED
+          declare -A CRATE_TIMEOUT
+          declare -A CRATE_UNVIABLE
+
           for CRATE_DIR in reports/mutation-report-*/; do
             if [ ! -d "$CRATE_DIR" ]; then continue; fi
-            CRATE_NAME=$(basename "$CRATE_DIR" | sed 's/mutation-report-//')
+            REPORT_NAME=$(basename "$CRATE_DIR" | sed 's/mutation-report-//')
+            # Strip trailing shard suffix "-K-N" (e.g. "-0-4") to get the
+            # base crate name.
+            CRATE_NAME=$(echo "$REPORT_NAME" | sed -E 's/-[0-9]+-[0-9]+$//')
 
             C=$(count "${CRATE_DIR}mutants.out/caught.txt")
             M=$(count "${CRATE_DIR}mutants.out/missed.txt")
             T=$(count "${CRATE_DIR}mutants.out/timeout.txt")
             U=$(count "${CRATE_DIR}mutants.out/unviable.txt")
+
+            CRATE_CAUGHT[$CRATE_NAME]=$((${CRATE_CAUGHT[$CRATE_NAME]:-0} + C))
+            CRATE_MISSED[$CRATE_NAME]=$((${CRATE_MISSED[$CRATE_NAME]:-0} + M))
+            CRATE_TIMEOUT[$CRATE_NAME]=$((${CRATE_TIMEOUT[$CRATE_NAME]:-0} + T))
+            CRATE_UNVIABLE[$CRATE_NAME]=$((${CRATE_UNVIABLE[$CRATE_NAME]:-0} + U))
+          done
+
+          for CRATE_NAME in "${!CRATE_CAUGHT[@]}"; do
+            C=${CRATE_CAUGHT[$CRATE_NAME]}
+            M=${CRATE_MISSED[$CRATE_NAME]}
+            T=${CRATE_TIMEOUT[$CRATE_NAME]}
+            U=${CRATE_UNVIABLE[$CRATE_NAME]}
             CRATE_TOTAL=$((C + M))
 
             if [ "$CRATE_TOTAL" -gt 0 ]; then
@@ -369,9 +437,12 @@ jobs:
           done
 
           set +e
+          # --timeout matches `cap_timeout` in mutants.toml so trivial
+          # accessors / Debug impls aren't reported as TIMEOUT on slower
+          # GitHub runners; see the lint in mutants.toml for context.
           cargo mutants $GLOB_ARGS \
             --output mutants.out \
-            --timeout 120 \
+            --timeout 300 \
             --jobs 4 \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?

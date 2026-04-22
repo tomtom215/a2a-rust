@@ -568,6 +568,26 @@ mod tests {
         assert!(TaskState::Rejected.is_terminal());
     }
 
+    // ── is_interrupted exhaustive ─────────────────────────────────────────
+    //
+    // Only `InputRequired` and `AuthRequired` are interrupted per spec.
+    // Every other variant must return false. A mutation to `true` or `false`
+    // across the board will be detected because both truthy and falsy cases
+    // are asserted below.
+
+    #[test]
+    fn is_interrupted_all_variants() {
+        assert!(!TaskState::Unspecified.is_interrupted());
+        assert!(!TaskState::Submitted.is_interrupted());
+        assert!(!TaskState::Working.is_interrupted());
+        assert!(TaskState::InputRequired.is_interrupted());
+        assert!(TaskState::AuthRequired.is_interrupted());
+        assert!(!TaskState::Completed.is_interrupted());
+        assert!(!TaskState::Failed.is_interrupted());
+        assert!(!TaskState::Canceled.is_interrupted());
+        assert!(!TaskState::Rejected.is_interrupted());
+    }
+
     // ── can_transition_to exhaustive ──────────────────────────────────────
 
     /// All valid transitions per A2A protocol spec.

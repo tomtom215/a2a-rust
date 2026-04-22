@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Tom F.
 #
-# Benchmark suite — runs criterion benchmarks, generates book page, and commits results.
+# Benchmark suite — runs criterion benchmarks, generates book page, and
+# commits results. Also provides a PR regression-gate job that compares
+# PR benchmarks against the base branch and fails CI if any per-transport
+# benchmark regresses beyond the configured threshold.
 #
-# Trigger: on-demand (workflow_dispatch) and pushes to main.
-# After benchmarks complete, the results page is committed to main,
-# which triggers the docs workflow to rebuild GitHub Pages.
+# Trigger:
+#   - workflow_dispatch / push to main → full criterion run + book publish.
+#   - pull_request → regression-gate job only (fast subset, fails on
+#     regression beyond `benches/scripts/check_regression.py --threshold`).
 
 name: Benchmarks
 
@@ -18,6 +22,14 @@ on:
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "benches/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/benchmarks.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -34,6 +46,10 @@ permissions:
 jobs:
   bench:
     name: Run Benchmarks
+    # Full criterion sweep + book publish only runs on manual dispatch or
+    # pushes to main. Pull requests are covered by the regression-gate job
+    # below, which runs a focused subset against the base branch.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -122,3 +138,139 @@ jobs:
           name: criterion-reports
           path: target/criterion/
           retention-days: 30
+
+  # ── Regression gate (pull requests) ────────────────────────────────────
+  #
+  # Runs a focused subset of the criterion suite twice — once on the
+  # base branch to establish a baseline, once on the PR to measure
+  # change — then fails the job if any benchmark's median regression
+  # passes the statistical test in `check_regression.py`.
+  #
+  # Statistical test: a benchmark is flagged as a regression only when
+  # the *lower* bound of criterion's 95 % confidence interval on the
+  # median change exceeds the threshold. Gating on the point estimate
+  # alone produced false positives on GitHub-runner noise (15-25 %
+  # variance is common on small benches); requiring the whole CI to
+  # sit above the threshold gives a much higher-signal gate.
+  #
+  # Threshold: 50 % — not 25. Observation showed that even tight-CI
+  # regressions of ~25-30 % appear on pristine code due to
+  # GitHub-runner heterogeneity (CPU frequency, thermal throttling,
+  # LTO-driven inlining shifts from unrelated code). A 50 % threshold
+  # tolerates those systematic effects while still catching the
+  # regressions worth blocking: accidental O(n²) loops, allocator
+  # thrash, lost inlining in hot paths, etc. See
+  # `book/src/reference/regression-gate.md` for the full analysis.
+  #
+  # Scope: we deliberately restrict the PR gate to `transport_throughput`
+  # and `protocol_overhead` — the two benchmarks that exercise the
+  # per-transport critical path and serde hot loop. Running the full
+  # suite twice inside a 60-minute PR job is not realistic, and those
+  # two modules cover the surface area most likely to regress from
+  # routine code changes. The full suite still runs on pushes to
+  # `main` via the `bench` job above.
+  bench-regression:
+    name: Regression Gate
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0 # full history — we check out the base branch
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # Build the benches once up front so both baseline and PR runs
+      # share the compiled benchmark binaries (incremental compilation
+      # still works across the `git checkout` because the benches crate
+      # depends on workspace crates by path, not Cargo.lock revision).
+      - name: Pre-build benches
+        run: cargo bench -p a2a-benchmarks --no-run
+
+      - name: Save baseline from base branch
+        run: |
+          set -euxo pipefail
+          BASE_REF="${{ github.base_ref }}"
+          # `actions/checkout` above was called with fetch-depth: 0, so the
+          # base branch is already in our local refs — no additional fetch
+          # needed. A shallow `git fetch --depth=1` here would actively
+          # conflict with that full clone.
+          git checkout "origin/$BASE_REF" --
+          echo "::group::Baseline benchmarks (base: $BASE_REF)"
+          # --sample-size 30 keeps the full bench run well under 15 min per
+          # branch on a shared runner (two full bench matrices fit inside
+          # the 60-min job budget with headroom for compilation). Default
+          # is 100 which would blow past the budget for these two modules.
+          cargo bench -p a2a-benchmarks --bench transport_throughput -- \
+            --save-baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          cargo bench -p a2a-benchmarks --bench protocol_overhead -- \
+            --save-baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          echo "::endgroup::"
+
+      - name: Compare PR against baseline
+        id: compare
+        run: |
+          set -euxo pipefail
+          git checkout "${{ github.event.pull_request.head.sha }}" --
+          echo "::group::PR benchmarks vs pr-base"
+          cargo bench -p a2a-benchmarks --bench transport_throughput -- \
+            --baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          cargo bench -p a2a-benchmarks --bench protocol_overhead -- \
+            --baseline pr-base --warm-up-time 1 --measurement-time 3 --sample-size 30
+          echo "::endgroup::"
+
+          echo "::group::Criterion change-file inventory"
+          # Surface what criterion actually produced — helps diagnose
+          # "no change files found" errors (bench rename, criterion
+          # version bump, etc.) from the CI log alone.
+          find target/criterion -name "estimates.json" -path "*/change/*" \
+            | sort | head -50
+          echo "::endgroup::"
+
+          echo "::group::Regression analysis"
+          # Threshold is set to 50% rather than the tighter 25% that the
+          # documentation comment above discusses, because experience on
+          # this repo has shown that GitHub-hosted runners occasionally
+          # produce *tight-CI* regressions of ~25-30% on individual
+          # benches even when the benchmarked code is provably unchanged
+          # (suspected: runner-to-runner CPU frequency / thermal
+          # differences, or LTO inlining shifts caused by compiling
+          # additional test code in sibling crates). See
+          # `book/src/reference/regression-gate.md` for the full
+          # analysis. 50% still catches the regressions we want to
+          # block — accidental O(n²) loops, allocator thrash, lost
+          # inlining in hot paths — while staying honest about CI
+          # noise. Change when moving to self-hosted runners.
+          python3 benches/scripts/check_regression.py \
+            --target-dir target/criterion \
+            --threshold 0.50 \
+            | tee /tmp/regression.txt
+          echo "::endgroup::"
+
+      - name: Report outcome
+        if: always()
+        run: |
+          {
+            echo "# Benchmark Regression Gate"
+            echo ""
+            echo "Compared this PR against \`${{ github.base_ref }}\` on \`transport_throughput\` and \`protocol_overhead\`."
+            echo "Threshold: **50 %** (95 % CI lower bound of the median)."
+            echo ""
+            echo "See [book/src/reference/regression-gate.md](../book/src/reference/regression-gate.md) for why the threshold is this forgiving on GitHub-hosted runners."
+            echo ""
+            if [ -f /tmp/regression.txt ]; then
+              echo '```'
+              cat /tmp/regression.txt
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload criterion reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: criterion-reports-pr
+          path: target/criterion/
+          retention-days: 14

@@ -241,14 +241,42 @@ Criterion produces HTML reports in `target/criterion/` with:
 Criterion will flag any statistically significant regressions in the terminal
 output and in the HTML reports.
 
+For an automated programmatic check — used by the CI regression gate
+described below — the `benches/scripts/check_regression.py` script reads
+criterion's `change/estimates.json` files and exits non-zero when a
+benchmark's **95 %-CI lower bound** of the median change exceeds a
+configurable threshold:
+
+```bash
+# After `./benches/scripts/run_benchmarks.sh --compare`:
+python3 benches/scripts/check_regression.py --target-dir target/criterion --threshold 0.25
+```
+
 ## CI Integration
 
-The `benchmarks.yml` workflow runs on-demand (`workflow_dispatch`) and on
-pushes to `main`. It:
+The `benchmarks.yml` workflow runs three distinct modes:
 
-1. Runs all 13 benchmark suites
-2. Archives criterion HTML reports as artifacts
-3. Comments summary on PRs (when applicable)
+| Trigger | Job | What it does |
+|---|---|---|
+| Push to `main` | `Run Benchmarks` | Runs all benchmark suites, commits results to `book/` for the public dashboard, archives criterion HTML reports. |
+| `workflow_dispatch` | `Run Benchmarks` | Same as above, on demand. |
+| Pull request to `main` | `Regression Gate` | Runs `transport_throughput` and `protocol_overhead` twice (base branch, then PR), compares via `check_regression.py` at the 50 % threshold, fails CI on a statistically-significant regression. |
+
+### The PR Regression Gate
+
+The regression gate is the CI signal that the portfolio page
+advertises under "Regression-gated benchmarks." It fails a PR when
+any benchmark's 95 %-CI lower bound of the median change exceeds
+**50 %** — deliberately loose to absorb the noise floor of shared
+GitHub-hosted runners without becoming a flake.
+
+The full design — including the statistical test, the threshold
+derivation (why 50 % and not 25 %), and the practical limitations of
+benchmark-gating on shared CI runners — is documented in
+[`book/src/reference/regression-gate.md`](../book/src/reference/regression-gate.md).
+Read that page before filing an issue about a CI regression gate
+failure: the most common cause is a runner-heterogeneity artifact,
+not a real code regression.
 
 Note: CI benchmarks run on shared runners, so absolute numbers will vary.
 Use `--save` / `--compare` locally for reliable regression detection.

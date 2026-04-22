@@ -73,7 +73,7 @@ See the book's [Configuration Reference](../../book/src/reference/configuration.
 - **Transport abstraction** — pluggable HTTP backends; the protocol core carries no HTTP dep.
 - **Strict modularity** — 500-line file cap, single-responsibility per module, thin `mod.rs` files.
 - **Complete test coverage** — unit tests, integration tests with real TCP servers, end-to-end examples.
-- **Zero `unsafe`** — no `unsafe` blocks in any library crate. `#![deny(unsafe_op_in_unsafe_fn)]` in every crate.
+- **Zero `unsafe`** — no `unsafe` blocks in any library crate. `#![forbid(unsafe_code)]` at every library crate root (a compile-time guarantee, not a lint that can be overridden per-file).
 
 ### Original Non-Goals (subsequently implemented as optional features)
 
@@ -890,9 +890,9 @@ This pattern applies to: `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushS
 
 ### Unsafe
 
-- `unsafe` blocks are **forbidden** unless crossing true FFI boundaries.
+- `unsafe` blocks are **forbidden** in every published library crate; the only `unsafe` in the repository is the counting allocator in `benches/benches/memory_overhead.rs`, where `GlobalAlloc` cannot be implemented safely.
 - Every `unsafe` block requires a `// SAFETY:` comment explaining the upheld invariants.
-- `#![deny(unsafe_op_in_unsafe_fn)]` in every crate.
+- `#![forbid(unsafe_code)]` at every library crate root — a compile-time guarantee, not just a denial lint.
 
 ### Documentation
 

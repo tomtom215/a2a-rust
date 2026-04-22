@@ -45,12 +45,13 @@ pub(crate) fn truncate_body(body: &str) -> String {
     if body.len() <= MAX_ERROR_BODY_LEN {
         body.to_owned()
     } else {
-        // Find the last char boundary at or before MAX_ERROR_BODY_LEN to avoid
-        // slicing in the middle of a multi-byte UTF-8 character.
-        let mut end = MAX_ERROR_BODY_LEN;
-        while end > 0 && !body.is_char_boundary(end) {
-            end -= 1;
-        }
+        // Walk backwards from MAX_ERROR_BODY_LEN to find the last char
+        // boundary at or before the limit. Byte 0 is always a char boundary,
+        // so the `.unwrap_or(0)` is just a defensive default.
+        let end = (0..=MAX_ERROR_BODY_LEN)
+            .rev()
+            .find(|&i| body.is_char_boundary(i))
+            .unwrap_or(0);
         format!("{}...(truncated)", &body[..end])
     }
 }

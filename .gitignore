@@ -32,3 +32,7 @@ __pycache__/
 node_modules/
 itk/agents/go-agent/go-agent
 itk/agents/js-agent/package-lock.json
+
+# cargo-mutants output
+mutants.out/
+mutants.out.old/

@@ -251,10 +251,33 @@ fn cap_backoff(current: Duration, multiplier: f64, max: Duration) -> Duration {
         return max;
     }
     let next = Duration::from_secs_f64(next_secs);
-    if next > max {
-        max
+    // Using Ord::min instead of an `if` comparison removes the `>` operator
+    // from this line: when `next == max` both branches of an `if next > max`
+    // return semantically-equal durations, making `>` → `>=` an equivalent
+    // mutation that no test could distinguish.
+    std::cmp::min(next, max)
+}
+
+/// Maps a raw 64-bit random draw onto the jitter factor range `[0.5, 1.0)`.
+///
+/// Extracted so we can exercise the arithmetic with arbitrary inputs and
+/// assert the output range — otherwise `RandomState`'s non-determinism makes
+/// boundary mutations unobservable.
+#[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
+fn jitter_factor_from_bits(random_bits: u64) -> f64 {
+    (random_bits as f64 / u64::MAX as f64).mul_add(0.5, 0.5)
+}
+
+/// Applies a pre-computed jitter `factor` to `backoff`.
+///
+/// Returns `backoff` unchanged if the multiplication produces a non-finite or
+/// negative value (defensive against pathological factors such as NaN or ∞).
+fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
+    let jittered_secs = backoff.as_secs_f64() * factor;
+    if !jittered_secs.is_finite() || jittered_secs < 0.0 {
+        backoff
     } else {
-        next
+        Duration::from_secs_f64(jittered_secs)
     }
 }
 
@@ -269,16 +292,8 @@ fn jittered(backoff: Duration) -> Duration {
     let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
     // Mix in the backoff value for extra entropy.
     hasher.write_u128(backoff.as_nanos());
-    let random_bits = hasher.finish();
-    // Map to [0.5, 1.0) range.
-    #[allow(clippy::cast_precision_loss)] // Precision loss is acceptable for jitter
-    let factor = (random_bits as f64 / u64::MAX as f64).mul_add(0.5, 0.5);
-    let jittered_secs = backoff.as_secs_f64() * factor;
-    if !jittered_secs.is_finite() || jittered_secs < 0.0 {
-        backoff
-    } else {
-        Duration::from_secs_f64(jittered_secs)
-    }
+    let factor = jitter_factor_from_bits(hasher.finish());
+    apply_jitter(backoff, factor)
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -448,6 +463,143 @@ mod tests {
         let max = Duration::from_secs(30);
         let result = cap_backoff(Duration::from_secs(0), f64::NAN, max);
         assert_eq!(result, max, "NaN should clamp to max");
+    }
+
+    // ── jitter_factor_from_bits tests ─────────────────────────────────────
+
+    /// Factor for the smallest bit pattern MUST equal exactly 0.5 — the
+    /// lower bound of the jitter range.
+    #[test]
+    fn jitter_factor_from_bits_zero() {
+        let f = jitter_factor_from_bits(0);
+        assert!(
+            (f - 0.5).abs() < f64::EPSILON,
+            "factor(0) should be 0.5, got {f}"
+        );
+    }
+
+    /// Factor for a mid-range value is close to 0.75.
+    #[test]
+    fn jitter_factor_from_bits_midpoint() {
+        let f = jitter_factor_from_bits(u64::MAX / 2);
+        // With f64 precision, this is approximately 0.75 but not exact.
+        assert!(
+            (0.74..=0.76).contains(&f),
+            "factor(u64::MAX/2) should be ~0.75, got {f}"
+        );
+    }
+
+    /// Factor for `u64::MAX` is very close to (but strictly less than) 1.0.
+    #[test]
+    fn jitter_factor_from_bits_max() {
+        let f = jitter_factor_from_bits(u64::MAX);
+        // f64 precision makes (u64::MAX / u64::MAX) round to exactly 1.0,
+        // giving a factor of 1.0. We accept [0.9, 1.0].
+        assert!(
+            (0.9..=1.0).contains(&f),
+            "factor(u64::MAX) should be ~1.0, got {f}"
+        );
+    }
+
+    /// Every valid bit pattern must map inside `[0.5, 1.0]`. This kills the
+    /// `/` → `%` mutation which would produce factors far outside this range
+    /// for typical u64 inputs.
+    #[test]
+    fn jitter_factor_from_bits_always_in_half_to_one() {
+        for bits in [
+            0_u64,
+            1,
+            7,
+            42,
+            1 << 20,
+            1 << 50,
+            u64::MAX / 4,
+            u64::MAX / 2,
+            u64::MAX,
+        ] {
+            let f = jitter_factor_from_bits(bits);
+            assert!(
+                (0.5..=1.0).contains(&f),
+                "factor({bits}) = {f} out of [0.5, 1.0]"
+            );
+        }
+    }
+
+    // ── apply_jitter tests ────────────────────────────────────────────────
+    //
+    // These directly cover line 277's guard:
+    //     `if !finite || jittered_secs < 0.0 { backoff } else { ... }`
+    // The mutations to address are `delete !`, `|| → &&`, `< → ==`, `< → >`,
+    // `< → <=` — each test below exercises an input that distinguishes the
+    // original from at least one mutation.
+
+    #[test]
+    fn apply_jitter_normal_factor() {
+        // factor = 0.5 → half the backoff.
+        assert_eq!(
+            apply_jitter(Duration::from_secs(2), 0.5),
+            Duration::from_secs(1)
+        );
+        // factor = 0.75 → three quarters.
+        assert_eq!(
+            apply_jitter(Duration::from_secs(4), 0.75),
+            Duration::from_secs(3)
+        );
+        // factor = 1.0 → full backoff.
+        assert_eq!(
+            apply_jitter(Duration::from_secs(5), 1.0),
+            Duration::from_secs(5)
+        );
+    }
+
+    /// factor = 0.0 produces `Duration::ZERO` via the else branch. A `< → <=`
+    /// mutation routes 0.0 into the fallback branch and returns `backoff`,
+    /// which is detectable.
+    #[test]
+    fn apply_jitter_zero_factor_returns_zero() {
+        assert_eq!(
+            apply_jitter(Duration::from_secs(5), 0.0),
+            Duration::ZERO,
+            "factor=0.0 must produce Duration::ZERO via from_secs_f64 path"
+        );
+    }
+
+    /// Negative factor is caught by `< 0.0` and returns backoff. A `<` → `>`
+    /// or `<` → `==` mutation would let the negative value flow into
+    /// `Duration::from_secs_f64(negative)` which panics — failing the test.
+    #[test]
+    fn apply_jitter_negative_factor_returns_backoff() {
+        assert_eq!(
+            apply_jitter(Duration::from_secs(3), -0.5),
+            Duration::from_secs(3),
+            "negative factor must short-circuit to backoff"
+        );
+    }
+
+    /// Infinite `jittered_secs` is caught by `!finite`. The `delete !` mutation
+    /// flips the first condition and returns backoff even for finite values;
+    /// this test pairs with `apply_jitter_normal_factor` which proves the
+    /// finite case goes through `from_secs_f64`.
+    ///
+    /// The `|| → &&` mutation requires BOTH non-finite AND negative to return
+    /// backoff; with `+∞` we hit non-finite but positive, so `&&` would fall
+    /// through to `Duration::from_secs_f64(+∞)` which panics, failing the test.
+    #[test]
+    fn apply_jitter_infinite_factor_returns_backoff() {
+        assert_eq!(
+            apply_jitter(Duration::from_secs(2), f64::INFINITY),
+            Duration::from_secs(2),
+            "infinite factor must short-circuit to backoff"
+        );
+    }
+
+    #[test]
+    fn apply_jitter_nan_factor_returns_backoff() {
+        assert_eq!(
+            apply_jitter(Duration::from_secs(4), f64::NAN),
+            Duration::from_secs(4),
+            "NaN factor must short-circuit to backoff"
+        );
     }
 
     // ── Mock transport for retry tests ────────────────────────────────────

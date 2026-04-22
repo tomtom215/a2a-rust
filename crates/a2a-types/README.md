@@ -72,7 +72,7 @@ match event {
 - **ID newtypes** for type safety: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
 - **`#[non_exhaustive]`** on enums for forward-compatible additions
 - **ProtoJSON naming**: `TaskState::Completed` serializes as `"TASK_STATE_COMPLETED"`
-- **No unsafe code**: `#![deny(unsafe_op_in_unsafe_fn)]`
+- **No unsafe code**: `#![forbid(unsafe_code)]` — zero `unsafe` blocks anywhere in this crate
 - **All types documented**: `#![deny(missing_docs)]`
 - **Property-tested**: JSON ser/de round-trip verified via `proptest`
 

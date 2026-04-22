@@ -258,7 +258,7 @@ impl JsonRpcTransport {
         match envelope {
             JsonRpcResponse::Success(ok) => {
                 // Validate response ID matches request ID (JS #318).
-                if ok.id != Some(request_id.clone()) {
+                if !response_id_matches(ok.id.as_ref(), &request_id) {
                     trace_warn!(
                         method,
                         "JSON-RPC response id mismatch (expected {request_id}, got {:?})",
@@ -273,7 +273,7 @@ impl JsonRpcTransport {
             }
             JsonRpcResponse::Error(err) => {
                 // Validate error response ID matches request ID (spec compliance).
-                if err.id != Some(request_id.clone()) {
+                if !response_id_matches(err.id.as_ref(), &request_id) {
                     trace_warn!(
                         method,
                         "JSON-RPC error response id mismatch (expected {request_id}, got {:?})",
@@ -409,6 +409,18 @@ async fn body_reader_task(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Returns `true` when the JSON-RPC response `id` matches the request `id`.
+///
+/// The response carries an `Option<Value>` (id may be absent); the request
+/// always has an id. We require the response's id to be `Some(value)` equal
+/// to the request value.
+fn response_id_matches(
+    response_id: Option<&serde_json::Value>,
+    request_id: &serde_json::Value,
+) -> bool {
+    response_id == Some(request_id)
+}
+
 fn validate_url(url: &str) -> ClientResult<()> {
     if url.is_empty() {
         return Err(ClientError::InvalidEndpoint("URL must not be empty".into()));
@@ -430,6 +442,44 @@ mod tests {
     #[test]
     fn validate_url_rejects_empty() {
         assert!(validate_url("").is_err());
+    }
+
+    // ── response_id_matches tests ─────────────────────────────────────────
+
+    #[test]
+    fn response_id_matches_equal_strings() {
+        let rid = serde_json::Value::String("abc".into());
+        assert!(response_id_matches(Some(&rid), &rid));
+    }
+
+    #[test]
+    fn response_id_matches_different_strings() {
+        let rid = serde_json::Value::String("abc".into());
+        let other = serde_json::Value::String("xyz".into());
+        assert!(!response_id_matches(Some(&other), &rid));
+    }
+
+    #[test]
+    fn response_id_matches_none() {
+        let rid = serde_json::Value::String("abc".into());
+        assert!(!response_id_matches(None, &rid));
+    }
+
+    #[test]
+    fn response_id_matches_numeric() {
+        let a = serde_json::json!(42);
+        let b = serde_json::json!(41);
+        let eq = serde_json::json!(42);
+        assert!(response_id_matches(Some(&a), &eq));
+        assert!(!response_id_matches(Some(&b), &eq));
+    }
+
+    #[test]
+    fn response_id_matches_type_mismatch() {
+        // Number vs string with same digits must NOT match (spec strict equality).
+        let s = serde_json::json!("1");
+        let n = serde_json::json!(1);
+        assert!(!response_id_matches(Some(&s), &n));
     }
 
     #[test]

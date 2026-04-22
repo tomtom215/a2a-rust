@@ -15,11 +15,13 @@ pub(super) fn build_query_string(params: &serde_json::Value) -> String {
     };
     let mut parts = Vec::new();
     for (k, v) in obj {
+        // Null values are skipped; strings are used verbatim so we don't get
+        // extra surrounding quotes from JSON serialization. All other JSON
+        // types (number, bool, object, array) serialize through serde_json,
+        // which produces the canonical textual form — "42", "true", etc.
         let raw = match v {
             serde_json::Value::Null => continue,
             serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Number(n) => n.to_string(),
-            serde_json::Value::Bool(b) => b.to_string(),
             _ => match serde_json::to_string(v) {
                 Ok(s) => s,
                 Err(_) => continue,
