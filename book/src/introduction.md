@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="/brand/og-card-editorial-dark.png">
+    <img alt="a2a-rust — Agent2Agent (A2A) Protocol SDK for Rust" src="/brand/og-card-editorial-light.png" width="720">
+  </picture>
+</p>
+
 # Introduction
 
 **a2a-rust** is a pure Rust implementation of the [Agent2Agent (A2A) protocol v1.0.0](https://a2a-protocol.org/) — an open standard for connecting AI agents over the network.

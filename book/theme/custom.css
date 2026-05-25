@@ -1,14 +1,51 @@
-/* a2a-rust documentation theme */
+/* a2a-rust documentation theme — brand identity (Space Grotesk + JetBrains Mono, amber) */
 
-/* ── Brand colors ─────────────────────────────────────────────────────────── */
+/* ── Brand web fonts (vendored locally; the site avoids third-party CDNs) ──── */
+@font-face {
+    font-family: 'Space Grotesk';
+    src: url('fonts/SpaceGrotesk.woff2') format('woff2');
+    font-weight: 300 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('fonts/JetBrainsMono.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'JetBrains Mono';
+    src: url('fonts/JetBrainsMono-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* ── Brand palette ────────────────────────────────────────────────────────── */
 
 :root {
-    --a2a-primary: #2563eb;
-    --a2a-primary-dark: #1d4ed8;
-    --a2a-accent: #059669;
-    --a2a-bg-code: #f8fafc;
-    --a2a-border: #e2e8f0;
+    --a2a-amber: #D97706;      /* decorative accent: rules, borders */
+    --a2a-link: #B45309;       /* AA-contrast link on light backgrounds */
+    --a2a-link-hover: #8a3f08;
+    --a2a-border: #e7e2d9;
+    --a2a-soft: #faf7f1;
 }
+
+/* Dark themes: brighter amber, translucent neutrals. */
+.coal, .navy, .ayu {
+    --a2a-amber: #F0A93B;
+    --a2a-link: #F0A93B;
+    --a2a-link-hover: #fbbf5a;
+    --a2a-border: rgba(255, 255, 255, 0.12);
+    --a2a-soft: rgba(255, 255, 255, 0.045);
+}
+
+/* Re-point mdBook's own accent variables at the brand amber
+   (content links + active sidebar entry), per theme. */
+.light, .rust { --links: #B45309; --sidebar-active: #B45309; }
+.coal, .navy, .ayu { --links: #F0A93B; --sidebar-active: #F0A93B; }
 
 /* ── Typography ───────────────────────────────────────────────────────────── */
 
@@ -18,8 +55,19 @@
     line-height: 1.8;
 }
 
+.content main h1,
+.content main h2,
+.content main h3,
+.content main h4,
+.menu-title {
+    font-family: 'Space Grotesk', system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: -0.02em;
+}
+
+.menu-title { font-weight: 700; }
+
 .content main h1 {
-    border-bottom: 2px solid var(--a2a-primary);
+    border-bottom: 3px solid var(--a2a-amber);
     padding-bottom: 0.3em;
     margin-bottom: 1em;
 }
@@ -30,21 +78,21 @@
     padding-bottom: 0.2em;
 }
 
-/* ── Code blocks ──────────────────────────────────────────────────────────── */
+/* ── Code (JetBrains Mono) ────────────────────────────────────────────────── */
+
+code, kbd, pre, pre code {
+    font-family: 'JetBrains Mono', ui-monospace, "Source Code Pro", monospace;
+}
 
 .content main pre {
     border: 1px solid var(--a2a-border);
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 1em;
 }
 
-.content main code {
-    font-size: 0.92em;
-}
-
-.content main pre > code {
-    font-size: 0.92em;
-}
+.content main code { font-size: 0.9em; }
+.content main pre > code { font-size: 0.9em; }
+.content main pre code:not([class*="language-"]) { color: var(--fg); }
 
 /* ── Tables ───────────────────────────────────────────────────────────────── */
 
@@ -55,7 +103,7 @@
 }
 
 .content main table th {
-    background-color: var(--a2a-bg-code);
+    background-color: var(--a2a-soft);
     border: 1px solid var(--a2a-border);
     padding: 0.5em 0.75em;
     text-align: left;
@@ -68,87 +116,27 @@
 }
 
 .content main table tr:nth-child(even) {
-    background-color: var(--a2a-bg-code);
+    background-color: var(--a2a-soft);
 }
 
 /* ── Links ────────────────────────────────────────────────────────────────── */
 
-.content main a {
-    color: var(--a2a-primary);
-    text-decoration: none;
-}
-
-.content main a:hover {
-    color: var(--a2a-primary-dark);
-    text-decoration: underline;
-}
+.content main a { color: var(--a2a-link); text-decoration: none; }
+.content main a:hover { color: var(--a2a-link-hover); text-decoration: underline; }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
 
-.sidebar .sidebar-scrollbox {
-    padding-top: 1em;
-    font-size: 1.0625rem;
-}
+.sidebar .sidebar-scrollbox { padding-top: 1em; font-size: 1.0625rem; }
+.sidebar .chapter li.chapter-item { margin-top: 0.35em; line-height: 1.6; }
 
-.sidebar .chapter li.chapter-item {
-    margin-top: 0.35em;
-    line-height: 1.6;
-}
-
-/* ── Blockquotes (tips/notes) ─────────────────────────────────────────────── */
+/* ── Blockquotes (tips / notes) ───────────────────────────────────────────── */
 
 .content main blockquote {
-    border-left: 4px solid var(--a2a-primary);
-    background-color: var(--a2a-bg-code);
+    border-left: 4px solid var(--a2a-amber);
+    background-color: var(--a2a-soft);
     padding: 0.75em 1em;
     margin: 1em 0;
-    border-radius: 0 6px 6px 0;
+    border-radius: 0 8px 8px 0;
 }
 
-.content main blockquote p {
-    margin: 0;
-}
-
-/* ── ASCII diagrams ──────────────────────────────────────────────────────── */
-
-.content main pre code:not([class*="language-"]) {
-    color: var(--fg);
-}
-
-/* ── Dark theme adjustments ───────────────────────────────────────────────── */
-
-.ayu .content main table th,
-.navy .content main table th,
-.coal .content main table th {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-.ayu .content main table td,
-.navy .content main table td,
-.coal .content main table td {
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-.ayu .content main table th,
-.navy .content main table th,
-.coal .content main table th {
-    border-color: rgba(255, 255, 255, 0.1);
-}
-
-.ayu .content main table tr:nth-child(even),
-.navy .content main table tr:nth-child(even),
-.coal .content main table tr:nth-child(even) {
-    background-color: rgba(255, 255, 255, 0.03);
-}
-
-.ayu .content main blockquote,
-.navy .content main blockquote,
-.coal .content main blockquote {
-    background-color: rgba(255, 255, 255, 0.05);
-}
-
-.ayu .content main pre,
-.navy .content main pre,
-.coal .content main pre {
-    border-color: rgba(255, 255, 255, 0.1);
-}
+.content main blockquote p { margin: 0; }
