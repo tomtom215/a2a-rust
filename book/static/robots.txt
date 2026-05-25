@@ -1,4 +1,4 @@
-# a2a-rust — Official Rust SDK for the A2A (Agent-to-Agent) protocol
+# a2a-rust — Rust SDK for the Agent2Agent (A2A) protocol
 #
 # Indexing policy: fully open to well-behaved web crawlers, with a small
 # crawl-delay for low-effort bots to avoid hammering the GitHub Pages

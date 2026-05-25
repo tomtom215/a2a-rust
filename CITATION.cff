@@ -2,7 +2,7 @@
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 cff-version: 1.2.0
-title: "a2a-rust: A2A Protocol SDK for Rust"
+title: "a2a-rust: Agent2Agent (A2A) Protocol SDK for Rust"
 message: "If you use this software, please cite it using the metadata from this file."
 type: software
 authors:
@@ -10,12 +10,13 @@ authors:
     email: "tomf@tomtomtech.net"
     alias: "tomtom215"
 repository-code: "https://github.com/tomtom215/a2a-rust"
-url: "https://github.com/tomtom215/a2a-rust"
+url: "https://a2a-rust.com"
 license: Apache-2.0
 version: "0.5.1"
 date-released: "2026-04-15"
 keywords:
   - a2a
+  - agent2agent
   - agent-to-agent
   - rust
   - sdk
@@ -23,6 +24,6 @@ keywords:
   - json-rpc
   - grpc
 abstract: >-
-  A complete Rust implementation of the Agent-to-Agent (A2A) protocol v1.0,
+  A complete Rust implementation of the Agent2Agent (A2A) protocol v1.0,
   providing types, server framework, and client library for building
   interoperable AI agent systems.

@@ -4,7 +4,7 @@
 [package]
 name        = "a2a-protocol-server"
 version     = "0.5.1"
-description = "A2A protocol v1.0 — server framework (hyper-backed)"
+description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
 edition.workspace      = true
@@ -14,7 +14,7 @@ authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
 documentation          = "https://docs.rs/a2a-protocol-server"
-keywords               = ["a2a", "agent", "server", "http"]
+keywords               = ["a2a", "agent2agent", "agent", "protocol", "server"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
