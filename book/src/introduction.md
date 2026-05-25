@@ -13,7 +13,7 @@ If you're building AI agents that need to talk to each other, discover capabilit
 
 ## What is the A2A Protocol?
 
-The Agent-to-Agent protocol defines how AI agents discover, communicate with, and delegate work to each other. Think of it as HTTP for AI agents: a shared language that lets any agent talk to any other, regardless of implementation.
+The Agent2Agent protocol defines how AI agents discover, communicate with, and delegate work to each other. Think of it as HTTP for AI agents: a shared language that lets any agent talk to any other, regardless of implementation.
 
 The protocol defines:
 
