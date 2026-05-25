@@ -1,0 +1,44 @@
+<!doctype html><html><head><meta charset="utf8"><style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px}
+  body{background:#0b0f17;font-family:'Space Grotesk',sans-serif;color:#c9d3df;
+       padding:46px 64px;display:flex;flex-direction:column;justify-content:space-between}
+  .top{display:flex;justify-content:space-between;align-items:baseline}
+  .mark{font-weight:700;font-size:40px;letter-spacing:-1.5px}
+  .mark .a{color:#f5f7fa}.mark .n{color:#f0a93b}
+  .tag{font-size:21px;color:#93a1b3}
+  .win{flex:1;margin:24px 0;background:#151b24;border:1px solid #2a3340;border-radius:14px;
+       box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden;display:flex;flex-direction:column}
+  .bar{height:48px;display:flex;align-items:center;gap:9px;padding:0 18px;border-bottom:1px solid #222a36;background:#11161e}
+  .dot{width:13px;height:13px;border-radius:50%}
+  .file{margin-left:14px;font-family:'JetBrains Mono';font-size:16px;color:#7e8b9c}
+  pre{flex:1;margin:0;padding:26px 32px;font-family:'JetBrains Mono';font-size:22px;line-height:1.66;white-space:pre}
+  .k{color:#ff7b72}.m{color:#d2a8ff}.t{color:#79c0ff}.s{color:#a5d6ff}
+  .bot{display:flex;justify-content:flex-end;align-items:baseline}
+  .url{font-family:'JetBrains Mono';font-size:21px;color:#f0a93b}
+</style></head><body>
+  <div class="top">
+    <div class="mark"><span class="a">a</span><span class="n">2</span><span class="a">a-rust</span></div>
+    <div class="tag">Agent2Agent (A2A) Protocol SDK for Rust</div>
+  </div>
+  <div class="win">
+    <div class="bar">
+      <span class="dot" style="background:#ff5f56"></span>
+      <span class="dot" style="background:#ffbd2e"></span>
+      <span class="dot" style="background:#27c93f"></span>
+      <span class="file">agent.rs</span>
+    </div>
+<pre><span class="k">use</span> <span class="t">a2a_protocol_sdk</span>::prelude::*;
+
+<span class="m">agent_executor!</span>(<span class="t">MyAgent</span>, |ctx, q| <span class="k">async</span> {
+    <span class="k">let</span> emit = <span class="t">EventEmitter</span>::new(ctx, q);
+    emit.status(<span class="t">TaskState</span>::Working).<span class="k">await</span>?;
+    emit.artifact(<span class="s">"hello"</span>, parts).<span class="k">await</span>?;
+    emit.status(<span class="t">TaskState</span>::Completed).<span class="k">await</span>?;
+    <span class="t">Ok</span>(())
+});</pre>
+  </div>
+  <div class="bot">
+    <div class="url">a2a-rust.com · v1.0.0</div>
+  </div>
+</body></html>

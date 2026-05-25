@@ -207,9 +207,9 @@ In addition to the 81 agent-team E2E tests (94 with optional features), the SDK 
 
 | Suite | Location | Tests | What it covers |
 |---|---|---|---|
-| **TLS/mTLS** | `crates/a2a-client/tests/tls_integration_tests.rs` | 7 | Client cert validation, SNI hostname verification, unknown CA rejection, mutual TLS |
-| **WebSocket server** | `crates/a2a-server/tests/websocket_tests.rs` | 7 | Send/stream, error handling, ping/pong, connection reuse, close frames |
-| **Memory & load stress** | `crates/a2a-server/tests/stress_tests.rs` | 5 | 200 concurrent requests, sustained load (500 requests/10 waves), eviction under load, multi-tenant isolation (10×50), rapid connect/disconnect |
+| **TLS/mTLS** | `crates/a2a-protocol-client/tests/tls_integration_tests.rs` | 7 | Client cert validation, SNI hostname verification, unknown CA rejection, mutual TLS |
+| **WebSocket server** | `crates/a2a-protocol-server/tests/websocket_tests.rs` | 7 | Send/stream, error handling, ping/pong, connection reuse, close frames |
+| **Memory & load stress** | `crates/a2a-protocol-server/tests/stress_tests.rs` | 5 | 200 concurrent requests, sustained load (500 requests/10 waves), eviction under load, multi-tenant isolation (10×50), rapid connect/disconnect |
 
 ## Features NOT Covered by E2E Tests
 

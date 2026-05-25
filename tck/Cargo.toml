@@ -16,8 +16,8 @@ name = "a2a-tck"
 path = "src/main.rs"
 
 [dependencies]
-a2a-protocol-types  = { path = "../crates/a2a-types" }
-a2a-protocol-client = { path = "../crates/a2a-client" }
+a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
 
 serde_json     = { workspace = true }
 serde          = { workspace = true }

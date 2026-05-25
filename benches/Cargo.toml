@@ -13,9 +13,9 @@ authors.workspace      = true
 
 [dependencies]
 # SDK crates under test
-a2a-protocol-types  = { path = "../crates/a2a-types" }
-a2a-protocol-client = { path = "../crates/a2a-client" }
-a2a-protocol-server = { path = "../crates/a2a-server" }
+a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
+a2a-protocol-server = { path = "../crates/a2a-protocol-server" }
 
 # Benchmark harness
 criterion = { workspace = true, features = ["html_reports", "async_tokio"] }

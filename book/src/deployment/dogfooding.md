@@ -199,12 +199,12 @@ All architecture, ergonomics, observability, performance, and durability issues 
 
 | Feature | Location |
 |---|---|
-| **OpenTelemetry integration** | `crates/a2a-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
-| **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
-| **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
-| **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` — `MigrationRunner`, V1–V3 migrations |
-| **Per-tenant configuration** | `crates/a2a-server/src/tenant_config.rs` — `PerTenantConfig`, `TenantLimits` |
-| **TenantResolver trait** | `crates/a2a-server/src/tenant_resolver.rs` — header, bearer token, path segment strategies |
+| **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` — `OtelMetrics`, `OtelMetricsBuilder`, `init_otlp_pipeline` (`otel` feature) |
+| **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics.rs` — `ConnectionPoolStats`, `on_connection_pool_stats` |
+| **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` — file polling + SIGHUP reload |
+| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` — `MigrationRunner`, V1–V3 migrations |
+| **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config.rs` — `PerTenantConfig`, `TenantLimits` |
+| **TenantResolver trait** | `crates/a2a-protocol-server/src/tenant_resolver.rs` — header, bearer token, path segment strategies |
 | **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps/feature_gated.rs` — test 79 (`signing` feature) |
 
 ## Sub-pages

@@ -4,7 +4,7 @@
 [package]
 name        = "a2a-protocol-types"
 version     = "0.5.1"
-description = "A2A protocol v1.0 — pure data types, serde only, no I/O"
+description = "Agent2Agent (A2A) protocol v1.0 — pure data types, serde only, no I/O"
 readme      = "README.md"
 
 edition.workspace      = true
@@ -14,7 +14,7 @@ authors.workspace      = true
 repository.workspace   = true
 homepage.workspace     = true
 documentation          = "https://docs.rs/a2a-protocol-types"
-keywords               = ["a2a", "agent", "protocol", "types"]
+keywords               = ["a2a", "agent2agent", "agent", "protocol", "types"]
 categories             = ["api-bindings"]
 
 [features]

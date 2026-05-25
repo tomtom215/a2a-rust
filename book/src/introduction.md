@@ -1,12 +1,19 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="/brand/og-card-editorial-dark.png">
+    <img alt="a2a-rust — Agent2Agent (A2A) Protocol SDK for Rust" src="/brand/og-card-editorial-light.png" width="720">
+  </picture>
+</p>
+
 # Introduction
 
-**a2a-rust** is a pure Rust implementation of the [A2A (Agent-to-Agent) protocol v1.0.0](https://google.github.io/A2A/) — an open standard for connecting AI agents over the network.
+**a2a-rust** is a pure Rust implementation of the [Agent2Agent (A2A) protocol v1.0.0](https://a2a-protocol.org/) — an open standard for connecting AI agents over the network.
 
 If you're building AI agents that need to talk to each other, discover capabilities, delegate tasks, and stream results — this library gives you the full protocol stack with zero `unsafe` code, compile-time type safety, and production-grade hardening.
 
 ## What is the A2A Protocol?
 
-The Agent-to-Agent protocol defines how AI agents discover, communicate with, and delegate work to each other. Think of it as HTTP for AI agents: a shared language that lets any agent talk to any other, regardless of implementation.
+The Agent2Agent protocol defines how AI agents discover, communicate with, and delegate work to each other. Think of it as HTTP for AI agents: a shared language that lets any agent talk to any other, regardless of implementation.
 
 The protocol defines:
 

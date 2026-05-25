@@ -1,6 +1,6 @@
 # Protocol Overview
 
-The A2A (Agent-to-Agent) protocol defines how AI agents discover each other, exchange messages, manage task lifecycles, and stream results. This page covers the conceptual model — the "what" before the "how."
+The Agent2Agent (A2A) protocol defines how AI agents discover each other, exchange messages, manage task lifecycles, and stream results. This page covers the conceptual model — the "what" before the "how."
 
 ## The Big Picture
 

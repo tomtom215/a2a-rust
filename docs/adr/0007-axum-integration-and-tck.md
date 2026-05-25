@@ -27,7 +27,7 @@ Two gaps were identified during the SDK audit:
 
 ### TCK Wire Format Conformance Tests
 
-Add a dedicated test file (`crates/a2a-types/tests/tck_wire_format.rs`) with
+Add a dedicated test file (`crates/a2a-protocol-types/tests/tck_wire_format.rs`) with
 golden JSON fixtures representing the canonical A2A v1.0 wire format. Tests
 validate:
 
@@ -41,7 +41,7 @@ validate:
 
 ### Axum Framework Integration
 
-Add a feature-gated `axum` module (`crates/a2a-server/src/dispatch/axum_adapter.rs`)
+Add a feature-gated `axum` module (`crates/a2a-protocol-server/src/dispatch/axum_adapter.rs`)
 that provides `A2aRouter` — a thin adapter that builds an `axum::Router` wrapping
 the existing `RequestHandler`. Design principles:
 

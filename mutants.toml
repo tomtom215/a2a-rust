@@ -35,17 +35,17 @@ jobs = 4
 # indirectly by the dogfood test suite but are not the subject of mutation
 # testing (their code is demonstration, not library surface area).
 examine_globs = [
-    "crates/a2a-types/src/**/*.rs",
-    "crates/a2a-client/src/**/*.rs",
-    "crates/a2a-server/src/**/*.rs",
-    "crates/a2a-sdk/src/**/*.rs",
+    "crates/a2a-protocol-types/src/**/*.rs",
+    "crates/a2a-protocol-client/src/**/*.rs",
+    "crates/a2a-protocol-server/src/**/*.rs",
+    "crates/a2a-protocol-sdk/src/**/*.rs",
 ]
 
 # ── Exclusions ───────────────────────────────────────────────────────────────
 # Thin re-export modules:  mutating `pub use` re-exports produces false
 # positives because they are tested indirectly through the public API.
 exclude_globs = [
-    "crates/a2a-sdk/src/lib.rs",        # pure re-exports
+    "crates/a2a-protocol-sdk/src/lib.rs",        # pure re-exports
     "**/mod.rs",                          # thin mod files (re-exports only)
     "crates/*/src/proto/**",              # generated protobuf code
 ]

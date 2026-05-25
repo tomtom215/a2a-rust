@@ -59,7 +59,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # protoc is bundled via the `protoc-bin-vendored` crate (see the
-      # `grpc` build scripts in crates/a2a-client and crates/a2a-server),
+      # `grpc` build scripts in crates/a2a-protocol-client and crates/a2a-protocol-server),
       # so no system protoc install is needed. Contributors building
       # `--features grpc` on a clean machine get the same behaviour.
       - name: Clippy (default features)

@@ -30,10 +30,10 @@ Publishing must happen in this order (each crate depends on the ones above it):
 git checkout -b release/vX.Y.Z main
 
 # Update version in all 4 crate Cargo.toml files (must all match)
-# crates/a2a-types/Cargo.toml
-# crates/a2a-client/Cargo.toml
-# crates/a2a-server/Cargo.toml
-# crates/a2a-sdk/Cargo.toml
+# crates/a2a-protocol-types/Cargo.toml
+# crates/a2a-protocol-client/Cargo.toml
+# crates/a2a-protocol-server/Cargo.toml
+# crates/a2a-protocol-sdk/Cargo.toml
 
 # Update CHANGELOG.md: move [Unreleased] content to [X.Y.Z] with date
 # Add new empty [Unreleased] section

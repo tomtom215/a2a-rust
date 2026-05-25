@@ -4,10 +4,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/a2a-types",
-    "crates/a2a-client",
-    "crates/a2a-server",
-    "crates/a2a-sdk",
+    "crates/a2a-protocol-types",
+    "crates/a2a-protocol-client",
+    "crates/a2a-protocol-server",
+    "crates/a2a-protocol-sdk",
     "examples/echo-agent",
     "examples/agent-team",
     "examples/multi-lang-team",
@@ -23,9 +23,9 @@ rust-version = "1.93"
 license      = "Apache-2.0"
 authors      = ["Tom F."]
 repository   = "https://github.com/tomtom215/a2a-rust"
-homepage     = "https://github.com/tomtom215/a2a-rust"
+homepage     = "https://a2a-rust.com"
 documentation = "https://docs.rs/a2a-protocol-sdk"
-keywords     = ["a2a", "agent", "protocol", "sdk", "ai"]
+keywords     = ["a2a", "agent2agent", "agent", "protocol", "ai"]
 categories   = ["network-programming", "web-programming", "api-bindings"]
 
 [workspace.dependencies]

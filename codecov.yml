@@ -16,11 +16,11 @@ ignore:
   # TCK is test infrastructure, not library code.
   - "tck/**"
   # Postgres stores require a running database; tested via integration tests.
-  - "crates/a2a-server/src/store/postgres_store.rs"
-  - "crates/a2a-server/src/store/tenant_postgres_store.rs"
-  - "crates/a2a-server/src/store/pg_migration.rs"
-  - "crates/a2a-server/src/push/postgres_config_store.rs"
-  - "crates/a2a-server/src/push/tenant_postgres_config_store.rs"
+  - "crates/a2a-protocol-server/src/store/postgres_store.rs"
+  - "crates/a2a-protocol-server/src/store/tenant_postgres_store.rs"
+  - "crates/a2a-protocol-server/src/store/pg_migration.rs"
+  - "crates/a2a-protocol-server/src/push/postgres_config_store.rs"
+  - "crates/a2a-protocol-server/src/push/tenant_postgres_config_store.rs"
   # Examples are not library code.
   - "examples/**"
   # ITK (interop test kit) agents are not library code.

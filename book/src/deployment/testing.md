@@ -308,7 +308,7 @@ cargo mutants --workspace
 cargo mutants -p a2a-protocol-types
 
 # Test a specific file
-cargo mutants --file crates/a2a-types/src/task.rs
+cargo mutants --file crates/a2a-protocol-types/src/task.rs
 
 # Dry-run: list all mutants without running tests
 cargo mutants --list --workspace
@@ -321,16 +321,16 @@ Mutation testing is configured via `mutants.toml` at the workspace root:
 ```toml
 # Which files to mutate
 examine_globs = [
-    "crates/a2a-types/src/**/*.rs",
-    "crates/a2a-client/src/**/*.rs",
-    "crates/a2a-server/src/**/*.rs",
-    "crates/a2a-sdk/src/**/*.rs",
+    "crates/a2a-protocol-types/src/**/*.rs",
+    "crates/a2a-protocol-client/src/**/*.rs",
+    "crates/a2a-protocol-server/src/**/*.rs",
+    "crates/a2a-protocol-sdk/src/**/*.rs",
 ]
 
 # Skip unproductive mutations (re-exports, generated code)
 # Note: Display/Debug impls are NOT excluded — we have tests for them.
 exclude_globs = [
-    "crates/a2a-sdk/src/lib.rs",        # pure re-exports
+    "crates/a2a-protocol-sdk/src/lib.rs",        # pure re-exports
     "**/mod.rs",                          # thin mod files (re-exports only)
     "crates/*/src/proto/**",              # generated protobuf code
 ]
@@ -368,7 +368,7 @@ When a mutant survives, `cargo mutants` prints the exact source location and
 mutation. For example:
 
 ```
-MISSED: crates/a2a-types/src/task.rs:42: replace TaskState::is_terminal -> bool with false
+MISSED: crates/a2a-protocol-types/src/task.rs:42: replace TaskState::is_terminal -> bool with false
 ```
 
 This tells you that replacing the body of `is_terminal()` with `false` did not

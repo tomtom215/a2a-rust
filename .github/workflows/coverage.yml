@@ -40,7 +40,7 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       # protoc is bundled via the `protoc-bin-vendored` crate (see the
-      # grpc build scripts in crates/a2a-client and crates/a2a-server).
+      # grpc build scripts in crates/a2a-protocol-client and crates/a2a-protocol-server).
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked

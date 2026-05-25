@@ -7,7 +7,7 @@
 //!
 //! These tests validate that this SDK's serialization and deserialization of A2A
 //! v1.0 types matches the canonical wire format defined by the official A2A
-//! specification (<https://google.github.io/A2A/specification/>).
+//! specification (<https://a2a-protocol.org/latest/specification/>).
 //!
 //! Each test uses a **golden JSON fixture** — the exact JSON that compliant
 //! implementations MUST produce or accept. Tests verify:

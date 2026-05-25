@@ -182,7 +182,7 @@ agent_executor!(EchoAgent, |ctx, queue| async move {
 ```
 
 The macro expands to the full trait impl including the default `cancel`
-and `on_shutdown` methods. In `crates/a2a-server/src/handler/lifecycle/`
+and `on_shutdown` methods. In `crates/a2a-protocol-server/src/handler/lifecycle/`
 every test fixture uses the macro form — `DummyExecutor`,
 `CancelableExecutor`, etc. For production executors with more than trivial
 logic, `boxed_future` is the idiomatic choice: it preserves the imperative

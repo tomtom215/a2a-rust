@@ -2,8 +2,8 @@
 
 > **Updated** — This document has been updated to reflect A2A v1.0.0 types.
 > For the authoritative wire format, see:
-> - The actual serde attributes in `crates/a2a-types/src/*.rs`
-> - The TCK conformance tests in `crates/a2a-types/tests/tck_wire_format.rs`
+> - The actual serde attributes in `crates/a2a-protocol-types/src/*.rs`
+> - The TCK conformance tests in `crates/a2a-protocol-types/tests/tck_wire_format.rs`
 > - The spec compliance verification in `docs/implementation/spec-compliance-gaps.md`
 
 Complete field-by-field mapping from A2A v1.0.0 JSON schema to Rust types.
