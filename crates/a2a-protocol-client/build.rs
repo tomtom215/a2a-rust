@@ -15,7 +15,7 @@ fn main() {
         // Point `prost-build` (the transitive dep of `tonic-prost-build`) at
         // the protoc binary vendored by `protoc-bin-vendored`, unless the user
         // has set `PROTOC` themselves. See the matching comment in
-        // crates/a2a-server/build.rs for the rationale.
+        // crates/a2a-protocol-server/build.rs for the rationale.
         if std::env::var_os("PROTOC").is_none() {
             if let Ok(path) = protoc_bin_vendored::protoc_bin_path() {
                 std::env::set_var("PROTOC", path);

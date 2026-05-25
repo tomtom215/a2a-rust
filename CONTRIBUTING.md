@@ -84,9 +84,9 @@ Before adding a dependency:
 |---|---|---|
 | Unit tests | `#[cfg(test)]` modules in source files | `cargo test --workspace` |
 | Integration tests | `crates/*/tests/` | included in workspace test |
-| TCK conformance | `crates/a2a-types/tests/tck_wire_format.rs` | `cargo test -p a2a-protocol-types --test tck_wire_format` |
-| Property-based tests | `crates/a2a-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
-| Corpus-based JSON tests | `crates/a2a-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
+| TCK conformance | `crates/a2a-protocol-types/tests/tck_wire_format.rs` | `cargo test -p a2a-protocol-types --test tck_wire_format` |
+| Property-based tests | `crates/a2a-protocol-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
+| Corpus-based JSON tests | `crates/a2a-protocol-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
 | End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
@@ -136,7 +136,7 @@ cargo mutants --workspace
 cargo mutants -p a2a-protocol-types
 
 # Run on a specific file
-cargo mutants --file crates/a2a-types/src/task.rs
+cargo mutants --file crates/a2a-protocol-types/src/task.rs
 
 # List mutants without running (dry-run)
 cargo mutants --list --workspace
@@ -165,7 +165,7 @@ Examples:
 
 ### Property-Based Tests (`proptest`)
 
-Located in `crates/a2a-types/tests/proptest_types.rs`. These verify invariants
+Located in `crates/a2a-protocol-types/tests/proptest_types.rs`. These verify invariants
 that must hold for all possible inputs:
 
 - **TaskState** — round-trip, terminal classification, wire format prefix
@@ -174,7 +174,7 @@ that must hold for all possible inputs:
 
 ### Corpus-Based JSON Tests
 
-Located in `crates/a2a-types/tests/corpus_json.rs`. Each test deserializes a
+Located in `crates/a2a-protocol-types/tests/corpus_json.rs`. Each test deserializes a
 representative JSON sample matching the A2A v1.0 wire format and verifies
 `deserialize → serialize → deserialize` round-trip fidelity. Covers:
 

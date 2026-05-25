@@ -4,10 +4,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/a2a-types",
-    "crates/a2a-client",
-    "crates/a2a-server",
-    "crates/a2a-sdk",
+    "crates/a2a-protocol-types",
+    "crates/a2a-protocol-client",
+    "crates/a2a-protocol-server",
+    "crates/a2a-protocol-sdk",
     "examples/echo-agent",
     "examples/agent-team",
     "examples/multi-lang-team",

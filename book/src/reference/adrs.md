@@ -94,7 +94,7 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 **Context:** The SDK lacked formal wire format conformance tests and required raw hyper for HTTP serving. Other SDKs integrate with their ecosystem's dominant web framework.
 
 **Decision:** Two additions:
-1. **TCK conformance tests** — 44 golden-fixture tests in `crates/a2a-types/tests/tck_wire_format.rs` validating ProtoJSON serialization, SecurityRequirement/StringList format, Part discriminators, cross-SDK interop fixtures, and full round-trip.
+1. **TCK conformance tests** — 44 golden-fixture tests in `crates/a2a-protocol-types/tests/tck_wire_format.rs` validating ProtoJSON serialization, SecurityRequirement/StringList format, Part discriminators, cross-SDK interop fixtures, and full round-trip.
 2. **Axum integration** — Feature-gated `A2aRouter` (`axum` feature) wrapping `RequestHandler` as an idiomatic `axum::Router`. Zero business logic duplication.
 
 **Rationale:** TCK tests catch interop regressions before release. Axum integration reduces server setup from ~25 lines to 3 while remaining optional (the raw hyper `serve()` API is unchanged).

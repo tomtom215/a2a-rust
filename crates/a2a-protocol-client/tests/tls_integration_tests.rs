@@ -82,7 +82,7 @@ fn generate_test_certs(san: &str) -> TestCerts {
 /// [`rustls::ServerConfig::builder`] / [`rustls::ClientConfig::builder`],
 /// so we construct every config with an explicit provider via the
 /// `_with_provider` entry points. This mirrors what
-/// `crates/a2a-client/src/tls.rs` does in production code.
+/// `crates/a2a-protocol-client/src/tls.rs` does in production code.
 fn test_ring_provider() -> std::sync::Arc<rustls::crypto::CryptoProvider> {
     std::sync::Arc::new(rustls::crypto::ring::default_provider())
 }

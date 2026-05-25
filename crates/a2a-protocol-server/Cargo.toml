@@ -36,7 +36,7 @@ otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 axum = ["dep:axum"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.5.1", path = "../a2a-types" }
+a2a-protocol-types      = { version = "0.5.1", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -78,7 +78,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.5.1", path = "../a2a-types" }
+a2a-protocol-types = { version = "0.5.1", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }

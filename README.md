@@ -91,10 +91,10 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | Crate | Purpose | When to Use |
 |---|---|---|
-| [`a2a-protocol-types`](crates/a2a-types) | All A2A wire types — `serde` only, no I/O | You need types without the HTTP stack |
-| [`a2a-protocol-client`](crates/a2a-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
-| [`a2a-protocol-server`](crates/a2a-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
-| [`a2a-protocol-sdk`](crates/a2a-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
+| [`a2a-protocol-types`](crates/a2a-protocol-types) | All A2A wire types — `serde` only, no I/O | You need types without the HTTP stack |
+| [`a2a-protocol-client`](crates/a2a-protocol-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
+| [`a2a-protocol-server`](crates/a2a-protocol-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
+| [`a2a-protocol-sdk`](crates/a2a-protocol-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
 
 `a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other. Use only what you need.
 

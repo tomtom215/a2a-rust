@@ -8,7 +8,7 @@ a2a-rust is organized as a Cargo workspace with four crates, each with a clear r
 a2a-rust/
 ├── Cargo.toml              # Workspace root
 ├── crates/
-│   ├── a2a-types/                   # Wire types (serde, no I/O) — publishes as a2a-protocol-types
+│   ├── a2a-protocol-types/   # Wire types (serde, no I/O)
 │   │   └── src/
 │   │       ├── lib.rs
 │   │       ├── task.rs         # Task, TaskState, TaskStatus, TaskId
@@ -25,7 +25,7 @@ a2a-rust/
 │   │       ├── signing.rs      # Agent card signing (JWS/ES256)
 │   │       └── extensions.rs   # Extension types
 │   │
-│   ├── a2a-client/                  # HTTP client — publishes as a2a-protocol-client
+│   ├── a2a-protocol-client/  # HTTP client
 │   │   └── src/
 │   │       ├── lib.rs          # A2aClient, ClientBuilder
 │   │       ├── builder/        # ClientBuilder (fluent config)
@@ -62,7 +62,7 @@ a2a-rust/
 │   │       ├── discovery.rs    # Agent card discovery
 │   │       └── tls.rs          # TLS configuration helpers
 │   │
-│   ├── a2a-server/                  # Server framework — publishes as a2a-protocol-server
+│   ├── a2a-protocol-server/  # Server framework
 │   │   └── src/
 │   │       ├── lib.rs          # Public re-exports
 │   │       ├── handler/        # RequestHandler (core orchestration)
@@ -160,7 +160,7 @@ a2a-rust/
 │   │       ├── tenant_config.rs   # PerTenantConfig, TenantLimits
 │   │       └── tenant_resolver.rs # TenantResolver trait + impls
 │   │
-│   └── a2a-sdk/                     # Umbrella crate — publishes as a2a-protocol-sdk
+│   └── a2a-protocol-sdk/      # Umbrella crate
 │       └── src/
 │           └── lib.rs          # Re-exports + prelude
 │

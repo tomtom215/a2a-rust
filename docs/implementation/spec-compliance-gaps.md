@@ -40,7 +40,7 @@ These produce or expect incorrect JSON and MUST be fixed before any public relea
 
 ### C1. `TaskState::Pending` should be `Submitted`
 
-**File:** `crates/a2a-types/src/task.rs`
+**File:** `crates/a2a-protocol-types/src/task.rs`
 
 Our variant `Pending` serializes as `"TASK_STATE_PENDING"`. The proto and JSON schema both define value 1 as `TASK_STATE_SUBMITTED`.
 
@@ -60,7 +60,7 @@ Submitted,
 
 ### C2. `SecurityRequirements` type structure is wrong
 
-**File:** `crates/a2a-types/src/security.rs`
+**File:** `crates/a2a-protocol-types/src/security.rs`
 
 Our type alias:
 ```rust
@@ -104,7 +104,7 @@ pub struct SecurityRequirement {
 
 ### C3. `AgentCard.security` field name → `securityRequirements`
 
-**File:** `crates/a2a-types/src/agent_card.rs:188`
+**File:** `crates/a2a-protocol-types/src/agent_card.rs:188`
 
 ```rust
 // CURRENT (serializes as "security"):
@@ -118,7 +118,7 @@ pub security_requirements: Option<Vec<SecurityRequirement>>,
 
 ### C4. `AgentSkill.security` field name → `securityRequirements`
 
-**File:** `crates/a2a-types/src/agent_card.rs:129`
+**File:** `crates/a2a-protocol-types/src/agent_card.rs:129`
 
 Same issue as C3 but on `AgentSkill`.
 
@@ -138,7 +138,7 @@ These represent incomplete API surface. Other SDKs can send values we can't pars
 
 ### H1. `MessageRole` missing `ROLE_UNSPECIFIED`
 
-**File:** `crates/a2a-types/src/message.rs`
+**File:** `crates/a2a-protocol-types/src/message.rs`
 
 Proto defines three values; we only have two:
 
@@ -158,7 +158,7 @@ Unspecified,
 
 ### H3. `PasswordOAuthFlow` missing
 
-**File:** `crates/a2a-types/src/security.rs`
+**File:** `crates/a2a-protocol-types/src/security.rs`
 
 Proto and JSON schema both define `PasswordOAuthFlow` (deprecated but present). Our `OAuthFlows` struct is missing the `password` field.
 
@@ -182,7 +182,7 @@ pub struct PasswordOAuthFlow {
 
 ### H4. No `ListPushConfigsParams` struct
 
-**File:** `crates/a2a-types/src/params.rs`
+**File:** `crates/a2a-protocol-types/src/params.rs`
 
 Proto defines `ListTaskPushNotificationConfigsRequest` with `task_id`, `page_size`, `page_token`, and `tenant`. Our client uses inline `serde_json::json!()` instead.
 
@@ -203,7 +203,7 @@ pub struct ListPushConfigsParams {
 
 ### H5. `list_push_configs` return type lacks pagination
 
-**File:** `crates/a2a-client/src/methods/push_config.rs`
+**File:** `crates/a2a-protocol-client/src/methods/push_config.rs`
 
 Proto `ListTaskPushNotificationConfigsResponse` includes `next_page_token`. Our client returns `Vec<TaskPushNotificationConfig>`, discarding pagination.
 
@@ -215,7 +215,7 @@ Proto `ListTaskPushNotificationConfigsResponse` includes `next_page_token`. Our 
 
 ### L1. `AgentCapabilities.state_transition_history` not in spec
 
-**File:** `crates/a2a-types/src/agent_card.rs:63`
+**File:** `crates/a2a-protocol-types/src/agent_card.rs:63`
 
 We added this in Phase 7 but it does not appear in the proto or JSON schema. With `skip_serializing_if = "Option::is_none"` it's harmless — it won't appear on the wire when `None`, and will be silently ignored by other SDKs if set. **Remove to avoid confusion.**
 

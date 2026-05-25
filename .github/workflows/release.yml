@@ -85,7 +85,7 @@ jobs:
           FAILED=0
 
           echo "::group::Version consistency"
-          for toml in crates/a2a-types/Cargo.toml crates/a2a-client/Cargo.toml crates/a2a-server/Cargo.toml crates/a2a-sdk/Cargo.toml; do
+          for toml in crates/a2a-protocol-types/Cargo.toml crates/a2a-protocol-client/Cargo.toml crates/a2a-protocol-server/Cargo.toml crates/a2a-protocol-sdk/Cargo.toml; do
             CARGO_VER=$(grep '^version' "$toml" | head -1 | sed 's/.*"\(.*\)".*/\1/')
             if [[ "$CARGO_VER" != "$TAG_VER" ]]; then
               echo "::error file=$toml::$toml version ($CARGO_VER) != tag ($TAG_VER)."

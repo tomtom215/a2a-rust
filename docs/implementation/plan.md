@@ -17,20 +17,20 @@ All proposed beyond-spec features have been implemented:
 
 | Feature | Location | Details |
 |---|---|---|
-| **OpenTelemetry integration** | `crates/a2a-server/src/otel/` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
-| **Connection pooling metrics** | `crates/a2a-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
-| **Hot-reload agent cards** | `crates/a2a-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
-| **Store migration tooling** | `crates/a2a-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
-| **Per-tenant configuration** | `crates/a2a-server/src/tenant_config.rs` | `PerTenantConfig`, `TenantLimits` with per-tenant overrides |
-| **TenantResolver trait** | `crates/a2a-server/src/tenant_resolver.rs` | `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver` |
+| **OpenTelemetry integration** | `crates/a2a-protocol-server/src/otel/` | `OtelMetrics` with OTLP export via `opentelemetry-otlp`; feature-gated under `otel` |
+| **Connection pooling metrics** | `crates/a2a-protocol-server/src/metrics.rs` | `ConnectionPoolStats` struct; `on_connection_pool_stats` on `Metrics` trait |
+| **Hot-reload agent cards** | `crates/a2a-protocol-server/src/agent_card/hot_reload.rs` | `HotReloadAgentCardHandler` with file polling and SIGHUP reload |
+| **Store migration tooling** | `crates/a2a-protocol-server/src/store/migration.rs` | `MigrationRunner` with `BUILTIN_MIGRATIONS` (V1–V3), `schema_versions` table |
+| **Per-tenant configuration** | `crates/a2a-protocol-server/src/tenant_config.rs` | `PerTenantConfig`, `TenantLimits` with per-tenant overrides |
+| **TenantResolver trait** | `crates/a2a-protocol-server/src/tenant_resolver.rs` | `HeaderTenantResolver`, `BearerTokenTenantResolver`, `PathSegmentTenantResolver` |
 | **Agent card signing E2E** | `examples/agent-team/src/tests/coverage_gaps.rs` | `test_agent_card_signing` with ES256 key generation (`#[cfg(feature = "signing")]`) |
-| **Request ID propagation** | `crates/a2a-server/src/call_context.rs` | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
-| **Metrics hooks** | `crates/a2a-server/src/metrics.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
-| **Rate limiting** | `crates/a2a-server/src/rate_limit.rs` | `RateLimitInterceptor` with fixed-window per-caller counters |
-| **gRPC transport** | `crates/a2a-server/src/dispatch/grpc/` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
-| **WebSocket transport** | `crates/a2a-server/src/dispatch/websocket.rs` | `WebSocketDispatcher` + `WebSocketTransport` via `tokio-tungstenite` (`websocket` feature) |
-| **Multi-tenancy** | `crates/a2a-server/src/store/tenant/` | In-memory via `task_local!`, SQLite via `tenant_id` column partitioning |
-| **Persistent task store** | `crates/a2a-server/src/store/sqlite_store.rs` | `SqliteTaskStore` + `SqlitePushConfigStore` behind `sqlite` feature flag |
+| **Request ID propagation** | `crates/a2a-protocol-server/src/call_context.rs` | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
+| **Metrics hooks** | `crates/a2a-protocol-server/src/metrics.rs` | `Metrics` trait: `on_request`, `on_response`, `on_error`, `on_latency`, `on_queue_depth_change` |
+| **Rate limiting** | `crates/a2a-protocol-server/src/rate_limit.rs` | `RateLimitInterceptor` with fixed-window per-caller counters |
+| **gRPC transport** | `crates/a2a-protocol-server/src/dispatch/grpc/` | `GrpcDispatcher` + `GrpcTransport` via `tonic` (`grpc` feature) |
+| **WebSocket transport** | `crates/a2a-protocol-server/src/dispatch/websocket.rs` | `WebSocketDispatcher` + `WebSocketTransport` via `tokio-tungstenite` (`websocket` feature) |
+| **Multi-tenancy** | `crates/a2a-protocol-server/src/store/tenant/` | In-memory via `task_local!`, SQLite via `tenant_id` column partitioning |
+| **Persistent task store** | `crates/a2a-protocol-server/src/store/sqlite_store.rs` | `SqliteTaskStore` + `SqlitePushConfigStore` behind `sqlite` feature flag |
 
 See the book's [Configuration Reference](../../book/src/reference/configuration.md) for usage details.
 
@@ -288,7 +288,7 @@ impl A2aClient {
 
 Every file listed with its responsibility and actual line count. No source file exceeds 500 lines.
 
-### `crates/a2a-types/` (4,098 lines)
+### `crates/a2a-protocol-types/` (4,098 lines)
 
 ```
 Cargo.toml                          [~37 lines]  serde + serde_json; optional base64 + ring (signing feature)
@@ -314,7 +314,7 @@ benches/
   json_serde.rs                     [122 lines]  5 criterion benchmarks: AgentCard/Task serialize+deserialize, Message serialize
 ```
 
-### `crates/a2a-client/` (3,909 lines)
+### `crates/a2a-protocol-client/` (3,909 lines)
 
 > **Note:** Several monolithic files listed below have since been refactored into
 > submodule directories (e.g., `rest.rs` → `rest/{mod, routing, query, request, streaming}.rs`,
@@ -353,7 +353,7 @@ benches/
   sse_parse.rs                      [71 lines]   3 criterion benchmarks: single/batch/fragmented SSE parsing
 ```
 
-### `crates/a2a-server/` (5,399 lines)
+### `crates/a2a-protocol-server/` (5,399 lines)
 
 > **Note:** Several monolithic files listed below have since been refactored into
 > submodule directories (e.g., `dispatch/rest.rs` → `dispatch/rest/{mod, response, query}.rs`,
@@ -398,7 +398,7 @@ src/
     task_store.rs                   [156 lines]  TaskStore trait, InMemoryTaskStore (with list filtering)
 ```
 
-### `crates/a2a-sdk/` (83 lines)
+### `crates/a2a-protocol-sdk/` (83 lines)
 
 ```
 Cargo.toml                          [~24 lines]  re-exports all workspace crates
@@ -419,7 +419,7 @@ echo-agent/
 ### Integration Tests (2,022 lines)
 
 ```
-crates/a2a-server/tests/
+crates/a2a-protocol-server/tests/
   handler_tests.rs                  [907 lines]  24 tests: EchoExecutor, FailingExecutor, CancelableExecutor, RejectInterceptor,
                                                  send/get/list/cancel/resubscribe/push config CRUD,
                                                  return_immediately, context/task mismatch, interceptor rejection
@@ -706,7 +706,7 @@ Files: `agent_card/caching.rs`, `agent_card/static_handler.rs`, `agent_card/dyna
 | Signature verification | ✅ `verify_agent_card()` with public key DER |
 | Feature-gated | ✅ Behind `signing` feature flag (`ring` + `base64` deps) |
 
-Files: `crates/a2a-types/src/signing.rs`
+Files: `crates/a2a-protocol-types/src/signing.rs`
 
 #### 8C. Quality & Release Tasks
 
@@ -741,7 +741,7 @@ Files: `crates/a2a-types/src/signing.rs`
 | Echo-agent `tracing-subscriber` setup | ✅ Optional via `tracing` feature, `RUST_LOG` env filter |
 | SDK umbrella feature | ✅ `a2a-protocol-sdk/tracing` enables both client + server tracing |
 
-Files: `crates/a2a-client/src/trace.rs`, `crates/a2a-server/src/trace.rs`
+Files: `crates/a2a-protocol-client/src/trace.rs`, `crates/a2a-protocol-server/src/trace.rs`
 
 #### 9B. TLS Support (`tls-rustls` feature) ✅
 
@@ -757,7 +757,7 @@ Files: `crates/a2a-client/src/trace.rs`, `crates/a2a-server/src/trace.rs`
 | SDK umbrella feature | ✅ `a2a-protocol-sdk/tls-rustls` enables client TLS |
 | Unit tests | ✅ 4 tests: config creation, client creation, custom roots |
 
-Files: `crates/a2a-client/src/tls.rs`
+Files: `crates/a2a-protocol-client/src/tls.rs`
 
 #### 9C. CI Pipeline Hardening ✅
 
@@ -803,7 +803,7 @@ Files: `.github/workflows/ci.yml`
 ### Test Organization
 
 - Unit tests: `#[cfg(test)]` modules inside each source file
-- Integration tests: `crates/a2a-server/tests/` directory
+- Integration tests: `crates/a2a-protocol-server/tests/` directory
 - End-to-end validation: `examples/echo-agent` (runs all transport paths)
 
 ### Test Naming Convention
