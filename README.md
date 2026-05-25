@@ -1,6 +1,15 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
+<p align="center">
+  <a href="https://a2a-rust.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="book/static/brand/og-card-editorial-dark.png">
+      <img alt="a2a-rust — Agent2Agent (A2A) Protocol SDK for Rust" src="book/static/brand/og-card-editorial-light.png" width="840">
+    </picture>
+  </a>
+</p>
+
 # a2a-rust — Agent2Agent (A2A) Protocol SDK for Rust
 
 [![CI](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/tomtom215/a2a-rust/actions/workflows/ci.yml)

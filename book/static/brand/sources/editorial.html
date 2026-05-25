@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf8"><style>
+  :root,[data-theme="light"]{--bg:#F3EFE6;--ink:#1A1A1A;--amber:#D97706;--muted:#5C5648;--eye:#A1937B;--url:#B5651D;--tx:#8A7E69;--bar:#D97706}
+  [data-theme="dark"]{--bg:#19150F;--ink:#F5F1E8;--amber:#F0A93B;--muted:#BCB1A0;--eye:#9A8B72;--url:#F0A93B;--tx:#8A7E69;--bar:#E0890F}
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1200px;height:630px}
+  body{background:var(--bg);font-family:'Space Grotesk',sans-serif;padding:0 100px;display:flex;flex-direction:column;justify-content:center;position:relative}
+  .bar{position:absolute;top:0;left:0;right:0;height:12px;background:var(--bar)}
+  .eye{font-size:24px;letter-spacing:5px;color:var(--eye);font-weight:600;margin-bottom:26px}
+  .mark{font-size:152px;font-weight:700;letter-spacing:-5px;line-height:1;color:var(--ink)}
+  .mark .n{color:var(--amber)}
+  .sub{font-size:32px;color:var(--muted);margin-top:30px;font-weight:400}
+  .foot{position:absolute;left:100px;right:100px;bottom:62px;display:flex;justify-content:space-between;align-items:baseline;font-family:'JetBrains Mono',monospace}
+  .foot .u{color:var(--url);font-size:24px;font-weight:500}
+  .foot .t{color:var(--tx);font-size:21px}
+</style></head><body>
+  <div class="bar"></div>
+  <div class="eye">AGENT2AGENT (A2A) PROTOCOL</div>
+  <div class="mark">a<span class="n">2</span>a-rust</div>
+  <div class="sub">Type-safe, async SDK — built to the final v1.0.0 spec</div>
+  <div class="foot"><span class="u">a2a-rust.com</span><span class="t">JSON-RPC · REST · WebSocket · gRPC</span></div>
+  <script>document.body.dataset.theme=(location.hash.replace('#','')||'light');</script>
+</body></html>
