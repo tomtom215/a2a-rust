@@ -33,6 +33,11 @@ env:
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # No debuginfo in CI test builds: the 9-combination test matrix shares one
+  # target dir per runner, and full debuginfo pushed linker memory/disk far
+  # enough that `ld` died with SIGBUS on the 1.93 leg after rig-core joined
+  # the workspace. Tests don't need debuginfo to pass or to report failures.
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   # ── Format check ─────────────────────────────────────────────────────────
@@ -201,4 +206,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude a2a-tck --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-benchmarks
