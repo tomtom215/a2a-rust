@@ -1,0 +1,20 @@
+2026-06-10T13:58:01Z INFO  payments-api req=9f31 POST /v1/charge 200 142ms
+2026-06-10T13:58:14Z INFO  checkout     req=9f44 GET /cart 200 38ms
+2026-06-10T13:58:55Z INFO  payments-api req=9f61 POST /v1/charge 200 156ms
+2026-06-10T13:59:31Z WARN  payments-db  pool=primary connections=92/100 nearing capacity
+2026-06-10T14:00:02Z WARN  payments-db  pool=primary connections=97/100 nearing capacity
+2026-06-10T14:00:19Z ERROR payments-api req=a012 POST /v1/charge 500 30012ms timeout acquiring db connection
+2026-06-10T14:00:23Z ERROR payments-api req=a019 POST /v1/charge 500 30009ms timeout acquiring db connection
+2026-06-10T14:00:31Z WARN  checkout     req=a02e upstream payments-api latency 8200ms, retrying
+2026-06-10T14:00:44Z ERROR payments-db  pool=primary connections=100/100 exhausted, rejecting acquire
+2026-06-10T14:00:52Z ERROR payments-api req=a047 POST /v1/charge 500 30011ms timeout acquiring db connection
+2026-06-10T14:01:05Z ERROR checkout     req=a061 POST /checkout/complete 502 upstream payments-api unavailable
+2026-06-10T14:01:18Z ERROR payments-api req=a070 POST /v1/charge 500 30008ms timeout acquiring db connection
+2026-06-10T14:01:26Z WARN  payments-db  slow query: SELECT ... FROM ledger_entries WHERE merchant_id=4711 (24.8s, missing index?)
+2026-06-10T14:01:40Z ERROR checkout     req=a08b POST /checkout/complete 502 upstream payments-api unavailable
+2026-06-10T14:02:03Z ERROR payments-db  pool=primary connections=100/100 exhausted, rejecting acquire
+2026-06-10T14:02:09Z INFO  search       req=a0a2 GET /search?q=shoes 200 61ms
+2026-06-10T14:02:31Z ERROR payments-api req=a0b7 POST /v1/charge 500 30013ms timeout acquiring db connection
+2026-06-10T14:02:55Z WARN  payments-db  slow query: SELECT ... FROM ledger_entries WHERE merchant_id=4711 (31.2s, missing index?)
+2026-06-10T14:03:12Z ERROR checkout     req=a0d1 POST /checkout/complete 502 upstream payments-api unavailable
+2026-06-10T14:03:30Z INFO  search       req=a0e9 GET /search?q=laptop 200 54ms

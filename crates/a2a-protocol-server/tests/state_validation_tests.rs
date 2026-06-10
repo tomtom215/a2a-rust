@@ -98,8 +98,10 @@ fn test_submitted_transitions() {
 
 #[test]
 fn test_working_transitions() {
-    // Working -> Completed, Failed, Canceled, InputRequired, AuthRequired
+    // Working -> Working (progress-narration refresh), Completed, Failed,
+    // Canceled, InputRequired, AuthRequired
     let valid = [
+        TaskState::Working,
         TaskState::Completed,
         TaskState::Failed,
         TaskState::Canceled,
@@ -118,8 +120,10 @@ fn test_working_transitions() {
         "Working -> Submitted must be invalid"
     );
     assert!(
-        !TaskState::Working.can_transition_to(TaskState::Working),
-        "Working -> Working must be invalid"
+        TaskState::Working.can_transition_to(TaskState::Working),
+        "Working -> Working must be valid: repeated Working status updates \
+         (each carrying a new progress message) are how an agent narrates \
+         long-running work"
     );
     assert!(
         !TaskState::Working.can_transition_to(TaskState::Rejected),
@@ -309,6 +313,7 @@ fn test_full_transition_matrix() {
     ];
 
     let working_targets = vec![
+        TaskState::Working,
         TaskState::Completed,
         TaskState::Failed,
         TaskState::Canceled,
@@ -402,14 +407,15 @@ fn test_non_terminal_states_report_not_terminal() {
 
 /// No state (except Unspecified) should be able to transition to itself.
 #[test]
-fn test_no_self_transitions_except_unspecified() {
+fn test_no_self_transitions_except_unspecified_and_working() {
+    // Working -> Working is the deliberate exception: repeated Working
+    // status updates (each carrying a new message) are how an agent
+    // narrates long-running work to streaming clients, and the store must
+    // accept what the stream delivers.
     for &state in &ALL_STATES {
         let can_self = state.can_transition_to(state);
-        if state == TaskState::Unspecified {
-            assert!(
-                can_self,
-                "Unspecified -> Unspecified should be allowed (wildcard rule)"
-            );
+        if state == TaskState::Unspecified || state == TaskState::Working {
+            assert!(can_self, "{state} -> {state} self-transition must be valid");
         } else {
             assert!(
                 !can_self,
@@ -427,13 +433,13 @@ fn test_valid_transition_counts() {
     let expected_counts: [(TaskState, usize); 9] = [
         (TaskState::Unspecified, 9),   // can go anywhere
         (TaskState::Submitted, 4),     // Working, Failed, Canceled, Rejected
-        (TaskState::Working, 5),       // Completed, Failed, Canceled, InputRequired, AuthRequired
+        (TaskState::Working, 6), // Working, Completed, Failed, Canceled, InputRequired, AuthRequired
         (TaskState::InputRequired, 3), // Working, Failed, Canceled
-        (TaskState::AuthRequired, 3),  // Working, Failed, Canceled
-        (TaskState::Completed, 0),     // terminal
-        (TaskState::Failed, 0),        // terminal
-        (TaskState::Canceled, 0),      // terminal
-        (TaskState::Rejected, 0),      // terminal
+        (TaskState::AuthRequired, 3), // Working, Failed, Canceled
+        (TaskState::Completed, 0), // terminal
+        (TaskState::Failed, 0),  // terminal
+        (TaskState::Canceled, 0), // terminal
+        (TaskState::Rejected, 0), // terminal
     ];
 
     for &(state, expected) in &expected_counts {

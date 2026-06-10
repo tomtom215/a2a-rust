@@ -145,10 +145,22 @@ impl EventQueueWriter for InMemoryQueueWriter {
                     trace_warn!("persistence channel closed, event not persisted");
                 }
             }
-            self.tx
-                .send(Ok(event))
-                .map(|_| ())
-                .map_err(|_| A2aError::internal("event queue: no active receivers"))
+            // Broadcast to live SSE subscribers. Zero receivers is NOT an
+            // error when a persistence channel exists: the event was already
+            // persisted above, and a client that dropped its stream can
+            // reattach later via `tasks/resubscribe` — a transport disconnect
+            // must not fail the running task. Without a persistence channel
+            // (sync mode) the sole receiver IS the request, so a closed
+            // channel means the work has nowhere to go and the executor
+            // should stop.
+            match self.tx.send(Ok(event)) {
+                Ok(_) => Ok(()),
+                Err(_) if self.persistence_tx.is_some() => {
+                    trace_warn!("no live event subscribers; event persisted only");
+                    Ok(())
+                }
+                Err(_) => Err(A2aError::internal("event queue: no active receivers")),
+            }
         })
     }
 
@@ -254,6 +266,56 @@ mod tests {
     }
 
     // ── write / read lifecycle ───────────────────────────────────────────
+
+    /// A streaming-mode write with zero live subscribers must succeed: the
+    /// event reaches the persistence channel, and the (only) SSE consumer
+    /// disconnecting is a transient condition that `tasks/resubscribe` is
+    /// designed to recover from. Before this guarantee, a client dropping
+    /// its stream failed the entire running task.
+    #[tokio::test]
+    async fn write_with_no_subscribers_succeeds_when_persistence_attached() {
+        let (writer, reader, mut persistence_rx) =
+            crate::streaming::event_queue::new_in_memory_queue_with_persistence(
+                8,
+                1024 * 1024,
+                std::time::Duration::from_secs(1),
+            );
+        drop(reader); // the only SSE consumer disconnects
+
+        writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await
+            .expect("write must succeed with persistence attached");
+
+        let persisted = persistence_rx
+            .recv()
+            .await
+            .expect("persistence channel should have the event")
+            .expect("event should be Ok");
+        match persisted {
+            StreamResponse::StatusUpdate(evt) => {
+                assert_eq!(evt.status.state, TaskState::Working);
+            }
+            other => panic!("expected StatusUpdate, got: {other:?}"),
+        }
+    }
+
+    /// Without a persistence channel (sync mode) the sole receiver IS the
+    /// request — a closed channel means the work has nowhere to go, so the
+    /// write must fail.
+    #[tokio::test]
+    async fn write_with_no_subscribers_fails_without_persistence() {
+        let (writer, reader) = new_in_memory_queue();
+        drop(reader);
+
+        let result = writer
+            .write(make_status_event("t1", TaskState::Working))
+            .await;
+        assert!(
+            result.is_err(),
+            "sync-mode write with no receivers must fail"
+        );
+    }
 
     #[tokio::test]
     async fn write_then_read_single_event() {

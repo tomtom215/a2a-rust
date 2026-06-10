@@ -269,9 +269,11 @@ impl TaskState {
             (self, next),
             // Submitted → Working, Failed, Canceled, Rejected
             (Self::Submitted, Self::Working | Self::Failed | Self::Canceled | Self::Rejected)
-            // Working → Completed, Failed, Canceled, InputRequired, AuthRequired
+            // Working → Working (status refresh carrying a new progress
+            // message — how an agent narrates long-running work),
+            // Completed, Failed, Canceled, InputRequired, AuthRequired
             | (Self::Working,
-               Self::Completed | Self::Failed | Self::Canceled | Self::InputRequired | Self::AuthRequired)
+               Self::Working | Self::Completed | Self::Failed | Self::Canceled | Self::InputRequired | Self::AuthRequired)
             // InputRequired / AuthRequired → Working, Failed, Canceled
             | (Self::InputRequired | Self::AuthRequired,
                Self::Working | Self::Failed | Self::Canceled)
@@ -669,9 +671,12 @@ mod tests {
         assert!(!Submitted.can_transition_to(Submitted));
         assert!(!Submitted.can_transition_to(Unspecified));
 
-        // Working cannot go to Submitted, Working, Unspecified, Rejected
+        // Working CAN refresh itself (progress narration via repeated
+        // Working status updates carrying new messages).
+        assert!(Working.can_transition_to(Working));
+
+        // Working cannot go to Submitted, Unspecified, Rejected
         assert!(!Working.can_transition_to(Submitted));
-        assert!(!Working.can_transition_to(Working));
         assert!(!Working.can_transition_to(Unspecified));
         assert!(!Working.can_transition_to(Rejected));
 

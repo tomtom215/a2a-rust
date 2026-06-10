@@ -10,6 +10,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] — Unreleased
 
+### Fixed
+
+- **`a2a-protocol-server`: a client disconnecting from `message/stream` no
+  longer fails the running task** — The event-queue writer treated a
+  broadcast send with zero live receivers as an executor-fatal error, so the
+  only SSE consumer dropping its connection (network blip, closed tab)
+  marked the in-flight task `TASK_STATE_FAILED` even though every event had
+  already reached the persistence channel. Zero receivers is now a non-error
+  whenever a persistence channel exists — the task keeps running and clients
+  can reattach via `tasks/resubscribe` (which is the reason that method
+  exists). Sync mode is unchanged: there the sole receiver *is* the request.
+
+- **`a2a-protocol-types`: `Working → Working` is now a valid state
+  transition** — Repeated `Working` status updates, each carrying a new
+  `status.message`, are how an agent narrates long-running work to streaming
+  clients. The state machine rejected the self-transition, so any executor
+  that emitted more than one progress note had its task marked
+  `TASK_STATE_FAILED` by the background processor *while the SSE stream
+  delivered the same events and a final `Completed` to the client* — a
+  stream/store split-brain. Self-transitions remain invalid for every other
+  state.
+
+- **`a2a-protocol-client`: JSON-RPC error responses to `message/stream` are
+  surfaced instead of dissolving into an empty stream** — A streaming
+  request that fails up-front (e.g. continuing a task with the wrong
+  `contextId`) returns HTTP 200 with a JSON-RPC error envelope. The client
+  fed that body to the SSE parser, which found no frames and ended the
+  stream with zero events and no error. The transport now checks the
+  response content type: JSON-RPC error envelopes map to
+  `ClientError::Protocol` with the original code, and other non-SSE bodies
+  map to `ClientError::Transport`.
+
+All three were found by driving the new `incident-response` example's
+multi-turn, multi-agent flow end-to-end against a live local model.
+
+### Added
+
+- **`incident-response` example** — A three-agent incident-response team
+  (triage orchestrator + deterministic log-search agent + LLM runbook agent)
+  demonstrating `INPUT_REQUIRED` multi-turn continuation, agent-to-agent
+  delegation, streaming progress narration, artifacts, cooperative
+  cancellation, and honest failure states. Runs fully local (llama-server /
+  Ollama) or with hosted providers, and passes the TCK 20/20.
+- **TCK: `a2a_media_type_accepted` conformance test** — Servers must accept
+  the registered A2A media type `application/a2a+json` that production
+  clients send, not just plain `application/json`. Added after the Rust
+  client's requests were rejected by the JS ITK agent, whose JSON body
+  parser was content-type-strict (fixed too); the cross-language CI matrix
+  now enforces this for every agent.
+
 ### Security
 
 - **`rustls-webpki` upgraded to 0.103.12** — Fixes RUSTSEC-2026-0098

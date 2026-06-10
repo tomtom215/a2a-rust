@@ -191,6 +191,21 @@ while let Some(event) = stream.next().await {
 
 ## Examples
 
+### Incident-Response Agent Team (start here)
+
+The hands-on answer to "how is an agent different from a wrapped prompt?":
+three cooperating agents triage a production incident — a vague alert parks
+the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
+the orchestrator delegates to a deterministic log-search agent and an
+LLM-backed runbook agent over real A2A calls, progress streams live, the
+incident report lands as an artifact, and a parked task can be cancelled.
+Runs fully local with a ~470 MB Apache-2.0 model (llama-server / Ollama) or
+with no model at all:
+
+```bash
+cargo run -p incident-response
+```
+
 ### Agent Team (Full Dogfood)
 
 A comprehensive 4-agent team that exercises every SDK feature — 81 base E2E tests (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
@@ -221,11 +236,14 @@ cargo run -p multi-lang-team
 
 ### AI Framework Integrations
 
-Examples showing how to wrap Rust AI frameworks behind the A2A protocol:
+Real LLM agents behind the A2A protocol — both pass the TCK 20/20 and run
+against hosted providers or any local OpenAI-compatible server, with
+honest failure semantics (provider errors fail the task; they are never
+disguised as successful artifacts):
 
 ```bash
 # rig AI framework (https://github.com/0xPlaygrounds/rig)
-cargo run -p rig-a2a-agent
+OPENAI_API_KEY=sk-... cargo run -p rig-a2a-agent
 
 # genai multi-provider LLM client (https://crates.io/crates/genai)
 GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
