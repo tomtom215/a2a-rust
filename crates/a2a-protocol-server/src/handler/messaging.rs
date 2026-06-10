@@ -28,6 +28,29 @@ use super::{CancellationEntry, RequestHandler, SendMessageResult};
 /// further truncates what is returned to clients.
 pub const MAX_TASK_HISTORY_MESSAGES: usize = 1024;
 
+/// Shapes the history carried by a *send response* (or streaming snapshot)
+/// per `SendMessageConfiguration.historyLength`.
+///
+/// The store always keeps the full (capped) history — this only governs the
+/// response payload. The default (`None`) omits history entirely: the
+/// sender already holds the message it just sent, and echoing it back
+/// doubled response payloads for large sends (the 1 MiB benchmark tripped
+/// the regression gate at +95% median). `Some(0)` also omits; `Some(n)`
+/// keeps the `n` most recent messages, mirroring `GetTask` semantics.
+fn shape_response_history(task: &mut Task, history_length: Option<u32>) {
+    task.history = match (task.history.take(), history_length) {
+        (Some(msgs), Some(n)) if n > 0 => {
+            let n = n as usize;
+            if msgs.len() > n {
+                Some(msgs[msgs.len() - n..].to_vec())
+            } else {
+                Some(msgs)
+            }
+        }
+        _ => None,
+    };
+}
+
 /// Returns the JSON-serialized byte length of a value without allocating a `String`.
 fn json_byte_len(value: &serde_json::Value) -> serde_json::Result<usize> {
     struct CountWriter(usize);
@@ -214,6 +237,7 @@ impl RequestHandler {
             .as_ref()
             .and_then(|c| c.return_immediately)
             .unwrap_or(false);
+        let response_history_length = params.configuration.as_ref().and_then(|c| c.history_length);
 
         // Create initial task.
         trace_debug!(
@@ -442,17 +466,22 @@ impl RequestHandler {
             // SPEC §3.1.2: The first event in a streaming response MUST be a
             // Task object representing the current state.
             let mut reader = reader;
-            reader.set_first_event(StreamResponse::Task(task.clone()));
+            let mut snapshot = task.clone();
+            shape_response_history(&mut snapshot, response_history_length);
+            reader.set_first_event(StreamResponse::Task(snapshot));
             Ok(SendMessageResult::Stream(reader))
         } else if return_immediately {
             // Return the task immediately without waiting for completion.
+            let mut task = task;
+            shape_response_history(&mut task, response_history_length);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
         } else {
             // Poll reader until final event. Pass the executor handle so
             // collect_events can detect executor completion/panic (CB-3).
-            let final_task = self
+            let mut final_task = self
                 .collect_events(reader, task_id.clone(), executor_handle)
                 .await?;
+            shape_response_history(&mut final_task, response_history_length);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(
                 final_task,
             )))
@@ -812,6 +841,60 @@ mod tests {
             history[MAX_TASK_HISTORY_MESSAGES - 1].parts[0].text_content(),
             Some("hello"),
             "the newest message is retained"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_response_omits_history_by_default_and_honors_history_length() {
+        // The store keeps full history, but the send RESPONSE omits it
+        // unless SendMessageConfiguration.historyLength asks for it —
+        // echoing the just-sent message back doubled response payloads for
+        // large sends (caught by the benchmark regression gate).
+        use a2a_protocol_types::params::SendMessageConfiguration;
+        let handler = make_handler();
+
+        let result = handler
+            .on_send_message(make_params(Some("ctx-resp")), false, None)
+            .await
+            .expect("send should succeed");
+        let task = match result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+            other => panic!("expected task response, got {other:?}"),
+        };
+        assert!(
+            task.history.is_none(),
+            "default send response must not echo history"
+        );
+        let stored = handler
+            .task_store
+            .get(&task.id)
+            .await
+            .unwrap()
+            .expect("task stored");
+        assert_eq!(
+            stored.history.as_ref().map(Vec::len),
+            Some(1),
+            "the store still keeps the full history"
+        );
+
+        let mut params = make_params(Some("ctx-resp"));
+        params.message.task_id = Some(task.id.clone());
+        params.configuration = Some(SendMessageConfiguration {
+            history_length: Some(10),
+            ..Default::default()
+        });
+        let result = handler
+            .on_send_message(params, false, None)
+            .await
+            .expect("continuation should succeed");
+        let task = match result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+            other => panic!("expected task response, got {other:?}"),
+        };
+        assert_eq!(
+            task.history.as_ref().map(Vec::len),
+            Some(2),
+            "historyLength=10 returns the (2) stored messages"
         );
     }
 

@@ -18,10 +18,13 @@ read the entries below.
 
 ### Changed
 
-- **Task responses now carry `history`** — `message/send`, `tasks/get`, and
-  streaming snapshots include the populated message history (subject to
-  `historyLength`); previously the field was always absent. Payloads grow
-  accordingly; use `historyLength: 0` to opt out per request.
+- **`Task.history` is retrievable, and send responses opt in to it** —
+  `tasks/get` returns the populated history (subject to `historyLength`;
+  previously the field was always absent). `message/send` responses and
+  streaming snapshots omit history unless
+  `SendMessageConfiguration.historyLength` requests it: echoing the
+  just-sent message back doubled response payloads for large sends (+95%
+  median at 1 MiB, caught by the benchmark regression gate).
 - **A dropped `message/stream` connection no longer cancels work** — tasks
   continue to completion and clients reattach via `SubscribeToTask`.
   Anything depending on disconnect-kills-task semantics must cancel
