@@ -4,7 +4,7 @@
 [package]
 name        = "rig-a2a-agent"
 version     = "0.0.0"
-description = "Template for wrapping a rig AI agent behind the A2A protocol (ships with a mock completion; add rig-core and replace run_rig_completion to use a real LLM)"
+description = "Wraps a real rig-core agent (OpenAI-compatible provider) behind the A2A protocol; works with hosted OpenAI or any local OpenAI-compatible server via OPENAI_BASE_URL"
 publish     = false
 
 edition.workspace    = true
@@ -22,3 +22,6 @@ hyper          = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 uuid           = { workspace = true }
+
+# rig — LLM agent framework (https://github.com/0xPlaygrounds/rig)
+rig-core       = "0.38.2"

@@ -76,3 +76,21 @@ pub async fn test_task_state_values(url: &str, binding: &str) -> Result<(), Stri
 
     Ok(())
 }
+
+/// Tests that the server accepts the A2A media type `application/a2a+json`.
+///
+/// The A2A v1.0 specification registers `application/a2a+json` (Section
+/// 14.2), and production clients — including `a2a-protocol-client` — send it
+/// as the request Content-Type. A server that only accepts plain
+/// `application/json` interoperates with hand-written curl commands but
+/// rejects real clients, so this must be a conformance failure.
+pub async fn test_a2a_media_type_accepted(url: &str, binding: &str) -> Result<(), String> {
+    let params = helpers::make_send_params("TCK: a2a media type");
+    let result = helpers::send_message_a2a_media_type(url, binding, params).await?;
+
+    if result.is_null() {
+        return Err("SendMessage with application/a2a+json returned null".to_string());
+    }
+    helpers::extract_task(&result)?;
+    Ok(())
+}

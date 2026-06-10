@@ -31,6 +31,15 @@ pub async fn rest_get(url: &str, path: &str) -> Result<(u16, Value), String> {
 
 /// Low-level HTTP POST that returns parsed JSON.
 async fn http_post(url: &str, body: &Value) -> Result<Value, String> {
+    http_post_with_content_type(url, body, "application/json").await
+}
+
+/// Low-level HTTP POST with an explicit Content-Type header.
+async fn http_post_with_content_type(
+    url: &str,
+    body: &Value,
+    content_type: &str,
+) -> Result<Value, String> {
     let body_bytes = serde_json::to_vec(body).map_err(|e| format!("serialize: {e}"))?;
 
     let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
@@ -39,7 +48,7 @@ async fn http_post(url: &str, body: &Value) -> Result<Value, String> {
     let req = hyper::Request::builder()
         .method(hyper::Method::POST)
         .uri(url)
-        .header("content-type", "application/json")
+        .header("content-type", content_type)
         .body(http_body_util::Full::new(hyper::body::Bytes::from(
             body_bytes,
         )))
@@ -144,6 +153,41 @@ pub async fn send_message(url: &str, binding: &str, params: Value) -> Result<Val
                 .ok_or_else(|| "missing 'result' in JSON-RPC response".to_string())
         }
         "rest" => rest_post(url, "/message:send", &params).await,
+        _ => Err(format!("unknown binding: {binding}")),
+    }
+}
+
+/// Sends a message like [`send_message`], but with the A2A media type
+/// `application/a2a+json` instead of plain `application/json`.
+///
+/// Production A2A clients (including `a2a-protocol-client`) send this
+/// registered media type, so servers must accept it.
+pub async fn send_message_a2a_media_type(
+    url: &str,
+    binding: &str,
+    params: Value,
+) -> Result<Value, String> {
+    const A2A_MEDIA_TYPE: &str = "application/a2a+json";
+    match binding {
+        "jsonrpc" => {
+            let body = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": uuid::Uuid::new_v4().to_string(),
+                "method": "SendMessage",
+                "params": params
+            });
+            let resp = http_post_with_content_type(url, &body, A2A_MEDIA_TYPE).await?;
+            if let Some(error) = resp.get("error") {
+                return Err(format!("JSON-RPC error: {error}"));
+            }
+            resp.get("result")
+                .cloned()
+                .ok_or_else(|| "missing 'result' in JSON-RPC response".to_string())
+        }
+        "rest" => {
+            let full_url = format!("{url}/message:send");
+            http_post_with_content_type(&full_url, &params, A2A_MEDIA_TYPE).await
+        }
         _ => Err(format!("unknown binding: {binding}")),
     }
 }

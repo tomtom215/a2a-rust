@@ -141,6 +141,11 @@ pub async fn run_all(url: &str, binding: &str) -> Vec<TestResult> {
     })
     .await;
 
+    run_test(&mut results, "a2a_media_type_accepted", async {
+        tests::wire_format::test_a2a_media_type_accepted(url, binding).await
+    })
+    .await;
+
     results
 }
 
