@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] - 2026-04-15
+## [0.5.1] — Unreleased
 
 ### Security
 
@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No code changes are required by consumers; `cargo update -p rustls-webpki`
   on existing lockfiles is sufficient for anyone not yet moving to 0.5.1.
 
-## [0.5.0] — Unreleased
+## [0.5.0] - 2026-04-02
 
 ### Breaking Changes
 
@@ -291,7 +291,10 @@ will need to update.
   `content_type_not_supported()`, `extension_support_required()`,
   `version_not_supported()`.
 
-## [0.3.4] - 2026-03-31
+## [0.3.4] — Unpublished
+
+> A standalone 0.3.4 release was never tagged or published to crates.io;
+> the changes below first shipped as part of [0.4.0] - 2026-03-31.
 
 ### Fixed
 

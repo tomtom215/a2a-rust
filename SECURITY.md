@@ -5,10 +5,15 @@
 
 ## Supported Versions
 
+Security fixes are released on top of the latest published minor line. Older
+`0.x` lines do not receive backports — upgrade to the latest release to stay
+patched. (This table is updated as part of every release; the release
+workflow checks that it covers the version being tagged.)
+
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.3.x   | :white_check_mark: |
-| 0.2.x   | :white_check_mark: |
+| 0.5.x   | :white_check_mark: |
+| < 0.5   | :x:                |
 
 ## Scope
 
