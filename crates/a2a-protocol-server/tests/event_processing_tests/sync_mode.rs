@@ -127,6 +127,7 @@ async fn sync_mode_no_push_calls_when_no_config() {
     let handler = RequestHandlerBuilder::new(StatusExecutor)
         .with_push_sender(SharedRecordingPushSender {
             calls: calls.clone(),
+            sent: Arc::new(Notify::new()),
         })
         .build()
         .expect("build handler");

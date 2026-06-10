@@ -23,12 +23,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+# CI only reads sources — never grant the default token more than that.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-D warnings"
   RUSTDOCFLAGS: "-D warnings"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # No debuginfo in CI test builds: the 9-combination test matrix shares one
+  # target dir per runner, and full debuginfo pushed linker memory/disk far
+  # enough that `ld` died with SIGBUS on the 1.93 leg after rig-core joined
+  # the workspace. Tests don't need debuginfo to pass or to report failures.
+  CARGO_PROFILE_DEV_DEBUG: 0
 
 jobs:
   # ── Format check ─────────────────────────────────────────────────────────
@@ -36,7 +45,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -52,7 +61,7 @@ jobs:
         rust: [stable, "1.93"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -88,7 +97,7 @@ jobs:
         rust: [stable, "1.93"]
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
@@ -113,13 +122,46 @@ jobs:
       - name: Test (no default features)
         run: cargo test --workspace --no-default-features
 
+  # ── PostgreSQL-backed store integration tests ───────────────────────────
+  #
+  # The postgres store implementations only execute against a live server,
+  # so the matrix above (which runs `cargo test --features postgres` without
+  # a database) never exercises them. This job provides a real PostgreSQL 16
+  # service and runs the #[ignore]-gated integration suite in
+  # crates/a2a-protocol-server/tests/postgres_store_tests.rs.
+  test-postgres:
+    name: Test (postgres integration)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    env:
+      A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Test (postgres integration, live database)
+        run: cargo test -p a2a-protocol-server --features postgres --test postgres_store_tests -- --ignored
+
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # Deliberately un-pinned: this informational canary exists to surface
+      # upcoming toolchain breakage early, so it must float with nightly.
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # protoc is bundled via the `protoc-bin-vendored` crate (see above).
@@ -131,7 +173,7 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Build docs (zero warnings)
@@ -144,7 +186,7 @@ jobs:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
         with:
           command: check
@@ -160,8 +202,8 @@ jobs:
     name: Package validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude a2a-tck --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-benchmarks

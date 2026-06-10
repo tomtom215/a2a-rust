@@ -93,6 +93,46 @@ fn extract_text(parts: &[Part]) -> String {
         .join(" ")
 }
 
+/// Sends `user_text` to one worker agent and renders its reply (or the
+/// failure) as a single line for the combined artifact.
+async fn call_worker(worker: &Worker, user_text: &str) -> String {
+    let client = match ClientBuilder::new(worker.url).build() {
+        Ok(c) => c,
+        Err(e) => return format!("[{}] Error connecting: {}", worker.language, e),
+    };
+
+    let params = MessageSendParams {
+        tenant: None,
+        message: Message {
+            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
+            role: MessageRole::User,
+            parts: vec![Part::text(user_text)],
+            task_id: None,
+            context_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        },
+        configuration: None,
+        metadata: None,
+    };
+
+    match tokio::time::timeout(Duration::from_secs(10), client.send_message(params)).await {
+        Ok(Ok(response)) => match response {
+            SendMessageResponse::Task(task) => task
+                .artifacts
+                .as_ref()
+                .and_then(|arts| arts.first())
+                .map(|a| extract_text(&a.parts))
+                .unwrap_or_else(|| format!("[{}] (no artifact)", worker.language)),
+            SendMessageResponse::Message(msg) => extract_text(&msg.parts),
+            _ => format!("[{}] (unknown response type)", worker.language),
+        },
+        Ok(Err(e)) => format!("[{}] Error: {}", worker.language, e),
+        Err(_) => format!("[{}] Timeout after 10s", worker.language),
+    }
+}
+
 /// Coordinator executor that delegates to cross-language workers.
 struct CoordinatorExecutor;
 
@@ -115,56 +155,24 @@ impl AgentExecutor for CoordinatorExecutor {
                 }))
                 .await?;
 
-            // Fan out to all available workers
+            // Fan out to all workers concurrently — a slow or down worker
+            // costs one timeout window in total, not one per worker. Worker
+            // failures are reported inline in the combined artifact
+            // (partial results are this coordinator's contract); the task
+            // itself only fails if the coordinator cannot make progress.
+            let tasks: Vec<_> = WORKERS
+                .iter()
+                .map(|worker| {
+                    let user_text = user_text.clone();
+                    tokio::spawn(async move { call_worker(worker, &user_text).await })
+                })
+                .collect();
+
             let mut responses = Vec::new();
-            for worker in WORKERS {
-                let client = match ClientBuilder::new(worker.url).build() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        responses.push(format!("[{}] Error connecting: {}", worker.language, e));
-                        continue;
-                    }
-                };
-
-                let params = MessageSendParams {
-                    tenant: None,
-                    message: Message {
-                        id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-                        role: MessageRole::User,
-                        parts: vec![Part::text(&user_text)],
-                        task_id: None,
-                        context_id: None,
-                        reference_task_ids: None,
-                        extensions: None,
-                        metadata: None,
-                    },
-                    configuration: None,
-                    metadata: None,
-                };
-
-                match tokio::time::timeout(Duration::from_secs(10), client.send_message(params))
-                    .await
-                {
-                    Ok(Ok(response)) => {
-                        let text = match response {
-                            SendMessageResponse::Task(task) => task
-                                .artifacts
-                                .as_ref()
-                                .and_then(|arts| arts.first())
-                                .map(|a| extract_text(&a.parts))
-                                .unwrap_or_else(|| format!("[{}] (no artifact)", worker.language)),
-                            SendMessageResponse::Message(msg) => extract_text(&msg.parts),
-                            _ => format!("[{}] (unknown response type)", worker.language),
-                        };
-                        responses.push(text);
-                    }
-                    Ok(Err(e)) => {
-                        responses.push(format!("[{}] Error: {}", worker.language, e));
-                    }
-                    Err(_) => {
-                        responses.push(format!("[{}] Timeout after 10s", worker.language));
-                    }
-                }
+            for (worker, task) in WORKERS.iter().zip(tasks) {
+                responses.push(task.await.unwrap_or_else(|join_err| {
+                    format!("[{}] Worker call panicked: {join_err}", worker.language)
+                }));
             }
 
             // Combine results into a single artifact
@@ -231,18 +239,17 @@ fn make_coordinator_card(url: &str) -> AgentCard {
     }
 }
 
-async fn start_server(handler: Arc<a2a_protocol_server::handler::RequestHandler>) -> SocketAddr {
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("local addr");
-
+/// Serves the JSON-RPC dispatcher on an already-bound listener.
+///
+/// Binding before building the handler lets the agent card carry the real
+/// address (instead of building a second, throwaway handler once the port
+/// is known).
+fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) {
     tokio::spawn(async move {
         loop {
             let (stream, _) = match listener.accept().await {
                 Ok(s) => s,
-                Err(_) => break,
+                Err(_) => continue,
             };
             let io = hyper_util::rt::TokioIo::new(stream);
             let dispatcher = Arc::clone(&dispatcher);
@@ -259,8 +266,6 @@ async fn start_server(handler: Arc<a2a_protocol_server::handler::RequestHandler>
             });
         }
     });
-
-    addr
 }
 
 #[tokio::main]
@@ -269,20 +274,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=================================");
     println!();
 
-    let handler = Arc::new(RequestHandlerBuilder::new(CoordinatorExecutor).build()?);
+    // Bind first so the agent card can advertise the real address — one
+    // listener, one handler.
+    let bind_addr = std::env::var("A2A_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string());
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    let addr: SocketAddr = listener.local_addr()?;
 
-    let addr = start_server(Arc::clone(&handler)).await;
-    println!("Coordinator listening on {addr}");
-
-    // Update the handler's agent card with the real address
-    let card = make_coordinator_card(&format!("http://{addr}"));
-    let handler_with_card = Arc::new(
+    let handler = Arc::new(
         RequestHandlerBuilder::new(CoordinatorExecutor)
-            .with_agent_card(card)
+            .with_agent_card(make_coordinator_card(&format!("http://{addr}")))
             .build()?,
     );
-    let addr = start_server(handler_with_card).await;
-    println!("Coordinator (with card) listening on {addr}");
+    serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
+    println!("Coordinator listening on http://{addr}");
 
     // ── Demo: Send a request to the coordinator ────────────────────────────
     println!();
@@ -340,6 +344,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("  Java:   cd itk/agents/java-agent && mvn compile exec:java");
         }
     }
+
+    // Keep serving so the coordinator can be probed with the TCK or any
+    // A2A client after the demo round-trip.
+    println!();
+    println!("Coordinator still serving on http://{addr} — press Ctrl+C to stop.");
+    tokio::signal::ctrl_c().await?;
+    println!("Shutting down.");
 
     Ok(())
 }

@@ -3,33 +3,44 @@
 
 # Genai Agent — LLM-Powered A2A Agent
 
-Demonstrates how to wrap a [genai](https://crates.io/crates/genai) multi-provider LLM client behind the A2A protocol. Incoming A2A messages are forwarded to the LLM, and the response is returned as an A2A artifact.
+Wraps the [genai](https://crates.io/crates/genai) multi-provider LLM client
+behind the A2A protocol. Incoming A2A messages are forwarded to the LLM, and
+the response is returned as an A2A artifact.
 
 ## Supported LLM providers
-
-`genai` supports these providers out of the box:
 
 | Provider | Model example | Env var |
 |----------|--------------|---------|
 | OpenAI | `gpt-4o`, `gpt-4o-mini` | `OPENAI_API_KEY` |
 | Anthropic | `claude-sonnet-4-20250514` | `ANTHROPIC_API_KEY` |
 | Google Gemini | `gemini-1.5-flash` | `GEMINI_API_KEY` |
-| Ollama | `llama3` | (local, no key) |
+| Ollama / any local server on `:11434` | any other model name | (local, no key) |
 | Groq | `llama3-70b-8192` | `GROQ_API_KEY` |
 | Cohere | `command-r-plus` | `COHERE_API_KEY` |
+
+Model names that don't match a hosted provider's prefix route to genai's
+Ollama adapter at `http://localhost:11434/v1/` — which is also the API that
+llama.cpp's `llama-server` speaks.
 
 ## Running
 
 ```bash
-# Set API key for your provider:
+# Hosted provider:
 export OPENAI_API_KEY=sk-...
+cargo run -p genai-a2a-agent             # defaults to gpt-4o-mini
 
-# Start the agent (defaults to gpt-4o-mini):
-cargo run -p genai-a2a-agent
-
-# Use a different model:
-GENAI_MODEL=claude-sonnet-4-20250514 cargo run -p genai-a2a-agent
+# Fully local, no API key — verified with llama.cpp's llama-server:
+curl -L -o model.gguf \
+  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
+llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
 ```
+
+(Ollama works too: `ollama pull qwen3:0.6b`, then
+`GENAI_MODEL=qwen3:0.6b cargo run -p genai-a2a-agent`.)
+
+Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
 
 ## How it works
 
@@ -39,57 +50,56 @@ A2A Client ──→ A2A Server (JSON-RPC)
                     ▼
               GenaiAgentExecutor
                     │
-              1. Extract user text from A2A message
+              1. Extract user text (no text part → TASK_STATE_FAILED, InvalidParams)
               2. Transition to Working
               3. Call genai::Client for LLM completion
-              4. Package response as A2A artifact
-              5. Transition to Completed
+              4. Success → artifact "llm-response" + TASK_STATE_COMPLETED
+                 LLM error → TASK_STATE_FAILED
 ```
 
-## Testing
-
-Once running, test with the TCK or any A2A client:
-
-```bash
-# With the TCK:
-cargo run -p a2a-tck -- --url http://127.0.0.1:<port>
-
-# Or send a request with curl:
-curl -X POST http://127.0.0.1:<port> \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "SendMessage",
-    "params": {
-      "message": {
-        "role": "ROLE_USER",
-        "parts": [{"text": "What is the A2A protocol?"}]
-      }
-    }
-  }'
-```
+Errors surface through the task state, never disguised as successful
+artifacts — clients can trust `status.state`.
 
 ## Key integration point
 
-The `GenaiAgentExecutor` struct implements `AgentExecutor` — the only trait you need to bridge any LLM framework with A2A:
+`GenaiAgentExecutor` implements `AgentExecutor` — the only trait needed to
+bridge any LLM library with A2A:
 
 ```rust
 impl AgentExecutor for GenaiAgentExecutor {
     fn execute<'a>(
         &'a self,
-        ctx: &'a RequestContext,    // incoming A2A message
+        ctx: &'a RequestContext,          // incoming A2A message
         queue: &'a dyn EventQueueWriter,  // emit status + artifacts
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         // Extract text → call LLM → emit artifact → done
+        // Returning Err(...) marks the task TASK_STATE_FAILED.
     }
 }
+```
+
+## Testing
+
+```bash
+# Agent discovery
+curl http://127.0.0.1:<port>/.well-known/agent-card.json
+
+# Send a message
+curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "message/send",
+  "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
+             "parts": [{"text": "What is 2+2?"}]}}
+}'
+
+# Full conformance suite (passes 20/20 against this agent)
+cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
 ```
 
 ## Prerequisites
 
 - Rust 1.93+ (MSRV)
-- API key for at least one supported LLM provider
+- An API key for a hosted provider, **or** any local OpenAI-compatible
+  server on port 11434 (llama-server, Ollama)
 
 ## License
 

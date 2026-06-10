@@ -28,7 +28,7 @@ Build, connect, and orchestrate AI agents with a type-safe, async-first SDK span
 
 ## Motivation
 
-The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
+The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) cover the same five languages — Rust is absent there too.
 
 This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
 
@@ -91,10 +91,10 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant survives; a full-sweep matrix runs on demand / on schedule |
+| **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
 | **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
 | **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
-| **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request |
+| **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request, covering the JSON-RPC and REST bindings; the WebSocket and gRPC transports are exercised by the agent-team end-to-end suite rather than the TCK |
 
 ## Crate Structure
 
@@ -113,7 +113,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.5"
+a2a-protocol-sdk = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -185,11 +185,28 @@ while let Some(event) = stream.next().await {
         StreamResponse::ArtifactUpdate(ev) => println!("Artifact: {}", ev.artifact.id),
         StreamResponse::Task(task) => println!("Task: {}", task.id),
         StreamResponse::Message(msg) => println!("Message: {:?}", msg),
+        // StreamResponse is #[non_exhaustive] — always keep a catch-all.
+        _ => {}
     }
 }
 ```
 
 ## Examples
+
+### Incident-Response Agent Team (start here)
+
+The hands-on answer to "how is an agent different from a wrapped prompt?":
+three cooperating agents triage a production incident — a vague alert parks
+the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
+the orchestrator delegates to a deterministic log-search agent and an
+LLM-backed runbook agent over real A2A calls, progress streams live, the
+incident report lands as an artifact, and a parked task can be cancelled.
+Runs fully local with Qwen3-0.6B (a ~640 MB Apache-2.0 model, via llama-server or Ollama) or
+with no model at all:
+
+```bash
+cargo run -p incident-response
+```
 
 ### Agent Team (Full Dogfood)
 
@@ -221,11 +238,14 @@ cargo run -p multi-lang-team
 
 ### AI Framework Integrations
 
-Examples showing how to wrap Rust AI frameworks behind the A2A protocol:
+Real LLM agents behind the A2A protocol — both pass the TCK 20/20 and run
+against hosted providers or any local OpenAI-compatible server, with
+honest failure semantics (provider errors fail the task; they are never
+disguised as successful artifacts):
 
 ```bash
 # rig AI framework (https://github.com/0xPlaygrounds/rig)
-cargo run -p rig-a2a-agent
+OPENAI_API_KEY=sk-... cargo run -p rig-a2a-agent
 
 # genai multi-provider LLM client (https://crates.io/crates/genai)
 GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
@@ -233,7 +253,9 @@ GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 
 ### Technology Compatibility Kit (TCK)
 
-A standalone conformance test runner that validates any A2A server against the protocol spec:
+A standalone conformance test runner that validates any A2A server against
+the protocol spec over the JSON-RPC and REST bindings (the gRPC and
+WebSocket transports are covered by the agent-team E2E tests instead):
 
 ```bash
 # Test a local server
@@ -296,8 +318,8 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (~1,630 with defaults only; more with optional feature flags)
-cargo test --workspace
+# Run the test suite (2,000+ tests with --all-features; CI runs nine feature combinations)
+cargo test --workspace --all-features
 
 # Run the end-to-end example
 cargo run -p echo-agent
@@ -309,7 +331,7 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (275 benchmarks across 14 suites — transport, protocol,
+# Run benchmarks (Criterion suites ×14 — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
 # data volume, memory, enterprise, production, advanced scenarios, and
 # coordinator chain under fault — the last is the only agent-level one,
@@ -327,23 +349,10 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 All phases are complete. The SDK is production-ready with all 11 A2A methods, quad transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full implementation roadmap and beyond-spec extensions.
 
-| Phase | Status |
-|---|---|
-| 0. Project Foundation | ✅ Complete |
-| 1. Protocol Types (`a2a-protocol-types`) | ✅ Complete |
-| 2. HTTP Client (`a2a-protocol-client`) | ✅ Complete |
-| 3. Server Framework (`a2a-protocol-server`) | ✅ Complete |
-| 4. v1.0 Protocol Upgrade | ✅ Complete |
-| 5. Server Tests & Bug Fixes | ✅ Complete |
-| 6. Umbrella Crate & Examples | ✅ Complete |
-| 7. v1.0 Spec Compliance Gaps | ✅ Complete |
-| 7.5 Spec Compliance Fixes | ✅ Complete |
-| 8. Caching, Signing & Release | ✅ Complete |
-| 9. Production Hardening | ✅ Complete |
 
 ## Stability
 
-All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases.
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 

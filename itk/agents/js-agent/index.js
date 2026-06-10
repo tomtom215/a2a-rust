@@ -18,7 +18,9 @@ import { v4 as uuidv4 } from 'uuid';
 const PORT = parseInt(process.argv.find((_, i, a) => a[i - 1] === '--port') || '9101', 10);
 
 const app = express();
-app.use(express.json());
+// Accept both plain JSON and the registered A2A media type
+// (application/a2a+json) that production A2A clients send.
+app.use(express.json({ type: ["application/json", "application/a2a+json"] }));
 
 // In-memory task store
 const tasks = new Map();

@@ -12,6 +12,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Conformance runs only read sources — never grant the default token more.
+permissions:
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -20,7 +24,7 @@ jobs:
     name: TCK self-test (echo-agent)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
@@ -28,11 +32,21 @@ jobs:
       - name: Build echo-agent and TCK
         run: cargo build --release -p echo-agent -p a2a-tck
 
-      # Start the echo agent in the background
+      # Start the echo agent in the background and poll its discovery
+      # endpoint until it answers (same readiness pattern as the
+      # cross-language matrix below — a fixed sleep flakes under load).
       - name: Start echo-agent
         run: |
           ./target/release/echo-agent &
-          sleep 2
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9090/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "echo-agent ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "echo-agent failed to start"
+          exit 1
         env:
           A2A_BIND_ADDR: "127.0.0.1:9090"
 
@@ -74,7 +88,7 @@ jobs:
               sleep 5
             port: 9103
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 

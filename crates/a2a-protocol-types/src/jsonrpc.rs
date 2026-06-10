@@ -150,6 +150,9 @@ impl JsonRpcRequest {
 ///
 /// The `untagged` representation tries `Success` first; if `result` is absent
 /// it falls back to `Error`.
+///
+/// Deliberately **not** `#[non_exhaustive]`: JSON-RPC 2.0 fixes a response to
+/// exactly these two shapes, so consumers may match them exhaustively.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum JsonRpcResponse<T> {

@@ -23,20 +23,51 @@ git push origin v0.3.0
 
 The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/workflows/release.yml) automatically:
 
-1. Validates all crate versions match the tag
-2. Runs the full CI suite
-3. Publishes crates to crates.io in dependency order
-4. Creates a GitHub release with notes
+1. Validates the tag against crate versions, CHANGELOG.md, CITATION.cff, and SECURITY.md
+2. Runs the full CI suite and security audit
+3. Packages all crates with SLSA build provenance
+4. Creates a GitHub release with notes extracted from CHANGELOG.md
+5. Publishes crates to crates.io in dependency order (behind a manually
+   approved `crates-io` environment)
 
 ### Publish Order
 
 ```
-a2a-protocol-types → a2a-protocol-client + a2a-protocol-server → a2a-protocol-sdk
+a2a-protocol-types → a2a-protocol-server → a2a-protocol-client → a2a-protocol-sdk
 ```
 
-This ensures each crate's dependencies are available before it publishes.
+Topological order over **all** dependency edges: server precedes client
+because the client has a versioned dev-dependency on the server, which
+`cargo publish` resolves against the crates.io index.
 
-## v0.5.1 (2026-04-15)
+## v0.6.0 (2026-06-10)
+
+### Fixed
+
+- **SSE disconnects no longer fail running tasks** — clients reattach via
+  `SubscribeToTask`; the persistence channel already had every event.
+- **`Working → Working` is a valid transition** — repeated Working status
+  updates (progress narration) no longer mark the task Failed in the store
+  while the stream shows success.
+- **`Task.history` is now populated** — user messages at send time, agent
+  `Message` events from both processors, capped at 1,024 (oldest dropped);
+  `historyLength` truncation is now observable.
+- **Continuations preserve accumulated state** — follow-up messages no
+  longer wipe a task's artifacts, metadata, and history.
+- **Client surfaces streaming errors** — JSON-RPC error envelopes on
+  `message/stream` map to `ClientError::Protocol` instead of an empty stream.
+- **Legacy `tasks/resubscribe` alias** accepted alongside `SubscribeToTask`
+  and `tasks/subscribe`.
+
+### Added
+
+- **`incident-response` example** — three-agent team demonstrating
+  multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts,
+  and cooperative cancellation; runs fully local.
+- **TCK test 20: `a2a_media_type_accepted`** — servers must accept the
+  registered `application/a2a+json` media type that real clients send.
+- **PostgreSQL integration suite** — live-database tests for all five
+  Postgres store files, run in CI against a `postgres:16` service.
 
 ### Security
 
@@ -47,7 +78,7 @@ This ensures each crate's dependencies are available before it publishes.
   Reaches `a2a-protocol-client` transitively via `rustls` when the
   `tls-rustls` feature is enabled. No API changes — drop-in update.
 
-## Unreleased (v0.5.0)
+## v0.5.0 (2026-04-02)
 
 ### Breaking Changes
 
@@ -111,7 +142,10 @@ This ensures each crate's dependencies are available before it publishes.
 - `TaskState::is_interrupted()`
 - Error constructors: `push_not_supported()`, `content_type_not_supported()`, `extension_support_required()`, `version_not_supported()`
 
-## v0.3.4 (2026-03-31)
+## v0.3.4 (unpublished)
+
+A standalone 0.3.4 release was never tagged or published; these changes
+first shipped as part of v0.4.0 (2026-03-31).
 
 ### Bug Fixes
 

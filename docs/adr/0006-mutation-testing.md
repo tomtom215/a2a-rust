@@ -41,7 +41,12 @@ orchestration flows.
    `a2a-protocol-sdk`).
 
 3. **Scope**: All source files in `crates/*/src/**/*.rs`, excluding:
-   - Thin `mod.rs` re-export files (false positives)
+   - ~~Thin `mod.rs` re-export files (false positives)~~ — *amended
+     2026-06-10: the blanket `**/mod.rs` exclusion was removed. cargo-mutants
+     only mutates function bodies, so pure re-export files generate no
+     mutants anyway, while 14 `mod.rs` files carrying real logic (~2,800
+     lines) were silently exempt. Only generated protobuf code is excluded
+     now.*
    - Generated protobuf code (`proto/`)
    - Tracing/logging instrumentation
    - Note: `Display`/`Debug` impls are NOT excluded — we have tests for them

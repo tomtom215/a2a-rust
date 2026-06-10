@@ -11,6 +11,7 @@ The CI workflow (`.github/workflows/ci.yml`) runs on every push and PR:
 | **Format** | `cargo fmt --all -- --check` — enforces consistent formatting |
 | **Clippy** | `cargo clippy` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features) across 3 OSes (ubuntu, macOS, Windows) and 2 Rust versions (stable, MSRV 1.93) |
 | **Test** | `cargo test --workspace` per feature combination (default, signing, tracing, tls-rustls, sqlite, postgres, axum, all-features, no-default-features) across 3 OSes and 2 Rust versions |
+| **Test (postgres integration)** | Runs the `#[ignore]`-gated live-database suite (`postgres_store_tests.rs`) against a `postgres:16` service container |
 | **Nightly** | Tests on nightly Rust toolchain for early compatibility checks (`continue-on-error: true` — non-blocking) |
 | **Deny** | `cargo deny check` — audits dependencies for vulnerabilities |
 | **Doc** | `cargo doc --workspace --no-deps` — verifies documentation builds |
@@ -27,7 +28,10 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 |------|---------|-------|
 | **Full sweep** | On-demand (`workflow_dispatch`) | All library crates |
 
-Nightly schedule and PR-gate triggers are currently commented out to save CI
+Every pull request additionally runs an **incremental** mutation gate:
+`cargo-mutants --in-diff` mutates only the source lines changed in the PR
+and fails on any missed mutant. The nightly full-sweep schedule is
+currently commented out to save CI
 time — a full sweep can take 100+ minutes per crate, and a2a-server alone
 generates 200–400 mutants. The workflow is run manually against `main` when
 test effectiveness is being audited.

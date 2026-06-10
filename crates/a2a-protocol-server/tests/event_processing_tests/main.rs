@@ -25,17 +25,20 @@ use a2a_protocol_types::artifact::Artifact;
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
-use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+use a2a_protocol_types::responses::{SendMessageResponse, TaskListResponse};
+use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::handler::SendMessageResult;
 use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;
+use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
 use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
+
+use tokio::sync::Notify;
 
 // ── Test executors ──────────────────────────────────────────────────────────
 
@@ -206,11 +209,112 @@ impl AgentExecutor for EmptyExecutor {
     }
 }
 
+// ── Deterministic wait infrastructure ───────────────────────────────────────
+//
+// Streaming-mode persistence and push delivery happen on a detached
+// background task, so tests must wait for them. Fixed sleeps flake under CI
+// load; instead, the wrappers below signal a [`Notify`] *after* each state
+// change, and [`wait_for_signalled`] re-checks a monotone condition on every
+// signal. `Notify::notify_one` stores a permit when no waiter is registered,
+// and state is always updated before the signal, so a wake can never be lost
+// and a coalesced signal can never hide the state it announced.
+
+/// Awaits `condition` becoming true, re-checking whenever `signal` fires.
+///
+/// Panics after a generous budget that only a genuine hang — not scheduler
+/// load — can exhaust.
+async fn wait_for_signalled<C, Fut>(signal: &Notify, what: &str, mut condition: C)
+where
+    C: FnMut() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(30);
+    tokio::time::timeout(BUDGET, async {
+        loop {
+            if condition().await {
+                return;
+            }
+            signal.notified().await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out after {BUDGET:?} waiting for {what}"));
+}
+
+/// A [`TaskStore`] wrapper that signals `saved` after every committed write,
+/// so tests can handshake with the background event processor's store updates.
+struct NotifyOnSaveStore {
+    inner: InMemoryTaskStore,
+    saved: Arc<Notify>,
+}
+
+impl NotifyOnSaveStore {
+    fn new(saved: Arc<Notify>) -> Self {
+        Self {
+            inner: InMemoryTaskStore::new(),
+            saved,
+        }
+    }
+}
+
+impl TaskStore for NotifyOnSaveStore {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            self.inner.save(task).await?;
+            self.saved.notify_one();
+            Ok(())
+        })
+    }
+
+    fn get<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+        self.inner.get(id)
+    }
+
+    fn list<'a>(
+        &'a self,
+        params: &'a ListTasksParams,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+        self.inner.list(params)
+    }
+
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        Box::pin(async move {
+            let inserted = self.inner.insert_if_absent(task).await?;
+            if inserted {
+                self.saved.notify_one();
+            }
+            Ok(inserted)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.delete(id)
+    }
+
+    fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+        self.inner.count()
+    }
+}
+
 // ── Recording push sender ───────────────────────────────────────────────────
 
-/// A [`PushSender`] that records calls to a shared vec for assertion.
+/// A [`PushSender`] that records calls to a shared vec for assertion and
+/// signals `sent` after each recorded call (for deterministic waits).
 struct SharedRecordingPushSender {
     calls: Arc<Mutex<Vec<String>>>,
+    sent: Arc<Notify>,
 }
 
 impl PushSender for SharedRecordingPushSender {
@@ -222,6 +326,7 @@ impl PushSender for SharedRecordingPushSender {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             self.calls.lock().unwrap().push(url.to_string());
+            self.sent.notify_one();
             Ok(())
         })
     }

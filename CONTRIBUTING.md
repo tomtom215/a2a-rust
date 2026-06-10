@@ -76,7 +76,30 @@ Before adding a dependency:
 
 ---
 
-## Testing Guide
+## Testing
+
+### Writing reliable async tests
+
+Fixed sleeps as synchronization are not accepted — they trade flakiness
+under CI load for dead time on every run. In order of preference:
+
+1. **Handshakes**: signal the state change itself (`tokio::sync::Notify`
+   fired after the write, a flag flipped by the executor) and wait on the
+   signal. See `NotifyOnSaveStore` / `wait_for_signalled` in
+   `crates/a2a-protocol-server/tests/event_processing_tests/main.rs`.
+2. **Deadline polls**: when no hook exists, poll the observable condition
+   with a generous deadline (~10s) and a tight step (~2ms) — returns the
+   moment the state lands, and only a genuine hang outlasts the deadline.
+   See `wait_for` in `tests/stress_tests.rs`.
+3. Fixed sleeps are acceptable only where the sleep itself is the test
+   subject (TTL expiry uses `sleep`'s minimum-duration guarantee with the
+   sleep strictly longer than the TTL), as simulated work inside test
+   executors, or as outer timeout guards in `select!`.
+
+Never assert an asynchronous counter or store state immediately after a
+fixed sleep — that is the flaky-test signature this policy exists to
+prevent.
+ Guide
 
 ### Test Categories
 
@@ -147,7 +170,9 @@ files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
 and timeout settings.
 
 **Zero surviving mutants is required.** The mutation CI job
-(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`.
+(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`;
+every pull request also runs an incremental `--in-diff` mutation gate that
+fails on any missed mutant in the changed lines.
 Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 
 When a mutant survives, the output shows the exact mutation and the file/line.

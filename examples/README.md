@@ -19,10 +19,11 @@ cargo run -p agent-team
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
+| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; runs fully local |
 | [**echo-agent**](echo-agent/) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent using [genai](https://crates.io/crates/genai) (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
-| [**rig-agent**](rig-agent/) | **Integration template** for the [rig](https://github.com/0xPlaygrounds/rig) framework — builds without `rig` as a dep; mock echo completion by default. A2A plumbing is real; the LLM call is stubbed until you paste in a provider snippet. | Optional API key | Intermediate |
+| [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
 
 ## What to start with

@@ -33,12 +33,24 @@ A2A Client ──→ A2A Server (JSON-RPC)
                     ▼
               GenaiAgentExecutor
                     │
-              1. Extract user text from A2A message
+              1. Extract user text (no text part → TASK_STATE_FAILED)
               2. Transition to Working
               3. Call genai::Client for LLM completion
-              4. Package response as A2A artifact
-              5. Transition to Completed
+              4. Success → artifact + Completed
+                 LLM error → TASK_STATE_FAILED
 ```
+
+## Fully local, no API key
+
+Model names that don't match a hosted provider route to the Ollama adapter
+on `:11434` — which is also what llama.cpp's `llama-server` speaks:
+
+```bash
+GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
+```
+
+The agent serves a discovery card, supports push-config CRUD, honors
+`A2A_BIND_ADDR` for a fixed port, and passes the TCK 20/20.
 
 ## Key integration point
 

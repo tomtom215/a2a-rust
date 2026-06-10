@@ -255,7 +255,7 @@ impl JsonRpcDispatcher {
             "SendStreamingMessage" | "message/stream" => {
                 return self.dispatch_send_message(id, rpc_req, true, headers).await;
             }
-            "SubscribeToTask" | "tasks/subscribe" => {
+            "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
                 return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_resubscribe(p, Some(headers)).await {
                         Ok(reader) => build_sse_response(
@@ -336,7 +336,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "SubscribeToTask" | "tasks/subscribe" => {
+            "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
                 let err = ServerError::InvalidParams(
                     "SubscribeToTask not supported in batch requests".into(),
                 );

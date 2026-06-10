@@ -31,7 +31,7 @@ Rust gives you performance, safety, and correctness without compromise:
 - **No `unsafe`** — The entire codebase is free of unsafe code
 - **Thread safety at compile time** — All public types implement `Send + Sync`
 - **Exhaustive pattern matching** — The compiler catches missing protocol states
-- **Production-ready** — Battle-tested HTTP via hyper, robust error handling, no panics in library code
+- **Production-ready** — Battle-tested HTTP via hyper, robust error handling, no panics on any caller input or I/O failure
 
 ## Architecture at a Glance
 
@@ -78,7 +78,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 - **CORS support** — Configurable cross-origin policies
 - **Fully configurable** — All defaults (timeouts, limits, intervals) are overridable via builders
 - **Mutation-tested** — Zero surviving mutants enforced via `cargo-mutants` CI gate
-- **No panics in library code** — All fallible operations return `Result`
+- **No panics on fallible paths** — Every operation that can fail on input, network, or storage errors returns `Result`; the only `expect` calls in library code assert internal invariants (e.g. lock-poisoning propagation) that no caller input can trigger
 
 ## All 11 Protocol Methods
 

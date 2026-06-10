@@ -330,9 +330,7 @@ examine_globs = [
 # Skip unproductive mutations (re-exports, generated code)
 # Note: Display/Debug impls are NOT excluded — we have tests for them.
 exclude_globs = [
-    "crates/a2a-protocol-sdk/src/lib.rs",        # pure re-exports
-    "**/mod.rs",                          # thin mod files (re-exports only)
-    "crates/*/src/proto/**",              # generated protobuf code
+    "crates/*/src/proto/**",   # generated protobuf code — the only exclusion
 ]
 
 # Skip functions whose mutations are unproductive (logging, tracing)
@@ -345,7 +343,9 @@ exclude_re = ["^tracing::", "^log::"]
 
 - **On-demand**: A full mutation sweep can be triggered via `workflow_dispatch` in
   `.github/workflows/mutants.yml`. Any surviving mutant fails the build.
-- Nightly schedule and PR-gate triggers are currently disabled to save CI time.
+- **Every pull request** runs the incremental gate (`--in-diff`): only changed
+  source lines are mutated, and any missed mutant fails the PR.
+- The nightly full-sweep schedule is currently disabled to save CI time.
 
 ### Interpreting Results
 
@@ -377,7 +377,7 @@ returns `true` for terminal states.
 
 ## Performance Benchmarks
 
-The `benches/` directory contains **267 Criterion.rs benchmarks** across 13 suites
+The `benches/` directory contains Criterion.rs benchmarks across all 14 suites (see the [benchmark results](../reference/benchmarks.md) page for the current count)
 measuring SDK overhead independently of agent logic:
 
 | Suite | Coverage |
@@ -415,7 +415,8 @@ CI artifacts.
 
 ## Running the Test Suite
 
-> **Current status:** The workspace has **1,769 passing tests** (with websocket feature)
+> **Current status:** the workspace carries 2,000+ passing tests — run
+> `cargo test --workspace --all-features` for the live count.
 > across all crates (unit, integration, property, TCK conformance, and E2E dogfood).
 
 ```bash

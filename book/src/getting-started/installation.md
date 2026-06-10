@@ -12,7 +12,7 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.5"
+a2a-protocol-sdk = "0.6"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -24,13 +24,13 @@ If you prefer fine-grained control, depend on individual crates:
 
 ```toml
 # Types only (no I/O, no async runtime)
-a2a-protocol-types = "0.5"
+a2a-protocol-types = "0.6"
 
 # Client only
-a2a-protocol-client = "0.5"
+a2a-protocol-client = "0.6"
 
 # Server only
-a2a-protocol-server = "0.5"
+a2a-protocol-server = "0.6"
 ```
 
 This is useful when:

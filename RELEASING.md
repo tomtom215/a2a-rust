@@ -14,12 +14,21 @@ This document describes the release process for the `a2a-rust` workspace.
 
 ## Workspace crate dependency order
 
-Publishing must happen in this order (each crate depends on the ones above it):
+Publishing must happen in topological order of **all** dependency edges —
+including dev-dependencies, because `cargo publish` keeps versioned
+`path + version` dev-dependencies in the published manifest and resolves
+them against the registry:
 
 1. `a2a-protocol-types` — no workspace dependencies
-2. `a2a-protocol-client` — depends on `a2a-protocol-types`
-3. `a2a-protocol-server` — depends on `a2a-protocol-types`
+2. `a2a-protocol-server` — depends on `a2a-protocol-types`
+3. `a2a-protocol-client` — depends on `a2a-protocol-types`; **dev-depends on
+   `a2a-protocol-server`** (integration tests), so server must already be on
+   crates.io
 4. `a2a-protocol-sdk` — depends on all three
+
+This matches the order used by `.github/workflows/release.yml`. Publishing
+client before server fails: the client's versioned dev-dependency on the
+not-yet-published server cannot be resolved from the index.
 
 ## Release checklist
 
@@ -36,7 +45,14 @@ git checkout -b release/vX.Y.Z main
 # crates/a2a-protocol-sdk/Cargo.toml
 
 # Update CHANGELOG.md: move [Unreleased] content to [X.Y.Z] with date
-# Add new empty [Unreleased] section
+# (the heading must be `## [X.Y.Z] - YYYY-MM-DD` — the release workflow
+# rejects undated headings). Add new empty [Unreleased] section.
+
+# Update CITATION.cff: set `version` and `date-released` to the new release
+# (validated against the tag by the release workflow)
+
+# Update SECURITY.md: make sure the Supported Versions table covers the
+# new minor line (validated by the release workflow)
 
 # Verify everything builds and passes
 cargo fmt --all

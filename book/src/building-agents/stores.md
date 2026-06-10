@@ -135,14 +135,30 @@ This variant partitions data by a `tenant_id` column instead of using task-local
 
 > **Note:** Corresponding `TenantAwareInMemoryPushConfigStore` and `TenantAwareSqlitePushConfigStore` variants exist for push notification config storage.
 
+### PostgresTaskStore (`postgres` feature)
+
+PostgreSQL-backed stores ship with the crate — `PostgresTaskStore`,
+`PostgresPushConfigStore`, tenant-aware variants, and a forward-only
+migration runner — and are exercised against a live PostgreSQL 16 service
+in CI (`postgres_store_tests.rs`):
+
+```rust
+use a2a_protocol_server::store::PostgresTaskStore;
+
+let store = PostgresTaskStore::with_migrations("postgres://user:pass@localhost/a2a").await?;
+let handler = RequestHandlerBuilder::new(MyExecutor)
+    .with_task_store(store)
+    .build()?;
+```
+
 ### Custom Implementation
 
 ```rust
-struct PostgresTaskStore {
+struct DynamoDbTaskStore {
     pool: sqlx::PgPool,
 }
 
-impl TaskStore for PostgresTaskStore {
+impl TaskStore for DynamoDbTaskStore {
     fn get<'a>(&'a self, id: &'a TaskId)
         -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>>
     {
@@ -201,7 +217,7 @@ Features:
 
 ```rust
 let handler = RequestHandlerBuilder::new(executor)
-    .with_task_store(PostgresTaskStore::new(pool.clone()))
+    .with_task_store(DynamoDbTaskStore::new(client.clone()))
     .with_push_config_store(PostgresPushConfigStore::new(pool))
     .build()
     .unwrap();

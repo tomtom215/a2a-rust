@@ -134,14 +134,16 @@ The default `InMemoryPushConfigStore` stores configs in memory with per-task lim
 ```rust
 use a2a_protocol_sdk::server::PushConfigStore;
 
-struct PostgresPushConfigStore { /* ... */ }
+struct DynamoDbPushConfigStore { /* ... */ }
 
-impl PushConfigStore for PostgresPushConfigStore {
+impl PushConfigStore for DynamoDbPushConfigStore {
     // Implement set, get, list, delete...
 }
 
 RequestHandlerBuilder::new(executor)
-    .with_push_config_store(PostgresPushConfigStore::new(pool))
+    .with_push_config_store(DynamoDbPushConfigStore::new(client))
+    // (SQLite and PostgreSQL push-config stores ship with the crate —
+    //  SqlitePushConfigStore / PostgresPushConfigStore.)
     .build()
 ```
 

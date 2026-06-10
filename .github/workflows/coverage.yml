@@ -31,7 +31,7 @@ jobs:
     name: Test coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -50,7 +50,19 @@ jobs:
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5.5.4
+        # TEMPORARY (2026-06-10): Codecov's public-key distribution is down
+        # (keybase.io/codecovsecurity returns "SELF-SIGNED PUBLIC KEY NOT
+        # FOUND"; cli.codecov.io/pgp_keys.asc 404s; the key is absent from
+        # public keyservers), so the action cannot verify its own CLI and
+        # exits 1 for every repo with validation enabled. continue-on-error
+        # keeps the outage from blocking merges while signature validation
+        # stays intact — uploads resume automatically once Codecov restores
+        # the key. REMOVE this line (and this comment) at that point so
+        # fail_ci_if_error below regains teeth.
+        continue-on-error: true
         with:
           files: lcov.info
-          fail_ci_if_error: false
+          # A failed upload must be visible, not silently green — otherwise
+          # the coverage signal can disappear without anyone noticing.
+          fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}

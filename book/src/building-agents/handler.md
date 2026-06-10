@@ -158,14 +158,14 @@ For production use, implement the `TaskStore` trait for your database:
 ```rust
 use a2a_protocol_sdk::server::TaskStore;
 
-struct PostgresTaskStore { /* ... */ }
+struct DynamoDbTaskStore { /* ... */ }
 
-impl TaskStore for PostgresTaskStore {
+impl TaskStore for DynamoDbTaskStore {
     // Implement save, get, list, insert_if_absent, delete...
 }
 
 RequestHandlerBuilder::new(executor)
-    .with_task_store(PostgresTaskStore::new(pool))
+    .with_task_store(DynamoDbTaskStore::new(client))
     .build()
 ```
 

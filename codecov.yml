@@ -1,21 +1,39 @@
 # SPDX-License-Identifier: Apache-2.0
 # Codecov configuration — https://docs.codecov.io/docs/codecov-yaml
+#
+# Policy: coverage is a guarded dashboard, not a hard merge gate. The two
+# status checks below are reported on every PR; whether they block merge is
+# decided by the branch-protection required-checks list (see
+# .github/workflows/README.md). Test *effectiveness* is gated separately by
+# mutation testing (.github/workflows/mutants.yml), which is stricter than
+# any line-coverage threshold.
 
 coverage:
   status:
     project:
       default:
+        # Fail the status if overall coverage drops more than 1% below the
+        # base commit. 1% absorbs run-to-run noise from async/timing-dependent
+        # paths while making sustained erosion visible immediately.
         target: auto
-        threshold: 2%
+        threshold: 1%
     patch:
       default:
-        target: 50%
+        # New / changed lines in a PR must be at least 75% covered (±5% for
+        # uninstrumentable lines). Raised from 50%, which let half-tested
+        # patches pass without comment.
+        target: 75%
         threshold: 5%
 
 ignore:
   # TCK is test infrastructure, not library code.
   - "tck/**"
-  # Postgres stores require a running database; tested via integration tests.
+  # The Postgres stores only execute against a live PostgreSQL server. The
+  # `postgres` integration suite (crates/a2a-protocol-server/tests/
+  # postgres_store_tests.rs, gated on A2A_TEST_POSTGRES_URL) runs in the
+  # dedicated CI postgres job, which is not part of the coverage run — so
+  # these files would always report 0% here and are excluded from the
+  # dashboard rather than from testing.
   - "crates/a2a-protocol-server/src/store/postgres_store.rs"
   - "crates/a2a-protocol-server/src/store/tenant_postgres_store.rs"
   - "crates/a2a-protocol-server/src/store/pg_migration.rs"

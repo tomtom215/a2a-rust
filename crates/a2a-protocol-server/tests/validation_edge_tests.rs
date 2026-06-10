@@ -441,7 +441,30 @@ async fn shutdown_cancels_in_flight_tasks() {
         let _ = h.on_send_message(make_params("never"), true, None).await;
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Deterministic startup handshake: poll until the streaming task is
+    // saved and Working (the executor has started) instead of trusting a
+    // fixed sleep under scheduler load.
+    {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let list = handler
+                .on_list_tasks(ListTasksParams::default(), None)
+                .await
+                .expect("list tasks");
+            if list
+                .tasks
+                .iter()
+                .any(|t| t.status.state == TaskState::Working)
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "executor never reached Working before shutdown test"
+            );
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
 
     // Shutdown should cancel all tasks
     handler.shutdown().await;

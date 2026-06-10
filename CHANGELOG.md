@@ -8,7 +8,104 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] - 2026-04-15
+## [0.6.0] - 2026-06-10
+
+Released as a **minor** (not patch) bump: no public API signatures changed,
+but observable behavior did — `Task.history` is now populated in responses,
+streaming disconnects no longer fail running tasks, and `Working → Working`
+status refreshes are accepted. Consumers relying on the old behaviors should
+read the entries below.
+
+### Changed
+
+- **`Task.history` is retrievable, and send responses opt in to it** —
+  `tasks/get` returns the populated history (subject to `historyLength`;
+  previously the field was always absent). `message/send` responses and
+  streaming snapshots omit history unless
+  `SendMessageConfiguration.historyLength` requests it: echoing the
+  just-sent message back doubled response payloads for large sends (+95%
+  median at 1 MiB, caught by the benchmark regression gate).
+- **A dropped `message/stream` connection no longer cancels work** — tasks
+  continue to completion and clients reattach via `SubscribeToTask`.
+  Anything depending on disconnect-kills-task semantics must cancel
+  explicitly via `CancelTask`.
+
+### Fixed
+
+- **`a2a-protocol-server`: a client disconnecting from `message/stream` no
+  longer fails the running task** — The event-queue writer treated a
+  broadcast send with zero live receivers as an executor-fatal error, so the
+  only SSE consumer dropping its connection (network blip, closed tab)
+  marked the in-flight task `TASK_STATE_FAILED` even though every event had
+  already reached the persistence channel. Zero receivers is now a non-error
+  whenever a persistence channel exists — the task keeps running and clients
+  can reattach via `tasks/resubscribe` (which is the reason that method
+  exists). Sync mode is unchanged: there the sole receiver *is* the request.
+
+- **`a2a-protocol-types`: `Working → Working` is now a valid state
+  transition** — Repeated `Working` status updates, each carrying a new
+  `status.message`, are how an agent narrates long-running work to streaming
+  clients. The state machine rejected the self-transition, so any executor
+  that emitted more than one progress note had its task marked
+  `TASK_STATE_FAILED` by the background processor *while the SSE stream
+  delivered the same events and a final `Completed` to the client* — a
+  stream/store split-brain. Self-transitions remain invalid for every other
+  state.
+
+- **`a2a-protocol-client`: JSON-RPC error responses to `message/stream` are
+  surfaced instead of dissolving into an empty stream** — A streaming
+  request that fails up-front (e.g. continuing a task with the wrong
+  `contextId`) returns HTTP 200 with a JSON-RPC error envelope. The client
+  fed that body to the SSE parser, which found no frames and ended the
+  stream with zero events and no error. The transport now checks the
+  response content type: JSON-RPC error envelopes map to
+  `ClientError::Protocol` with the original code, and other non-SSE bodies
+  map to `ClientError::Transport`.
+
+- **`a2a-protocol-server`: `Task.history` is now actually populated** —
+  Nothing ever appended messages to task history: tasks were created with
+  `history: None`, continuations never added the new message, and both event
+  processors explicitly ignored agent `Message` events. `GetTask`'s
+  `historyLength` parameter (fixed in 0.3.4 to "truncate history") truncated
+  a permanently empty list, and multi-turn executors could not see prior
+  turns via `RequestContext::stored_task`. Incoming user messages are now
+  appended at send time, agent `Message` events are recorded by both the
+  sync and background processors, and history is capped at 1,024 messages
+  (oldest dropped first).
+
+- **`a2a-protocol-server`: continuations no longer wipe accumulated task
+  state** — Sending a follow-up message to an existing non-terminal task
+  saved a freshly constructed task over the stored one, destroying its
+  accumulated artifacts, metadata, and history. Continuations now carry all
+  three forward; only the status returns to `Submitted` for the new turn.
+
+- **`a2a-protocol-server`: JSON-RPC legacy alias `tasks/resubscribe`** —
+  The dispatcher accepted the v1.0 method `SubscribeToTask` and the alias
+  `tasks/subscribe`, but not `tasks/resubscribe` — the actual method name
+  from the v0.2.x spec that older clients send. All three now route to
+  resubscription.
+
+All of the above were found by driving the new `incident-response` example's
+multi-turn, multi-agent flow end-to-end against a live local model — including
+a full probe of resubscribe-after-disconnect (works: a reattached client
+receives the remaining events and terminal state) and real webhook push
+delivery (works: deliveries carry the `a2a-notification-token` header and
+continue while no SSE consumer is connected).
+
+### Added
+
+- **`incident-response` example** — A three-agent incident-response team
+  (triage orchestrator + deterministic log-search agent + LLM runbook agent)
+  demonstrating `INPUT_REQUIRED` multi-turn continuation, agent-to-agent
+  delegation, streaming progress narration, artifacts, cooperative
+  cancellation, and honest failure states. Runs fully local (llama-server /
+  Ollama) or with hosted providers, and passes the TCK 20/20.
+- **TCK: `a2a_media_type_accepted` conformance test** — Servers must accept
+  the registered A2A media type `application/a2a+json` that production
+  clients send, not just plain `application/json`. Added after the Rust
+  client's requests were rejected by the JS ITK agent, whose JSON body
+  parser was content-type-strict (fixed too); the cross-language CI matrix
+  now enforces this for every agent.
 
 ### Security
 
@@ -30,7 +127,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   No code changes are required by consumers; `cargo update -p rustls-webpki`
   on existing lockfiles is sufficient for anyone not yet moving to 0.5.1.
 
-## [0.5.0] — Unreleased
+## [0.5.0] - 2026-04-02
 
 ### Breaking Changes
 
@@ -291,7 +388,10 @@ will need to update.
   `content_type_not_supported()`, `extension_support_required()`,
   `version_not_supported()`.
 
-## [0.3.4] - 2026-03-31
+## [0.3.4] — Unpublished
+
+> A standalone 0.3.4 release was never tagged or published to crates.io;
+> the changes below first shipped as part of [0.4.0] - 2026-03-31.
 
 ### Fixed
 

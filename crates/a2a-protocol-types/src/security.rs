@@ -98,6 +98,12 @@ pub struct ApiKeySecurityScheme {
 }
 
 /// Where an API key is placed in the request.
+///
+/// Deliberately **not** `#[non_exhaustive]`, unlike the protocol enums that
+/// track the evolving A2A specification: the OpenAPI 3.x security model this
+/// type mirrors defines exactly these three `in` locations, so consumers may
+/// rely on matching them exhaustively. A fourth location would be a breaking
+/// revision of the upstream security model, warranting a major bump here too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ApiKeyLocation {

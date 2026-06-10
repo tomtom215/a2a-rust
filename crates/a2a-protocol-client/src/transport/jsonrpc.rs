@@ -330,6 +330,26 @@ impl JsonRpcTransport {
             });
         }
 
+        // A JSON-RPC error response to a streaming request arrives as
+        // HTTP 200 with an application/json error envelope rather than an
+        // SSE body. Feeding it to the SSE parser would dissolve the error
+        // into an empty stream, so surface it as the protocol error it is.
+        let content_type = resp
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !content_type.starts_with("text/event-stream") {
+            let body_bytes =
+                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
+                    .await
+                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
+                    .map_err(ClientError::Http)?
+                    .to_bytes();
+            return Err(non_sse_stream_response_error(&content_type, &body_bytes));
+        }
+
         let actual_status = status.as_u16();
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let body = resp.into_body();
@@ -419,6 +439,32 @@ fn response_id_matches(
     request_id: &serde_json::Value,
 ) -> bool {
     response_id == Some(request_id)
+}
+
+/// Maps a non-SSE response body on a streaming request to the error it
+/// carries: a JSON-RPC error envelope becomes [`ClientError::Protocol`]
+/// (preserving the original code), anything else becomes
+/// [`ClientError::Transport`].
+fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> ClientError {
+    if let Ok(JsonRpcResponse::Error(err)) =
+        serde_json::from_slice::<JsonRpcResponse<serde_json::Value>>(body_bytes)
+    {
+        trace_warn!(
+            code = err.error.code,
+            "JSON-RPC error response to streaming request"
+        );
+        let a2a = a2a_protocol_types::A2aError::new(
+            a2a_protocol_types::ErrorCode::try_from(err.error.code)
+                .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+            err.error.message,
+        );
+        return ClientError::Protocol(a2a);
+    }
+    let body_str = String::from_utf8_lossy(body_bytes);
+    ClientError::Transport(format!(
+        "expected text/event-stream response, got '{content_type}': {}",
+        super::truncate_body(&body_str)
+    ))
 }
 
 fn validate_url(url: &str) -> ClientResult<()> {
@@ -594,6 +640,67 @@ mod tests {
             .await;
         let value = result.unwrap();
         assert_eq!(value["hello"], "world");
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_jsonrpc_error_envelope_returns_protocol_error() {
+        // A JSON-RPC error to message/stream arrives as HTTP 200 +
+        // application/json; it must surface as a protocol error, not as an
+        // empty event stream.
+        let addr = start_server(
+            200,
+            r#"{"jsonrpc":"2.0","id":"__ID__","error":{"code":-32602,"message":"task_id exists but belongs to a different context"}}"#,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        match result {
+            Err(ClientError::Protocol(e)) => {
+                assert_eq!(
+                    e.code,
+                    a2a_protocol_types::ErrorCode::InvalidParams,
+                    "JSON-RPC code -32602 should map to InvalidParams"
+                );
+                assert!(
+                    e.message.contains("different context"),
+                    "error message should be preserved, got: {}",
+                    e.message
+                );
+            }
+            other => panic!("expected ClientError::Protocol, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_streaming_request_non_sse_body_returns_transport_error() {
+        // A 200 response that is neither SSE nor a JSON-RPC envelope must
+        // not be parsed as an (empty) event stream.
+        let addr = start_server(200, "not json at all").await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let result = transport
+            .execute_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({}),
+                &HashMap::new(),
+            )
+            .await;
+        match result {
+            Err(ClientError::Transport(msg)) => {
+                assert!(
+                    msg.contains("text/event-stream"),
+                    "error should name the expected content type, got: {msg}"
+                );
+            }
+            other => panic!("expected ClientError::Transport, got {other:?}"),
+        }
     }
 
     #[tokio::test]

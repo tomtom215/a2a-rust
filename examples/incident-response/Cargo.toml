@@ -2,9 +2,9 @@
 # Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
 [package]
-name        = "rig-a2a-agent"
+name        = "incident-response"
 version     = "0.0.0"
-description = "Wraps a real rig-core agent (OpenAI-compatible provider) behind the A2A protocol; works with hosted OpenAI or any local OpenAI-compatible server via OPENAI_BASE_URL"
+description = "Three-agent incident-response team: multi-turn triage with input-required, agent-to-agent delegation over A2A, deterministic tool agents, streaming progress, and cancellation — runs fully local"
 publish     = false
 
 edition.workspace    = true
@@ -23,5 +23,6 @@ hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 uuid           = { workspace = true }
 
-# rig — LLM agent framework (https://github.com/0xPlaygrounds/rig)
-rig-core       = "0.38.2"
+# genai — multi-provider LLM client; unknown model names route to the local
+# Ollama-compatible endpoint on :11434 (llama-server / Ollama).
+genai = "0.5"

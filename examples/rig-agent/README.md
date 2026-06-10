@@ -1,19 +1,14 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
 
-# Rig Integration Template
+# Rig Agent — A2A Protocol Bridge for rig
 
-> **This is an integration *template*, not a working rig agent.** The example
-> compiles and runs standalone because `rig` is intentionally **not** listed as
-> a dependency — this lets the template build in any environment without
-> pulling in an LLM SDK or requiring API keys. The `run_rig_completion()`
-> function returns a mock echo-style response by default. To turn this into a
-> real rig agent, add `rig-core` (or the provider crate of your choice) to
-> `Cargo.toml` and paste the snippet below into `run_rig_completion()`. The
-> A2A plumbing — status transitions, artifact emission, streaming — is
-> production-ready as shipped; only the LLM call is stubbed.
-
-Demonstrates how to wrap a [rig](https://github.com/0xPlaygrounds/rig) AI agent behind the A2A protocol. Shows the integration pattern for bridging rig's completion-based model with A2A's event-based streaming model.
+A real [rig](https://github.com/0xPlaygrounds/rig) agent served over the A2A
+protocol. Incoming A2A messages are passed to a `rig_core::agent::Agent`
+(OpenAI-compatible provider), and the completion is returned as an A2A
+artifact. The executor is generic over `rig_core::completion::CompletionModel`,
+so swapping providers (Anthropic, Gemini, Ollama, …) only changes the client
+construction in `main` — the A2A bridge is untouched.
 
 ## Architecture
 
@@ -21,113 +16,76 @@ Demonstrates how to wrap a [rig](https://github.com/0xPlaygrounds/rig) AI agent 
 A2A Client ──→ A2A Server (JSON-RPC)
                     │
                     ▼
-              RigAgentExecutor
+              RigAgentExecutor<M>
                     │
                     ▼
-              rig::Agent (LLM-powered)
+              rig_core::agent::Agent<M> ──→ LLM provider
 ```
 
-## Running
+## Running against hosted OpenAI
 
 ```bash
-# Template mode — echoes the user's text. No rig dependency, no API key:
-cargo run -p rig-a2a-agent
-
-# Real rig mode — after you follow "How to connect a real rig agent" below
-# (adding the rig dependency and replacing the mock body):
 export OPENAI_API_KEY=sk-...
-cargo run -p rig-a2a-agent
+cargo run -p rig-a2a-agent              # defaults to gpt-4o-mini
+RIG_MODEL=gpt-4o cargo run -p rig-a2a-agent
 ```
 
-## How to connect a real rig agent
+## Running fully local — no API key
 
-The example ships with a mock completion for zero-dependency demo purposes. To
-connect a real LLM, do two things:
-
-1. Add the rig dependency to `examples/rig-agent/Cargo.toml`:
-
-   ```toml
-   [dependencies]
-   rig-core = "0.x"   # or the provider crate you prefer
-   ```
-
-2. Replace the body of `RigAgentExecutor::run_rig_completion()`:
-
-### OpenAI
-
-```rust
-use rig::providers::openai;
-use rig::completion::Prompt;
-
-let client = openai::Client::from_env();
-let model = client.agent("gpt-4o")
-    .preamble("You are a helpful assistant.")
-    .build();
-
-let response = model.prompt(user_text).await
-    .map_err(|e| format!("rig error: {e}"))?;
-Ok(response)
-```
-
-### Anthropic
-
-```rust
-use rig::providers::anthropic;
-use rig::completion::Prompt;
-
-let client = anthropic::Client::from_env();
-let model = client.agent("claude-sonnet-4-20250514")
-    .preamble("You are a helpful assistant.")
-    .build();
-
-let response = model.prompt(user_text).await
-    .map_err(|e| format!("rig error: {e}"))?;
-Ok(response)
-```
-
-## Testing
-
-Once running, test with the TCK or any A2A client:
+Any OpenAI-compatible server works via rig's `OPENAI_BASE_URL` support. A
+verified walkthrough with [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+`llama-server` and the Apache-2.0 Qwen3-0.6B model (~640 MB):
 
 ```bash
-cargo run -p a2a-tck -- --url http://127.0.0.1:<port>
+# 1. Get a prebuilt llama-server (pick the latest release tag) and a model
+curl -L -o llama.tar.gz \
+  'https://github.com/ggml-org/llama.cpp/releases/latest/download/llama-bin-ubuntu-x64.tar.gz' \
+  || echo 'grab the llama-<tag>-bin-<os>.tar.gz asset for your platform'
+tar xzf llama.tar.gz
+curl -L -o model.gguf \
+  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
+
+# 2. Serve it (OpenAI-compatible API on :11434)
+./llama-*/llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+
+# 3. Point the rig agent at it
+export OPENAI_API_KEY=local              # any non-empty value
+export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+RIG_MODEL=qwen3-0.6b cargo run -p rig-a2a-agent
 ```
 
-## Key integration point
+(Ollama works identically — it already listens on `:11434`.)
 
-The `RigAgentExecutor` implements `AgentExecutor` — the single trait that bridges any AI framework with A2A:
+## Talking to the agent
 
-```rust
-impl AgentExecutor for RigAgentExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,         // incoming A2A message
-        queue: &'a dyn EventQueueWriter, // emit status + artifacts
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        // 1. Extract user text from A2A message
-        // 2. Emit Working status
-        // 3. Call rig agent
-        // 4. Emit artifact with response
-        // 5. Emit Completed status
-    }
-}
+```bash
+# Agent discovery
+curl http://127.0.0.1:<port>/.well-known/agent-card.json
+
+# Send a message (JSON-RPC binding)
+curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "message/send",
+  "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
+             "parts": [{"text": "What is the capital of France?"}]}}
+}'
+
+# Full conformance suite (passes 20/20 against this agent)
+cargo run -p a2a-tck -- --url http://127.0.0.1:<port> --binding jsonrpc
 ```
 
-This pattern works with any rig agent type: completion, chat, RAG, tool-using, etc.
+Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
 
-## What it demonstrates
+## Failure semantics
 
-| Feature | How |
-|---------|-----|
-| **AI framework integration** | Bridges rig's `Prompt` trait with A2A's `AgentExecutor` |
-| **Status lifecycle** | Working → Artifact → Completed transitions |
-| **Error handling** | LLM errors are returned as artifact text, not server errors |
-| **Extensibility** | Drop-in replacement for any rig provider |
+| Condition | Task state |
+|-----------|-----------|
+| Completion succeeds | `TASK_STATE_COMPLETED`, artifact `rig-response` |
+| Provider unreachable / errors | `TASK_STATE_FAILED` |
+| Message has no text part | `TASK_STATE_FAILED` (invalid params) |
 
-## Prerequisites
-
-- Rust 1.93+ (MSRV)
-- API key for your chosen rig provider (optional — works with mock by default)
+Errors are never folded into a "successful" artifact — clients can trust the
+task state.
 
 ## License
 

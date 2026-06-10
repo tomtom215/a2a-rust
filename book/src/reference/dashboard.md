@@ -26,7 +26,7 @@ Benchmark Dashboard &rarr;
 | **Enterprise** | Multi-tenant isolation, CORS, rate limiting, eviction, large histories, pagination |
 | **Production** | Agent burst scaling, E2E orchestration, cold start, push config CRUD, cross-language |
 | **Memory** | Allocation timing under counting allocator, bytes per payload, history scaling |
-| **All Results** | Searchable table of all 267 individual benchmark measurements |
+| **All Results** | Searchable table of all individual benchmark measurements |
 
 ## Methodology
 

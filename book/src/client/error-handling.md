@@ -116,7 +116,7 @@ use a2a_protocol_sdk::server::ServerError;
 
 ### Don't Panic
 
-a2a-rust never panics in library code. All fallible operations return `Result`. Follow the same pattern in your executors:
+a2a-rust never panics on caller input or I/O failure — every fallible operation returns `Result`. (The only `expect` calls in the libraries assert internal invariants, such as propagating lock poisoning, that callers cannot trigger.) Follow the same pattern in your executors:
 
 ```rust
 // Good: return an error

@@ -67,7 +67,7 @@ See the book's [Configuration Reference](../../book/src/reference/configuration.
 ### Goals
 
 - **Full spec compliance** — every method, type, error code, and transport variant defined in A2A v1.0.0.
-- **Enterprise-grade** — production-ready error handling, no panics, no `unwrap()` at boundaries.
+- **Enterprise-grade** — production-ready error handling, no panics on caller input or I/O failure, no `unwrap()` at boundaries.
 - **Minimal footprint** — zero mandatory deps beyond `serde`/`serde_json`; optional features gate all I/O.
 - **Modern Rust idioms** — async/await, Edition 2021, `Pin<Box<dyn Future>>` for object-safe async traits.
 - **Transport abstraction** — pluggable HTTP backends; the protocol core carries no HTTP dep.
