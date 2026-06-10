@@ -28,7 +28,7 @@ Build, connect, and orchestrate AI agents with a type-safe, async-first SDK span
 
 ## Motivation
 
-The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) follow the same pattern.
+The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, but there is no official Rust implementation. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) cover the same five languages — Rust is absent there too.
 
 This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
 
@@ -113,7 +113,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.5"
+a2a-protocol-sdk = "0.6"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -185,6 +185,8 @@ while let Some(event) = stream.next().await {
         StreamResponse::ArtifactUpdate(ev) => println!("Artifact: {}", ev.artifact.id),
         StreamResponse::Task(task) => println!("Task: {}", task.id),
         StreamResponse::Message(msg) => println!("Message: {:?}", msg),
+        // StreamResponse is #[non_exhaustive] — always keep a catch-all.
+        _ => {}
     }
 }
 ```
@@ -199,7 +201,7 @@ the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
 the orchestrator delegates to a deterministic log-search agent and an
 LLM-backed runbook agent over real A2A calls, progress streams live, the
 incident report lands as an artifact, and a parked task can be cancelled.
-Runs fully local with a ~470 MB Apache-2.0 model (llama-server / Ollama) or
+Runs fully local with Qwen3-0.6B (a ~640 MB Apache-2.0 model, via llama-server or Ollama) or
 with no model at all:
 
 ```bash
@@ -316,8 +318,8 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run all tests (~1,630 with defaults only; more with optional feature flags)
-cargo test --workspace
+# Run the test suite (2,000+ tests with --all-features; CI runs nine feature combinations)
+cargo test --workspace --all-features
 
 # Run the end-to-end example
 cargo run -p echo-agent
@@ -329,7 +331,7 @@ cargo fmt --all -- --check
 # Build documentation
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Run benchmarks (275 benchmarks across 14 suites — transport, protocol,
+# Run benchmarks (Criterion suites ×14 — transport, protocol,
 # lifecycle, concurrency, cross-language, realistic, error paths, backpressure,
 # data volume, memory, enterprise, production, advanced scenarios, and
 # coordinator chain under fault — the last is the only agent-level one,
@@ -347,19 +349,6 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 All phases are complete. The SDK is production-ready with all 11 A2A methods, quad transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full implementation roadmap and beyond-spec extensions.
 
-| Phase | Status |
-|---|---|
-| 0. Project Foundation | ✅ Complete |
-| 1. Protocol Types (`a2a-protocol-types`) | ✅ Complete |
-| 2. HTTP Client (`a2a-protocol-client`) | ✅ Complete |
-| 3. Server Framework (`a2a-protocol-server`) | ✅ Complete |
-| 4. v1.0 Protocol Upgrade | ✅ Complete |
-| 5. Server Tests & Bug Fixes | ✅ Complete |
-| 6. Umbrella Crate & Examples | ✅ Complete |
-| 7. v1.0 Spec Compliance Gaps | ✅ Complete |
-| 7.5 Spec Compliance Fixes | ✅ Complete |
-| 8. Caching, Signing & Release | ✅ Complete |
-| 9. Production Hardening | ✅ Complete |
 
 ## Stability
 
