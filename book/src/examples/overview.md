@@ -6,10 +6,11 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
+| [Incident-Response Team](./incident-response.md) | **Start here** — multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
 | [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
 | [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
 | [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
-| [Rig Agent](./rig-agent.md) | AI agent using the rig framework (mock by default, drop-in LLM support) | Optional API key | Intermediate |
+| [Rig Agent](./rig-agent.md) | Real rig-core agent behind A2A — hosted or fully local, no mock | None (local server works keyless) |
 | [Multi-Language Team](./multi-lang-team.md) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
 
 ## Where to Start

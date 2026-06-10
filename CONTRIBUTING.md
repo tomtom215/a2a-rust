@@ -147,7 +147,9 @@ files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
 and timeout settings.
 
 **Zero surviving mutants is required.** The mutation CI job
-(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`.
+(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`;
+every pull request also runs an incremental `--in-diff` mutation gate that
+fails on any missed mutant in the changed lines.
 Nightly schedule and PR-gate triggers are currently disabled to save CI time.
 
 When a mutant survives, the output shows the exact mutation and the file/line.

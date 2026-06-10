@@ -16,6 +16,7 @@ Architecture Decision Records (ADRs) and implementation planning documents for t
 | [0005](adr/0005-sse-streaming-design.md) | SSE Streaming Design | In-tree SSE with zero additional dependencies |
 | [0006](adr/0006-mutation-testing.md) | Mutation Testing | Systematic mutation testing strategy |
 | [0007](adr/0007-axum-integration-and-tck.md) | Axum Integration & TCK | Axum adapter and wire-format conformance testing |
+| [0008](adr/0008-agent-executor-trait-shape.md) | AgentExecutor trait shape | Accepted |
 
 ## Implementation Documents
 

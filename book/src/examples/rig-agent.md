@@ -1,50 +1,39 @@
 # Rig Agent
 
-Demonstrates how to wrap a [rig](https://github.com/0xPlaygrounds/rig) AI agent behind the A2A protocol. Shows the integration pattern for bridging rig's completion-based model with A2A's event-based streaming model.
-
-**Source:** [`examples/rig-agent/`](https://github.com/tomtom215/a2a-rust/tree/main/examples/rig-agent)
+A real [rig](https://github.com/0xPlaygrounds/rig) agent served over the
+A2A protocol: incoming A2A messages are passed to a
+`rig_core::agent::Agent`, and the completion returns as an A2A artifact.
+The executor is generic over `rig_core::completion::CompletionModel`, so
+swapping providers (Anthropic, Gemini, Ollama, …) only changes the client
+construction in `main`.
 
 ## Running
 
 ```bash
-# With mock completion (no API key needed):
-cargo run -p rig-a2a-agent
-
-# With a real provider (after uncommenting in source):
+# Hosted OpenAI:
 export OPENAI_API_KEY=sk-...
-cargo run -p rig-a2a-agent
+cargo run -p rig-a2a-agent              # defaults to gpt-4o-mini
+
+# Fully local — any OpenAI-compatible server (llama-server, Ollama):
+export OPENAI_API_KEY=local             # any non-empty value
+export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+RIG_MODEL=qwen2.5-0.5b-instruct cargo run -p rig-a2a-agent
 ```
 
-## How to connect a real rig agent
+Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port. The agent serves a
+discovery card at `/.well-known/agent-card.json`, supports push-config
+CRUD, and passes the TCK 20/20.
 
-The example ships with a mock completion for zero-dependency demos. To connect a real LLM, replace the body of `RigAgentExecutor::run_rig_completion()`:
+## Failure semantics
 
-```rust
-// OpenAI via rig:
-use rig::providers::openai;
-use rig::completion::Prompt;
+| Condition | Task state |
+|-----------|-----------|
+| Completion succeeds | `TASK_STATE_COMPLETED`, artifact `rig-response` |
+| Provider unreachable / errors | `TASK_STATE_FAILED` |
+| Message has no text part | `TASK_STATE_FAILED` (invalid params) |
 
-let client = openai::Client::from_env();
-let model = client.agent("gpt-4o")
-    .preamble("You are a helpful assistant.")
-    .build();
-let response = model.prompt(user_text).await?;
-```
+Errors surface through the task state — they are never folded into a
+"successful" artifact.
 
-This works with any rig agent type: completion, chat, RAG, tool-using, etc.
-
-## Architecture
-
-```text
-A2A Client ──→ A2A Server (JSON-RPC)
-                    │
-                    ▼
-              RigAgentExecutor
-                    │
-                    ▼
-              rig::Agent (LLM-powered)
-```
-
-## Key takeaway
-
-The integration point is always `AgentExecutor` — the same ~60 line pattern as the [Genai Agent](./genai-agent.md). The only difference is which LLM framework you call inside `execute()`.
+See [`examples/rig-agent/README.md`](https://github.com/tomtom215/a2a-rust/blob/main/examples/rig-agent/README.md)
+for the full verified walkthrough.

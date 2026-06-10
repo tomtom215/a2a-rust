@@ -83,7 +83,8 @@ The `Transport` trait (client) and `Dispatcher` trait (server) make transports p
 
 **Context:** The test suite includes unit, integration, property, fuzz, and E2E dogfood tests — but none of these measure whether the tests actually *detect* real bugs. A test suite can achieve 100% line coverage with trivial assertions. At multi-data-center deployment scales, the bugs that escape traditional testing have the highest blast radius.
 
-**Decision:** Adopt `cargo-mutants` as a test-effectiveness quality signal, audited on-demand against all library crates. The CI workflow is configured to fail on surviving mutants, so when invoked a clean run confirms zero survivors — but it runs via `workflow_dispatch` rather than on every PR, because a full sweep can take 100+ minutes per crate and `a2a-server` alone generates 200–400 mutants. Nightly schedule and PR-gate triggers are commented out in `.github/workflows/mutants.yml` and will be re-enabled when iteration stabilises. Configuration is centralized in `mutants.toml`.
+The full sweep runs via `workflow_dispatch`; every pull request runs an
+incremental `--in-diff` mutation gate on the changed lines.
 
 **Rationale:** Mutation testing is the only technique that directly measures *fault detection capability*. It provides an objective, automated answer to "would this test suite catch a real bug at this location?" The tradeoff is CI time: making it a blocking PR gate is punitive given current compute budgets, so it is treated as an on-demand audit that *enforces* zero survivors when it runs, rather than a per-commit gate.
 

@@ -42,6 +42,33 @@ because the client has a versioned dev-dependency on the server, which
 
 ## Unreleased (v0.5.1)
 
+### Fixed
+
+- **SSE disconnects no longer fail running tasks** — clients reattach via
+  `SubscribeToTask`; the persistence channel already had every event.
+- **`Working → Working` is a valid transition** — repeated Working status
+  updates (progress narration) no longer mark the task Failed in the store
+  while the stream shows success.
+- **`Task.history` is now populated** — user messages at send time, agent
+  `Message` events from both processors, capped at 1,024 (oldest dropped);
+  `historyLength` truncation is now observable.
+- **Continuations preserve accumulated state** — follow-up messages no
+  longer wipe a task's artifacts, metadata, and history.
+- **Client surfaces streaming errors** — JSON-RPC error envelopes on
+  `message/stream` map to `ClientError::Protocol` instead of an empty stream.
+- **Legacy `tasks/resubscribe` alias** accepted alongside `SubscribeToTask`
+  and `tasks/subscribe`.
+
+### Added
+
+- **`incident-response` example** — three-agent team demonstrating
+  multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts,
+  and cooperative cancellation; runs fully local.
+- **TCK test 20: `a2a_media_type_accepted`** — servers must accept the
+  registered `application/a2a+json` media type that real clients send.
+- **PostgreSQL integration suite** — live-database tests for all five
+  Postgres store files, run in CI against a `postgres:16` service.
+
 ### Security
 
 - **`rustls-webpki` upgraded to 0.103.12** — Fixes

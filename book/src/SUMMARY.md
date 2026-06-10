@@ -37,6 +37,7 @@
 # Examples
 
 - [Overview](./examples/overview.md)
+- [Incident-Response Team](./examples/incident-response.md)
 - [Echo Agent](./examples/echo-agent.md)
 - [Agent Team](./examples/agent-team.md)
 - [Genai Agent](./examples/genai-agent.md)

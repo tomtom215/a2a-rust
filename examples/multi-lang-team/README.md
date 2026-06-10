@@ -22,7 +22,8 @@ Demonstrates a Rust coordinator agent that delegates work to worker agents imple
 The coordinator:
 1. Receives a user message via A2A
 2. Fans out the request to all available workers (with 10s timeout)
-3. Collects responses (or error messages for unavailable workers)
+3. Collects responses **concurrently** (a down worker costs one timeout
+   window in total, and is reported inline in the artifact)
 4. Combines all results into a single artifact
 
 ## Running
@@ -96,3 +97,6 @@ When workers are not running, you'll see connection errors for each unavailable 
 ## License
 
 Apache-2.0
+
+After the demo round-trip the coordinator **keeps serving** (probe it with
+the TCK or any A2A client) until you press Ctrl+C.

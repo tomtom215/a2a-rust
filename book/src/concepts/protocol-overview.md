@@ -60,7 +60,9 @@ A **Task** is the central unit of work. When a client sends a message, the serve
 
     Valid transitions:
     Submitted  → Working, Failed, Canceled, Rejected
-    Working    → Completed, Failed, Canceled, InputRequired, AuthRequired
+    Working    → Working, Completed, Failed, Canceled, InputRequired, AuthRequired
+             (Working → Working is valid: repeated Working updates carry
+              progress messages; all other self-transitions are invalid)
     InputRequired / AuthRequired → Working, Failed, Canceled
 ```
 
