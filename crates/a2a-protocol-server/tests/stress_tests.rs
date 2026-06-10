@@ -36,6 +36,22 @@ use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
 
+/// Polls `condition` until it holds, panicking after a generous deadline.
+///
+/// Replaces fixed "sleep then assert" waits: immune to scheduler stalls
+/// (only a genuine hang outlasts the deadline) and returns the moment the
+/// state lands instead of always paying the full sleep.
+async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !condition() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+}
+
 // ── Test executor ───────────────────────────────────────────────────────────
 
 struct StressExecutor {
@@ -257,8 +273,10 @@ async fn concurrent_200_requests_all_succeed() {
 
     assert_eq!(error_count, 0, "all requests should succeed");
     assert_eq!(success_count, 200);
-    // Wait a bit for background event processors to complete.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_for("all 200 executors to complete", || {
+        completed.load(Ordering::Relaxed) == 200
+    })
+    .await;
     assert_eq!(
         completed.load(Ordering::Relaxed),
         200,
@@ -306,8 +324,10 @@ async fn sustained_load_10_seconds() {
         "sustained load test took too long: {elapsed:?}"
     );
 
-    // Wait for all background processors.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    wait_for("all executors to complete", || {
+        completed.load(Ordering::Relaxed) == total_sent
+    })
+    .await;
     let completed_val = completed.load(Ordering::Relaxed);
     assert_eq!(
         completed_val, total_sent,
@@ -426,7 +446,9 @@ async fn rapid_connect_disconnect_cycles() {
         drop(client);
     }
 
-    // Wait for executors.
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    wait_for("all 100 executors to complete", || {
+        completed.load(Ordering::Relaxed) == 100
+    })
+    .await;
     assert_eq!(completed.load(Ordering::Relaxed), 100);
 }

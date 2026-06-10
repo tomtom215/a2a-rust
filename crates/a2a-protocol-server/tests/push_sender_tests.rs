@@ -15,6 +15,24 @@ use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
 use a2a_protocol_server::push::{HttpPushSender, PushSender};
 
+use std::time::Duration;
+
+/// Polls `condition` until it holds, panicking after a generous deadline.
+///
+/// Replaces fixed "sleep then assert" waits: immune to scheduler stalls
+/// (only a genuine hang outlasts the deadline) and returns the moment the
+/// state lands instead of always paying the full sleep.
+async fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !condition() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "timed out waiting for {what}"
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 fn status_event() -> StreamResponse {
@@ -107,8 +125,10 @@ async fn successful_delivery_on_first_attempt() {
     let config = base_config(&url);
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    // Wait briefly for the counter to be updated.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the delivery counter to reach 1", || {
+        counter.load(Ordering::SeqCst) == 1
+    })
+    .await;
     assert_eq!(
         counter.load(Ordering::SeqCst),
         1,
@@ -190,7 +210,10 @@ async fn bearer_auth_header_is_sent() {
     });
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(
@@ -220,7 +243,10 @@ async fn basic_auth_header_is_sent() {
     });
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
@@ -244,7 +270,10 @@ async fn notification_token_header_is_sent() {
     config.token = Some("my-notification-token".into());
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
@@ -271,7 +300,10 @@ async fn both_auth_and_token_headers_are_sent() {
     config.token = Some("notif-456".into());
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
@@ -299,7 +331,10 @@ async fn request_has_json_content_type() {
     let config = base_config(&url);
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
@@ -322,7 +357,10 @@ async fn request_uses_post_method() {
     let config = base_config(&url);
 
     sender.send(&url, &status_event(), &config).await.unwrap();
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
 
     let reqs = captured.lock().unwrap();
     assert!(!reqs.is_empty());
