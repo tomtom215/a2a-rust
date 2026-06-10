@@ -105,12 +105,14 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
 
     let proceed = Arc::new(Notify::new());
     let started = Arc::new(AtomicBool::new(false));
+    let store_saved = Arc::new(Notify::new());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WaitingWorkThenErrorExecutor {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
     );
@@ -150,32 +152,32 @@ async fn streaming_mode_work_then_error_marks_failed_in_store() {
     while !started.load(Ordering::SeqCst) {
         tokio::task::yield_now().await;
     }
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
+    // No subscription wait is needed: the background processor consumes a
+    // dedicated mpsc persistence channel created before the executor spawns,
+    // so buffered events cannot be missed.
     proceed.notify_one();
     send_handle.await.expect("send handle");
 
-    // Poll until background processor updates the store.
-    let mut found = false;
-    for _ in 0..40 {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let list = handler
-            .on_list_tasks(default_list_params(), None)
-            .await
-            .expect("list tasks");
-        if list
-            .tasks
-            .iter()
-            .any(|t| t.status.state == TaskState::Failed)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(
-        found,
-        "background processor should mark task as Failed after executor error"
-    );
+    // Handshake with the background processor: wait until the Failed state
+    // is persisted instead of polling on a fixed schedule.
+    let handler_for_wait = handler.clone();
+    wait_for_signalled(
+        &store_saved,
+        "background processor to mark the task Failed after executor error",
+        move || {
+            let handler = handler_for_wait.clone();
+            async move {
+                let list = handler
+                    .on_list_tasks(default_list_params(), None)
+                    .await
+                    .expect("list tasks");
+                list.tasks
+                    .iter()
+                    .any(|t| t.status.state == TaskState::Failed)
+            }
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -204,12 +206,14 @@ async fn streaming_mode_error_marks_failed_in_store() {
 
     let proceed = Arc::new(Notify::new());
     let started = Arc::new(AtomicBool::new(false));
+    let store_saved = Arc::new(Notify::new());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WaitingErrorExecutor {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
     );
@@ -231,32 +235,32 @@ async fn streaming_mode_error_marks_failed_in_store() {
     while !started.load(Ordering::SeqCst) {
         tokio::task::yield_now().await;
     }
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
+    // No subscription wait is needed: the background processor consumes a
+    // dedicated mpsc persistence channel created before the executor spawns,
+    // so buffered events cannot be missed.
     proceed.notify_one();
     send_handle.await.expect("send handle");
 
-    // Poll until background processor updates the store.
-    let mut found = false;
-    for _ in 0..40 {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let list = handler
-            .on_list_tasks(default_list_params(), None)
-            .await
-            .expect("list tasks");
-        if list
-            .tasks
-            .iter()
-            .any(|t| t.status.state == TaskState::Failed)
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(
-        found,
-        "background processor should mark task as Failed after error event"
-    );
+    // Handshake with the background processor: wait until the Failed state
+    // is persisted instead of polling on a fixed schedule.
+    let handler_for_wait = handler.clone();
+    wait_for_signalled(
+        &store_saved,
+        "background processor to mark the task Failed after error event",
+        move || {
+            let handler = handler_for_wait.clone();
+            async move {
+                let list = handler
+                    .on_list_tasks(default_list_params(), None)
+                    .await
+                    .expect("list tasks");
+                list.tasks
+                    .iter()
+                    .any(|t| t.status.state == TaskState::Failed)
+            }
+        },
+    )
+    .await;
 }
 
 // ── Push delivery timeout test ──────────────────────────────────────────────

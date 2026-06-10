@@ -64,12 +64,14 @@ async fn streaming_mode_background_processor_updates_store() {
 
     let proceed = Arc::new(Notify::new());
     let started = Arc::new(AtomicBool::new(false));
+    let store_saved = Arc::new(Notify::new());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WaitingExecutor {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
     );
@@ -91,14 +93,34 @@ async fn streaming_mode_background_processor_updates_store() {
     while !started.load(Ordering::SeqCst) {
         tokio::task::yield_now().await;
     }
-    // Give background processor time to subscribe.
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
+    // No subscription wait is needed: the background processor consumes a
+    // dedicated mpsc persistence channel created before the executor spawns,
+    // so buffered events cannot be missed.
     proceed.notify_one();
     send_handle.await.expect("send handle");
 
-    // Give background processor time to process all events.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // Handshake with the background processor: wait until it has persisted
+    // the terminal state and artifact instead of sleeping a fixed window.
+    let handler_for_wait = handler.clone();
+    wait_for_signalled(
+        &store_saved,
+        "background processor to persist Completed state with artifact",
+        move || {
+            let handler = handler_for_wait.clone();
+            async move {
+                let mut params = default_list_params();
+                params.include_artifacts = Some(true);
+                let list = handler
+                    .on_list_tasks(params, None)
+                    .await
+                    .expect("list tasks");
+                list.tasks
+                    .iter()
+                    .any(|t| t.status.state == TaskState::Completed && t.artifacts.is_some())
+            }
+        },
+    )
+    .await;
 
     let mut params = default_list_params();
     params.include_artifacts = Some(true);
@@ -179,6 +201,7 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
     let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let proceed = Arc::new(Notify::new());
     let started = Arc::new(AtomicBool::new(false));
+    let push_sent = Arc::new(Notify::new());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WaitingExecutor {
@@ -187,6 +210,7 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
         })
         .with_push_sender(SharedRecordingPushSender {
             calls: calls.clone(),
+            sent: push_sent.clone(),
         })
         .build()
         .expect("build handler"),
@@ -209,8 +233,8 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
     while !started.load(Ordering::SeqCst) {
         tokio::task::yield_now().await;
     }
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
+    // The handler saves the task before spawning the executor, so once
+    // `started` is observed the task is guaranteed to be in the store.
     let list = handler
         .on_list_tasks(default_list_params(), None)
         .await
@@ -230,8 +254,18 @@ async fn streaming_mode_push_delivery_with_cooperative_executor() {
     proceed.notify_one();
     send_handle.await.expect("send handle");
 
-    // Give background processor time to deliver push notifications.
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // Handshake with push delivery: wait until at least two pushes (status +
+    // artifact) have been recorded instead of sleeping a fixed window.
+    let calls_for_wait = calls.clone();
+    wait_for_signalled(
+        &push_sent,
+        "background processor to deliver at least 2 push notifications",
+        move || {
+            let calls = calls_for_wait.clone();
+            async move { calls.lock().unwrap().len() >= 2 }
+        },
+    )
+    .await;
 
     let push_calls = calls.lock().unwrap().clone();
     let count = push_calls.len();
@@ -299,12 +333,14 @@ async fn streaming_mode_background_drains_after_executor_done() {
 
     let proceed = Arc::new(Notify::new());
     let started = Arc::new(AtomicBool::new(false));
+    let store_saved = Arc::new(Notify::new());
 
     let handler = Arc::new(
         RequestHandlerBuilder::new(WaitingArtifactExecutor {
             proceed: proceed.clone(),
             started: started.clone(),
         })
+        .with_task_store(NotifyOnSaveStore::new(store_saved.clone()))
         .build()
         .expect("build handler"),
     );
@@ -336,29 +372,32 @@ async fn streaming_mode_background_drains_after_executor_done() {
     while !started.load(Ordering::SeqCst) {
         tokio::task::yield_now().await;
     }
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
+    // No subscription wait is needed: the background processor consumes a
+    // dedicated mpsc persistence channel created before the executor spawns,
+    // so buffered events cannot be missed.
     proceed.notify_one();
     send_handle.await.expect("send handle");
 
-    // Poll until background processor updates the store.
-    let mut found = false;
-    for _ in 0..40 {
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let mut params = default_list_params();
-        params.include_artifacts = Some(true);
-        let list = handler
-            .on_list_tasks(params, None)
-            .await
-            .expect("list tasks");
-        if list
-            .tasks
-            .iter()
-            .any(|t| t.status.state == TaskState::Completed && t.artifacts.is_some())
-        {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "background processor should have drained all events");
+    // Handshake with the background processor: it must drain and persist all
+    // remaining events (terminal state + artifact) after the executor exits.
+    let handler_for_wait = handler.clone();
+    wait_for_signalled(
+        &store_saved,
+        "background processor to drain all events after executor completion",
+        move || {
+            let handler = handler_for_wait.clone();
+            async move {
+                let mut params = default_list_params();
+                params.include_artifacts = Some(true);
+                let list = handler
+                    .on_list_tasks(params, None)
+                    .await
+                    .expect("list tasks");
+                list.tasks
+                    .iter()
+                    .any(|t| t.status.state == TaskState::Completed && t.artifacts.is_some())
+            }
+        },
+    )
+    .await;
 }
