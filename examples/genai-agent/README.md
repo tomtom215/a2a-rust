@@ -31,13 +31,14 @@ cargo run -p genai-a2a-agent             # defaults to gpt-4o-mini
 
 # Fully local, no API key — verified with llama.cpp's llama-server:
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf'
-llama-server -m model.gguf --port 11434 --alias qwen2.5-0.5b-instruct &
-GENAI_MODEL=qwen2.5-0.5b-instruct cargo run -p genai-a2a-agent
+  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
+llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
 ```
 
-(Ollama works too: `ollama pull qwen2.5:0.5b`, then
-`GENAI_MODEL=qwen2.5:0.5b cargo run -p genai-a2a-agent`.)
+(Ollama works too: `ollama pull qwen3:0.6b`, then
+`GENAI_MODEL=qwen3:0.6b cargo run -p genai-a2a-agent`.)
 
 Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
 

@@ -46,7 +46,7 @@ Model names that don't match a hosted provider route to the Ollama adapter
 on `:11434` — which is also what llama.cpp's `llama-server` speaks:
 
 ```bash
-GENAI_MODEL=qwen2.5-0.5b-instruct cargo run -p genai-a2a-agent
+GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
 ```
 
 The agent serves a discovery card, supports push-config CRUD, honors

@@ -21,7 +21,7 @@
 //! cargo run -p genai-a2a-agent
 //!
 //! # Fully local (Ollama or llama-server on :11434), no key needed:
-//! GENAI_MODEL=qwen2.5-0.5b-instruct cargo run -p genai-a2a-agent
+//! GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
 //! ```
 //!
 //! # How it works
@@ -57,7 +57,7 @@ use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 struct GenaiAgentExecutor {
     /// The genai client instance.
     client: genai::Client,
-    /// The model to use (e.g., "gpt-4o-mini", "qwen2.5-0.5b-instruct").
+    /// The model to use (e.g., "gpt-4o-mini", "qwen3-0.6b").
     model: String,
 }
 

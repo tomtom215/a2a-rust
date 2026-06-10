@@ -34,7 +34,7 @@
 //! # llama-server or Ollama), no real key needed:
 //! export OPENAI_API_KEY=local
 //! export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-//! RIG_MODEL=qwen2.5-0.5b-instruct cargo run -p rig-a2a-agent
+//! RIG_MODEL=qwen3-0.6b cargo run -p rig-a2a-agent
 //! ```
 //!
 //! # Failure semantics

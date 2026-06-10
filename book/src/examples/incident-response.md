@@ -25,7 +25,7 @@ cargo run -p incident-response          # narrated three-act demo
 The demo works with **no model at all** (labeled mechanical fallbacks keep
 the protocol mechanics visible) and shines with a small local model —
 verified with llama.cpp's `llama-server` and the Apache-2.0
-Qwen2.5-0.5B-Instruct model (~470 MB) on `:11434`. Ollama works
+Qwen3-0.6B model (~640 MB) on `:11434`. Ollama works
 identically. See
 [`examples/incident-response/README.md`](https://github.com/tomtom215/a2a-rust/blob/main/examples/incident-response/README.md)
 for the verified walkthrough, the three-act demo transcript, and the

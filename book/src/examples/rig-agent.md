@@ -17,7 +17,7 @@ cargo run -p rig-a2a-agent              # defaults to gpt-4o-mini
 # Fully local — any OpenAI-compatible server (llama-server, Ollama):
 export OPENAI_API_KEY=local             # any non-empty value
 export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-RIG_MODEL=qwen2.5-0.5b-instruct cargo run -p rig-a2a-agent
+RIG_MODEL=qwen3-0.6b cargo run -p rig-a2a-agent
 ```
 
 Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port. The agent serves a

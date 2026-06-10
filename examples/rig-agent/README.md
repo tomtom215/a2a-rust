@@ -34,7 +34,7 @@ RIG_MODEL=gpt-4o cargo run -p rig-a2a-agent
 
 Any OpenAI-compatible server works via rig's `OPENAI_BASE_URL` support. A
 verified walkthrough with [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
-`llama-server` and the Apache-2.0 Qwen2.5-0.5B-Instruct model (~470 MB):
+`llama-server` and the Apache-2.0 Qwen3-0.6B model (~640 MB):
 
 ```bash
 # 1. Get a prebuilt llama-server (pick the latest release tag) and a model
@@ -43,15 +43,16 @@ curl -L -o llama.tar.gz \
   || echo 'grab the llama-<tag>-bin-<os>.tar.gz asset for your platform'
 tar xzf llama.tar.gz
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf'
+  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
 
 # 2. Serve it (OpenAI-compatible API on :11434)
-./llama-*/llama-server -m model.gguf --port 11434 --alias qwen2.5-0.5b-instruct &
+./llama-*/llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
 
 # 3. Point the rig agent at it
 export OPENAI_API_KEY=local              # any non-empty value
 export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-RIG_MODEL=qwen2.5-0.5b-instruct cargo run -p rig-a2a-agent
+RIG_MODEL=qwen3-0.6b cargo run -p rig-a2a-agent
 ```
 
 (Ollama works identically — it already listens on `:11434`.)

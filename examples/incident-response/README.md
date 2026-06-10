@@ -46,13 +46,14 @@ cargo run -p incident-response          # narrated three-act demo
 The demo works with **no model at all** (agents label their output as
 mechanical/verbatim fallbacks so the protocol mechanics stay visible), and
 shines with a small local model — verified with llama.cpp's `llama-server`
-and the Apache-2.0 Qwen2.5-0.5B-Instruct model (~470 MB):
+and the Apache-2.0 Qwen3-0.6B model (~640 MB):
 
 ```bash
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf'
-llama-server -m model.gguf --port 11434 --alias qwen2.5-0.5b-instruct &
-cargo run -p incident-response          # INCIDENT_MODEL defaults to qwen2.5-0.5b-instruct
+  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
+llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
+cargo run -p incident-response          # INCIDENT_MODEL defaults to qwen3-0.6b
 ```
 
 (Ollama on `:11434` works identically; hosted providers work by setting
