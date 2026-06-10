@@ -91,10 +91,10 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 | | |
 |---|---|
-| **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant survives; a full-sweep matrix runs on demand / on schedule |
+| **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
 | **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
 | **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
-| **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request |
+| **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request, covering the JSON-RPC and REST bindings; the WebSocket and gRPC transports are exercised by the agent-team end-to-end suite rather than the TCK |
 
 ## Crate Structure
 
@@ -233,7 +233,9 @@ GENAI_MODEL=gpt-4o-mini cargo run -p genai-a2a-agent
 
 ### Technology Compatibility Kit (TCK)
 
-A standalone conformance test runner that validates any A2A server against the protocol spec:
+A standalone conformance test runner that validates any A2A server against
+the protocol spec over the JSON-RPC and REST bindings (the gRPC and
+WebSocket transports are covered by the agent-team E2E tests instead):
 
 ```bash
 # Test a local server
@@ -343,7 +345,7 @@ All phases are complete. The SDK is production-ready with all 11 A2A methods, qu
 
 ## Stability
 
-All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases.
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 
