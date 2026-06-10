@@ -44,6 +44,10 @@ on:
         required: false
         type: string
 
+# Mutation testing only reads sources — never grant the default token more.
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -123,7 +127,7 @@ jobs:
           SHARD_TAG="${SHARD_TAG//\//-}"
           echo "shard_tag=${SHARD_TAG}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         if: steps.check.outputs.skip == 'false'
 
       - uses: dtolnay/rust-toolchain@stable
@@ -392,7 +396,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0 # full history for diff
 
