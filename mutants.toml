@@ -42,11 +42,14 @@ examine_globs = [
 ]
 
 # ── Exclusions ───────────────────────────────────────────────────────────────
-# Thin re-export modules:  mutating `pub use` re-exports produces false
-# positives because they are tested indirectly through the public API.
+# Only generated code is excluded. Pure re-export files (e.g. the sdk's
+# lib.rs) contain no function bodies, so cargo-mutants generates no mutants
+# for them and they need no entry here. A previous blanket "**/mod.rs"
+# exclusion claimed mod files were "re-exports only" — in fact 14 of them
+# carry real logic (InMemoryTaskStore, the background event processor, the
+# REST/JSON-RPC dispatch entry points, builder accessors, …), and the glob
+# silently exempted ~2,800 lines from the mutation gate.
 exclude_globs = [
-    "crates/a2a-protocol-sdk/src/lib.rs",        # pure re-exports
-    "**/mod.rs",                          # thin mod files (re-exports only)
     "crates/*/src/proto/**",              # generated protobuf code
 ]
 
