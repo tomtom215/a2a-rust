@@ -175,7 +175,23 @@ pub(super) async fn process_event_bg(
                 *last_task = prev;
             }
         }
-        Ok(StreamResponse::Message(_) | _) => {}
+        Ok(StreamResponse::Message(msg)) => {
+            // Agent messages are part of the conversation record: append to
+            // Task.history (same cap as the send path) and persist.
+            let history = last_task.history.get_or_insert_with(Vec::new);
+            history.push(msg);
+            if history.len() > crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES {
+                let excess = history.len() - crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES;
+                history.drain(..excess);
+            }
+            if let Err(_e) = task_store.save(last_task).await {
+                trace_error!(
+                    task_id = %task_id,
+                    "background processor: task store save failed for agent message"
+                );
+            }
+        }
+        Ok(_) => {}
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
@@ -241,6 +257,49 @@ mod tests {
 
     fn default_limits() -> HandlerLimits {
         HandlerLimits::default()
+    }
+
+    #[tokio::test]
+    async fn process_event_bg_message_event_appended_to_history() {
+        // Agent Message events are part of the conversation record and must
+        // be persisted into Task.history.
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole};
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t-msg");
+
+        task_store
+            .save(&make_task("t-msg", TaskState::Working))
+            .await
+            .unwrap();
+        let mut last_task = make_task("t-msg", TaskState::Working);
+
+        let msg = Message {
+            id: MessageId::new("agent-m1"),
+            role: MessageRole::Agent,
+            parts: vec![Part::text("hello from agent")],
+            context_id: None,
+            task_id: None,
+            reference_task_ids: None,
+            extensions: None,
+            metadata: None,
+        };
+        process_event_bg(
+            Ok(StreamResponse::Message(msg)),
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        let history = stored.history.expect("agent message recorded");
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].role, MessageRole::Agent);
+        assert_eq!(history[0].parts[0].text_content(), Some("hello from agent"));
     }
 
     #[tokio::test]

@@ -42,8 +42,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ClientError::Protocol` with the original code, and other non-SSE bodies
   map to `ClientError::Transport`.
 
-All three were found by driving the new `incident-response` example's
-multi-turn, multi-agent flow end-to-end against a live local model.
+- **`a2a-protocol-server`: `Task.history` is now actually populated** —
+  Nothing ever appended messages to task history: tasks were created with
+  `history: None`, continuations never added the new message, and both event
+  processors explicitly ignored agent `Message` events. `GetTask`'s
+  `historyLength` parameter (fixed in 0.3.4 to "truncate history") truncated
+  a permanently empty list, and multi-turn executors could not see prior
+  turns via `RequestContext::stored_task`. Incoming user messages are now
+  appended at send time, agent `Message` events are recorded by both the
+  sync and background processors, and history is capped at 1,024 messages
+  (oldest dropped first).
+
+- **`a2a-protocol-server`: continuations no longer wipe accumulated task
+  state** — Sending a follow-up message to an existing non-terminal task
+  saved a freshly constructed task over the stored one, destroying its
+  accumulated artifacts, metadata, and history. Continuations now carry all
+  three forward; only the status returns to `Submitted` for the new turn.
+
+- **`a2a-protocol-server`: JSON-RPC legacy alias `tasks/resubscribe`** —
+  The dispatcher accepted the v1.0 method `SubscribeToTask` and the alias
+  `tasks/subscribe`, but not `tasks/resubscribe` — the actual method name
+  from the v0.2.x spec that older clients send. All three now route to
+  resubscription.
+
+All of the above were found by driving the new `incident-response` example's
+multi-turn, multi-agent flow end-to-end against a live local model — including
+a full probe of resubscribe-after-disconnect (works: a reattached client
+receives the remaining events and terminal state) and real webhook push
+delivery (works: deliveries carry the `a2a-notification-token` header and
+continue while no SSE consumer is connected).
 
 ### Added
 

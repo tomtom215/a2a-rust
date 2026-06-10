@@ -21,6 +21,13 @@ use crate::streaming::EventQueueWriter;
 use super::helpers::{build_call_context, validate_id};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
+/// Hard cap on the number of messages retained in `Task.history`.
+///
+/// Oldest messages are dropped first. Bounds per-task memory for
+/// long-running multi-turn conversations; `GetTask`'s `historyLength`
+/// further truncates what is returned to clients.
+pub const MAX_TASK_HISTORY_MESSAGES: usize = 1024;
+
 /// Returns the JSON-serialized byte length of a value without allocating a `String`.
 fn json_byte_len(value: &serde_json::Value) -> serde_json::Result<usize> {
     struct CountWriter(usize);
@@ -214,13 +221,28 @@ impl RequestHandler {
             context_id = %context_id,
             "creating task"
         );
+        // A continuation carries the stored task's accumulated history,
+        // artifacts, and metadata forward — only the status returns to
+        // Submitted for the new turn. The incoming message is appended to
+        // `history` in both cases: Task.history is the conversation record
+        // that GetTask's historyLength truncates, and multi-turn executors
+        // read prior turns from it via RequestContext::stored_task.
+        let mut history = stored_task
+            .as_ref()
+            .and_then(|s| s.history.clone())
+            .unwrap_or_default();
+        history.push(params.message.clone());
+        if history.len() > MAX_TASK_HISTORY_MESSAGES {
+            let excess = history.len() - MAX_TASK_HISTORY_MESSAGES;
+            history.drain(..excess);
+        }
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
             status: TaskStatus::with_timestamp(TaskState::Submitted),
-            history: None,
-            artifacts: None,
-            metadata: None,
+            history: Some(history),
+            artifacts: stored_task.as_ref().and_then(|s| s.artifacts.clone()),
+            metadata: stored_task.as_ref().and_then(|s| s.metadata.clone()),
         };
 
         // Build request context BEFORE saving to store so we can insert the
@@ -654,6 +676,142 @@ mod tests {
         assert!(
             matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("does not match")),
             "expected InvalidParams for task_id mismatch, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_message_records_user_message_in_history() {
+        // Task.history is the conversation record: the incoming user message
+        // must be persisted with the task.
+        let handler = make_handler();
+        let result = handler
+            .on_send_message(make_params(None), false, None)
+            .await
+            .expect("send should succeed");
+        let task_id = match result {
+            SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id,
+            other => panic!("expected task response, got {other:?}"),
+        };
+        let stored = handler
+            .task_store
+            .get(&task_id)
+            .await
+            .expect("get")
+            .expect("task stored");
+        let history = stored.history.expect("history populated on send");
+        assert_eq!(history.len(), 1, "exactly the incoming user message");
+        assert_eq!(history[0].role, MessageRole::User);
+        assert_eq!(
+            history[0].parts[0].text_content(),
+            Some("hello"),
+            "history records the message content"
+        );
+    }
+
+    #[tokio::test]
+    async fn continuation_appends_history_and_preserves_artifacts() {
+        // A continuation must carry the stored task's artifacts and metadata
+        // forward and append the new message — not reset the task.
+        use a2a_protocol_types::artifact::Artifact;
+        let handler = make_handler();
+        let prior = Task {
+            id: TaskId::new("cont-task"),
+            context_id: ContextId::new("ctx-cont"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: Some(vec![Message {
+                id: MessageId::new("m-prior"),
+                role: MessageRole::User,
+                parts: vec![Part::text("first turn")],
+                context_id: None,
+                task_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            }]),
+            artifacts: Some(vec![Artifact::new("a1", vec![Part::text("turn-1 output")])]),
+            metadata: Some(serde_json::json!({"k": "v"})),
+        };
+        handler.task_store.save(&prior).await.unwrap();
+
+        let mut params = make_params(Some("ctx-cont"));
+        params.message.task_id = Some(TaskId::new("cont-task"));
+        handler
+            .on_send_message(params, false, None)
+            .await
+            .expect("continuation should succeed");
+
+        let stored = handler
+            .task_store
+            .get(&TaskId::new("cont-task"))
+            .await
+            .expect("get")
+            .expect("task stored");
+        let history = stored.history.expect("history preserved");
+        assert_eq!(history.len(), 2, "prior message + continuation message");
+        assert_eq!(history[0].parts[0].text_content(), Some("first turn"));
+        assert_eq!(history[1].parts[0].text_content(), Some("hello"));
+        assert!(
+            stored.artifacts.as_ref().is_some_and(|a| a.len() == 1),
+            "continuation must not wipe accumulated artifacts"
+        );
+        assert_eq!(
+            stored.metadata,
+            Some(serde_json::json!({"k": "v"})),
+            "continuation must not wipe task metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn history_is_capped_at_max_messages() {
+        // The oldest messages are dropped once the cap is reached.
+        let handler = make_handler();
+        let mut long_history: Vec<Message> = (0..MAX_TASK_HISTORY_MESSAGES)
+            .map(|i| Message {
+                id: MessageId::new(format!("m-{i}")),
+                role: MessageRole::User,
+                parts: vec![Part::text(format!("msg {i}"))],
+                context_id: None,
+                task_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            })
+            .collect();
+        long_history[0].parts = vec![Part::text("OLDEST")];
+        let prior = Task {
+            id: TaskId::new("cap-task"),
+            context_id: ContextId::new("ctx-cap"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: Some(long_history),
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(&prior).await.unwrap();
+
+        let mut params = make_params(Some("ctx-cap"));
+        params.message.task_id = Some(TaskId::new("cap-task"));
+        handler
+            .on_send_message(params, false, None)
+            .await
+            .expect("continuation should succeed");
+
+        let stored = handler
+            .task_store
+            .get(&TaskId::new("cap-task"))
+            .await
+            .unwrap()
+            .unwrap();
+        let history = stored.history.unwrap();
+        assert_eq!(history.len(), MAX_TASK_HISTORY_MESSAGES, "capped");
+        assert_ne!(
+            history[0].parts[0].text_content(),
+            Some("OLDEST"),
+            "the oldest message is dropped first"
+        );
+        assert_eq!(
+            history[MAX_TASK_HISTORY_MESSAGES - 1].parts[0].text_content(),
+            Some("hello"),
+            "the newest message is retained"
         );
     }
 
