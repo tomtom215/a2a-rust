@@ -40,7 +40,7 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
-## Unreleased (v0.5.1)
+## v0.6.0 (2026-06-10)
 
 ### Fixed
 

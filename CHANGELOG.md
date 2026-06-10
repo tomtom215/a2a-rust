@@ -8,7 +8,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.5.1] — Unreleased
+## [0.6.0] - 2026-06-10
+
+Released as a **minor** (not patch) bump: no public API signatures changed,
+but observable behavior did — `Task.history` is now populated in responses,
+streaming disconnects no longer fail running tasks, and `Working → Working`
+status refreshes are accepted. Consumers relying on the old behaviors should
+read the entries below.
+
+### Changed
+
+- **Task responses now carry `history`** — `message/send`, `tasks/get`, and
+  streaming snapshots include the populated message history (subject to
+  `historyLength`); previously the field was always absent. Payloads grow
+  accordingly; use `historyLength: 0` to opt out per request.
+- **A dropped `message/stream` connection no longer cancels work** — tasks
+  continue to completion and clients reattach via `SubscribeToTask`.
+  Anything depending on disconnect-kills-task semantics must cancel
+  explicitly via `CancelTask`.
 
 ### Fixed
 
