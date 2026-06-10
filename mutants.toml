@@ -24,6 +24,17 @@ minimum_test_timeout = 30
 # above the 183s nominal timeout while still catching genuine hangs.
 cap_timeout = 300
 
+# ── Test tool & build profile ───────────────────────────────────────────────
+# CI passes `--test-tool=nextest --profile=mutants` on the command line
+# (.github/workflows/mutants.yml): nextest runs the many per-crate test
+# binaries in parallel with run-wide fail-fast so CAUGHT mutants die at the
+# first failing test, and the `mutants` profile (Cargo.toml) drops debuginfo
+# from the hundreds of per-mutant rebuilds. They are CLI flags rather than
+# config keys because this cargo-mutants version ignores the corresponding
+# config entries silently. Caveat: nextest does not run doctests — if a
+# future sweep reports a missed mutant that only a doctest covered, add a
+# unit test for it.
+
 # ── Parallelism ──────────────────────────────────────────────────────────────
 # Run mutants in parallel within each CI job.  GitHub-hosted ubuntu-latest
 # runners have 4 vCPUs, so 4 concurrent mutants is the sweet spot.

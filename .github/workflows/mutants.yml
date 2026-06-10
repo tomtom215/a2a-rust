@@ -74,9 +74,10 @@ jobs:
     strategy:
       fail-fast: false   # Don't cancel other crates if one fails
       matrix:
-        # a2a-server has > 1,600 mutants and cannot finish inside a single
+        # a2a-server has > 1,800 mutants and cannot finish inside a single
         # 2-hour job even at 4-way intra-crate parallelism — so we shard it
-        # across 4 separate runners. The `shard` value is passed verbatim to
+        # across 8 separate runners (wall-clock ≈ the slowest shard; runs
+        # use nextest + a debuginfo-free profile, see mutants.toml). The `shard` value is passed verbatim to
         # cargo-mutants' `--shard K/N` flag (cargo-mutants will split mutants
         # deterministically across shards). Other crates run as a single
         # shard (K=0/N=1 ≡ no sharding).
@@ -91,20 +92,36 @@ jobs:
             shard: "0/1"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 1/4
-            shard: "0/4"
+            name: a2a-server shard 1/8
+            shard: "0/8"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 2/4
-            shard: "1/4"
+            name: a2a-server shard 2/8
+            shard: "1/8"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 3/4
-            shard: "2/4"
+            name: a2a-server shard 3/8
+            shard: "2/8"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 4/4
-            shard: "3/4"
+            name: a2a-server shard 4/8
+            shard: "3/8"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 5/8
+            shard: "4/8"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 6/8
+            shard: "5/8"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 7/8
+            shard: "6/8"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 8/8
+            shard: "7/8"
           - crate: a2a-protocol-sdk
             short: a2a-sdk
             name: a2a-sdk
@@ -138,9 +155,9 @@ jobs:
 
       # protoc is bundled via the `protoc-bin-vendored` crate.
 
-      - name: Install cargo-mutants
+      - name: Install cargo-mutants and nextest
         if: steps.check.outputs.skip == 'false'
-        run: cargo install cargo-mutants
+        run: cargo install cargo-mutants cargo-nextest --locked
 
       # ── Run mutants for this crate ───────────────────────────────────────
       - name: "Run mutation tests: ${{ matrix.name }}"
@@ -159,6 +176,8 @@ jobs:
             --output mutants.out \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
+            --test-tool=nextest \
+            --profile=mutants \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -406,8 +425,8 @@ jobs:
 
       # protoc is bundled via the `protoc-bin-vendored` crate.
 
-      - name: Install cargo-mutants
-        run: cargo install cargo-mutants
+      - name: Install cargo-mutants and nextest
+        run: cargo install cargo-mutants cargo-nextest --locked
 
       - name: Build PR source diff (rename-aware)
         id: diff
@@ -446,6 +465,8 @@ jobs:
             --output mutants.out \
             --timeout 300 \
             --jobs 4 \
+            --test-tool=nextest \
+            --profile=mutants \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
