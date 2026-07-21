@@ -242,20 +242,23 @@ impl Transport for RetryTransport {
 
 /// Computes the next backoff duration, capped at `max`.
 ///
-/// Handles overflow gracefully: if the multiplication produces infinity or NaN
+/// Handles overflow gracefully: if the multiplication produces infinity, NaN,
+/// a negative value, or a finite value too large to fit in a `Duration`
 /// (possible with extreme multipliers or near-`Duration::MAX` values), returns
 /// `max` instead of panicking.
 fn cap_backoff(current: Duration, multiplier: f64, max: Duration) -> Duration {
     let next_secs = current.as_secs_f64() * multiplier;
-    if !next_secs.is_finite() || next_secs < 0.0 {
-        return max;
-    }
-    let next = Duration::from_secs_f64(next_secs);
-    // Using Ord::min instead of an `if` comparison removes the `>` operator
-    // from this line: when `next == max` both branches of an `if next > max`
-    // return semantically-equal durations, making `>` → `>=` an equivalent
-    // mutation that no test could distinguish.
-    std::cmp::min(next, max)
+    // `try_from_secs_f64` returns `Err` for NaN, infinity, negative, *and*
+    // finite-but-out-of-range values — all of which must clamp to `max`. Plain
+    // `from_secs_f64` would instead panic on the finite-overflow case (a value
+    // above ~1.8e19 s, reachable from a near-`Duration::MAX` retry config).
+    Duration::try_from_secs_f64(next_secs).map_or(max, |next| {
+        // Using Ord::min instead of an `if` comparison removes the `>` operator:
+        // when `next == max` both branches of an `if next > max` return
+        // semantically-equal durations, making `>` → `>=` an equivalent mutation
+        // that no test could distinguish.
+        std::cmp::min(next, max)
+    })
 }
 
 /// Maps a raw 64-bit random draw onto the jitter factor range `[0.5, 1.0)`.
@@ -431,6 +434,17 @@ mod tests {
         let max = Duration::from_secs(30);
         let result = cap_backoff(Duration::from_secs(u64::MAX / 2), f64::MAX, max);
         assert_eq!(result, max, "infinity should clamp to max");
+    }
+
+    #[test]
+    fn cap_backoff_finite_overflow_returns_max() {
+        // A *finite* product that still exceeds Duration's range: 1e19 s × 10 =
+        // 1e20 s, which is far above Duration::MAX (~1.8e19 s). The previous
+        // `Duration::from_secs_f64` panicked on exactly this input; the fixed
+        // `try_from_secs_f64` clamps to `max` instead.
+        let max = Duration::from_secs(30);
+        let result = cap_backoff(Duration::from_secs(10_000_000_000_000_000_000), 10.0, max);
+        assert_eq!(result, max, "finite-but-overflowing backoff should clamp to max");
     }
 
     /// Test jittered backoff produces values in expected range (covers line 276).
