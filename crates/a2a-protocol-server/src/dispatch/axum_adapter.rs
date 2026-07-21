@@ -113,6 +113,11 @@ impl A2aRouter {
     /// The router uses `Arc<RequestHandler>` as shared state (via Axum's
     /// `State` extractor). Returns the configured `Router`.
     pub fn into_router(self) -> Router {
+        // Honor the configured body cap on the Axum transport too. Without this
+        // the `Bytes` extractor falls back to Axum's own `DefaultBodyLimit`
+        // (2 MiB) and silently ignores `max_request_body_size`, so the knob that
+        // works on the JSON-RPC/REST dispatchers would be a no-op here.
+        let max_body = self.config.max_request_body_size;
         let state = A2aState {
             handler: self.handler,
             config: Arc::new(self.config),
@@ -136,6 +141,7 @@ impl A2aRouter {
             // Health check
             .route("/health", get(handle_health))
             .with_state(state)
+            .layer(axum::extract::DefaultBodyLimit::max(max_body))
     }
 }
 
