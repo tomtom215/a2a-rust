@@ -15,7 +15,7 @@
 //! to prevent HTTP header injection.
 
 use std::future::Future;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
@@ -173,18 +173,55 @@ impl HttpPushSender {
     }
 }
 
+/// Returns `true` if the given IPv4 address is private, loopback, link-local,
+/// unspecified, or shared (CGNAT).
+#[allow(clippy::missing_const_for_fn)] // IpAddr methods aren't const-stable everywhere
+fn is_private_v4(v4: Ipv4Addr) -> bool {
+    v4.is_loopback()          // 127.0.0.0/8
+        || v4.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+        || v4.is_link_local() // 169.254.0.0/16
+        || v4.is_unspecified() // 0.0.0.0
+        || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
+}
+
+/// Recovers an embedded IPv4 address from the IPv6 forms that actually route to
+/// IPv4: IPv4-mapped (`::ffff:a.b.c.d`, what dual-stack sockets dial), the NAT64
+/// well-known prefix (`64:ff9b::a.b.c.d`, RFC 6052), and the deprecated
+/// IPv4-compatible form (`::a.b.c.d`, RFC 4291 — excluding `::` and `::1`, which
+/// are handled as unspecified/loopback by the caller).
+///
+/// Without this, an attacker could smuggle a loopback/private/metadata IPv4
+/// target past the SSRF filter by wrapping it in one of these IPv6 encodings.
+fn embedded_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
+    if let Some(v4) = v6.to_ipv4_mapped() {
+        return Some(v4);
+    }
+    let v4_from = |g: u16, h: u16| {
+        let [a, b] = g.to_be_bytes();
+        let [c, d] = h.to_be_bytes();
+        Ipv4Addr::new(a, b, c, d)
+    };
+    match v6.segments() {
+        // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052).
+        [0x0064, 0xff9b, 0, 0, 0, 0, g, h] => Some(v4_from(g, h)),
+        // IPv4-compatible ::a.b.c.d (deprecated), excluding :: and ::1.
+        [0, 0, 0, 0, 0, 0, g, h] if !(g == 0 && (h == 0 || h == 1)) => Some(v4_from(g, h)),
+        _ => None,
+    }
+}
+
 /// Returns `true` if the given IP address is private, loopback, or link-local.
 #[allow(clippy::missing_const_for_fn)] // IpAddr methods aren't const-stable everywhere
 fn is_private_ip(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => {
-            v4.is_loopback()          // 127.0.0.0/8
-                || v4.is_private()    // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-                || v4.is_link_local() // 169.254.0.0/16
-                || v4.is_unspecified() // 0.0.0.0
-                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
-        }
+        IpAddr::V4(v4) => is_private_v4(v4),
         IpAddr::V6(v6) => {
+            // Normalize any IPv4 smuggled inside IPv6 back to v4 and re-check, so
+            // `::ffff:127.0.0.1`, `::ffff:169.254.169.254`, `64:ff9b::a.b.c.d`,
+            // etc. cannot bypass the v4 private-range checks above.
+            if let Some(v4) = embedded_ipv4(v6) {
+                return is_private_v4(v4);
+            }
             v6.is_loopback()          // ::1
                 || v6.is_unspecified() // ::
                 // fc00::/7 (unique local)
@@ -642,6 +679,46 @@ mod tests {
     #[test]
     fn rejects_ipv6_loopback() {
         assert!(validate_webhook_url("http://[::1]:8080/webhook").is_err());
+    }
+
+    // ── IPv4-in-IPv6 SSRF bypass vectors ────────────────────────────────────
+    //
+    // Dual-stack sockets dial IPv4-mapped addresses straight to the embedded
+    // IPv4, so an unguarded filter lets `::ffff:127.0.0.1` /
+    // `::ffff:169.254.169.254` reach loopback / the cloud metadata endpoint.
+
+    #[test]
+    fn rejects_ipv4_mapped_loopback() {
+        assert!(validate_webhook_url("http://[::ffff:127.0.0.1]:8080/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv4_mapped_metadata() {
+        assert!(validate_webhook_url("http://[::ffff:169.254.169.254]/latest/meta-data").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv4_mapped_private() {
+        assert!(validate_webhook_url("http://[::ffff:10.0.0.1]/webhook").is_err());
+        assert!(validate_webhook_url("http://[::ffff:192.168.1.1]/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_ipv4_compatible_loopback() {
+        // Deprecated `::a.b.c.d` form embedding 127.0.0.1.
+        assert!(validate_webhook_url("http://[::127.0.0.1]/webhook").is_err());
+    }
+
+    #[test]
+    fn rejects_nat64_wellknown_prefix_to_private() {
+        // 64:ff9b::/96 NAT64 embedding 169.254.169.254 (a9fe:a9fe).
+        assert!(validate_webhook_url("http://[64:ff9b::a9fe:a9fe]/latest").is_err());
+    }
+
+    #[test]
+    fn accepts_ipv4_mapped_public() {
+        // A mapped *public* IPv4 is not an SSRF target and must still be allowed.
+        assert!(validate_webhook_url("http://[::ffff:203.0.113.1]/webhook").is_ok());
     }
 
     #[test]
