@@ -17,7 +17,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, LengthLimitError, Limited};
 use hyper::body::Bytes;
 use hyper::header;
 #[cfg(not(feature = "tls-rustls"))]
@@ -283,20 +283,31 @@ async fn fetch_card_with_metadata(
         }
     }
 
-    let body_bytes = tokio::time::timeout(Duration::from_secs(30), resp.collect())
-        .await
-        .map_err(|_| ClientError::Transport("agent card body read timed out".into()))?
-        .map_err(ClientError::Http)?
-        .to_bytes();
-
-    // FIX(H8): Also check after reading for chunked/streaming responses
-    // that don't include Content-Length.
-    if exceeds_card_body_size(body_bytes.len() as u64, max_card_body_size) {
-        return Err(ClientError::Transport(format!(
-            "agent card response too large: {} bytes exceeds {max_card_body_size} byte limit",
-            body_bytes.len()
-        )));
-    }
+    // Enforce the card size cap *during* streaming, not just after collection.
+    // The Content-Length fast-path above only fires for honest responses; a
+    // compromised card endpoint that omits Content-Length (chunked or
+    // close-delimited) would otherwise stream an unbounded body into memory
+    // before any size check. `Limited` aborts the read the moment the cap is
+    // exceeded, bounding memory regardless of framing.
+    let cap = usize::try_from(max_card_body_size).unwrap_or(usize::MAX);
+    let body_bytes = match tokio::time::timeout(
+        Duration::from_secs(30),
+        Limited::new(resp.into_body(), cap).collect(),
+    )
+    .await
+    {
+        Err(_) => return Err(ClientError::Transport("agent card body read timed out".into())),
+        Ok(Ok(collected)) => collected.to_bytes(),
+        Ok(Err(err)) => {
+            return Err(if err.downcast_ref::<LengthLimitError>().is_some() {
+                ClientError::Transport(format!(
+                    "agent card response too large: exceeds {max_card_body_size} byte limit"
+                ))
+            } else {
+                ClientError::Transport(format!("agent card body read failed: {err}"))
+            });
+        }
+    };
 
     if !status.is_success() {
         let body_str = String::from_utf8_lossy(&body_bytes).into_owned();
