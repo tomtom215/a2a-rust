@@ -132,8 +132,10 @@ pub(super) async fn read_body_limited(
     max_size: usize,
     read_timeout: std::time::Duration,
 ) -> Result<Bytes, String> {
-    use http_body_util::BodyExt;
+    use http_body_util::{BodyExt, LengthLimitError, Limited};
 
+    // Fast path: reject before reading any body bytes when an honest
+    // Content-Length already exceeds the cap.
     let size_hint = <Incoming as hyper::body::Body>::size_hint(&body);
     if let Some(upper) = size_hint.upper() {
         if upper > max_size as u64 {
@@ -142,18 +144,23 @@ pub(super) async fn read_body_limited(
             ));
         }
     }
-    let collected = tokio::time::timeout(read_timeout, body.collect())
-        .await
-        .map_err(|_| "request body read timed out".to_owned())?
-        .map_err(|e| e.to_string())?;
-    let bytes = collected.to_bytes();
-    if bytes.len() > max_size {
-        return Err(format!(
-            "request body too large: {} bytes exceeds {max_size} byte limit",
-            bytes.len()
-        ));
+
+    // Enforce the cap *during* streaming, not just after collection. A chunked
+    // or HTTP/2 request advertises no Content-Length (`size_hint.upper()` is
+    // `None`), so without `Limited` an unauthenticated caller could stream far
+    // more than `max_size` into memory before the size check ever runs — a
+    // memory-amplification DoS bounded only by `read_timeout`. `Limited` aborts
+    // the read as soon as the accumulated body would exceed `max_size`.
+    let limited = Limited::new(body, max_size);
+    match tokio::time::timeout(read_timeout, limited.collect()).await {
+        Err(_) => Err("request body read timed out".to_owned()),
+        Ok(Ok(collected)) => Ok(collected.to_bytes()),
+        Ok(Err(err)) => Err(if err.downcast_ref::<LengthLimitError>().is_some() {
+            format!("request body too large: exceeds {max_size} byte limit")
+        } else {
+            err.to_string()
+        }),
     }
-    Ok(bytes)
 }
 
 /// Injects a field into a JSON object if it is missing.
