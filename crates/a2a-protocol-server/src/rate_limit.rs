@@ -7,7 +7,9 @@
 //!
 //! Provides [`RateLimitInterceptor`], a ready-made interceptor that limits
 //! request throughput per caller. The caller key is derived from
-//! [`CallContext::caller_identity`] or the `x-forwarded-for` / peer IP header.
+//! [`CallContext::caller_identity`]; for unauthenticated callers behind a
+//! trusted reverse proxy, the client IP can be taken from `x-forwarded-for`
+//! (see [`RateLimitConfig::trusted_proxy_hops`]).
 //!
 //! # Example
 //!
@@ -15,10 +17,14 @@
 //! use std::sync::Arc;
 //! use a2a_protocol_server::rate_limit::{RateLimitInterceptor, RateLimitConfig};
 //!
-//! let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
-//!     requests_per_window: 100,
-//!     window_secs: 60,
-//! }));
+//! let limiter = Arc::new(
+//!     RateLimitInterceptor::new(RateLimitConfig {
+//!         requests_per_window: 100,
+//!         window_secs: 60,
+//!         ..RateLimitConfig::default()
+//!     })
+//!     .expect("valid rate limit config"),
+//! );
 //! ```
 //!
 //! Then add it to the handler builder:
@@ -29,11 +35,30 @@
 //!     .build()?;
 //! ```
 //!
+//! # Caller identity
+//!
+//! The per-caller key is derived in this order:
+//!
+//! 1. [`CallContext::caller_identity`] — set by an authentication interceptor.
+//!    This is the recommended source: it cannot be forged by the client.
+//! 2. The client IP from `x-forwarded-for`, **only** when
+//!    [`RateLimitConfig::trusted_proxy_hops`] is non-zero. The header is
+//!    client-controlled, so by default (`trusted_proxy_hops == 0`) it is
+//!    ignored entirely — otherwise a caller could evade the limit by forging
+//!    a fresh address on every request.
+//! 3. A shared `"anonymous"` key. All remaining callers share one budget,
+//!    which keeps the limit enforceable (fail-closed) at the cost of
+//!    granularity.
+//!
 //! # Design
 //!
 //! Uses a fixed-window counter per caller key. Windows are aligned to wall
 //! clock seconds. When a request exceeds the per-window limit, the `before`
 //! hook returns an error with code `-32029` ("rate limit exceeded").
+//!
+//! The bucket map is bounded by [`RateLimitConfig::max_buckets`]. When the
+//! map is full and stale buckets cannot be evicted, requests from *new*
+//! callers are rejected until capacity frees up (fail-closed).
 //!
 //! For production deployments requiring sliding windows, distributed counters,
 //! or more sophisticated algorithms, implement a custom [`ServerInterceptor`]
@@ -49,23 +74,57 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use tokio::sync::RwLock;
 
 use crate::call_context::CallContext;
+use crate::error::{ServerError, ServerResult};
 use crate::interceptor::ServerInterceptor;
 
 /// Configuration for [`RateLimitInterceptor`].
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     /// Maximum number of requests allowed per window per caller key.
+    ///
+    /// Must be non-zero.
     pub requests_per_window: u64,
 
     /// Window duration in seconds.
+    ///
+    /// Must be non-zero.
     pub window_secs: u64,
+
+    /// Number of trusted reverse-proxy hops in front of this server.
+    ///
+    /// `0` (the default) means `x-forwarded-for` is **not trusted** and is
+    /// ignored when deriving the caller key: the header is client-controlled,
+    /// so trusting it without a proxy that overwrites or appends to it lets
+    /// any caller evade the limit by forging a fresh address per request.
+    ///
+    /// Set to `n` when exactly `n` trusted proxies sit between the client and
+    /// this server, each appending the address of its immediate peer to
+    /// `x-forwarded-for`. The client address is then the `n`-th entry from
+    /// the *right* of the header; anything further left is client-supplied
+    /// and remains untrusted. If the header has fewer than `n` entries, the
+    /// request did not traverse the expected proxy chain and the caller falls
+    /// back to the shared `"anonymous"` key.
+    pub trusted_proxy_hops: usize,
+
+    /// Maximum number of caller buckets tracked at once.
+    ///
+    /// Bounds the limiter's memory. When the map is full, stale buckets from
+    /// previous windows are evicted first; if none can be freed, requests
+    /// from callers without an existing bucket are rejected (fail-closed).
+    /// Must be non-zero.
+    pub max_buckets: usize,
 }
+
+/// Default cap on the number of tracked caller buckets.
+pub const DEFAULT_MAX_BUCKETS: usize = 10_000;
 
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
             requests_per_window: 100,
             window_secs: 60,
+            trusted_proxy_hops: 0,
+            max_buckets: DEFAULT_MAX_BUCKETS,
         }
     }
 }
@@ -85,8 +144,9 @@ struct CallerBucket {
 ///
 /// Caller keys are derived in this order:
 /// 1. [`CallContext::caller_identity`] (set by auth interceptors)
-/// 2. `x-forwarded-for` HTTP header (first IP)
-/// 3. `"anonymous"` fallback
+/// 2. Client IP from `x-forwarded-for`, only when
+///    [`RateLimitConfig::trusted_proxy_hops`] is non-zero
+/// 3. `"anonymous"` fallback (shared bucket)
 pub struct RateLimitInterceptor {
     config: RateLimitConfig,
     buckets: RwLock<HashMap<String, CallerBucket>>,
@@ -107,24 +167,61 @@ impl std::fmt::Debug for RateLimitInterceptor {
 
 impl RateLimitInterceptor {
     /// Creates a new rate limiter with the given configuration.
-    #[must_use]
-    pub fn new(config: RateLimitConfig) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::InvalidParams`] if `requests_per_window`,
+    /// `window_secs`, or `max_buckets` is zero. A zero window would divide by
+    /// zero on every request; a zero limit or bucket cap would reject all
+    /// requests.
+    pub fn new(config: RateLimitConfig) -> ServerResult<Self> {
+        if config.requests_per_window == 0 {
+            return Err(ServerError::InvalidParams(
+                "rate limit requests_per_window must be greater than zero".into(),
+            ));
+        }
+        if config.window_secs == 0 {
+            return Err(ServerError::InvalidParams(
+                "rate limit window_secs must be greater than zero".into(),
+            ));
+        }
+        if config.max_buckets == 0 {
+            return Err(ServerError::InvalidParams(
+                "rate limit max_buckets must be greater than zero".into(),
+            ));
+        }
+        Ok(Self {
             config,
             buckets: RwLock::new(HashMap::new()),
             check_count: AtomicU64::new(0),
-        }
+        })
     }
 
     /// Extracts the caller key from the call context.
-    fn caller_key(ctx: &CallContext) -> String {
+    ///
+    /// See the module docs ("Caller identity") for the derivation order and
+    /// the `x-forwarded-for` trust model.
+    fn caller_key(&self, ctx: &CallContext) -> String {
         if let Some(identity) = ctx.caller_identity() {
             return identity.to_owned();
         }
-        if let Some(xff) = ctx.http_headers().get("x-forwarded-for") {
-            // Use the first IP in the chain (client IP).
-            if let Some(ip) = xff.split(',').next() {
-                return ip.trim().to_string();
+        let hops = self.config.trusted_proxy_hops;
+        if hops > 0 {
+            if let Some(xff) = ctx.http_headers().get("x-forwarded-for") {
+                let entries: Vec<&str> = xff
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|e| !e.is_empty())
+                    .collect();
+                // With `hops` trusted proxies each appending its peer address,
+                // the client address is the `hops`-th entry from the right.
+                // Entries further left are client-supplied and untrusted.
+                if entries.len() >= hops {
+                    return entries[entries.len() - hops].to_string();
+                }
+                // Fewer entries than trusted hops: the request did not come
+                // through the expected proxy chain. Fall through to the
+                // shared anonymous bucket rather than trusting any entry.
             }
         }
         "anonymous".to_string()
@@ -133,6 +230,13 @@ impl RateLimitInterceptor {
     /// Returns the current window number for the given timestamp.
     const fn window_number(&self, now_secs: u64) -> u64 {
         now_secs / self.config.window_secs
+    }
+
+    /// Removes buckets whose window is older than the previous window.
+    fn evict_stale(buckets: &mut HashMap<String, CallerBucket>, current_window: u64) {
+        buckets.retain(|_, bucket| {
+            bucket.window_start.load(Ordering::Relaxed) >= current_window.saturating_sub(1)
+        });
     }
 
     /// Removes buckets whose window is older than the current window.
@@ -147,9 +251,7 @@ impl RateLimitInterceptor {
         let current_window = self.window_number(now_secs);
 
         let mut buckets = self.buckets.write().await;
-        buckets.retain(|_, bucket| {
-            bucket.window_start.load(Ordering::Relaxed) >= current_window.saturating_sub(1)
-        });
+        Self::evict_stale(&mut buckets, current_window);
     }
 
     /// Checks rate limit for the caller. Returns `Ok(())` if allowed, `Err` if exceeded.
@@ -226,6 +328,16 @@ impl RateLimitInterceptor {
             }
             return Ok(());
         }
+        if buckets.len() >= self.config.max_buckets {
+            // Try to reclaim capacity from stale windows before rejecting.
+            Self::evict_stale(&mut buckets, current_window);
+            if buckets.len() >= self.config.max_buckets {
+                return Err(A2aError::internal(format!(
+                    "rate limiter caller capacity exhausted ({} buckets); request rejected",
+                    self.config.max_buckets
+                )));
+            }
+        }
         buckets.insert(
             key.to_string(),
             CallerBucket {
@@ -244,7 +356,7 @@ impl ServerInterceptor for RateLimitInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let key = Self::caller_key(ctx);
+            let key = self.caller_key(ctx);
             self.check(&key).await
         })
     }
@@ -275,7 +387,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 5,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let ctx = make_ctx(Some("user-1"));
         for _ in 0..5 {
             assert!(limiter.before(&ctx).await.is_ok());
@@ -287,7 +401,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 3,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let ctx = make_ctx(Some("user-2"));
         for _ in 0..3 {
             assert!(limiter.before(&ctx).await.is_ok());
@@ -301,7 +417,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 2,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let ctx_a = make_ctx(Some("alice"));
         let ctx_b = make_ctx(Some("bob"));
 
@@ -319,36 +437,255 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let ctx = make_ctx(None);
         assert!(limiter.before(&ctx).await.is_ok());
         assert!(limiter.before(&ctx).await.is_err());
     }
 
+    /// Regression (D3a): by default `x-forwarded-for` is untrusted and must
+    /// NOT create per-value buckets — otherwise a caller bypasses the limit
+    /// by forging a fresh address on every request.
     #[tokio::test]
-    async fn uses_x_forwarded_for_when_no_identity() {
+    async fn default_config_ignores_forged_x_forwarded_for() {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1,
             window_secs: 60,
-        });
-        let mut headers = HashMap::new();
-        headers.insert(
-            "x-forwarded-for".to_string(),
-            "10.0.0.1, 10.0.0.2".to_string(),
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        // Two requests forging *different* client addresses must share the
+        // anonymous bucket: the second is rejected.
+        let ctx1 = CallContext::new("message/send").with_http_header("x-forwarded-for", "10.0.0.1");
+        let ctx2 = CallContext::new("message/send").with_http_header("x-forwarded-for", "10.0.0.2");
+        assert!(limiter.before(&ctx1).await.is_ok());
+        assert!(
+            limiter.before(&ctx2).await.is_err(),
+            "forged x-forwarded-for must not evade the limit"
         );
-        let ctx = CallContext::new("message/send").with_http_headers(headers);
-        assert!(limiter.before(&ctx).await.is_ok());
-        assert!(limiter.before(&ctx).await.is_err());
+        // And no per-address buckets were created.
+        assert_eq!(limiter.buckets.read().await.len(), 1);
+    }
+
+    /// With one trusted proxy hop, the caller key is the *rightmost* entry
+    /// (appended by the trusted proxy); client-supplied entries further left
+    /// must not mint fresh buckets.
+    #[tokio::test]
+    async fn trusted_hop_uses_rightmost_entry_and_resists_spoofing() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 1,
+            window_secs: 60,
+            trusted_proxy_hops: 1,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        // Same real client (rightmost), different forged prefixes.
+        let ctx1 = CallContext::new("message/send")
+            .with_http_header("x-forwarded-for", "6.6.6.1, 203.0.113.7");
+        let ctx2 = CallContext::new("message/send")
+            .with_http_header("x-forwarded-for", "6.6.6.2, 203.0.113.7");
+        assert!(limiter.before(&ctx1).await.is_ok());
+        assert!(
+            limiter.before(&ctx2).await.is_err(),
+            "spoofed left-hand entries must map to the same real client"
+        );
+        // A different real client gets its own budget.
+        let ctx3 =
+            CallContext::new("message/send").with_http_header("x-forwarded-for", "203.0.113.8");
+        assert!(limiter.before(&ctx3).await.is_ok());
+    }
+
+    /// With `n` trusted hops the client is the `n`-th entry from the right.
+    #[tokio::test]
+    async fn trusted_hops_two_takes_second_from_right() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 1,
+            window_secs: 60,
+            trusted_proxy_hops: 2,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        // XFF: [forged, client, proxy1] — client is 2nd from the right.
+        let ctx1 = CallContext::new("message/send")
+            .with_http_header("x-forwarded-for", "6.6.6.1, 198.51.100.9, 10.0.0.5");
+        let ctx2 = CallContext::new("message/send")
+            .with_http_header("x-forwarded-for", "6.6.6.2, 198.51.100.9, 10.0.0.5");
+        assert!(limiter.before(&ctx1).await.is_ok());
+        assert!(
+            limiter.before(&ctx2).await.is_err(),
+            "same client, same bucket"
+        );
+    }
+
+    /// A request with fewer XFF entries than trusted hops did not traverse the
+    /// expected proxy chain: it falls back to the shared anonymous bucket.
+    #[tokio::test]
+    async fn short_xff_chain_falls_back_to_anonymous() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 1,
+            window_secs: 60,
+            trusted_proxy_hops: 3,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        let ctx1 = CallContext::new("message/send").with_http_header("x-forwarded-for", "1.2.3.4");
+        let ctx2 = CallContext::new("message/send").with_http_header("x-forwarded-for", "5.6.7.8");
+        assert!(limiter.before(&ctx1).await.is_ok());
+        assert!(
+            limiter.before(&ctx2).await.is_err(),
+            "short chains must share the anonymous bucket, not be trusted"
+        );
+    }
+
+    // ── Constructor validation (D3c) ───────────────────────────────────────
+
+    /// Regression (D3c): `window_secs == 0` previously panicked with a
+    /// divide-by-zero on the first request; it must be rejected up front.
+    #[test]
+    fn new_rejects_zero_window_secs() {
+        let err = RateLimitInterceptor::new(RateLimitConfig {
+            window_secs: 0,
+            ..RateLimitConfig::default()
+        })
+        .expect_err("zero window_secs must be rejected");
+        assert!(err.to_string().contains("window_secs"), "got: {err}");
+    }
+
+    #[test]
+    fn new_rejects_zero_requests_per_window() {
+        let err = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 0,
+            ..RateLimitConfig::default()
+        })
+        .expect_err("zero requests_per_window must be rejected");
+        assert!(
+            err.to_string().contains("requests_per_window"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn new_rejects_zero_max_buckets() {
+        let err = RateLimitInterceptor::new(RateLimitConfig {
+            max_buckets: 0,
+            ..RateLimitConfig::default()
+        })
+        .expect_err("zero max_buckets must be rejected");
+        assert!(err.to_string().contains("max_buckets"), "got: {err}");
+    }
+
+    // ── Bounded bucket map (D3b) ───────────────────────────────────────────
+
+    /// Regression (D3b): the bucket map must never exceed `max_buckets`; a
+    /// new caller beyond capacity is rejected (fail-closed).
+    #[tokio::test]
+    async fn bucket_map_is_bounded() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10,
+            window_secs: 60,
+            max_buckets: 2,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        assert!(limiter.before(&make_ctx(Some("a"))).await.is_ok());
+        assert!(limiter.before(&make_ctx(Some("b"))).await.is_ok());
+        let err = limiter
+            .before(&make_ctx(Some("c")))
+            .await
+            .expect_err("third caller must be rejected at capacity");
+        assert!(err.to_string().contains("capacity"), "got: {err}");
+        assert_eq!(limiter.buckets.read().await.len(), 2);
+        // Existing callers keep working at capacity.
+        assert!(limiter.before(&make_ctx(Some("a"))).await.is_ok());
+    }
+
+    /// When the map is full but holds stale (old-window) buckets, capacity is
+    /// reclaimed inline and the new caller is admitted.
+    #[tokio::test]
+    async fn full_map_evicts_stale_buckets_before_rejecting() {
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10,
+            window_secs: 60,
+            max_buckets: 2,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        // One live bucket + one ancient bucket fills the map.
+        assert!(limiter.before(&make_ctx(Some("live"))).await.is_ok());
+        {
+            let mut buckets = limiter.buckets.write().await;
+            buckets.insert(
+                "ancient".to_string(),
+                CallerBucket {
+                    window_start: AtomicU64::new(0),
+                    count: AtomicU64::new(1),
+                },
+            );
+        }
+        // A new caller triggers inline eviction of the stale bucket.
+        assert!(
+            limiter.before(&make_ctx(Some("newcomer"))).await.is_ok(),
+            "stale bucket should be evicted to admit the new caller"
+        );
+        let buckets = limiter.buckets.read().await;
+        assert!(!buckets.contains_key("ancient"));
+        assert!(buckets.contains_key("live"));
+        assert!(buckets.contains_key("newcomer"));
+        drop(buckets);
+    }
+
+    /// Concurrency: with many distinct callers racing, the map never exceeds
+    /// `max_buckets` and exactly `max_buckets` callers are admitted.
+    #[tokio::test]
+    async fn concurrent_distinct_callers_respect_bucket_cap() {
+        use std::sync::Arc;
+
+        let limiter = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 10,
+            window_secs: 60,
+            max_buckets: 10,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+        let limiter = Arc::new(limiter);
+
+        let mut handles = Vec::new();
+        for i in 0..50 {
+            let lim = Arc::clone(&limiter);
+            handles.push(tokio::spawn(async move {
+                let ctx =
+                    CallContext::new("message/send").with_caller_identity(format!("user-{i}"));
+                lim.before(&ctx).await
+            }));
+        }
+
+        let mut ok_count = 0;
+        let mut err_count = 0;
+        for handle in handles {
+            match handle.await.unwrap() {
+                Ok(()) => ok_count += 1,
+                Err(_) => err_count += 1,
+            }
+        }
+        assert_eq!(ok_count, 10, "exactly max_buckets callers admitted");
+        assert_eq!(err_count, 40);
+        assert_eq!(limiter.buckets.read().await.len(), 10);
     }
 
     #[tokio::test]
     async fn concurrent_rate_limit_checks() {
         use std::sync::Arc;
 
-        let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
-            requests_per_window: 100,
-            window_secs: 60,
-        }));
+        let limiter = Arc::new(
+            RateLimitInterceptor::new(RateLimitConfig {
+                requests_per_window: 100,
+                window_secs: 60,
+                ..RateLimitConfig::default()
+            })
+            .expect("valid config"),
+        );
 
         // Spawn 200 concurrent requests from the same caller.
         let mut handles = Vec::new();
@@ -380,7 +717,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 10,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // Create some buckets.
         let ctx_a = make_ctx(Some("stale-a"));
@@ -404,7 +743,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 42,
             window_secs: 10,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let debug = format!("{limiter:?}");
         assert!(
             debug.contains("RateLimitInterceptor"),
@@ -427,7 +768,7 @@ mod tests {
     /// Covers lines 250-255 (after hook returns Ok).
     #[tokio::test]
     async fn after_hook_is_noop() {
-        let limiter = RateLimitInterceptor::new(RateLimitConfig::default());
+        let limiter = RateLimitInterceptor::new(RateLimitConfig::default()).expect("valid config");
         let ctx = make_ctx(Some("user"));
         let result = limiter.after(&ctx).await;
         assert_eq!(result.unwrap(), (), "after hook should return Ok(())");
@@ -438,7 +779,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 10,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // 0 seconds → window 0
         assert_eq!(limiter.window_number(0), 0);
@@ -457,7 +800,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 100,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // Manually insert a bucket with an ancient window.
         {
@@ -486,7 +831,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 10000,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // Insert a stale bucket manually.
         {
@@ -528,7 +875,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 2,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         let ctx = make_ctx(Some("race-user"));
         // First request creates the bucket.
@@ -546,7 +895,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 10,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // Manually insert a bucket with an old window_start so that the
         // slow-path re-check finds it with a stale window.
@@ -593,7 +944,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -629,7 +982,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 2,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // First two requests create and use the fast-path bucket.
         let ctx = make_ctx(Some("fast-path-user"));
@@ -655,7 +1010,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         let key = "fast-path-window-advance";
         // Manually insert a bucket with an old window so the fast-path CAS fires.
@@ -703,7 +1060,9 @@ mod tests {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 10000,
             window_secs: 60,
-        });
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
 
         // Insert a stale bucket before any calls.
         {
@@ -733,13 +1092,17 @@ mod tests {
         );
     }
 
-    /// Covers the `caller_key` function with an empty x-forwarded-for (no commas).
+    /// Covers `caller_key` with a single-entry x-forwarded-for behind one
+    /// trusted hop (no commas).
     #[tokio::test]
-    async fn x_forwarded_for_single_ip() {
+    async fn x_forwarded_for_single_ip_with_trusted_hop() {
         let limiter = RateLimitInterceptor::new(RateLimitConfig {
             requests_per_window: 1,
             window_secs: 60,
-        });
+            trusted_proxy_hops: 1,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
         let mut headers = HashMap::new();
         headers.insert("x-forwarded-for".to_string(), "192.168.1.1".to_string());
         let ctx = CallContext::new("message/send").with_http_headers(headers);

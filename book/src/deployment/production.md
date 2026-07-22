@@ -111,10 +111,17 @@ Protect public-facing agents from abuse:
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 
 RequestHandlerBuilder::new(executor)
-    .with_interceptor(RateLimitInterceptor::new(RateLimitConfig {
-        requests_per_window: 100,
-        window_secs: 60,
-    }))
+    .with_interceptor(
+        RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 100,
+            window_secs: 60,
+            // Set to the number of trusted reverse proxies so the client IP
+            // is taken from X-Forwarded-For; 0 (default) ignores the header.
+            trusted_proxy_hops: 1,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid rate limit config"),
+    )
     .build()
 ```
 

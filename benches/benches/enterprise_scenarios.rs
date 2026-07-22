@@ -316,8 +316,10 @@ fn bench_rate_limiting(c: &mut Criterion) {
     let rate_config = a2a_protocol_server::RateLimitConfig {
         requests_per_window: 100_000,
         window_secs: 60,
+        ..a2a_protocol_server::RateLimitConfig::default()
     };
-    let rate_limiter = a2a_protocol_server::RateLimitInterceptor::new(rate_config);
+    let rate_limiter =
+        a2a_protocol_server::RateLimitInterceptor::new(rate_config).expect("valid config");
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(EchoExecutor)
