@@ -7,17 +7,23 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+#[cfg(feature = "grpc-legacy-json")]
 use std::pin::Pin;
 
+#[cfg(feature = "grpc-legacy-json")]
 use tokio::sync::mpsc;
+#[cfg(feature = "grpc-legacy-json")]
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 
-use super::JsonPayload;
+#[cfg(feature = "grpc-legacy-json")]
+use super::proto::JsonPayload;
 use crate::error::ServerError;
+#[cfg(feature = "grpc-legacy-json")]
 use crate::streaming::EventQueueReader;
 
-/// The streaming response type for gRPC server-streaming methods.
+/// The streaming response type for the legacy JSON-tunnel streaming methods.
+#[cfg(feature = "grpc-legacy-json")]
 pub(super) type GrpcStream =
     Pin<Box<dyn tokio_stream::Stream<Item = Result<JsonPayload, Status>> + Send + 'static>>;
 
@@ -35,7 +41,8 @@ pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashM
     map
 }
 
-/// Deserializes a JSON payload from a gRPC request.
+/// Deserializes a JSON payload from a legacy-tunnel gRPC request.
+#[cfg(feature = "grpc-legacy-json")]
 #[allow(clippy::result_large_err)]
 pub(super) fn decode_json<T: serde::de::DeserializeOwned>(
     payload: &JsonPayload,
@@ -44,7 +51,8 @@ pub(super) fn decode_json<T: serde::de::DeserializeOwned>(
         .map_err(|e| Status::invalid_argument(format!("invalid JSON payload: {e}")))
 }
 
-/// Serializes a value into a JSON payload for a gRPC response.
+/// Serializes a value into a JSON payload for a legacy-tunnel gRPC response.
+#[cfg(feature = "grpc-legacy-json")]
 #[allow(clippy::result_large_err)]
 pub(super) fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload, Status> {
     let data = serde_json::to_vec(value)
@@ -88,7 +96,9 @@ pub(super) async fn resolve_addr(
     })
 }
 
-/// Converts an [`InMemoryQueueReader`] into a gRPC streaming response.
+/// Converts an [`InMemoryQueueReader`](crate::streaming::InMemoryQueueReader)
+/// into a legacy-tunnel gRPC streaming response.
+#[cfg(feature = "grpc-legacy-json")]
 pub(super) fn reader_to_grpc_stream(
     mut reader: crate::streaming::InMemoryQueueReader,
     capacity: usize,
@@ -126,6 +136,7 @@ mod tests {
     use crate::error::ServerError;
 
     // decode_json / encode_json round-trip
+    #[cfg(feature = "grpc-legacy-json")]
     #[test]
     fn encode_decode_json_roundtrip() {
         #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
@@ -138,6 +149,7 @@ mod tests {
         assert_eq!(original, decoded);
     }
 
+    #[cfg(feature = "grpc-legacy-json")]
     #[test]
     fn decode_json_invalid_returns_status_error() {
         let payload = JsonPayload {
