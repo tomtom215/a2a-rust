@@ -59,6 +59,7 @@ impl RestTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::super::truncate_body(&body_str),
+                retry_after: None,
             });
         }
 

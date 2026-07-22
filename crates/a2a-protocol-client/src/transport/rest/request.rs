@@ -122,7 +122,12 @@ impl RestTransport {
 
         let req = self.build_request(method, &params, extra_headers, false)?;
 
-        let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
+        // Single deadline across header fetch AND body read (see the JSON-RPC
+        // transport for the rationale): `request_timeout` is a per-call budget,
+        // not applied twice.
+        let deadline = tokio::time::Instant::now() + self.inner.request_timeout;
+
+        let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
@@ -135,10 +140,14 @@ impl RestTransport {
 
         let status = resp.status();
         trace_debug!(method, %status, "received response");
+
+        let retry_after = crate::error::parse_retry_after(resp.headers());
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         let body_bytes = match crate::transport::collect_response_limited(
             resp,
             self.inner.max_response_size,
-            self.inner.request_timeout,
+            remaining,
         )
         .await
         {
@@ -154,6 +163,7 @@ impl RestTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::super::truncate_body(&body_str),
+                retry_after,
             });
         }
 

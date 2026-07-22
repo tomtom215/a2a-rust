@@ -222,7 +222,13 @@ impl JsonRpcTransport {
 
         let (request_id, req) = self.build_request(method, params, extra_headers, false)?;
 
-        let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
+        // Single deadline across header fetch AND body read, so `request_timeout`
+        // is a true per-call budget rather than being applied twice (headers,
+        // then body) — which previously let a slow server hold the call for up
+        // to 2× the configured timeout.
+        let deadline = tokio::time::Instant::now() + self.inner.request_timeout;
+
+        let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
@@ -236,19 +242,21 @@ impl JsonRpcTransport {
         let status = resp.status();
         trace_debug!(method, %status, "received response");
 
-        let body_bytes = match super::collect_response_limited(
-            resp,
-            self.inner.max_response_size,
-            self.inner.request_timeout,
-        )
-        .await
-        {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                trace_error!(method, error = %e, "response body read failed");
-                return Err(e);
-            }
-        };
+        // Capture Retry-After before the response is consumed, so the retry
+        // layer can honor a rate-limiter's requested delay.
+        let retry_after = crate::error::parse_retry_after(resp.headers());
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let body_bytes =
+            match super::collect_response_limited(resp, self.inner.max_response_size, remaining)
+                .await
+            {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    trace_error!(method, error = %e, "response body read failed");
+                    return Err(e);
+                }
+            };
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -256,6 +264,7 @@ impl JsonRpcTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
+                retry_after,
             });
         }
 
@@ -342,6 +351,7 @@ impl JsonRpcTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
+                retry_after: None,
             });
         }
 

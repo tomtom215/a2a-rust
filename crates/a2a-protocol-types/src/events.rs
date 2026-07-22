@@ -7,7 +7,8 @@
 //!
 //! When a client calls `SendStreamingMessage` or `SubscribeToTask`, the server
 //! responds with a stream of Server-Sent Events. Each event carries a
-//! [`StreamResponse`] JSON payload discriminated by field presence (untagged).
+//! [`StreamResponse`] JSON payload: an externally-tagged (single-key) object
+//! whose key names the variant, matching the `ProtoJSON` `oneof` encoding.
 //!
 //! # Stream event variants
 //!
@@ -83,8 +84,11 @@ pub struct TaskArtifactUpdateEvent {
 
 /// A single event payload in an A2A streaming response.
 ///
-/// Discriminated by field presence (untagged oneof). Exactly one of
-/// `task`, `message`, `statusUpdate`, or `artifactUpdate` is present.
+/// Externally tagged: serialized as a single-key object (`{"task": …}`,
+/// `{"statusUpdate": …}`, …) whose `camelCase` key names the variant. This
+/// matches the `ProtoJSON` encoding of the `StreamResponse.payload` `oneof` on
+/// the wire — it is **not** an untagged union, and must not be "corrected" to
+/// one without breaking wire compatibility.
 #[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

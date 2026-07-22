@@ -68,8 +68,10 @@ impl TaskListResponse {
     #[must_use]
     #[allow(clippy::missing_const_for_fn)] // Vec::len() is not const
     pub fn new(tasks: Vec<Task>) -> Self {
-        #[allow(clippy::cast_possible_truncation)]
-        let total = tasks.len() as u32;
+        // Saturating rather than a wrapping `as u32`: only reachable above
+        // u32::MAX tasks in one page (physically impossible to hold in a Vec),
+        // but a saturating conversion can never silently report a wrong count.
+        let total = u32::try_from(tasks.len()).unwrap_or(u32::MAX);
         Self {
             page_size: total,
             total_size: total,

@@ -294,6 +294,7 @@ fn client_error_display_unexpected_status() {
     let e = ClientError::UnexpectedStatus {
         status: 503,
         body: "Service Unavailable".into(),
+        retry_after: None,
     };
     let msg = e.to_string();
     assert!(msg.contains("503"));
@@ -393,6 +394,7 @@ fn client_error_source_returns_none_for_unexpected_status() {
     let e = ClientError::UnexpectedStatus {
         status: 500,
         body: "error".into(),
+        retry_after: None,
     };
     assert!(
         e.source().is_none(),

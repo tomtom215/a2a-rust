@@ -286,6 +286,7 @@ impl GrpcTransport {
             tonic::Code::ResourceExhausted => ClientError::UnexpectedStatus {
                 status: 429,
                 body: status.message().to_owned(),
+                retry_after: None,
             },
             _ => {
                 let a2a = a2a_protocol_types::A2aError::new(

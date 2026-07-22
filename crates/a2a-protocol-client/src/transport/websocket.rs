@@ -372,7 +372,11 @@ impl WebSocketTransport {
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        Ok(EventStream::new(rx))
+        // Bound establishment: unlike the HTTP streaming paths, the WebSocket
+        // transport otherwise returns a stream with no timeout at all, so a
+        // server that accepts the socket but never answers this request would
+        // hang the consumer forever. The bound is lifted after the first frame.
+        Ok(EventStream::new(rx).with_first_event_timeout(self.inner.request_timeout))
     }
 }
 
