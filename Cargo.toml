@@ -51,6 +51,8 @@ tracing = { version = ">=0.1.40, <0.2" }
 # gRPC (optional — behind `grpc` feature flag)
 tonic              = { version = "0.14" }
 prost              = { version = "0.14" }
+prost-types        = { version = "0.14" }
+prost-build        = { version = "0.14" }
 tonic-build        = { version = "0.14" }
 tonic-prost        = { version = "0.14" }
 tonic-prost-build  = { version = "0.14" }
@@ -60,6 +62,9 @@ tokio-stream       = { version = "0.1" }
 # and CI runners do not need to install protobuf-compiler manually — a clean
 # `cargo build --features grpc` works out of the box.
 protoc-bin-vendored = { version = "3" }
+# RFC 3339 timestamp parsing/formatting for the protobuf conversion layer
+# (google.protobuf.Timestamp ⇄ ISO 8601 strings). Optional, `proto` feature only.
+time = { version = "0.3", default-features = false, features = ["parsing", "formatting"] }
 
 # SQLite (optional — behind `sqlite` feature flag)
 [workspace.dependencies.sqlx]

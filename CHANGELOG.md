@@ -10,11 +10,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Interop, hardening, and edge-case fixes from an independent protocol audit.
-Several public types changed shape (0.x breaking — warrants a minor bump).
+Interop, hardening, and edge-case fixes from an independent protocol audit,
+plus a protobuf-native rewrite of the gRPC transport. Several public types
+changed shape (0.x breaking — warrants a minor bump).
 
 ### Changed
 
+- **gRPC is now protobuf-native and wire-compatible with the official A2A
+  SDKs** — the transport speaks the canonical `lf.a2a.v1.A2AService`
+  (fully-typed messages generated from the specification's protobuf
+  schema, kept byte-identical in-repo) instead of the pre-0.7 JSON-in-
+  `bytes` tunnel on a non-standard service. A Go, Python, or Java SDK
+  peer can now interoperate over gRPC. Details in ADR 0009.
+  - `a2a-protocol-types` gains a `proto` feature exposing the generated
+    message types (`a2a_protocol_types::proto`) and a bidirectional
+    `TryFrom` conversion layer to the serde domain types (ProtoJSON
+    semantics; property-tested through real encoded protobuf bytes).
+  - `a2a-protocol-server`: `GrpcDispatcher` serves the canonical service.
+    The deprecated JSON tunnel (`a2a.v1.A2aService`) can still be served
+    *alongside it* for 0.6 clients via the new `grpc-legacy-json` feature
+    (off by default, removal planned for 0.8); rolling-upgrade coexistence
+    is covered by an e2e test. `into_service` now returns the canonical
+    service type; the legacy service is available via `into_legacy_service`.
+  - `a2a-protocol-client`: `GrpcTransport` speaks the canonical service;
+    the tunnel client was removed. Conversion failures surface as
+    non-retryable `ClientError::Transport` errors.
+  - Wire compatibility is proven against the official A2A Python SDK:
+    golden binary fixtures serialized by `a2a-sdk` are checked in under
+    `tck/fixtures/grpc/`, validated in both directions (prost decodes the
+    official bytes; the official SDK parses prost-encoded bytes) by the
+    new `grpc-wire-compat` CI job.
 - **`a2a-protocol-types`: push types accept spec-compliant JSON** —
   `AuthenticationInfo.credentials` and `TaskPushNotificationConfig.taskId`
   are now `Option<String>`, matching the canonical protocol schema (both

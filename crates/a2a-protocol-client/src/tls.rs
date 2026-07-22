@@ -48,7 +48,7 @@ fn ring_provider() -> Arc<CryptoProvider> {
 /// Builds a default [`ClientConfig`] with Mozilla root certificates.
 ///
 /// Uses TLS 1.2+ with `ring` as the crypto provider, selected explicitly
-/// (see [`ring_provider`] for the rationale).
+/// (see the private `ring_provider` helper for the rationale).
 ///
 /// # Panics
 ///

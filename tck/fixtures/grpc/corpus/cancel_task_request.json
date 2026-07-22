@@ -1,0 +1,4 @@
+{
+  "message": "CancelTaskRequest",
+  "proto_json": { "tenant": "acme", "id": "t-9", "metadata": { "reason": "user" } }
+}

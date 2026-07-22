@@ -20,12 +20,31 @@ categories             = ["api-bindings"]
 [features]
 ## Enable agent card signing (JWS, RFC 8785 canonicalization).
 signing = ["dep:base64", "dep:ring"]
+## Enable the canonical A2A protobuf message types (`lf.a2a.v1`, prost-generated)
+## and lossless conversions to/from the serde domain types. Wire-compatible with
+## the official Go/Python/Java A2A SDKs. Pure data — still no I/O; the gRPC
+## transports in the server/client crates build their service bindings on top.
+proto = [
+    "dep:prost",
+    "dep:prost-types",
+    "dep:base64",
+    "dep:time",
+    "dep:prost-build",
+    "dep:protoc-bin-vendored",
+]
 
 [dependencies]
-serde      = { workspace = true }
-serde_json = { workspace = true }
-base64     = { version = "0.22", optional = true }
-ring       = { version = "0.17", optional = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+base64      = { version = "0.22", optional = true }
+ring        = { version = "0.17", optional = true }
+prost       = { workspace = true, optional = true }
+prost-types = { workspace = true, optional = true }
+time        = { workspace = true, optional = true }
+
+[build-dependencies]
+prost-build         = { workspace = true, optional = true }
+protoc-bin-vendored = { workspace = true, optional = true }
 
 [package.metadata.docs.rs]
 all-features = true

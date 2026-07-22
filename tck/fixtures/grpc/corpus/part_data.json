@@ -1,0 +1,12 @@
+{
+  "message": "Part",
+  "proto_json": {
+    "data": {
+      "emoji😀": "value",
+      "לּ": "u+fb33",
+      "nested": { "list": [1, "two", false, null], "pi": 3.14 },
+      "big": 9007199254740991
+    },
+    "mediaType": "application/json"
+  }
+}

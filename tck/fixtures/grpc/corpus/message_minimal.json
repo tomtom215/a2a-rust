@@ -1,0 +1,8 @@
+{
+  "message": "Message",
+  "proto_json": {
+    "messageId": "m-min",
+    "role": "ROLE_AGENT",
+    "parts": [{ "text": "done" }]
+  }
+}

@@ -26,11 +26,13 @@ signing = ["a2a-protocol-types/signing"]
 tracing = ["dep:tracing"]
 ## Enable WebSocket transport via `tokio-tungstenite`.
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
-## Enable gRPC transport via `tonic`.
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored"]
+## Enable gRPC transport via `tonic`. Speaks the canonical `lf.a2a.v1.A2AService`
+## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
 
 [dependencies]
 a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
+serde          = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
 http-body-util = { workspace = true }

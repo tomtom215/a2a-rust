@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc db77af4f9b9e36da14f846baa75022ed725d3f51ff03586704796477d1c8d1b2 # shrinks to part = Part { content: Text(""), metadata: Some(Object {}), filename: None, media_type: None }
+cc 6743a41cc4d7935d125852b5a5ec54d4bdbdccd642bbba05b192970b323ece0e # shrinks to msg = Message { id: MessageId("a"), role: Unspecified, parts: [Part { content: Text(""), metadata: Some(Object {}), filename: None, media_type: None }], task_id: None, context_id: None, reference_task_ids: None, extensions: None, metadata: None }

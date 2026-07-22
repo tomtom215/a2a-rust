@@ -1,0 +1,4 @@
+{
+  "message": "DeleteTaskPushNotificationConfigRequest",
+  "proto_json": { "taskId": "t-1", "id": "cfg-1" }
+}

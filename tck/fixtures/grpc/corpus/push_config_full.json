@@ -1,0 +1,11 @@
+{
+  "message": "TaskPushNotificationConfig",
+  "proto_json": {
+    "tenant": "acme",
+    "id": "cfg-1",
+    "taskId": "t-1",
+    "url": "https://hooks.example.com/notify",
+    "token": "tok-1",
+    "authentication": { "scheme": "Bearer", "credentials": "secret" }
+  }
+}

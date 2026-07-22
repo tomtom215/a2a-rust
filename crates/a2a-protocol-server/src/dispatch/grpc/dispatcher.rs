@@ -8,15 +8,19 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use super::service::GrpcServiceImpl;
+use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
 use crate::handler::RequestHandler;
 
 /// gRPC dispatcher that routes A2A requests to a [`RequestHandler`].
 ///
-/// Implements the tonic `A2aService` trait using JSON-over-gRPC payloads.
+/// Serves the canonical `lf.a2a.v1.A2AService` (protobuf-native, wire
+/// compatible with the official A2A SDKs). With the `grpc-legacy-json`
+/// feature enabled, [`serve`](Self::serve) additionally registers the
+/// deprecated pre-0.7 JSON-tunnel service on the same listener.
+///
 /// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
-/// or build a tonic `Router` with [`GrpcDispatcher::into_service`].
+/// or build a tonic service with [`GrpcDispatcher::into_service`].
 pub struct GrpcDispatcher {
     handler: Arc<RequestHandler>,
     config: GrpcConfig,
@@ -39,19 +43,14 @@ impl GrpcDispatcher {
     /// Returns `std::io::Error` if binding fails.
     pub async fn serve(self, addr: impl tokio::net::ToSocketAddrs) -> std::io::Result<()> {
         let addr = super::helpers::resolve_addr(addr).await?;
-        let svc = self.into_service();
 
         trace_info!(
             addr = %addr,
             "A2A gRPC server listening"
         );
 
-        tonic::transport::Server::builder()
-            .concurrency_limit_per_connection(self.config.concurrency_limit)
-            .add_service(svc)
-            .serve(addr)
-            .await
-            .map_err(std::io::Error::other)
+        let router = self.build_router();
+        router.serve(addr).await.map_err(std::io::Error::other)
     }
 
     /// Starts a gRPC server and returns the bound [`SocketAddr`].
@@ -88,38 +87,65 @@ impl GrpcDispatcher {
     ) -> std::io::Result<SocketAddr> {
         let local_addr = listener.local_addr()?;
         let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
-        let svc = self.into_service();
 
         trace_info!(
             %local_addr,
             "A2A gRPC server listening"
         );
 
-        let limit = self.config.concurrency_limit;
+        let router = self.build_router();
         tokio::spawn(async move {
-            let _ = tonic::transport::Server::builder()
-                .concurrency_limit_per_connection(limit)
-                .add_service(svc)
-                .serve_with_incoming(incoming)
-                .await;
+            let _ = router.serve_with_incoming(incoming).await;
         });
 
         Ok(local_addr)
     }
 
-    /// Builds the tonic service for use with a custom server setup.
+    /// Builds the canonical tonic service for use with a custom server setup.
     ///
-    /// Returns an [`A2aServiceServer`] that can be added to a
-    /// [`tonic::transport::Server`] via `add_service`.
+    /// Returns an [`A2aServiceServer`] (the `lf.a2a.v1.A2AService` binding)
+    /// that can be added to a [`tonic::transport::Server`] via `add_service`.
+    /// Note this does **not** include the legacy JSON-tunnel service; with
+    /// the `grpc-legacy-json` feature, add
+    /// [`into_legacy_service`](Self::into_legacy_service) separately or use
+    /// [`serve`](Self::serve), which registers both.
     #[must_use]
-    pub fn into_service(&self) -> A2aServiceServer<GrpcServiceImpl> {
-        let inner = GrpcServiceImpl {
+    pub fn into_service(&self) -> A2aServiceServer<A2aServiceImpl> {
+        let inner = A2aServiceImpl {
             handler: Arc::clone(&self.handler),
             config: self.config.clone(),
         };
         A2aServiceServer::new(inner)
             .max_decoding_message_size(self.config.max_message_size)
             .max_encoding_message_size(self.config.max_message_size)
+    }
+
+    /// Builds the deprecated JSON-tunnel service (`a2a.v1.A2aService`).
+    ///
+    /// Serves the pre-0.7 JSON-in-`bytes` wire format for rolling upgrades
+    /// from 0.6 gRPC clients. Removal is planned for 0.8.
+    #[cfg(feature = "grpc-legacy-json")]
+    #[must_use]
+    pub fn into_legacy_service(
+        &self,
+    ) -> super::LegacyA2aServiceServer<super::LegacyGrpcServiceImpl> {
+        let inner = super::LegacyGrpcServiceImpl {
+            handler: Arc::clone(&self.handler),
+            config: self.config.clone(),
+        };
+        super::LegacyA2aServiceServer::new(inner)
+            .max_decoding_message_size(self.config.max_message_size)
+            .max_encoding_message_size(self.config.max_message_size)
+    }
+
+    /// Builds the tonic router with every enabled service registered.
+    fn build_router(&self) -> tonic::transport::server::Router {
+        let mut server = tonic::transport::Server::builder()
+            .concurrency_limit_per_connection(self.config.concurrency_limit);
+        let router = server.add_service(self.into_service());
+        #[cfg(feature = "grpc-legacy-json")]
+        let router = router.add_service(self.into_legacy_service());
+        router
     }
 }
 

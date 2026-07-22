@@ -1,0 +1,4 @@
+{
+  "message": "ListTaskPushNotificationConfigsRequest",
+  "proto_json": { "taskId": "t-1", "pageSize": 10, "pageToken": "p" }
+}

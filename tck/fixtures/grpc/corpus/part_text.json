@@ -1,0 +1,8 @@
+{
+  "message": "Part",
+  "proto_json": {
+    "text": "héllo 🌍",
+    "mediaType": "text/plain",
+    "metadata": { "n": 1, "f": 1.5, "ok": true, "nil": null }
+  }
+}

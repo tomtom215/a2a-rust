@@ -1,0 +1,6 @@
+{
+  "message": "SendMessageResponse",
+  "proto_json": {
+    "message": { "messageId": "m-1", "role": "ROLE_AGENT", "parts": [{ "text": "direct" }] }
+  }
+}

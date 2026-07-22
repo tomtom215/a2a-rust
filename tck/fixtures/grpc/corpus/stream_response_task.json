@@ -1,0 +1,6 @@
+{
+  "message": "StreamResponse",
+  "proto_json": {
+    "task": { "id": "t-1", "contextId": "c-1", "status": { "state": "TASK_STATE_SUBMITTED" } }
+  }
+}
