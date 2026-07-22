@@ -54,10 +54,7 @@ impl From<TaskState> for pb::TaskState {
 }
 
 /// Decodes a prost enum field (`i32`) into a domain [`TaskState`].
-pub fn task_state_from_i32(
-    value: i32,
-    field: &'static str,
-) -> Result<TaskState, ConvertError> {
+pub fn task_state_from_i32(value: i32, field: &'static str) -> Result<TaskState, ConvertError> {
     pb::TaskState::try_from(value)
         .map_err(|_| ConvertError::new(field, format!("unknown TaskState number {value}")))?
         .try_into()
