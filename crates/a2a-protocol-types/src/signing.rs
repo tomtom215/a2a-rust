@@ -56,8 +56,18 @@ pub fn canonicalize(value: &serde_json::Value) -> A2aResult<Vec<u8>> {
 ///
 /// Returns an error if serialization or canonicalization fails.
 pub fn canonicalize_card(card: &AgentCard) -> A2aResult<Vec<u8>> {
-    let value = serde_json::to_value(card)
+    let mut value = serde_json::to_value(card)
         .map_err(|e| A2aError::internal(format!("card serialization: {e}")))?;
+    // The `signatures` field MUST be excluded from the canonical payload that
+    // signatures are computed over. A signed card is served on the wire with
+    // its `signatures` array populated; if that field were part of the
+    // canonical bytes, the served card could never be verified against what was
+    // signed (and multi-signature / key-rotation flows would sign over the
+    // wrong bytes). Removing it here fixes both `sign_agent_card` and
+    // `verify_agent_card`, which share this canonicalizer.
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("signatures");
+    }
     canonicalize(&value)
 }
 
@@ -337,6 +347,34 @@ mod tests {
 
         // Verify.
         verify_agent_card(&card, &sig, pub_key).unwrap();
+    }
+
+    #[test]
+    fn sign_and_verify_card_in_wire_shape() {
+        // A signed card is served on the wire with its `signatures` array
+        // populated. Verification MUST succeed against that exact shape, because
+        // the `signatures` field is excluded from the canonical payload. This is
+        // the shape any spec-compliant peer produces.
+        let card = minimal_card();
+
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("test-key")).unwrap();
+
+        let key_pair = EcdsaKeyPair::from_pkcs8(
+            &signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+            pkcs8.as_ref(),
+            &rng,
+        )
+        .unwrap();
+        let pub_key = key_pair.public_key().as_ref();
+
+        // Attach the signature exactly as it is served, then verify.
+        let mut served = minimal_card();
+        served.signatures = Some(vec![sig.clone()]);
+        verify_agent_card(&served, &sig, pub_key)
+            .expect("a served card with its signatures populated must verify");
     }
 
     #[test]

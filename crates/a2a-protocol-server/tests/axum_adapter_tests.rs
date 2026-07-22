@@ -314,3 +314,54 @@ async fn axum_router_is_composable() {
         .merge(a2a_router)
         .route("/custom", axum::routing::get(|| async { "custom route" }));
 }
+
+/// Start an Axum test server whose dispatch config caps the request body at
+/// `max_body` bytes.
+async fn start_test_server_with_body_limit(max_body: usize) -> String {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(test_card())
+            .build()
+            .expect("build handler"),
+    );
+    let config = a2a_protocol_server::dispatch::DispatchConfig::default()
+        .with_max_request_body_size(max_body);
+    let app = A2aRouter::with_config(handler, config).into_router();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let base_url = format!("http://{addr}");
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    base_url
+}
+
+/// The Axum adapter must enforce the *configured* `max_request_body_size`, not
+/// silently fall back to Axum's 2 MiB `DefaultBodyLimit`. A body over the
+/// configured 1 KiB cap (but well under 2 MiB) must be rejected with 413, while
+/// a small body under the cap still succeeds.
+#[tokio::test]
+async fn axum_honors_configured_body_limit() {
+    let base = start_test_server_with_body_limit(1024).await;
+
+    // ~4 KiB body: over the 1 KiB configured cap, under Axum's 2 MiB default.
+    let big_body = make_send_body(&"x".repeat(4096));
+    let (status, _) = http_post_json(&format!("{base}/message:send"), &big_body).await;
+    assert_eq!(
+        status, 413,
+        "body over the configured 1 KiB cap must be rejected (413), got {status}"
+    );
+
+    // A small body under the cap is unaffected.
+    let small_body = make_send_body("hi");
+    let (status, _) = http_post_json(&format!("{base}/message:send"), &small_body).await;
+    assert_eq!(
+        status, 200,
+        "body under the configured cap should succeed (200), got {status}"
+    );
+}

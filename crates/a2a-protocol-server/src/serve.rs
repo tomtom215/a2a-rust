@@ -122,7 +122,20 @@ pub async fn serve(
     );
 
     loop {
-        let (stream, _peer) = listener.accept().await?;
+        let (stream, _peer) = match listener.accept().await {
+            Ok(pair) => pair,
+            Err(e) => {
+                // A transient accept() error (per-connection abort, or fd-table
+                // exhaustion) must not tear down the whole server. Log, back off
+                // if the fd table is full so we don't busy-spin, and keep going.
+                trace_warn!(error = %e, "accept() failed; retrying");
+                let backoff = accept_retry_backoff(&e);
+                if !backoff.is_zero() {
+                    tokio::time::sleep(backoff).await;
+                }
+                continue;
+            }
+        };
         // Disable Nagle's algorithm to avoid ~40ms delayed-ACK latency on
         // small SSE frames and JSON-RPC responses.
         let _ = stream.set_nodelay(true);
@@ -162,8 +175,17 @@ pub async fn serve_with_addr(
 
     tokio::spawn(async move {
         loop {
-            let Ok((stream, _peer)) = listener.accept().await else {
-                break;
+            let (stream, _peer) = match listener.accept().await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    // Never let a transient accept() error kill the loop.
+                    trace_warn!(error = %e, "accept() failed; retrying");
+                    let backoff = accept_retry_backoff(&e);
+                    if !backoff.is_zero() {
+                        tokio::time::sleep(backoff).await;
+                    }
+                    continue;
+                }
             };
             let _ = stream.set_nodelay(true);
             let io = hyper_util::rt::TokioIo::new(stream);
@@ -186,6 +208,25 @@ pub async fn serve_with_addr(
     Ok(local_addr)
 }
 
+/// Backoff to apply before retrying after a [`tokio::net::TcpListener::accept`]
+/// error.
+///
+/// `accept()` failures on an already-bound listener are effectively always
+/// transient: a per-connection abort (`ECONNABORTED`) or file-descriptor
+/// exhaustion (`EMFILE`/`ENFILE`). The accept loop must therefore never
+/// terminate on them — doing so would take the whole server down for the life
+/// of the process the first time the fd table momentarily fills. For fd
+/// exhaustion we pause briefly so we don't busy-spin while the table is full;
+/// other errors retry immediately.
+fn accept_retry_backoff(err: &std::io::Error) -> std::time::Duration {
+    // EMFILE (24) / ENFILE (23) on Unix. On platforms that report other codes
+    // the loop still retries — just without the extra pause.
+    match err.raw_os_error() {
+        Some(23 | 24) => std::time::Duration::from_millis(20),
+        _ => std::time::Duration::ZERO,
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -195,6 +236,21 @@ mod tests {
     use http_body_util::{BodyExt, Empty};
     use hyper_util::client::legacy::Client;
     use hyper_util::rt::TokioExecutor;
+
+    #[test]
+    fn accept_retry_backoff_pauses_only_on_fd_exhaustion() {
+        use std::io::{Error, ErrorKind};
+        // EMFILE (24) / ENFILE (23): back off so the accept loop doesn't
+        // busy-spin while the descriptor table is full.
+        assert!(!accept_retry_backoff(&Error::from_raw_os_error(24)).is_zero());
+        assert!(!accept_retry_backoff(&Error::from_raw_os_error(23)).is_zero());
+        // A per-connection abort (ECONNABORTED = 103 on Linux) retries at once.
+        assert!(accept_retry_backoff(&Error::from_raw_os_error(103)).is_zero());
+        // A synthetic error carrying no OS code also retries at once (no panic).
+        assert!(
+            accept_retry_backoff(&Error::new(ErrorKind::ConnectionAborted, "aborted")).is_zero()
+        );
+    }
 
     struct MockDispatcher;
 
