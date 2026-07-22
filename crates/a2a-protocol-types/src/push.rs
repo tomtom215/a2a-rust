@@ -258,7 +258,7 @@ mod tests {
     }
 
     /// Regression (D1): the canonical schema marks `taskId` optional (e.g.
-    /// a config nested in SendMessageConfiguration before the task exists) —
+    /// a config nested in `SendMessageConfiguration` before the task exists) —
     /// previously this failed with "missing field `taskId`".
     #[test]
     fn push_config_without_task_id_parses() {
