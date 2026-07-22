@@ -1,0 +1,13 @@
+{
+  "message": "ListTasksRequest",
+  "proto_json": {
+    "tenant": "acme",
+    "contextId": "ctx-1",
+    "status": "TASK_STATE_WORKING",
+    "pageSize": 25,
+    "pageToken": "tok",
+    "historyLength": 3,
+    "statusTimestampAfter": "2026-01-15T08:30:00Z",
+    "includeArtifacts": false
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "message": "ListTasksResponse",
+  "proto_json": {
+    "tasks": [
+      { "id": "t-0", "contextId": "c", "status": { "state": "TASK_STATE_UNSPECIFIED" } },
+      { "id": "t-1", "contextId": "c", "status": { "state": "TASK_STATE_SUBMITTED" } },
+      { "id": "t-2", "contextId": "c", "status": { "state": "TASK_STATE_WORKING" } },
+      { "id": "t-3", "contextId": "c", "status": { "state": "TASK_STATE_COMPLETED" } },
+      { "id": "t-4", "contextId": "c", "status": { "state": "TASK_STATE_FAILED" } },
+      { "id": "t-5", "contextId": "c", "status": { "state": "TASK_STATE_CANCELED" } },
+      { "id": "t-6", "contextId": "c", "status": { "state": "TASK_STATE_INPUT_REQUIRED" } },
+      { "id": "t-7", "contextId": "c", "status": { "state": "TASK_STATE_REJECTED" } },
+      { "id": "t-8", "contextId": "c", "status": { "state": "TASK_STATE_AUTH_REQUIRED" } }
+    ],
+    "nextPageToken": "",
+    "pageSize": 9,
+    "totalSize": 9
+  }
+}

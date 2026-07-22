@@ -1,0 +1,11 @@
+{
+  "message": "StreamResponse",
+  "proto_json": {
+    "artifactUpdate": {
+      "taskId": "t-1",
+      "contextId": "c-1",
+      "artifact": { "artifactId": "a-1", "parts": [{ "text": "x" }] },
+      "lastChunk": true
+    }
+  }
+}

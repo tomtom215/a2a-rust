@@ -87,10 +87,20 @@ semantics so protobuf and JSON round-trips agree:
   the wire level; the e2e suite proves the binding against this
   workspace's own client and a hand-rolled 0.6-style tunnel client
   sharing one listener.
-- Wire compatibility is claimed against the canonical schema file, and the
-  schema fidelity is what the byte-identical rule protects. Cross-SDK
-  binary fixtures (bytes produced by the official Python/Go SDKs) are the
-  remaining strengthening step, tracked for the TCK.
+- Wire compatibility is proven against the **official A2A Python SDK**
+  itself, not just the schema file: `tck/fixtures/grpc/` holds a golden
+  corpus serialized by `a2a-sdk`'s generated `lf.a2a.v1` classes
+  (protobuf-python — an implementation independent of prost), and the CI
+  job `grpc-wire-compat` verifies three properties on every run — the
+  checked-in bytes still match what the installed official SDK produces
+  (schema-drift guard), prost decodes those exact bytes into the expected
+  domain values, and the official SDK parses prost-encoded bytes back to
+  the same messages. The corpus covers every message with a domain
+  conversion, all `Part` variants (including non-UTF-8 bytes), every
+  `TaskState`, proto3 optional-presence edges (`historyLength: 0`,
+  `Some(false)` bools, empty metadata objects), Struct numerics at the
+  exact-`f64` boundary, supplementary-plane map keys, and the full
+  `AgentCard` security graph.
 - The types crate gains optional deps (`prost`, `prost-types`, `time`,
   `base64`) behind the `proto` feature; it remains pure data — no I/O.
 - Conversion adds one allocation-bearing hop per request compared to the

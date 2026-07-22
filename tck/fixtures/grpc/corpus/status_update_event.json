@@ -1,0 +1,9 @@
+{
+  "message": "TaskStatusUpdateEvent",
+  "proto_json": {
+    "taskId": "t-1",
+    "contextId": "c-1",
+    "status": { "state": "TASK_STATE_INPUT_REQUIRED", "timestamp": "2026-01-15T08:30:00Z" },
+    "metadata": {}
+  }
+}

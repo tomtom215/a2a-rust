@@ -1,0 +1,10 @@
+{
+  "message": "TaskArtifactUpdateEvent",
+  "proto_json": {
+    "taskId": "t-1",
+    "contextId": "c-1",
+    "artifact": { "artifactId": "a-1", "parts": [{ "text": "chunk" }] },
+    "append": true,
+    "lastChunk": true
+  }
+}

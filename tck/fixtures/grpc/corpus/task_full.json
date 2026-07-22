@@ -1,0 +1,26 @@
+{
+  "message": "Task",
+  "proto_json": {
+    "id": "t-full",
+    "contextId": "c-1",
+    "status": {
+      "state": "TASK_STATE_WORKING",
+      "message": { "messageId": "m-status", "role": "ROLE_AGENT", "parts": [{ "text": "working" }] },
+      "timestamp": "2026-01-15T08:30:00.123456789Z"
+    },
+    "history": [
+      { "messageId": "m-1", "role": "ROLE_USER", "parts": [{ "text": "hi" }] }
+    ],
+    "artifacts": [
+      {
+        "artifactId": "a-1",
+        "name": "out",
+        "description": "an artifact",
+        "parts": [{ "raw": "AAF/gP/+", "filename": "out.bin", "mediaType": "application/octet-stream" }],
+        "extensions": ["https://ext.example.com/v1"],
+        "metadata": { "size": 6 }
+      }
+    ],
+    "metadata": { "k": "v" }
+  }
+}

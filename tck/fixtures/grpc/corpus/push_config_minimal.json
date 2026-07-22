@@ -1,0 +1,4 @@
+{
+  "message": "TaskPushNotificationConfig",
+  "proto_json": { "url": "https://hooks.example.com/n" }
+}

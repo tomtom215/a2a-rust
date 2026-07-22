@@ -1,0 +1,4 @@
+{
+  "message": "GetTaskPushNotificationConfigRequest",
+  "proto_json": { "tenant": "acme", "taskId": "t-1", "id": "cfg-1" }
+}

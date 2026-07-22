@@ -1,0 +1,13 @@
+{
+  "message": "Message",
+  "proto_json": {
+    "messageId": "m-full",
+    "role": "ROLE_USER",
+    "parts": [{ "text": "hello" }],
+    "contextId": "c-1",
+    "taskId": "t-1",
+    "referenceTaskIds": ["t-0", "t-00"],
+    "extensions": ["https://ext.example.com/v1"],
+    "metadata": { "trace": "abc" }
+  }
+}

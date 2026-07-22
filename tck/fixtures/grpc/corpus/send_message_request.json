@@ -1,0 +1,14 @@
+{
+  "message": "SendMessageRequest",
+  "proto_json": {
+    "tenant": "acme",
+    "message": { "messageId": "m-1", "role": "ROLE_USER", "parts": [{ "text": "hi" }] },
+    "configuration": {
+      "acceptedOutputModes": ["text/plain"],
+      "taskPushNotificationConfig": { "url": "https://hooks.example.com/n" },
+      "historyLength": 0,
+      "returnImmediately": true
+    },
+    "metadata": { "trace": "abc" }
+  }
+}

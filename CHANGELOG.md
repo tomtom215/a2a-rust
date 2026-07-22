@@ -35,6 +35,11 @@ changed shape (0.x breaking — warrants a minor bump).
   - `a2a-protocol-client`: `GrpcTransport` speaks the canonical service;
     the tunnel client was removed. Conversion failures surface as
     non-retryable `ClientError::Transport` errors.
+  - Wire compatibility is proven against the official A2A Python SDK:
+    golden binary fixtures serialized by `a2a-sdk` are checked in under
+    `tck/fixtures/grpc/`, validated in both directions (prost decodes the
+    official bytes; the official SDK parses prost-encoded bytes) by the
+    new `grpc-wire-compat` CI job.
 - **`a2a-protocol-types`: push types accept spec-compliant JSON** —
   `AuthenticationInfo.credentials` and `TaskPushNotificationConfig.taskId`
   are now `Option<String>`, matching the canonical protocol schema (both

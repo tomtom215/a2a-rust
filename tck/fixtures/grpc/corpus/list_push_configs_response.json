@@ -1,0 +1,7 @@
+{
+  "message": "ListTaskPushNotificationConfigsResponse",
+  "proto_json": {
+    "configs": [{ "taskId": "t-1", "id": "cfg-1", "url": "https://hooks.example.com/n" }],
+    "nextPageToken": "next"
+  }
+}
