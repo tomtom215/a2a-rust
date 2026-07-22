@@ -103,6 +103,14 @@ pub struct ClientConfig {
     /// when the server is unreachable. Defaults to 10 seconds.
     pub connection_timeout: Duration,
 
+    /// Maximum size in bytes of a buffered (non-streaming) response body.
+    ///
+    /// Responses exceeding this cap fail with a transport error instead of
+    /// being buffered without bound. Defaults to 32 MiB — large enough for
+    /// big task histories and inline artifacts while still bounding client
+    /// memory against a hostile or buggy server.
+    pub max_response_size: usize,
+
     /// TLS configuration.
     pub tls: TlsConfig,
 
@@ -127,6 +135,7 @@ impl ClientConfig {
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
+            max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             tls: TlsConfig::Disabled,
             tenant: None,
         }
@@ -143,6 +152,7 @@ impl Default for ClientConfig {
             request_timeout: Duration::from_secs(30),
             stream_connect_timeout: Duration::from_secs(30),
             connection_timeout: Duration::from_secs(10),
+            max_response_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
             tls: TlsConfig::default(),
             tenant: None,
         }

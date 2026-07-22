@@ -38,6 +38,66 @@ pub use websocket::WebSocketTransport;
 /// Maximum length for response body snippets included in error messages.
 const MAX_ERROR_BODY_LEN: usize = 512;
 
+/// Default cap on buffered (non-streaming) response bodies, in bytes.
+///
+/// Large enough for legitimately big task histories and inline artifacts
+/// (8× the server's default 4 MiB request-body cap, and above its default
+/// 16 MiB event-size cap) while still bounding client memory against a
+/// hostile or buggy server. Override via
+/// [`crate::ClientBuilder::with_max_response_size`].
+pub(crate) const DEFAULT_MAX_RESPONSE_SIZE: usize = 32 * 1024 * 1024;
+
+/// Collects a response body, enforcing `max_size` **during** the read.
+///
+/// Mirrors the server's `read_body_limited` pattern: an honest
+/// `Content-Length` beyond the cap is rejected before reading any bytes, and
+/// chunked/HTTP-2 bodies (which advertise no length) are aborted by
+/// [`http_body_util::Limited`] as soon as the accumulated size would exceed
+/// `max_size` — previously such bodies were buffered without bound, limited
+/// only by the request timeout.
+///
+/// Over-limit responses map to a non-retryable [`ClientError::Transport`];
+/// genuine transport failures keep their retryable [`ClientError::Http`]
+/// classification.
+pub(crate) async fn collect_response_limited(
+    resp: hyper::Response<hyper::body::Incoming>,
+    max_size: usize,
+    read_timeout: std::time::Duration,
+) -> crate::error::ClientResult<hyper::body::Bytes> {
+    use http_body_util::{BodyExt, LengthLimitError, Limited};
+
+    use crate::error::ClientError;
+
+    let body = resp.into_body();
+    let size_hint = <hyper::body::Incoming as hyper::body::Body>::size_hint(&body);
+    if let Some(upper) = size_hint.upper() {
+        if upper > max_size as u64 {
+            return Err(ClientError::Transport(format!(
+                "response body too large: {upper} bytes exceeds {max_size} byte limit"
+            )));
+        }
+    }
+
+    let limited = Limited::new(body, max_size);
+    match tokio::time::timeout(read_timeout, limited.collect()).await {
+        Err(_) => Err(crate::error::ClientError::Timeout(
+            "response body read timed out".into(),
+        )),
+        Ok(Ok(collected)) => Ok(collected.to_bytes()),
+        Ok(Err(err)) => {
+            if err.downcast_ref::<LengthLimitError>().is_some() {
+                return Err(ClientError::Transport(format!(
+                    "response body too large: exceeds {max_size} byte limit"
+                )));
+            }
+            match err.downcast::<hyper::Error>() {
+                Ok(hyper_err) => Err(ClientError::Http(*hyper_err)),
+                Err(other) => Err(ClientError::Transport(other.to_string())),
+            }
+        }
+    }
+}
+
 /// Truncates a response body for inclusion in error messages.
 ///
 /// Uses a char-boundary-safe truncation to avoid panics on multi-byte UTF-8.

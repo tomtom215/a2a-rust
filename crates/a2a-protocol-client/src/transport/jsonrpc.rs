@@ -21,7 +21,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use http_body_util::{BodyExt, Full};
+use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::header;
 #[cfg(not(feature = "tls-rustls"))]
@@ -58,12 +58,13 @@ pub struct JsonRpcTransport {
     inner: Arc<Inner>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Inner {
     client: HttpClient,
     endpoint: String,
     request_timeout: Duration,
     stream_connect_timeout: Duration,
+    max_response_size: usize,
 }
 
 impl JsonRpcTransport {
@@ -149,8 +150,20 @@ impl JsonRpcTransport {
                 endpoint,
                 request_timeout,
                 stream_connect_timeout,
+                max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
             }),
         })
+    }
+
+    /// Sets the maximum size in bytes of a buffered (non-streaming) response
+    /// body. Responses exceeding the cap fail with a non-retryable transport
+    /// error instead of being buffered without bound.
+    ///
+    /// Defaults to 32 MiB.
+    #[must_use]
+    pub fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+        Arc::make_mut(&mut self.inner).max_response_size = max_bytes;
+        self
     }
 
     /// Returns the endpoint URL this transport targets.
@@ -223,14 +236,19 @@ impl JsonRpcTransport {
         let status = resp.status();
         trace_debug!(method, %status, "received response");
 
-        let body_bytes = tokio::time::timeout(self.inner.request_timeout, resp.collect())
-            .await
-            .map_err(|_| {
-                trace_error!(method, "response body read timed out");
-                ClientError::Timeout("response body read timed out".into())
-            })?
-            .map_err(ClientError::Http)?
-            .to_bytes();
+        let body_bytes = match super::collect_response_limited(
+            resp,
+            self.inner.max_response_size,
+            self.inner.request_timeout,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                trace_error!(method, error = %e, "response body read failed");
+                return Err(e);
+            }
+        };
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -317,12 +335,12 @@ impl JsonRpcTransport {
 
         let status = resp.status();
         if !status.is_success() {
-            let body_bytes =
-                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
-                    .await
-                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
-                    .map_err(ClientError::Http)?
-                    .to_bytes();
+            let body_bytes = super::collect_response_limited(
+                resp,
+                self.inner.max_response_size,
+                self.inner.stream_connect_timeout,
+            )
+            .await?;
             let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
@@ -341,12 +359,12 @@ impl JsonRpcTransport {
             .unwrap_or("")
             .to_ascii_lowercase();
         if !content_type.starts_with("text/event-stream") {
-            let body_bytes =
-                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
-                    .await
-                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
-                    .map_err(ClientError::Http)?
-                    .to_bytes();
+            let body_bytes = super::collect_response_limited(
+                resp,
+                self.inner.max_response_size,
+                self.inner.stream_connect_timeout,
+            )
+            .await?;
             return Err(non_sse_stream_response_error(&content_type, &body_bytes));
         }
 
@@ -483,6 +501,8 @@ fn validate_url(url: &str) -> ClientResult<()> {
 
 #[cfg(test)]
 mod tests {
+    use http_body_util::BodyExt;
+
     use super::*;
 
     #[test]
@@ -823,6 +843,106 @@ mod tests {
             .await;
         let value = result.unwrap();
         assert_eq!(value["hello"], "world");
+    }
+
+    /// Regression (D5): a response whose Content-Length exceeds the cap is
+    /// rejected before the body is read — previously `resp.collect()` had no
+    /// size cap, so the client buffered arbitrarily large responses (bounded
+    /// only by the request timeout).
+    #[tokio::test]
+    async fn oversized_response_rejected_by_content_length() {
+        let big = format!(
+            r#"{{"jsonrpc":"2.0","id":"1","result":{{"pad":"{}"}}}}"#,
+            "x".repeat(64 * 1024)
+        );
+        let addr = start_server(200, big).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url)
+            .unwrap()
+            .with_max_response_size(1024);
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::Transport(msg)) => {
+                assert!(msg.contains("too large"), "got: {msg}");
+            }
+            other => panic!("expected Transport 'too large' error, got {other:?}"),
+        }
+    }
+
+    /// Regression (D5): a chunked response (no Content-Length) is aborted
+    /// *during* the read once the accumulated body exceeds the cap.
+    #[tokio::test]
+    async fn oversized_chunked_response_aborted_mid_read() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let io = hyper_util::rt::TokioIo::new(stream);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(|_req| async {
+                        // 64 × 64 KiB frames = 4 MiB, streamed without a
+                        // Content-Length header.
+                        let chunks: Vec<
+                            Result<hyper::body::Frame<Bytes>, std::convert::Infallible>,
+                        > = (0..64)
+                            .map(|_| {
+                                Ok(hyper::body::Frame::data(Bytes::from(vec![b'x'; 64 * 1024])))
+                            })
+                            .collect();
+                        let body =
+                            http_body_util::StreamBody::new(futures_util::stream::iter(chunks));
+                        Ok::<_, hyper::Error>(
+                            hyper::Response::builder()
+                                .status(200)
+                                .header("content-type", "application/json")
+                                .body(body)
+                                .unwrap(),
+                        )
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url)
+            .unwrap()
+            .with_max_response_size(1024 * 1024);
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::Transport(msg)) => {
+                assert!(msg.contains("too large"), "got: {msg}");
+            }
+            other => panic!("expected Transport 'too large' error, got {other:?}"),
+        }
+    }
+
+    /// A large response *under* the cap still succeeds — the default must not
+    /// reject legitimately big task histories.
+    #[tokio::test]
+    async fn large_response_under_cap_succeeds() {
+        let big = format!(
+            r#"{{"jsonrpc":"2.0","id":"__ID__","result":{{"pad":"{}"}}}}"#,
+            "y".repeat(256 * 1024)
+        );
+        let addr = start_server(200, big).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = JsonRpcTransport::new(&url).unwrap();
+        let value = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await
+            .expect("large response under the default cap must succeed");
+        assert_eq!(value["pad"].as_str().unwrap().len(), 256 * 1024);
     }
 
     #[tokio::test]

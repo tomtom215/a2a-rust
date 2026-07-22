@@ -184,6 +184,17 @@ impl ClientBuilder {
         self
     }
 
+    /// Sets the maximum size in bytes of a buffered (non-streaming) response
+    /// body. Responses exceeding the cap fail with a transport error instead
+    /// of being buffered without bound.
+    ///
+    /// Defaults to 32 MiB.
+    #[must_use]
+    pub const fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+        self.config.max_response_size = max_bytes;
+        self
+    }
+
     /// Sets the preferred protocol binding.
     ///
     /// Overrides any binding derived from the agent card.
