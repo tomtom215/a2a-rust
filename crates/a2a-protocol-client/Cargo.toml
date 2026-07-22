@@ -18,6 +18,10 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "client"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
+## HTTPS is on by default: the A2A spec serves agents over HTTPS, so the client
+## must reach them out of the box. Opt out with `default-features = false` for a
+## plaintext-HTTP-only build with no rustls dependency.
+default = ["tls-rustls"]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency).
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ## Enable agent card signing verification.

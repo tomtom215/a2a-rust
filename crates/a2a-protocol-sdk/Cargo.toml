@@ -18,12 +18,17 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "ai"]
 categories             = ["network-programming", "web-programming", "api-bindings"]
 
 [features]
+## HTTPS is on by default: the A2A spec serves agents over HTTPS, so both the
+## client (reaching agents) and the bundled push sender (delivering webhooks)
+## must speak TLS out of the box. Opt out with `default-features = false`.
+default = ["tls-rustls"]
 ## Enable agent card signing.
 signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-protocol-client/signing"]
 ## Enable structured logging via the `tracing` crate.
 tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
-## Enable HTTPS support via rustls.
-tls-rustls = ["a2a-protocol-client/tls-rustls"]
+## Enable HTTPS support via rustls, for both the client and the bundled
+## server-side push notification sender.
+tls-rustls = ["a2a-protocol-client/tls-rustls", "a2a-protocol-server/tls-rustls"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
 ## Additionally serve the deprecated pre-0.7 JSON-tunnel gRPC service for

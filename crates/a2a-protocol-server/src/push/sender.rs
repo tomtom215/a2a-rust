@@ -23,8 +23,56 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use bytes::Bytes;
 use http_body_util::Full;
+use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
+
+/// The hyper client type backing [`HttpPushSender`].
+///
+/// Plaintext-HTTP only in the default build; an HTTPS-capable
+/// (`https_or_http`) client when the `tls-rustls` feature is enabled.
+#[cfg(not(feature = "tls-rustls"))]
+type PushHttpClient = Client<HttpConnector, Full<Bytes>>;
+#[cfg(feature = "tls-rustls")]
+type PushHttpClient = Client<hyper_rustls::HttpsConnector<HttpConnector>, Full<Bytes>>;
+
+/// Builds the rustls `ClientConfig` used for HTTPS push delivery: TLS 1.2+ with
+/// `ring` selected explicitly (avoiding the multi-provider "could not determine
+/// process-level `CryptoProvider`" panic) and Mozilla's webpki roots.
+#[cfg(feature = "tls-rustls")]
+fn push_tls_config() -> rustls::ClientConfig {
+    let mut roots = rustls::RootCertStore::empty();
+    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("ring provider supports the rustls default protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth()
+}
+
+/// Builds the push-delivery hyper client for the active feature set.
+fn build_push_http_client() -> PushHttpClient {
+    #[cfg(not(feature = "tls-rustls"))]
+    {
+        Client::builder(TokioExecutor::new()).build_http()
+    }
+    #[cfg(feature = "tls-rustls")]
+    {
+        let mut http = HttpConnector::new();
+        // Let the HttpsConnector wrapper handle TLS for https:// targets while
+        // still permitting plaintext http:// via `https_or_http()`.
+        http.enforce_http(false);
+        http.set_nodelay(true);
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(push_tls_config())
+            .https_or_http()
+            .enable_all_versions()
+            .wrap_connector(http);
+        Client::builder(TokioExecutor::new()).build(https)
+    }
+}
 
 /// Trait for delivering push notifications to client webhooks.
 ///
@@ -114,22 +162,30 @@ impl PushRetryPolicy {
 ///
 /// Retries failed deliveries according to a configurable [`PushRetryPolicy`].
 ///
-/// # Transport: HTTP only
+/// # Transport
 ///
-/// This bundled sender delivers over **plaintext HTTP**; its hyper client is
-/// built with an HTTP-only connector, so it deliberately does not pull a TLS
-/// stack into the server's default dependency set. A delivery to an `https://`
-/// webhook fails fast with a clear error.
+/// With the **`tls-rustls`** feature (enabled by default via the `a2a-protocol-sdk`
+/// crate) this sender delivers over both `http://` and `https://` — the latter
+/// being the norm for production and what the A2A spec's webhook field
+/// describes. Without the feature it is plaintext-HTTP only and fails fast on
+/// an `https://` target with a clear, actionable error rather than a late,
+/// opaque connector failure.
 ///
-/// To deliver to `https://` webhooks — the norm for production, and what the
-/// A2A spec's webhook field describes — provide your own TLS-capable
-/// [`PushSender`] via
-/// [`RequestHandlerBuilder::with_push_sender`](crate::RequestHandlerBuilder::with_push_sender).
-/// [`PushSender`] is a public, object-safe trait; an implementation can wrap
-/// any TLS HTTP client (e.g. `hyper-rustls`) and reuse the SSRF-validation
-/// helpers exposed here. A TLS implementation should preserve the same
-/// defenses: validate the resolved address is public and pin it against DNS
-/// rebinding while presenting the original hostname for SNI/`Host`.
+/// You can always supply a fully custom TLS stack via
+/// [`RequestHandlerBuilder::with_push_sender`](crate::RequestHandlerBuilder::with_push_sender);
+/// [`PushSender`] is a public, object-safe trait.
+///
+/// # HTTPS and DNS-rebinding
+///
+/// The SSRF pre-flight ([`validate_webhook_url_with_dns`]) always runs, rejecting
+/// webhooks that resolve to private/loopback/link-local addresses. For `http://`
+/// targets the validated IP is additionally *pinned* (the request dials the
+/// literal IP with the original `Host` header) to close the DNS-rebinding TOCTOU
+/// window. For `https://` targets the IP is **not** pinned — the connection must
+/// present the original hostname for SNI and certificate verification — and the
+/// rebinding window is instead closed by TLS itself: an attacker who flips DNS to
+/// a private address after validation cannot present a certificate valid for the
+/// original hostname, so the handshake fails.
 ///
 /// # Security
 ///
@@ -140,7 +196,7 @@ impl PushRetryPolicy {
 ///   (rejects values containing CR/LF characters).
 #[derive(Debug)]
 pub struct HttpPushSender {
-    client: Client<hyper_util::client::legacy::connect::HttpConnector, Full<Bytes>>,
+    client: PushHttpClient,
     request_timeout: std::time::Duration,
     retry_policy: PushRetryPolicy,
     /// Whether to skip SSRF URL validation (for testing only).
@@ -164,7 +220,7 @@ impl HttpPushSender {
     /// Creates a new [`HttpPushSender`] with a custom per-request timeout.
     #[must_use]
     pub fn with_timeout(request_timeout: std::time::Duration) -> Self {
-        let client = Client::builder(TokioExecutor::new()).build_http();
+        let client = build_push_http_client();
         Self {
             client,
             request_timeout,
@@ -462,45 +518,46 @@ impl PushSender for HttpPushSender {
         Box::pin(async move {
             trace_info!(url, "delivering push notification");
 
-            // This bundled sender speaks plaintext HTTP only (its hyper client
-            // is built with an HTTP-only connector). Fail an `https://` target
-            // early with an actionable error rather than letting it fall through
-            // to an opaque "scheme is not http" connector error after every
-            // retry attempt. HTTPS webhook delivery is supported by providing a
-            // TLS-capable [`PushSender`] implementation (the trait is public and
-            // pluggable) — see the type-level docs.
-            if url
+            let is_https = url
                 .split_once("://")
-                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
-            {
+                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"));
+
+            // Without the `tls-rustls` feature this sender's connector is
+            // HTTP-only. Fail an `https://` target early with an actionable
+            // error rather than letting it fall through to an opaque "scheme is
+            // not http" connector error after every retry attempt. With the
+            // feature enabled, https is delivered normally.
+            #[cfg(not(feature = "tls-rustls"))]
+            if is_https {
                 return Err(A2aError::internal(
-                    "the bundled HttpPushSender delivers over HTTP only and cannot reach an \
-                     https:// webhook; supply a TLS-capable PushSender implementation for \
-                     HTTPS delivery",
+                    "this build of HttpPushSender delivers over HTTP only and cannot reach an \
+                     https:// webhook; enable the `tls-rustls` feature (on by default in \
+                     a2a-protocol-sdk) or supply a TLS-capable PushSender implementation",
                 ));
             }
 
             // SSRF protection: reject private/loopback addresses (with DNS resolution).
             //
-            // `pinned_addr` is the specific IP that validation checked. If it is
-            // `Some`, we rewrite the outgoing URI to use that literal IP and
-            // restore the original hostname via an explicit `Host:` header,
-            // which closes the DNS-rebinding TOCTOU window between validation
-            // and the HTTP client's own resolver. See
-            // `rewrite_uri_with_pinned_addr` for the details.
+            // `pinned_addr` is the specific IP that validation checked.
             let pinned_addr = if self.allow_private_urls {
                 None
             } else {
                 validate_webhook_url_with_dns(url).await?
             };
 
-            let (pinned_uri, pinned_host_header) = if let Some(addr) = pinned_addr {
-                (
+            // Pin the validated IP for `http://` only: rewrite the URI to the
+            // literal IP and restore the original hostname via an explicit
+            // `Host:` header, closing the DNS-rebinding TOCTOU window. For
+            // `https://` the IP is deliberately NOT pinned — the connection must
+            // present the original hostname for SNI/certificate verification, and
+            // TLS validation itself defeats a rebind to a private address (no
+            // valid cert for the hostname → handshake fails).
+            let (pinned_uri, pinned_host_header) = match pinned_addr {
+                Some(addr) if !is_https => (
                     Some(rewrite_uri_with_pinned_addr(url, addr)?),
                     Some(host_header_from_url(url)?),
-                )
-            } else {
-                (None, None)
+                ),
+                _ => (None, None),
             };
 
             // Header injection protection: validate credentials.
@@ -992,5 +1049,67 @@ mod tests {
     fn host_header_from_url_rejects_missing_host() {
         let result = host_header_from_url("http:///path");
         assert!(result.is_err());
+    }
+
+    // ── HTTPS delivery behavior ──────────────────────────────────────────────
+
+    fn dummy_event() -> StreamResponse {
+        use a2a_protocol_types::events::TaskStatusUpdateEvent;
+        use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("t1"),
+            context_id: ContextId::new("c1"),
+            status: TaskStatus::with_timestamp(TaskState::Working),
+            metadata: None,
+        })
+    }
+
+    fn dummy_config(url: &str) -> TaskPushNotificationConfig {
+        TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg".to_owned()),
+            task_id: Some("t1".to_owned()),
+            url: url.to_owned(),
+            token: None,
+            authentication: None,
+        }
+    }
+
+    /// Without `tls-rustls`, an `https://` webhook fails fast with an actionable
+    /// error (before any network I/O), never an opaque late connector error.
+    #[cfg(not(feature = "tls-rustls"))]
+    #[tokio::test]
+    async fn https_without_tls_feature_fails_fast() {
+        let sender = HttpPushSender::new();
+        let event = dummy_event();
+        let config = dummy_config("https://example.com/webhook");
+        let err = sender
+            .send(&config.url, &event, &config)
+            .await
+            .expect_err("https must fail fast without the tls-rustls feature");
+        assert!(
+            err.to_string().contains("HTTP only"),
+            "expected the HTTP-only error, got: {err}"
+        );
+    }
+
+    /// With `tls-rustls`, an `https://` target is no longer rejected at the
+    /// scheme gate — it proceeds into SSRF validation, which still rejects a
+    /// private/loopback address (proving https gets the same SSRF defense).
+    #[cfg(feature = "tls-rustls")]
+    #[tokio::test]
+    async fn https_with_tls_feature_still_enforces_ssrf() {
+        let sender = HttpPushSender::new();
+        let event = dummy_event();
+        let config = dummy_config("https://127.0.0.1:8443/webhook");
+        let err = sender
+            .send(&config.url, &event, &config)
+            .await
+            .expect_err("https to a loopback address must be rejected by SSRF");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("private/loopback") || msg.contains("loopback"),
+            "expected an SSRF rejection (not the HTTP-only error), got: {msg}"
+        );
     }
 }

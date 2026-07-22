@@ -78,12 +78,15 @@ dependencies = [
  "futures-util",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-util",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "prost",
  "protoc-bin-vendored",
+ "rustls",
+ "rustls-pki-types",
  "serde",
  "serde_json",
  "sqlx",
@@ -96,6 +99,7 @@ dependencies = [
  "tonic-prost-build",
  "tracing",
  "uuid",
+ "webpki-roots 1.0.6",
 ]
 
 [[package]]

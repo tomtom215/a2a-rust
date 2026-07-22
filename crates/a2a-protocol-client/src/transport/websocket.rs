@@ -414,6 +414,9 @@ impl std::fmt::Debug for WebSocketTransport {
 /// send the request unauthenticated with no signal; this makes the drop
 /// observable. See the module docs for the rationale and the connect-time
 /// alternative.
+// `method` is consumed only by `trace_warn!`, which expands to nothing when the
+// `tracing` feature is off — allow it to be unused in that build.
+#[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
 fn warn_dropped_per_request_headers(method: &str, extra_headers: &HashMap<String, String>) {
     if !extra_headers.is_empty() {
         trace_warn!(

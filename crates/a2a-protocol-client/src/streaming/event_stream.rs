@@ -167,7 +167,11 @@ impl EventStream {
     /// [`ClientError::Timeout`] instead of blocking forever. The bound applies
     /// only to establishment — once any data is received, subsequent waits are
     /// unbounded so long-idle subscriptions are not interrupted.
+    ///
+    /// Currently wired by the WebSocket transport, which otherwise has no
+    /// establishment timeout at all.
     #[must_use]
+    #[cfg(any(test, feature = "websocket"))]
     pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
         self

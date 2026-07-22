@@ -497,6 +497,17 @@ fn validate_url(url: &str) -> ClientResult<()> {
             "URL must start with http:// or https://: {url}"
         )));
     }
+    // Fail fast in a plaintext-only build: an `https://` endpoint would
+    // otherwise be accepted here and only fail later, per-request, with an
+    // opaque "scheme is not http" connector error. HTTPS requires the
+    // (default) `tls-rustls` feature.
+    #[cfg(not(feature = "tls-rustls"))]
+    if url.starts_with("https://") {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "https:// requires the `tls-rustls` feature (enabled by default); \
+             this build has it disabled: {url}"
+        )));
+    }
     Ok(())
 }
 
@@ -561,9 +572,20 @@ mod tests {
         assert!(validate_url("http://localhost:8080").is_ok());
     }
 
+    #[cfg(feature = "tls-rustls")]
     #[test]
     fn validate_url_accepts_https() {
         assert!(validate_url("https://agent.example.com/a2a").is_ok());
+    }
+
+    #[cfg(not(feature = "tls-rustls"))]
+    #[test]
+    fn validate_url_rejects_https_without_tls_feature() {
+        let err = validate_url("https://agent.example.com/a2a").unwrap_err();
+        assert!(
+            err.to_string().contains("tls-rustls"),
+            "error should point at the tls-rustls feature, got: {err}"
+        );
     }
 
     #[test]

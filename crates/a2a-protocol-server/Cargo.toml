@@ -22,6 +22,10 @@ categories             = ["network-programming", "web-programming"]
 signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]
+## Enable HTTPS delivery for the bundled push-notification sender via rustls
+## (no OpenSSL system dependency). Without this feature the bundled
+## `HttpPushSender` speaks plaintext HTTP only and fails fast on `https://`.
+tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
 ## Enable SQLite-backed task and push config stores via `sqlx`.
 sqlite = ["dep:sqlx"]
 ## Enable PostgreSQL-backed task and push config stores via `sqlx` with PostgreSQL driver.
@@ -52,6 +56,10 @@ uuid           = { workspace = true }
 bytes          = "1"
 tokio-util     = { version = ">=0.7, <0.8", features = ["rt"] }
 tracing        = { workspace = true, optional = true }
+hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features = false, features = ["ring", "http1", "http2", "webpki-tokio"] }
+rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
+rustls-pki-types = { version = ">=1.7, <2", optional = true }
+webpki-roots   = { version = ">=1.0, <2", optional = true }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.29, <0.30", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
