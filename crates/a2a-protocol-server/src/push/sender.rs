@@ -521,6 +521,22 @@ fn host_header_from_url(url: &str) -> A2aResult<String> {
         .map_or_else(|| host.to_string(), |port| format!("{host}:{port}")))
 }
 
+/// Decides whether to pin the pre-validated IP for this delivery.
+///
+/// `http://` requests pin (the caller rewrites the URI to the literal IP and
+/// restores the original `Host` header) to close the DNS-rebinding TOCTOU
+/// window. `https://` requests must **not** pin — the connection has to present
+/// the original hostname for SNI and certificate verification, and TLS
+/// validation itself defeats a rebind to a private address (no valid cert for
+/// the hostname → handshake fails). A `None` address (IP literal, or SSRF
+/// validation skipped) is never pinned.
+const fn pin_target(is_https: bool, pinned_addr: Option<SocketAddr>) -> Option<SocketAddr> {
+    match pinned_addr {
+        Some(addr) if !is_https => Some(addr),
+        _ => None,
+    }
+}
+
 /// Validates that a header value contains no CR/LF characters.
 fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
     if value.contains('\r') || value.contains('\n') {
@@ -580,12 +596,12 @@ impl PushSender for HttpPushSender {
             // present the original hostname for SNI/certificate verification, and
             // TLS validation itself defeats a rebind to a private address (no
             // valid cert for the hostname → handshake fails).
-            let (pinned_uri, pinned_host_header) = match pinned_addr {
-                Some(addr) if !is_https => (
+            let (pinned_uri, pinned_host_header) = match pin_target(is_https, pinned_addr) {
+                Some(addr) => (
                     Some(rewrite_uri_with_pinned_addr(url, addr)?),
                     Some(host_header_from_url(url)?),
                 ),
-                _ => (None, None),
+                None => (None, None),
             };
 
             // Header injection protection: validate credentials.
@@ -1077,6 +1093,19 @@ mod tests {
     fn host_header_from_url_rejects_missing_host() {
         let result = host_header_from_url("http:///path");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn pin_target_pins_http_but_not_https() {
+        let addr: SocketAddr = "203.0.113.1:8080".parse().unwrap();
+        // http:// pins the validated IP (DNS-rebinding defense).
+        assert_eq!(pin_target(false, Some(addr)), Some(addr));
+        // https:// must NOT pin — the hostname is preserved for SNI/cert
+        // verification, and TLS closes the rebinding window instead.
+        assert_eq!(pin_target(true, Some(addr)), None);
+        // Nothing to pin when validation was skipped / the host was an IP literal.
+        assert_eq!(pin_target(false, None), None);
+        assert_eq!(pin_target(true, None), None);
     }
 
     // ── HTTPS delivery behavior ──────────────────────────────────────────────

@@ -602,13 +602,20 @@ mod tests {
         // Keep `tx` alive so the channel does not close; simply never send.
         let (_tx, rx) = mpsc::channel::<BodyChunk>(8);
         let mut stream = EventStream::new(rx).with_first_event_timeout(Duration::from_millis(50));
-        let result = stream.next().await;
+        // Outer bound so that if the first-event timeout is ever broken (the
+        // guard never fires), this test fails fast instead of hanging forever.
+        let result = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .expect("first-event timeout must fire well within 2s");
         assert!(
             matches!(result, Some(Err(ClientError::Timeout(_)))),
             "expected first-event timeout, got {result:?}"
         );
         // After timing out the stream is done.
-        assert!(stream.next().await.is_none());
+        let done = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .expect("a completed stream must return promptly");
+        assert!(done.is_none());
     }
 
     /// Once the first chunk arrives, the first-event timeout no longer applies:

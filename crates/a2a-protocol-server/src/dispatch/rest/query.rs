@@ -191,6 +191,18 @@ mod tests {
         assert_eq!(percent_decode("%ZZ"), "%ZZ");
     }
 
+    /// A `%` followed by exactly ONE more character at end-of-input must be
+    /// passed through, not read past the buffer. This pins the `i + 2 < len`
+    /// bounds check: an off-by-one to `<=` would index `raw[i + 2]` out of
+    /// bounds and panic on this attacker-controllable input.
+    #[test]
+    fn percent_decode_truncated_single_char_at_end_does_not_panic() {
+        assert_eq!(percent_decode("%4"), "%4");
+        assert_eq!(percent_decode("a%F"), "a%F");
+        // Even a "valid-looking" first hex digit with nothing after it stays literal.
+        assert_eq!(percent_decode("x%2"), "x%2");
+    }
+
     #[test]
     fn percent_decode_multibyte_utf8_roundtrips() {
         // A percent-encoded multi-byte UTF-8 value must decode to the original
