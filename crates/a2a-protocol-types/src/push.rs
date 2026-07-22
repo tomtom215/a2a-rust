@@ -19,7 +19,12 @@ use serde::{Deserialize, Serialize};
 /// In v1.0, this uses singular `scheme` (not `schemes`). `credentials` is
 /// optional in the canonical protocol schema — a scheme may not need an
 /// explicit credential value.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `credentials` is a secret and is **redacted** in the [`Debug`]
+/// representation (its presence is shown, its value is not) so it cannot leak
+/// into logs via `{:?}`. Serialization is unaffected — the real value is still
+/// sent on the wire.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthenticationInfo {
     /// Authentication scheme (e.g. `"bearer"`).
@@ -30,13 +35,30 @@ pub struct AuthenticationInfo {
     pub credentials: Option<String>,
 }
 
+impl core::fmt::Debug for AuthenticationInfo {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AuthenticationInfo")
+            .field("scheme", &self.scheme)
+            .field(
+                "credentials",
+                &self.credentials.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
 // ── TaskPushNotificationConfig ──────────────────────────────────────────────
 
 /// Configuration for delivering task updates to a webhook endpoint.
 ///
 /// In v1.0, this is a single flat type combining the previous
 /// `PushNotificationConfig` and `TaskPushNotificationConfig`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// `token` is a secret and is **redacted** in the [`Debug`] representation
+/// (presence shown, value hidden), as is any `credentials` inside
+/// `authentication`, so a `{:?}` of a config tree cannot leak the shared
+/// secret into logs. Serialization is unaffected.
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskPushNotificationConfig {
     /// Optional tenant identifier for multi-tenancy.
@@ -69,6 +91,19 @@ pub struct TaskPushNotificationConfig {
     /// Authentication details the agent should use when calling the webhook.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authentication: Option<AuthenticationInfo>,
+}
+
+impl core::fmt::Debug for TaskPushNotificationConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("TaskPushNotificationConfig")
+            .field("tenant", &self.tenant)
+            .field("id", &self.id)
+            .field("task_id", &self.task_id)
+            .field("url", &self.url)
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .field("authentication", &self.authentication)
+            .finish()
+    }
 }
 
 impl TaskPushNotificationConfig {
@@ -297,5 +332,49 @@ mod tests {
             cfg.validate().is_ok(),
             "absent task_id is valid on the wire"
         );
+    }
+
+    #[test]
+    fn debug_redacts_secrets_but_keeps_presence() {
+        let cfg = TaskPushNotificationConfig {
+            tenant: None,
+            id: None,
+            task_id: Some("t-1".into()),
+            url: "https://example.com/hook".into(),
+            token: Some("super-secret-shared-token".into()),
+            authentication: Some(AuthenticationInfo {
+                scheme: "bearer".into(),
+                credentials: Some("SECRET-BEARER-CREDENTIAL".into()),
+            }),
+        };
+        let dbg = format!("{cfg:?}");
+        // The secret values must never appear.
+        assert!(
+            !dbg.contains("super-secret-shared-token"),
+            "token leaked in Debug: {dbg}"
+        );
+        assert!(
+            !dbg.contains("SECRET-BEARER-CREDENTIAL"),
+            "credentials leaked in Debug: {dbg}"
+        );
+        // Presence (Some vs None) and non-secret fields must still be visible.
+        assert!(dbg.contains("<redacted>"), "expected redaction marker: {dbg}");
+        assert!(dbg.contains("https://example.com/hook"), "url dropped: {dbg}");
+        assert!(dbg.contains("bearer"), "scheme dropped: {dbg}");
+
+        // Serialization must still carry the real secret on the wire.
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert!(json.contains("super-secret-shared-token"));
+        assert!(json.contains("SECRET-BEARER-CREDENTIAL"));
+    }
+
+    #[test]
+    fn debug_shows_none_for_absent_secret() {
+        let info = AuthenticationInfo {
+            scheme: "none".into(),
+            credentials: None,
+        };
+        let dbg = format!("{info:?}");
+        assert!(dbg.contains("credentials: None"), "{dbg}");
     }
 }

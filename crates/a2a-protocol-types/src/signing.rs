@@ -45,9 +45,19 @@ use crate::extensions::AgentCardSignature;
 /// Returns an error if the value cannot be serialized.
 pub fn canonicalize(value: &serde_json::Value) -> A2aResult<Vec<u8>> {
     let mut buf = Vec::with_capacity(1024);
-    write_canonical(value, &mut buf)?;
+    write_canonical(value, &mut buf, 0)?;
     Ok(buf)
 }
+
+/// Maximum nesting depth accepted by [`canonicalize`].
+///
+/// `write_canonical` recurses once per array/object level, so a
+/// programmatically constructed, pathologically deep [`serde_json::Value`]
+/// (one that never passed through `serde_json`'s own 128-level parse limit)
+/// could overflow the stack. Bounding depth turns that into a clean error.
+/// Set well above the 128 nesting levels `serde_json` accepts so no value that
+/// deserialized can be rejected here.
+const MAX_CANONICAL_DEPTH: usize = 256;
 
 /// Canonicalizes an [`AgentCard`] to bytes for signing.
 ///
@@ -73,7 +83,12 @@ pub fn canonicalize_card(card: &AgentCard) -> A2aResult<Vec<u8>> {
     canonicalize(&value)
 }
 
-fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()> {
+fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>, depth: usize) -> A2aResult<()> {
+    if depth > MAX_CANONICAL_DEPTH {
+        return Err(A2aError::internal(format!(
+            "JSON nesting exceeds maximum canonicalization depth of {MAX_CANONICAL_DEPTH}"
+        )));
+    }
     match value {
         serde_json::Value::Null => buf.extend_from_slice(b"null"),
         serde_json::Value::Bool(b) => {
@@ -104,7 +119,7 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()
                 if i > 0 {
                     buf.push(b',');
                 }
-                write_canonical(item, buf)?;
+                write_canonical(item, buf, depth + 1)?;
             }
             buf.push(b']');
         }
@@ -124,7 +139,7 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()
                 write_canonical_string(key, buf);
                 buf.push(b':');
                 if let Some(val) = obj.get(*key) {
-                    write_canonical(val, buf)?;
+                    write_canonical(val, buf, depth + 1)?;
                 }
             }
             buf.push(b'}');
@@ -391,6 +406,32 @@ mod tests {
         let canonical = canonicalize(&json).unwrap();
         let s = String::from_utf8(canonical).unwrap();
         assert_eq!(s, r#"{"msg":"hello\nworld"}"#);
+    }
+
+    #[test]
+    fn canonicalize_rejects_pathologically_deep_value() {
+        // A value nested past the depth bound must error, not overflow the
+        // stack. Build it iteratively so constructing the input can't itself
+        // overflow.
+        let mut v = serde_json::json!(1);
+        for _ in 0..(MAX_CANONICAL_DEPTH + 10) {
+            v = serde_json::json!([v]);
+        }
+        let err = canonicalize(&v).expect_err("over-deep value must be rejected");
+        assert!(
+            err.to_string().contains("depth"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn canonicalize_allows_reasonable_nesting() {
+        // Nesting comfortably within the bound must still succeed.
+        let mut v = serde_json::json!(1);
+        for _ in 0..64 {
+            v = serde_json::json!({ "n": v });
+        }
+        assert!(canonicalize(&v).is_ok());
     }
 
     #[test]

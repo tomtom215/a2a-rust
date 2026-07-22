@@ -11,13 +11,16 @@
 //! wire-compatible with the official Go, Python, and Java A2A SDKs.
 //!
 //! The [`convert`] submodule provides conversions between these protobuf
-//! types and the serde domain types in the rest of this crate:
+//! types and the serde domain types in the rest of this crate. Both
+//! directions are fallible with [`convert::ConvertError`] — hence `TryFrom`,
+//! not `From`, on both sides:
 //!
-//! - `From<Domain> for Proto` — infallible (every domain value has a
-//!   protobuf representation)
-//! - `TryFrom<Proto> for Domain` — fallible with [`convert::ConvertError`]
-//!   (protobuf values can carry out-of-range enums, invalid timestamps,
-//!   or missing required fields)
+//! - `TryFrom<Proto> for Domain` — protobuf values can carry out-of-range
+//!   enums, invalid timestamps, or missing required oneof fields.
+//! - `TryFrom<Domain> for Proto` — domain values can carry data a protobuf
+//!   message cannot faithfully hold: non-object `metadata`, a base64 `Raw`
+//!   part that fails to decode, a count exceeding `i32::MAX`, or a number
+//!   outside the exact-`f64` range of `google.protobuf.Value`.
 //!
 //! This module is pure data, like the rest of the crate: no I/O and no
 //! transport. The gRPC transports in the server and client crates generate

@@ -189,16 +189,45 @@ pub(crate) fn rfc3339_to_timestamp(
 
 // ── google.protobuf.Struct / Value ⇄ serde_json::Value ──────────────────────
 
+/// Maximum nesting depth for `Struct`/`Value` conversion in either direction.
+///
+/// Both `proto_value_to_json`/`proto_struct_to_json` and their inverses recurse
+/// once per nesting level, so an adversarial `Value` (a deeply nested
+/// `google.protobuf.Struct` on the wire, or a programmatically built
+/// `serde_json::Value` handed to the public [`json_to_struct`]) could overflow
+/// the stack. Transport decoders bound this upstream (prost caps proto nesting
+/// near 100 levels; `serde_json` caps JSON at 128), but the public conversion
+/// API accepts values that never passed through either, so the limit is
+/// enforced here too. Set comfortably above both upstream limits so nothing
+/// that already parsed is rejected.
+const MAX_STRUCT_DEPTH: usize = 256;
+
 /// Converts a protobuf `Value` into a JSON value.
 ///
 /// Numbers are `f64` in protobuf; integral values inside the exact-`f64`
 /// range become JSON integers so common metadata round-trips losslessly.
 /// Non-finite numbers are rejected (they have no JSON representation).
+/// Nesting deeper than [`MAX_STRUCT_DEPTH`] is rejected rather than overflowing
+/// the stack.
 pub(crate) fn proto_value_to_json(
     v: prost_types::Value,
     field: &'static str,
 ) -> Result<serde_json::Value, ConvertError> {
+    proto_value_to_json_depth(v, field, 0)
+}
+
+fn proto_value_to_json_depth(
+    v: prost_types::Value,
+    field: &'static str,
+    depth: usize,
+) -> Result<serde_json::Value, ConvertError> {
     use prost_types::value::Kind;
+    if depth > MAX_STRUCT_DEPTH {
+        return Err(ConvertError::new(
+            field,
+            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
+        ));
+    }
     let Some(kind) = v.kind else {
         return Ok(serde_json::Value::Null);
     };
@@ -207,11 +236,11 @@ pub(crate) fn proto_value_to_json(
         Kind::BoolValue(b) => serde_json::Value::Bool(b),
         Kind::NumberValue(n) => serde_json::Value::Number(f64_to_json_number(n, field)?),
         Kind::StringValue(s) => serde_json::Value::String(s),
-        Kind::StructValue(s) => proto_struct_to_json(s, field)?,
+        Kind::StructValue(s) => proto_struct_to_json_depth(s, field, depth + 1)?,
         Kind::ListValue(l) => serde_json::Value::Array(
             l.values
                 .into_iter()
-                .map(|v| proto_value_to_json(v, field))
+                .map(|v| proto_value_to_json_depth(v, field, depth + 1))
                 .collect::<Result<_, _>>()?,
         ),
     })
@@ -222,12 +251,31 @@ pub(crate) fn proto_struct_to_json(
     s: prost_types::Struct,
     field: &'static str,
 ) -> Result<serde_json::Value, ConvertError> {
+    proto_struct_to_json_depth(s, field, 0)
+}
+
+fn proto_struct_to_json_depth(
+    s: prost_types::Struct,
+    field: &'static str,
+    depth: usize,
+) -> Result<serde_json::Value, ConvertError> {
+    if depth > MAX_STRUCT_DEPTH {
+        return Err(ConvertError::new(
+            field,
+            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
+        ));
+    }
     let mut map = serde_json::Map::with_capacity(s.fields.len());
     for (k, v) in s.fields {
-        map.insert(k, proto_value_to_json(v, field)?);
+        map.insert(k, proto_value_to_json_depth(v, field, depth + 1)?);
     }
     Ok(serde_json::Value::Object(map))
 }
+
+/// The largest integer magnitude an `f64` represents exactly, `2^53`. Integers
+/// with `|n| <= MAX_EXACT_INT_F64` survive an `f64` round-trip bit-for-bit;
+/// beyond it consecutive integers start colliding onto the same `f64`.
+const MAX_EXACT_INT_F64: f64 = 9_007_199_254_740_992.0;
 
 fn f64_to_json_number(n: f64, field: &'static str) -> Result<serde_json::Number, ConvertError> {
     if !n.is_finite() {
@@ -236,10 +284,15 @@ fn f64_to_json_number(n: f64, field: &'static str) -> Result<serde_json::Number,
             format!("non-finite number {n} has no JSON representation"),
         ));
     }
-    // Integral values in the exact range convert to JSON integers; the
-    // 2^53 bound is where f64 stops representing integers exactly.
+    // Integral values in the exact range convert to JSON integers so common
+    // metadata round-trips losslessly. The bound is inclusive of ±2^53 (which
+    // is itself exactly representable) and mirrors the encode-side guard in
+    // `json_number_to_f64`, so the set of integers accepted on encode is
+    // exactly the set restored to integers on decode. `-0.0` is excluded: it
+    // is integral but casting it to `i64` would drop the sign, so it flows
+    // through `from_f64` to preserve the negative zero serde_json emits.
     #[allow(clippy::cast_possible_truncation)]
-    if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 {
+    if n.fract() == 0.0 && n.abs() <= MAX_EXACT_INT_F64 && !(n == 0.0 && n.is_sign_negative()) {
         let i = n as i64;
         return Ok(serde_json::Number::from(i));
     }
@@ -256,7 +309,21 @@ pub(crate) fn json_to_proto_value(
     v: serde_json::Value,
     field: &'static str,
 ) -> Result<prost_types::Value, ConvertError> {
+    json_to_proto_value_depth(v, field, 0)
+}
+
+fn json_to_proto_value_depth(
+    v: serde_json::Value,
+    field: &'static str,
+    depth: usize,
+) -> Result<prost_types::Value, ConvertError> {
     use prost_types::value::Kind;
+    if depth > MAX_STRUCT_DEPTH {
+        return Err(ConvertError::new(
+            field,
+            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
+        ));
+    }
     let kind = match v {
         serde_json::Value::Null => Kind::NullValue(0),
         serde_json::Value::Bool(b) => Kind::BoolValue(b),
@@ -265,10 +332,12 @@ pub(crate) fn json_to_proto_value(
         serde_json::Value::Array(items) => Kind::ListValue(prost_types::ListValue {
             values: items
                 .into_iter()
-                .map(|v| json_to_proto_value(v, field))
+                .map(|v| json_to_proto_value_depth(v, field, depth + 1))
                 .collect::<Result<_, _>>()?,
         }),
-        serde_json::Value::Object(map) => Kind::StructValue(json_map_to_proto_struct(map, field)?),
+        serde_json::Value::Object(map) => {
+            Kind::StructValue(json_map_to_proto_struct_depth(map, field, depth + 1)?)
+        }
     };
     Ok(prost_types::Value { kind: Some(kind) })
 }
@@ -281,7 +350,7 @@ pub(crate) fn json_to_proto_struct(
     field: &'static str,
 ) -> Result<prost_types::Struct, ConvertError> {
     match v {
-        serde_json::Value::Object(map) => json_map_to_proto_struct(map, field),
+        serde_json::Value::Object(map) => json_map_to_proto_struct_depth(map, field, 0),
         other => Err(ConvertError::new(
             field,
             format!(
@@ -292,38 +361,47 @@ pub(crate) fn json_to_proto_struct(
     }
 }
 
-fn json_map_to_proto_struct(
+fn json_map_to_proto_struct_depth(
     map: serde_json::Map<String, serde_json::Value>,
     field: &'static str,
+    depth: usize,
 ) -> Result<prost_types::Struct, ConvertError> {
+    if depth > MAX_STRUCT_DEPTH {
+        return Err(ConvertError::new(
+            field,
+            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
+        ));
+    }
     let mut fields = std::collections::BTreeMap::new();
     for (k, v) in map {
-        fields.insert(k, json_to_proto_value(v, field)?);
+        fields.insert(k, json_to_proto_value_depth(v, field, depth + 1)?);
     }
     Ok(prost_types::Struct { fields })
 }
 
 fn json_number_to_f64(n: &serde_json::Number, field: &'static str) -> Result<f64, ConvertError> {
-    #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+    // `2^53` as an exact `u64`, the inclusive magnitude bound for lossless
+    // integer↔f64 conversion. A range check is used rather than the older
+    // `i as f64 as i64 == i` round-trip: that round-trip *saturates* at the
+    // extremes (`i64::MAX as f64` rounds up to 2^63, and casting back
+    // saturates to `i64::MAX`), so it silently accepted `i64::MAX`/`u64::MAX`
+    // and corrupted them — exactly the precision loss this guard exists to
+    // reject.
+    const MAX_EXACT: u64 = 1 << 53;
+    #[allow(clippy::cast_precision_loss)]
     if let Some(i) = n.as_i64() {
-        let f = i as f64;
-        if f as i64 == i {
-            return Ok(f);
+        if i.unsigned_abs() <= MAX_EXACT {
+            return Ok(i as f64);
         }
         return Err(ConvertError::new(
             field,
             format!("integer {i} exceeds the exact f64 range of protobuf numbers"),
         ));
     }
-    #[allow(
-        clippy::cast_precision_loss,
-        clippy::cast_sign_loss,
-        clippy::cast_possible_truncation
-    )]
+    #[allow(clippy::cast_precision_loss)]
     if let Some(u) = n.as_u64() {
-        let f = u as f64;
-        if f as u64 == u {
-            return Ok(f);
+        if u <= MAX_EXACT {
+            return Ok(u as f64);
         }
         return Err(ConvertError::new(
             field,
@@ -546,5 +624,63 @@ mod tests {
             Some(serde_json::json!({}))
         );
         assert_eq!(metadata_from_proto(None, "m").unwrap(), None);
+    }
+
+    /// Regression: the previous `i as f64 as i64 == i` guard *saturated* at the
+    /// extremes and silently accepted `i64::MAX`/`i64::MIN`/`u64::MAX`, casting
+    /// them to a different `f64`. They must now be rejected, not corrupted.
+    #[test]
+    fn json_to_value_rejects_saturating_integer_extremes() {
+        for n in [
+            serde_json::json!(i64::MAX),
+            serde_json::json!(i64::MIN),
+            serde_json::json!(u64::MAX),
+        ] {
+            let err = json_to_proto_value(n.clone(), "m")
+                .expect_err(&format!("{n} must be rejected, not silently corrupted"));
+            assert!(err.reason.contains("exact f64"), "{}", err.reason);
+        }
+    }
+
+    /// The set of integers accepted on encode must equal the set restored to
+    /// JSON integers on decode: `±2^53` is the inclusive boundary and must
+    /// round-trip as an integer, not degrade into a float.
+    #[test]
+    fn exact_boundary_integer_roundtrips_as_integer() {
+        for i in [9_007_199_254_740_992_i64, -9_007_199_254_740_992_i64] {
+            let v = json_to_proto_value(serde_json::json!(i), "m")
+                .unwrap_or_else(|e| panic!("2^53 boundary should encode: {}", e.reason));
+            let back = proto_value_to_json(v, "m").unwrap();
+            assert_eq!(back, serde_json::json!(i));
+            assert_eq!(serde_json::to_string(&back).unwrap(), i.to_string());
+        }
+        // 2^53 + 1 is the first non-representable integer and stays rejected.
+        assert!(json_to_proto_value(serde_json::json!(9_007_199_254_740_993_i64), "m").is_err());
+    }
+
+    /// `-0.0` is integral but must not collapse to `0`: casting to `i64` drops
+    /// the sign, so it flows through `from_f64` and stays a (negative) float.
+    #[test]
+    fn negative_zero_does_not_collapse_to_integer() {
+        let v = prost_types::Value {
+            kind: Some(prost_types::value::Kind::NumberValue(-0.0)),
+        };
+        let json = proto_value_to_json(v, "m").unwrap();
+        assert!(
+            json.as_f64().is_some_and(|f| f == 0.0 && f.is_sign_negative()),
+            "expected negative zero float, got {json}"
+        );
+    }
+
+    /// Deeply nested `Struct` conversion must return an error rather than
+    /// overflow the stack. Build a value nested past `MAX_STRUCT_DEPTH`.
+    #[test]
+    fn deeply_nested_value_is_rejected_not_overflowing() {
+        let mut v = serde_json::json!(1);
+        for _ in 0..(MAX_STRUCT_DEPTH + 10) {
+            v = serde_json::json!({ "n": v });
+        }
+        let err = json_to_proto_value(v, "m").expect_err("over-deep value must be rejected");
+        assert!(err.reason.contains("maximum depth"), "{}", err.reason);
     }
 }
