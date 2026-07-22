@@ -230,7 +230,7 @@ mod tests {
             let config = TaskPushNotificationConfig {
                 tenant: None,
                 id: Some(format!("cfg-{i}")),
-                task_id: "t-deadline".to_owned(),
+                task_id: Some("t-deadline".to_owned()),
                 url: format!("https://example.com/hook{i}"),
                 token: None,
                 authentication: None,
@@ -286,7 +286,7 @@ mod tests {
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-fail".to_owned()),
-            task_id: "t-fail".to_owned(),
+            task_id: Some("t-fail".to_owned()),
             url: "https://example.com/hook".to_owned(),
             token: None,
             authentication: None,
@@ -331,7 +331,7 @@ mod tests {
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-timeout".to_owned()),
-            task_id: "t-timeout".to_owned(),
+            task_id: Some("t-timeout".to_owned()),
             url: "https://example.com/hook".to_owned(),
             token: None,
             authentication: None,

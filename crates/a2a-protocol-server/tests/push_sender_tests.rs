@@ -206,7 +206,7 @@ async fn bearer_auth_header_is_sent() {
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
         scheme: "bearer".into(),
-        credentials: "my-secret-token".into(),
+        credentials: Some("my-secret-token".into()),
     });
 
     sender.send(&url, &status_event(), &config).await.unwrap();
@@ -239,7 +239,7 @@ async fn basic_auth_header_is_sent() {
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
         scheme: "basic".into(),
-        credentials: "dXNlcjpwYXNz".into(),
+        credentials: Some("dXNlcjpwYXNz".into()),
     });
 
     sender.send(&url, &status_event(), &config).await.unwrap();
@@ -295,7 +295,7 @@ async fn both_auth_and_token_headers_are_sent() {
     let mut config = base_config(&url);
     config.authentication = Some(AuthenticationInfo {
         scheme: "bearer".into(),
-        credentials: "token-123".into(),
+        credentials: Some("token-123".into()),
     });
     config.token = Some("notif-456".into());
 

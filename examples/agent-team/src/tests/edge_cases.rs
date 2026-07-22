@@ -265,7 +265,7 @@ pub async fn test_push_crud_jsonrpc(ctx: &TestContext) -> TestResult {
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: None,
-            task_id: tid.clone(),
+            task_id: Some(tid.clone()),
             url: format!("http://{}/webhook", ctx.webhook_addr),
             token: Some("jsonrpc-test-token".into()),
             authentication: None,

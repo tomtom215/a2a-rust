@@ -129,6 +129,13 @@ impl PushConfigStore for InMemoryPushConfigStore {
         mut config: TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> {
         Box::pin(async move {
+            // A config cannot be stored without its routing key. The handler
+            // rejects this earlier; guard here too for direct store users.
+            let Some(task_id) = config.task_id.clone() else {
+                return Err(a2a_protocol_types::error::A2aError::invalid_params(
+                    "taskId is required to store a push notification config",
+                ));
+            };
             // Assign an ID if not present.
             let id = config
                 .id
@@ -136,7 +143,7 @@ impl PushConfigStore for InMemoryPushConfigStore {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
             config.id = Some(id.clone());
 
-            let key = (config.task_id.clone(), id);
+            let key = (task_id.clone(), id);
             let mut store = self.configs.write().await;
             let mut counts = self.task_counts.write().await;
 
@@ -157,8 +164,7 @@ impl PushConfigStore for InMemoryPushConfigStore {
                 }
                 // FIX(M11): Use secondary index for O(1) per-task count lookup
                 // instead of scanning all keys.
-                let task_id = &config.task_id;
-                let count = counts.get(task_id).copied().unwrap_or(0);
+                let count = counts.get(&task_id).copied().unwrap_or(0);
                 let max = self.max_configs_per_task;
                 if count >= max {
                     drop(counts);
@@ -171,7 +177,7 @@ impl PushConfigStore for InMemoryPushConfigStore {
 
             store.insert(key, config.clone());
             if is_new {
-                *counts.entry(config.task_id.clone()).or_insert(0) += 1;
+                *counts.entry(task_id).or_insert(0) += 1;
             }
             drop(counts);
             drop(store);
@@ -246,11 +252,31 @@ mod tests {
         TaskPushNotificationConfig {
             tenant: None,
             id: id.map(String::from),
-            task_id: task_id.to_string(),
+            task_id: Some(task_id.to_string()),
             url: url.to_string(),
             token: None,
             authentication: None,
         }
+    }
+
+    /// Regression (D1): storing a config without its `task_id` routing key
+    /// must fail with a proper invalid-params error, not panic.
+    #[tokio::test]
+    async fn set_without_task_id_returns_invalid_params() {
+        let store = InMemoryPushConfigStore::new();
+        let config = TaskPushNotificationConfig {
+            tenant: None,
+            id: None,
+            task_id: None,
+            url: "https://example.com/hook".to_string(),
+            token: None,
+            authentication: None,
+        };
+        let err = store
+            .set(config)
+            .await
+            .expect_err("None task_id must be rejected");
+        assert!(err.to_string().contains("taskId"), "got: {err}");
     }
 
     #[tokio::test]
@@ -300,7 +326,7 @@ mod tests {
             .await
             .expect("get should succeed")
             .expect("config should exist after set");
-        assert_eq!(retrieved.task_id, "task-1");
+        assert_eq!(retrieved.task_id.as_deref(), Some("task-1"));
         assert_eq!(retrieved.url, "https://example.com/hook");
     }
 

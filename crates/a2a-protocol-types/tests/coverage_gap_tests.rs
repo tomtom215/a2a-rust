@@ -245,7 +245,7 @@ fn push_config_roundtrip() {
     assert!(json.contains("\"url\""));
 
     let back: TaskPushNotificationConfig = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(back.task_id, "task-1");
+    assert_eq!(back.task_id.as_deref(), Some("task-1"));
     assert_eq!(back.url, "https://example.com/webhook");
 }
 
@@ -254,12 +254,12 @@ fn push_config_with_auth_roundtrip() {
     let config = TaskPushNotificationConfig {
         tenant: None,
         id: Some("config-1".into()),
-        task_id: "task-1".into(),
+        task_id: Some("task-1".into()),
         url: "https://example.com/webhook".into(),
         token: Some("shared-secret".into()),
         authentication: Some(AuthenticationInfo {
             scheme: "bearer".into(),
-            credentials: "my-token".into(),
+            credentials: Some("my-token".into()),
         }),
     };
 
@@ -274,7 +274,7 @@ fn push_config_with_auth_roundtrip() {
         .as_ref()
         .expect("authentication should be present");
     assert_eq!(auth.scheme, "bearer");
-    assert_eq!(auth.credentials, "my-token");
+    assert_eq!(auth.credentials.as_deref(), Some("my-token"));
 }
 
 // ── Event types ──────────────────────────────────────────────────────────────

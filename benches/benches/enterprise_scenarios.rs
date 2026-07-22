@@ -188,7 +188,10 @@ fn bench_push_config_store(c: &mut Criterion) {
             );
             let saved = rt.block_on(store.set(config)).unwrap();
             if i == 50 {
-                config_ids.push((saved.task_id.clone(), saved.id.clone().unwrap_or_default()));
+                config_ids.push((
+                    saved.task_id.clone().unwrap_or_default(),
+                    saved.id.clone().unwrap_or_default(),
+                ));
             }
         }
         let (task_id, config_id) = &config_ids[0];

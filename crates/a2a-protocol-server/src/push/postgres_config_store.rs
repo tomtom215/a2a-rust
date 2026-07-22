@@ -83,6 +83,14 @@ impl PushConfigStore for PostgresPushConfigStore {
         mut config: TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> {
         Box::pin(async move {
+            // A config cannot be stored without its routing key. The handler
+            // rejects this earlier; guard here too so a missing taskId maps to
+            // a proper invalid-params error instead of a NOT NULL violation.
+            let Some(task_id) = config.task_id.clone() else {
+                return Err(A2aError::invalid_params(
+                    "taskId is required to store a push notification config",
+                ));
+            };
             let id = config
                 .id
                 .clone()
@@ -97,7 +105,7 @@ impl PushConfigStore for PostgresPushConfigStore {
                  VALUES ($1, $2, $3)
                  ON CONFLICT(task_id, id) DO UPDATE SET data = EXCLUDED.data",
             )
-            .bind(&config.task_id)
+            .bind(&task_id)
             .bind(&id)
             .bind(&data)
             .execute(&self.pool)

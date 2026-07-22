@@ -123,7 +123,7 @@ fn make_task(id: &str, context_id: &str) -> Task {
 
 fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
     TaskPushNotificationConfig {
-        task_id: task_id.to_string(),
+        task_id: Some(task_id.to_string()),
         id: None,
         tenant: None,
         url: "https://example.com/push".to_string(),
@@ -367,7 +367,7 @@ async fn push_set_get_list_delete() -> A2aResult<()> {
     let id = config.id.clone().expect("id auto-generated");
     let got = store.get("t1", &id).await?;
     assert!(got.is_some());
-    assert_eq!(got.unwrap().task_id, "t1");
+    assert_eq!(got.unwrap().task_id.as_deref(), Some("t1"));
 
     // missing
     assert!(store.get("t1", "nope").await?.is_none());

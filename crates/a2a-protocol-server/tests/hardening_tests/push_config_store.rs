@@ -25,7 +25,7 @@ async fn push_config_store_crud_lifecycle() {
         .expect("get")
         .expect("should be Some");
     assert_eq!(fetched.url, "https://example.com/hook");
-    assert_eq!(fetched.task_id, "task-1");
+    assert_eq!(fetched.task_id.as_deref(), Some("task-1"));
 
     // List.
     let configs = store.list("task-1").await.expect("list");

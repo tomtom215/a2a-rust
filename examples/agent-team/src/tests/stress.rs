@@ -253,12 +253,12 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
                 let push_config = TaskPushNotificationConfig {
                     tenant: None,
                     id: None,
-                    task_id: ev.task_id.0.clone(),
+                    task_id: Some(ev.task_id.0.clone()),
                     url: webhook_url.clone(),
                     token: Some("e2e-push-token".into()),
                     authentication: Some(AuthenticationInfo {
                         scheme: "bearer".into(),
-                        credentials: "push-secret".into(),
+                        credentials: Some("push-secret".into()),
                     }),
                 };
                 let _ = client.set_push_config(push_config).await;

@@ -654,7 +654,7 @@ mod tests {
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-1".to_owned()),
-            task_id: "t-push".to_owned(),
+            task_id: Some("t-push".to_owned()),
             url: "https://example.com/webhook".to_owned(),
             token: None,
             authentication: None,
@@ -897,7 +897,7 @@ mod tests {
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-1".to_owned()),
-            task_id: "t-push-fail".to_owned(),
+            task_id: Some("t-push-fail".to_owned()),
             url: "https://example.com/webhook".to_owned(),
             token: None,
             authentication: None,

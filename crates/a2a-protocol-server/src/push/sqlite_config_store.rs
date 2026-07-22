@@ -98,6 +98,14 @@ impl PushConfigStore for SqlitePushConfigStore {
         mut config: TaskPushNotificationConfig,
     ) -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>> {
         Box::pin(async move {
+            // A config cannot be stored without its routing key. The handler
+            // rejects this earlier; guard here too so a missing taskId maps to
+            // a proper invalid-params error instead of a NOT NULL violation.
+            let Some(task_id) = config.task_id.clone() else {
+                return Err(A2aError::invalid_params(
+                    "taskId is required to store a push notification config",
+                ));
+            };
             let id = config
                 .id
                 .clone()
@@ -112,7 +120,7 @@ impl PushConfigStore for SqlitePushConfigStore {
                  VALUES (?1, ?2, ?3)
                  ON CONFLICT(task_id, id) DO UPDATE SET data = excluded.data",
             )
-            .bind(&config.task_id)
+            .bind(&task_id)
             .bind(&id)
             .bind(&data)
             .execute(&self.pool)
@@ -202,7 +210,7 @@ mod tests {
         TaskPushNotificationConfig {
             tenant: None,
             id: id.map(String::from),
-            task_id: task_id.to_string(),
+            task_id: Some(task_id.to_string()),
             url: url.to_string(),
             token: None,
             authentication: None,
@@ -240,7 +248,7 @@ mod tests {
 
         let retrieved = store.get("task-1", "cfg-1").await.unwrap();
         let retrieved = retrieved.expect("config should exist after set");
-        assert_eq!(retrieved.task_id, "task-1");
+        assert_eq!(retrieved.task_id.as_deref(), Some("task-1"));
         assert_eq!(retrieved.url, "https://example.com/hook");
         assert_eq!(retrieved.id.as_deref(), Some("cfg-1"));
     }

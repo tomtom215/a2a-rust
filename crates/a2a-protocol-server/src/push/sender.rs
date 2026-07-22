@@ -469,7 +469,9 @@ impl PushSender for HttpPushSender {
 
             // Header injection protection: validate credentials.
             if let Some(ref auth) = config.authentication {
-                validate_header_value(&auth.credentials, "authentication credentials")?;
+                if let Some(ref credentials) = auth.credentials {
+                    validate_header_value(credentials, "authentication credentials")?;
+                }
                 validate_header_value(&auth.scheme, "authentication scheme")?;
             }
             if let Some(ref token) = config.token {
@@ -496,16 +498,24 @@ impl PushSender for HttpPushSender {
                     builder = builder.uri(url);
                 }
 
-                // Set authentication headers from config.
+                // Set authentication headers from config. A scheme without a
+                // credential value cannot produce an auth header — skip it
+                // rather than sending an empty "Bearer "/"Basic " header.
                 if let Some(ref auth) = config.authentication {
-                    match auth.scheme.as_str() {
-                        "bearer" => {
-                            builder = builder
-                                .header("authorization", format!("Bearer {}", auth.credentials));
+                    match (auth.scheme.as_str(), auth.credentials.as_deref()) {
+                        ("bearer", Some(credentials)) => {
+                            builder =
+                                builder.header("authorization", format!("Bearer {credentials}"));
                         }
-                        "basic" => {
-                            builder = builder
-                                .header("authorization", format!("Basic {}", auth.credentials));
+                        ("basic", Some(credentials)) => {
+                            builder =
+                                builder.header("authorization", format!("Basic {credentials}"));
+                        }
+                        ("bearer" | "basic", None) => {
+                            trace_warn!(
+                                scheme = auth.scheme.as_str(),
+                                "authentication scheme has no credentials; no auth header set"
+                            );
                         }
                         _ => {
                             trace_warn!(

@@ -957,13 +957,13 @@ fn tck_push_notification_config_wire_format() {
     });
 
     let config: TaskPushNotificationConfig = serde_json::from_value(golden).unwrap();
-    assert_eq!(config.task_id, "task-123");
+    assert_eq!(config.task_id.as_deref(), Some("task-123"));
     assert_eq!(config.url, "https://client.example.com/webhook");
     assert!(config.authentication.is_some());
 
     let auth = config.authentication.as_ref().unwrap();
     assert_eq!(auth.scheme, "bearer");
-    assert_eq!(auth.credentials, "secret-token");
+    assert_eq!(auth.credentials.as_deref(), Some("secret-token"));
 
     let ser = serde_json::to_value(&config).unwrap();
     assert_eq!(ser["taskId"], "task-123");
