@@ -45,17 +45,44 @@ impl RestTransport {
 
         let status = resp.status();
         if !status.is_success() {
-            let body_bytes =
-                tokio::time::timeout(self.inner.stream_connect_timeout, resp.collect())
-                    .await
-                    .map_err(|_| ClientError::Timeout("error body read timed out".into()))?
-                    .map_err(ClientError::Http)?
-                    .to_bytes();
+            // Enforce the response-size cap during the read: a hostile server
+            // answering with a 500 and an endless chunked body previously made
+            // the client buffer without bound (limited only by the connect
+            // timeout). Mirrors the JSON-RPC transport.
+            let body_bytes = super::super::collect_response_limited(
+                resp,
+                self.inner.max_response_size,
+                self.inner.stream_connect_timeout,
+            )
+            .await?;
             let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::super::truncate_body(&body_str),
             });
+        }
+
+        // A non-SSE 200 (e.g. an `application/json` error envelope or a proxy
+        // interstitial) must not be fed to the SSE parser — that would dissolve
+        // into a silently empty, "successful" stream. Surface it as the error
+        // it is, mirroring the JSON-RPC transport.
+        let content_type = resp
+            .headers()
+            .get(hyper::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if !content_type.starts_with("text/event-stream") {
+            let body_bytes = super::super::collect_response_limited(
+                resp,
+                self.inner.max_response_size,
+                self.inner.stream_connect_timeout,
+            )
+            .await?;
+            return Err(super::super::jsonrpc::non_sse_stream_response_error(
+                &content_type,
+                &body_bytes,
+            ));
         }
 
         let actual_status = status.as_u16();

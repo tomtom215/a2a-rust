@@ -164,10 +164,10 @@ impl RestTransport {
             return match envelope {
                 JsonRpcResponse::Success(ok) => Ok(ok.result),
                 JsonRpcResponse::Error(err) => {
-                    let a2a = a2a_protocol_types::A2aError::new(
-                        a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                            .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                    let a2a = crate::transport::map_jsonrpc_error(
+                        err.error.code,
                         err.error.message,
+                        err.error.data,
                     );
                     Err(ClientError::Protocol(a2a))
                 }

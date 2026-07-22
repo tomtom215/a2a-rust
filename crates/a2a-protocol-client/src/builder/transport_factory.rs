@@ -10,7 +10,7 @@
 //! together into an [`A2aClient`].
 
 use crate::client::A2aClient;
-use crate::config::{BINDING_GRPC, BINDING_JSONRPC, BINDING_REST};
+use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, BINDING_REST};
 use crate::error::{ClientError, ClientResult};
 use crate::retry::RetryTransport;
 use crate::transport::{JsonRpcTransport, RestTransport, Transport};
@@ -61,7 +61,11 @@ impl ClientBuilder {
                     .with_max_response_size(self.config.max_response_size);
                     Box::new(t)
                 }
-                BINDING_REST => {
+                // `HTTP+JSON` is the A2A spec name for the REST binding;
+                // `REST` is the legacy alias. An agent card published by an
+                // official Go/Python/Java SDK advertises the spec name, so both
+                // must resolve to the REST transport.
+                BINDING_REST | BINDING_HTTP_JSON => {
                     let t = RestTransport::with_all_timeouts(
                         &self.endpoint,
                         self.config.request_timeout,
@@ -131,7 +135,11 @@ impl ClientBuilder {
         } else {
             let grpc_config = GrpcTransportConfig::default()
                 .with_timeout(self.config.request_timeout)
-                .with_connect_timeout(self.config.connection_timeout);
+                .with_connect_timeout(self.config.connection_timeout)
+                // Keep the response-size ceiling consistent across transports:
+                // a payload that fits the configured cap over JSON-RPC/REST
+                // must not be rejected by gRPC's separate decode default.
+                .with_max_message_size(self.config.max_response_size);
             let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config).await?;
             Box::new(t)
         };
@@ -149,7 +157,7 @@ impl ClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::super::*;
-    use crate::config::{BINDING_GRPC, BINDING_REST};
+    use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_REST};
     use std::time::Duration;
 
     #[test]
@@ -166,6 +174,17 @@ mod tests {
             .with_protocol_binding(BINDING_REST)
             .build()
             .expect("build");
+        let _ = client;
+    }
+
+    #[test]
+    fn builder_accepts_spec_http_json_binding() {
+        // "HTTP+JSON" is the canonical spec name for the REST binding; a card
+        // from an official SDK advertises it and must resolve, not error.
+        let client = ClientBuilder::new("http://localhost:8080")
+            .with_protocol_binding(BINDING_HTTP_JSON)
+            .build()
+            .expect("HTTP+JSON binding should resolve to the REST transport");
         let _ = client;
     }
 

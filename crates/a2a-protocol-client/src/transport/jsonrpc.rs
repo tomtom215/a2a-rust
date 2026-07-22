@@ -299,10 +299,10 @@ impl JsonRpcTransport {
                     );
                 }
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
-                let a2a = a2a_protocol_types::A2aError::new(
-                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                let a2a = super::map_jsonrpc_error(
+                    err.error.code,
                     err.error.message,
+                    err.error.data,
                 );
                 Err(ClientError::Protocol(a2a))
             }
@@ -463,7 +463,7 @@ fn response_id_matches(
 /// carries: a JSON-RPC error envelope becomes [`ClientError::Protocol`]
 /// (preserving the original code), anything else becomes
 /// [`ClientError::Transport`].
-fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> ClientError {
+pub(crate) fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> ClientError {
     if let Ok(JsonRpcResponse::Error(err)) =
         serde_json::from_slice::<JsonRpcResponse<serde_json::Value>>(body_bytes)
     {
@@ -471,11 +471,7 @@ fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> Clien
             code = err.error.code,
             "JSON-RPC error response to streaming request"
         );
-        let a2a = a2a_protocol_types::A2aError::new(
-            a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
-            err.error.message,
-        );
+        let a2a = super::map_jsonrpc_error(err.error.code, err.error.message, err.error.data);
         return ClientError::Protocol(a2a);
     }
     let body_str = String::from_utf8_lossy(body_bytes);

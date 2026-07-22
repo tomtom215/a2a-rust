@@ -51,6 +51,11 @@ pub struct SseParser {
     ready: VecDeque<Result<SseFrame, SseParseError>>,
     /// Whether the UTF-8 BOM has already been checked/stripped.
     bom_checked: bool,
+    /// When `true`, an oversized event was rejected and we are discarding the
+    /// remainder of that event's lines until the next event boundary (blank
+    /// line). Prevents the tail of an over-limit event from being re-parsed as
+    /// a fresh, seemingly-valid frame.
+    discarding: bool,
 }
 
 /// Default maximum number of frames buffered before the oldest is dropped.
@@ -69,6 +74,7 @@ impl Default for SseParser {
             retry: None,
             ready: VecDeque::new(),
             bom_checked: false,
+            discarding: false,
         }
     }
 }
@@ -112,16 +118,25 @@ impl SseParser {
     /// it returns `None` to consume all complete frames.
     pub fn feed(&mut self, bytes: &[u8]) {
         let mut input = bytes;
-        // Strip UTF-8 BOM (\xEF\xBB\xBF) if it appears at the very start.
-        if !self.bom_checked && self.line_buf.is_empty() {
-            if input.starts_with(b"\xEF\xBB\xBF") {
-                input = &input[3..];
-            }
-            // Only check once per stream; after the first feed, BOM position
-            // has passed regardless.
-            if !input.is_empty() || bytes.len() >= 3 {
+        // Strip a leading UTF-8 BOM (\xEF\xBB\xBF) once, at the very start of
+        // the stream. The three BOM bytes can arrive split across TCP reads, so
+        // we must NOT commit to a decision while the bytes seen so far are still
+        // a proper prefix of the BOM — the deferred bytes are buffered and
+        // `process_line` completes the strip once a full line is available.
+        // (The previous code set `bom_checked` on any non-empty first feed, so a
+        // one-byte first chunk (`\xEF`) swallowed the check and the first event
+        // was silently lost.)
+        if !self.bom_checked && self.line_buf.is_empty() && !input.is_empty() {
+            const BOM: &[u8] = b"\xEF\xBB\xBF";
+            if let Some(rest) = input.strip_prefix(BOM) {
+                input = rest;
+                self.bom_checked = true;
+            } else if !BOM.starts_with(input) {
+                // Definitely not a BOM — nothing to strip, decision made.
                 self.bom_checked = true;
             }
+            // Else: `input` is a non-empty proper prefix of the BOM; defer by
+            // buffering it below without setting `bom_checked`.
         }
         for &byte in input {
             if byte == b'\n' {
@@ -180,6 +195,18 @@ impl SseParser {
             }
         };
 
+        // If a prior line overflowed the size limit, swallow the rest of this
+        // event up to (and including) the next blank line, then resume. Without
+        // this, the tail of a rejected oversized event is parsed as a new event
+        // and surfaced as a spurious "valid" frame.
+        if self.discarding {
+            if line.is_empty() {
+                self.discarding = false;
+                self.reset_event_state();
+            }
+            return;
+        }
+
         if line.is_empty() {
             // Blank line → dispatch frame if we have data.
             self.dispatch_frame();
@@ -204,18 +231,25 @@ impl SseParser {
         // Track event size for memory protection.
         self.current_event_size += value.len();
         if self.current_event_size > self.max_event_size {
-            // Discard the current event and queue an error.
+            // Discard the current event and queue an error, then swallow the
+            // rest of this event (until the next blank line) so its tail is not
+            // re-parsed as a fresh frame.
             let error = SseParseError::EventTooLarge {
                 limit: self.max_event_size,
                 actual: self.current_event_size,
             };
-            self.data_lines.clear();
-            self.event_type = None;
-            self.current_event_size = 0;
+            self.reset_event_state();
+            self.discarding = true;
             self.enqueue(Err(error));
             return;
         }
 
+        self.apply_field(field, value);
+    }
+
+    /// Applies one parsed `field: value` line to the in-progress event state,
+    /// per the SSE field grammar. Unknown fields are ignored per spec.
+    fn apply_field(&mut self, field: &str, value: String) {
         match field {
             "data" => self.data_lines.push(value),
             "event" => self.event_type = Some(value),
@@ -236,6 +270,15 @@ impl SseParser {
                 // Unknown field — ignore per spec.
             }
         }
+    }
+
+    /// Clears the per-event accumulators (data lines, `event:` type, size
+    /// counter). Leaves the persistent `id`/`retry` alone, matching SSE
+    /// semantics where the last event ID carries across events.
+    fn reset_event_state(&mut self) {
+        self.data_lines.clear();
+        self.event_type = None;
+        self.current_event_size = 0;
     }
 
     fn dispatch_frame(&mut self) {
@@ -391,6 +434,32 @@ mod tests {
         assert_eq!(second.unwrap().data, "ok");
     }
 
+    /// Regression (FIX C6): the *tail* of an oversized event — the lines after
+    /// the one that breached the limit but before the terminating blank line —
+    /// must be discarded, not re-parsed into a spurious "valid" frame.
+    #[test]
+    fn oversized_event_tail_is_not_reparsed_as_a_frame() {
+        let mut p = SseParser::with_max_event_size(16);
+        // One event: an over-limit data line followed by a small data line and
+        // the event boundary. The whole event must be rejected.
+        p.feed(format!("data: {}\ndata: ok\n\n", "x".repeat(32)).as_bytes());
+        // A genuinely separate, small event afterwards must still parse.
+        p.feed(b"data: next\n\n");
+
+        let first = p.next_frame().expect("expected the size error");
+        assert!(
+            matches!(first, Err(SseParseError::EventTooLarge { .. })),
+            "expected EventTooLarge, got {first:?}"
+        );
+        let second = p.next_frame().expect("expected the following event");
+        assert_eq!(
+            second.unwrap().data,
+            "next",
+            "the tail 'ok' must not surface; only the next real event does"
+        );
+        assert!(p.next_frame().is_none(), "no spurious tail frame expected");
+    }
+
     /// Bug #33: `next_frame` used `Vec::remove(0)` which is O(n).
     /// Verify `VecDeque`-based dequeue works correctly for many events.
     #[test]
@@ -531,6 +600,33 @@ mod tests {
         p.feed(b"\xEF\xBB\xBFdata: after-bom\n\n");
         let frame = p.next_frame().unwrap().unwrap();
         assert_eq!(frame.data, "after-bom");
+    }
+
+    /// Regression (FIX C7): a BOM split byte-by-byte across TCP reads must still
+    /// be stripped, so the first event is not lost. Previously a one-byte first
+    /// chunk (`\xEF`) prematurely marked the BOM as "checked", leaving the
+    /// remaining `\xBB\xBF` glued to the first line and swallowing the event.
+    #[test]
+    fn bom_split_one_byte_at_a_time_first_event_survives() {
+        let mut p = SseParser::new();
+        p.feed(b"\xEF");
+        p.feed(b"\xBB");
+        p.feed(b"\xBF");
+        p.feed(b"data: first\n\ndata: second\n\n");
+        let f1 = p.next_frame().unwrap().unwrap();
+        assert_eq!(f1.data, "first", "first event lost to a fragmented BOM");
+        let f2 = p.next_frame().unwrap().unwrap();
+        assert_eq!(f2.data, "second");
+    }
+
+    /// The 2-byte + 1-byte BOM split must also strip cleanly.
+    #[test]
+    fn bom_split_two_then_one_byte_first_event_survives() {
+        let mut p = SseParser::new();
+        p.feed(b"\xEF\xBB");
+        p.feed(b"\xBFdata: hi\n\n");
+        let f = p.next_frame().unwrap().unwrap();
+        assert_eq!(f.data, "hi");
     }
 
     #[test]
