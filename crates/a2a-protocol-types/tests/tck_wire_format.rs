@@ -701,7 +701,7 @@ fn tck_jsonrpc_send_message_request() {
 
     let req: JsonRpcRequest = serde_json::from_value(golden).unwrap();
     assert_eq!(req.jsonrpc, JsonRpcVersion);
-    assert_eq!(req.id, Some(json!(1)));
+    assert_eq!(req.id.as_value(), Some(&json!(1)));
     assert_eq!(req.method, "SendMessage");
     let params = req.params.as_ref().expect("params should be present");
     assert!(params.get("message").is_some());

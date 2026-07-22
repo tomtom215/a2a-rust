@@ -75,26 +75,110 @@ impl<'de> Deserialize<'de> for JsonRpcVersion {
 
 // ── JsonRpcId ─────────────────────────────────────────────────────────────────
 
-/// A JSON-RPC 2.0 request/response identifier.
+/// A JSON-RPC 2.0 *response* identifier.
 ///
-/// Per spec, valid values are a string, a number, or `null`. When the field is
-/// absent entirely (notifications), represent as `None`.
+/// Per spec, a response always carries an `id` member: the value of the
+/// request's id, or `null` when the request id could not be determined.
+/// `None` serializes as `null`.
 pub type JsonRpcId = Option<serde_json::Value>;
+
+// ── JsonRpcRequestId ──────────────────────────────────────────────────────────
+
+/// A JSON-RPC 2.0 *request* identifier with three distinct states.
+///
+/// JSON-RPC 2.0 distinguishes an **absent** `id` member (the request is a
+/// *notification* — no response is expected) from an **explicit `null`** id
+/// (a call — discouraged by the spec, but a call nonetheless, answered with a
+/// null-id response). Modeling the id as `Option<Value>` collapses these two
+/// states, so an explicit `"id": null` would round-trip into a notification.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum JsonRpcRequestId {
+    /// The `id` member was absent: the request is a notification.
+    #[default]
+    Absent,
+    /// The `id` member was an explicit `null`: a call with a null id.
+    Null,
+    /// A string or number id. (Kept permissive as a raw JSON value, matching
+    /// the previous behavior of accepting any JSON type here.)
+    Value(serde_json::Value),
+}
+
+impl JsonRpcRequestId {
+    /// Returns `true` when the `id` member is absent (a notification).
+    #[must_use]
+    pub const fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+
+    /// Returns the id value, if this is a [`Self::Value`].
+    #[must_use]
+    pub const fn as_value(&self) -> Option<&serde_json::Value> {
+        match self {
+            Self::Value(v) => Some(v),
+            Self::Absent | Self::Null => None,
+        }
+    }
+
+    /// Converts to the id a *response* to this request must carry:
+    /// the request value, or `null` for a null-id call.
+    ///
+    /// A notification ([`Self::Absent`]) expects no response at all; callers
+    /// that respond anyway (as this SDK's HTTP dispatch does, treating every
+    /// A2A request as a call) get `null`, mirroring the spec's rule for
+    /// requests whose id could not be determined.
+    #[must_use]
+    pub fn to_response_id(&self) -> JsonRpcId {
+        match self {
+            Self::Absent | Self::Null => None,
+            Self::Value(v) => Some(v.clone()),
+        }
+    }
+}
+
+impl From<serde_json::Value> for JsonRpcRequestId {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Self::Null,
+            v => Self::Value(v),
+        }
+    }
+}
+
+impl Serialize for JsonRpcRequestId {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            // `Absent` is skipped at the struct level via
+            // `skip_serializing_if`; if serialized directly anyway, `null`
+            // is the closest JSON representation.
+            Self::Absent | Self::Null => serializer.serialize_none(),
+            Self::Value(v) => v.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for JsonRpcRequestId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        // Only reached when the `id` member is present (an absent member
+        // falls back to `#[serde(default)]` → `Absent`).
+        Ok(Self::from(serde_json::Value::deserialize(deserializer)?))
+    }
+}
 
 // ── JsonRpcRequest ────────────────────────────────────────────────────────────
 
 /// A JSON-RPC 2.0 request object.
 ///
-/// When `id` is `None`, the request is a *notification* and no response is
-/// expected.
+/// When `id` is [`JsonRpcRequestId::Absent`], the request is a *notification*
+/// and no response is expected. An explicit `"id": null` is preserved as
+/// [`JsonRpcRequestId::Null`] (a call).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JsonRpcRequest {
     /// Protocol version — always `"2.0"`.
     pub jsonrpc: JsonRpcVersion,
 
-    /// Request identifier; `None` for notifications.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: JsonRpcId,
+    /// Request identifier; [`JsonRpcRequestId::Absent`] for notifications.
+    #[serde(default, skip_serializing_if = "JsonRpcRequestId::is_absent")]
+    pub id: JsonRpcRequestId,
 
     /// A2A method name (e.g. `"message/send"`).
     pub method: String,
@@ -110,7 +194,7 @@ impl JsonRpcRequest {
     pub fn new(id: serde_json::Value, method: impl Into<String>) -> Self {
         Self {
             jsonrpc: JsonRpcVersion,
-            id: Some(id),
+            id: JsonRpcRequestId::from(id),
             method: method.into(),
             params: None,
         }
@@ -125,7 +209,7 @@ impl JsonRpcRequest {
     ) -> Self {
         Self {
             jsonrpc: JsonRpcVersion,
-            id: Some(id),
+            id: JsonRpcRequestId::from(id),
             method: method.into(),
             params: Some(params),
         }
@@ -136,7 +220,7 @@ impl JsonRpcRequest {
     pub fn notification(method: impl Into<String>, params: Option<serde_json::Value>) -> Self {
         Self {
             jsonrpc: JsonRpcVersion,
-            id: None,
+            id: JsonRpcRequestId::Absent,
             method: method.into(),
             params,
         }
@@ -401,7 +485,7 @@ mod tests {
     fn request_new_has_no_params() {
         let req = JsonRpcRequest::new(serde_json::json!(1), "test/method");
         assert_eq!(req.method, "test/method");
-        assert_eq!(req.id, Some(serde_json::json!(1)));
+        assert_eq!(req.id, JsonRpcRequestId::Value(serde_json::json!(1)));
         assert!(req.params.is_none());
         assert_eq!(req.jsonrpc, JsonRpcVersion);
     }
@@ -412,14 +496,14 @@ mod tests {
         let req =
             JsonRpcRequest::with_params(serde_json::json!("str-id"), "method", params.clone());
         assert_eq!(req.params, Some(params));
-        assert_eq!(req.id, Some(serde_json::json!("str-id")));
+        assert_eq!(req.id, JsonRpcRequestId::Value(serde_json::json!("str-id")));
     }
 
     #[test]
     fn notification_has_method_and_params() {
         let params = serde_json::json!({"task_id": "t1"});
         let n = JsonRpcRequest::notification("task/cancel", Some(params.clone()));
-        assert!(n.id.is_none());
+        assert!(n.id.is_absent());
         assert_eq!(n.method, "task/cancel");
         assert_eq!(n.params, Some(params));
     }
@@ -472,5 +556,87 @@ mod tests {
         assert_eq!(resp.id, Some(serde_json::json!(2)));
         assert_eq!(resp.error.code, -32600);
         assert_eq!(resp.jsonrpc, JsonRpcVersion);
+    }
+
+    // ── D2 regressions: three-state request id ────────────────────────────
+
+    /// Regression (D2): an explicit `"id": null` is a *call*, not a
+    /// notification — it must survive a round-trip. Previously
+    /// `Option<Value>` collapsed it to absent, so re-serialization dropped
+    /// the member entirely.
+    #[test]
+    fn explicit_null_id_roundtrips_as_null() {
+        let req: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","id":null,"method":"message/send"}"#)
+                .expect("deserialize");
+        assert_eq!(req.id, JsonRpcRequestId::Null);
+        assert!(!req.id.is_absent(), "null id is a call, not a notification");
+
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(
+            json.contains("\"id\":null"),
+            "explicit null id must be preserved on the wire: {json}"
+        );
+    }
+
+    /// An absent id (notification) stays absent through a round-trip.
+    #[test]
+    fn absent_id_roundtrips_as_absent() {
+        let req: JsonRpcRequest =
+            serde_json::from_str(r#"{"jsonrpc":"2.0","method":"task/cancel"}"#)
+                .expect("deserialize");
+        assert!(req.id.is_absent());
+
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(
+            !json.contains("\"id\""),
+            "notification must omit id: {json}"
+        );
+    }
+
+    /// String and numeric ids round-trip unchanged.
+    #[test]
+    fn value_ids_roundtrip_unchanged() {
+        for raw in [
+            r#"{"jsonrpc":"2.0","id":7,"method":"m"}"#,
+            r#"{"jsonrpc":"2.0","id":"abc","method":"m"}"#,
+        ] {
+            let req: JsonRpcRequest = serde_json::from_str(raw).expect("deserialize");
+            assert!(req.id.as_value().is_some());
+            let json = serde_json::to_string(&req).expect("serialize");
+            assert_eq!(json, raw, "value ids must round-trip byte-identical");
+        }
+    }
+
+    #[test]
+    fn to_response_id_mapping() {
+        assert_eq!(JsonRpcRequestId::Absent.to_response_id(), None);
+        assert_eq!(JsonRpcRequestId::Null.to_response_id(), None);
+        assert_eq!(
+            JsonRpcRequestId::Value(serde_json::json!(3)).to_response_id(),
+            Some(serde_json::json!(3))
+        );
+    }
+
+    #[test]
+    fn request_id_from_value() {
+        assert_eq!(
+            JsonRpcRequestId::from(serde_json::Value::Null),
+            JsonRpcRequestId::Null
+        );
+        assert_eq!(
+            JsonRpcRequestId::from(serde_json::json!("x")),
+            JsonRpcRequestId::Value(serde_json::json!("x"))
+        );
+    }
+
+    /// `JsonRpcRequest::new` with an explicit null value behaves like the
+    /// wire form: the id serializes as `null`, not as an absent member.
+    #[test]
+    fn new_with_null_value_serializes_null_id() {
+        let req = JsonRpcRequest::new(serde_json::Value::Null, "m");
+        assert_eq!(req.id, JsonRpcRequestId::Null);
+        let json = serde_json::to_string(&req).expect("serialize");
+        assert!(json.contains("\"id\":null"), "got: {json}");
     }
 }

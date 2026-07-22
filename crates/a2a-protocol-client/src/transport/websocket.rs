@@ -266,7 +266,7 @@ impl WebSocketTransport {
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
             .id
-            .as_ref()
+            .as_value()
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -331,7 +331,7 @@ impl WebSocketTransport {
         let rpc_req = build_rpc_request(method, params);
         let request_id = rpc_req
             .id
-            .as_ref()
+            .as_value()
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_owned();
@@ -584,7 +584,7 @@ mod tests {
         let params = req.params.expect("params should be present");
         assert_eq!(params["key"], "val");
         // ID should be a UUID string
-        let id = req.id.expect("id should be present");
+        let id = req.id.as_value().expect("id should be present");
         assert!(id.is_string(), "id should be a string UUID");
         assert!(!id.as_str().unwrap().is_empty(), "id should not be empty");
     }

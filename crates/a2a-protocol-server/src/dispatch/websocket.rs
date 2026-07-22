@@ -228,7 +228,7 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
         }
     };
 
-    let id = rpc_req.id.clone();
+    let id = rpc_req.id.to_response_id();
     let headers = HashMap::new();
 
     match rpc_req.method.as_str() {

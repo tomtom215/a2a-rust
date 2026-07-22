@@ -416,7 +416,7 @@ fn jsonrpc_request_roundtrip() {
         jsonrpc: jsonrpc::JsonRpcVersion,
         method: "SendMessage".into(),
         params: Some(serde_json::json!({"test": true})),
-        id: Some(serde_json::json!(1)),
+        id: jsonrpc::JsonRpcRequestId::Value(serde_json::json!(1)),
     };
 
     let json = serde_json::to_string(&req).expect("serialize");
@@ -425,7 +425,7 @@ fn jsonrpc_request_roundtrip() {
 
     let back: JsonRpcRequest = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.method, "SendMessage");
-    assert_eq!(back.id, Some(serde_json::json!(1)));
+    assert_eq!(back.id.as_value(), Some(&serde_json::json!(1)));
 }
 
 #[test]

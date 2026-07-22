@@ -65,8 +65,8 @@ pub use error::{A2aError, A2aResult, ErrorCode};
 pub use events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 pub use extensions::{AgentCardSignature, AgentExtension};
 pub use jsonrpc::{
-    JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcResponse,
-    JsonRpcSuccessResponse, JsonRpcVersion,
+    JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest, JsonRpcRequestId,
+    JsonRpcResponse, JsonRpcSuccessResponse, JsonRpcVersion,
 };
 pub use message::{FileContent, Message, MessageId, MessageRole, Part, PartContent};
 pub use params::{
