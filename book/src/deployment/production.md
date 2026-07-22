@@ -51,7 +51,9 @@ The REST dispatcher automatically rejects:
 
 ### Executor Timeout
 
-Prevent hung tasks from consuming resources forever:
+Prevent hung tasks from consuming resources forever. There is deliberately no
+default (a fixed value would silently fail legitimately long-running agent
+tasks) — set one matched to your workload:
 
 ```rust
 use std::time::Duration;
@@ -63,7 +65,9 @@ RequestHandlerBuilder::new(executor)
 
 ### Concurrent Stream Limits
 
-Bound memory usage from SSE connections:
+Concurrent streaming requests are capped at 1024 by default (each stream
+allocates channels and spawns background tasks). Tune the ceiling to your
+deployment; pass `usize::MAX` to effectively disable it:
 
 ```rust
 RequestHandlerBuilder::new(executor)

@@ -25,6 +25,16 @@ use crate::streaming::EventQueueManager;
 use crate::tenant_config::PerTenantConfig;
 use crate::tenant_resolver::TenantResolver;
 
+/// Default ceiling on concurrent streaming event queues.
+///
+/// Every streaming request eagerly allocates channels and spawns background
+/// tasks, so an *unlimited* default let an unauthenticated caller grow server
+/// memory and task count without bound. 1024 concurrent streams is far above
+/// typical single-instance loads while still bounding resource use; raise it
+/// via [`RequestHandlerBuilder::with_max_concurrent_streams`] (up to
+/// `usize::MAX` to effectively disable the ceiling).
+pub const DEFAULT_MAX_CONCURRENT_STREAMS: usize = 1024;
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -42,6 +52,10 @@ use crate::tenant_resolver::TenantResolver;
 /// - `agent_card`: defaults to `None`.
 /// - `tenant_resolver`: defaults to `None` (no tenant resolution).
 /// - `tenant_config`: defaults to `None` (no per-tenant limits).
+/// - `max_concurrent_streams`: defaults to
+///   [`DEFAULT_MAX_CONCURRENT_STREAMS`] (1024).
+/// - `executor_timeout`: defaults to `None` (unbounded — **recommended** to
+///   set explicitly; see [`with_executor_timeout`](Self::with_executor_timeout)).
 pub struct RequestHandlerBuilder {
     executor: Arc<dyn AgentExecutor>,
     task_store: Option<Arc<dyn TaskStore>>,
@@ -147,6 +161,11 @@ impl RequestHandlerBuilder {
     ///
     /// If the executor does not complete within this duration, the task is
     /// marked as failed with a timeout error.
+    ///
+    /// There is deliberately no default: any fixed value would silently mark
+    /// legitimately long-running agent tasks as failed. Production
+    /// deployments should set a timeout matched to their workload so a hung
+    /// executor cannot pin a task (and its stream resources) forever.
     #[must_use]
     pub const fn with_executor_timeout(mut self, timeout: Duration) -> Self {
         self.executor_timeout = Some(timeout);
@@ -185,8 +204,10 @@ impl RequestHandlerBuilder {
 
     /// Sets the maximum number of concurrent streaming event queues.
     ///
-    /// Limits memory usage from concurrent streams. When the limit is reached,
-    /// new streaming requests will fail.
+    /// Limits memory usage from concurrent streams. When the limit is
+    /// reached, new streaming requests will fail. Defaults to
+    /// [`DEFAULT_MAX_CONCURRENT_STREAMS`] (1024); pass `usize::MAX` to
+    /// effectively disable the ceiling.
     #[must_use]
     pub const fn with_max_concurrent_streams(mut self, max: usize) -> Self {
         self.max_concurrent_streams = Some(max);
@@ -312,9 +333,10 @@ impl RequestHandlerBuilder {
                 if let Some(timeout) = self.event_queue_write_timeout {
                     mgr = mgr.with_write_timeout(timeout);
                 }
-                if let Some(max_streams) = self.max_concurrent_streams {
-                    mgr = mgr.with_max_concurrent_queues(max_streams);
-                }
+                mgr = mgr.with_max_concurrent_queues(
+                    self.max_concurrent_streams
+                        .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
+                );
                 mgr = mgr.with_metrics(Arc::clone(&self.metrics));
                 mgr
             },
@@ -497,6 +519,36 @@ mod tests {
         let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
         assert!(handler.tenant_resolver().is_none());
         assert!(handler.tenant_config().is_none());
+    }
+
+    /// Regression (D4): the default builder must apply a concurrent-stream
+    /// ceiling — previously it was unlimited, letting an unauthenticated
+    /// caller allocate channels and spawn tasks without bound.
+    #[test]
+    fn builder_default_caps_concurrent_streams() {
+        let handler = RequestHandlerBuilder::new(TestExecutor).build().unwrap();
+        let debug = format!("{:?}", handler.event_queue_manager);
+        assert!(
+            debug.contains(&format!(
+                "max_concurrent_queues: Some({DEFAULT_MAX_CONCURRENT_STREAMS})"
+            )),
+            "default builder should cap concurrent streams at \
+             {DEFAULT_MAX_CONCURRENT_STREAMS}, got: {debug}"
+        );
+    }
+
+    /// An explicit override still wins over the default.
+    #[test]
+    fn builder_max_concurrent_streams_override_wins() {
+        let handler = RequestHandlerBuilder::new(TestExecutor)
+            .with_max_concurrent_streams(7)
+            .build()
+            .unwrap();
+        let debug = format!("{:?}", handler.event_queue_manager);
+        assert!(
+            debug.contains("max_concurrent_queues: Some(7)"),
+            "explicit cap should override the default, got: {debug}"
+        );
     }
 
     #[test]
