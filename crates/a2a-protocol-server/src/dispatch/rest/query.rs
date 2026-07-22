@@ -38,28 +38,44 @@ pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
 /// Decodes percent-encoded characters in a query parameter value.
 ///
 /// Handles `%XX` hex sequences and `+` as space (application/x-www-form-urlencoded).
+///
+/// Decodes into a byte buffer first and interprets the whole buffer as UTF-8
+/// (lossily) at the end. Decoding each `%XX` straight to a `char` would treat
+/// every byte as Latin-1, mangling any multi-byte UTF-8 sequence (e.g. a
+/// percent-encoded non-ASCII tenant name or query value) into several garbage
+/// characters.
 fn percent_decode(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut bytes = input.as_bytes().iter();
-    while let Some(&b) = bytes.next() {
-        match b {
-            b'%' => {
-                let hi = bytes.next().copied();
-                let lo = bytes.next().copied();
-                if let (Some(h), Some(l)) = (hi, lo) {
-                    if let (Some(h), Some(l)) = (hex_val(h), hex_val(l)) {
-                        output.push(char::from(h << 4 | l));
-                        continue;
-                    }
+    let raw = input.as_bytes();
+    let mut bytes: Vec<u8> = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        match raw[i] {
+            b'%' if i + 2 < raw.len() => {
+                if let (Some(h), Some(l)) = (hex_val(raw[i + 1]), hex_val(raw[i + 2])) {
+                    bytes.push(h << 4 | l);
+                    i += 3;
+                    continue;
                 }
-                // Invalid percent sequence — pass through as-is.
-                output.push('%');
+                // Invalid percent sequence — pass the `%` through literally.
+                bytes.push(b'%');
+                i += 1;
             }
-            b'+' => output.push(' '),
-            _ => output.push(char::from(b)),
+            b'%' => {
+                // Truncated `%` at end of input — pass through as-is.
+                bytes.push(b'%');
+                i += 1;
+            }
+            b'+' => {
+                bytes.push(b' ');
+                i += 1;
+            }
+            other => {
+                bytes.push(other);
+                i += 1;
+            }
         }
     }
-    output
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Checks if a path contains traversal sequences (`..`) in either raw,
@@ -170,8 +186,19 @@ mod tests {
     fn percent_decode_invalid_sequence_passthrough() {
         // Incomplete percent sequence: just '%' at end
         assert_eq!(percent_decode("abc%"), "abc%");
-        // Invalid hex digits after percent
-        assert_eq!(percent_decode("%ZZ"), "%");
+        // Invalid hex digits after percent: the '%' is literal and the
+        // following bytes are preserved (standard WHATWG behavior), not dropped.
+        assert_eq!(percent_decode("%ZZ"), "%ZZ");
+    }
+
+    #[test]
+    fn percent_decode_multibyte_utf8_roundtrips() {
+        // A percent-encoded multi-byte UTF-8 value must decode to the original
+        // string, not to per-byte Latin-1 garbage.
+        assert_eq!(percent_decode("%E2%9C%93"), "\u{2713}"); // ✓ (3-byte UTF-8)
+        assert_eq!(percent_decode("caf%C3%A9"), "café"); // 2-byte é
+                                                         // Invalid UTF-8 bytes decode lossily rather than panicking.
+        assert_eq!(percent_decode("%FF"), "\u{FFFD}");
     }
 
     #[test]

@@ -299,11 +299,8 @@ impl JsonRpcTransport {
                     );
                 }
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
-                let a2a = super::map_jsonrpc_error(
-                    err.error.code,
-                    err.error.message,
-                    err.error.data,
-                );
+                let a2a =
+                    super::map_jsonrpc_error(err.error.code, err.error.message, err.error.data);
                 Err(ClientError::Protocol(a2a))
             }
         }

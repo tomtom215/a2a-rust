@@ -245,9 +245,9 @@ impl GrpcTransport {
             // proceed *unauthenticated*. The HTTP transports fail closed on the
             // same input. The value is never included in the error — it may be
             // a credential.
-            let key = k
-                .parse::<tonic::metadata::MetadataKey<_>>()
-                .map_err(|e| ClientError::Transport(format!("invalid gRPC metadata key {k:?}: {e}")))?;
+            let key = k.parse::<tonic::metadata::MetadataKey<_>>().map_err(|e| {
+                ClientError::Transport(format!("invalid gRPC metadata key {k:?}: {e}"))
+            })?;
             let val = v
                 .parse::<tonic::metadata::MetadataValue<_>>()
                 .map_err(|_| {
@@ -818,7 +818,10 @@ mod tests {
             matches!(err, ClientError::UnexpectedStatus { status: 429, .. }),
             "ResourceExhausted should map to 429, got {err:?}"
         );
-        assert!(err.is_retryable(), "gRPC ResourceExhausted must be retryable");
+        assert!(
+            err.is_retryable(),
+            "gRPC ResourceExhausted must be retryable"
+        );
     }
 
     // ── status_to_error match arms ────────────────────────────────────────

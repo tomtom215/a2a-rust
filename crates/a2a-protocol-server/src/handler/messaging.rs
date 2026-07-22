@@ -715,7 +715,11 @@ mod tests {
         else {
             panic!("expected an immediate Task response");
         };
-        assert_eq!(task.status.state, TaskState::Submitted, "snapshot is Submitted");
+        assert_eq!(
+            task.status.state,
+            TaskState::Submitted,
+            "snapshot is Submitted"
+        );
 
         let final_state = poll_task_state(&handler, &task.id, TaskState::Completed).await;
         assert_eq!(
@@ -730,7 +734,9 @@ mod tests {
     /// cancellation token (leaving the original work uncancelable).
     #[tokio::test]
     async fn concurrent_send_to_in_flight_task_is_rejected() {
-        let handler = RequestHandlerBuilder::new(BlockingExecutor).build().unwrap();
+        let handler = RequestHandlerBuilder::new(BlockingExecutor)
+            .build()
+            .unwrap();
 
         // First send (fire-and-forget) leaves a live executor + token.
         let mut first = make_params(Some("ctx-dup"));

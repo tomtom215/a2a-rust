@@ -418,10 +418,7 @@ mod tests {
             v = serde_json::json!([v]);
         }
         let err = canonicalize(&v).expect_err("over-deep value must be rejected");
-        assert!(
-            err.to_string().contains("depth"),
-            "unexpected error: {err}"
-        );
+        assert!(err.to_string().contains("depth"), "unexpected error: {err}");
     }
 
     #[test]

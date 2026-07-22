@@ -358,8 +358,14 @@ mod tests {
             "credentials leaked in Debug: {dbg}"
         );
         // Presence (Some vs None) and non-secret fields must still be visible.
-        assert!(dbg.contains("<redacted>"), "expected redaction marker: {dbg}");
-        assert!(dbg.contains("https://example.com/hook"), "url dropped: {dbg}");
+        assert!(
+            dbg.contains("<redacted>"),
+            "expected redaction marker: {dbg}"
+        );
+        assert!(
+            dbg.contains("https://example.com/hook"),
+            "url dropped: {dbg}"
+        );
         assert!(dbg.contains("bearer"), "scheme dropped: {dbg}");
 
         // Serialization must still carry the real secret on the wire.

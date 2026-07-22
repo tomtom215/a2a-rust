@@ -27,10 +27,16 @@ use a2a_protocol_sdk::server::CorsConfig;
 
 The built-in `HttpPushSender` includes:
 
-- **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth)
+- **SSRF protection** — Rejects private/loopback IPs at config creation and delivery time (defense-in-depth), including IPv4-in-IPv6 smuggling, and pins the validated IP against DNS rebinding
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
-- **HTTPS enforcement** — Optionally require HTTPS webhook URLs
 - **Per-request timeout** — Each push delivery HTTP request is capped at 30 seconds
+
+> **Transport note:** the bundled `HttpPushSender` delivers over plaintext HTTP
+> only (it does not pull a TLS stack into the server's default dependencies) and
+> rejects an `https://` webhook with a clear error. To deliver to `https://`
+> webhooks — the norm for production — supply a TLS-capable `PushSender`
+> implementation via `with_push_sender`; `PushSender` is a public, pluggable
+> trait and the SSRF-validation helpers are reusable.
 
 ### Path Traversal Protection
 
@@ -155,8 +161,8 @@ Enable the `tracing` feature for structured logs:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.5", features = ["tracing"] }
-tracing-subscriber = { version = "0.5", features = ["env-filter"] }
+a2a-protocol-server = { version = "0.6", features = ["tracing"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
 ```rust

@@ -6,7 +6,7 @@
 //! A2A protocol v1.0 — umbrella SDK crate.
 //!
 //! Re-exports all three constituent crates so users who want everything can
-//! depend on `a2a-sdk` alone.
+//! depend on `a2a-protocol-sdk` alone.
 //!
 //! # Quick start
 //!
@@ -20,9 +20,9 @@
 //!
 //! | Module | Source crate | Contents |
 //! |---|---|---|
-//! | [`types`] | `a2a-types` | All A2A wire types |
-//! | [`client`] | `a2a-client` | HTTP client |
-//! | [`server`] | `a2a-server` | Server framework |
+//! | [`types`] | `a2a-protocol-types` | All A2A wire types |
+//! | [`client`] | `a2a-protocol-client` | HTTP/gRPC/WebSocket client |
+//! | [`server`] | `a2a-protocol-server` | Server framework |
 //! | [`prelude`] | — | Convenience re-exports for common usage |
 
 #![deny(missing_docs)]
@@ -66,9 +66,9 @@ pub mod prelude {
     // ── Wire types ───────────────────────────────────────────────────────
     pub use a2a_protocol_types::{
         AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Artifact, ArtifactId, ContextId,
-        Message, MessageId, MessageRole, MessageSendParams, Part, SendMessageResponse,
-        StreamResponse, Task, TaskArtifactUpdateEvent, TaskId, TaskListResponse, TaskQueryParams,
-        TaskState, TaskStatus, TaskStatusUpdateEvent,
+        ListTasksParams, Message, MessageId, MessageRole, MessageSendParams, Part,
+        SendMessageResponse, StreamResponse, Task, TaskArtifactUpdateEvent, TaskId,
+        TaskListResponse, TaskQueryParams, TaskState, TaskStatus, TaskStatusUpdateEvent,
     };
 
     // ── Errors ───────────────────────────────────────────────────────────

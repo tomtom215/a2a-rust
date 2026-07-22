@@ -88,6 +88,104 @@ changed shape (0.x breaking — warrants a minor bump).
   check); the client no longer leaks a pending-request map entry per
   timed-out request.
 
+### Security
+
+- **`a2a-protocol-server`: a configured `TenantResolver` is now enforced.**
+  `with_tenant_resolver(...)` previously configured a resolver that was never
+  consulted — the client-controlled `tenant` field alone selected the store
+  partition, so any caller could read or write another tenant's tasks by
+  naming it. The resolver is now authoritative (tenant derived from trusted
+  request context); a client-supplied tenant that disagrees is rejected. With
+  no resolver configured, behavior is unchanged (single-tenant / trusted
+  caller).
+- **`a2a-protocol-server`: push-notification config count is bounded on every
+  store backend.** A per-task cap (`HandlerLimits::max_push_configs_per_task`,
+  default 100) is enforced in the handler; previously only the in-memory store
+  self-enforced, so the SQLite/Postgres stores let a client mint unbounded
+  configs for one task (disk exhaustion, and delivery amplification since each
+  event fans out to every config).
+- **`a2a-protocol-server`: tenant-aware in-memory push-config store no longer
+  allocates a partition on read.** `get`/`list`/`delete` for an unseen tenant
+  were creating (and counting) a partition, an unauthenticated `max_tenants`
+  exhaustion vector.
+- **`a2a-protocol-server`: OpenTelemetry error metrics are labeled by a bounded
+  discriminant, not the error message.** The `error` attribute was the rendered
+  message (embedding client-controlled ids), a metric-cardinality-explosion
+  vector; it is now `ServerError::metric_label()` (a fixed set).
+- **`a2a-protocol-server`: rate-limit caller keys canonicalize IP forms.** An
+  IPv4-mapped IPv6 address and its plain IPv4 form now share one bucket, so a
+  client cannot obtain two budgets by presenting both.
+- **`a2a-protocol-client`: JSON-RPC error `data` and unknown codes are no longer
+  discarded.** All transports preserve `error.data`, and an implementation-
+  defined code outside the closed `ErrorCode` set is retained (under the error
+  `data`) instead of collapsing silently to `InternalError`.
+- **`a2a-protocol-client` (gRPC/WebSocket): unparseable auth metadata now fails
+  the request closed** instead of being silently dropped and sent
+  unauthenticated. Header values are never echoed in the error.
+- **`a2a-protocol-types`: webhook secrets are redacted in `Debug`.**
+  `AuthenticationInfo.credentials` and `TaskPushNotificationConfig.token` no
+  longer print their values via `{:?}` (presence is still shown);
+  serialization is unchanged.
+- **`a2a-protocol-types` / proto: bounded recursion.** `Struct`/`Value`
+  conversion and RFC 8785 canonicalization reject nesting past a fixed depth
+  instead of risking a stack overflow on a programmatically-built value.
+
+### Fixed (additional hardening)
+
+- **`a2a-protocol-server`: fire-and-forget (`returnImmediately`) sends now run
+  to completion.** They spawned no background processor and no persistence
+  channel, so the executor's events went nowhere: nothing was persisted, no
+  push fired, and the task was stuck in `Submitted` forever. They now use the
+  background processor exactly like streaming.
+- **`a2a-protocol-server`: hitting `max_concurrent_streams` returns a clean
+  overload error with no side effects.** The cap was detected only after the
+  task and cancellation token had been committed, orphaning the task in
+  `Submitted` and returning a misleading internal error; the queue is now
+  leased (and the cap checked) before any side effect, surfacing the new
+  `ServerError::Overloaded` (gRPC `RESOURCE_EXHAUSTED` / HTTP 503).
+- **`a2a-protocol-server`: a second `message/send` to a task already being
+  processed is rejected** instead of spawning a second executor and overwriting
+  the first's cancellation token (which left the original work uncancelable and
+  racing on store writes).
+- **`a2a-protocol-server`: `CancelTask` no longer leaks an event queue.**
+  Cancelling a task whose executor had already exited registered a queue via
+  `get_or_create` that nothing removed — a permanent map + concurrency-slot
+  leak keyed by task id.
+- **`a2a-protocol-server`: per-artifact `parts` growth is bounded**
+  (`HandlerLimits::max_parts_per_artifact`, default 10,000), so an unbounded
+  stream of `append: true` artifact updates cannot grow one task record without
+  limit.
+- **`a2a-protocol-server`: REST query percent-decoding is UTF-8 correct** —
+  multi-byte sequences (e.g. a percent-encoded non-ASCII tenant name) decode to
+  the original string instead of per-byte Latin-1 garbage.
+- **`a2a-protocol-server`: the bundled `HttpPushSender` rejects `https://`
+  webhooks with a clear, actionable error** (it is HTTP-only) instead of an
+  opaque connector error after every retry; HTTPS delivery is available by
+  supplying a TLS-capable `PushSender`.
+- **`a2a-protocol-server`: agent-card hot-reload watchers no longer block a
+  runtime worker** on file I/O (reads run on the blocking pool).
+- **`a2a-protocol-client` (gRPC): `RESOURCE_EXHAUSTED` maps to a retryable
+  error**, and mid-stream `Unavailable`/`DeadlineExceeded` keep their retryable
+  classification (they were non-retryable `Protocol` errors); the configured
+  response-size cap now applies to the gRPC decode limit.
+- **`a2a-protocol-client` (REST streaming): the non-2xx error body is read
+  through the size-capped collector** (was unbounded), and a non-SSE `200`
+  response surfaces as an error instead of dissolving into a silently empty
+  stream.
+- **`a2a-protocol-client` (WebSocket): terminal-state detection recognizes the
+  canonical `TASK_STATE_*` wire strings**, fixing a pending-map + sender leak of
+  one entry per completed stream against every spec-conformant server;
+  `route_frame` no longer holds the pending-map mutex across a bounded stream
+  send (a stalled consumer could wedge the whole transport).
+- **`a2a-protocol-client` (SSE): a BOM split across reads is stripped**
+  correctly (the first event was being lost), and the tail of an over-limit
+  event is discarded to the next boundary instead of being re-parsed into a
+  spurious frame.
+- **`a2a-protocol-client`: the spec binding name `HTTP+JSON` resolves to the
+  REST transport** (it was rejected as unknown), and the retry jitter uses
+  `Duration::try_from_secs_f64` to avoid a panic on a near-`Duration::MAX`
+  backoff config.
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,

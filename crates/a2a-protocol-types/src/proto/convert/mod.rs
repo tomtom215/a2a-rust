@@ -667,7 +667,8 @@ mod tests {
         };
         let json = proto_value_to_json(v, "m").unwrap();
         assert!(
-            json.as_f64().is_some_and(|f| f == 0.0 && f.is_sign_negative()),
+            json.as_f64()
+                .is_some_and(|f| f == 0.0 && f.is_sign_negative()),
             "expected negative zero float, got {json}"
         );
     }
