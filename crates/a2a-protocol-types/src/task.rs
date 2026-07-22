@@ -193,6 +193,12 @@ impl From<u64> for TaskVersion {
 /// Per v1.0 spec (Section 5.5), enum values use `ProtoJSON` `SCREAMING_SNAKE_CASE`:
 /// `"TASK_STATE_COMPLETED"`, `"TASK_STATE_INPUT_REQUIRED"`, etc.
 /// Legacy lowercase/kebab-case values are accepted on deserialization.
+///
+/// This enum is closed to the v1.0 states. A future protocol revision that adds
+/// a state would be a wire-breaking change for the gRPC binding: an unknown
+/// `TASK_STATE_*` number from a newer peer is rejected by the protobuf
+/// conversion layer (with a field-scoped error) rather than silently discarded,
+/// so no task is ever reported in a bogus state.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskState {
