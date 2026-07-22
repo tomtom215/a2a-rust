@@ -19,6 +19,7 @@ mod manager;
 
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
 pub use manager::EventQueueManager;
+pub(crate) use manager::QueueLease;
 
 use std::future::Future;
 use std::pin::Pin;

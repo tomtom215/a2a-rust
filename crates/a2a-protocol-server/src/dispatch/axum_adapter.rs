@@ -187,6 +187,9 @@ const fn server_error_status(err: &crate::error::ServerError) -> u16 {
         ServerError::InvalidStateTransition { .. } | ServerError::TaskNotCancelable(_) => 409,
         ServerError::PushNotSupported => 501,
         ServerError::PayloadTooLarge(_) => 413,
+        // Transient resource-limit rejection → 503 Service Unavailable, the
+        // retryable overload status, rather than a generic 500.
+        ServerError::Overloaded(_) => 503,
         _ => 500,
     }
 }

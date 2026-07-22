@@ -75,7 +75,14 @@ impl RequestHandler {
                 task.context_id.0.clone(),
             );
 
-            let (writer, _reader) = self.event_queue_manager.get_or_create(&task_id).await;
+            // Use a non-registering writer: if a live queue exists (an in-flight
+            // streaming task) the cancel event reaches its subscribers;
+            // otherwise a throwaway writer is used. `get_or_create` here would
+            // INSERT a queue for a task whose executor has already exited (e.g.
+            // an input-required task), and nothing on the cancel path ever
+            // destroys it — a permanent map + concurrency-slot leak keyed by a
+            // client-reachable task id.
+            let writer = self.event_queue_manager.writer_for_cancel(&task_id).await;
             self.executor.cancel(&ctx, writer.as_ref()).await?;
 
             // Re-read the task to narrow the TOCTOU window: if the background
@@ -215,6 +222,43 @@ mod tests {
             result.unwrap().status.state,
             TaskState::Canceled,
             "canceled task should have Canceled state"
+        );
+    }
+
+    /// Regression: cancelling a persisted task that has no live event queue
+    /// (e.g. an input-required task whose executor already exited) must not
+    /// register a queue. `get_or_create` used to insert one that nothing ever
+    /// removed — a permanent map + concurrency-slot leak keyed by task id.
+    #[tokio::test]
+    async fn cancel_task_does_not_leak_event_queue() {
+        let handler = RequestHandlerBuilder::new(CancelableExecutor)
+            .build()
+            .unwrap();
+        // A non-terminal task with no running executor / no queue.
+        handler
+            .task_store
+            .save(&make_submitted_task("t-no-leak"))
+            .await
+            .unwrap();
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            0,
+            "precondition: no queue exists"
+        );
+
+        let params = CancelTaskParams {
+            tenant: None,
+            id: "t-no-leak".to_owned(),
+            metadata: None,
+        };
+        let result = handler.on_cancel_task(params, None).await;
+        assert!(result.is_ok(), "cancel should succeed, got {result:?}");
+        assert_eq!(result.unwrap().status.state, TaskState::Canceled);
+
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            0,
+            "cancel must not leave a leaked event queue behind"
         );
     }
 

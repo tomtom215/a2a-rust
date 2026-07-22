@@ -58,6 +58,10 @@ pub enum ServerError {
         /// The attempted target state.
         to: a2a_protocol_types::task::TaskState,
     },
+    /// The server is at a configured resource limit (e.g. the
+    /// `max_concurrent_streams` cap) and transiently cannot accept the request.
+    /// Clients should back off and retry. Maps to gRPC `RESOURCE_EXHAUSTED`.
+    Overloaded(String),
 }
 
 impl fmt::Display for ServerError {
@@ -82,6 +86,7 @@ impl fmt::Display for ServerError {
                     "invalid state transition for task {task_id}: {from} → {to}"
                 )
             }
+            Self::Overloaded(msg) => write!(f, "server overloaded: {msg}"),
         }
     }
 }
@@ -138,6 +143,11 @@ impl ServerError {
             Self::InvalidStateTransition { task_id, from, to } => A2aError::invalid_params(
                 format!("invalid state transition for task {task_id}: {from} → {to}"),
             ),
+            // A2A/JSON-RPC define no throttling code, so this surfaces as an
+            // internal (server-side) condition — but with a clear, actionable
+            // message rather than the opaque one the cap path returned before.
+            // The gRPC dispatcher maps it to the more precise RESOURCE_EXHAUSTED.
+            Self::Overloaded(msg) => A2aError::internal(msg.clone()),
         }
     }
 }
