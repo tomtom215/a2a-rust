@@ -57,7 +57,8 @@ impl ClientBuilder {
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
                         self.config.connection_timeout,
-                    )?;
+                    )?
+                    .with_max_response_size(self.config.max_response_size);
                     Box::new(t)
                 }
                 BINDING_REST => {
@@ -66,7 +67,8 @@ impl ClientBuilder {
                         self.config.request_timeout,
                         self.config.stream_connect_timeout,
                         self.config.connection_timeout,
-                    )?;
+                    )?
+                    .with_max_response_size(self.config.max_response_size);
                     Box::new(t)
                 }
                 #[cfg(feature = "grpc")]

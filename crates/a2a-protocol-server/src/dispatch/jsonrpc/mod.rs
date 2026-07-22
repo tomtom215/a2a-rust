@@ -247,7 +247,7 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         headers: &HashMap<String, String>,
     ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
-        let id = rpc_req.id.clone();
+        let id = rpc_req.id.to_response_id();
         trace_info!(method = %rpc_req.method, "dispatching JSON-RPC request");
 
         // Streaming methods return SSE, not JSON.
@@ -285,7 +285,7 @@ impl JsonRpcDispatcher {
         rpc_req: &JsonRpcRequest,
         headers: &HashMap<String, String>,
     ) -> Vec<u8> {
-        let id = rpc_req.id.clone();
+        let id = rpc_req.id.to_response_id();
 
         match rpc_req.method.as_str() {
             "SendMessage" | "message/send" => {

@@ -108,7 +108,7 @@ pub async fn test_push_list_jsonrpc_regression(ctx: &TestContext) -> TestResult 
         let config = TaskPushNotificationConfig {
             tenant: None,
             id: None,
-            task_id: tid.clone(),
+            task_id: Some(tid.clone()),
             url: format!("http://{}/webhook", ctx.webhook_addr),
             token: Some(format!("regression-token-{i}")),
             authentication: None,
@@ -162,12 +162,12 @@ pub async fn test_push_event_classification(ctx: &TestContext) -> TestResult {
                 let push_config = TaskPushNotificationConfig {
                     tenant: None,
                     id: None,
-                    task_id: ev.task_id.0.clone(),
+                    task_id: Some(ev.task_id.0.clone()),
                     url: webhook_url,
                     token: Some("classify-test".into()),
                     authentication: Some(AuthenticationInfo {
                         scheme: "bearer".into(),
-                        credentials: "test-cred".into(),
+                        credentials: Some("test-cred".into()),
                     }),
                 };
                 let _ = client.set_push_config(push_config).await;

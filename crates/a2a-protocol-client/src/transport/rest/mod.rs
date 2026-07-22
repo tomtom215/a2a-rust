@@ -79,12 +79,13 @@ pub struct RestTransport {
     inner: Arc<Inner>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Inner {
     client: HttpClient,
     base_url: String,
     request_timeout: Duration,
     stream_connect_timeout: Duration,
+    max_response_size: usize,
 }
 
 impl RestTransport {
@@ -174,8 +175,20 @@ impl RestTransport {
                 base_url: base_url.trim_end_matches('/').to_owned(),
                 request_timeout,
                 stream_connect_timeout,
+                max_response_size: super::DEFAULT_MAX_RESPONSE_SIZE,
             }),
         })
+    }
+
+    /// Sets the maximum size in bytes of a buffered (non-streaming) response
+    /// body. Responses exceeding the cap fail with a non-retryable transport
+    /// error instead of being buffered without bound.
+    ///
+    /// Defaults to 32 MiB.
+    #[must_use]
+    pub fn with_max_response_size(mut self, max_bytes: usize) -> Self {
+        Arc::make_mut(&mut self.inner).max_response_size = max_bytes;
+        self
     }
 
     /// Returns the base URL this transport targets.

@@ -35,6 +35,15 @@ impl RequestHandler {
             let Some(ref sender) = self.push_sender else {
                 return Err(ServerError::PushNotSupported);
             };
+            // taskId is optional on the wire (a config nested in
+            // SendMessageConfiguration omits it), but a standalone create has
+            // no task context to infer it from — reject explicitly instead of
+            // storing an unroutable config.
+            if config.task_id.as_deref().unwrap_or("").is_empty() {
+                return Err(ServerError::InvalidParams(
+                    "taskId is required for CreateTaskPushNotificationConfig".into(),
+                ));
+            }
             // FIX(#3): Validate webhook URL at config creation time to prevent
             // SSRF attacks. Previously validation only happened at delivery time,
             // leaving a window where malicious URLs could be stored.
@@ -221,7 +230,7 @@ mod tests {
         TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-1".to_owned()),
-            task_id: task_id.to_owned(),
+            task_id: Some(task_id.to_owned()),
             url: "https://example.com/webhook".to_owned(),
             token: None,
             authentication: None,
@@ -239,6 +248,55 @@ mod tests {
             matches!(result, Err(crate::error::ServerError::PushNotSupported)),
             "expected PushNotSupported, got: {result:?}"
         );
+    }
+
+    /// Regression (D1): `taskId` is optional on the wire, but a standalone
+    /// `CreateTaskPushNotificationConfig` cannot infer it — the handler must
+    /// reject a missing task ID with `InvalidParams`, not panic or store an
+    /// unroutable config.
+    #[tokio::test]
+    async fn set_push_config_without_task_id_returns_invalid_params() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+            fn allows_private_urls(&self) -> bool {
+                true
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+
+        let config = TaskPushNotificationConfig {
+            tenant: None,
+            id: None,
+            task_id: None,
+            url: "https://example.com/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        };
+        let result = handler.on_set_push_config(config, None).await;
+        match result {
+            Err(crate::error::ServerError::InvalidParams(msg)) => {
+                assert!(msg.contains("taskId"), "got: {msg}");
+            }
+            other => panic!("expected InvalidParams for missing taskId, got: {other:?}"),
+        }
     }
 
     // ── on_get_push_config ───────────────────────────────────────────────────

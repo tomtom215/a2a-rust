@@ -286,12 +286,12 @@ pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
     let push_config = TaskPushNotificationConfig {
         tenant: None,
         id: None,
-        task_id: task_id.clone(),
+        task_id: Some(task_id.clone()),
         url: webhook_url.clone(),
         token: Some("test-token-123".into()),
         authentication: Some(AuthenticationInfo {
             scheme: "bearer".into(),
-            credentials: "my-secret-bearer".into(),
+            credentials: Some("my-secret-bearer".into()),
         }),
     };
 

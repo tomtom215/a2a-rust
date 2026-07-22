@@ -407,7 +407,7 @@ pub async fn test_push_not_supported(ctx: &TestContext) -> TestResult {
     let config = TaskPushNotificationConfig {
         tenant: None,
         id: None,
-        task_id: "any-task-id".to_owned(),
+        task_id: Some("any-task-id".to_owned()),
         url: format!("http://{}/webhook", ctx.webhook_addr),
         token: None,
         authentication: None,

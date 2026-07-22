@@ -167,7 +167,7 @@ mod tests {
         TaskPushNotificationConfig {
             tenant: None,
             id: id.map(String::from),
-            task_id: task_id.to_string(),
+            task_id: Some(task_id.to_string()),
             url: url.to_string(),
             token: None,
             authentication: None,

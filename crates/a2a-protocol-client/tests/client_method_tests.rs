@@ -358,7 +358,7 @@ async fn set_push_config_returns_stored_config() {
 
     let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
     let result = client.set_push_config(config).await.unwrap();
-    assert_eq!(result.task_id, "task-1");
+    assert_eq!(result.task_id.as_deref(), Some("task-1"));
     assert_eq!(result.id.as_deref(), Some("config-1"));
 }
 
@@ -391,7 +391,7 @@ async fn get_push_config_returns_config() {
     let client = make_client(transport);
 
     let result = client.get_push_config("task-1", "cfg-1").await.unwrap();
-    assert_eq!(result.task_id, "task-1");
+    assert_eq!(result.task_id.as_deref(), Some("task-1"));
     assert_eq!(result.url, "https://example.com/hook");
 }
 

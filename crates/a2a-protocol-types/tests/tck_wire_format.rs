@@ -701,7 +701,7 @@ fn tck_jsonrpc_send_message_request() {
 
     let req: JsonRpcRequest = serde_json::from_value(golden).unwrap();
     assert_eq!(req.jsonrpc, JsonRpcVersion);
-    assert_eq!(req.id, Some(json!(1)));
+    assert_eq!(req.id.as_value(), Some(&json!(1)));
     assert_eq!(req.method, "SendMessage");
     let params = req.params.as_ref().expect("params should be present");
     assert!(params.get("message").is_some());
@@ -957,13 +957,13 @@ fn tck_push_notification_config_wire_format() {
     });
 
     let config: TaskPushNotificationConfig = serde_json::from_value(golden).unwrap();
-    assert_eq!(config.task_id, "task-123");
+    assert_eq!(config.task_id.as_deref(), Some("task-123"));
     assert_eq!(config.url, "https://client.example.com/webhook");
     assert!(config.authentication.is_some());
 
     let auth = config.authentication.as_ref().unwrap();
     assert_eq!(auth.scheme, "bearer");
-    assert_eq!(auth.credentials, "secret-token");
+    assert_eq!(auth.credentials.as_deref(), Some("secret-token"));
 
     let ser = serde_json::to_value(&config).unwrap();
     assert_eq!(ser["taskId"], "task-123");

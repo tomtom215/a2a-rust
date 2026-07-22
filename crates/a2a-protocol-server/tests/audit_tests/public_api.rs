@@ -150,7 +150,7 @@ fn artifact_new_empty_parts_panics_in_debug() {
 #[test]
 fn push_config_new_construction() {
     let config = TaskPushNotificationConfig::new("task-42", "https://hooks.example.com/notify");
-    assert_eq!(config.task_id, "task-42");
+    assert_eq!(config.task_id.as_deref(), Some("task-42"));
     assert_eq!(config.url, "https://hooks.example.com/notify");
     assert!(config.id.is_none(), "id should default to None");
     assert!(config.tenant.is_none(), "tenant should default to None");

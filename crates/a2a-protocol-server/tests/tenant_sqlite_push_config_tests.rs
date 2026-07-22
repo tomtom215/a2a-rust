@@ -15,7 +15,7 @@ use a2a_protocol_types::push::TaskPushNotificationConfig;
 fn make_config(task_id: &str, id: Option<&str>, url: &str) -> TaskPushNotificationConfig {
     TaskPushNotificationConfig {
         tenant: None,
-        task_id: task_id.to_string(),
+        task_id: Some(task_id.to_string()),
         id: id.map(String::from),
         url: url.to_string(),
         token: None,
@@ -49,13 +49,13 @@ async fn set_and_get_roundtrip() {
     TenantContext::scope("t1", async {
         let saved = store.set(config).await.unwrap();
         assert_eq!(saved.id.as_deref(), Some("cfg-1"));
-        assert_eq!(saved.task_id, "task-1");
+        assert_eq!(saved.task_id.as_deref(), Some("task-1"));
         assert_eq!(saved.url, "https://example.com/hook");
 
         let got = store.get("task-1", "cfg-1").await.unwrap();
         assert!(got.is_some());
         let got = got.unwrap();
-        assert_eq!(got.task_id, "task-1");
+        assert_eq!(got.task_id.as_deref(), Some("task-1"));
         assert_eq!(got.id.as_deref(), Some("cfg-1"));
         assert_eq!(got.url, "https://example.com/hook");
     })

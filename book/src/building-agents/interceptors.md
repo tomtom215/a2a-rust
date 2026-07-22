@@ -154,10 +154,14 @@ The built-in `RateLimitInterceptor` provides per-caller fixed-window rate limiti
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 use std::sync::Arc;
 
-let limiter = Arc::new(RateLimitInterceptor::new(RateLimitConfig {
-    requests_per_window: 100,
-    window_secs: 60,
-}));
+let limiter = Arc::new(
+    RateLimitInterceptor::new(RateLimitConfig {
+        requests_per_window: 100,
+        window_secs: 60,
+        ..RateLimitConfig::default()
+    })
+    .expect("valid rate limit config"),
+);
 
 // Add to handler builder:
 RequestHandlerBuilder::new(my_executor)
@@ -166,7 +170,10 @@ RequestHandlerBuilder::new(my_executor)
 ```
 
 Caller keys are derived from `CallContext::caller_identity()` (set by auth
-interceptors), the `X-Forwarded-For` header, or `"anonymous"`.
+interceptors) or `"anonymous"`. The `X-Forwarded-For` header is only consulted
+when `trusted_proxy_hops` is set to the number of trusted reverse proxies in
+front of the server — the header is client-controlled, so it is ignored by
+default. The bucket map is bounded by `max_buckets` (default 10,000).
 
 > **Note:** `CallContext` fields are read-only (accessed via methods like
 > `ctx.method()`, `ctx.caller_identity()`, `ctx.http_headers()`). This

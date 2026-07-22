@@ -160,6 +160,51 @@ async fn jsonrpc_id_null_is_valid() {
     assert!(v["id"].is_null());
 }
 
+/// Regression (D2): an explicit `"id": null` request is a *call* — the
+/// response must carry a present, null `id` member. (`v["id"].is_null()`
+/// alone cannot distinguish a present null from an absent member.)
+#[tokio::test]
+async fn jsonrpc_null_id_call_gets_response_with_present_null_id() {
+    let addr = start_jsonrpc_server().await;
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "ListTasks",
+        "id": null,
+        "params": {}
+    });
+    let (status, resp) = post_jsonrpc(addr, &body.to_string()).await;
+    assert_eq!(status, 200);
+    let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+    let obj = v.as_object().expect("response is an object");
+    assert!(
+        obj.contains_key("id"),
+        "null-id call must be answered with a present id member: {resp}"
+    );
+    assert!(obj["id"].is_null(), "response id must be null: {resp}");
+    assert!(obj.contains_key("result"), "expected success: {resp}");
+}
+
+/// End-to-end pin (D2): the HTTP dispatch treats every A2A request as a
+/// call — an id-less request is still answered, with a null response id
+/// (A2A defines no notification methods). This preserves long-standing
+/// behavior; the type layer now distinguishes the two states so the request
+/// round-trips faithfully.
+#[tokio::test]
+async fn jsonrpc_absent_id_request_answered_with_null_id() {
+    let addr = start_jsonrpc_server().await;
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "method": "ListTasks",
+        "params": {}
+    });
+    let (status, resp) = post_jsonrpc(addr, &body.to_string()).await;
+    assert_eq!(status, 200);
+    let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
+    let obj = v.as_object().expect("response is an object");
+    assert!(obj["id"].is_null(), "got: {resp}");
+    assert!(obj.contains_key("result"), "expected success: {resp}");
+}
+
 #[tokio::test]
 async fn jsonrpc_id_large_integer_is_valid() {
     let addr = start_jsonrpc_server().await;

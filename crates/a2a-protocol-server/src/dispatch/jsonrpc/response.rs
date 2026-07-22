@@ -252,7 +252,7 @@ mod tests {
         use a2a_protocol_types::params::TaskQueryParams;
         let req = JsonRpcRequest {
             jsonrpc: JsonRpcVersion,
-            id: None,
+            id: a2a_protocol_types::jsonrpc::JsonRpcRequestId::Absent,
             method: "GetTask".to_owned(),
             params: None,
         };
@@ -272,7 +272,7 @@ mod tests {
         // Passing a bare integer should produce an InvalidParams error.
         let req = JsonRpcRequest {
             jsonrpc: JsonRpcVersion,
-            id: Some(serde_json::json!(1)),
+            id: a2a_protocol_types::jsonrpc::JsonRpcRequestId::Value(serde_json::json!(1)),
             method: "GetTask".to_owned(),
             params: Some(serde_json::json!(42)),
         };

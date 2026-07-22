@@ -8,6 +8,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Interop, hardening, and edge-case fixes from an independent protocol audit.
+Several public types changed shape (0.x breaking — warrants a minor bump).
+
+### Changed
+
+- **`a2a-protocol-types`: push types accept spec-compliant JSON** —
+  `AuthenticationInfo.credentials` and `TaskPushNotificationConfig.taskId`
+  are now `Option<String>`, matching the canonical protocol schema (both
+  were previously required, rejecting valid cross-SDK payloads at parse
+  time — e.g. a push config nested in `SendMessageConfiguration` before the
+  task exists). A standalone `CreateTaskPushNotificationConfig` without a
+  `taskId` is now rejected by the server with a structured invalid-params
+  error instead of a parse error; all push-config stores guard the missing
+  routing key explicitly.
+- **`a2a-protocol-types`: JSON-RPC request ids are three-state** —
+  `JsonRpcRequest.id` is now the `JsonRpcRequestId` enum
+  (`Absent`/`Null`/`Value`). An explicit `"id": null` request previously
+  collapsed into a notification on round-trip; per JSON-RPC 2.0 it is a
+  *call* and now round-trips faithfully. Server responses are unchanged.
+- **`a2a-protocol-server`: concurrent streams capped at 1024 by default** —
+  `max_concurrent_streams` previously defaulted to unlimited; every stream
+  eagerly allocates channels and spawns tasks, an unauthenticated DoS
+  vector. Deployments needing more must raise the cap explicitly
+  (`usize::MAX` effectively disables it). `executor_timeout` deliberately
+  keeps no default, now documented as a production recommendation.
+- **`a2a-protocol-server`: `RateLimitInterceptor` hardened** — caller
+  identity no longer trusts the client-controlled `X-Forwarded-For` header
+  unless `RateLimitConfig::trusted_proxy_hops` is set (forged headers
+  previously bypassed the limit entirely); the bucket map is bounded by
+  `max_buckets` (default 10,000); `RateLimitInterceptor::new` is now
+  fallible and rejects zero config values (`window_secs == 0` previously
+  panicked with a divide-by-zero at request time).
+- **`a2a-protocol-client`: buffered response bodies capped** — unary
+  responses were collected with no size limit; they are now capped at
+  32 MiB by default (configurable via
+  `ClientBuilder::with_max_response_size`), enforced during the read.
+
+### Fixed
+
+- **`a2a-protocol-types`: ambiguous `Part` content rejected** — a part
+  carrying more than one content member (`text`/`raw`/`url`/`data`) was
+  silently coalesced to the first match; it now fails deserialization.
+- **`a2a-protocol-types`: RFC 8785 canonicalization conformance (signing)**
+  — object keys now sort by UTF-16 code units (§3.2.3) and doubles use
+  ECMAScript `Number::toString` formatting (§3.2.2), fixing cross-SDK
+  signature mismatches for cards containing supplementary-plane keys or
+  non-integer numbers in `AgentExtension.params`.
+- **WebSocket (opt-in)**: the server's 4 MiB message cap is now enforced at
+  the protocol level via `WebSocketConfig` (previously tungstenite's 64 MiB
+  default applied and oversized messages were fully buffered before the
+  check); the client no longer leaks a pending-request map entry per
+  timed-out request.
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,

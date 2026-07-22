@@ -33,9 +33,11 @@ use crate::extensions::AgentCardSignature;
 /// Produces an RFC 8785 (JCS) canonical JSON serialization of a value.
 ///
 /// JCS defines a deterministic serialization for JSON values:
-/// - Object keys sorted lexicographically by Unicode code point
+/// - Object keys sorted lexicographically by UTF-16 code units (RFC 8785
+///   §3.2.3 — note this differs from Unicode code-point order for
+///   supplementary-plane characters such as emoji)
 /// - No insignificant whitespace
-/// - Numbers in shortest representation (no trailing zeros)
+/// - Numbers formatted per ECMAScript `Number::toString` (RFC 8785 §3.2.2)
 /// - Strings escaped per RFC 8785 rules
 ///
 /// # Errors
@@ -78,9 +80,20 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()
             buf.extend_from_slice(if *b { b"true" } else { b"false" });
         }
         serde_json::Value::Number(n) => {
-            // RFC 8785: use the shortest representation.
-            let s = n.to_string();
-            buf.extend_from_slice(s.as_bytes());
+            if n.is_i64() || n.is_u64() {
+                // Integers print exactly. (All i64/u64 magnitudes are below
+                // 1e21, so ECMAScript would render them in plain integer
+                // form as well.)
+                buf.extend_from_slice(n.to_string().as_bytes());
+            } else {
+                // RFC 8785 §3.2.2: doubles use ECMAScript Number::toString
+                // formatting. serde_json's own Display differs from it
+                // (e.g. `100.0` vs `100`, `1e-6` vs `0.000001`).
+                let f = n
+                    .as_f64()
+                    .ok_or_else(|| A2aError::internal("unrepresentable JSON number"))?;
+                write_es_number(f, buf)?;
+            }
         }
         serde_json::Value::String(s) => {
             write_canonical_string(s, buf);
@@ -96,9 +109,12 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()
             buf.push(b']');
         }
         serde_json::Value::Object(obj) => {
-            // RFC 8785: keys sorted by Unicode code point order.
+            // RFC 8785 §3.2.3: keys sorted by their UTF-16 code units.
+            // Plain `sort()` (code-point / UTF-8 byte order) disagrees for
+            // supplementary-plane characters: their UTF-16 surrogates
+            // (0xD800–0xDFFF) sort below BMP characters above 0xE000.
             let mut keys: Vec<&String> = obj.keys().collect();
-            keys.sort();
+            keys.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
 
             buf.push(b'{');
             for (i, key) in keys.iter().enumerate() {
@@ -113,6 +129,68 @@ fn write_canonical(value: &serde_json::Value, buf: &mut Vec<u8>) -> A2aResult<()
             }
             buf.push(b'}');
         }
+    }
+    Ok(())
+}
+
+/// Writes an `f64` using ECMAScript `Number::toString` formatting
+/// (ECMA-262 §7.1.12.1 / "`ToString` applied to the Number type"), as RFC 8785
+/// §3.2.2 requires for JSON doubles.
+///
+/// Rust's `LowerExp` produces the shortest digit string that round-trips, so
+/// it supplies the digits `s` and decimal exponent; the ECMAScript layout
+/// rules (plain integer, fixed-point, or exponential with an explicit `+`)
+/// are applied on top.
+fn write_es_number(f: f64, buf: &mut Vec<u8>) -> A2aResult<()> {
+    if f == 0.0 {
+        // Covers negative zero: ECMAScript renders -0 as "0".
+        buf.push(b'0');
+        return Ok(());
+    }
+    if f.is_sign_negative() {
+        buf.push(b'-');
+    }
+    let exp_form = format!("{:e}", f.abs()); // e.g. "9.007199254740994e15"
+    let (mantissa, exp) = exp_form
+        .split_once('e')
+        .ok_or_else(|| A2aError::internal("float LowerExp missing exponent"))?;
+    let exp: i32 = exp
+        .parse()
+        .map_err(|e| A2aError::internal(format!("float exponent parse: {e}")))?;
+    let digits: Vec<u8> = mantissa.bytes().filter(|b| *b != b'.').collect();
+    // Value = digits × 10^(n−k), with k digits and the decimal point
+    // logically after position n (ECMA-262 notation).
+    let k = i32::try_from(digits.len())
+        .map_err(|_| A2aError::internal("float digit count overflow"))?;
+    let n = exp + 1;
+
+    if k <= n && n <= 21 {
+        // Integer with (n−k) trailing zeros.
+        buf.extend_from_slice(&digits);
+        buf.extend(std::iter::repeat_n(b'0', (n - k).unsigned_abs() as usize));
+    } else if 0 < n && n <= 21 {
+        // Fixed-point with the decimal point inside the digit string.
+        buf.extend_from_slice(&digits[..n.unsigned_abs() as usize]);
+        buf.push(b'.');
+        buf.extend_from_slice(&digits[n.unsigned_abs() as usize..]);
+    } else if -6 < n && n <= 0 {
+        // Fixed-point with leading "0.000…" padding.
+        buf.extend_from_slice(b"0.");
+        buf.extend(std::iter::repeat_n(b'0', n.unsigned_abs() as usize));
+        buf.extend_from_slice(&digits);
+    } else {
+        // Exponential notation with an explicit sign on the exponent.
+        buf.push(digits[0]);
+        if digits.len() > 1 {
+            buf.push(b'.');
+            buf.extend_from_slice(&digits[1..]);
+        }
+        buf.push(b'e');
+        let e = n - 1;
+        if e >= 0 {
+            buf.push(b'+');
+        }
+        buf.extend_from_slice(e.to_string().as_bytes());
     }
     Ok(())
 }
@@ -485,5 +563,74 @@ mod tests {
             "\"\\u001f\"",
             "0x1F must be escaped as \\u001f"
         );
+    }
+
+    /// Regression (D7): RFC 8785 §3.2.3 requires key order by UTF-16 code
+    /// units, not Unicode code points. This is the RFC's own sorting example:
+    /// the emoji (U+1F600 — surrogate pair D83D DE00) must sort BEFORE
+    /// U+FB33, although its code point is higher.
+    #[test]
+    fn canonicalize_sorts_keys_by_utf16_code_units() {
+        let json = serde_json::json!({
+            "\u{20AC}": "Euro Sign",
+            "\r": "Carriage Return",
+            "\u{FB33}": "Hebrew Letter Dalet With Dagesh",
+            "1": "One",
+            "\u{1F600}": "Emoji: Grinning Face",
+            "\u{80}": "Control",
+            "\u{F6}": "Latin Small Letter O With Diaeresis"
+        });
+        let canonical = String::from_utf8(canonicalize(&json).unwrap()).unwrap();
+        let expected = concat!(
+            "{\"\\r\":\"Carriage Return\",",
+            "\"1\":\"One\",",
+            "\"\u{80}\":\"Control\",",
+            "\"\u{F6}\":\"Latin Small Letter O With Diaeresis\",",
+            "\"\u{20AC}\":\"Euro Sign\",",
+            "\"\u{1F600}\":\"Emoji: Grinning Face\",",
+            "\"\u{FB33}\":\"Hebrew Letter Dalet With Dagesh\"}"
+        );
+        assert_eq!(canonical, expected);
+    }
+
+    /// Regression (D7): RFC 8785 §3.2.2 requires ECMAScript `Number::toString`
+    /// formatting for doubles; `serde_json`'s Display differs for several
+    /// classes of values.
+    #[test]
+    fn canonicalize_numbers_use_ecmascript_formatting() {
+        let cases: &[(f64, &str)] = &[
+            (100.0, "100"),     // not "100.0"
+            (-0.0, "0"),        // not "-0.0"
+            (1e-6, "0.000001"), // not "1e-6"
+            (1e-7, "1e-7"),
+            (1e21, "1e+21"),
+            (1e20, "100000000000000000000"), // below the 1e21 cutoff
+            (0.1, "0.1"),
+            (271.828, "271.828"),
+            (-2.5e-10, "-2.5e-10"),
+            (9_007_199_254_740_994.0, "9007199254740994"), // 2^53 + 2
+            (5e-324, "5e-324"),                            // min subnormal
+            (1.797_693_134_862_315_7e308, "1.7976931348623157e+308"), // max double
+        ];
+        for (input, expected) in cases {
+            let value = serde_json::json!(input);
+            assert!(value.as_f64().is_some(), "test setup: {input} must be f64");
+            let canonical = String::from_utf8(canonicalize(&value).unwrap()).unwrap();
+            assert_eq!(&canonical, expected, "for input {input:?}");
+        }
+    }
+
+    /// Integers (i64/u64) keep their exact representation.
+    #[test]
+    fn canonicalize_integers_exact() {
+        for (value, expected) in [
+            (serde_json::json!(0), "0"),
+            (serde_json::json!(-1), "-1"),
+            (serde_json::json!(u64::MAX), "18446744073709551615"),
+            (serde_json::json!(i64::MIN), "-9223372036854775808"),
+        ] {
+            let canonical = String::from_utf8(canonicalize(&value).unwrap()).unwrap();
+            assert_eq!(canonical, expected);
+        }
     }
 }

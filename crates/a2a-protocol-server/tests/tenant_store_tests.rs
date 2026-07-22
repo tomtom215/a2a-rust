@@ -217,7 +217,7 @@ fn make_push_config(task_id: &str) -> TaskPushNotificationConfig {
     TaskPushNotificationConfig {
         tenant: None,
         id: None,
-        task_id: task_id.to_owned(),
+        task_id: Some(task_id.to_owned()),
         url: "http://example.com/webhook".to_owned(),
         token: Some("secret".to_owned()),
         authentication: None,

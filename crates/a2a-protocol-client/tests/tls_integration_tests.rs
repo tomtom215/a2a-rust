@@ -134,7 +134,7 @@ async fn echo_handler(
         Ok(rpc) => {
             let success = JsonRpcSuccessResponse {
                 jsonrpc: JsonRpcVersion,
-                id: rpc.id,
+                id: rpc.id.to_response_id(),
                 result: serde_json::json!({
                     "method": rpc.method,
                     "echo": true,

@@ -188,7 +188,10 @@ fn bench_push_config_store(c: &mut Criterion) {
             );
             let saved = rt.block_on(store.set(config)).unwrap();
             if i == 50 {
-                config_ids.push((saved.task_id.clone(), saved.id.clone().unwrap_or_default()));
+                config_ids.push((
+                    saved.task_id.clone().unwrap_or_default(),
+                    saved.id.clone().unwrap_or_default(),
+                ));
             }
         }
         let (task_id, config_id) = &config_ids[0];
@@ -316,8 +319,10 @@ fn bench_rate_limiting(c: &mut Criterion) {
     let rate_config = a2a_protocol_server::RateLimitConfig {
         requests_per_window: 100_000,
         window_secs: 60,
+        ..a2a_protocol_server::RateLimitConfig::default()
     };
-    let rate_limiter = a2a_protocol_server::RateLimitInterceptor::new(rate_config);
+    let rate_limiter =
+        a2a_protocol_server::RateLimitInterceptor::new(rate_config).expect("valid config");
 
     let handler = Arc::new(
         a2a_protocol_server::builder::RequestHandlerBuilder::new(EchoExecutor)

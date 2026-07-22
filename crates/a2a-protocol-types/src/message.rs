@@ -296,8 +296,18 @@ impl<'de> serde::Deserialize<'de> for Part {
                     }
                 }
 
-                // Determine the content variant. Exactly one content field
-                // should be present per the A2A spec.
+                // Exactly one content member is allowed per the A2A spec.
+                // Reject ambiguous input instead of silently picking one and
+                // dropping the rest.
+                let content_members = usize::from(text.is_some())
+                    + usize::from(raw.is_some())
+                    + usize::from(url.is_some())
+                    + usize::from(data.is_some());
+                if content_members > 1 {
+                    return Err(de::Error::custom(
+                        "Part must contain exactly one of: text, raw, url, data",
+                    ));
+                }
                 let content = if let Some(t) = text {
                     PartContent::Text(t)
                 } else if let Some(r) = raw {
@@ -776,6 +786,51 @@ mod tests {
             result.is_err(),
             "duplicate metadata field must error: {result:?}"
         );
+    }
+
+    /// Regression (D7): a Part carrying more than one content member is
+    /// ambiguous and must be rejected — previously the deserializer silently
+    /// picked the first match (text > raw > url > data) and dropped the rest.
+    #[test]
+    fn part_deserialize_rejects_multiple_content_members() {
+        for json in [
+            r#"{"text":"a","raw":"b64"}"#,
+            r#"{"text":"a","url":"https://x.test/f"}"#,
+            r#"{"text":"a","data":{"k":1}}"#,
+            r#"{"raw":"b64","url":"https://x.test/f"}"#,
+            r#"{"raw":"b64","data":{"k":1}}"#,
+            r#"{"url":"https://x.test/f","data":{"k":1}}"#,
+            r#"{"text":"a","raw":"b64","url":"https://x.test/f","data":{"k":1}}"#,
+        ] {
+            let result: Result<Part, _> = serde_json::from_str(json);
+            let err = result.expect_err("ambiguous Part must be rejected");
+            assert!(
+                err.to_string().contains("exactly one"),
+                "error should explain the exactly-one rule, got: {err}"
+            );
+        }
+    }
+
+    /// Each single content member still deserializes fine after the
+    /// ambiguity check.
+    #[test]
+    fn part_deserialize_each_single_content_member_ok() {
+        for (json, want_variant) in [
+            (r#"{"text":"a"}"#, "text"),
+            (r#"{"raw":"b64"}"#, "raw"),
+            (r#"{"url":"https://x.test/f"}"#, "url"),
+            (r#"{"data":{"k":1}}"#, "data"),
+        ] {
+            let part: Part = serde_json::from_str(json).expect("single-member Part");
+            let matches = matches!(
+                (&part.content, want_variant),
+                (PartContent::Text(_), "text")
+                    | (PartContent::Raw(_), "raw")
+                    | (PartContent::Url(_), "url")
+                    | (PartContent::Data(_), "data")
+            );
+            assert!(matches, "wrong variant for {json}: {part:?}");
+        }
     }
 
     // ── PartVisitor::expecting test ───────────────────────────────────────

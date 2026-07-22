@@ -10,7 +10,7 @@
 
 use std::collections::HashMap;
 
-use http_body_util::{BodyExt, Full};
+use http_body_util::Full;
 use hyper::body::Bytes;
 use hyper::header;
 
@@ -135,14 +135,19 @@ impl RestTransport {
 
         let status = resp.status();
         trace_debug!(method, %status, "received response");
-        let body_bytes = tokio::time::timeout(self.inner.request_timeout, resp.collect())
-            .await
-            .map_err(|_| {
-                trace_error!(method, "response body read timed out");
-                ClientError::Timeout("response body read timed out".into())
-            })?
-            .map_err(ClientError::Http)?
-            .to_bytes();
+        let body_bytes = match crate::transport::collect_response_limited(
+            resp,
+            self.inner.max_response_size,
+            self.inner.request_timeout,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                trace_error!(method, error = %e, "response body read failed");
+                return Err(e);
+            }
+        };
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -451,6 +456,27 @@ mod tests {
                 );
             }
             other => panic!("expected Protocol error, got {other:?}"),
+        }
+    }
+
+    /// Regression (D5): REST unary responses are capped like JSON-RPC ones —
+    /// previously `resp.collect()` buffered without bound.
+    #[tokio::test]
+    async fn execute_request_oversized_response_rejected() {
+        let big = format!(r#"{{"pad":"{}"}}"#, "x".repeat(64 * 1024));
+        let addr = start_rest_server(200, "application/json", big).await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+        let transport = RestTransport::new(&url)
+            .unwrap()
+            .with_max_response_size(1024);
+        let result = transport
+            .execute_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await;
+        match result {
+            Err(ClientError::Transport(msg)) => {
+                assert!(msg.contains("too large"), "got: {msg}");
+            }
+            other => panic!("expected Transport 'too large' error, got {other:?}"),
         }
     }
 

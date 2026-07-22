@@ -223,14 +223,13 @@ fn canonicalize_floating_point_number() {
 
 #[test]
 fn canonicalize_float_no_trailing_zeros() {
-    // 10.0 should be represented without unnecessary trailing zeros.
-    // serde_json represents 10.0 as a float.
+    // 10.0 must be represented without unnecessary trailing zeros.
+    // RFC 8785 §3.2.2 requires ECMAScript Number::toString formatting,
+    // which renders the integral double 10.0 as "10" (not "10.0").
     let json: serde_json::Value = serde_json::from_str("10.0").unwrap();
     let canonical = canonicalize(&json).unwrap();
     let s = String::from_utf8(canonical).unwrap();
-    // serde_json::Number::to_string for 10.0 gives "10.0" — this is the
-    // shortest faithful representation.
-    assert_eq!(s, "10.0");
+    assert_eq!(s, "10");
 }
 
 #[test]
