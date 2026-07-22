@@ -52,7 +52,24 @@ fn push_tls_config() -> rustls::ClientConfig {
     .with_no_client_auth()
 }
 
-/// Builds the push-delivery hyper client for the active feature set.
+/// Builds an HTTPS-capable (`https_or_http`) push client from a rustls config.
+#[cfg(feature = "tls-rustls")]
+fn build_push_https_client(tls_config: rustls::ClientConfig) -> PushHttpClient {
+    let mut http = HttpConnector::new();
+    // Let the HttpsConnector wrapper handle TLS for https:// targets while
+    // still permitting plaintext http:// via `https_or_http()`.
+    http.enforce_http(false);
+    http.set_nodelay(true);
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls_config)
+        .https_or_http()
+        .enable_all_versions()
+        .wrap_connector(http);
+    Client::builder(TokioExecutor::new()).build(https)
+}
+
+/// Builds the push-delivery hyper client for the active feature set, using the
+/// default trust roots.
 fn build_push_http_client() -> PushHttpClient {
     #[cfg(not(feature = "tls-rustls"))]
     {
@@ -60,17 +77,7 @@ fn build_push_http_client() -> PushHttpClient {
     }
     #[cfg(feature = "tls-rustls")]
     {
-        let mut http = HttpConnector::new();
-        // Let the HttpsConnector wrapper handle TLS for https:// targets while
-        // still permitting plaintext http:// via `https_or_http()`.
-        http.enforce_http(false);
-        http.set_nodelay(true);
-        let https = hyper_rustls::HttpsConnectorBuilder::new()
-            .with_tls_config(push_tls_config())
-            .https_or_http()
-            .enable_all_versions()
-            .wrap_connector(http);
-        Client::builder(TokioExecutor::new()).build(https)
+        build_push_https_client(push_tls_config())
     }
 }
 
@@ -224,6 +231,27 @@ impl HttpPushSender {
         Self {
             client,
             request_timeout,
+            retry_policy: PushRetryPolicy::default(),
+            allow_private_urls: false,
+        }
+    }
+
+    /// Creates an [`HttpPushSender`] that delivers HTTPS using a custom rustls
+    /// [`ClientConfig`](rustls::ClientConfig) instead of the default Mozilla
+    /// root store.
+    ///
+    /// Use this to trust an internal/private CA for webhook endpoints, or to
+    /// present a client certificate for mutual TLS. Uses the default per-request
+    /// timeout and retry policy (chain [`with_retry_policy`](Self::with_retry_policy)
+    /// to change them). `http://` targets are still delivered in plaintext.
+    ///
+    /// Requires the `tls-rustls` feature.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn with_tls_config(tls_config: rustls::ClientConfig) -> Self {
+        Self {
+            client: build_push_https_client(tls_config),
+            request_timeout: DEFAULT_PUSH_REQUEST_TIMEOUT,
             retry_policy: PushRetryPolicy::default(),
             allow_private_urls: false,
         }

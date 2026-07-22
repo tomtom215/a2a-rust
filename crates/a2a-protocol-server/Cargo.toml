@@ -95,6 +95,10 @@ a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }
+# For the live-TLS end-to-end push-sender test (gated on `tls-rustls`): generate
+# a throwaway CA + server cert and run a real rustls HTTPS server on loopback.
+rcgen = "0.14"
+tokio-rustls = { version = ">=0.26, <0.27", default-features = false, features = ["ring"] }
 
 [[bench]]
 name = "handler_bench"

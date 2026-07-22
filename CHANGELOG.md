@@ -195,7 +195,11 @@ changed shape (0.x breaking — warrants a minor bump).
   feature makes the bundled `HttpPushSender` deliver to `https://` webhooks;
   the SDK's `tls-rustls` enables it too. Without the feature, `https://` fails
   fast with an actionable error (client `build()` and the push sender) instead
-  of a late, opaque connector error.
+  of a late, opaque connector error. `HttpPushSender::with_tls_config` accepts a
+  custom rustls `ClientConfig` (internal/private-CA webhooks, or mutual TLS).
+  A live-TLS end-to-end test drives the sender through a real handshake against
+  a `tokio-rustls` server on loopback (runs in the `tls-rustls` and
+  `all-features` CI jobs).
 - **`a2a-protocol-server`: opt-in strict multi-tenancy**
   (`RequestHandlerBuilder::require_resolved_tenant`) — a configured
   `TenantResolver` that returns `None` rejects the request instead of falling
