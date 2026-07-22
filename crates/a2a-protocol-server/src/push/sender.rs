@@ -721,6 +721,45 @@ mod tests {
         assert!(validate_webhook_url("http://[::ffff:203.0.113.1]/webhook").is_ok());
     }
 
+    // ── Direct coverage of the private-range primitives ─────────────────────
+    //
+    // Exercised directly (not only through `validate_webhook_url`) so the
+    // boundary conditions are pinned: the CGNAT check ANDs two octet tests, and
+    // `embedded_ipv4`'s `::`/`::1` exclusion is behaviorally equivalent when
+    // observed only through `is_private_ip`.
+
+    #[test]
+    fn is_private_v4_cgnat_boundary() {
+        // 100.64.0.0/10 (CGNAT) is private; the rest of 100.0.0.0/8 is public.
+        assert!(is_private_v4("100.64.0.1".parse().unwrap()));
+        assert!(is_private_v4("100.127.255.255".parse().unwrap())); // top of the block
+        assert!(!is_private_v4("100.0.0.1".parse().unwrap())); // below the block
+        assert!(!is_private_v4("100.128.0.1".parse().unwrap())); // above the block
+                                                                 // The two octet conditions are ANDed — neither alone makes an address
+                                                                 // CGNAT: a matching second octet with a non-100 first octet is public.
+        assert!(!is_private_v4("5.64.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn embedded_ipv4_recovers_only_the_v4_bearing_forms() {
+        let v6 = |s: &str| s.parse::<std::net::Ipv6Addr>().unwrap();
+        let v4 = |s: &str| Some(s.parse::<std::net::Ipv4Addr>().unwrap());
+
+        // IPv4-mapped and NAT64 carry a routable IPv4.
+        assert_eq!(embedded_ipv4(v6("::ffff:127.0.0.1")), v4("127.0.0.1"));
+        assert_eq!(
+            embedded_ipv4(v6("64:ff9b::a9fe:a9fe")),
+            v4("169.254.169.254")
+        );
+        // IPv4-compatible ::a.b.c.d is recovered, but :: and ::1 are excluded
+        // (the caller handles them as unspecified/loopback).
+        assert_eq!(embedded_ipv4(v6("::2")), v4("0.0.0.2"));
+        assert_eq!(embedded_ipv4(v6("::")), None);
+        assert_eq!(embedded_ipv4(v6("::1")), None);
+        // A normal global IPv6 address carries no embedded IPv4.
+        assert_eq!(embedded_ipv4(v6("2606:4700::1111")), None);
+    }
+
     #[test]
     fn accepts_public_url() {
         assert!(validate_webhook_url("https://example.com/webhook").is_ok());
