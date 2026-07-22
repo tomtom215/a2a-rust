@@ -177,7 +177,7 @@ impl PushRetryPolicy {
 ///
 /// # HTTPS and DNS-rebinding
 ///
-/// The SSRF pre-flight ([`validate_webhook_url_with_dns`]) always runs, rejecting
+/// The SSRF pre-flight (`validate_webhook_url_with_dns`) always runs, rejecting
 /// webhooks that resolve to private/loopback/link-local addresses. For `http://`
 /// targets the validated IP is additionally *pinned* (the request dials the
 /// literal IP with the original `Host` header) to close the DNS-rebinding TOCTOU

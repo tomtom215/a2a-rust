@@ -181,13 +181,14 @@ async fn retries_on_client_error_status() {
     handle.abort();
 }
 
-// ── HTTPS transport limitation ──────────────────────────────────────────────
+// ── HTTPS transport behavior ────────────────────────────────────────────────
 
+/// Without the `tls-rustls` feature the bundled sender is HTTP-only: an
+/// `https://` target must fail immediately with a clear, actionable message
+/// rather than an opaque connector error surfacing after every retry attempt.
+#[cfg(not(feature = "tls-rustls"))]
 #[tokio::test]
-async fn https_webhook_fails_fast_with_actionable_error() {
-    // The bundled HttpPushSender is HTTP-only. An https:// target must fail
-    // immediately with a clear, actionable message rather than an opaque
-    // connector error surfacing after every retry attempt.
+async fn https_webhook_fails_fast_without_tls_feature() {
     let sender = HttpPushSender::new().allow_private_urls();
     let url = "https://example.com/webhook";
     let config = base_config(url);
@@ -196,8 +197,33 @@ async fn https_webhook_fails_fast_with_actionable_error() {
     let err = result.expect_err("https delivery must fail on the HTTP-only sender");
     let msg = err.to_string();
     assert!(
-        msg.contains("HTTP only") && msg.contains("PushSender"),
-        "error should explain the HTTP-only limitation and the pluggable escape hatch: {msg}"
+        msg.contains("HTTP only"),
+        "error should explain the HTTP-only limitation: {msg}"
+    );
+}
+
+/// With the `tls-rustls` feature the sender accepts `https://` past the scheme
+/// gate (no HTTP-only rejection); SSRF still rejects a private/loopback target.
+#[cfg(feature = "tls-rustls")]
+#[tokio::test]
+async fn https_webhook_enforces_ssrf_with_tls_feature() {
+    // SSRF validation is on (no allow_private_urls), so a loopback https target
+    // is rejected before any TLS handshake — proving https got past the scheme
+    // gate into validation rather than hitting the old HTTP-only error.
+    let sender = HttpPushSender::new();
+    let url = "https://127.0.0.1:8443/webhook";
+    let config = base_config(url);
+
+    let result = sender.send(url, &status_event(), &config).await;
+    let err = result.expect_err("https to a loopback address must be rejected");
+    let msg = err.to_string();
+    assert!(
+        !msg.contains("HTTP only"),
+        "https should not hit the HTTP-only error with tls-rustls: {msg}"
+    );
+    assert!(
+        msg.contains("loopback") || msg.contains("private"),
+        "expected an SSRF rejection: {msg}"
     );
 }
 
