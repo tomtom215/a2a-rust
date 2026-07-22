@@ -40,7 +40,12 @@ This is useful when:
 
 ## Feature Flags
 
-All features are off by default to minimize compile times and dependency trees.
+Features are off by default to minimize compile times and dependency trees, with
+one exception: **`tls-rustls` is on by default** for `a2a-protocol-client` and
+`a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
+(and the bundled push sender) must reach them out of the box. Opt out with
+`default-features = false` for a plaintext-HTTP-only build with no rustls
+dependency.
 
 ### `a2a-protocol-types`
 

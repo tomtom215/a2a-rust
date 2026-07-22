@@ -47,9 +47,9 @@ let handler = RequestHandlerBuilder::new(my_executor)
 
 The built-in `HttpPushSender` includes:
 
-- **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses. Uses `validate_webhook_url_with_dns()` which performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP
+- **HTTPS delivery** — With the `tls-rustls` feature (enabled by default via the `a2a-protocol-sdk` crate) it delivers to both `http://` and `https://` webhooks. In a build with the feature disabled it is plaintext-HTTP only and fails fast on an `https://` target with a clear error.
+- **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses. Uses `validate_webhook_url_with_dns()` which performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP. For `http://` the validated IP is pinned at connect time; for `https://` the rebinding window is closed by TLS certificate verification instead (so the original hostname is preserved for SNI).
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
-- **HTTPS validation** — Optionally enforces HTTPS-only webhook URLs
 
 ### Client Side
 
@@ -95,7 +95,8 @@ use a2a_protocol_sdk::types::push::{TaskPushNotificationConfig, AuthenticationIn
 let mut config = TaskPushNotificationConfig::new("task-abc", "https://webhook.example.com");
 config.authentication = Some(AuthenticationInfo {
     scheme: "bearer".into(),
-    credentials: "my-secret-token".into(),
+    // `credentials` is `Option<String>`.
+    credentials: Some("my-secret-token".into()),
 });
 ```
 

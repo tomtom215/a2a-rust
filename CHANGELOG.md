@@ -186,6 +186,61 @@ changed shape (0.x breaking — warrants a minor bump).
   `Duration::try_from_secs_f64` to avoid a panic on a near-`Duration::MAX`
   backoff config.
 
+### Added (second hardening pass)
+
+- **HTTPS is first-class.** `tls-rustls` is now a **default** feature of
+  `a2a-protocol-client` and `a2a-protocol-sdk`, so the client reaches
+  `https://` agents — the spec-standard transport — out of the box (opt out
+  with `default-features = false`). A new `a2a-protocol-server` `tls-rustls`
+  feature makes the bundled `HttpPushSender` deliver to `https://` webhooks;
+  the SDK's `tls-rustls` enables it too. Without the feature, `https://` fails
+  fast with an actionable error (client `build()` and the push sender) instead
+  of a late, opaque connector error.
+- **`a2a-protocol-server`: opt-in strict multi-tenancy**
+  (`RequestHandlerBuilder::require_resolved_tenant`) — a configured
+  `TenantResolver` that returns `None` rejects the request instead of falling
+  back to the shared default (`""`) partition. Off by default to preserve the
+  documented resolver contract.
+- **`a2a-protocol-server`: a global push-config ceiling**
+  (`HandlerLimits::max_total_push_configs`, default 100,000; per-tenant for
+  tenant stores) via a new `PushConfigStore::count` method.
+
+### Fixed (second hardening pass)
+
+- **`a2a-protocol-client`: automatic retries no longer duplicate work.**
+  Non-idempotent methods (`SendMessage`, `SendStreamingMessage`,
+  `CreateTaskPushNotificationConfig`, and any unknown method) are retried only
+  when the server rejected the request up front (`429`/`503`), never on an
+  ambiguous timeout or connection error the server may already have processed.
+- **`a2a-protocol-client`: `request_timeout` is a single per-call deadline.**
+  It was applied once to the response headers and again to the body read,
+  letting a slow server hold a call for up to 2× the configured budget.
+- **`a2a-protocol-client`: `Retry-After` (delta-seconds) is honored** on
+  `429`/`503` in preference to the computed backoff (clamped to `max_backoff`),
+  so the client stops hammering a server that asked it to wait.
+- **`a2a-protocol-client`: WebSocket streams get an establishment timeout.**
+  The WS streaming path previously returned a stream with no timeout of any
+  kind; a socket accepted but never answered would hang the consumer forever.
+- **`a2a-protocol-types`: `JsonRpcResponse` deserialization enforces JSON-RPC
+  2.0 §5** (exactly one of `result`/`error`). A malformed response carrying
+  *both* was silently read as success with the error discarded; a mistyped
+  `result` now surfaces the real type error instead of an opaque
+  "no variant matched".
+- **`a2a-protocol-server`: closed a lost-work race in the send path.** A
+  continuation send that hit an already-registered event queue (reachable via a
+  cancel-then-resend race or an aged-out cancellation token) spawned a second
+  executor with no persistence channel — silently dropping the resent task's
+  state transitions and push notifications while racing the original on store
+  writes. Such a send is now rejected. The stale-token sweep no longer evicts a
+  still-running task's token.
+- **`a2a-protocol-server`: SQL push-config backends are bounded.** The global
+  ceiling (above) closes a disk-growth vector where configs spread across
+  unboundedly many task ids had no limit on SQL stores.
+- **Docs:** corrected the book's push-notifications page (the bundled sender's
+  HTTPS behavior, a removed non-existent "HTTPS-only enforcement" toggle, and a
+  won't-compile `credentials` example) and the "all features off by default"
+  note (now that `tls-rustls` is a default).
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,
