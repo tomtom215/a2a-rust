@@ -31,6 +31,10 @@ use crate::metrics::Metrics;
 /// send path must handle differently, so a capacity rejection is never mistaken
 /// for an existing queue (which orphaned the task and returned a misleading
 /// internal error).
+// A transient return value destructured immediately by the caller; boxing the
+// `Created` payload to equalize variant sizes would add an allocation on the
+// hot send path for no benefit.
+#[allow(clippy::large_enum_variant)]
 pub enum QueueLease {
     /// A new queue was created; the caller owns the first reader (and the
     /// persistence receiver, when persistence was requested).
@@ -39,12 +43,11 @@ pub enum QueueLease {
         reader: InMemoryQueueReader,
         persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
     },
-    /// A queue already existed for this task; the caller receives the shared
-    /// writer and a freshly subscribed reader.
-    Existing {
-        writer: Arc<InMemoryQueueWriter>,
-        reader: InMemoryQueueReader,
-    },
+    /// A queue already existed for this task. The send path treats this as a
+    /// concurrent/leaked-executor condition and rejects, so no writer/reader is
+    /// handed back — carrying them would only invite a second executor to write
+    /// to the shared queue without a persistence channel.
+    Existing,
     /// The `max_concurrent_queues` limit was reached and no queue was created.
     /// No slot was consumed and nothing was inserted into the map.
     CapacityExhausted,
@@ -272,11 +275,8 @@ impl EventQueueManager {
     #[allow(clippy::option_if_let_else)]
     pub(crate) async fn lease(&self, task_id: &TaskId, with_persistence: bool) -> QueueLease {
         let mut map = self.writers.write().await;
-        let lease = if let Some(existing) = map.get(task_id) {
-            QueueLease::Existing {
-                writer: Arc::clone(existing),
-                reader: existing.subscribe(),
-            }
+        let lease = if map.contains_key(task_id) {
+            QueueLease::Existing
         } else if self
             .max_concurrent_queues
             .is_some_and(|max| map.len() >= max)
@@ -391,6 +391,15 @@ impl EventQueueManager {
     pub async fn active_count(&self) -> usize {
         let map = self.writers.read().await;
         map.len()
+    }
+
+    /// Returns `true` if an event queue is currently registered for `task_id`.
+    ///
+    /// Used by the cancellation-token sweep to avoid evicting the token of a
+    /// task whose executor is still live (a long-running task older than
+    /// `max_token_age`), which would otherwise make that task uncancelable.
+    pub(crate) async fn has_queue(&self, task_id: &TaskId) -> bool {
+        self.writers.read().await.contains_key(task_id)
     }
 
     /// Returns the configured maximum number of concurrent event queues, if a
@@ -543,6 +552,29 @@ mod tests {
             0,
             "destroy_all should clear all queues"
         );
+    }
+
+    #[tokio::test]
+    async fn lease_reports_existing_and_has_queue() {
+        let manager = EventQueueManager::new();
+        let task = TaskId::new("t-lease");
+
+        // First lease creates the queue.
+        assert!(matches!(
+            manager.lease(&task, true).await,
+            QueueLease::Created { .. }
+        ));
+        assert!(manager.has_queue(&task).await, "queue should now be live");
+
+        // A second lease for the same task reports Existing — the send path
+        // treats this as a concurrent/leaked-executor condition and rejects.
+        assert!(matches!(
+            manager.lease(&task, true).await,
+            QueueLease::Existing
+        ));
+
+        // An unrelated task has no queue.
+        assert!(!manager.has_queue(&TaskId::new("other")).await);
     }
 
     #[tokio::test]

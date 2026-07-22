@@ -76,6 +76,10 @@ pub struct RequestHandler {
     pub(crate) limits: HandlerLimits,
     pub(crate) tenant_resolver: Option<Arc<dyn TenantResolver>>,
     pub(crate) tenant_config: Option<PerTenantConfig>,
+    /// When `true`, a configured resolver that returns `None` (no tenant could
+    /// be determined) causes the request to be **rejected** rather than falling
+    /// back to the shared default (`""`) partition. Opt-in strict multi-tenancy.
+    pub(crate) require_resolved_tenant: bool,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
     /// Per-context-ID locks to serialize find + save operations for the same
@@ -143,7 +147,20 @@ impl RequestHandler {
             return Ok(client_tenant.unwrap_or_default().to_owned());
         };
         let call_ctx = crate::handler::helpers::build_call_context(method, headers);
-        let authoritative = resolver.resolve(&call_ctx).await.unwrap_or_default();
+        let derived = resolver.resolve(&call_ctx).await;
+        // Strict mode: a resolver that cannot determine a tenant must not fall
+        // through to the shared default partition — reject instead, so a
+        // header-less/unauthenticated request cannot read or write the `""`
+        // bucket. Off by default to preserve the documented resolver contract
+        // (`None` → default partition) for deployments that rely on it.
+        if self.require_resolved_tenant && derived.is_none() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "no tenant could be determined for this request and strict \
+                 multi-tenancy is enabled"
+                    .to_owned(),
+            ));
+        }
+        let authoritative = derived.unwrap_or_default();
         if let Some(client) = client_tenant {
             if !client.is_empty() && client != authoritative {
                 return Err(crate::error::ServerError::InvalidParams(format!(
@@ -284,6 +301,40 @@ mod tests {
             .await
             .expect("matching client tenant is fine");
         assert_eq!(tenant, "acme");
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_default_falls_back_to_empty_when_unresolved() {
+        // Without strict mode, an unresolved tenant (no header) uses the
+        // documented default partition — preserving the resolver contract.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .build()
+            .unwrap();
+        let tenant = handler
+            .resolve_tenant("GetTask", None, None)
+            .await
+            .expect("default mode tolerates an unresolved tenant");
+        assert_eq!(
+            tenant, "",
+            "unresolved tenant defaults to the shared partition"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_strict_rejects_unresolved() {
+        // Strict mode: a request the resolver cannot map to a tenant (no
+        // header) is rejected rather than silently sharing the `""` partition.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .require_resolved_tenant()
+            .build()
+            .unwrap();
+        let result = handler.resolve_tenant("GetTask", None, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+            "strict mode must reject an unresolved tenant, got {result:?}"
+        );
     }
 
     #[tokio::test]

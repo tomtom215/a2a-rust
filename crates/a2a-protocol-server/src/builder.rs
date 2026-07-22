@@ -73,6 +73,7 @@ pub struct RequestHandlerBuilder {
     handler_limits: HandlerLimits,
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
     tenant_config: Option<PerTenantConfig>,
+    require_resolved_tenant: bool,
 }
 
 impl RequestHandlerBuilder {
@@ -98,6 +99,7 @@ impl RequestHandlerBuilder {
             handler_limits: HandlerLimits::default(),
             tenant_resolver: None,
             tenant_config: None,
+            require_resolved_tenant: false,
         }
     }
 
@@ -256,6 +258,23 @@ impl RequestHandlerBuilder {
         self
     }
 
+    /// Enables strict multi-tenancy: reject any request for which a configured
+    /// [`with_tenant_resolver`](Self::with_tenant_resolver) returns `None`
+    /// (no tenant could be determined) instead of falling back to the shared
+    /// default (`""`) partition.
+    ///
+    /// Use this when every request must carry an identifiable tenant — it closes
+    /// the gap where header-less or unauthenticated callers would otherwise all
+    /// share one default bucket. Has no effect unless a resolver is configured.
+    ///
+    /// Defaults to `false` (the resolver's documented `None` → default-partition
+    /// behavior is preserved).
+    #[must_use]
+    pub const fn require_resolved_tenant(mut self) -> Self {
+        self.require_resolved_tenant = true;
+        self
+    }
+
     /// Sets per-tenant configuration for multi-tenant deployments.
     ///
     /// [`PerTenantConfig`] allows differentiated service levels (timeouts,
@@ -346,6 +365,7 @@ impl RequestHandlerBuilder {
             metrics: self.metrics,
             limits: self.handler_limits,
             tenant_resolver: self.tenant_resolver,
+            require_resolved_tenant: self.require_resolved_tenant,
             tenant_config: self.tenant_config,
             cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
@@ -374,6 +394,7 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("handler_limits", &self.handler_limits)
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)
+            .field("require_resolved_tenant", &self.require_resolved_tenant)
             .finish()
     }
 }

@@ -68,6 +68,15 @@ pub struct HandlerLimits {
     /// per-artifact (and thus per-task) size. Appends that would exceed the cap
     /// are dropped.
     pub max_parts_per_artifact: usize,
+    /// Global ceiling on the total number of push configs a store may hold
+    /// (per-tenant for tenant-scoped stores). Default: 100,000.
+    ///
+    /// Complements `max_push_configs_per_task`: the per-task cap alone lets a
+    /// client mint configs for unboundedly many *distinct* task ids (100 each),
+    /// growing a SQL-backed table without limit. Enforced whenever the store
+    /// reports a count (see [`PushConfigStore::count`](crate::push::PushConfigStore::count));
+    /// stores that do not report one are unaffected.
+    pub max_total_push_configs: usize,
 }
 
 impl Default for HandlerLimits {
@@ -82,6 +91,7 @@ impl Default for HandlerLimits {
             max_context_locks: 10_000,
             max_push_configs_per_task: 100,
             max_parts_per_artifact: 10_000,
+            max_total_push_configs: 100_000,
         }
     }
 }
@@ -133,6 +143,14 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {
         self.max_push_configs_per_task = max;
+        self
+    }
+
+    /// Sets the global (per-tenant for tenant stores) ceiling on total push
+    /// notification configs. Enforced only when the store reports a count.
+    #[must_use]
+    pub const fn with_max_total_push_configs(mut self, max: usize) -> Self {
+        self.max_total_push_configs = max;
         self
     }
 

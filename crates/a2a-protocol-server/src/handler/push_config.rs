@@ -22,6 +22,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::PushNotSupported`] if no push sender is configured.
+    #[allow(clippy::too_many_lines)]
     pub async fn on_set_push_config(
         &self,
         config: TaskPushNotificationConfig,
@@ -76,6 +77,21 @@ impl RequestHandler {
                     "task {task_key} already has the maximum of {} push notification configs",
                     self.limits.max_push_configs_per_task
                 )));
+            }
+
+            // Global (per-tenant, for tenant stores) ceiling so configs spread
+            // across many distinct task ids cannot grow a SQL-backed store
+            // without bound. Only enforced when the backend reports a count.
+            if !is_update {
+                if let Some(total) = self.push_config_store.count().await? {
+                    if total >= self.limits.max_total_push_configs {
+                        return Err(ServerError::Overloaded(format!(
+                            "server is at the maximum of {} push notification configs; \
+                             delete unused configs before creating more",
+                            self.limits.max_total_push_configs
+                        )));
+                    }
+                }
             }
 
             let result = self.push_config_store.set(config).await?;
@@ -335,6 +351,69 @@ mod tests {
             }
             other => panic!("expected InvalidParams for missing taskId, got: {other:?}"),
         }
+    }
+
+    /// The global (total) push-config ceiling is enforced across distinct task
+    /// ids, not just per task — a client cannot grow the store without bound by
+    /// spreading configs over many task ids.
+    #[tokio::test]
+    async fn set_push_config_enforces_global_cap() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default().with_max_total_push_configs(2),
+            )
+            .build()
+            .unwrap();
+
+        // Two creates (distinct tasks) fill the global cap.
+        for i in 0..2 {
+            let cfg = TaskPushNotificationConfig {
+                tenant: None,
+                id: Some(format!("cfg-{i}")),
+                task_id: Some(format!("task-{i}")),
+                url: "https://example.com/webhook".to_owned(),
+                token: None,
+                authentication: None,
+            };
+            handler
+                .on_set_push_config(cfg, None)
+                .await
+                .expect("creates under the global cap should succeed");
+        }
+
+        // The third distinct-task create exceeds the global ceiling.
+        let cfg = TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-x".to_owned()),
+            task_id: Some("task-x".to_owned()),
+            url: "https://example.com/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        };
+        let result = handler.on_set_push_config(cfg, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::Overloaded(_))),
+            "global push-config cap must reject, got {result:?}"
+        );
     }
 
     // ── on_get_push_config ───────────────────────────────────────────────────

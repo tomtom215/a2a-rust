@@ -177,6 +177,17 @@ impl PushConfigStore for TenantAwareInMemoryPushConfigStore {
             }
         })
     }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move {
+            // Per-tenant count (read-only w.r.t. partitions): an unseen tenant
+            // has zero configs and must not allocate a partition.
+            match self.get_existing_store().await {
+                Some(store) => store.count().await,
+                None => Ok(Some(0)),
+            }
+        })
+    }
 }
 
 #[cfg(test)]

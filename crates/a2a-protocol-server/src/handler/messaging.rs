@@ -323,7 +323,21 @@ impl RequestHandler {
                 reader,
                 persistence_rx,
             } => (writer, reader, persistence_rx),
-            crate::streaming::QueueLease::Existing { writer, reader } => (writer, reader, None),
+            crate::streaming::QueueLease::Existing => {
+                // A queue already exists for this task_id even though the
+                // in-flight token check above passed. That means either a
+                // concurrent send is racing us, or a previous executor's queue
+                // outlived its cancelled/swept token. Proceeding down the old
+                // `Existing` path spawned a SECOND executor sharing the queue
+                // with NO persistence channel — silently dropping every state
+                // transition and push notification for the resent task (it was
+                // stuck in `Submitted`) while racing the original executor on
+                // store writes. Reject instead of corrupting state.
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {task_id} is already being processed; wait for it to reach \
+                     input-required or a terminal state before sending again"
+                )));
+            }
             crate::streaming::QueueLease::CapacityExhausted => {
                 let cap = self
                     .event_queue_manager
@@ -343,22 +357,42 @@ impl RequestHandler {
             // Phase 1: Collect stale entries under READ lock (non-blocking for
             // other readers). This avoids holding a write lock during the O(n)
             // sweep of all cancellation tokens.
-            let stale_ids: Vec<TaskId> = {
+            //
+            // Cancelled tokens are always evictable. An *aged* but not-cancelled
+            // token may still belong to a live, long-running executor; evicting
+            // it would make that task uncancelable, so aged candidates are only
+            // evicted once we confirm (below) their event queue is gone.
+            let (cancelled_ids, aged_candidates): (Vec<TaskId>, Vec<TaskId>) = {
                 let tokens = self.cancellation_tokens.read().await;
                 if tokens.len() >= self.limits.max_cancellation_tokens {
                     let now = Instant::now();
-                    tokens
-                        .iter()
-                        .filter(|(_, entry)| {
-                            entry.token.is_cancelled()
-                                || now.duration_since(entry.created_at) >= self.limits.max_token_age
-                        })
-                        .map(|(id, _)| id.clone())
-                        .collect()
+                    let mut cancelled = Vec::new();
+                    let mut aged = Vec::new();
+                    for (id, entry) in tokens.iter() {
+                        if entry.token.is_cancelled() {
+                            cancelled.push(id.clone());
+                        } else if now.duration_since(entry.created_at) >= self.limits.max_token_age
+                        {
+                            aged.push(id.clone());
+                        }
+                    }
+                    drop(tokens);
+                    (cancelled, aged)
                 } else {
-                    Vec::new()
+                    (Vec::new(), Vec::new())
                 }
             };
+
+            // Only evict aged tokens whose event queue is no longer registered —
+            // i.e. the executor has finished but the token lingered. A token
+            // whose queue is still live is left in place so the task remains
+            // cancelable.
+            let mut stale_ids = cancelled_ids;
+            for id in aged_candidates {
+                if !self.event_queue_manager.has_queue(&id).await {
+                    stale_ids.push(id);
+                }
+            }
 
             // Phase 2: Remove stale entries under WRITE lock (brief).
             if !stale_ids.is_empty() {
