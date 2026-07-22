@@ -814,4 +814,55 @@ mod tests {
             "pending map must not retain timed-out requests"
         );
     }
+
+    /// The dropped-header warning is a security-observability guarantee: an
+    /// `Authorization` (or any) per-request header that the WebSocket binding
+    /// cannot deliver on an established connection must NOT be dropped silently.
+    /// Capture tracing output to prove a warning fires when — and only when —
+    /// there are headers to drop.
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn warn_dropped_per_request_headers_warns_iff_headers_present() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        /// Minimal subscriber that just counts emitted events.
+        struct CountingSubscriber(Arc<AtomicUsize>);
+        impl tracing::Subscriber for CountingSubscriber {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+            fn event(&self, _: &tracing::Event<'_>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+            fn enter(&self, _: &tracing::span::Id) {}
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        tracing::subscriber::with_default(CountingSubscriber(Arc::clone(&count)), || {
+            // No headers to drop → no warning.
+            warn_dropped_per_request_headers("SendMessage", &HashMap::new());
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                0,
+                "must not warn when there are no per-request headers to drop"
+            );
+
+            // A dropped header → exactly one warning, so the drop is observable.
+            let mut headers = HashMap::new();
+            headers.insert("authorization".to_owned(), "Bearer secret".to_owned());
+            warn_dropped_per_request_headers("SendMessage", &headers);
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                1,
+                "dropping a per-request header must emit a warning (never silent)"
+            );
+        });
+    }
 }

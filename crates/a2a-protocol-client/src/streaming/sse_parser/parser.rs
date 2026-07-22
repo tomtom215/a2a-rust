@@ -117,28 +117,15 @@ impl SseParser {
     /// After calling `feed`, call [`SseParser::next_frame`] repeatedly until
     /// it returns `None` to consume all complete frames.
     pub fn feed(&mut self, bytes: &[u8]) {
-        let mut input = bytes;
-        // Strip a leading UTF-8 BOM (\xEF\xBB\xBF) once, at the very start of
-        // the stream. The three BOM bytes can arrive split across TCP reads, so
-        // we must NOT commit to a decision while the bytes seen so far are still
-        // a proper prefix of the BOM — the deferred bytes are buffered and
-        // `process_line` completes the strip once a full line is available.
-        // (The previous code set `bom_checked` on any non-empty first feed, so a
-        // one-byte first chunk (`\xEF`) swallowed the check and the first event
-        // was silently lost.)
-        if !self.bom_checked && self.line_buf.is_empty() && !input.is_empty() {
-            const BOM: &[u8] = b"\xEF\xBB\xBF";
-            if let Some(rest) = input.strip_prefix(BOM) {
-                input = rest;
-                self.bom_checked = true;
-            } else if !BOM.starts_with(input) {
-                // Definitely not a BOM — nothing to strip, decision made.
-                self.bom_checked = true;
-            }
-            // Else: `input` is a non-empty proper prefix of the BOM; defer by
-            // buffering it below without setting `bom_checked`.
-        }
-        for &byte in input {
+        // A leading UTF-8 BOM (\xEF\xBB\xBF) — possibly split across TCP reads —
+        // is stripped from the first line by `process_line`, which defers the
+        // decision until a full line is buffered. Deferring is what makes a
+        // one-byte first chunk (`\xEF`) safe: `bom_checked` is only set once a
+        // complete line is available, so the fragment can't prematurely mark the
+        // check done and lose the first event. (A previous feed-time fast-path
+        // duplicated this strip; it was redundant with `process_line` and has
+        // been removed.)
+        for &byte in bytes {
             if byte == b'\n' {
                 self.process_line();
                 self.line_buf.clear();
