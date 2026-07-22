@@ -86,6 +86,10 @@ pub struct WebSocketTransport {
 struct Inner {
     /// Channel to send write commands to the background writer/router task.
     write_tx: mpsc::Sender<WriteCommand>,
+    /// Pending requests keyed by JSON-RPC request ID (shared with the
+    /// reader/writer tasks). Held here so request paths can remove their
+    /// entry on timeout instead of leaking it.
+    pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
     endpoint: String,
     request_timeout: Duration,
     /// Handle to the background reader task for cleanup.
@@ -235,6 +239,7 @@ impl WebSocketTransport {
         Ok(Self {
             inner: Arc::new(Inner {
                 write_tx,
+                pending,
                 endpoint: endpoint_stored,
                 request_timeout,
                 _reader_handle: reader_handle,
@@ -273,16 +278,22 @@ impl WebSocketTransport {
             .write_tx
             .send(WriteCommand {
                 text: body,
-                request_id,
+                request_id: request_id.clone(),
                 pending: PendingRequest::Unary(tx),
             })
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        let response_text = tokio::time::timeout(self.inner.request_timeout, rx)
-            .await
-            .map_err(|_| ClientError::Timeout("WebSocket response timed out".into()))?
-            .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??;
+        let response_text = match tokio::time::timeout(self.inner.request_timeout, rx).await {
+            Ok(received) => received
+                .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??,
+            Err(_elapsed) => {
+                // Remove the pending entry: nothing else will, so every
+                // timed-out request would otherwise leak one map entry.
+                self.inner.pending.lock().await.remove(&request_id);
+                return Err(ClientError::Timeout("WebSocket response timed out".into()));
+            }
+        };
 
         let envelope: JsonRpcResponse<serde_json::Value> =
             serde_json::from_str(&response_text).map_err(ClientError::Serialization)?;
@@ -652,5 +663,48 @@ mod tests {
     fn extract_jsonrpc_id_missing_returns_none() {
         let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","result":{}}"#);
         assert!(id.is_none());
+    }
+
+    /// Regression (D6): a request that times out must remove its entry from
+    /// the shared pending map — previously every client-side timeout leaked
+    /// one entry (the server never answers, so `route_frame` never cleans
+    /// it up either).
+    #[tokio::test]
+    async fn timed_out_request_is_removed_from_pending_map() {
+        // A WebSocket server that completes the handshake, swallows frames,
+        // and never responds.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(_)) = ws.next().await {}
+                });
+            }
+        });
+
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_millis(100),
+        )
+        .await
+        .expect("connect");
+
+        let err = transport
+            .send_request("GetTask", serde_json::json!({"id": "t1"}), &HashMap::new())
+            .await
+            .expect_err("request must time out");
+        assert!(
+            matches!(err, ClientError::Timeout(_)),
+            "expected timeout, got: {err:?}"
+        );
+
+        assert!(
+            transport.inner.pending.lock().await.is_empty(),
+            "pending map must not retain timed-out requests"
+        );
     }
 }

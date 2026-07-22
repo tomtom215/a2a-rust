@@ -45,10 +45,23 @@ use crate::error::ServerError;
 use crate::handler::{RequestHandler, SendMessageResult};
 use crate::streaming::EventQueueReader;
 
+/// Maximum size of an incoming WebSocket message (and frame), in bytes.
+///
+/// Enforced at the protocol level via [`WebSocketConfig`] so oversized
+/// messages abort the read *before* they are buffered — without this,
+/// tungstenite's 64 MiB default applied and the application-level size check
+/// only ran after the full message had been assembled in memory.
+///
+/// [`WebSocketConfig`]: tokio_tungstenite::tungstenite::protocol::WebSocketConfig
+const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
+
 /// WebSocket-based A2A dispatcher.
 ///
 /// Accepts WebSocket connections and processes JSON-RPC 2.0 messages over the
 /// WebSocket channel. Streaming responses are sent as individual text frames.
+///
+/// Incoming messages are capped at 4 MiB at the WebSocket protocol level;
+/// a connection sending a larger message or frame is terminated.
 pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
 }
@@ -121,7 +134,12 @@ impl WebSocketDispatcher {
 
     /// Handles a single WebSocket connection.
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), WsError> {
-        let ws_stream = tokio_tungstenite::accept_async(stream)
+        // Cap message/frame sizes at the protocol level so oversized input is
+        // rejected during the read, before it is buffered in memory.
+        let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
+            .max_message_size(Some(MAX_WS_MESSAGE_SIZE))
+            .max_frame_size(Some(MAX_WS_MESSAGE_SIZE));
+        let ws_stream = tokio_tungstenite::accept_async_with_config(stream, Some(ws_config))
             .await
             .map_err(WsError::Handshake)?;
 
@@ -134,8 +152,9 @@ impl WebSocketDispatcher {
         while let Some(msg) = reader.next().await {
             match msg {
                 Ok(WsMessage::Text(text)) => {
-                    // FIX(M10): Reject oversized WebSocket messages to prevent OOM.
-                    if text.len() > 4 * 1024 * 1024 {
+                    // Defense in depth: the protocol-level cap above already
+                    // rejects oversized messages before buffering.
+                    if text.len() > MAX_WS_MESSAGE_SIZE {
                         let err_resp = JsonRpcErrorResponse::new(
                             None,
                             JsonRpcError::new(-32000, "message too large".to_string()),
@@ -707,7 +726,13 @@ mod tests {
         assert_eq!(v["error"]["code"], -32700, "expected parse error code");
     }
 
-    // 8. Oversized message returns "message too large" error
+    // 8. Oversized message is rejected at the WebSocket protocol level.
+    //
+    // Regression (D6): the 4 MiB cap must be enforced during the read via
+    // WebSocketConfig — previously tungstenite's 64 MiB default applied and
+    // the server fully buffered oversized messages before checking their
+    // size (it then answered with a JSON-RPC "message too large" frame,
+    // proving the message had been assembled in memory).
     #[tokio::test]
     async fn ws_oversized_message_rejected() {
         let addr = spawn_ws_server().await;
@@ -715,16 +740,38 @@ mod tests {
 
         // Create a message > 4MB
         let big = "x".repeat(4 * 1024 * 1024 + 1);
+        // The server drops the connection as soon as the frame header reveals
+        // the oversized payload, so the send itself may already fail
+        // (connection reset mid-write) — that IS the rejection.
+        if ws.send(WsMessage::Text(big.into())).await.is_ok() {
+            // If the send got through, the server must still terminate the
+            // connection without processing: no JSON-RPC frame may arrive.
+            let outcome = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+                .await
+                .expect("server should react to the oversized message");
+            match outcome {
+                None | Some(Err(_) | Ok(WsMessage::Close(_))) => {}
+                Some(Ok(frame)) => panic!(
+                    "server must not answer an oversized message with a frame, got: {frame:?}"
+                ),
+            }
+        }
+    }
+
+    // 8b. A large message *under* the cap is still read and processed
+    // (answered with a JSON-RPC parse error since it is not valid JSON) —
+    // the protocol-level cap must not undershoot the intended 4 MiB.
+    #[tokio::test]
+    async fn ws_large_message_under_cap_still_processed() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+
+        let big = "x".repeat(3 * 1024 * 1024);
         ws.send(WsMessage::Text(big.into())).await.unwrap();
 
         let text = read_text(&mut ws).await;
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
-        assert!(v.get("error").is_some(), "expected error: {text}");
-        let msg = v["error"]["message"].as_str().unwrap_or("");
-        assert!(
-            msg.contains("too large"),
-            "error should mention 'too large': {msg}"
-        );
+        assert_eq!(v["error"]["code"], -32700, "expected parse error: {text}");
     }
 
     // 9. Ping/Pong
