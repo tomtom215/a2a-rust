@@ -1,0 +1,28 @@
+// Minimal vendored stub of google/api/client.proto (Apache-2.0, from
+// github.com/googleapis/googleapis). Upstream client.proto defines a large
+// set of client-library settings messages; a2a.proto uses only the
+// `method_signature` method option, so this stub carries just the option
+// extensions. See http.proto in this directory for why these stubs exist.
+
+syntax = "proto3";
+
+package google.api;
+
+import "google/protobuf/descriptor.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "ClientProto";
+option java_package = "com.google.api";
+
+extend google.protobuf.MethodOptions {
+  // A definition of a client library method signature.
+  repeated string method_signature = 1051;
+}
+
+extend google.protobuf.ServiceOptions {
+  // The hostname for this service.
+  string default_host = 1049;
+
+  // OAuth scopes needed for the client.
+  string oauth_scopes = 1050;
+}

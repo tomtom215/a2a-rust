@@ -39,6 +39,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "rustls-pki-types",
+ "serde",
  "serde_json",
  "tokio",
  "tokio-rustls",
@@ -59,6 +60,11 @@ dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "prost",
+ "serde_json",
+ "tokio",
+ "tonic",
+ "tonic-prost",
 ]
 
 [[package]]
@@ -99,9 +105,14 @@ dependencies = [
  "base64",
  "criterion",
  "proptest",
+ "prost",
+ "prost-build",
+ "prost-types",
+ "protoc-bin-vendored",
  "ring",
  "serde",
  "serde_json",
+ "time",
 ]
 
 [[package]]

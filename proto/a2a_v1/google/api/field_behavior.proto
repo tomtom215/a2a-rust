@@ -1,0 +1,33 @@
+// Minimal vendored stub of google/api/field_behavior.proto (Apache-2.0, from
+// github.com/googleapis/googleapis). See http.proto in this directory for
+// why these stubs exist.
+
+syntax = "proto3";
+
+package google.api;
+
+import "google/protobuf/descriptor.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "FieldBehaviorProto";
+option java_package = "com.google.api";
+
+extend google.protobuf.FieldOptions {
+  // A designation of a specific field behavior (required, output only, etc.)
+  // in protobuf messages.
+  repeated google.api.FieldBehavior field_behavior = 1052;
+}
+
+// An indicator of the behavior of a given field (for example, that a field
+// is required in requests, or given as output but ignored as input).
+enum FieldBehavior {
+  FIELD_BEHAVIOR_UNSPECIFIED = 0;
+  OPTIONAL = 1;
+  REQUIRED = 2;
+  OUTPUT_ONLY = 3;
+  INPUT_ONLY = 4;
+  IMMUTABLE = 5;
+  UNORDERED_LIST = 6;
+  NON_EMPTY_DEFAULT = 7;
+  IDENTIFIER = 8;
+}

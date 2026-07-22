@@ -49,6 +49,8 @@ pub mod extensions;
 pub mod jsonrpc;
 pub mod message;
 pub mod params;
+#[cfg(feature = "proto")]
+pub mod proto;
 pub mod push;
 pub mod responses;
 pub mod security;
