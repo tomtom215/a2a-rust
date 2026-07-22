@@ -444,7 +444,10 @@ mod tests {
         // `try_from_secs_f64` clamps to `max` instead.
         let max = Duration::from_secs(30);
         let result = cap_backoff(Duration::from_secs(10_000_000_000_000_000_000), 10.0, max);
-        assert_eq!(result, max, "finite-but-overflowing backoff should clamp to max");
+        assert_eq!(
+            result, max,
+            "finite-but-overflowing backoff should clamp to max"
+        );
     }
 
     /// Test jittered backoff produces values in expected range (covers line 276).

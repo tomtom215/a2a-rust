@@ -324,8 +324,8 @@ async fn start_test_server_with_body_limit(max_body: usize) -> String {
             .build()
             .expect("build handler"),
     );
-    let config =
-        a2a_protocol_server::dispatch::DispatchConfig::default().with_max_request_body_size(max_body);
+    let config = a2a_protocol_server::dispatch::DispatchConfig::default()
+        .with_max_request_body_size(max_body);
     let app = A2aRouter::with_config(handler, config).into_router();
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

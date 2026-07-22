@@ -296,7 +296,11 @@ async fn fetch_card_with_metadata(
     )
     .await
     {
-        Err(_) => return Err(ClientError::Transport("agent card body read timed out".into())),
+        Err(_) => {
+            return Err(ClientError::Transport(
+                "agent card body read timed out".into(),
+            ))
+        }
         Ok(Ok(collected)) => collected.to_bytes(),
         Ok(Err(err)) => {
             return Err(if err.downcast_ref::<LengthLimitError>().is_some() {

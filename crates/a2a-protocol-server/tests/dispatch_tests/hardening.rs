@@ -366,7 +366,10 @@ async fn send_chunked_oversized_then_stall(
         .write_all(format!("{:x}\r\n", payload.len()).as_bytes())
         .await
         .expect("write chunk size");
-    stream.write_all(payload.as_bytes()).await.expect("write chunk");
+    stream
+        .write_all(payload.as_bytes())
+        .await
+        .expect("write chunk");
     stream.write_all(b"\r\n").await.expect("write chunk crlf");
     stream.flush().await.expect("flush");
 

@@ -247,7 +247,9 @@ mod tests {
         // A per-connection abort (ECONNABORTED = 103 on Linux) retries at once.
         assert!(accept_retry_backoff(&Error::from_raw_os_error(103)).is_zero());
         // A synthetic error carrying no OS code also retries at once (no panic).
-        assert!(accept_retry_backoff(&Error::new(ErrorKind::ConnectionAborted, "aborted")).is_zero());
+        assert!(
+            accept_retry_backoff(&Error::new(ErrorKind::ConnectionAborted, "aborted")).is_zero()
+        );
     }
 
     struct MockDispatcher;
