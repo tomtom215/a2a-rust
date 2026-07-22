@@ -5,10 +5,17 @@
 
 //! gRPC transport implementation for the A2A client.
 //!
-//! [`GrpcTransport`] connects to a tonic-served A2A gRPC endpoint and
-//! implements the [`Transport`] trait. JSON payloads are carried inside
-//! protobuf `bytes` fields, reusing the same serde types as JSON-RPC
-//! and REST.
+//! [`GrpcTransport`] speaks the canonical `lf.a2a.v1.A2AService` — the
+//! protobuf-native A2A v1.0 binding — and is wire-compatible with servers
+//! from the official Go, Python, and Java A2A SDKs as well as this crate's
+//! own [`GrpcDispatcher`](https://docs.rs/a2a-protocol-server). JSON params
+//! from the client core are converted to typed protobuf messages via
+//! [`a2a_protocol_types::proto`] before hitting the wire.
+//!
+//! Releases before 0.7 tunneled JSON inside a protobuf `bytes` envelope on
+//! a non-standard service; that client was removed in 0.7. Servers built
+//! with this workspace can still serve 0.6 clients via their
+//! `grpc-legacy-json` feature.
 //!
 //! # Configuration
 //!
@@ -35,6 +42,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use a2a_protocol_types::proto as apb;
+use a2a_protocol_types::proto::convert::ConvertError;
 use tokio::sync::mpsc;
 use tonic::transport::Channel;
 
@@ -42,7 +51,8 @@ use crate::error::{ClientError, ClientResult};
 use crate::streaming::EventStream;
 use crate::transport::Transport;
 
-// Include the generated protobuf client code.
+// Include the generated tonic client glue for `lf.a2a.v1.A2AService`.
+// Message types live in `a2a_protocol_types::proto` via `extern_path`.
 mod proto {
     #![allow(
         clippy::all,
@@ -51,11 +61,10 @@ mod proto {
         missing_docs,
         unused_qualifications
     )]
-    tonic::include_proto!("a2a.v1");
+    tonic::include_proto!("lf.a2a.v1");
 }
 
 use proto::a2a_service_client::A2aServiceClient;
-use proto::JsonPayload;
 
 // ── GrpcTransportConfig ─────────────────────────────────────────────────────
 
@@ -128,9 +137,9 @@ impl GrpcTransportConfig {
 
 /// gRPC transport for A2A clients.
 ///
-/// Connects to a tonic-served gRPC endpoint and translates A2A method
-/// calls into gRPC RPCs with JSON payloads. Implements the [`Transport`]
-/// trait for use with [`crate::A2aClient`].
+/// Connects to a canonical A2A gRPC endpoint and translates A2A method
+/// calls into typed protobuf RPCs. Implements the [`Transport`] trait for
+/// use with [`crate::A2aClient`].
 #[derive(Clone, Debug)]
 pub struct GrpcTransport {
     inner: Arc<Inner>,
@@ -195,15 +204,30 @@ impl GrpcTransport {
 
     // ── internals ────────────────────────────────────────────────────────
 
-    fn encode_params(params: &serde_json::Value) -> ClientResult<JsonPayload> {
-        let data = serde_json::to_vec(params).map_err(ClientError::Serialization)?;
-        Ok(JsonPayload { data })
+    fn client(&self) -> A2aServiceClient<Channel> {
+        // FIX(C1): Clone the tonic channel instead of locking a Mutex. Tonic
+        // channels are internally multiplexed and cheaply cloneable, so this
+        // enables full concurrent throughput without serialization.
+        A2aServiceClient::new(self.inner.channel.clone())
+            .max_decoding_message_size(self.inner.config.max_message_size)
+            .max_encoding_message_size(self.inner.config.max_message_size)
     }
 
-    fn add_metadata(
-        req: &mut tonic::Request<JsonPayload>,
+    fn request<T>(
+        &self,
+        message: T,
         extra_headers: &HashMap<String, String>,
-    ) {
+        with_deadline: bool,
+    ) -> tonic::Request<T> {
+        let mut req = tonic::Request::new(message);
+        if with_deadline {
+            req.set_timeout(self.inner.config.timeout);
+        }
+        Self::add_metadata(&mut req, extra_headers);
+        req
+    }
+
+    fn add_metadata<T>(req: &mut tonic::Request<T>, extra_headers: &HashMap<String, String>) {
         let md = req.metadata_mut();
         md.insert(
             "a2a-version",
@@ -221,8 +245,12 @@ impl GrpcTransport {
         }
     }
 
-    fn decode_response(payload: &JsonPayload) -> ClientResult<serde_json::Value> {
-        serde_json::from_slice(&payload.data).map_err(ClientError::Serialization)
+    fn parse_params<T: serde::de::DeserializeOwned>(params: serde_json::Value) -> ClientResult<T> {
+        serde_json::from_value(params).map_err(ClientError::Serialization)
+    }
+
+    fn to_json<T: serde::Serialize>(value: &T) -> ClientResult<serde_json::Value> {
+        serde_json::to_value(value).map_err(ClientError::Serialization)
     }
 
     fn status_to_error(status: &tonic::Status) -> ClientError {
@@ -260,51 +288,145 @@ impl GrpcTransport {
             "sending gRPC request"
         );
 
-        let payload = Self::encode_params(&params)?;
-        let mut req = tonic::Request::new(payload);
-        req.set_timeout(self.inner.config.timeout);
-        Self::add_metadata(&mut req, extra_headers);
-
-        // FIX(C1): Clone the tonic channel instead of locking a Mutex. Tonic
-        // channels are internally multiplexed and cheaply cloneable, so this
-        // enables full concurrent throughput without serialization.
-        let mut client = A2aServiceClient::new(self.inner.channel.clone())
-            .max_decoding_message_size(self.inner.config.max_message_size)
-            .max_encoding_message_size(self.inner.config.max_message_size);
-
-        let response = tokio::time::timeout(self.inner.config.timeout, async {
-            match method {
-                "SendMessage" => client.send_message(req).await,
-                "GetTask" => client.get_task(req).await,
-                "ListTasks" => client.list_tasks(req).await,
-                "CancelTask" => client.cancel_task(req).await,
-                "CreateTaskPushNotificationConfig" => {
-                    client.create_task_push_notification_config(req).await
-                }
-                "GetTaskPushNotificationConfig" => {
-                    client.get_task_push_notification_config(req).await
-                }
-                "ListTaskPushNotificationConfigs" => {
-                    client.list_task_push_notification_configs(req).await
-                }
-                "DeleteTaskPushNotificationConfig" => {
-                    client.delete_task_push_notification_config(req).await
-                }
-                "GetExtendedAgentCard" => client.get_extended_agent_card(req).await,
-                other => Err(tonic::Status::unimplemented(format!(
-                    "unknown gRPC method: {other}"
-                ))),
-            }
-        })
+        let mut client = self.client();
+        tokio::time::timeout(
+            self.inner.config.timeout,
+            self.dispatch_unary(&mut client, method, params, extra_headers),
+        )
         .await
         .map_err(|_| {
             trace_error!(method, "gRPC request timed out");
             ClientError::Timeout("gRPC request timed out".into())
-        })?;
+        })?
+    }
 
-        match response {
-            Ok(resp) => Self::decode_response(&resp.into_inner()),
-            Err(status) => Err(Self::status_to_error(&status)),
+    /// Routes one unary method: JSON params → typed request → RPC → typed
+    /// response → JSON result.
+    ///
+    /// A flat dispatch table over the nine unary methods — long but with no
+    /// nesting; splitting it would only scatter the per-method type wiring.
+    #[allow(clippy::too_many_lines)]
+    async fn dispatch_unary(
+        &self,
+        client: &mut A2aServiceClient<Channel>,
+        method: &str,
+        params: serde_json::Value,
+        extra_headers: &HashMap<String, String>,
+    ) -> ClientResult<serde_json::Value> {
+        match method {
+            "SendMessage" => {
+                let p: a2a_protocol_types::params::MessageSendParams = Self::parse_params(params)?;
+                let req = apb::SendMessageRequest::try_from(p).map_err(convert_error)?;
+                let resp = client
+                    .send_message(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::responses::SendMessageResponse =
+                    resp.into_inner().try_into().map_err(convert_error)?;
+                Self::to_json(&domain)
+            }
+            "GetTask" => {
+                let p: a2a_protocol_types::params::TaskQueryParams = Self::parse_params(params)?;
+                let req = apb::GetTaskRequest::try_from(p).map_err(convert_error)?;
+                let resp = client
+                    .get_task(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::task::Task =
+                    resp.into_inner().try_into().map_err(convert_error)?;
+                Self::to_json(&domain)
+            }
+            "ListTasks" => {
+                let p: a2a_protocol_types::params::ListTasksParams = Self::parse_params(params)?;
+                let req = apb::ListTasksRequest::try_from(p).map_err(convert_error)?;
+                let resp = client
+                    .list_tasks(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::responses::TaskListResponse =
+                    resp.into_inner().try_into().map_err(convert_error)?;
+                Self::to_json(&domain)
+            }
+            "CancelTask" => {
+                let p: a2a_protocol_types::params::CancelTaskParams = Self::parse_params(params)?;
+                let req = apb::CancelTaskRequest::try_from(p).map_err(convert_error)?;
+                let resp = client
+                    .cancel_task(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::task::Task =
+                    resp.into_inner().try_into().map_err(convert_error)?;
+                Self::to_json(&domain)
+            }
+            "CreateTaskPushNotificationConfig" => {
+                let p: a2a_protocol_types::push::TaskPushNotificationConfig =
+                    Self::parse_params(params)?;
+                let req = apb::TaskPushNotificationConfig::from(p);
+                let resp = client
+                    .create_task_push_notification_config(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::push::TaskPushNotificationConfig =
+                    resp.into_inner().into();
+                Self::to_json(&domain)
+            }
+            "GetTaskPushNotificationConfig" => {
+                let p: a2a_protocol_types::params::GetPushConfigParams =
+                    Self::parse_params(params)?;
+                let req = apb::GetTaskPushNotificationConfigRequest::from(p);
+                let resp = client
+                    .get_task_push_notification_config(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::push::TaskPushNotificationConfig =
+                    resp.into_inner().into();
+                Self::to_json(&domain)
+            }
+            "ListTaskPushNotificationConfigs" => {
+                let p: a2a_protocol_types::params::ListPushConfigsParams =
+                    Self::parse_params(params)?;
+                let req = apb::ListTaskPushNotificationConfigsRequest::try_from(p)
+                    .map_err(convert_error)?;
+                let resp = client
+                    .list_task_push_notification_configs(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::responses::ListPushConfigsResponse =
+                    resp.into_inner().into();
+                Self::to_json(&domain)
+            }
+            "DeleteTaskPushNotificationConfig" => {
+                let p: a2a_protocol_types::params::DeletePushConfigParams =
+                    Self::parse_params(params)?;
+                let req = apb::DeleteTaskPushNotificationConfigRequest::from(p);
+                client
+                    .delete_task_push_notification_config(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                Ok(serde_json::json!({}))
+            }
+            "GetExtendedAgentCard" => {
+                // The client core may pass `null` for parameterless calls.
+                let params = if params.is_null() {
+                    serde_json::json!({})
+                } else {
+                    params
+                };
+                let p: a2a_protocol_types::params::GetExtendedAgentCardParams =
+                    Self::parse_params(params)?;
+                let req = apb::GetExtendedAgentCardRequest::from(p);
+                let resp = client
+                    .get_extended_agent_card(self.request(req, extra_headers, true))
+                    .await
+                    .map_err(|s| Self::status_to_error(&s))?;
+                let domain: a2a_protocol_types::agent_card::AgentCard =
+                    resp.into_inner().try_into().map_err(convert_error)?;
+                Self::to_json(&domain)
+            }
+            other => Err(ClientError::Protocol(a2a_protocol_types::A2aError::new(
+                a2a_protocol_types::ErrorCode::MethodNotFound,
+                format!("unknown gRPC method: {other}"),
+            ))),
         }
     }
 
@@ -320,37 +442,41 @@ impl GrpcTransport {
             "opening gRPC stream"
         );
 
-        let payload = Self::encode_params(&params)?;
-        let mut req = tonic::Request::new(payload);
-        Self::add_metadata(&mut req, extra_headers);
-
-        // FIX(C1): Clone the tonic channel for concurrent access.
-        let mut client = A2aServiceClient::new(self.inner.channel.clone())
-            .max_decoding_message_size(self.inner.config.max_message_size)
-            .max_encoding_message_size(self.inner.config.max_message_size);
-
+        let mut client = self.client();
         let stream = tokio::time::timeout(self.inner.config.timeout, async {
-            let response = match method {
-                "SendStreamingMessage" => client.send_streaming_message(req).await,
-                "SubscribeToTask" => client.subscribe_to_task(req).await,
-                #[allow(clippy::needless_return)]
-                other => {
-                    return Err(tonic::Status::unimplemented(format!(
-                        "unknown streaming gRPC method: {other}"
-                    )));
+            match method {
+                "SendStreamingMessage" => {
+                    let p: a2a_protocol_types::params::MessageSendParams =
+                        Self::parse_params(params)?;
+                    let req = apb::SendMessageRequest::try_from(p).map_err(convert_error)?;
+                    client
+                        // Streams outlive the unary deadline; only the
+                        // connect phase is bounded by the outer timeout.
+                        .send_streaming_message(self.request(req, extra_headers, false))
+                        .await
+                        .map(tonic::Response::into_inner)
+                        .map_err(|s| Self::status_to_error(&s))
                 }
-            };
-            match response {
-                Ok(resp) => Ok(resp.into_inner()),
-                Err(status) => Err(status),
+                "SubscribeToTask" => {
+                    let p: a2a_protocol_types::params::TaskIdParams = Self::parse_params(params)?;
+                    let req = apb::SubscribeToTaskRequest::from(p);
+                    client
+                        .subscribe_to_task(self.request(req, extra_headers, false))
+                        .await
+                        .map(tonic::Response::into_inner)
+                        .map_err(|s| Self::status_to_error(&s))
+                }
+                other => Err(ClientError::Protocol(a2a_protocol_types::A2aError::new(
+                    a2a_protocol_types::ErrorCode::MethodNotFound,
+                    format!("unknown streaming gRPC method: {other}"),
+                ))),
             }
         })
         .await
         .map_err(|_| {
             trace_error!(method, "gRPC stream connect timed out");
             ClientError::Timeout("gRPC stream connect timed out".into())
-        })?
-        .map_err(|status| Self::status_to_error(&status))?;
+        })??;
 
         let cap = self.inner.config.stream_channel_capacity;
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(cap);
@@ -391,9 +517,10 @@ impl Transport for GrpcTransport {
 
 // ── Background stream reader ────────────────────────────────────────────────
 
-/// Reads gRPC streaming responses and feeds them to the `EventStream`
-/// channel as SSE-formatted data lines. This reuses the existing SSE
-/// parser in `EventStream`, matching the WebSocket transport approach.
+/// Reads canonical `StreamResponse` messages, converts them to the domain
+/// representation, and feeds them to the `EventStream` channel as
+/// SSE-formatted data lines. This reuses the existing SSE parser in
+/// `EventStream`, matching the WebSocket transport approach.
 ///
 /// Generic over the concrete stream type so tests can substitute an in-memory
 /// `futures::stream::iter(...)` without a live gRPC connection.
@@ -401,28 +528,31 @@ async fn grpc_stream_reader_task<S>(
     mut stream: S,
     tx: mpsc::Sender<crate::streaming::event_stream::BodyChunk>,
 ) where
-    S: tonic::codegen::tokio_stream::Stream<Item = Result<JsonPayload, tonic::Status>> + Unpin,
+    S: tonic::codegen::tokio_stream::Stream<Item = Result<apb::StreamResponse, tonic::Status>>
+        + Unpin,
 {
     use tonic::codegen::tokio_stream::StreamExt;
 
     loop {
         match stream.next().await {
-            Some(Ok(payload)) => {
-                // Each gRPC message contains raw JSON (a StreamResponse).
-                // Wrap as a JSON-RPC success envelope inside an SSE frame
-                // so the existing EventStream SSE parser can decode it.
-                let json_str = match String::from_utf8(payload.data) {
+            Some(Ok(pb_event)) => {
+                let event: a2a_protocol_types::events::StreamResponse =
+                    match pb_event.try_into().map_err(convert_error) {
+                        Ok(e) => e,
+                        Err(err) => {
+                            let _ = tx.send(Err(err)).await;
+                            break;
+                        }
+                    };
+                let json_str = match serde_json::to_string(&event) {
                     Ok(s) => s,
                     Err(e) => {
-                        let _ = tx
-                            .send(Err(ClientError::Transport(format!(
-                                "invalid UTF-8 in gRPC payload: {e}"
-                            ))))
-                            .await;
+                        let _ = tx.send(Err(ClientError::Serialization(e))).await;
                         break;
                     }
                 };
-                // Wrap in JSON-RPC envelope for SSE parser compatibility.
+                // Wrap in a JSON-RPC envelope inside an SSE frame so the
+                // existing EventStream SSE parser can decode it.
                 let envelope =
                     format!("data: {{\"jsonrpc\":\"2.0\",\"id\":null,\"result\":{json_str}}}\n\n");
                 if tx
@@ -450,6 +580,12 @@ async fn grpc_stream_reader_task<S>(
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Maps a protobuf conversion failure to a non-retryable transport error.
+#[allow(clippy::needless_pass_by_value)]
+fn convert_error(err: ConvertError) -> ClientError {
+    ClientError::Transport(format!("protobuf conversion failed: {err}"))
+}
 
 fn validate_url(url: &str) -> ClientResult<()> {
     if url.is_empty() {
@@ -484,6 +620,8 @@ const fn grpc_code_to_error_code(code: tonic::Code) -> a2a_protocol_types::Error
 #[cfg(test)]
 mod tests {
     use super::*;
+    use a2a_protocol_types::events::TaskStatusUpdateEvent;
+    use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
     #[test]
     fn validate_url_rejects_empty() {
@@ -515,6 +653,19 @@ mod tests {
         assert_eq!(cfg.timeout, Duration::from_secs(60));
         assert_eq!(cfg.max_message_size, 8 * 1024 * 1024);
         assert_eq!(cfg.stream_channel_capacity, 128);
+    }
+
+    #[test]
+    fn convert_error_maps_to_non_retryable_transport() {
+        let err = convert_error(ConvertError {
+            field: "part.raw",
+            reason: "invalid base64".into(),
+        });
+        assert!(
+            matches!(err, ClientError::Transport(_)),
+            "conversion failures must be non-retryable: {err:?}"
+        );
+        assert!(!err.is_retryable());
     }
 
     #[test]
@@ -599,8 +750,7 @@ mod tests {
 
     #[test]
     fn add_metadata_injects_a2a_version() {
-        let payload = JsonPayload { data: vec![] };
-        let mut req = tonic::Request::new(payload);
+        let mut req = tonic::Request::new(());
         let headers = HashMap::new();
         GrpcTransport::add_metadata(&mut req, &headers);
         let md = req.metadata();
@@ -615,8 +765,7 @@ mod tests {
 
     #[test]
     fn add_metadata_injects_extra_headers() {
-        let payload = JsonPayload { data: vec![] };
-        let mut req = tonic::Request::new(payload);
+        let mut req = tonic::Request::new(());
         let mut headers = HashMap::new();
         headers.insert("x-custom".to_string(), "value123".to_string());
         GrpcTransport::add_metadata(&mut req, &headers);
@@ -624,7 +773,7 @@ mod tests {
         assert_eq!(md.get("x-custom").unwrap().to_str().unwrap(), "value123",);
     }
 
-    // ── Mutation-killing: status_to_error match arms (lines 232, 235, 238) ──
+    // ── status_to_error match arms ────────────────────────────────────────
 
     #[test]
     fn status_to_error_deadline_exceeded_is_timeout() {
@@ -668,16 +817,32 @@ mod tests {
 
     // ── grpc_stream_reader_task tests ─────────────────────────────────────
     //
-    // The task is generic over `Stream<Item = Result<JsonPayload, Status>>`
+    // The task is generic over `Stream<Item = Result<StreamResponse, Status>>`
     // so we can drive it with an in-memory stream, no network needed. This
     // catches the "replace function with ()" mutation — an empty body would
     // never emit anything into `tx`.
 
+    fn status_update_event() -> apb::StreamResponse {
+        let event = TaskStatusUpdateEvent {
+            task_id: TaskId("t-1".into()),
+            context_id: ContextId("c-1".into()),
+            status: TaskStatus {
+                state: TaskState::Working,
+                message: None,
+                timestamp: None,
+            },
+            metadata: None,
+        };
+        apb::StreamResponse {
+            payload: Some(apb::stream_response::Payload::StatusUpdate(
+                event.try_into().unwrap(),
+            )),
+        }
+    }
+
     #[tokio::test]
-    async fn grpc_stream_reader_task_forwards_payload_as_sse() {
-        let payloads = vec![Ok(JsonPayload {
-            data: br#"{"status":{"state":"working"}}"#.to_vec(),
-        })];
+    async fn grpc_stream_reader_task_forwards_typed_event_as_sse() {
+        let payloads = vec![Ok(status_update_event())];
         let stream = tonic::codegen::tokio_stream::iter(payloads);
         let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
 
@@ -695,8 +860,12 @@ mod tests {
             "chunk must be JSON-RPC envelope: {text}"
         );
         assert!(
-            text.contains("\"working\""),
-            "chunk must include inner payload: {text}"
+            text.contains("\"statusUpdate\""),
+            "typed event must serialize as the domain union: {text}"
+        );
+        assert!(
+            text.contains("TASK_STATE_WORKING"),
+            "state must use canonical wire encoding: {text}"
         );
         // Stream ended → task exits → channel closes.
         assert!(rx.recv().await.is_none());
@@ -705,15 +874,9 @@ mod tests {
     #[tokio::test]
     async fn grpc_stream_reader_task_forwards_multiple_payloads() {
         let payloads = vec![
-            Ok(JsonPayload {
-                data: br#"{"n":1}"#.to_vec(),
-            }),
-            Ok(JsonPayload {
-                data: br#"{"n":2}"#.to_vec(),
-            }),
-            Ok(JsonPayload {
-                data: br#"{"n":3}"#.to_vec(),
-            }),
+            Ok(status_update_event()),
+            Ok(status_update_event()),
+            Ok(status_update_event()),
         ];
         let stream = tonic::codegen::tokio_stream::iter(payloads);
         let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
@@ -730,7 +893,7 @@ mod tests {
 
     #[tokio::test]
     async fn grpc_stream_reader_task_maps_status_error_to_protocol_error() {
-        let payloads: Vec<Result<JsonPayload, tonic::Status>> =
+        let payloads: Vec<Result<apb::StreamResponse, tonic::Status>> =
             vec![Err(tonic::Status::not_found("missing"))];
         let stream = tonic::codegen::tokio_stream::iter(payloads);
         let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
@@ -748,11 +911,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn grpc_stream_reader_task_handles_invalid_utf8() {
-        let payloads: Vec<Result<JsonPayload, tonic::Status>> = vec![Ok(JsonPayload {
-            // Invalid UTF-8: bare continuation byte
-            data: vec![0xff, 0xfe, 0xfd],
-        })];
+    async fn grpc_stream_reader_task_rejects_empty_payload() {
+        // A StreamResponse with no payload cannot convert to the domain
+        // union; the reader must surface a non-retryable error and stop.
+        let payloads = vec![Ok(apb::StreamResponse { payload: None })];
         let stream = tonic::codegen::tokio_stream::iter(payloads);
         let (tx, mut rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(8);
 
@@ -761,7 +923,10 @@ mod tests {
         let chunk = rx.recv().await.expect("expected an error chunk");
         match chunk {
             Err(ClientError::Transport(msg)) => {
-                assert!(msg.contains("UTF-8"), "msg should mention UTF-8: {msg}");
+                assert!(
+                    msg.contains("streamResponse.payload"),
+                    "msg should name the field: {msg}"
+                );
             }
             other => panic!("expected Transport error, got {other:?}"),
         }
