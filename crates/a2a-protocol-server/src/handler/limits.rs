@@ -49,6 +49,25 @@ pub struct HandlerLimits {
     /// `context_id`. Stale entries (where no other reference is held) are
     /// pruned when this limit is reached.
     pub max_context_locks: usize,
+    /// Maximum number of push notification configs per task. Default: 100.
+    ///
+    /// Enforced by the handler on `CreateTaskPushNotificationConfig` so the cap
+    /// applies uniformly across **all** store backends. Without it, the SQL
+    /// stores (which do not self-enforce) let a client mint unbounded configs
+    /// for a single task — a disk-exhaustion vector, and a delivery-amplification
+    /// vector since every stream event fans out to all of a task's configs.
+    /// Updating an existing config (same id) does not count against the cap.
+    pub max_push_configs_per_task: usize,
+    /// Maximum number of parts a single artifact may accumulate. Default:
+    /// 10,000.
+    ///
+    /// `max_artifacts_per_task` bounds the artifact *count*, but a stream of
+    /// `TaskArtifactUpdateEvent`s with `append: true` grows one artifact's
+    /// `parts` without bound. Since executors routinely stream model output
+    /// derived from attacker-influenced prompts, this bounds the cumulative
+    /// per-artifact (and thus per-task) size. Appends that would exceed the cap
+    /// are dropped.
+    pub max_parts_per_artifact: usize,
 }
 
 impl Default for HandlerLimits {
@@ -61,6 +80,8 @@ impl Default for HandlerLimits {
             push_delivery_timeout: Duration::from_secs(5),
             max_artifacts_per_task: 1000,
             max_context_locks: 10_000,
+            max_push_configs_per_task: 100,
+            max_parts_per_artifact: 10_000,
         }
     }
 }
@@ -105,6 +126,20 @@ impl HandlerLimits {
     #[must_use]
     pub const fn with_max_artifacts_per_task(mut self, max: usize) -> Self {
         self.max_artifacts_per_task = max;
+        self
+    }
+
+    /// Sets the maximum number of push notification configs per task.
+    #[must_use]
+    pub const fn with_max_push_configs_per_task(mut self, max: usize) -> Self {
+        self.max_push_configs_per_task = max;
+        self
+    }
+
+    /// Sets the maximum number of parts a single artifact may accumulate.
+    #[must_use]
+    pub const fn with_max_parts_per_artifact(mut self, max: usize) -> Self {
+        self.max_parts_per_artifact = max;
         self
     }
 

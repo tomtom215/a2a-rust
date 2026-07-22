@@ -185,10 +185,43 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
+/// Async wrapper around [`file_mtime`] that runs the blocking `stat` on the
+/// blocking thread pool, so the watcher loop never stalls a runtime worker on a
+/// slow/stalled volume (NFS, etc.).
+async fn file_mtime_async(path: &Path) -> Option<SystemTime> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || file_mtime(&path))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Async wrapper that reads the card file on the blocking thread pool and then
+/// parses/installs it (parsing is CPU-only and stays inline). Keeps the public
+/// synchronous [`HotReloadAgentCardHandler::reload_from_file`] unchanged for
+/// callers that want it, while the background watchers avoid blocking IO on a
+/// runtime worker.
+async fn reload_from_file_async(
+    handler: &HotReloadAgentCardHandler,
+    path: &Path,
+) -> ServerResult<()> {
+    let owned = path.to_path_buf();
+    let read = tokio::task::spawn_blocking(move || std::fs::read_to_string(&owned))
+        .await
+        .map_err(|e| ServerError::Internal(format!("agent card read task failed: {e}")))?;
+    let contents = read.map_err(|e| {
+        ServerError::Internal(format!(
+            "failed to read agent card file {}: {e}",
+            path.display()
+        ))
+    })?;
+    handler.reload_from_json(&contents)
+}
+
 /// Background loop that polls `path` for modification time changes and reloads
 /// the agent card when a change is detected.
 async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, interval: Duration) {
-    let mut last_mtime = file_mtime(&path);
+    let mut last_mtime = file_mtime_async(&path).await;
     let mut tick = tokio::time::interval(interval);
     // The first tick completes immediately; consume it so we don't reload on
     // startup (the caller already loaded the initial card).
@@ -196,10 +229,10 @@ async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, in
 
     loop {
         tick.tick().await;
-        let current_mtime = file_mtime(&path);
+        let current_mtime = file_mtime_async(&path).await;
         if current_mtime != last_mtime {
             last_mtime = current_mtime;
-            if let Err(e) = handler.reload_from_file(&path) {
+            if let Err(e) = reload_from_file_async(&handler, &path).await {
                 // Log the error but keep polling. The file may be temporarily
                 // unavailable during an atomic rename-based deploy.
                 #[cfg(feature = "tracing")]
@@ -223,7 +256,7 @@ async fn signal_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf) 
 
     loop {
         stream.recv().await;
-        if let Err(e) = handler.reload_from_file(&path) {
+        if let Err(e) = reload_from_file_async(&handler, &path).await {
             #[cfg(feature = "tracing")]
             tracing::warn!(
                 path = %path.display(),

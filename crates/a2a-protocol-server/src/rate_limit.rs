@@ -54,7 +54,11 @@
 //!
 //! Uses a fixed-window counter per caller key. Windows are aligned to wall
 //! clock seconds. When a request exceeds the per-window limit, the `before`
-//! hook returns an error with code `-32029` ("rate limit exceeded").
+//! hook returns an error. A2A / JSON-RPC define no dedicated throttling code,
+//! so this surfaces as an internal error (`-32603`) whose message names the
+//! rate limit; the request is rejected. (If you need a distinct client-visible
+//! signal for backoff, wrap this in a transport adapter that maps the message
+//! to your preferred status — e.g. HTTP 429.)
 //!
 //! The bucket map is bounded by [`RateLimitConfig::max_buckets`]. When the
 //! map is full and stale buckets cannot be evicted, requests from *new*
@@ -217,7 +221,7 @@ impl RateLimitInterceptor {
                 // the client address is the `hops`-th entry from the right.
                 // Entries further left are client-supplied and untrusted.
                 if entries.len() >= hops {
-                    return entries[entries.len() - hops].to_string();
+                    return canonicalize_caller_ip(entries[entries.len() - hops]);
                 }
                 // Fewer entries than trusted hops: the request did not come
                 // through the expected proxy chain. Fall through to the
@@ -369,10 +373,45 @@ impl ServerInterceptor for RateLimitInterceptor {
     }
 }
 
+/// Canonicalizes a caller IP string so equivalent encodings of the same address
+/// share one rate-limit bucket.
+///
+/// An IPv4-mapped IPv6 address (`::ffff:203.0.113.7`) and its plain IPv4 form
+/// (`203.0.113.7`) otherwise hash to different keys, letting one client obtain
+/// two independent budgets by presenting both forms. Parsing normalizes the
+/// mapped form back to IPv4 and collapses cosmetic differences (case, IPv6
+/// zero-compression). A value that does not parse as an IP is returned trimmed,
+/// unchanged.
+fn canonicalize_caller_ip(entry: &str) -> String {
+    use std::net::IpAddr;
+    let trimmed = entry.trim().trim_start_matches('[').trim_end_matches(']');
+    match trimmed.parse::<IpAddr>() {
+        Ok(IpAddr::V6(v6)) => v6
+            .to_ipv4_mapped()
+            .map_or_else(|| IpAddr::V6(v6).to_string(), |v4| v4.to_string()),
+        Ok(ip) => ip.to_string(),
+        Err(_) => trimmed.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn caller_ip_canonicalization_collapses_equivalent_forms() {
+        // IPv4-mapped IPv6 and plain IPv4 must share one bucket key.
+        assert_eq!(canonicalize_caller_ip("::ffff:203.0.113.7"), "203.0.113.7");
+        assert_eq!(canonicalize_caller_ip("203.0.113.7"), "203.0.113.7");
+        // Bracketed + zero-compressed IPv6 normalizes consistently.
+        assert_eq!(
+            canonicalize_caller_ip("[2001:db8::1]"),
+            canonicalize_caller_ip("2001:0db8:0000:0000:0000:0000:0000:0001")
+        );
+        // Non-IP values pass through trimmed (e.g. an opaque identity).
+        assert_eq!(canonicalize_caller_ip("  not-an-ip "), "not-an-ip");
+    }
 
     fn make_ctx(identity: Option<&str>) -> CallContext {
         let mut ctx = CallContext::new("message/send");

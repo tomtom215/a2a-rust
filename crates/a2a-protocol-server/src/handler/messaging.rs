@@ -92,7 +92,9 @@ impl RequestHandler {
         trace_info!(method = method_name, streaming, "handling send message");
         self.metrics.on_request(method_name);
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant(method_name, headers, params.tenant.as_deref())
+            .await?;
         let result = crate::store::tenant::TenantContext::scope(tenant, async {
             self.send_message_inner(params, streaming, method_name, headers)
                 .await
@@ -105,7 +107,7 @@ impl RequestHandler {
                 self.metrics.on_latency(method_name, elapsed);
             }
             Err(e) => {
-                self.metrics.on_error(method_name, &e.to_string());
+                self.metrics.on_error(method_name, e.metric_label());
                 self.metrics.on_latency(method_name, elapsed);
             }
         }

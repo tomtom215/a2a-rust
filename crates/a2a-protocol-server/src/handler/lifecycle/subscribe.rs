@@ -32,7 +32,9 @@ impl RequestHandler {
         trace_info!(method = "SubscribeToTask", task_id = %params.id, "handling resubscribe");
         self.metrics.on_request("SubscribeToTask");
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant("SubscribeToTask", headers, params.tenant.as_deref())
+            .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("SubscribeToTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -76,7 +78,7 @@ impl RequestHandler {
                 self.metrics.on_latency("SubscribeToTask", elapsed);
             }
             Err(e) => {
-                self.metrics.on_error("SubscribeToTask", &e.to_string());
+                self.metrics.on_error("SubscribeToTask", e.metric_label());
                 self.metrics.on_latency("SubscribeToTask", elapsed);
             }
         }

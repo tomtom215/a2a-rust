@@ -31,7 +31,9 @@ impl RequestHandler {
         trace_info!(method = "ListTasks", "handling list tasks");
         self.metrics.on_request("ListTasks");
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant("ListTasks", headers, params.tenant.as_deref())
+            .await?;
         // Clamp page_size at the handler level to prevent oversized allocations.
         let mut params = params;
         if let Some(ps) = params.page_size {
@@ -82,7 +84,7 @@ impl RequestHandler {
                 self.metrics.on_latency("ListTasks", elapsed);
             }
             Err(e) => {
-                self.metrics.on_error("ListTasks", &e.to_string());
+                self.metrics.on_error("ListTasks", e.metric_label());
                 self.metrics.on_latency("ListTasks", elapsed);
             }
         }

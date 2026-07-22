@@ -97,6 +97,18 @@ pub(super) async fn process_event_bg(
             // artifact with the same ID (Python #735, Java #615).
             if update.append == Some(true) {
                 if let Some(existing) = artifacts.iter_mut().find(|a| a.id == update.artifact.id) {
+                    // Bound cumulative per-artifact growth: an unbounded stream
+                    // of append updates would otherwise grow one artifact's
+                    // parts (and the re-serialized task record) without limit.
+                    if existing.parts.len() + update.artifact.parts.len()
+                        > limits.max_parts_per_artifact
+                    {
+                        trace_warn!(
+                            task_id = %task_id,
+                            "dropping artifact append: would exceed max_parts_per_artifact"
+                        );
+                        return;
+                    }
                     // Snapshot the artifact state before mutation so we can
                     // revert if the store save fails (data consistency).
                     let prev_parts_len = existing.parts.len();

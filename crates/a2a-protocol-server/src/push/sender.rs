@@ -114,10 +114,28 @@ impl PushRetryPolicy {
 ///
 /// Retries failed deliveries according to a configurable [`PushRetryPolicy`].
 ///
+/// # Transport: HTTP only
+///
+/// This bundled sender delivers over **plaintext HTTP**; its hyper client is
+/// built with an HTTP-only connector, so it deliberately does not pull a TLS
+/// stack into the server's default dependency set. A delivery to an `https://`
+/// webhook fails fast with a clear error.
+///
+/// To deliver to `https://` webhooks — the norm for production, and what the
+/// A2A spec's webhook field describes — provide your own TLS-capable
+/// [`PushSender`] via
+/// [`RequestHandlerBuilder::with_push_sender`](crate::RequestHandlerBuilder::with_push_sender).
+/// [`PushSender`] is a public, object-safe trait; an implementation can wrap
+/// any TLS HTTP client (e.g. `hyper-rustls`) and reuse the SSRF-validation
+/// helpers exposed here. A TLS implementation should preserve the same
+/// defenses: validate the resolved address is public and pin it against DNS
+/// rebinding while presenting the original hostname for SNI/`Host`.
+///
 /// # Security
 ///
 /// - Rejects webhook URLs targeting private/loopback/link-local addresses
-///   to prevent SSRF attacks.
+///   to prevent SSRF attacks (including IPv4-in-IPv6 smuggling), and pins the
+///   validated IP against DNS-rebinding between validation and connect.
 /// - Validates authentication credentials to prevent HTTP header injection
 ///   (rejects values containing CR/LF characters).
 #[derive(Debug)]
@@ -443,6 +461,24 @@ impl PushSender for HttpPushSender {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             trace_info!(url, "delivering push notification");
+
+            // This bundled sender speaks plaintext HTTP only (its hyper client
+            // is built with an HTTP-only connector). Fail an `https://` target
+            // early with an actionable error rather than letting it fall through
+            // to an opaque "scheme is not http" connector error after every
+            // retry attempt. HTTPS webhook delivery is supported by providing a
+            // TLS-capable [`PushSender`] implementation (the trait is public and
+            // pluggable) — see the type-level docs.
+            if url
+                .split_once("://")
+                .is_some_and(|(scheme, _)| scheme.eq_ignore_ascii_case("https"))
+            {
+                return Err(A2aError::internal(
+                    "the bundled HttpPushSender delivers over HTTP only and cannot reach an \
+                     https:// webhook; supply a TLS-capable PushSender implementation for \
+                     HTTPS delivery",
+                ));
+            }
 
             // SSRF protection: reject private/loopback addresses (with DNS resolution).
             //

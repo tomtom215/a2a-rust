@@ -57,7 +57,13 @@ pub trait Metrics: Send + Sync + 'static {
     fn on_response(&self, _method: &str) {}
 
     /// Called when a request results in an error.
-    fn on_error(&self, _method: &str, _error: &str) {}
+    ///
+    /// `error_kind` is a **bounded, low-cardinality** discriminant (e.g.
+    /// [`ServerError::metric_label`](crate::ServerError::metric_label)), never
+    /// the free-form error message. Implementations may use it as a metric
+    /// label/attribute; the caller guarantees it draws from a small fixed set,
+    /// so a client cannot inflate metric cardinality through it.
+    fn on_error(&self, _method: &str, _error_kind: &str) {}
 
     /// Called when a request completes (successfully or not) with the wall-clock
     /// duration from receipt to response.

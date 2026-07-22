@@ -181,6 +181,26 @@ async fn retries_on_client_error_status() {
     handle.abort();
 }
 
+// ── HTTPS transport limitation ──────────────────────────────────────────────
+
+#[tokio::test]
+async fn https_webhook_fails_fast_with_actionable_error() {
+    // The bundled HttpPushSender is HTTP-only. An https:// target must fail
+    // immediately with a clear, actionable message rather than an opaque
+    // connector error surfacing after every retry attempt.
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = "https://example.com/webhook";
+    let config = base_config(url);
+
+    let result = sender.send(url, &status_event(), &config).await;
+    let err = result.expect_err("https delivery must fail on the HTTP-only sender");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("HTTP only") && msg.contains("PushSender"),
+        "error should explain the HTTP-only limitation and the pluggable escape hatch: {msg}"
+    );
+}
+
 // ── Connection error tests ──────────────────────────────────────────────────
 
 #[tokio::test]

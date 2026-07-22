@@ -103,6 +103,35 @@ impl std::error::Error for ServerError {
 }
 
 impl ServerError {
+    /// Returns a bounded, low-cardinality discriminant for this error, suitable
+    /// as a metrics/telemetry label.
+    ///
+    /// This is a fixed set of variant names — never the error *message*, which
+    /// embeds client-controlled data (task ids, sizes, URLs). Using the message
+    /// as a metric label lets a caller mint an unbounded number of time series
+    /// (e.g. by requesting many random task ids), exhausting the backend's
+    /// cardinality budget.
+    #[must_use]
+    pub const fn metric_label(&self) -> &'static str {
+        match self {
+            Self::TaskNotFound(_) => "task_not_found",
+            Self::TaskNotCancelable(_) => "task_not_cancelable",
+            Self::InvalidParams(_) => "invalid_params",
+            Self::Serialization(_) => "serialization",
+            Self::Http(_) => "http",
+            Self::HttpClient(_) => "http_client",
+            Self::Transport(_) => "transport",
+            Self::PushNotSupported => "push_not_supported",
+            Self::Internal(_) => "internal",
+            Self::MethodNotFound(_) => "method_not_found",
+            Self::Protocol(_) => "protocol",
+            Self::PayloadTooLarge(_) => "payload_too_large",
+            Self::UnsupportedOperation(_) => "unsupported_operation",
+            Self::InvalidStateTransition { .. } => "invalid_state_transition",
+            Self::Overloaded(_) => "overloaded",
+        }
+    }
+
     /// Converts this server error into an [`A2aError`] suitable for wire responses.
     ///
     /// # Mapping

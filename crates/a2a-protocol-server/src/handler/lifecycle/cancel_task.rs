@@ -33,7 +33,9 @@ impl RequestHandler {
         trace_info!(method = "CancelTask", task_id = %params.id, "handling cancel task");
         self.metrics.on_request("CancelTask");
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant("CancelTask", headers, params.tenant.as_deref())
+            .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("CancelTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -119,7 +121,7 @@ impl RequestHandler {
                 self.metrics.on_latency("CancelTask", elapsed);
             }
             Err(e) => {
-                self.metrics.on_error("CancelTask", &e.to_string());
+                self.metrics.on_error("CancelTask", e.metric_label());
                 self.metrics.on_latency("CancelTask", elapsed);
             }
         }

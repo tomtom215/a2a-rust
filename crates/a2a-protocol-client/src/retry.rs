@@ -277,11 +277,12 @@ fn jitter_factor_from_bits(random_bits: u64) -> f64 {
 /// negative value (defensive against pathological factors such as NaN or ∞).
 fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
     let jittered_secs = backoff.as_secs_f64() * factor;
-    if !jittered_secs.is_finite() || jittered_secs < 0.0 {
-        backoff
-    } else {
-        Duration::from_secs_f64(jittered_secs)
-    }
+    // `try_from_secs_f64` rejects NaN/∞/negative *and* finite-but-out-of-range
+    // values (a near-`Duration::MAX` backoff scaled by a factor ≥ 1.0 can round
+    // above `Duration::MAX`), all of which fall back to the unjittered backoff.
+    // Plain `from_secs_f64` would panic on the finite-overflow case — the same
+    // hazard `cap_backoff` documents.
+    Duration::try_from_secs_f64(jittered_secs).unwrap_or(backoff)
 }
 
 /// Applies full jitter to a backoff duration: returns a random duration in
