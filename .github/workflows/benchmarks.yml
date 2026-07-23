@@ -243,9 +243,16 @@ jobs:
           # block — accidental O(n²) loops, allocator thrash, lost
           # inlining in hot paths — while staying honest about CI
           # noise. Change when moving to self-hosted runners.
+          # Per-benchmark override: `from_str/16384` has repeatedly shown
+          # tight-CI swings past even the 50% gate on identical code — a
+          # 16 KiB parse is small enough (~tens of µs) that allocator and
+          # cache-layout luck dominate at exactly this size (its 4 KiB and
+          # 100 KiB neighbours are stable). Give that one benchmark a 75%
+          # tolerance instead of loosening the gate for everything else.
           python3 benches/scripts/check_regression.py \
             --target-dir target/criterion \
             --threshold 0.50 \
+            --override '*/from_str/16384=0.75' \
             | tee /tmp/regression.txt
           echo "::endgroup::"
 
@@ -256,7 +263,7 @@ jobs:
             echo "# Benchmark Regression Gate"
             echo ""
             echo "Compared this PR against \`${{ github.base_ref }}\` on \`transport_throughput\` and \`protocol_overhead\`."
-            echo "Threshold: **50 %** (95 % CI lower bound of the median)."
+            echo "Threshold: **50 %** (95 % CI lower bound of the median); per-benchmark overrides are listed inline as \`[override N%]\`."
             echo ""
             echo "See [book/src/reference/regression-gate.md](../book/src/reference/regression-gate.md) for why the threshold is this forgiving on GitHub-hosted runners."
             echo ""

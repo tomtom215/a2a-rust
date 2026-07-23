@@ -1488,3 +1488,120 @@ fn tck_protocol_constants() {
     assert_eq!(a2a_protocol_types::A2A_CONTENT_TYPE, "application/a2a+json");
     assert_eq!(a2a_protocol_types::A2A_VERSION_HEADER, "A2A-Version");
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// §21 — ProtoJSON empty-repeated omission tolerance
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// ProtoJSON printers — what every official A2A SDK uses on the JSON wire —
+// omit empty repeated fields, empty maps, and default scalars. Absence on
+// the wire therefore means "empty", and deserialization MUST accept it.
+// Requiring these keys rejected real official-SDK traffic at parse time
+// (found live: the official Python SDK's JSON-RPC client sends a
+// `configuration` object without `acceptedOutputModes`).
+
+/// The exact shape the official Python SDK's `ClientConfig` produces: a
+/// configuration present (because `return_immediately` was touched) but with
+/// its empty `acceptedOutputModes` list omitted by the ProtoJSON printer.
+#[test]
+fn tck_omitted_accepted_output_modes_is_empty() {
+    let params: MessageSendParams = serde_json::from_value(json!({
+        "message": {
+            "messageId": "msg-1",
+            "role": "ROLE_USER",
+            "parts": [{"text": "hello"}]
+        },
+        "configuration": {}
+    }))
+    .expect("configuration without acceptedOutputModes must parse");
+    assert!(params
+        .configuration
+        .expect("configuration present")
+        .accepted_output_modes
+        .is_empty());
+}
+
+/// An empty `StringList` prints as `{}` in ProtoJSON — a scheme requiring no
+/// scopes is common (e.g. plain bearer auth in a security requirement).
+#[test]
+fn tck_omitted_string_list_is_empty() {
+    let req: SecurityRequirement =
+        serde_json::from_value(json!({"schemes": {"bearer": {}}})).expect("empty StringList");
+    assert!(req.schemes["bearer"].list.is_empty());
+
+    // An entirely empty requirement object (empty map omitted) also parses.
+    let req: SecurityRequirement = serde_json::from_value(json!({})).expect("empty requirement");
+    assert!(req.schemes.is_empty());
+}
+
+/// A ListTasks response with zero matches omits `tasks` (and its zero-valued
+/// pagination scalars) entirely under ProtoJSON printing.
+#[test]
+fn tck_omitted_task_list_is_empty() {
+    let resp: TaskListResponse = serde_json::from_value(json!({})).expect("empty list response");
+    assert!(resp.tasks.is_empty());
+    assert!(resp.next_page_token.is_empty());
+}
+
+/// A push-config list response with zero configs omits `configs`.
+#[test]
+fn tck_omitted_push_config_list_is_empty() {
+    let resp: a2a_protocol_types::responses::ListPushConfigsResponse =
+        serde_json::from_value(json!({})).expect("empty configs response");
+    assert!(resp.configs.is_empty());
+}
+
+/// A skill published with no tags (legal for every official SDK, whose proto
+/// models treat absent and empty identically) must not fail the whole
+/// agent-card parse.
+#[test]
+fn tck_agent_card_with_omitted_repeated_fields_parses() {
+    let card: AgentCard = serde_json::from_value(json!({
+        "name": "sparse-agent",
+        "description": "card with ProtoJSON-omitted empty lists",
+        "version": "1.0.0",
+        "capabilities": {},
+        "supportedInterfaces": [
+            {"url": "http://localhost:1", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}
+        ],
+        "skills": [
+            {"id": "s1", "name": "skill", "description": "no tags"}
+        ]
+    }))
+    .expect("card with omitted tags/defaultInputModes/defaultOutputModes must parse");
+    assert!(card.skills[0].tags.is_empty());
+    assert!(card.default_input_modes.is_empty());
+    assert!(card.default_output_modes.is_empty());
+    card.validate().expect("card is otherwise valid");
+
+    // A card whose REQUIRED supportedInterfaces is absent still parses
+    // (ProtoJSON cannot distinguish absent from empty) — the semantic
+    // requirement is enforced by validate(), with a real error message.
+    let card: AgentCard = serde_json::from_value(json!({
+        "name": "no-interfaces",
+        "description": "d",
+        "version": "1.0.0",
+        "capabilities": {}
+    }))
+    .expect("interface-less card parses");
+    assert!(card.validate().is_err(), "validate() must reject it instead");
+}
+
+/// A message or artifact without `parts` parses to an empty vec — the server
+/// rejects it with a structured invalid-params error (uniform with the gRPC
+/// binding, which has always decoded absent repeated fields as empty).
+#[test]
+fn tck_omitted_parts_parse_as_empty() {
+    let msg: Message = serde_json::from_value(json!({
+        "messageId": "m1",
+        "role": "ROLE_USER"
+    }))
+    .expect("part-less message parses");
+    assert!(msg.parts.is_empty());
+
+    let artifact: Artifact = serde_json::from_value(json!({
+        "artifactId": "a1"
+    }))
+    .expect("part-less artifact parses");
+    assert!(artifact.parts.is_empty());
+}

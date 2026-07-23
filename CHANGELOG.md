@@ -276,6 +276,31 @@ changed shape (0.x breaking — warrants a minor bump).
 
 ### Fixed (third hardening pass)
 
+- **`a2a-protocol-types`: ProtoJSON empty-repeated omission no longer breaks
+  cross-SDK parsing** — ProtoJSON printers (what every official A2A SDK
+  uses on the JSON wire) omit empty repeated fields and empty maps, so
+  absence means "empty". Twelve JSON-facing list/map fields required their
+  key to be present and rejected real official-SDK traffic at parse time —
+  found live by driving this SDK's JSON-RPC server with the official
+  Python SDK's client, whose `configuration` object legitimately omits an
+  empty `acceptedOutputModes` and was answered with
+  "invalid params: missing field `acceptedOutputModes`". All repeated
+  fields now deserialize absent-as-empty
+  (`SendMessageConfiguration.acceptedOutputModes`, `StringList.list`,
+  `SecurityRequirement.schemes`, `TaskListResponse.tasks`,
+  `ListPushConfigsResponse.configs`, `AgentCard.{supportedInterfaces,
+  defaultInputModes, defaultOutputModes, skills}`, `AgentSkill.tags`,
+  `Message.parts`, `Artifact.parts`). Semantic must-be-non-empty
+  requirements are unchanged and enforced where they belong: the server
+  still rejects empty message parts with a structured invalid-params
+  error, event processors still drop empty-parts artifacts, and
+  `AgentCard::validate()` still requires at least one interface — errors
+  that now name the real problem instead of a JSON "missing field" type
+  error. Serialized output is unchanged. Verified end-to-end against the
+  official Python SDK (`a2a-sdk` 1.1.2): agent-card resolution, unary
+  send, SSE streaming, and gRPC (all 33 golden fixtures plus live
+  unary/streaming/mid-flight-subscribe probes) all pass in both
+  directions.
 - **`a2a-protocol-server` (WebSocket): accept-loop and handshake
   resilience** — a transient `accept()` error (per-connection abort,
   fd-table exhaustion) no longer tears down the WebSocket server; the
@@ -300,6 +325,13 @@ changed shape (0.x breaking — warrants a minor bump).
   fail fast — previously a clean server close left pending requests
   hanging for their full request timeout, and new requests kept queuing
   against the dead socket.
+- **CI: per-benchmark regression tolerance** — the benchmark gate accepts
+  targeted `--override PATTERN=THRESHOLD` globs, and the known-noisy
+  `from_str/16384` benchmark (tiny absolute runtime; tight-CI swings on
+  identical code while its size neighbours stay stable) now carries a 75%
+  tolerance instead of the whole gate being loosened. Overridden rows are
+  labelled in the gate output, and a regression past the raised threshold
+  still fails.
 
 ## [0.6.0] - 2026-06-10
 

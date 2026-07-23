@@ -134,6 +134,31 @@ PR should either (a) fix the regression, or (b) if it's a deliberate
 trade-off, annotate the call site with a `// perf: ...` comment
 explaining the trade-off and justifying the threshold hit.
 
+## Per-benchmark overrides
+
+A benchmark whose absolute runtime is tiny can be noisier than the 50 %
+gate accommodates even when every neighbouring benchmark is stable —
+allocator and cache-layout luck dominate at specific payload sizes.
+`protocol/payload_scaling/from_str/16384` is the known case: it has
+produced tight-CI swings past the global gate on provably identical
+code, while its 4 KiB and 100 KiB neighbours sit still.
+
+Rather than loosening the gate for every benchmark, the workflow passes
+a targeted override to `check_regression.py`:
+
+```
+--override '*/from_str/16384=0.75'
+```
+
+The pattern is a glob over the benchmark name (first match wins;
+repeatable flag). Overridden rows are labelled `[override N%]` in the
+gate output so the raised tolerance is visible in every run, and a
+regression past the raised threshold still fails the gate.
+
+Add an override only with evidence (multiple false-positive runs on
+unchanged code, stable neighbours) — an override on a benchmark that
+regresses for real silently raises the bar for catching it.
+
 ## Why we run the base and PR benches sequentially
 
 The workflow runs both sides on the same runner, in sequence, on the
