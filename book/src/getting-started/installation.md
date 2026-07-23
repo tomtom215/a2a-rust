@@ -40,7 +40,12 @@ This is useful when:
 
 ## Feature Flags
 
-All features are off by default to minimize compile times and dependency trees.
+Features are off by default to minimize compile times and dependency trees, with
+one exception: **`tls-rustls` is on by default** for `a2a-protocol-client` and
+`a2a-protocol-sdk`, because the A2A spec serves agents over HTTPS and the client
+(and the bundled push sender) must reach them out of the box. Opt out with
+`default-features = false` for a plaintext-HTTP-only build with no rustls
+dependency.
 
 ### `a2a-protocol-types`
 
@@ -89,11 +94,11 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.5", features = ["tracing", "signing"] }
+a2a-protocol-sdk = { version = "0.6", features = ["tracing", "signing"] }
 
 # Or with individual crates:
-a2a-protocol-server = { version = "0.5", features = ["tracing", "sqlite"] }
-a2a-protocol-client = { version = "0.5", features = ["tls-rustls"] }
+a2a-protocol-server = { version = "0.6", features = ["tracing", "sqlite"] }
+a2a-protocol-client = { version = "0.6", features = ["tls-rustls"] }
 ```
 
 ## Verifying the Installation

@@ -178,6 +178,16 @@ impl PushConfigStore for PostgresPushConfigStore {
             Ok(())
         })
     }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move {
+            let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM push_configs")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(Some(usize::try_from(total).unwrap_or(usize::MAX)))
+        })
+    }
 }
 
 #[cfg(test)]

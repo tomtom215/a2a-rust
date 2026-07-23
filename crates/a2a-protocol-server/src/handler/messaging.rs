@@ -68,6 +68,32 @@ fn json_byte_len(value: &serde_json::Value) -> serde_json::Result<usize> {
     Ok(w.0)
 }
 
+// ── Send-path decision helpers ────────────────────────────────────────────────
+//
+// Extracted from `send_message_inner` so the branch conditions are unit-testable
+// in isolation (the enclosing async handler is not easily driven to these exact
+// states).
+
+/// A second `SendMessage` targeting a task that still has a **live**
+/// (non-cancelled) cancellation token must be rejected: an executor is already
+/// in flight for that `task_id`.
+fn second_send_blocked(entry: &CancellationEntry) -> bool {
+    !entry.token.is_cancelled()
+}
+
+/// Whether a non-cancelled cancellation token has aged at or past
+/// `max_token_age` and is therefore a candidate for the stale-token sweep.
+fn token_aged(elapsed: std::time::Duration, max_token_age: std::time::Duration) -> bool {
+    elapsed >= max_token_age
+}
+
+/// Whether an aged token should actually be evicted: only when its event queue
+/// is gone (the executor has finished). A token whose queue is still live is
+/// kept so the running task stays cancelable.
+const fn evict_aged_token(queue_live: bool) -> bool {
+    !queue_live
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -92,7 +118,9 @@ impl RequestHandler {
         trace_info!(method = method_name, streaming, "handling send message");
         self.metrics.on_request(method_name);
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant(method_name, headers, params.tenant.as_deref())
+            .await?;
         let result = crate::store::tenant::TenantContext::scope(tenant, async {
             self.send_message_inner(params, streaming, method_name, headers)
                 .await
@@ -105,7 +133,7 @@ impl RequestHandler {
                 self.metrics.on_latency(method_name, elapsed);
             }
             Err(e) => {
-                self.metrics.on_error(method_name, &e.to_string());
+                self.metrics.on_error(method_name, e.metric_label());
                 self.metrics.on_latency(method_name, elapsed);
             }
         }
@@ -239,6 +267,32 @@ impl RequestHandler {
             .unwrap_or(false);
         let response_history_length = params.configuration.as_ref().and_then(|c| c.history_length);
 
+        // Both streaming and fire-and-forget (`return_immediately`) drive the
+        // task asynchronously and therefore need the background event processor
+        // to persist state transitions and fire push notifications. Only the
+        // default blocking mode collects events in the foreground.
+        let use_background = streaming || return_immediately;
+
+        // Reject a second send that targets a task already being processed. A
+        // live (non-cancelled) cancellation token means an executor is in
+        // flight for this `task_id`; a concurrent send would spawn a *second*
+        // executor and overwrite the first's token, leaving the original work
+        // uncancelable and racing on store writes. Only reachable when a client
+        // explicitly reuses a `task_id` (continuations); fresh sends generate a
+        // unique id. Checked under the still-held per-context lock so it is
+        // atomic with the token insert below.
+        {
+            let tokens = self.cancellation_tokens.read().await;
+            if let Some(entry) = tokens.get(&task_id) {
+                if second_send_blocked(entry) {
+                    return Err(ServerError::UnsupportedOperation(format!(
+                        "task {task_id} is already being processed; \
+                         wait for it to reach input-required or a terminal state before sending again"
+                    )));
+                }
+            }
+        }
+
         // Create initial task.
         trace_debug!(
             task_id = %task_id,
@@ -279,6 +333,48 @@ impl RequestHandler {
             ctx = ctx.with_metadata(meta);
         }
 
+        // Create the event queue FIRST, so hitting the concurrent-stream cap is
+        // detected *before* any side effect is committed. Leasing distinguishes
+        // capacity exhaustion from an already-existing queue (see
+        // [`QueueLease`]); the old `get_or_create` collapsed both to a `None`
+        // reader, so a cap rejection was misreported as an internal error and
+        // left the task orphaned in `Submitted` with a leaked token.
+        let (writer, reader, persistence_rx) = match self
+            .event_queue_manager
+            .lease(&task_id, use_background)
+            .await
+        {
+            crate::streaming::QueueLease::Created {
+                writer,
+                reader,
+                persistence_rx,
+            } => (writer, reader, persistence_rx),
+            crate::streaming::QueueLease::Existing => {
+                // A queue already exists for this task_id even though the
+                // in-flight token check above passed. That means either a
+                // concurrent send is racing us, or a previous executor's queue
+                // outlived its cancelled/swept token. Proceeding down the old
+                // `Existing` path spawned a SECOND executor sharing the queue
+                // with NO persistence channel — silently dropping every state
+                // transition and push notification for the resent task (it was
+                // stuck in `Submitted`) while racing the original executor on
+                // store writes. Reject instead of corrupting state.
+                return Err(ServerError::UnsupportedOperation(format!(
+                    "task {task_id} is already being processed; wait for it to reach \
+                     input-required or a terminal state before sending again"
+                )));
+            }
+            crate::streaming::QueueLease::CapacityExhausted => {
+                let cap = self
+                    .event_queue_manager
+                    .max_concurrent_queues()
+                    .map_or_else(String::new, |n| format!(" ({n})"));
+                return Err(ServerError::Overloaded(format!(
+                    "server at maximum concurrent stream capacity{cap}; retry later"
+                )));
+            }
+        };
+
         // FIX(#8): Insert the cancellation token BEFORE saving the task to
         // the store. This eliminates the race window where a task exists in
         // the store but has no cancellation token — a concurrent CancelTask
@@ -287,22 +383,45 @@ impl RequestHandler {
             // Phase 1: Collect stale entries under READ lock (non-blocking for
             // other readers). This avoids holding a write lock during the O(n)
             // sweep of all cancellation tokens.
-            let stale_ids: Vec<TaskId> = {
+            //
+            // Cancelled tokens are always evictable. An *aged* but not-cancelled
+            // token may still belong to a live, long-running executor; evicting
+            // it would make that task uncancelable, so aged candidates are only
+            // evicted once we confirm (below) their event queue is gone.
+            let (cancelled_ids, aged_candidates): (Vec<TaskId>, Vec<TaskId>) = {
                 let tokens = self.cancellation_tokens.read().await;
                 if tokens.len() >= self.limits.max_cancellation_tokens {
                     let now = Instant::now();
-                    tokens
-                        .iter()
-                        .filter(|(_, entry)| {
-                            entry.token.is_cancelled()
-                                || now.duration_since(entry.created_at) >= self.limits.max_token_age
-                        })
-                        .map(|(id, _)| id.clone())
-                        .collect()
+                    let mut cancelled = Vec::new();
+                    let mut aged = Vec::new();
+                    for (id, entry) in tokens.iter() {
+                        if entry.token.is_cancelled() {
+                            cancelled.push(id.clone());
+                        } else if token_aged(
+                            now.duration_since(entry.created_at),
+                            self.limits.max_token_age,
+                        ) {
+                            aged.push(id.clone());
+                        }
+                    }
+                    drop(tokens);
+                    (cancelled, aged)
                 } else {
-                    Vec::new()
+                    (Vec::new(), Vec::new())
                 }
             };
+
+            // Only evict aged tokens whose event queue is no longer registered —
+            // i.e. the executor has finished but the token lingered. A token
+            // whose queue is still live is left in place so the task remains
+            // cancelable.
+            let mut stale_ids = cancelled_ids;
+            for id in aged_candidates {
+                let queue_live = self.event_queue_manager.has_queue(&id).await;
+                if evict_aged_token(queue_live) {
+                    stale_ids.push(id);
+                }
+            }
 
             // Phase 2: Remove stale entries under WRITE lock (brief).
             if !stale_ids.is_empty() {
@@ -323,49 +442,17 @@ impl RequestHandler {
             );
         }
 
-        self.task_store.save(&task).await?;
+        // Persist the initial task. If this fails, roll back the queue and
+        // token we just created so a store error does not leak either.
+        if let Err(e) = self.task_store.save(&task).await {
+            self.event_queue_manager.destroy(&task_id).await;
+            self.cancellation_tokens.write().await.remove(&task_id);
+            return Err(e.into());
+        }
 
         // Release the per-context lock now that the task is saved. Subsequent
         // requests for this context_id will find the task via find_task_by_context.
         drop(context_guard);
-
-        // Create event queue. For streaming mode, use a dedicated persistence
-        // channel so the background event processor is not affected by slow
-        // SSE consumers (H5 fix).
-        let (writer, reader, persistence_rx) = if streaming {
-            let (w, r, p) = self
-                .event_queue_manager
-                .get_or_create_with_persistence(&task_id)
-                .await;
-            let r = match r {
-                Some(r) => r,
-                None => {
-                    // Queue already exists — subscribe to it instead of failing.
-                    self.event_queue_manager
-                        .subscribe(&task_id)
-                        .await
-                        .ok_or_else(|| {
-                            ServerError::Internal("event queue disappeared during subscribe".into())
-                        })?
-                }
-            };
-            (w, r, p)
-        } else {
-            let (w, r) = self.event_queue_manager.get_or_create(&task_id).await;
-            let r = match r {
-                Some(r) => r,
-                None => {
-                    // Queue already exists — subscribe to it instead of failing.
-                    self.event_queue_manager
-                        .subscribe(&task_id)
-                        .await
-                        .ok_or_else(|| {
-                            ServerError::Internal("event queue disappeared during subscribe".into())
-                        })?
-                }
-            };
-            (w, r, None)
-        };
 
         // Spawn executor task. The spawned task owns the only writer clone
         // needed; drop the local reference and the manager's reference so the
@@ -452,32 +539,45 @@ impl RequestHandler {
 
         self.interceptors.run_after(&call_ctx).await?;
 
-        if streaming {
-            // ARCHITECTURAL FIX: Spawn a background event processor that
-            // runs independently of the SSE consumer. This ensures that:
-            // 1. Task store is updated with state transitions even in streaming mode
-            // 2. Push notifications fire for every event regardless of consumer mode
-            // 3. State transition validation occurs for streaming events
+        if use_background {
+            // ARCHITECTURAL FIX: Spawn a background event processor that runs
+            // independently of any SSE consumer. This ensures that, for BOTH
+            // streaming and fire-and-forget (`return_immediately`) sends:
+            // 1. The task store is updated with state transitions.
+            // 2. Push notifications fire for every event.
+            // 3. State transition validation occurs.
+            //
+            // Fire-and-forget previously spawned neither this processor nor a
+            // persistence channel, so the executor's writes went to a dropped
+            // reader: nothing was persisted and the task was stuck in
+            // `Submitted` forever (no completion, no push).
             //
             // H5 FIX: The persistence channel is a dedicated mpsc channel that
             // is not affected by SSE consumer backpressure, so the background
             // processor never misses state transitions.
             self.spawn_background_event_processor(task_id.clone(), executor_handle, persistence_rx);
-            // SPEC §3.1.2: The first event in a streaming response MUST be a
-            // Task object representing the current state.
-            let mut reader = reader;
-            let mut snapshot = task.clone();
-            shape_response_history(&mut snapshot, response_history_length);
-            reader.set_first_event(StreamResponse::Task(snapshot));
-            Ok(SendMessageResult::Stream(reader))
-        } else if return_immediately {
-            // Return the task immediately without waiting for completion.
-            let mut task = task;
-            shape_response_history(&mut task, response_history_length);
-            Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
+
+            if streaming {
+                // SPEC §3.1.2: The first event in a streaming response MUST be a
+                // Task object representing the current state.
+                let mut reader = reader;
+                let mut snapshot = task.clone();
+                shape_response_history(&mut snapshot, response_history_length);
+                reader.set_first_event(StreamResponse::Task(snapshot));
+                Ok(SendMessageResult::Stream(reader))
+            } else {
+                // return_immediately: hand back the initial snapshot; the
+                // background processor drives the task to completion and
+                // clients poll `tasks/get` or rely on push.
+                drop(reader);
+                let mut task = task;
+                shape_response_history(&mut task, response_history_length);
+                Ok(SendMessageResult::Response(SendMessageResponse::Task(task)))
+            }
         } else {
-            // Poll reader until final event. Pass the executor handle so
-            // collect_events can detect executor completion/panic (CB-3).
+            // Blocking mode: poll reader until the final event. Pass the
+            // executor handle so collect_events can detect executor
+            // completion/panic (CB-3).
             let mut final_task = self
                 .collect_events(reader, task_id.clone(), executor_handle)
                 .await?;
@@ -608,6 +708,164 @@ mod tests {
                 Ok(SendMessageResult::Response(SendMessageResponse::Task(_)))
             ),
             "expected Response(Task) for return_immediately=true"
+        );
+    }
+
+    // An executor that narrates progress to completion via the event queue.
+    struct CompletingExecutor;
+    agent_executor!(CompletingExecutor, |ctx, queue| async {
+        for state in [TaskState::Working, TaskState::Completed] {
+            let ev = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: ContextId::new(ctx.context_id.clone()),
+                status: TaskStatus::with_timestamp(state),
+                metadata: None,
+            });
+            let _ = queue.write(ev).await;
+        }
+        Ok(())
+    });
+
+    // An executor that never finishes, keeping its task in flight (and its
+    // event queue alive) for the duration of a test.
+    struct BlockingExecutor;
+    agent_executor!(BlockingExecutor, |_ctx, _queue| async {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        Ok(())
+    });
+
+    async fn poll_task_state(
+        handler: &RequestHandler,
+        task_id: &TaskId,
+        want: TaskState,
+    ) -> TaskState {
+        for _ in 0..200 {
+            if let Ok(Some(t)) = handler.task_store.get(task_id).await {
+                if t.status.state == want {
+                    return want;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        handler
+            .task_store
+            .get(task_id)
+            .await
+            .ok()
+            .flatten()
+            .map_or(TaskState::Submitted, |t| t.status.state)
+    }
+
+    /// Regression: a `return_immediately` send must still drive the task to
+    /// completion in the background and persist the final state. Previously it
+    /// spawned no background processor, so the executor's events went nowhere
+    /// and the task was stuck in `Submitted` forever.
+    #[tokio::test]
+    async fn return_immediately_persists_final_state() {
+        let handler = RequestHandlerBuilder::new(CompletingExecutor)
+            .build()
+            .unwrap();
+        let mut params = make_params(Some("ctx-ri"));
+        params.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        });
+
+        let SendMessageResult::Response(SendMessageResponse::Task(task)) =
+            handler.on_send_message(params, false, None).await.unwrap()
+        else {
+            panic!("expected an immediate Task response");
+        };
+        assert_eq!(
+            task.status.state,
+            TaskState::Submitted,
+            "snapshot is Submitted"
+        );
+
+        let final_state = poll_task_state(&handler, &task.id, TaskState::Completed).await;
+        assert_eq!(
+            final_state,
+            TaskState::Completed,
+            "fire-and-forget task must reach Completed in the store"
+        );
+    }
+
+    /// Regression: a second send targeting a task already being processed must
+    /// be rejected, not spawn a second executor and overwrite the first's
+    /// cancellation token (leaving the original work uncancelable).
+    #[tokio::test]
+    async fn concurrent_send_to_in_flight_task_is_rejected() {
+        let handler = RequestHandlerBuilder::new(BlockingExecutor)
+            .build()
+            .unwrap();
+
+        // First send (fire-and-forget) leaves a live executor + token.
+        let mut first = make_params(Some("ctx-dup"));
+        first.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        });
+        let SendMessageResult::Response(SendMessageResponse::Task(task)) =
+            handler.on_send_message(first, false, None).await.unwrap()
+        else {
+            panic!("expected an immediate Task response");
+        };
+
+        // Second send explicitly targets the same in-flight task.
+        let mut second = make_params(Some("ctx-dup"));
+        second.message.task_id = Some(task.id.clone());
+        let result = handler.on_send_message(second, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::UnsupportedOperation(_))),
+            "expected rejection of a send to an in-flight task, got {result:?}"
+        );
+    }
+
+    /// Regression: hitting the concurrent-stream cap must return a clean
+    /// `Overloaded` error and create NO task (no orphaned `Submitted` row, no
+    /// leaked queue) — not a misleading internal error after committing the
+    /// task and token.
+    #[tokio::test]
+    async fn stream_cap_exhaustion_returns_overloaded_without_orphan() {
+        let handler = RequestHandlerBuilder::new(BlockingExecutor)
+            .with_max_concurrent_streams(1)
+            .build()
+            .unwrap();
+
+        // First send consumes the single slot (its executor blocks, so the
+        // queue stays alive).
+        let mut first = make_params(Some("ctx-a"));
+        first.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        });
+        handler.on_send_message(first, false, None).await.unwrap();
+        assert_eq!(handler.event_queue_manager.active_count().await, 1);
+
+        // Second send hits the cap.
+        let mut second = make_params(Some("ctx-b"));
+        second.configuration = Some(SendMessageConfiguration {
+            accepted_output_modes: vec!["text/plain".into()],
+            task_push_notification_config: None,
+            history_length: None,
+            return_immediately: Some(true),
+        });
+        let result = handler.on_send_message(second, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::Overloaded(_))),
+            "expected Overloaded at capacity, got {result:?}"
+        );
+        // No queue was created for the rejected send, and no task orphaned.
+        assert_eq!(
+            handler.event_queue_manager.active_count().await,
+            1,
+            "capacity rejection must not create a queue"
         );
     }
 
@@ -1407,5 +1665,58 @@ mod tests {
             }
             _ => panic!("expected Response(Task)"),
         }
+    }
+
+    // ── Send-path decision helpers ────────────────────────────────────────
+
+    #[test]
+    fn second_send_blocked_iff_token_live() {
+        let live = CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: Instant::now(),
+        };
+        assert!(
+            second_send_blocked(&live),
+            "a live token means an executor is in flight → block the second send"
+        );
+
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        let cancelled = CancellationEntry {
+            token,
+            created_at: Instant::now(),
+        };
+        assert!(
+            !second_send_blocked(&cancelled),
+            "a cancelled token no longer blocks a resend"
+        );
+    }
+
+    #[test]
+    fn token_aged_at_or_past_max_age() {
+        let max = std::time::Duration::from_secs(3600);
+        assert!(
+            !token_aged(std::time::Duration::from_secs(3599), max),
+            "younger than max is not aged"
+        );
+        // Boundary: exactly max_age counts as aged (>=), which distinguishes
+        // the correct operator from both `<` and `>`.
+        assert!(
+            token_aged(std::time::Duration::from_secs(3600), max),
+            "exactly max_age is aged"
+        );
+        assert!(token_aged(std::time::Duration::from_secs(3601), max));
+    }
+
+    #[test]
+    fn evict_aged_token_only_when_queue_gone() {
+        assert!(
+            evict_aged_token(false),
+            "no live queue → the executor finished → evict the lingering token"
+        );
+        assert!(
+            !evict_aged_token(true),
+            "a live queue means the task is still running → keep its token"
+        );
     }
 }

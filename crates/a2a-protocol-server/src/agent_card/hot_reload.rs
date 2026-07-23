@@ -185,10 +185,43 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
 }
 
+/// Async wrapper around [`file_mtime`] that runs the blocking `stat` on the
+/// blocking thread pool, so the watcher loop never stalls a runtime worker on a
+/// slow/stalled volume (NFS, etc.).
+async fn file_mtime_async(path: &Path) -> Option<SystemTime> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || file_mtime(&path))
+        .await
+        .ok()
+        .flatten()
+}
+
+/// Async wrapper that reads the card file on the blocking thread pool and then
+/// parses/installs it (parsing is CPU-only and stays inline). Keeps the public
+/// synchronous [`HotReloadAgentCardHandler::reload_from_file`] unchanged for
+/// callers that want it, while the background watchers avoid blocking IO on a
+/// runtime worker.
+async fn reload_from_file_async(
+    handler: &HotReloadAgentCardHandler,
+    path: &Path,
+) -> ServerResult<()> {
+    let owned = path.to_path_buf();
+    let read = tokio::task::spawn_blocking(move || std::fs::read_to_string(&owned))
+        .await
+        .map_err(|e| ServerError::Internal(format!("agent card read task failed: {e}")))?;
+    let contents = read.map_err(|e| {
+        ServerError::Internal(format!(
+            "failed to read agent card file {}: {e}",
+            path.display()
+        ))
+    })?;
+    handler.reload_from_json(&contents)
+}
+
 /// Background loop that polls `path` for modification time changes and reloads
 /// the agent card when a change is detected.
 async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, interval: Duration) {
-    let mut last_mtime = file_mtime(&path);
+    let mut last_mtime = file_mtime_async(&path).await;
     let mut tick = tokio::time::interval(interval);
     // The first tick completes immediately; consume it so we don't reload on
     // startup (the caller already loaded the initial card).
@@ -196,10 +229,10 @@ async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, in
 
     loop {
         tick.tick().await;
-        let current_mtime = file_mtime(&path);
+        let current_mtime = file_mtime_async(&path).await;
         if current_mtime != last_mtime {
             last_mtime = current_mtime;
-            if let Err(e) = handler.reload_from_file(&path) {
+            if let Err(e) = reload_from_file_async(&handler, &path).await {
                 // Log the error but keep polling. The file may be temporarily
                 // unavailable during an atomic rename-based deploy.
                 #[cfg(feature = "tracing")]
@@ -223,7 +256,7 @@ async fn signal_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf) 
 
     loop {
         stream.recv().await;
-        if let Err(e) = handler.reload_from_file(&path) {
+        if let Err(e) = reload_from_file_async(&handler, &path).await {
             #[cfg(feature = "tracing")]
             tracing::warn!(
                 path = %path.display(),
@@ -359,6 +392,72 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_file(&file);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    /// Verifies that `signal_watcher_loop` actually reloads the card on
+    /// `SIGHUP` — not merely that the task can be spawned and aborted. Kills
+    /// the `replace signal_watcher_loop with ()` mutant, which would otherwise
+    /// leave the reload behavior (the entire point of the loop) untested.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn signal_watcher_reloads_on_sighup() {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        // Register a guard SIGHUP stream up front. This overrides the default
+        // "terminate" disposition for the whole process so raising SIGHUP
+        // below does not kill the test runner, independent of how quickly the
+        // watcher task gets scheduled.
+        let _guard = signal(SignalKind::hangup()).expect("register guard SIGHUP handler");
+
+        let dir = std::env::temp_dir().join("a2a_signal_reload_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let handler = HotReloadAgentCardHandler::new(initial);
+        let handle = handler.spawn_signal_watcher(&file);
+
+        // Give the watcher task time to run and register its own SIGHUP stream
+        // before we raise the signal. A signal delivered before a stream is
+        // created is not observed by that stream.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Write an updated card, then raise SIGHUP to trigger the reload.
+        let mut updated = minimal_agent_card();
+        updated.name = "SIGHUP Reloaded".into();
+        std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
+
+        // Raise SIGHUP to this process. Using `kill(1)` keeps the test free of
+        // a `libc`/`nix` dependency; `kill` is always present under `#[cfg(unix)]`.
+        let status = std::process::Command::new("kill")
+            .args(["-HUP", &std::process::id().to_string()])
+            .status()
+            .expect("send SIGHUP via kill(1)");
+        assert!(status.success(), "kill -HUP <self> should succeed");
+
+        // Poll for the reload with a bounded timeout so a regression fails
+        // fast instead of hanging.
+        let reloaded = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if handler.current().name == "SIGHUP Reloaded" {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        handle.abort();
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+
+        assert!(
+            reloaded,
+            "signal_watcher_loop should reload the agent card on SIGHUP"
+        );
     }
 
     /// Covers `file_mtime` helper function (line 182-184).

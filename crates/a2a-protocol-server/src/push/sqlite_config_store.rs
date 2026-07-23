@@ -193,6 +193,16 @@ impl PushConfigStore for SqlitePushConfigStore {
             Ok(())
         })
     }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move {
+            let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM push_configs")
+                .fetch_one(&self.pool)
+                .await
+                .map_err(to_a2a_error)?;
+            Ok(Some(usize::try_from(total).unwrap_or(usize::MAX)))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -226,6 +236,27 @@ mod tests {
             result.id.is_some(),
             "set should assign an id when none is provided"
         );
+    }
+
+    #[tokio::test]
+    async fn count_reflects_total_configs_across_tasks() {
+        let store = make_store().await;
+        assert_eq!(store.count().await.unwrap(), Some(0));
+        store
+            .set(make_config("task-a", Some("c1"), "https://example.com/1"))
+            .await
+            .unwrap();
+        store
+            .set(make_config("task-b", Some("c1"), "https://example.com/2"))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.count().await.unwrap(),
+            Some(2),
+            "count spans distinct task ids"
+        );
+        store.delete("task-a", "c1").await.unwrap();
+        assert_eq!(store.count().await.unwrap(), Some(1));
     }
 
     #[tokio::test]

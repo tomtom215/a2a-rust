@@ -209,6 +209,20 @@ impl PushConfigStore for TenantAwareSqlitePushConfigStore {
             Ok(())
         })
     }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move {
+            // Per-tenant count: yields a per-tenant global ceiling.
+            let tenant = TenantContext::current();
+            let (total,): (i64,) =
+                sqlx::query_as("SELECT COUNT(*) FROM tenant_push_configs WHERE tenant_id = ?1")
+                    .bind(&tenant)
+                    .fetch_one(&self.pool)
+                    .await
+                    .map_err(|e| to_a2a_error(&e))?;
+            Ok(Some(usize::try_from(total).unwrap_or(usize::MAX)))
+        })
+    }
 }
 
 #[cfg(test)]

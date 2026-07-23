@@ -38,28 +38,52 @@ pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
 /// Decodes percent-encoded characters in a query parameter value.
 ///
 /// Handles `%XX` hex sequences and `+` as space (application/x-www-form-urlencoded).
+///
+/// Decodes into a byte buffer first and interprets the whole buffer as UTF-8
+/// (lossily) at the end. Decoding each `%XX` straight to a `char` would treat
+/// every byte as Latin-1, mangling any multi-byte UTF-8 sequence (e.g. a
+/// percent-encoded non-ASCII tenant name or query value) into several garbage
+/// characters.
 fn percent_decode(input: &str) -> String {
-    let mut output = String::with_capacity(input.len());
-    let mut bytes = input.as_bytes().iter();
-    while let Some(&b) = bytes.next() {
-        match b {
+    let mut rest = input.as_bytes();
+    let mut bytes: Vec<u8> = Vec::with_capacity(rest.len());
+    // Advance by consuming from the front of `rest` rather than tracking a
+    // mutable index: every iteration reassigns `rest` to a strictly shorter
+    // slice, so there is no index arithmetic that a mutation could turn into a
+    // non-terminating loop.
+    while let Some((&first, tail)) = rest.split_first() {
+        match first {
+            // A `%XX` sequence needs two more bytes; `[h, l, ..]` matches iff
+            // they exist (equivalent to the old `i + 2 < len` bound).
             b'%' => {
-                let hi = bytes.next().copied();
-                let lo = bytes.next().copied();
-                if let (Some(h), Some(l)) = (hi, lo) {
-                    if let (Some(h), Some(l)) = (hex_val(h), hex_val(l)) {
-                        output.push(char::from(h << 4 | l));
+                if let [h, l, ..] = tail {
+                    if let (Some(hv), Some(lv)) = (hex_val(*h), hex_val(*l)) {
+                        // `hv`/`lv` are single hex nibbles (0..=15), so the high
+                        // nibble (`hv << 4`, bits 4-7) and low nibble (`lv`, bits
+                        // 0-3) never overlap: `+` composes the byte exactly like a
+                        // bitwise OR would, but without an equivalent `| -> ^`
+                        // mutation.
+                        bytes.push((hv << 4) + lv);
+                        rest = &tail[2..];
                         continue;
                     }
                 }
-                // Invalid percent sequence — pass through as-is.
-                output.push('%');
+                // Truncated or invalid `%` sequence — pass the `%` through
+                // literally and keep decoding the byte(s) after it.
+                bytes.push(b'%');
+                rest = tail;
             }
-            b'+' => output.push(' '),
-            _ => output.push(char::from(b)),
+            b'+' => {
+                bytes.push(b' ');
+                rest = tail;
+            }
+            other => {
+                bytes.push(other);
+                rest = tail;
+            }
         }
     }
-    output
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 /// Checks if a path contains traversal sequences (`..`) in either raw,
@@ -170,8 +194,31 @@ mod tests {
     fn percent_decode_invalid_sequence_passthrough() {
         // Incomplete percent sequence: just '%' at end
         assert_eq!(percent_decode("abc%"), "abc%");
-        // Invalid hex digits after percent
-        assert_eq!(percent_decode("%ZZ"), "%");
+        // Invalid hex digits after percent: the '%' is literal and the
+        // following bytes are preserved (standard WHATWG behavior), not dropped.
+        assert_eq!(percent_decode("%ZZ"), "%ZZ");
+    }
+
+    /// A `%` followed by exactly ONE more character at end-of-input must be
+    /// passed through, not read past the buffer. This pins the `i + 2 < len`
+    /// bounds check: an off-by-one to `<=` would index `raw[i + 2]` out of
+    /// bounds and panic on this attacker-controllable input.
+    #[test]
+    fn percent_decode_truncated_single_char_at_end_does_not_panic() {
+        assert_eq!(percent_decode("%4"), "%4");
+        assert_eq!(percent_decode("a%F"), "a%F");
+        // Even a "valid-looking" first hex digit with nothing after it stays literal.
+        assert_eq!(percent_decode("x%2"), "x%2");
+    }
+
+    #[test]
+    fn percent_decode_multibyte_utf8_roundtrips() {
+        // A percent-encoded multi-byte UTF-8 value must decode to the original
+        // string, not to per-byte Latin-1 garbage.
+        assert_eq!(percent_decode("%E2%9C%93"), "\u{2713}"); // ✓ (3-byte UTF-8)
+        assert_eq!(percent_decode("caf%C3%A9"), "café"); // 2-byte é
+                                                         // Invalid UTF-8 bytes decode lossily rather than panicking.
+        assert_eq!(percent_decode("%FF"), "\u{FFFD}");
     }
 
     #[test]
@@ -180,6 +227,15 @@ mod tests {
         assert_eq!(percent_decode("%252E"), "%2E");
         // Second pass decodes %2E to .
         assert_eq!(percent_decode("%2E"), ".");
+    }
+
+    #[test]
+    fn percent_decode_composes_high_and_low_nibbles() {
+        // Pin the exact byte a `%XX` pair decodes to, with both nibbles
+        // non-zero and distinct, so the nibble composition (`h << 4` + `l`)
+        // is verified independently of any traversal-detection behaviour.
+        assert_eq!(percent_decode("%4A"), "J"); // 0x4A: h=4, l=0xA
+        assert_eq!(percent_decode("%7E"), "~"); // 0x7E: h=7, l=0xE
     }
 
     // ── contains_path_traversal ──────────────────────────────────────────

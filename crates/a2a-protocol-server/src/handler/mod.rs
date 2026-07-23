@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 use a2a_protocol_types::agent_card::AgentCard;
 use a2a_protocol_types::task::TaskId;
 
+use crate::error::ServerResult;
 use crate::executor::AgentExecutor;
 use crate::interceptor::ServerInterceptorChain;
 use crate::metrics::Metrics;
@@ -75,6 +76,10 @@ pub struct RequestHandler {
     pub(crate) limits: HandlerLimits,
     pub(crate) tenant_resolver: Option<Arc<dyn TenantResolver>>,
     pub(crate) tenant_config: Option<PerTenantConfig>,
+    /// When `true`, a configured resolver that returns `None` (no tenant could
+    /// be determined) causes the request to be **rejected** rather than falling
+    /// back to the shared default (`""`) partition. Opt-in strict multi-tenancy.
+    pub(crate) require_resolved_tenant: bool,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
     /// Per-context-ID locks to serialize find + save operations for the same
@@ -110,6 +115,60 @@ impl RequestHandler {
     #[must_use]
     pub const fn tenant_config(&self) -> Option<&PerTenantConfig> {
         self.tenant_config.as_ref()
+    }
+
+    /// Resolves the authoritative tenant for a request.
+    ///
+    /// When a [`TenantResolver`] is configured it is the source of truth: the
+    /// tenant is derived from trusted request context (an auth token, a
+    /// gateway-set header, a URL path segment) rather than from the
+    /// client-supplied `tenant` field. A client that *also* names a tenant is
+    /// honored only when it matches the resolved one; a mismatch is a
+    /// cross-tenant access attempt and is rejected. This closes the gap where a
+    /// configured resolver was never consulted and the client's `params.tenant`
+    /// alone selected the store partition — letting any caller read or write
+    /// another tenant's tasks by naming it.
+    ///
+    /// With no resolver configured, the client-supplied value is used verbatim
+    /// (single-tenant deployments, or trusted callers behind an authenticating
+    /// gateway), preserving the prior behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::InvalidParams`] when a client-supplied tenant
+    /// disagrees with the resolver-derived tenant.
+    pub(crate) async fn resolve_tenant(
+        &self,
+        method: &str,
+        headers: Option<&HashMap<String, String>>,
+        client_tenant: Option<&str>,
+    ) -> ServerResult<String> {
+        let Some(resolver) = self.tenant_resolver.as_deref() else {
+            return Ok(client_tenant.unwrap_or_default().to_owned());
+        };
+        let call_ctx = crate::handler::helpers::build_call_context(method, headers);
+        let derived = resolver.resolve(&call_ctx).await;
+        // Strict mode: a resolver that cannot determine a tenant must not fall
+        // through to the shared default partition — reject instead, so a
+        // header-less/unauthenticated request cannot read or write the `""`
+        // bucket. Off by default to preserve the documented resolver contract
+        // (`None` → default partition) for deployments that rely on it.
+        if self.require_resolved_tenant && derived.is_none() {
+            return Err(crate::error::ServerError::InvalidParams(
+                "no tenant could be determined for this request and strict \
+                 multi-tenancy is enabled"
+                    .to_owned(),
+            ));
+        }
+        let authoritative = derived.unwrap_or_default();
+        if let Some(client) = client_tenant {
+            if !client.is_empty() && client != authoritative {
+                return Err(crate::error::ServerError::InvalidParams(format!(
+                    "request tenant '{client}' does not match the authenticated tenant"
+                )));
+            }
+        }
+        Ok(authoritative)
     }
 }
 
@@ -184,6 +243,109 @@ mod tests {
             handler.tenant_resolver().is_some(),
             "should return Some when a resolver was configured"
         );
+    }
+
+    // ── resolve_tenant: the resolver is authoritative ────────────────────
+    //
+    // Regression: `with_tenant_resolver` was a no-op — `params.tenant`
+    // (client-controlled) alone selected the store partition, so any caller
+    // could reach another tenant's data by naming it. The resolver must now
+    // decide the tenant, and a disagreeing client value must be rejected.
+
+    fn headers_with(tenant: &str) -> HashMap<String, String> {
+        let mut h = HashMap::new();
+        h.insert("x-tenant-id".to_owned(), tenant.to_owned());
+        h
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_uses_resolver_when_client_omits_tenant() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .build()
+            .unwrap();
+        let headers = headers_with("acme");
+        let tenant = handler
+            .resolve_tenant("GetTask", Some(&headers), None)
+            .await
+            .expect("resolution should succeed");
+        assert_eq!(tenant, "acme", "resolver-derived tenant must be used");
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_rejects_client_tenant_mismatch() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .build()
+            .unwrap();
+        // Authenticated as "acme" (header), but the client claims "victim".
+        let headers = headers_with("acme");
+        let result = handler
+            .resolve_tenant("GetTask", Some(&headers), Some("victim"))
+            .await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+            "a client tenant disagreeing with the resolver must be rejected, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_accepts_matching_client_tenant() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .build()
+            .unwrap();
+        let headers = headers_with("acme");
+        let tenant = handler
+            .resolve_tenant("GetTask", Some(&headers), Some("acme"))
+            .await
+            .expect("matching client tenant is fine");
+        assert_eq!(tenant, "acme");
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_default_falls_back_to_empty_when_unresolved() {
+        // Without strict mode, an unresolved tenant (no header) uses the
+        // documented default partition — preserving the resolver contract.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .build()
+            .unwrap();
+        let tenant = handler
+            .resolve_tenant("GetTask", None, None)
+            .await
+            .expect("default mode tolerates an unresolved tenant");
+        assert_eq!(
+            tenant, "",
+            "unresolved tenant defaults to the shared partition"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_strict_rejects_unresolved() {
+        // Strict mode: a request the resolver cannot map to a tenant (no
+        // header) is rejected rather than silently sharing the `""` partition.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_tenant_resolver(HeaderTenantResolver::default())
+            .require_resolved_tenant()
+            .build()
+            .unwrap();
+        let result = handler.resolve_tenant("GetTask", None, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
+            "strict mode must reject an unresolved tenant, got {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_tenant_without_resolver_trusts_client_value() {
+        // No resolver → single-tenant / trusted-caller mode: client value used.
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let tenant = handler
+            .resolve_tenant("GetTask", None, Some("whatever"))
+            .await
+            .unwrap();
+        assert_eq!(tenant, "whatever");
     }
 
     #[test]

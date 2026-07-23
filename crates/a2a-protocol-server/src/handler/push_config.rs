@@ -22,6 +22,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns [`ServerError::PushNotSupported`] if no push sender is configured.
+    #[allow(clippy::too_many_lines)]
     pub async fn on_set_push_config(
         &self,
         config: TaskPushNotificationConfig,
@@ -30,7 +31,13 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("CreateTaskPushNotificationConfig");
 
-        let tenant = config.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant(
+                "CreateTaskPushNotificationConfig",
+                headers,
+                config.tenant.as_deref(),
+            )
+            .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let Some(ref sender) = self.push_sender else {
                 return Err(ServerError::PushNotSupported);
@@ -54,6 +61,39 @@ impl RequestHandler {
 
             let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
+
+            // Enforce the per-task config cap here so it holds for EVERY store
+            // backend (the SQL stores do not self-enforce). Creating a new
+            // config for a task already at the cap is rejected; updating an
+            // existing config (matching id) is always allowed.
+            let task_key = config.task_id.clone().unwrap_or_default();
+            let existing = self.push_config_store.list(&task_key).await?;
+            let is_update = config
+                .id
+                .as_deref()
+                .is_some_and(|id| existing.iter().any(|c| c.id.as_deref() == Some(id)));
+            if !is_update && existing.len() >= self.limits.max_push_configs_per_task {
+                return Err(ServerError::InvalidParams(format!(
+                    "task {task_key} already has the maximum of {} push notification configs",
+                    self.limits.max_push_configs_per_task
+                )));
+            }
+
+            // Global (per-tenant, for tenant stores) ceiling so configs spread
+            // across many distinct task ids cannot grow a SQL-backed store
+            // without bound. Only enforced when the backend reports a count.
+            if !is_update {
+                if let Some(total) = self.push_config_store.count().await? {
+                    if total >= self.limits.max_total_push_configs {
+                        return Err(ServerError::Overloaded(format!(
+                            "server is at the maximum of {} push notification configs; \
+                             delete unused configs before creating more",
+                            self.limits.max_total_push_configs
+                        )));
+                    }
+                }
+            }
+
             let result = self.push_config_store.set(config).await?;
             self.interceptors.run_after(&call_ctx).await?;
             Ok(result)
@@ -69,7 +109,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 self.metrics
-                    .on_error("CreateTaskPushNotificationConfig", &e.to_string());
+                    .on_error("CreateTaskPushNotificationConfig", e.metric_label());
                 self.metrics
                     .on_latency("CreateTaskPushNotificationConfig", elapsed);
             }
@@ -90,7 +130,13 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("GetTaskPushNotificationConfig");
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant(
+                "GetTaskPushNotificationConfig",
+                headers,
+                params.tenant.as_deref(),
+            )
+            .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -120,7 +166,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 self.metrics
-                    .on_error("GetTaskPushNotificationConfig", &e.to_string());
+                    .on_error("GetTaskPushNotificationConfig", e.metric_label());
                 self.metrics
                     .on_latency("GetTaskPushNotificationConfig", elapsed);
             }
@@ -142,7 +188,9 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("ListTaskPushNotificationConfigs");
 
-        let tenant_owned = tenant.unwrap_or_default().to_owned();
+        let tenant_owned = self
+            .resolve_tenant("ListTaskPushNotificationConfigs", headers, tenant)
+            .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope(tenant_owned, async {
                 let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
@@ -162,7 +210,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 self.metrics
-                    .on_error("ListTaskPushNotificationConfigs", &e.to_string());
+                    .on_error("ListTaskPushNotificationConfigs", e.metric_label());
                 self.metrics
                     .on_latency("ListTaskPushNotificationConfigs", elapsed);
             }
@@ -183,7 +231,13 @@ impl RequestHandler {
         let start = Instant::now();
         self.metrics.on_request("DeleteTaskPushNotificationConfig");
 
-        let tenant = params.tenant.clone().unwrap_or_default();
+        let tenant = self
+            .resolve_tenant(
+                "DeleteTaskPushNotificationConfig",
+                headers,
+                params.tenant.as_deref(),
+            )
+            .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -204,7 +258,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 self.metrics
-                    .on_error("DeleteTaskPushNotificationConfig", &e.to_string());
+                    .on_error("DeleteTaskPushNotificationConfig", e.metric_label());
                 self.metrics
                     .on_latency("DeleteTaskPushNotificationConfig", elapsed);
             }
@@ -297,6 +351,132 @@ mod tests {
             }
             other => panic!("expected InvalidParams for missing taskId, got: {other:?}"),
         }
+    }
+
+    /// The global (total) push-config ceiling is enforced across distinct task
+    /// ids, not just per task — a client cannot grow the store without bound by
+    /// spreading configs over many task ids.
+    #[tokio::test]
+    async fn set_push_config_enforces_global_cap() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default().with_max_total_push_configs(2),
+            )
+            .build()
+            .unwrap();
+
+        // Two creates (distinct tasks) fill the global cap.
+        for i in 0..2 {
+            let cfg = TaskPushNotificationConfig {
+                tenant: None,
+                id: Some(format!("cfg-{i}")),
+                task_id: Some(format!("task-{i}")),
+                url: "https://example.com/webhook".to_owned(),
+                token: None,
+                authentication: None,
+            };
+            handler
+                .on_set_push_config(cfg, None)
+                .await
+                .expect("creates under the global cap should succeed");
+        }
+
+        // The third distinct-task create exceeds the global ceiling.
+        let cfg = TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-x".to_owned()),
+            task_id: Some("task-x".to_owned()),
+            url: "https://example.com/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        };
+        let result = handler.on_set_push_config(cfg, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::Overloaded(_))),
+            "global push-config cap must reject, got {result:?}"
+        );
+    }
+
+    /// Updating an existing config (matching id) is allowed even when the task
+    /// is already at `max_push_configs_per_task` — the per-task cap only blocks
+    /// *new* configs. Pins the `is_update` id-match check.
+    #[tokio::test]
+    async fn set_push_config_update_allowed_at_per_task_cap() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        // Per-task cap of 1: one config fills the task.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default().with_max_push_configs_per_task(1),
+            )
+            .build()
+            .unwrap();
+
+        let make = |url: &str| TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-1".to_owned()),
+            task_id: Some("task-1".to_owned()),
+            url: url.to_owned(),
+            token: None,
+            authentication: None,
+        };
+
+        // First create fills the task to its cap.
+        handler
+            .on_set_push_config(make("https://example.com/a"), None)
+            .await
+            .expect("first create should succeed");
+
+        // Re-setting the SAME id is an update, not a new config → allowed at cap.
+        handler
+            .on_set_push_config(make("https://example.com/b"), None)
+            .await
+            .expect("updating an existing config at the cap must be allowed");
+
+        // A DIFFERENT id would be a new config and must be rejected at the cap.
+        let mut newcfg = make("https://example.com/c");
+        newcfg.id = Some("cfg-2".to_owned());
+        let rejected = handler.on_set_push_config(newcfg, None).await;
+        assert!(
+            matches!(rejected, Err(crate::error::ServerError::InvalidParams(_))),
+            "a new config beyond the per-task cap must be rejected, got {rejected:?}"
+        );
     }
 
     // ── on_get_push_config ───────────────────────────────────────────────────

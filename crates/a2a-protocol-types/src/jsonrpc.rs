@@ -12,7 +12,8 @@
 //! # Key types
 //!
 //! - [`JsonRpcRequest`] — outbound method call.
-//! - [`JsonRpcResponse`] — inbound response (success **or** error, untagged union).
+//! - [`JsonRpcResponse`] — inbound response (success **xor** error; a
+//!   validating deserializer enforces JSON-RPC 2.0 §5's exactly-one rule).
 //! - [`JsonRpcError`] — structured error object carried in error responses.
 //! - [`JsonRpcVersion`] — newtype that always serializes/deserializes as `"2.0"`.
 
@@ -232,18 +233,67 @@ impl JsonRpcRequest {
 /// A JSON-RPC 2.0 response: either a success with a `result` or an error with
 /// an `error` object.
 ///
-/// The `untagged` representation tries `Success` first; if `result` is absent
-/// it falls back to `Error`.
-///
 /// Deliberately **not** `#[non_exhaustive]`: JSON-RPC 2.0 fixes a response to
 /// exactly these two shapes, so consumers may match them exhaustively.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// # Deserialization
+///
+/// Deserialization is hand-written rather than `#[serde(untagged)]`, and it
+/// enforces JSON-RPC 2.0 §5: a response object must carry **exactly one** of
+/// `result` or `error`. A message with both — or neither — is rejected. (A
+/// naïve untagged union tries `Success` first and would silently read a
+/// malformed `result`+`error` message as a success, discarding the error.)
+/// When `result` is present but fails to typecheck as `T`, the underlying
+/// type error is surfaced verbatim instead of an opaque "did not match any
+/// variant" message.
+///
+/// Serialization keeps the untagged shape (the bare success/error object, no
+/// enum tag), matching the JSON-RPC wire format.
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum JsonRpcResponse<T> {
     /// Successful response carrying a typed result.
     Success(JsonRpcSuccessResponse<T>),
     /// Error response carrying a structured error object.
     Error(JsonRpcErrorResponse),
+}
+
+impl<'de, T> Deserialize<'de> for JsonRpcResponse<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error as _;
+
+        // Buffer the whole response so presence of `result`/`error` can be
+        // inspected before committing to a variant.
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let obj = value
+            .as_object()
+            .ok_or_else(|| D::Error::custom("JSON-RPC response must be a JSON object"))?;
+        let has_result = obj.contains_key("result");
+        let has_error = obj.contains_key("error");
+
+        match (has_result, has_error) {
+            (true, false) => serde_json::from_value(value)
+                .map(Self::Success)
+                // Propagate the real `result` typing error (e.g. "result.id:
+                // invalid type") rather than swallowing it.
+                .map_err(D::Error::custom),
+            (false, true) => serde_json::from_value(value)
+                .map(Self::Error)
+                .map_err(D::Error::custom),
+            (true, true) => Err(D::Error::custom(
+                "JSON-RPC 2.0 response carries both `result` and `error`; §5 requires exactly one",
+            )),
+            (false, false) => Err(D::Error::custom(
+                "JSON-RPC 2.0 response carries neither `result` nor `error`; §5 requires exactly one",
+            )),
+        }
+    }
 }
 
 // ── JsonRpcSuccessResponse ────────────────────────────────────────────────────
@@ -409,6 +459,69 @@ mod tests {
         let json = serde_json::to_string(&resp).expect("serialize");
         assert!(json.contains("\"error\""));
         assert!(json.contains("-32601"));
+    }
+
+    #[test]
+    fn response_deserializes_success_from_wire() {
+        let wire = r#"{"jsonrpc":"2.0","id":1,"result":{"status":"ok"}}"#;
+        let resp: JsonRpcResponse<serde_json::Value> =
+            serde_json::from_str(wire).expect("valid success");
+        assert!(matches!(resp, JsonRpcResponse::Success(_)));
+    }
+
+    #[test]
+    fn response_deserializes_error_from_wire() {
+        let wire = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"nope"}}"#;
+        let resp: JsonRpcResponse<serde_json::Value> =
+            serde_json::from_str(wire).expect("valid error");
+        assert!(matches!(resp, JsonRpcResponse::Error(_)));
+    }
+
+    /// JSON-RPC 2.0 §5: a response carrying BOTH `result` and `error` is
+    /// malformed and must be rejected — never silently read as a success that
+    /// drops the error.
+    #[test]
+    fn response_with_both_result_and_error_is_rejected() {
+        let wire =
+            r#"{"jsonrpc":"2.0","id":1,"result":{"x":1},"error":{"code":-32000,"message":"boom"}}"#;
+        let result: Result<JsonRpcResponse<serde_json::Value>, _> = serde_json::from_str(wire);
+        assert!(
+            result.is_err(),
+            "a both-present response must be rejected, got {result:?}"
+        );
+    }
+
+    /// A response carrying neither `result` nor `error` is likewise malformed.
+    #[test]
+    fn response_with_neither_result_nor_error_is_rejected() {
+        let wire = r#"{"jsonrpc":"2.0","id":1}"#;
+        let result: Result<JsonRpcResponse<serde_json::Value>, _> = serde_json::from_str(wire);
+        assert!(
+            result.is_err(),
+            "a neither-present response must be rejected"
+        );
+    }
+
+    /// When `result` is present but does not typecheck as `T`, the real type
+    /// error is surfaced — not an opaque "did not match any variant" message.
+    #[test]
+    fn response_propagates_real_result_type_error() {
+        // T = String, but the wire `result` is a number.
+        let wire = r#"{"jsonrpc":"2.0","id":1,"result":123}"#;
+        let err = serde_json::from_str::<JsonRpcResponse<String>>(wire)
+            .expect_err("wrong result type must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("invalid type") || msg.contains("string"),
+            "error should name the real cause, got: {msg}"
+        );
+    }
+
+    /// A non-object top-level response is rejected with a clear message.
+    #[test]
+    fn response_non_object_is_rejected() {
+        let result: Result<JsonRpcResponse<serde_json::Value>, _> = serde_json::from_str("[1,2,3]");
+        assert!(result.is_err(), "a non-object response must be rejected");
     }
 
     #[test]

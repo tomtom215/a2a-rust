@@ -8,6 +8,7 @@
 pub mod event_queue;
 pub mod sse;
 
+pub(crate) use event_queue::QueueLease;
 pub use event_queue::{
     EventQueueManager, EventQueueReader, EventQueueWriter, InMemoryQueueReader,
     InMemoryQueueWriter, DEFAULT_MAX_EVENT_SIZE, DEFAULT_QUEUE_CAPACITY,

@@ -58,6 +58,26 @@ pub trait PushConfigStore: Send + Sync + 'static {
         task_id: &'a str,
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    /// Returns the total number of stored configs the handler should count
+    /// against its global ceiling, or `None` if this backend does not report a
+    /// count (in which case only the per-task cap is enforced).
+    ///
+    /// Implementations that can answer cheaply (an in-memory size, a SQL
+    /// `COUNT(*)`) return `Some(n)` so the handler can bound total growth
+    /// uniformly — without it, configs spread across unboundedly many task ids
+    /// grow a SQL-backed store without limit. Tenant-scoped stores report the
+    /// count for the current tenant, yielding a per-tenant ceiling.
+    ///
+    /// The default returns `None` so existing custom implementations keep
+    /// compiling and behave exactly as before.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the operation fails.
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 
 /// Default maximum number of push notification configs allowed per task.
@@ -240,6 +260,10 @@ impl PushConfigStore for InMemoryPushConfigStore {
             drop(store);
             Ok(())
         })
+    }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move { Ok(Some(self.configs.read().await.len())) })
     }
 }
 

@@ -68,7 +68,7 @@ impl RequestHandler {
             }
             Err(e) => {
                 self.metrics
-                    .on_error("GetExtendedAgentCard", &e.to_string());
+                    .on_error("GetExtendedAgentCard", e.metric_label());
                 self.metrics.on_latency("GetExtendedAgentCard", elapsed);
             }
         }

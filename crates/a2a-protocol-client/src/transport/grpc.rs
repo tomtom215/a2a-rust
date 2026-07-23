@@ -218,16 +218,19 @@ impl GrpcTransport {
         message: T,
         extra_headers: &HashMap<String, String>,
         with_deadline: bool,
-    ) -> tonic::Request<T> {
+    ) -> ClientResult<tonic::Request<T>> {
         let mut req = tonic::Request::new(message);
         if with_deadline {
             req.set_timeout(self.inner.config.timeout);
         }
-        Self::add_metadata(&mut req, extra_headers);
-        req
+        Self::add_metadata(&mut req, extra_headers)?;
+        Ok(req)
     }
 
-    fn add_metadata<T>(req: &mut tonic::Request<T>, extra_headers: &HashMap<String, String>) {
+    fn add_metadata<T>(
+        req: &mut tonic::Request<T>,
+        extra_headers: &HashMap<String, String>,
+    ) -> ClientResult<()> {
         let md = req.metadata_mut();
         md.insert(
             "a2a-version",
@@ -236,13 +239,23 @@ impl GrpcTransport {
                 .unwrap_or_else(|_| tonic::metadata::MetadataValue::from_static("")),
         );
         for (k, v) in extra_headers {
-            if let (Ok(key), Ok(val)) = (
-                k.parse::<tonic::metadata::MetadataKey<_>>(),
-                v.parse::<tonic::metadata::MetadataValue<_>>(),
-            ) {
-                md.insert(key, val);
-            }
+            // Fail closed on an unparseable header rather than silently dropping
+            // it: a key/value that tonic rejects (e.g. a non-ASCII byte in a
+            // bearer token, an underscore in the name) must not let the RPC
+            // proceed *unauthenticated*. The HTTP transports fail closed on the
+            // same input. The value is never included in the error — it may be
+            // a credential.
+            let key = k.parse::<tonic::metadata::MetadataKey<_>>().map_err(|e| {
+                ClientError::Transport(format!("invalid gRPC metadata key {k:?}: {e}"))
+            })?;
+            let val = v
+                .parse::<tonic::metadata::MetadataValue<_>>()
+                .map_err(|_| {
+                    ClientError::Transport(format!("invalid gRPC metadata value for key {k:?}"))
+                })?;
+            md.insert(key, val);
         }
+        Ok(())
     }
 
     fn parse_params<T: serde::de::DeserializeOwned>(params: serde_json::Value) -> ClientResult<T> {
@@ -266,6 +279,15 @@ impl GrpcTransport {
             tonic::Code::Unavailable => {
                 ClientError::HttpClient(format!("gRPC unavailable: {}", status.message()))
             }
+            // ResourceExhausted is the gRPC analog of HTTP 429 (rate limited /
+            // over quota): a transient, retryable condition. Mapping it through
+            // the wildcard would make it a non-retryable `Protocol(InvalidParams)`,
+            // the opposite of how the HTTP transports treat 429.
+            tonic::Code::ResourceExhausted => ClientError::UnexpectedStatus {
+                status: 429,
+                body: status.message().to_owned(),
+                retry_after: None,
+            },
             _ => {
                 let a2a = a2a_protocol_types::A2aError::new(
                     grpc_code_to_error_code(status.code()),
@@ -318,7 +340,7 @@ impl GrpcTransport {
                 let p: a2a_protocol_types::params::MessageSendParams = Self::parse_params(params)?;
                 let req = apb::SendMessageRequest::try_from(p).map_err(convert_error)?;
                 let resp = client
-                    .send_message(self.request(req, extra_headers, true))
+                    .send_message(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::responses::SendMessageResponse =
@@ -329,7 +351,7 @@ impl GrpcTransport {
                 let p: a2a_protocol_types::params::TaskQueryParams = Self::parse_params(params)?;
                 let req = apb::GetTaskRequest::try_from(p).map_err(convert_error)?;
                 let resp = client
-                    .get_task(self.request(req, extra_headers, true))
+                    .get_task(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::task::Task =
@@ -340,7 +362,7 @@ impl GrpcTransport {
                 let p: a2a_protocol_types::params::ListTasksParams = Self::parse_params(params)?;
                 let req = apb::ListTasksRequest::try_from(p).map_err(convert_error)?;
                 let resp = client
-                    .list_tasks(self.request(req, extra_headers, true))
+                    .list_tasks(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::responses::TaskListResponse =
@@ -351,7 +373,7 @@ impl GrpcTransport {
                 let p: a2a_protocol_types::params::CancelTaskParams = Self::parse_params(params)?;
                 let req = apb::CancelTaskRequest::try_from(p).map_err(convert_error)?;
                 let resp = client
-                    .cancel_task(self.request(req, extra_headers, true))
+                    .cancel_task(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::task::Task =
@@ -363,7 +385,7 @@ impl GrpcTransport {
                     Self::parse_params(params)?;
                 let req = apb::TaskPushNotificationConfig::from(p);
                 let resp = client
-                    .create_task_push_notification_config(self.request(req, extra_headers, true))
+                    .create_task_push_notification_config(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::push::TaskPushNotificationConfig =
@@ -375,7 +397,7 @@ impl GrpcTransport {
                     Self::parse_params(params)?;
                 let req = apb::GetTaskPushNotificationConfigRequest::from(p);
                 let resp = client
-                    .get_task_push_notification_config(self.request(req, extra_headers, true))
+                    .get_task_push_notification_config(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::push::TaskPushNotificationConfig =
@@ -388,7 +410,7 @@ impl GrpcTransport {
                 let req = apb::ListTaskPushNotificationConfigsRequest::try_from(p)
                     .map_err(convert_error)?;
                 let resp = client
-                    .list_task_push_notification_configs(self.request(req, extra_headers, true))
+                    .list_task_push_notification_configs(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::responses::ListPushConfigsResponse =
@@ -400,7 +422,7 @@ impl GrpcTransport {
                     Self::parse_params(params)?;
                 let req = apb::DeleteTaskPushNotificationConfigRequest::from(p);
                 client
-                    .delete_task_push_notification_config(self.request(req, extra_headers, true))
+                    .delete_task_push_notification_config(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 Ok(serde_json::json!({}))
@@ -416,7 +438,7 @@ impl GrpcTransport {
                     Self::parse_params(params)?;
                 let req = apb::GetExtendedAgentCardRequest::from(p);
                 let resp = client
-                    .get_extended_agent_card(self.request(req, extra_headers, true))
+                    .get_extended_agent_card(self.request(req, extra_headers, true)?)
                     .await
                     .map_err(|s| Self::status_to_error(&s))?;
                 let domain: a2a_protocol_types::agent_card::AgentCard =
@@ -452,7 +474,7 @@ impl GrpcTransport {
                     client
                         // Streams outlive the unary deadline; only the
                         // connect phase is bounded by the outer timeout.
-                        .send_streaming_message(self.request(req, extra_headers, false))
+                        .send_streaming_message(self.request(req, extra_headers, false)?)
                         .await
                         .map(tonic::Response::into_inner)
                         .map_err(|s| Self::status_to_error(&s))
@@ -461,7 +483,7 @@ impl GrpcTransport {
                     let p: a2a_protocol_types::params::TaskIdParams = Self::parse_params(params)?;
                     let req = apb::SubscribeToTaskRequest::from(p);
                     client
-                        .subscribe_to_task(self.request(req, extra_headers, false))
+                        .subscribe_to_task(self.request(req, extra_headers, false)?)
                         .await
                         .map(tonic::Response::into_inner)
                         .map_err(|s| Self::status_to_error(&s))
@@ -564,14 +586,11 @@ async fn grpc_stream_reader_task<S>(
                 }
             }
             Some(Err(status)) => {
-                // Use proper error code mapping instead of generic Transport
-                // error, so callers can distinguish protocol errors from
-                // transport issues and retry logic works correctly.
-                let a2a = a2a_protocol_types::A2aError::new(
-                    grpc_code_to_error_code(status.code()),
-                    status.message().to_owned(),
-                );
-                let _ = tx.send(Err(ClientError::Protocol(a2a))).await;
+                // Route through `status_to_error` (not the bare code map) so a
+                // mid-stream `Unavailable`/`DeadlineExceeded`/`ResourceExhausted`
+                // keeps its retryable classification, matching unary calls —
+                // the bare map made all of them non-retryable `Protocol` errors.
+                let _ = tx.send(Err(GrpcTransport::status_to_error(&status))).await;
                 break;
             }
             None => break,
@@ -752,7 +771,7 @@ mod tests {
     fn add_metadata_injects_a2a_version() {
         let mut req = tonic::Request::new(());
         let headers = HashMap::new();
-        GrpcTransport::add_metadata(&mut req, &headers);
+        GrpcTransport::add_metadata(&mut req, &headers).expect("valid headers");
         let md = req.metadata();
         let version_value = md
             .get("a2a-version")
@@ -768,9 +787,42 @@ mod tests {
         let mut req = tonic::Request::new(());
         let mut headers = HashMap::new();
         headers.insert("x-custom".to_string(), "value123".to_string());
-        GrpcTransport::add_metadata(&mut req, &headers);
+        GrpcTransport::add_metadata(&mut req, &headers).expect("valid headers");
         let md = req.metadata();
         assert_eq!(md.get("x-custom").unwrap().to_str().unwrap(), "value123",);
+    }
+
+    #[test]
+    fn add_metadata_fails_closed_on_invalid_header() {
+        // A header value with an embedded newline is rejected by tonic; it must
+        // surface as an error, never be silently dropped (which would send the
+        // RPC unauthenticated when the dropped header was `Authorization`).
+        let mut req = tonic::Request::new(());
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer bad\nvalue".to_string());
+        let result = GrpcTransport::add_metadata(&mut req, &headers);
+        assert!(
+            matches!(result, Err(ClientError::Transport(_))),
+            "invalid metadata must fail closed, got: {result:?}"
+        );
+        // The secret value must not leak into the error message.
+        if let Err(ClientError::Transport(msg)) = result {
+            assert!(!msg.contains("Bearer bad"), "value leaked in error: {msg}");
+        }
+    }
+
+    #[test]
+    fn resource_exhausted_maps_to_retryable_429() {
+        let status = tonic::Status::resource_exhausted("slow down");
+        let err = GrpcTransport::status_to_error(&status);
+        assert!(
+            matches!(err, ClientError::UnexpectedStatus { status: 429, .. }),
+            "ResourceExhausted should map to 429, got {err:?}"
+        );
+        assert!(
+            err.is_retryable(),
+            "gRPC ResourceExhausted must be retryable"
+        );
     }
 
     // ── status_to_error match arms ────────────────────────────────────────

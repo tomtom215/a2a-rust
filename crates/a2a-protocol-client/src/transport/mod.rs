@@ -98,6 +98,51 @@ pub(crate) async fn collect_response_limited(
     }
 }
 
+/// Maps a JSON-RPC error (code, message, optional `data`) to an
+/// [`A2aError`](a2a_protocol_types::A2aError), preserving information the old
+/// per-site mapping discarded.
+///
+/// Two things were previously lost at every mapping site:
+///
+/// - **`data`** — the JSON-RPC `error.data` payload (structured diagnostics)
+///   was dropped even though `A2aError` can carry it.
+/// - **The numeric code** — [`ErrorCode`](a2a_protocol_types::ErrorCode) is a
+///   closed enum, so any implementation-defined code (JSON-RPC reserves
+///   `-32000..=-32099` for server errors; A2A assigns only a subset) collapsed
+///   to `InternalError`, and the original number was unrecoverable.
+///
+/// Known codes map through directly (carrying `data` when present). An unknown
+/// code maps to `InternalError` but the original code — and any `data` — is
+/// preserved under the error's `data` field as
+/// `{"originalCode": <n>, "data": <original>}` so nothing is silently lost.
+pub(crate) fn map_jsonrpc_error(
+    code: i32,
+    message: impl Into<String>,
+    data: Option<serde_json::Value>,
+) -> a2a_protocol_types::A2aError {
+    use a2a_protocol_types::{A2aError, ErrorCode};
+
+    let message = message.into();
+    match ErrorCode::try_from(code) {
+        Ok(known) => match data {
+            Some(d) => A2aError::with_data(known, message, d),
+            None => A2aError::new(known, message),
+        },
+        Err(unknown) => {
+            let mut payload = serde_json::Map::new();
+            payload.insert("originalCode".into(), serde_json::Value::from(unknown));
+            if let Some(d) = data {
+                payload.insert("data".into(), d);
+            }
+            A2aError::with_data(
+                ErrorCode::InternalError,
+                message,
+                serde_json::Value::Object(payload),
+            )
+        }
+    }
+}
+
 /// Truncates a response body for inclusion in error messages.
 ///
 /// Uses a char-boundary-safe truncation to avoid panics on multi-byte UTF-8.

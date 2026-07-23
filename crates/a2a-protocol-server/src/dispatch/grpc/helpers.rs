@@ -65,6 +65,12 @@ pub(super) fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload,
 /// Per Section 5.4, each A2A error type maps to a specific gRPC status code.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     use a2a_protocol_types::ErrorCode;
+    // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
+    // gRPC RESOURCE_EXHAUSTED status (the retryable overload signal), so
+    // special-case them before the code-based mapping.
+    if let ServerError::Overloaded(msg) = err {
+        return Status::new(tonic::Code::ResourceExhausted, msg.clone());
+    }
     let a2a_err = err.to_a2a_error();
     let code = match a2a_err.code {
         ErrorCode::TaskNotFound => tonic::Code::NotFound,

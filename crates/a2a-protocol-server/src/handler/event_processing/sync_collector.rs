@@ -142,6 +142,20 @@ impl RequestHandler {
                     if let Some(existing) =
                         artifacts.iter_mut().find(|a| a.id == update.artifact.id)
                     {
+                        // Bound cumulative per-artifact growth (see the matching
+                        // guard in the background processor): reject an append
+                        // that would push this artifact past the cap.
+                        if super::append_exceeds_parts_cap(
+                            existing.parts.len(),
+                            update.artifact.parts.len(),
+                            self.limits.max_parts_per_artifact,
+                        ) {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "dropping artifact append: would exceed max_parts_per_artifact"
+                            );
+                            return Ok(());
+                        }
                         // Snapshot before mutation for revert on save failure.
                         let prev_parts_len = existing.parts.len();
                         let prev_metadata = existing.metadata.clone();

@@ -22,9 +22,20 @@
 //! would hold the reader Mutex for the entire stream duration, preventing any
 //! subsequent non-streaming request from proceeding.
 //!
-//! FIX(C3): Extra headers (including auth interceptor headers) are passed via
-//! the initial HTTP upgrade request during WebSocket connection establishment,
-//! as well as embedded in JSON-RPC request metadata where supported.
+//! # Authentication and per-request headers
+//!
+//! Headers (including those an [`AuthInterceptor`](crate::AuthInterceptor)
+//! produces) are applied to the HTTP upgrade request **only at connection
+//! establishment**, via [`WebSocketTransport::connect_with_options`]. A
+//! persistent WebSocket carries JSON-RPC text frames with no per-frame HTTP
+//! header channel, so headers supplied *per request* by the client's
+//! interceptor chain cannot be attached to individual frames and are **not
+//! sent** over an established connection (a dropped set is logged at `warn`).
+//!
+//! The practical consequence: provide credentials at connect time. A token
+//! that rotates mid-connection is not picked up — reconnect to present the new
+//! credential. This is a deliberate limitation of the WebSocket binding, which
+//! is not part of the canonical A2A transport set (JSON-RPC, REST, gRPC).
 //!
 //! # Feature gate
 //!
@@ -149,12 +160,21 @@ impl WebSocketTransport {
             .into_client_request()
             .map_err(|e| ClientError::Transport(format!("WebSocket request build failed: {e}")))?;
         for (k, v) in extra_headers {
-            if let (Ok(name), Ok(val)) = (
-                k.parse::<tokio_tungstenite::tungstenite::http::HeaderName>(),
-                v.parse::<tokio_tungstenite::tungstenite::http::HeaderValue>(),
-            ) {
-                ws_request.headers_mut().insert(name, val);
-            }
+            // Fail closed on an unparseable header rather than silently dropping
+            // it: a rejected `Authorization` header must not let the handshake
+            // proceed unauthenticated. The value is never echoed in the error —
+            // it may be a credential.
+            let name = k
+                .parse::<tokio_tungstenite::tungstenite::http::HeaderName>()
+                .map_err(|e| {
+                    ClientError::Transport(format!("invalid WebSocket header name {k:?}: {e}"))
+                })?;
+            let val = v
+                .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
+                .map_err(|_| {
+                    ClientError::Transport(format!("invalid WebSocket header value for {k:?}"))
+                })?;
+            ws_request.headers_mut().insert(name, val);
         }
 
         let (ws_stream, _resp) = tokio_tungstenite::connect_async(ws_request)
@@ -259,8 +279,9 @@ impl WebSocketTransport {
         &self,
         method: &str,
         params: serde_json::Value,
-        _extra_headers: &HashMap<String, String>,
+        extra_headers: &HashMap<String, String>,
     ) -> ClientResult<serde_json::Value> {
+        warn_dropped_per_request_headers(method, extra_headers);
         trace_info!(method, endpoint = %self.inner.endpoint, "sending WebSocket JSON-RPC request");
 
         let rpc_req = build_rpc_request(method, params);
@@ -309,10 +330,10 @@ impl WebSocketTransport {
                     code = err.error.code,
                     "JSON-RPC error over WebSocket"
                 );
-                let a2a = a2a_protocol_types::A2aError::new(
-                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                let a2a = crate::transport::map_jsonrpc_error(
+                    err.error.code,
                     err.error.message,
+                    err.error.data,
                 );
                 Err(ClientError::Protocol(a2a))
             }
@@ -324,8 +345,9 @@ impl WebSocketTransport {
         &self,
         method: &str,
         params: serde_json::Value,
-        _extra_headers: &HashMap<String, String>,
+        extra_headers: &HashMap<String, String>,
     ) -> ClientResult<EventStream> {
+        warn_dropped_per_request_headers(method, extra_headers);
         trace_info!(method, endpoint = %self.inner.endpoint, "opening WebSocket stream");
 
         let rpc_req = build_rpc_request(method, params);
@@ -350,7 +372,11 @@ impl WebSocketTransport {
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
-        Ok(EventStream::new(rx))
+        // Bound establishment: unlike the HTTP streaming paths, the WebSocket
+        // transport otherwise returns a stream with no timeout at all, so a
+        // server that accepts the socket but never answers this request would
+        // hang the consumer forever. The bound is lifted after the first frame.
+        Ok(EventStream::new(rx).with_first_event_timeout(self.inner.request_timeout))
     }
 }
 
@@ -382,6 +408,26 @@ impl std::fmt::Debug for WebSocketTransport {
     }
 }
 
+/// Warns (once per call) when the client's interceptor chain produced
+/// per-request headers that the WebSocket binding cannot deliver on an
+/// established connection. Silently dropping an `Authorization` header would
+/// send the request unauthenticated with no signal; this makes the drop
+/// observable. See the module docs for the rationale and the connect-time
+/// alternative.
+// `method` is consumed only by `trace_warn!`, which expands to nothing when the
+// `tracing` feature is off — allow it to be unused in that build.
+#[cfg_attr(not(feature = "tracing"), allow(unused_variables))]
+fn warn_dropped_per_request_headers(method: &str, extra_headers: &HashMap<String, String>) {
+    if !extra_headers.is_empty() {
+        trace_warn!(
+            method,
+            header_count = extra_headers.len(),
+            "per-request headers are not sent over an established WebSocket connection; \
+             supply credentials at connect time via WebSocketTransport::connect_with_options"
+        );
+    }
+}
+
 // ── Frame routing ────────────────────────────────────────────────────────────
 
 /// Routes an incoming WebSocket text frame to the correct pending request.
@@ -390,45 +436,55 @@ impl std::fmt::Debug for WebSocketTransport {
 /// pending request in the shared map.
 async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text: &str) {
     // Try to extract the JSON-RPC ID to route the response.
-    let frame_id = extract_jsonrpc_id(text);
-
-    let mut map = pending.lock().await;
-
-    let request_id = if let Some(ref id) = frame_id {
-        id.clone()
-    } else {
-        // If we can't extract an ID, this might be a notification or malformed frame.
-        // Try to deliver to any pending streaming request (best effort).
+    let Some(request_id) = extract_jsonrpc_id(text) else {
+        // If we can't extract an ID, this might be a notification or malformed
+        // frame. Nothing to route.
         return;
     };
 
-    if let Some(entry) = map.get(&request_id) {
-        match entry {
-            PendingRequest::Unary(_) => {
-                // Remove and deliver the response.
+    // Decide how to deliver while holding the lock only briefly. For a
+    // streaming request, clone the sender and DROP the guard before the
+    // awaiting `send`: the broadcast channel is bounded, so a consumer that
+    // stopped polling would otherwise fill it and block the reader task *while
+    // it holds the pending-map mutex* — wedging the entire transport, including
+    // unary timeout cleanup (FIX(C2), re-fixed). Unary delivery is a
+    // non-blocking `oneshot::send`, so it stays under the lock.
+    let streaming_tx = {
+        let mut map = pending.lock().await;
+        let tx = match map.get(&request_id) {
+            Some(PendingRequest::Unary(_)) => {
                 if let Some(PendingRequest::Unary(tx)) = map.remove(&request_id) {
                     let _ = tx.send(Ok(text.to_owned()));
                 }
+                return;
             }
-            PendingRequest::Streaming(tx) => {
-                // Wrap as SSE data line for the existing EventStream SSE parser.
-                let sse_line = format!("data: {text}\n\n");
-                if tx
-                    .send(Ok(hyper::body::Bytes::from(sse_line)))
-                    .await
-                    .is_err()
-                {
-                    // Consumer dropped — remove the pending entry.
-                    map.remove(&request_id);
-                    return;
-                }
+            Some(PendingRequest::Streaming(tx)) => tx.clone(),
+            None => return,
+        };
+        drop(map);
+        tx
+    };
 
-                // Check if this is the final response (terminal state).
-                if is_stream_terminal(text) {
-                    map.remove(&request_id);
-                }
-            }
-        }
+    // Guard released. Wrap as an SSE data line for the existing EventStream SSE
+    // parser and deliver; a slow/stalled consumer blocks only this send now.
+    let sse_line = format!("data: {text}\n\n");
+    if streaming_tx
+        .send(Ok(hyper::body::Bytes::from(sse_line)))
+        .await
+        .is_err()
+    {
+        // Consumer dropped — remove the pending entry.
+        pending.lock().await.remove(&request_id);
+        return;
+    }
+
+    // Remove the entry once the stream reaches a terminal state, so a completed
+    // stream does not leak a pending-map entry + sender for the life of the
+    // connection (FIX(C3): terminal detection now recognizes the canonical
+    // `TASK_STATE_*` wire strings, which never matched the old lowercase-only
+    // check).
+    if is_stream_terminal(text) {
+        pending.lock().await.remove(&request_id);
     }
 }
 
@@ -444,11 +500,26 @@ fn extract_jsonrpc_id(text: &str) -> Option<String> {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/// Returns `true` if a serialized task-state string is terminal.
+///
+/// Routes the string through the domain [`TaskState`](a2a_protocol_types::TaskState)
+/// deserializer — which accepts both the canonical `ProtoJSON`
+/// `SCREAMING_SNAKE_CASE` wire form (`"TASK_STATE_COMPLETED"`) and the legacy
+/// lowercase aliases — and consults its own terminal-state definition. The
+/// previous hand-rolled `matches!` only listed the lowercase forms, so it never
+/// fired against a canonical A2A server and leaked one pending-map entry per
+/// completed stream.
+fn task_state_str_is_terminal(state: &str) -> bool {
+    serde_json::from_value::<a2a_protocol_types::TaskState>(serde_json::Value::String(
+        state.to_owned(),
+    ))
+    .is_ok_and(a2a_protocol_types::TaskState::is_terminal)
+}
+
 /// Checks whether a JSON-RPC frame represents a terminal streaming event.
 ///
 /// A stream is terminal when the result contains a status update with a
-/// terminal task state (`completed`, `failed`, `canceled`, `rejected`),
-/// or when the frame is a `stream_complete` sentinel.
+/// terminal task state, or when the frame is a `stream_complete` sentinel.
 ///
 /// Uses structural JSON inspection rather than fragile string matching
 /// to avoid false positives from payload content containing those words.
@@ -464,14 +535,14 @@ fn is_stream_terminal(text: &str) -> bool {
         if let Some(status_update) = obj.get("statusUpdate") {
             if let Some(status) = status_update.get("status") {
                 if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                    return matches!(state, "completed" | "failed" | "canceled" | "rejected");
+                    return task_state_str_is_terminal(state);
                 }
             }
         }
         // Check for terminal status in a full task response
         if let Some(status) = obj.get("status") {
             if let Some(state) = status.get("state").and_then(|s| s.as_str()) {
-                return matches!(state, "completed" | "failed" | "canceled" | "rejected");
+                return task_state_str_is_terminal(state);
             }
         }
         false
@@ -629,6 +700,42 @@ mod tests {
         assert!(!is_stream_terminal(frame));
     }
 
+    /// Regression (FIX(C3)): canonical `TASK_STATE_*` wire strings — what every
+    /// spec-conformant A2A server actually emits — must be detected as terminal.
+    /// The old lowercase-only `matches!` never fired against them, leaking a
+    /// pending-map entry per completed stream.
+    #[test]
+    fn is_stream_terminal_canonical_screaming_snake_case() {
+        for state in [
+            "TASK_STATE_COMPLETED",
+            "TASK_STATE_FAILED",
+            "TASK_STATE_CANCELED",
+            "TASK_STATE_REJECTED",
+        ] {
+            let frame = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","result":{{"statusUpdate":{{"status":{{"state":"{state}"}}}}}}}}"#
+            );
+            assert!(
+                is_stream_terminal(&frame),
+                "canonical terminal state {state} not detected"
+            );
+        }
+    }
+
+    /// Non-terminal canonical states must NOT be treated as terminal.
+    #[test]
+    fn is_stream_terminal_canonical_non_terminal() {
+        for state in ["TASK_STATE_WORKING", "TASK_STATE_SUBMITTED", "working"] {
+            let frame = format!(
+                r#"{{"jsonrpc":"2.0","id":"1","result":{{"status":{{"state":"{state}"}}}}}}"#
+            );
+            assert!(
+                !is_stream_terminal(&frame),
+                "non-terminal state {state} wrongly detected as terminal"
+            );
+        }
+    }
+
     #[test]
     fn validate_ws_url_rejects_https() {
         assert!(validate_ws_url("https://example.com").is_err());
@@ -706,5 +813,56 @@ mod tests {
             transport.inner.pending.lock().await.is_empty(),
             "pending map must not retain timed-out requests"
         );
+    }
+
+    /// The dropped-header warning is a security-observability guarantee: an
+    /// `Authorization` (or any) per-request header that the WebSocket binding
+    /// cannot deliver on an established connection must NOT be dropped silently.
+    /// Capture tracing output to prove a warning fires when — and only when —
+    /// there are headers to drop.
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn warn_dropped_per_request_headers_warns_iff_headers_present() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        /// Minimal subscriber that just counts emitted events.
+        struct CountingSubscriber(Arc<AtomicUsize>);
+        impl tracing::Subscriber for CountingSubscriber {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+            fn event(&self, _: &tracing::Event<'_>) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+            fn enter(&self, _: &tracing::span::Id) {}
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+
+        let count = Arc::new(AtomicUsize::new(0));
+        tracing::subscriber::with_default(CountingSubscriber(Arc::clone(&count)), || {
+            // No headers to drop → no warning.
+            warn_dropped_per_request_headers("SendMessage", &HashMap::new());
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                0,
+                "must not warn when there are no per-request headers to drop"
+            );
+
+            // A dropped header → exactly one warning, so the drop is observable.
+            let mut headers = HashMap::new();
+            headers.insert("authorization".to_owned(), "Bearer secret".to_owned());
+            warn_dropped_per_request_headers("SendMessage", &headers);
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                1,
+                "dropping a per-request header must emit a warning (never silent)"
+            );
+        });
     }
 }

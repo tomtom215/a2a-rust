@@ -175,6 +175,12 @@ pub struct AgentCard {
     ///
     /// Convenience field that typically matches the URL of the first
     /// entry in `supported_interfaces`.
+    ///
+    /// The canonical `lf.a2a.v1` protobuf `AgentCard` has no dedicated `url`
+    /// field, so a card round-tripped through the gRPC binding derives `url`
+    /// from the first supported interface. If you set `url` to something other
+    /// than `supported_interfaces[0].url`, that difference is not preserved over
+    /// gRPC. It is preserved over the JSON-RPC/REST bindings.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
 

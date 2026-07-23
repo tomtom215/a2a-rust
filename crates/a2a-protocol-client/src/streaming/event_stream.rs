@@ -76,6 +76,16 @@ pub struct EventStream {
     /// - `false`: each `data:` field is a bare `StreamResponse` (REST binding,
     ///   per A2A spec Section 11.7).
     jsonrpc_envelope: bool,
+    /// Optional bound on the wait for the **first** chunk of stream data.
+    ///
+    /// Guards against a server that accepts the stream connection but never
+    /// sends anything (notably the WebSocket transport, which otherwise returns
+    /// a stream with no establishment timeout of any kind). Once the first chunk
+    /// arrives the bound is lifted, so legitimately long-idle subscriptions are
+    /// not cut off mid-stream.
+    first_event_timeout: Option<std::time::Duration>,
+    /// Whether at least one chunk has been received (clears `first_event_timeout`).
+    first_chunk_received: bool,
 }
 
 impl EventStream {
@@ -94,6 +104,8 @@ impl EventStream {
             abort_handle: None,
             status_code: 200,
             jsonrpc_envelope: true,
+            first_event_timeout: None,
+            first_chunk_received: false,
         }
     }
 
@@ -114,6 +126,8 @@ impl EventStream {
             abort_handle: Some(abort_handle),
             status_code: 200,
             jsonrpc_envelope: true,
+            first_event_timeout: None,
+            first_chunk_received: false,
         }
     }
 
@@ -132,6 +146,8 @@ impl EventStream {
             abort_handle: Some(abort_handle),
             status_code,
             jsonrpc_envelope: true,
+            first_event_timeout: None,
+            first_chunk_received: false,
         }
     }
 
@@ -142,6 +158,22 @@ impl EventStream {
     #[must_use]
     pub(crate) const fn with_jsonrpc_envelope(mut self, envelope: bool) -> Self {
         self.jsonrpc_envelope = envelope;
+        self
+    }
+
+    /// Bounds the wait for the first chunk of stream data.
+    ///
+    /// If no data arrives within `timeout`, [`EventStream::next`] yields a
+    /// [`ClientError::Timeout`] instead of blocking forever. The bound applies
+    /// only to establishment — once any data is received, subsequent waits are
+    /// unbounded so long-idle subscriptions are not interrupted.
+    ///
+    /// Currently wired by the WebSocket transport, which otherwise has no
+    /// establishment timeout at all.
+    #[must_use]
+    #[cfg(any(test, feature = "websocket"))]
+    pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.first_event_timeout = Some(timeout);
         self
     }
 
@@ -177,7 +209,22 @@ impl EventStream {
             }
 
             // Need more bytes — wait for the next chunk from the body reader.
-            match self.rx.recv().await {
+            // Until the first chunk arrives, bound the wait by
+            // `first_event_timeout` (if set) so a server that accepts the
+            // stream but never responds cannot hang the consumer forever.
+            let chunk = match self.first_event_timeout {
+                Some(timeout) if !self.first_chunk_received => {
+                    let Ok(chunk) = tokio::time::timeout(timeout, self.rx.recv()).await else {
+                        self.done = true;
+                        return Some(Err(ClientError::Timeout(
+                            "stream produced no data before the first-event timeout".into(),
+                        )));
+                    };
+                    chunk
+                }
+                _ => self.rx.recv().await,
+            };
+            match chunk {
                 None => {
                     // Channel closed — body reader task exited.
                     self.done = true;
@@ -197,6 +244,7 @@ impl EventStream {
                     return Some(Err(e));
                 }
                 Some(Ok(bytes)) => {
+                    self.first_chunk_received = true;
                     self.parser.feed(&bytes);
                 }
             }
@@ -220,10 +268,10 @@ impl EventStream {
                 }
                 JsonRpcResponse::Error(err) => {
                     self.done = true;
-                    let a2a = a2a_protocol_types::A2aError::new(
-                        a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                            .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
+                    let a2a = crate::transport::map_jsonrpc_error(
+                        err.error.code,
                         err.error.message,
+                        err.error.data,
                     );
                     Err(ClientError::Protocol(a2a))
                 }
@@ -545,6 +593,56 @@ mod tests {
         let task = tokio::spawn(async { tokio::time::sleep(Duration::from_secs(60)).await });
         let stream = EventStream::with_status(rx, task.abort_handle(), 201);
         assert_eq!(stream.status_code(), 201);
+    }
+
+    /// A stream that never produces a first chunk must fail with `Timeout`
+    /// rather than hang forever (the WebSocket-establishment hazard).
+    #[tokio::test]
+    async fn first_event_timeout_fires_when_no_data_arrives() {
+        // Keep `tx` alive so the channel does not close; simply never send.
+        let (_tx, rx) = mpsc::channel::<BodyChunk>(8);
+        let mut stream = EventStream::new(rx).with_first_event_timeout(Duration::from_millis(50));
+        // Outer bound so that if the first-event timeout is ever broken (the
+        // guard never fires), this test fails fast instead of hanging forever.
+        let result = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .expect("first-event timeout must fire well within 2s");
+        assert!(
+            matches!(result, Some(Err(ClientError::Timeout(_)))),
+            "expected first-event timeout, got {result:?}"
+        );
+        // After timing out the stream is done.
+        let done = tokio::time::timeout(Duration::from_secs(2), stream.next())
+            .await
+            .expect("a completed stream must return promptly");
+        assert!(done.is_none());
+    }
+
+    /// Once the first chunk arrives, the first-event timeout no longer applies:
+    /// a subsequent long gap does not spuriously terminate the stream.
+    #[tokio::test]
+    async fn first_event_timeout_lifted_after_first_chunk() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::new(rx)
+            .with_jsonrpc_envelope(false)
+            .with_first_event_timeout(Duration::from_millis(50));
+        // Deliver one complete (non-terminal) event, then hold the channel open.
+        let event = make_status_event(TaskState::Working, false);
+        tx.send(Ok(Bytes::from(bare_sse_frame(&event))))
+            .await
+            .unwrap();
+        let first = stream.next().await;
+        assert!(
+            matches!(first, Some(Ok(_))),
+            "first event should parse, got {first:?}"
+        );
+        // The bound is lifted; a wait longer than the first-event timeout must
+        // NOT produce a timeout. Confirm next() is still pending after 120ms.
+        let pending = tokio::time::timeout(Duration::from_millis(120), stream.next()).await;
+        assert!(
+            pending.is_err(),
+            "stream must remain open (pending) after first chunk, got {pending:?}"
+        );
     }
 
     /// Test transport error propagation (covers lines 148-149, 165-168).

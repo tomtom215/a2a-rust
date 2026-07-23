@@ -42,6 +42,11 @@ pub enum ClientError {
         status: u16,
         /// The response body (truncated if large).
         body: String,
+        /// Server-requested retry delay parsed from a `Retry-After` header
+        /// (delta-seconds), when present on a `429`/`503`. The retry layer
+        /// honors this in preference to its own computed backoff so the client
+        /// does not hammer a server that explicitly asked it to wait.
+        retry_after: Option<std::time::Duration>,
     },
 
     /// The agent requires authentication for this task.
@@ -70,7 +75,7 @@ impl fmt::Display for ClientError {
             Self::Protocol(e) => write!(f, "protocol error: {e}"),
             Self::Transport(msg) => write!(f, "transport error: {msg}"),
             Self::InvalidEndpoint(msg) => write!(f, "invalid endpoint: {msg}"),
-            Self::UnexpectedStatus { status, body } => {
+            Self::UnexpectedStatus { status, body, .. } => {
                 write!(f, "unexpected HTTP status {status}: {body}")
             }
             Self::AuthRequired { task_id } => {
@@ -96,6 +101,33 @@ impl std::error::Error for ClientError {
             _ => None,
         }
     }
+}
+
+impl ClientError {
+    /// Server-requested retry delay, if this error carries one (a `Retry-After`
+    /// header on a `429`/`503`). The retry layer prefers this over its computed
+    /// backoff.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<std::time::Duration> {
+        match self {
+            Self::UnexpectedStatus { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
+}
+
+/// Parses a `Retry-After` header value into a delay.
+///
+/// Supports the delta-seconds form (`Retry-After: 120`). The HTTP-date form is
+/// not parsed (it would require a date-parsing dependency); such headers yield
+/// `None` and the client falls back to its computed backoff.
+#[must_use]
+pub(crate) fn parse_retry_after(headers: &hyper::HeaderMap) -> Option<std::time::Duration> {
+    let raw = headers.get(hyper::header::RETRY_AFTER)?.to_str().ok()?;
+    let secs: u64 = raw.trim().parse().ok()?;
+    // Clamp to a sane ceiling so a hostile/misconfigured header can't park a
+    // retry for an absurd duration.
+    Some(std::time::Duration::from_secs(secs.min(3600)))
 }
 
 impl From<A2aError> for ClientError {
@@ -153,6 +185,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 404,
             body: "Not Found".into(),
+            retry_after: None,
         };
         assert!(e.to_string().contains("404"));
     }
@@ -263,6 +296,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 500,
             body: "Internal Server Error".into(),
+            retry_after: None,
         };
         let s = e.to_string();
         assert!(s.contains("500"), "missing status code: {s}");
@@ -281,6 +315,7 @@ mod tests {
             ClientError::UnexpectedStatus {
                 status: 404,
                 body: String::new(),
+                retry_after: None,
             },
             ClientError::AuthRequired {
                 task_id: TaskId::new("t"),
@@ -375,22 +410,26 @@ mod tests {
         assert!(ClientError::Timeout("deadline".into()).is_retryable());
         assert!(ClientError::UnexpectedStatus {
             status: 429,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(ClientError::UnexpectedStatus {
             status: 502,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(ClientError::UnexpectedStatus {
             status: 503,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(ClientError::UnexpectedStatus {
             status: 504,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
 
@@ -399,17 +438,20 @@ mod tests {
         assert!(!ClientError::InvalidEndpoint("bad url".into()).is_retryable());
         assert!(!ClientError::UnexpectedStatus {
             status: 400,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(!ClientError::UnexpectedStatus {
             status: 401,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(!ClientError::UnexpectedStatus {
             status: 404,
-            body: String::new()
+            body: String::new(),
+            retry_after: None,
         }
         .is_retryable());
         assert!(!ClientError::ProtocolBindingMismatch("wrong".into()).is_retryable());

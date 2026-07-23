@@ -187,6 +187,9 @@ const fn server_error_status(err: &crate::error::ServerError) -> u16 {
         ServerError::InvalidStateTransition { .. } | ServerError::TaskNotCancelable(_) => 409,
         ServerError::PushNotSupported => 501,
         ServerError::PayloadTooLarge(_) => 413,
+        // Transient resource-limit rejection → 503 Service Unavailable, the
+        // retryable overload status, rather than a generic 500.
+        ServerError::Overloaded(_) => 503,
         _ => 500,
     }
 }
@@ -605,6 +608,17 @@ mod tests {
         assert_eq!(
             server_error_status(&ServerError::PayloadTooLarge("big".into())),
             413
+        );
+    }
+
+    #[test]
+    fn server_error_status_overloaded() {
+        use crate::error::ServerError;
+        // A transient overload maps to 503 (retryable), NOT the generic 500 that
+        // deleting this arm would fall through to.
+        assert_eq!(
+            server_error_status(&ServerError::Overloaded("at capacity".into())),
+            503
         );
     }
 

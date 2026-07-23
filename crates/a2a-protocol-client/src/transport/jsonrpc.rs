@@ -222,7 +222,13 @@ impl JsonRpcTransport {
 
         let (request_id, req) = self.build_request(method, params, extra_headers, false)?;
 
-        let resp = tokio::time::timeout(self.inner.request_timeout, self.inner.client.request(req))
+        // Single deadline across header fetch AND body read, so `request_timeout`
+        // is a true per-call budget rather than being applied twice (headers,
+        // then body) — which previously let a slow server hold the call for up
+        // to 2× the configured timeout.
+        let deadline = tokio::time::Instant::now() + self.inner.request_timeout;
+
+        let resp = tokio::time::timeout_at(deadline, self.inner.client.request(req))
             .await
             .map_err(|_| {
                 trace_error!(method, "request timed out");
@@ -236,19 +242,21 @@ impl JsonRpcTransport {
         let status = resp.status();
         trace_debug!(method, %status, "received response");
 
-        let body_bytes = match super::collect_response_limited(
-            resp,
-            self.inner.max_response_size,
-            self.inner.request_timeout,
-        )
-        .await
-        {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                trace_error!(method, error = %e, "response body read failed");
-                return Err(e);
-            }
-        };
+        // Capture Retry-After before the response is consumed, so the retry
+        // layer can honor a rate-limiter's requested delay.
+        let retry_after = crate::error::parse_retry_after(resp.headers());
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let body_bytes =
+            match super::collect_response_limited(resp, self.inner.max_response_size, remaining)
+                .await
+            {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    trace_error!(method, error = %e, "response body read failed");
+                    return Err(e);
+                }
+            };
 
         if !status.is_success() {
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -256,6 +264,7 @@ impl JsonRpcTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
+                retry_after,
             });
         }
 
@@ -299,11 +308,8 @@ impl JsonRpcTransport {
                     );
                 }
                 trace_warn!(method, code = err.error.code, "JSON-RPC error response");
-                let a2a = a2a_protocol_types::A2aError::new(
-                    a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                        .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
-                    err.error.message,
-                );
+                let a2a =
+                    super::map_jsonrpc_error(err.error.code, err.error.message, err.error.data);
                 Err(ClientError::Protocol(a2a))
             }
         }
@@ -345,6 +351,7 @@ impl JsonRpcTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
+                retry_after: None,
             });
         }
 
@@ -463,7 +470,7 @@ fn response_id_matches(
 /// carries: a JSON-RPC error envelope becomes [`ClientError::Protocol`]
 /// (preserving the original code), anything else becomes
 /// [`ClientError::Transport`].
-fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> ClientError {
+pub(crate) fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> ClientError {
     if let Ok(JsonRpcResponse::Error(err)) =
         serde_json::from_slice::<JsonRpcResponse<serde_json::Value>>(body_bytes)
     {
@@ -471,11 +478,7 @@ fn non_sse_stream_response_error(content_type: &str, body_bytes: &[u8]) -> Clien
             code = err.error.code,
             "JSON-RPC error response to streaming request"
         );
-        let a2a = a2a_protocol_types::A2aError::new(
-            a2a_protocol_types::ErrorCode::try_from(err.error.code)
-                .unwrap_or(a2a_protocol_types::ErrorCode::InternalError),
-            err.error.message,
-        );
+        let a2a = super::map_jsonrpc_error(err.error.code, err.error.message, err.error.data);
         return ClientError::Protocol(a2a);
     }
     let body_str = String::from_utf8_lossy(body_bytes);
@@ -492,6 +495,17 @@ fn validate_url(url: &str) -> ClientResult<()> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(ClientError::InvalidEndpoint(format!(
             "URL must start with http:// or https://: {url}"
+        )));
+    }
+    // Fail fast in a plaintext-only build: an `https://` endpoint would
+    // otherwise be accepted here and only fail later, per-request, with an
+    // opaque "scheme is not http" connector error. HTTPS requires the
+    // (default) `tls-rustls` feature.
+    #[cfg(not(feature = "tls-rustls"))]
+    if url.starts_with("https://") {
+        return Err(ClientError::InvalidEndpoint(format!(
+            "https:// requires the `tls-rustls` feature (enabled by default); \
+             this build has it disabled: {url}"
         )));
     }
     Ok(())
@@ -558,9 +572,20 @@ mod tests {
         assert!(validate_url("http://localhost:8080").is_ok());
     }
 
+    #[cfg(feature = "tls-rustls")]
     #[test]
     fn validate_url_accepts_https() {
         assert!(validate_url("https://agent.example.com/a2a").is_ok());
+    }
+
+    #[cfg(not(feature = "tls-rustls"))]
+    #[test]
+    fn validate_url_rejects_https_without_tls_feature() {
+        let err = validate_url("https://agent.example.com/a2a").unwrap_err();
+        assert!(
+            err.to_string().contains("tls-rustls"),
+            "error should point at the tls-rustls feature, got: {err}"
+        );
     }
 
     #[test]

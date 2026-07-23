@@ -112,10 +112,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.5", features = ["websocket"] }
+a2a-protocol-server = { version = "0.6", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.5", features = ["websocket"] }
+a2a-protocol-client = { version = "0.6", features = ["websocket"] }
 ```
 
 ### Server
@@ -158,14 +158,14 @@ let client = ClientBuilder::new("ws://agent.example.com:3002")
 
 ## gRPC
 
-The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. JSON payloads are carried inside protobuf `bytes` fields, reusing all existing serde types — no duplicate type definitions.
+The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. As of 0.7 it is **protobuf-native**: the transport speaks the canonical `lf.a2a.v1.A2AService` service with fully-typed messages generated from the A2A specification's protobuf schema, making it wire-compatible with the official Go, Python, and Java SDKs. (Through 0.6 it tunneled JSON inside a protobuf `bytes` field on a non-standard service; that tunnel was removed in 0.7. Servers can still serve 0.6 clients alongside the canonical service via the `grpc-legacy-json` feature.)
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.5", features = ["grpc"] }
+a2a-protocol-server = { version = "0.6", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.5", features = ["grpc"] }
+a2a-protocol-client = { version = "0.6", features = ["grpc"] }
 ```
 
 ### Server
@@ -196,10 +196,10 @@ let client = ClientBuilder::new("http://agent.example.com:50051")
 
 ### Protocol
 
-- All 11 A2A methods are mapped to gRPC RPCs
+- All 11 A2A methods are mapped to gRPC RPCs on the canonical `lf.a2a.v1.A2AService`
 - Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming
-- JSON payloads are wrapped in `JsonPayload { bytes data = 1 }` protobuf messages
-- The proto definition is at `proto/a2a.proto`
+- Messages are the fully-typed `lf.a2a.v1` protobuf types, converted to/from the serde domain types via a bidirectional `TryFrom` layer (ProtoJSON semantics)
+- The canonical schema lives at `proto/a2a_v1/a2a.proto`, kept byte-identical to the specification copy
 
 ### When to Use gRPC
 

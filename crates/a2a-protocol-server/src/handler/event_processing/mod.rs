@@ -11,3 +11,29 @@
 
 mod background;
 mod sync_collector;
+
+/// Returns `true` if appending `new_parts` more parts to an artifact that
+/// already holds `existing_parts` would push it past `max` — the per-artifact
+/// parts cap.
+///
+/// Shared by both append paths (sync `collect_events` and the background
+/// streaming processor) so the bound is computed identically in one place.
+pub const fn append_exceeds_parts_cap(existing_parts: usize, new_parts: usize, max: usize) -> bool {
+    existing_parts + new_parts > max
+}
+
+#[cfg(test)]
+mod cap_tests {
+    use super::append_exceeds_parts_cap;
+
+    /// The cap is inclusive: a total exactly at `max` is allowed, one over is
+    /// rejected. Pinning both sides catches every mutation of the sum and the
+    /// comparison (`+`→`-`/`*`, `>`→`<`/`==`/`>=`).
+    #[test]
+    fn append_cap_is_inclusive_at_the_limit() {
+        // 3 existing + 2 new == 5 == max: allowed (not over).
+        assert!(!append_exceeds_parts_cap(3, 2, 5));
+        // 3 existing + 2 new == 5 > 4 == max: rejected.
+        assert!(append_exceeds_parts_cap(3, 2, 4));
+    }
+}

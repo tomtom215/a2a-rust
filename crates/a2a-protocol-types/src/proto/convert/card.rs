@@ -509,7 +509,11 @@ impl TryFrom<AgentCard> for pb::AgentCard {
                 .collect(),
             provider: value.provider.map(Into::into),
             version: value.version,
-            documentation_url: value.documentation_url,
+            // Filter empties on the way out too, so the proto→domain filter
+            // (which maps `Some("")` → `None`) makes the round-trip idempotent
+            // rather than silently dropping an empty string only in one
+            // direction.
+            documentation_url: value.documentation_url.filter(|s| !s.is_empty()),
             capabilities: Some(value.capabilities.try_into()?),
             security_schemes: match value.security_schemes {
                 None => HashMap::new(),
@@ -536,7 +540,7 @@ impl TryFrom<AgentCard> for pb::AgentCard {
                 .into_iter()
                 .map(TryInto::try_into)
                 .collect::<Result<_, _>>()?,
-            icon_url: value.icon_url,
+            icon_url: value.icon_url.filter(|s| !s.is_empty()),
         })
     }
 }

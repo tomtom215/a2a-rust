@@ -111,6 +111,8 @@ jobs:
         run: cargo test --workspace --features tracing
       - name: Test (tls-rustls feature)
         run: cargo test -p a2a-protocol-client --features tls-rustls
+      - name: Test (tls-rustls feature, server — live-TLS push E2E)
+        run: cargo test -p a2a-protocol-server --features tls-rustls
       - name: Test (sqlite feature)
         run: cargo test -p a2a-protocol-server --features sqlite
       - name: Test (postgres feature)

@@ -20,6 +20,39 @@ use super::{
 };
 use crate::metrics::Metrics;
 
+// ── QueueLease ───────────────────────────────────────────────────────────────
+
+/// Outcome of leasing a writer for a task via
+/// [`EventQueueManager::lease`].
+///
+/// Unlike the `(_, Option<reader>)` shape of [`EventQueueManager::get_or_create`]
+/// — where a `None` reader ambiguously means *either* "queue already exists"
+/// *or* "concurrency limit reached" — this distinguishes the three cases the
+/// send path must handle differently, so a capacity rejection is never mistaken
+/// for an existing queue (which orphaned the task and returned a misleading
+/// internal error).
+// A transient return value destructured immediately by the caller; boxing the
+// `Created` payload to equalize variant sizes would add an allocation on the
+// hot send path for no benefit.
+#[allow(clippy::large_enum_variant)]
+pub enum QueueLease {
+    /// A new queue was created; the caller owns the first reader (and the
+    /// persistence receiver, when persistence was requested).
+    Created {
+        writer: Arc<InMemoryQueueWriter>,
+        reader: InMemoryQueueReader,
+        persistence_rx: Option<tokio::sync::mpsc::Receiver<A2aResult<StreamResponse>>>,
+    },
+    /// A queue already existed for this task. The send path treats this as a
+    /// concurrent/leaked-executor condition and rejects, so no writer/reader is
+    /// handed back — carrying them would only invite a second executor to write
+    /// to the shared queue without a persistence channel.
+    Existing,
+    /// The `max_concurrent_queues` limit was reached and no queue was created.
+    /// No slot was consumed and nothing was inserted into the map.
+    CapacityExhausted,
+}
+
 // ── EventQueueManager ────────────────────────────────────────────────────────
 
 /// Manages event queues for active tasks.
@@ -228,6 +261,86 @@ impl EventQueueManager {
         result
     }
 
+    /// Leases a writer for a task, distinguishing *created*, *already-existing*,
+    /// and *capacity-exhausted* explicitly (see [`QueueLease`]).
+    ///
+    /// `with_persistence` requests the dedicated persistence channel used by the
+    /// background event processor; it is only populated on the `Created` path.
+    ///
+    /// This is the entry point the send path uses so that hitting
+    /// `max_concurrent_queues` returns a clean [`QueueLease::CapacityExhausted`]
+    /// — the caller can then reject with a proper overload error *before*
+    /// committing any side effects — instead of being indistinguishable from an
+    /// existing queue.
+    #[allow(clippy::option_if_let_else)]
+    pub(crate) async fn lease(&self, task_id: &TaskId, with_persistence: bool) -> QueueLease {
+        let mut map = self.writers.write().await;
+        let lease = if map.contains_key(task_id) {
+            QueueLease::Existing
+        } else if self
+            .max_concurrent_queues
+            .is_some_and(|max| map.len() >= max)
+        {
+            QueueLease::CapacityExhausted
+        } else if with_persistence {
+            let (writer, reader, persistence_rx) = new_in_memory_queue_with_persistence(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
+            let writer = Arc::new(writer);
+            map.insert(task_id.clone(), Arc::clone(&writer));
+            QueueLease::Created {
+                writer,
+                reader,
+                persistence_rx: Some(persistence_rx),
+            }
+        } else {
+            let (writer, reader) = new_in_memory_queue_with_options(
+                self.capacity,
+                self.max_event_size,
+                self.write_timeout,
+            );
+            let writer = Arc::new(writer);
+            map.insert(task_id.clone(), Arc::clone(&writer));
+            QueueLease::Created {
+                writer,
+                reader,
+                persistence_rx: None,
+            }
+        };
+        let queue_count = map.len();
+        drop(map);
+        if let Some(ref metrics) = self.metrics {
+            metrics.on_queue_depth_change(queue_count);
+        }
+        lease
+    }
+
+    /// Returns a writer to drive a task's cancellation events **without**
+    /// registering a queue.
+    ///
+    /// If a live queue exists (an in-flight streaming task), its writer is
+    /// returned so the cancel event reaches current subscribers. Otherwise a
+    /// fresh, unregistered writer is returned: the executor has already exited,
+    /// so its events have nowhere to go, and registering one here would leak a
+    /// map entry (and consume a concurrency slot) that nothing ever removes —
+    /// which is exactly what `get_or_create` did on the cancel path.
+    pub(crate) async fn writer_for_cancel(&self, task_id: &TaskId) -> Arc<InMemoryQueueWriter> {
+        {
+            let map = self.writers.read().await;
+            if let Some(writer) = map.get(task_id) {
+                return Arc::clone(writer);
+            }
+        }
+        let (writer, _reader) = new_in_memory_queue_with_options(
+            self.capacity,
+            self.max_event_size,
+            self.write_timeout,
+        );
+        Arc::new(writer)
+    }
+
     /// Creates a new reader for an existing task's event queue.
     ///
     /// Returns `None` if no queue exists for the given task. The returned
@@ -280,6 +393,22 @@ impl EventQueueManager {
         map.len()
     }
 
+    /// Returns `true` if an event queue is currently registered for `task_id`.
+    ///
+    /// Used by the cancellation-token sweep to avoid evicting the token of a
+    /// task whose executor is still live (a long-running task older than
+    /// `max_token_age`), which would otherwise make that task uncancelable.
+    pub(crate) async fn has_queue(&self, task_id: &TaskId) -> bool {
+        self.writers.read().await.contains_key(task_id)
+    }
+
+    /// Returns the configured maximum number of concurrent event queues, if a
+    /// limit is set (`None` means unbounded).
+    #[must_use]
+    pub(crate) const fn max_concurrent_queues(&self) -> Option<usize> {
+        self.max_concurrent_queues
+    }
+
     /// Removes all event queues, causing all readers to see EOF.
     pub async fn destroy_all(&self) {
         let mut map = self.writers.write().await;
@@ -309,6 +438,19 @@ mod tests {
     }
 
     // ── EventQueueManager ────────────────────────────────────────────────
+
+    #[test]
+    fn max_concurrent_queues_reports_configured_limit() {
+        // Unbounded by default.
+        assert_eq!(EventQueueManager::new().max_concurrent_queues(), None);
+        // Reflects the configured cap exactly — not None, 0, or 1.
+        assert_eq!(
+            EventQueueManager::new()
+                .with_max_concurrent_queues(42)
+                .max_concurrent_queues(),
+            Some(42)
+        );
+    }
 
     #[tokio::test]
     async fn manager_get_or_create_new_task() {
@@ -423,6 +565,29 @@ mod tests {
             0,
             "destroy_all should clear all queues"
         );
+    }
+
+    #[tokio::test]
+    async fn lease_reports_existing_and_has_queue() {
+        let manager = EventQueueManager::new();
+        let task = TaskId::new("t-lease");
+
+        // First lease creates the queue.
+        assert!(matches!(
+            manager.lease(&task, true).await,
+            QueueLease::Created { .. }
+        ));
+        assert!(manager.has_queue(&task).await, "queue should now be live");
+
+        // A second lease for the same task reports Existing — the send path
+        // treats this as a concurrent/leaked-executor condition and rejects.
+        assert!(matches!(
+            manager.lease(&task, true).await,
+            QueueLease::Existing
+        ));
+
+        // An unrelated task has no queue.
+        assert!(!manager.has_queue(&TaskId::new("other")).await);
     }
 
     #[tokio::test]

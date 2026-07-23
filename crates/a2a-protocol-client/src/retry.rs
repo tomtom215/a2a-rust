@@ -123,6 +123,62 @@ impl ClientError {
     }
 }
 
+// ── Idempotency classification ───────────────────────────────────────────────
+
+/// Returns `true` if re-sending `method` after an ambiguous failure is safe —
+/// i.e. the method is read-only or naturally idempotent, so a duplicate
+/// delivery has no additional side effect.
+///
+/// Non-idempotent methods (`SendMessage`, `SendStreamingMessage`,
+/// `CreateTaskPushNotificationConfig`) create or advance server-side state, and
+/// the A2A spec does not mandate server-side deduplication, so a blind re-send
+/// can double-execute real work. Any unrecognized method is treated as
+/// non-idempotent (fail safe).
+fn is_idempotent_method(method: &str) -> bool {
+    matches!(
+        method,
+        "GetTask"
+            | "ListTasks"
+            | "CancelTask"
+            | "SubscribeToTask"
+            | "GetExtendedAgentCard"
+            | "GetTaskPushNotificationConfig"
+            | "ListTaskPushNotificationConfigs"
+            | "DeleteTaskPushNotificationConfig"
+    )
+}
+
+/// Returns `true` if a retryable `error` is safe to retry even for a
+/// **non-idempotent** method — that is, the error proves the server rejected
+/// the request *without processing it*, so re-sending cannot duplicate work.
+///
+/// Only `429 Too Many Requests` and `503 Service Unavailable` qualify: both
+/// signal the request was refused up front. `Timeout`, connection errors, and
+/// `502`/`504` (a gateway may already have forwarded the request to a backend
+/// that processed it) are all ambiguous and are therefore *not* retried for
+/// non-idempotent methods.
+const fn safe_to_retry_non_idempotent(error: &ClientError) -> bool {
+    matches!(
+        error,
+        ClientError::UnexpectedStatus {
+            status: 429 | 503,
+            ..
+        }
+    )
+}
+
+/// Computes the delay before the next retry: the server's `Retry-After` (from
+/// the previous error), clamped to `max_backoff`, else the jittered backoff.
+fn retry_delay(
+    last_err: Option<&ClientError>,
+    backoff: Duration,
+    max_backoff: Duration,
+) -> Duration {
+    last_err
+        .and_then(ClientError::retry_after)
+        .map_or_else(|| jittered(backoff), |after| after.min(max_backoff))
+}
+
 // ── RetryTransport ───────────────────────────────────────────────────────────
 
 /// A [`Transport`] wrapper that retries transient failures with exponential
@@ -147,8 +203,9 @@ impl Transport for RetryTransport {
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
         Box::pin(async move {
-            let mut last_err = None;
+            let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
+            let idempotent = is_idempotent_method(method);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -156,9 +213,9 @@ impl Transport for RetryTransport {
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    let jittered_backoff = jittered(backoff);
-                    trace_info!(method, attempt, ?jittered_backoff, "retrying after backoff");
-                    tokio::time::sleep(jittered_backoff).await;
+                    let delay = retry_delay(last_err.as_ref(), backoff, self.policy.max_backoff);
+                    trace_info!(method, attempt, ?delay, "retrying after backoff");
+                    tokio::time::sleep(delay).await;
                     backoff = cap_backoff(
                         backoff,
                         self.policy.backoff_multiplier,
@@ -175,7 +232,15 @@ impl Transport for RetryTransport {
                     .await
                 {
                     Ok(result) => return Ok(result),
-                    Err(e) if e.is_retryable() => {
+                    // Retry only when the error is transient AND either the
+                    // method is idempotent or the failure proves the request
+                    // was rejected without being processed (429/503). This
+                    // prevents silently re-sending a non-idempotent SendMessage
+                    // whose outcome is ambiguous (a timeout the server may have
+                    // already processed).
+                    Err(e)
+                        if e.is_retryable() && (idempotent || safe_to_retry_non_idempotent(&e)) =>
+                    {
                         trace_warn!(method, attempt, error = %e, "transient error, will retry");
                         last_err = Some(e);
                     }
@@ -194,8 +259,9 @@ impl Transport for RetryTransport {
         extra_headers: &'a HashMap<String, String>,
     ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
         Box::pin(async move {
-            let mut last_err = None;
+            let mut last_err: Option<ClientError> = None;
             let mut backoff = self.policy.initial_backoff;
+            let idempotent = is_idempotent_method(method);
 
             // FIX(H7): Serialize params to bytes once and deserialize for each attempt,
             // avoiding deep-clone of the serde_json::Value tree on every retry.
@@ -203,14 +269,14 @@ impl Transport for RetryTransport {
 
             for attempt in 0..=self.policy.max_retries {
                 if attempt > 0 {
-                    let jittered_backoff = jittered(backoff);
+                    let delay = retry_delay(last_err.as_ref(), backoff, self.policy.max_backoff);
                     trace_info!(
                         method,
                         attempt,
-                        ?jittered_backoff,
+                        ?delay,
                         "retrying stream connect after backoff"
                     );
-                    tokio::time::sleep(jittered_backoff).await;
+                    tokio::time::sleep(delay).await;
                     backoff = cap_backoff(
                         backoff,
                         self.policy.backoff_multiplier,
@@ -227,7 +293,12 @@ impl Transport for RetryTransport {
                     .await
                 {
                     Ok(stream) => return Ok(stream),
-                    Err(e) if e.is_retryable() => {
+                    // See the unary path: non-idempotent streaming starts
+                    // (SendStreamingMessage) are only retried when the server
+                    // rejected the request up front (429/503).
+                    Err(e)
+                        if e.is_retryable() && (idempotent || safe_to_retry_non_idempotent(&e)) =>
+                    {
                         trace_warn!(method, attempt, error = %e, "transient error, will retry");
                         last_err = Some(e);
                     }
@@ -277,11 +348,12 @@ fn jitter_factor_from_bits(random_bits: u64) -> f64 {
 /// negative value (defensive against pathological factors such as NaN or ∞).
 fn apply_jitter(backoff: Duration, factor: f64) -> Duration {
     let jittered_secs = backoff.as_secs_f64() * factor;
-    if !jittered_secs.is_finite() || jittered_secs < 0.0 {
-        backoff
-    } else {
-        Duration::from_secs_f64(jittered_secs)
-    }
+    // `try_from_secs_f64` rejects NaN/∞/negative *and* finite-but-out-of-range
+    // values (a near-`Duration::MAX` backoff scaled by a factor ≥ 1.0 can round
+    // above `Duration::MAX`), all of which fall back to the unjittered backoff.
+    // Plain `from_secs_f64` would panic on the finite-overflow case — the same
+    // hazard `cap_backoff` documents.
+    Duration::try_from_secs_f64(jittered_secs).unwrap_or(backoff)
 }
 
 /// Applies full jitter to a backoff duration: returns a random duration in
@@ -322,6 +394,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 503,
             body: "Service Unavailable".into(),
+            retry_after: None,
         };
         assert!(e.is_retryable());
     }
@@ -331,6 +404,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 429,
             body: "Too Many Requests".into(),
+            retry_after: None,
         };
         assert!(e.is_retryable());
     }
@@ -340,6 +414,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 404,
             body: "Not Found".into(),
+            retry_after: None,
         };
         assert!(!e.is_retryable());
     }
@@ -379,6 +454,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 502,
             body: "Bad Gateway".into(),
+            retry_after: None,
         };
         assert!(e.is_retryable());
     }
@@ -388,6 +464,7 @@ mod tests {
         let e = ClientError::UnexpectedStatus {
             status: 504,
             body: "Gateway Timeout".into(),
+            retry_after: None,
         };
         assert!(e.is_retryable());
     }
@@ -399,6 +476,7 @@ mod tests {
             let e = ClientError::UnexpectedStatus {
                 status,
                 body: String::new(),
+                retry_after: None,
             };
             assert!(!e.is_retryable(), "status {status} should not be retryable");
         }
@@ -731,7 +809,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok(), "should succeed after retries");
         assert_eq!(
@@ -755,7 +833,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_err(), "should fail after exhausting retries");
         assert_eq!(
@@ -778,7 +856,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_err());
         assert!(matches!(
@@ -805,7 +883,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         // After 1 transient failure, the mock returns a Transport error
         // (non-retryable) on "success" path, but the point is it retried.
@@ -830,7 +908,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         assert!(matches!(
             result.unwrap_err(),
@@ -898,7 +976,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok(), "streaming should succeed after retry");
         assert_eq!(
@@ -921,7 +999,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_err());
         assert_eq!(
@@ -944,7 +1022,7 @@ mod tests {
 
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok());
         assert_eq!(
@@ -972,7 +1050,7 @@ mod tests {
         let start = tokio::time::Instant::now();
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok());
         assert!(
@@ -998,7 +1076,7 @@ mod tests {
         let start = tokio::time::Instant::now();
         let headers = HashMap::new();
         let result = transport
-            .send_request("test", serde_json::Value::Null, &headers)
+            .send_request("GetTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok());
         assert!(
@@ -1048,7 +1126,7 @@ mod tests {
         let start = tokio::time::Instant::now();
         let headers = HashMap::new();
         let result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         assert!(result.is_ok());
         assert!(
@@ -1072,7 +1150,7 @@ mod tests {
         let start = tokio::time::Instant::now();
         let headers = HashMap::new();
         let _result = transport
-            .send_streaming_request("test", serde_json::Value::Null, &headers)
+            .send_streaming_request("SubscribeToTask", serde_json::Value::Null, &headers)
             .await;
         // After 1 transient failure, the mock returns a different error on "success".
         // The important thing is that the retry slept.
@@ -1095,6 +1173,211 @@ mod tests {
             result,
             Duration::ZERO,
             "0 * any = 0, should not clamp to max"
+        );
+    }
+
+    // ── Idempotency gating ────────────────────────────────────────────────
+
+    #[test]
+    fn method_idempotency_classification() {
+        for m in [
+            "GetTask",
+            "ListTasks",
+            "CancelTask",
+            "SubscribeToTask",
+            "GetExtendedAgentCard",
+            "GetTaskPushNotificationConfig",
+            "ListTaskPushNotificationConfigs",
+            "DeleteTaskPushNotificationConfig",
+        ] {
+            assert!(is_idempotent_method(m), "{m} should be idempotent");
+        }
+        for m in [
+            "SendMessage",
+            "SendStreamingMessage",
+            "CreateTaskPushNotificationConfig",
+            "SomethingBrandNew",
+        ] {
+            assert!(!is_idempotent_method(m), "{m} must be non-idempotent");
+        }
+    }
+
+    #[test]
+    fn only_429_503_are_safe_for_non_idempotent() {
+        let mk = |status| ClientError::UnexpectedStatus {
+            status,
+            body: String::new(),
+            retry_after: None,
+        };
+        assert!(safe_to_retry_non_idempotent(&mk(429)));
+        assert!(safe_to_retry_non_idempotent(&mk(503)));
+        // Ambiguous: the server may already have processed the request.
+        assert!(!safe_to_retry_non_idempotent(&mk(502)));
+        assert!(!safe_to_retry_non_idempotent(&mk(504)));
+        assert!(!safe_to_retry_non_idempotent(&ClientError::Timeout(
+            "t".into()
+        )));
+        assert!(!safe_to_retry_non_idempotent(&ClientError::HttpClient(
+            "reset".into()
+        )));
+    }
+
+    /// A non-idempotent method (`SendMessage`) that fails with an ambiguous
+    /// timeout must NOT be re-sent — exactly one attempt.
+    #[tokio::test]
+    async fn non_idempotent_not_retried_on_timeout() {
+        let inner = FailNTransport::new(5, serde_json::json!({"ok": true}));
+        let call_count = Arc::clone(&inner.call_count);
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("SendMessage", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_err());
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "SendMessage must not be re-sent on an ambiguous timeout"
+        );
+    }
+
+    /// A non-idempotent method IS retried when the server rejected it up front
+    /// (503), because that proves the request was not processed.
+    #[tokio::test]
+    async fn non_idempotent_retried_on_503() {
+        /// Fails `n` times with a 503, then succeeds.
+        struct Fail503 {
+            remaining: Arc<AtomicUsize>,
+            calls: Arc<AtomicUsize>,
+        }
+        impl crate::transport::Transport for Fail503 {
+            fn send_request<'a>(
+                &'a self,
+                _m: &'a str,
+                _p: serde_json::Value,
+                _h: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
+            {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                let left = self.remaining.fetch_sub(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if left > 0 {
+                        Err(ClientError::UnexpectedStatus {
+                            status: 503,
+                            body: String::new(),
+                            retry_after: None,
+                        })
+                    } else {
+                        Ok(serde_json::json!({"ok": true}))
+                    }
+                })
+            }
+            fn send_streaming_request<'a>(
+                &'a self,
+                _m: &'a str,
+                _p: serde_json::Value,
+                _h: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+                Box::pin(async { Err(ClientError::Transport("n/a".into())) })
+            }
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let inner = Fail503 {
+            remaining: Arc::new(AtomicUsize::new(1)),
+            calls: Arc::clone(&calls),
+        };
+        let transport = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_retries(3),
+        );
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("SendMessage", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok(), "503 is a safe retry for non-idempotent");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    /// The server's `Retry-After` is honored in preference to computed backoff.
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_header_is_honored() {
+        /// Fails once with a 429 carrying `Retry-After: 20s`, then succeeds.
+        struct RetryAfter429 {
+            calls: Arc<AtomicUsize>,
+        }
+        impl crate::transport::Transport for RetryAfter429 {
+            fn send_request<'a>(
+                &'a self,
+                _m: &'a str,
+                _p: serde_json::Value,
+                _h: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>>
+            {
+                let n = self.calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    if n == 0 {
+                        Err(ClientError::UnexpectedStatus {
+                            status: 429,
+                            body: String::new(),
+                            retry_after: Some(Duration::from_secs(20)),
+                        })
+                    } else {
+                        Ok(serde_json::json!({"ok": true}))
+                    }
+                })
+            }
+            fn send_streaming_request<'a>(
+                &'a self,
+                _m: &'a str,
+                _p: serde_json::Value,
+                _h: &'a HashMap<String, String>,
+            ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
+                Box::pin(async { Err(ClientError::Transport("n/a".into())) })
+            }
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let transport = RetryTransport::new(
+            Box::new(RetryAfter429 {
+                calls: Arc::clone(&calls),
+            }),
+            // Tiny computed backoff, so a delay near 20s can only come from
+            // honoring Retry-After.
+            RetryPolicy::default()
+                .with_initial_backoff(Duration::from_millis(1))
+                .with_max_backoff(Duration::from_secs(30)),
+        );
+        let start = tokio::time::Instant::now();
+        let headers = HashMap::new();
+        let result = transport
+            .send_request("GetTask", serde_json::Value::Null, &headers)
+            .await;
+        assert!(result.is_ok());
+        assert!(
+            start.elapsed() >= Duration::from_secs(20),
+            "should have waited the server-requested 20s, waited {:?}",
+            start.elapsed()
+        );
+    }
+
+    #[test]
+    fn retry_after_clamped_to_max_backoff() {
+        let err = ClientError::UnexpectedStatus {
+            status: 503,
+            body: String::new(),
+            retry_after: Some(Duration::from_secs(9999)),
+        };
+        let delay = retry_delay(Some(&err), Duration::from_secs(1), Duration::from_secs(30));
+        assert_eq!(
+            delay,
+            Duration::from_secs(30),
+            "retry-after must be clamped"
         );
     }
 }

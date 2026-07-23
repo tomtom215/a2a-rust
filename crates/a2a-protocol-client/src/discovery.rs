@@ -244,6 +244,7 @@ async fn fetch_card_with_metadata(
         .map_err(|e| ClientError::HttpClient(e.to_string()))?;
 
     let status = resp.status();
+    let retry_after = crate::error::parse_retry_after(resp.headers());
 
     // 304 Not Modified — return cached card with existing metadata.
     if status == hyper::StatusCode::NOT_MODIFIED {
@@ -318,6 +319,7 @@ async fn fetch_card_with_metadata(
         return Err(ClientError::UnexpectedStatus {
             status: status.as_u16(),
             body: body_str,
+            retry_after,
         });
     }
 
@@ -476,7 +478,7 @@ mod tests {
         let result = fetch_card_with_metadata(&url, None).await;
         assert!(result.is_err());
         match result.unwrap_err() {
-            ClientError::UnexpectedStatus { status, body } => {
+            ClientError::UnexpectedStatus { status, body, .. } => {
                 assert_eq!(status, 404);
                 assert!(body.contains("Not Found"));
             }

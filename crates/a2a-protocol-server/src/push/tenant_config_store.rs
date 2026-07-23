@@ -106,6 +106,17 @@ impl TenantAwareInMemoryPushConfigStore {
         Ok(store)
     }
 
+    /// Returns the store for the current tenant **without** creating one.
+    ///
+    /// Read-only operations (`get`/`list`/`delete`) must not allocate a tenant
+    /// partition: doing so lets an attacker exhaust the `max_tenants` budget (and
+    /// grow memory) by issuing reads for many never-seen tenant names, after
+    /// which legitimate *new* tenants' writes fail with "tenant limit exceeded".
+    async fn get_existing_store(&self) -> Option<Arc<InMemoryPushConfigStore>> {
+        let tenant = TenantContext::current();
+        self.stores.read().await.get(&tenant).map(Arc::clone)
+    }
+
     /// Returns the number of active tenant partitions.
     pub async fn tenant_count(&self) -> usize {
         self.stores.read().await.len()
@@ -131,8 +142,11 @@ impl PushConfigStore for TenantAwareInMemoryPushConfigStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<Option<TaskPushNotificationConfig>>> + Send + 'a>>
     {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.get(task_id, id).await
+            // Read-only: do not allocate a partition for an unseen tenant.
+            match self.get_existing_store().await {
+                Some(store) => store.get(task_id, id).await,
+                None => Ok(None),
+            }
         })
     }
 
@@ -141,8 +155,11 @@ impl PushConfigStore for TenantAwareInMemoryPushConfigStore {
         task_id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<Vec<TaskPushNotificationConfig>>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.list(task_id).await
+            // Read-only: do not allocate a partition for an unseen tenant.
+            match self.get_existing_store().await {
+                Some(store) => store.list(task_id).await,
+                None => Ok(Vec::new()),
+            }
         })
     }
 
@@ -152,8 +169,23 @@ impl PushConfigStore for TenantAwareInMemoryPushConfigStore {
         id: &'a str,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            let store = self.get_store().await?;
-            store.delete(task_id, id).await
+            // Read-only w.r.t. partitions: deleting from an unseen tenant is a
+            // no-op and must not allocate a partition.
+            match self.get_existing_store().await {
+                Some(store) => store.delete(task_id, id).await,
+                None => Ok(()),
+            }
+        })
+    }
+
+    fn count(&self) -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async move {
+            // Per-tenant count (read-only w.r.t. partitions): an unseen tenant
+            // has zero configs and must not allocate a partition.
+            match self.get_existing_store().await {
+                Some(store) => store.count().await,
+                None => Ok(Some(0)),
+            }
         })
     }
 }
