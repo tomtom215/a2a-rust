@@ -202,6 +202,22 @@ pub(crate) fn rfc3339_to_timestamp(
 /// that already parsed is rejected.
 const MAX_STRUCT_DEPTH: usize = 256;
 
+/// Guards one level of recursive descent through nested `Struct`/`Value`
+/// conversion. Rejects input already past [`MAX_STRUCT_DEPTH`] (rather than
+/// overflowing the stack) and otherwise returns the depth to pass to the next
+/// level. Centralising the check and the increment in one place keeps every
+/// recursion site (both conversion directions, struct and list branches) using
+/// the exact same boundary, and makes that boundary directly testable.
+fn check_depth(depth: usize, field: &'static str) -> Result<usize, ConvertError> {
+    if depth > MAX_STRUCT_DEPTH {
+        return Err(ConvertError::new(
+            field,
+            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
+        ));
+    }
+    Ok(depth + 1)
+}
+
 /// Converts a protobuf `Value` into a JSON value.
 ///
 /// Numbers are `f64` in protobuf; integral values inside the exact-`f64`
@@ -222,12 +238,7 @@ fn proto_value_to_json_depth(
     depth: usize,
 ) -> Result<serde_json::Value, ConvertError> {
     use prost_types::value::Kind;
-    if depth > MAX_STRUCT_DEPTH {
-        return Err(ConvertError::new(
-            field,
-            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
-        ));
-    }
+    let depth = check_depth(depth, field)?;
     let Some(kind) = v.kind else {
         return Ok(serde_json::Value::Null);
     };
@@ -236,11 +247,11 @@ fn proto_value_to_json_depth(
         Kind::BoolValue(b) => serde_json::Value::Bool(b),
         Kind::NumberValue(n) => serde_json::Value::Number(f64_to_json_number(n, field)?),
         Kind::StringValue(s) => serde_json::Value::String(s),
-        Kind::StructValue(s) => proto_struct_to_json_depth(s, field, depth + 1)?,
+        Kind::StructValue(s) => proto_struct_to_json_depth(s, field, depth)?,
         Kind::ListValue(l) => serde_json::Value::Array(
             l.values
                 .into_iter()
-                .map(|v| proto_value_to_json_depth(v, field, depth + 1))
+                .map(|v| proto_value_to_json_depth(v, field, depth))
                 .collect::<Result<_, _>>()?,
         ),
     })
@@ -259,15 +270,10 @@ fn proto_struct_to_json_depth(
     field: &'static str,
     depth: usize,
 ) -> Result<serde_json::Value, ConvertError> {
-    if depth > MAX_STRUCT_DEPTH {
-        return Err(ConvertError::new(
-            field,
-            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
-        ));
-    }
+    let depth = check_depth(depth, field)?;
     let mut map = serde_json::Map::with_capacity(s.fields.len());
     for (k, v) in s.fields {
-        map.insert(k, proto_value_to_json_depth(v, field, depth + 1)?);
+        map.insert(k, proto_value_to_json_depth(v, field, depth)?);
     }
     Ok(serde_json::Value::Object(map))
 }
@@ -318,12 +324,7 @@ fn json_to_proto_value_depth(
     depth: usize,
 ) -> Result<prost_types::Value, ConvertError> {
     use prost_types::value::Kind;
-    if depth > MAX_STRUCT_DEPTH {
-        return Err(ConvertError::new(
-            field,
-            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
-        ));
-    }
+    let depth = check_depth(depth, field)?;
     let kind = match v {
         serde_json::Value::Null => Kind::NullValue(0),
         serde_json::Value::Bool(b) => Kind::BoolValue(b),
@@ -332,11 +333,11 @@ fn json_to_proto_value_depth(
         serde_json::Value::Array(items) => Kind::ListValue(prost_types::ListValue {
             values: items
                 .into_iter()
-                .map(|v| json_to_proto_value_depth(v, field, depth + 1))
+                .map(|v| json_to_proto_value_depth(v, field, depth))
                 .collect::<Result<_, _>>()?,
         }),
         serde_json::Value::Object(map) => {
-            Kind::StructValue(json_map_to_proto_struct_depth(map, field, depth + 1)?)
+            Kind::StructValue(json_map_to_proto_struct_depth(map, field, depth)?)
         }
     };
     Ok(prost_types::Value { kind: Some(kind) })
@@ -366,15 +367,10 @@ fn json_map_to_proto_struct_depth(
     field: &'static str,
     depth: usize,
 ) -> Result<prost_types::Struct, ConvertError> {
-    if depth > MAX_STRUCT_DEPTH {
-        return Err(ConvertError::new(
-            field,
-            format!("nested value exceeds maximum depth of {MAX_STRUCT_DEPTH}"),
-        ));
-    }
+    let depth = check_depth(depth, field)?;
     let mut fields = std::collections::BTreeMap::new();
     for (k, v) in map {
-        fields.insert(k, json_to_proto_value_depth(v, field, depth + 1)?);
+        fields.insert(k, json_to_proto_value_depth(v, field, depth)?);
     }
     Ok(prost_types::Struct { fields })
 }
@@ -682,6 +678,52 @@ mod tests {
             v = serde_json::json!({ "n": v });
         }
         let err = json_to_proto_value(v, "m").expect_err("over-deep value must be rejected");
+        assert!(err.reason.contains("maximum depth"), "{}", err.reason);
+    }
+
+    /// The recursion-depth guard accepts input exactly at the limit and rejects
+    /// input one level past it. This pins the boundary shared by every nested
+    /// conversion path (both directions, struct and list branches), so a
+    /// one-off comparison error (`>` weakened to `>=`/`==`/`<`) is caught.
+    #[test]
+    fn check_depth_boundary_is_inclusive() {
+        // Exactly at the limit descends one more level.
+        assert_eq!(
+            check_depth(MAX_STRUCT_DEPTH, "m").expect("at-limit depth is allowed"),
+            MAX_STRUCT_DEPTH + 1
+        );
+        // One past the limit is rejected instead of recursing.
+        let err = check_depth(MAX_STRUCT_DEPTH + 1, "m").expect_err("over-limit is rejected");
+        assert!(err.reason.contains("maximum depth"), "{}", err.reason);
+    }
+
+    /// Each descent advances the depth by exactly one, so the guard counts real
+    /// nesting levels. Catches a mangled increment (`+ 1` turned into `* 1`,
+    /// which would never advance, or `- 1`, which would underflow).
+    #[test]
+    fn check_depth_advances_by_one() {
+        assert_eq!(check_depth(0, "m").unwrap(), 1);
+        assert_eq!(check_depth(1, "m").unwrap(), 2);
+        assert_eq!(check_depth(128, "m").unwrap(), 129);
+    }
+
+    /// The proto→JSON direction must also reject over-deep nesting rather than
+    /// overflow the stack — the guard is shared, but exercise this path too so
+    /// a regression on either side is visible.
+    #[test]
+    fn deeply_nested_proto_value_is_rejected_not_overflowing() {
+        use prost_types::value::Kind;
+        let mut v = prost_types::Value {
+            kind: Some(Kind::NumberValue(1.0)),
+        };
+        for _ in 0..(MAX_STRUCT_DEPTH + 10) {
+            let mut fields = std::collections::BTreeMap::new();
+            fields.insert("n".to_string(), v);
+            v = prost_types::Value {
+                kind: Some(Kind::StructValue(prost_types::Struct { fields })),
+            };
+        }
+        let err = proto_value_to_json(v, "m").expect_err("over-deep proto value must be rejected");
         assert!(err.reason.contains("maximum depth"), "{}", err.reason);
     }
 }
