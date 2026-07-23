@@ -276,6 +276,32 @@ changed shape (0.x breaking — warrants a minor bump).
 
 ### Added (third hardening pass)
 
+- **First-party authentication helpers (client + server)** — the SDK now
+  *acquires* and *verifies* credentials, not just models the schemes and
+  provides interceptor hooks (ADR 0010). Built on the existing `ring`/`hyper`
+  stack — no OAuth-ecosystem dependencies.
+  - `a2a-protocol-client`: a `TokenProvider` trait with `StaticTokenProvider`,
+    a `BearerAuthInterceptor` that injects a fresh token before every request
+    (so a rotating token stays current, including on retries), and
+    `OAuth2ClientCredentials` — the RFC 6749 §4.4 client-credentials grant with
+    token caching, proactive pre-expiry refresh, single-flight concurrent
+    refresh, `Basic`/`Post` client-auth styles, and constructors that read the
+    token endpoint from an agent card's OAuth2 flow or discover it from an OIDC
+    issuer. Client secrets are redacted from `Debug` and never echoed in errors.
+  - `a2a-protocol-server`: `ApiKeyAuthInterceptor` and
+    `BearerTokenAuthInterceptor` (constant-time comparison, no feature flag)
+    and, behind the new `auth-jwt` feature, `JwtAuthInterceptor` — verifies
+    HS256/RS256/ES256, checks `exp`/`nbf`/`iss`/`aud`, and resolves keys from a
+    static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint (TTL-cached,
+    refetched once on a key-id miss to follow rotation) with OIDC discovery.
+    `alg: none` and unlisted algorithms are rejected, and HS256 is only ever
+    checked against a configured secret — never a JWKS public key — so the
+    RS256→HS256 confusion downgrade is structurally impossible. Rejections are
+    generic (no oracle) and map to `InvalidRequest` (HTTP 400). JWT verification
+    is cross-checked against independently-generated (Python) test vectors and
+    a live interceptor→dispatcher→HTTP end-to-end test.
+  - `a2a-protocol-sdk`: re-exports the client/server auth types from the
+    prelude; the `auth-jwt` feature passes through to the server.
 - **`A2A-Extensions` header wired end to end (spec §14.2.2)** — new
   `A2A_EXTENSIONS_HEADER` constant in `a2a-protocol-types`, and every
   server binding now parses the comma-separated extension URIs into

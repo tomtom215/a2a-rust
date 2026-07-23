@@ -38,6 +38,10 @@ grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:to
 a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
+# RFC 6749 §2.3.1 Basic client authentication for the token_provider module.
+# Tiny, zero transitive deps; also already in-tree via the types crate's
+# `signing` feature.
+base64         = "0.22"
 hyper          = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util     = { workspace = true }

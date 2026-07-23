@@ -27,6 +27,7 @@ version = "0.6.0"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "base64",
  "bytes",
  "criterion",
  "futures-util",
@@ -73,6 +74,7 @@ version = "0.6.0"
 dependencies = [
  "a2a-protocol-types",
  "axum",
+ "base64",
  "bytes",
  "criterion",
  "futures-util",
@@ -86,6 +88,7 @@ dependencies = [
  "prost",
  "protoc-bin-vendored",
  "rcgen",
+ "ring",
  "rustls",
  "rustls-pki-types",
  "serde",

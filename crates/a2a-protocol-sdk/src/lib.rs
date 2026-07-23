@@ -76,14 +76,16 @@ pub mod prelude {
 
     // ── Client ───────────────────────────────────────────────────────────
     pub use a2a_protocol_client::{
-        A2aClient, ClientBuilder, ClientError, ClientResult, EventStream, RetryPolicy,
+        A2aClient, BearerAuthInterceptor, ClientBuilder, ClientError, ClientResult, EventStream,
+        OAuth2ClientCredentials, RetryPolicy, StaticTokenProvider, TokenProvider,
     };
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{
-        serve, serve_with_addr, AgentExecutor, Dispatcher, EventEmitter, EventQueueWriter,
-        JsonRpcDispatcher, RateLimitConfig, RateLimitInterceptor, RequestContext, RequestHandler,
-        RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
+        serve, serve_with_addr, AgentExecutor, ApiKeyAuthInterceptor, BearerTokenAuthInterceptor,
+        Dispatcher, EventEmitter, EventQueueWriter, JsonRpcDispatcher, RateLimitConfig,
+        RateLimitInterceptor, RequestContext, RequestHandler, RequestHandlerBuilder,
+        RestDispatcher, ServerError, ServerResult,
     };
 
     // ── Axum integration (feature-gated) ────────────────────────────────
