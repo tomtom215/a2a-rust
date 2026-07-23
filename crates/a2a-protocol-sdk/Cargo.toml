@@ -44,6 +44,11 @@ sqlite = ["a2a-protocol-server/sqlite"]
 postgres = ["a2a-protocol-server/postgres"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["a2a-protocol-server/axum"]
+## Enable JWT bearer-token authentication (server `JwtAuthInterceptor`,
+## HS256/RS256/ES256, static or remote JWKS with OIDC discovery). The
+## header/token interceptors and the client OAuth2 token provider need no
+## feature.
+auth-jwt = ["a2a-protocol-server/auth-jwt"]
 
 [package.metadata.docs.rs]
 all-features = true

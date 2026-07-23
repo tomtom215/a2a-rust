@@ -79,7 +79,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_executor_timeout(Duration)` | None | Timeout for executor completion |
 | `with_event_queue_capacity(usize)` | 256 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
-| `with_max_concurrent_streams(usize)` | Unbounded | Limit concurrent SSE streams |
+| `with_max_concurrent_streams(usize)` | 1,024 | Limit concurrent SSE streams (pass `usize::MAX` to disable) |
 | `with_event_queue_write_timeout(Duration)` | 5 seconds | Prevents executor blocking on slow clients |
 | `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (see [HandlerLimits](#handlerlimits) below) |
 | `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
@@ -100,6 +100,9 @@ The `HandlerLimits` struct configures per-handler bounds:
 | `push_delivery_timeout` | `Duration` | 5 seconds | Timeout for individual push webhook deliveries |
 | `max_artifacts_per_task` | `usize` | 1000 | Maximum artifacts per task (prevents unbounded growth) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
+| `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
+| `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
+| `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
 
 ### Build-Time Validation
 

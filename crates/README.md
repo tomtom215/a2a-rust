@@ -33,7 +33,7 @@ a2a-protocol-sdk            ← umbrella re-export + prelude
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.5"
+a2a-protocol-sdk = "0.7"
 ```
 
 ```rust
@@ -44,21 +44,21 @@ use a2a_protocol_sdk::prelude::*;
 
 ```toml
 [dependencies]
-a2a-protocol-types = "0.5"
+a2a-protocol-types = "0.7"
 ```
 
 **Client only (orchestrators):**
 
 ```toml
 [dependencies]
-a2a-protocol-client = "0.5"
+a2a-protocol-client = "0.7"
 ```
 
 **Server only (agents):**
 
 ```toml
 [dependencies]
-a2a-protocol-server = "0.5"
+a2a-protocol-server = "0.7"
 ```
 
 ## Feature Flags
@@ -68,12 +68,14 @@ Features are defined on individual crates and passed through by the SDK umbrella
 | Feature | Crate(s) | Purpose |
 |---------|----------|---------|
 | `signing` | types, client, server | Agent card signing (JWS/ES256) |
-| `tls-rustls` | client | HTTPS via rustls (default, no OpenSSL) |
+| `tls-rustls` | client, server | HTTPS via rustls, no OpenSSL (default in client/sdk; server variant enables HTTPS push delivery) |
 | `tracing` | client, server | Structured logging (zero-cost when off) |
 | `sqlite` | server | SQLite-backed task and push config stores |
 | `postgres` | server | PostgreSQL-backed stores |
 | `websocket` | client, server | WebSocket transport |
-| `grpc` | client, server | gRPC transport via tonic |
+| `grpc` | client, server | Protobuf-native gRPC (canonical `lf.a2a.v1.A2AService`) via tonic |
+| `grpc-legacy-json` | server | Serves the deprecated pre-0.7 JSON-tunnel gRPC service alongside the canonical one (off by default; removal planned for 0.8) |
+| `proto` | types | Canonical protobuf message types + JSON⇄proto conversion layer (enabled transitively by `grpc`) |
 | `otel` | server | OpenTelemetry OTLP metrics export |
 | `axum` | server | Axum framework integration |
 

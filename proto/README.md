@@ -3,46 +3,52 @@
 
 # Protocol Buffer Definitions
 
-gRPC service definition for the A2A protocol v1.0.
+gRPC service definitions for the A2A protocol v1.0.
 
-## Overview
+## Canonical binding — `a2a_v1/a2a.proto`
 
-The `a2a.proto` file defines the gRPC service interface for all 11 A2A methods. It uses **JSON-encoded payloads over gRPC framing** — the canonical JSON wire format from the A2A spec is preserved, wrapped in a `JsonPayload` message.
+`a2a_v1/a2a.proto` is the **canonical A2A v1.0 protobuf schema**
+(`package lf.a2a.v1`, `service A2AService`): fully-typed messages for all
+11 A2A methods, exactly as published by the specification. This is the
+binding the client speaks and the server serves — it is wire-compatible
+with the official A2A SDKs (Python, JS, Go, Java).
 
-## Service Definition
+Rules for this file:
 
-```
-package a2a.v1;
+- It is **never edited** for codegen convenience. It is kept byte-identical
+  to the specification copy at `docs/implementation/a2a.proto`; the
+  `proto_schema_sync` test in `a2a-protocol-types` enforces this, along
+  with the per-crate copies under `crates/*/proto/a2a_v1/`.
+- Wire compatibility is proven against the official A2A Python SDK
+  (`a2a-sdk`): golden binary fixtures under `tck/fixtures/grpc/` are
+  validated in both directions (prost decodes the official SDK's bytes;
+  the official SDK parses prost-encoded bytes) by the `grpc-wire-compat`
+  CI job.
+- `a2a_v1/google/api/` holds minimal vendored stubs of the googleapis
+  annotation protos the schema imports (Apache-2.0, from
+  github.com/googleapis/googleapis).
 
-service A2aService {
-    // Messaging
-    rpc SendMessage(JsonPayload) returns (JsonPayload);
-    rpc SendStreamingMessage(JsonPayload) returns (stream JsonPayload);
+See ADR 0009 (`docs/adr/0009-protobuf-native-grpc.md`) for the design
+record.
 
-    // Task lifecycle
-    rpc GetTask(JsonPayload) returns (JsonPayload);
-    rpc ListTasks(JsonPayload) returns (JsonPayload);
-    rpc CancelTask(JsonPayload) returns (JsonPayload);
-    rpc SubscribeToTask(JsonPayload) returns (stream JsonPayload);
+## Legacy tunnel — `a2a.proto` (deprecated)
 
-    // Push notifications
-    rpc CreateTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
-    rpc GetTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
-    rpc ListTaskPushNotificationConfigs(JsonPayload) returns (JsonPayload);
-    rpc DeleteTaskPushNotificationConfig(JsonPayload) returns (JsonPayload);
+`a2a.proto` (`package a2a.v1`, `service A2aService`) is the pre-0.7
+JSON-in-`bytes` tunnel: every RPC takes and returns a `JsonPayload`
+wrapper around UTF-8 JSON. It is **not** the A2A gRPC binding and cannot
+interoperate with the official SDKs.
 
-    // Agent discovery
-    rpc GetExtendedAgentCard(JsonPayload) returns (JsonPayload);
-}
-```
-
-## Design Decision
-
-The proto uses a `JsonPayload` wrapper (UTF-8 JSON bytes) rather than native protobuf message definitions. This ensures wire-format compatibility with the A2A spec's JSON serialization rules (ProtoJSON naming, discriminated unions, etc.).
+It is retained only so 0.6 clients can be rolling-upgraded: the server can
+serve it *alongside* the canonical service via the off-by-default
+`grpc-legacy-json` feature. The client support was removed in 0.7, and the
+tunnel is scheduled for removal in 0.8.
 
 ## Usage
 
-This proto is compiled by `tonic-build` in `a2a-protocol-server` when the `grpc` feature is enabled. You do not need to compile it manually.
+These protos are compiled by the `grpc`-feature build scripts of
+`a2a-protocol-types` (messages), `a2a-protocol-server` (server stubs), and
+`a2a-protocol-client` (client stubs) using a vendored `protoc` — no manual
+compilation or system protobuf install is needed.
 
 ## License
 

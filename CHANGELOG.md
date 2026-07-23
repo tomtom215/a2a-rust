@@ -245,6 +245,257 @@ changed shape (0.x breaking — warrants a minor bump).
   won't-compile `credentials` example) and the "all features off by default"
   note (now that `tls-rustls` is a default).
 
+### Changed (third hardening pass)
+
+- **WebSocket is a full-surface, authenticated transport** — the WebSocket
+  binding now matches the JSON-RPC HTTP dispatcher's method surface and
+  security posture:
+  - `a2a-protocol-server`: the upgrade request's HTTP headers (plus the
+    request path, under `":path"`) are captured during the handshake and
+    passed to the handler for every request on the connection — tenant
+    resolvers, strict multi-tenancy, and header-based auth now work over
+    WebSocket exactly as over HTTP. Previously the dispatcher passed an
+    **empty** header map, so every WebSocket client resolved to the default
+    tenant partition and header-based authentication was impossible.
+  - `a2a-protocol-server`: all push-notification-config methods
+    (`CreateTaskPushNotificationConfig`, `GetTaskPushNotificationConfig`,
+    `ListTaskPushNotificationConfigs`, `DeleteTaskPushNotificationConfig`)
+    and `GetExtendedAgentCard` are now routed over WebSocket, and every
+    method also accepts its v0.3 `method/verb` alias (`message/send`,
+    `tasks/get`, …) for parity with the HTTP dispatcher. Previously only
+    6 of the 11 A2A methods were reachable over WebSocket.
+  - `a2a-protocol-server`: an upgrade request carrying an `A2A-Version`
+    header with a major version other than 1 is rejected during the
+    handshake (HTTP 400), mirroring the HTTP dispatchers.
+  - `a2a-protocol-client`: new `WebSocketTransportConfig` +
+    `WebSocketTransport::connect_with_config` configure the request
+    timeout, upgrade headers, and the incoming message-size cap in one
+    place. Incoming messages are now capped (default 32 MiB, the shared
+    response-size ceiling of the HTTP/gRPC transports) at the WebSocket
+    protocol level — previously tungstenite's 64 MiB default applied.
+
+### Added (third hardening pass)
+
+- **First-party authentication helpers (client + server)** — the SDK now
+  *acquires* and *verifies* credentials, not just models the schemes and
+  provides interceptor hooks (ADR 0010). Built on the existing `ring`/`hyper`
+  stack — no OAuth-ecosystem dependencies.
+  - `a2a-protocol-client`: a `TokenProvider` trait with `StaticTokenProvider`,
+    a `BearerAuthInterceptor` that injects a fresh token before every request
+    (so a rotating token stays current, including on retries), and
+    `OAuth2ClientCredentials` — the RFC 6749 §4.4 client-credentials grant with
+    token caching, proactive pre-expiry refresh, single-flight concurrent
+    refresh, `Basic`/`Post` client-auth styles, and constructors that read the
+    token endpoint from an agent card's OAuth2 flow or discover it from an OIDC
+    issuer. Client secrets are redacted from `Debug` and never echoed in errors.
+  - `a2a-protocol-server`: `ApiKeyAuthInterceptor` and
+    `BearerTokenAuthInterceptor` (constant-time comparison, no feature flag)
+    and, behind the new `auth-jwt` feature, `JwtAuthInterceptor` — verifies
+    HS256/RS256/ES256, checks `exp`/`nbf`/`iss`/`aud`, and resolves keys from a
+    static `Jwks`, a shared HS256 secret, or a remote JWKS endpoint (TTL-cached,
+    refetched once on a key-id miss to follow rotation) with OIDC discovery.
+    `alg: none` and unlisted algorithms are rejected, and HS256 is only ever
+    checked against a configured secret — never a JWKS public key — so the
+    RS256→HS256 confusion downgrade is structurally impossible. Rejections are
+    generic (no oracle) and map to `InvalidRequest` (HTTP 400). JWT verification
+    is cross-checked against independently-generated (Python) test vectors and
+    a live interceptor→dispatcher→HTTP end-to-end test.
+  - `a2a-protocol-sdk`: re-exports the client/server auth types from the
+    prelude; the `auth-jwt` feature passes through to the server.
+- **`A2A-Extensions` header wired end to end (spec §14.2.2)** — new
+  `A2A_EXTENSIONS_HEADER` constant in `a2a-protocol-types`, and every
+  server binding now parses the comma-separated extension URIs into
+  `CallContext::extensions` for interceptors and resolvers (the accessor
+  existed but nothing populated it — it always returned empty). Extension
+  *data* continues to ride in-band in `Message::extensions`/metadata.
+
+### Fixed (third hardening pass)
+
+- **`a2a-protocol-server` (push): the notification token is sent as
+  `X-A2A-Notification-Token`** — the header name the spec's push example
+  uses and the official SDK's webhook receivers read. The bare
+  `a2a-notification-token` name was this SDK's own pre-0.7 invention, so
+  receivers written against the official convention never saw the token;
+  it is still sent alongside the canonical name for migration and will be
+  removed in 0.8. The default CORS allow-list now also includes
+  `a2a-version` and `a2a-extensions` — protocol headers A2A clients send
+  on every request, without which a browser client's preflight fails.
+- **`a2a-protocol-server` (REST): the canonical `/{tenant}/...` bindings
+  are now routed** — the spec proto's `google.api.http` additional
+  bindings put the tenant as a bare first path segment
+  (`/{tenant}/message:send`, `/{tenant}/tasks`, …), which is exactly what
+  official-SDK REST clients send when configured with a tenant; only this
+  SDK's own `/tenants/{tenant}/...` form was recognized, so canonical
+  tenant-scoped requests 404'd. Both forms now work, with
+  literal-beats-variable matching so a real route is never swallowed as a
+  tenant. Verified live with the official Python SDK's `RestTransport`
+  (tenant-scoped send/list/get all round-trip).
+
+- **`a2a-protocol-types`: ProtoJSON empty-repeated omission no longer breaks
+  cross-SDK parsing** — ProtoJSON printers (what every official A2A SDK
+  uses on the JSON wire) omit empty repeated fields and empty maps, so
+  absence means "empty". Twelve JSON-facing list/map fields required their
+  key to be present and rejected real official-SDK traffic at parse time —
+  found live by driving this SDK's JSON-RPC server with the official
+  Python SDK's client, whose `configuration` object legitimately omits an
+  empty `acceptedOutputModes` and was answered with
+  "invalid params: missing field `acceptedOutputModes`". All repeated
+  fields now deserialize absent-as-empty
+  (`SendMessageConfiguration.acceptedOutputModes`, `StringList.list`,
+  `SecurityRequirement.schemes`, `TaskListResponse.tasks`,
+  `ListPushConfigsResponse.configs`, `AgentCard.{supportedInterfaces,
+  defaultInputModes, defaultOutputModes, skills}`, `AgentSkill.tags`,
+  `Message.parts`, `Artifact.parts`). Semantic must-be-non-empty
+  requirements are unchanged and enforced where they belong: the server
+  still rejects empty message parts with a structured invalid-params
+  error, event processors still drop empty-parts artifacts, and
+  `AgentCard::validate()` still requires at least one interface — errors
+  that now name the real problem instead of a JSON "missing field" type
+  error. Serialized output is unchanged. Verified end-to-end against the
+  official Python SDK (`a2a-sdk` 1.1.2): agent-card resolution, unary
+  send, SSE streaming, and gRPC (all 33 golden fixtures plus live
+  unary/streaming/mid-flight-subscribe probes) all pass in both
+  directions.
+- **`a2a-protocol-server` (WebSocket): accept-loop and handshake
+  resilience** — a transient `accept()` error (per-connection abort,
+  fd-table exhaustion) no longer tears down the WebSocket server; the
+  accept loop now follows the same retry-with-backoff policy as the HTTP
+  serve path. A peer that opens a TCP connection but never completes the
+  WebSocket handshake is disconnected after a bounded handshake timeout
+  (default 10 s, configurable via `with_handshake_timeout`) instead of
+  pinning a connection and file descriptor indefinitely. The server also
+  completes the WebSocket close handshake on shutdown paths, disables
+  Nagle's algorithm to match the HTTP path's latency profile, answers
+  binary frames with an explicit error instead of silence, and correlates
+  "server busy"/"message too large" rejections with the request `id` so
+  clients fail fast instead of timing out on an unroutable null-id error.
+- **`a2a-protocol-client` (WebSocket): dropped transports leaked their
+  connection; disconnects hung in-flight requests** — dropping a
+  `WebSocketTransport` now aborts its background reader/writer tasks and
+  closes the socket (a tokio `JoinHandle` detaches on drop, so every
+  dropped transport previously leaked a task and an open TCP connection
+  until the server closed it). A server-initiated close, end-of-stream, or
+  write failure now fails **all** in-flight requests promptly with a
+  transport error and marks the connection dead so subsequent requests
+  fail fast — previously a clean server close left pending requests
+  hanging for their full request timeout, and new requests kept queuing
+  against the dead socket.
+- **CI: per-benchmark regression tolerance** — the benchmark gate accepts
+  targeted `--override PATTERN=THRESHOLD` globs, and the known-noisy
+  `from_str/16384` benchmark (tiny absolute runtime; tight-CI swings on
+  identical code while its size neighbours stay stable) now carries a 75%
+  tolerance instead of the whole gate being loosened. Overridden rows are
+  labelled in the gate output, and a regression past the raised threshold
+  still fails.
+- **`a2a-protocol-client`: every streaming transport now bounds the wait for
+  the first event** — the HTTP JSON-RPC, REST, and gRPC streaming paths
+  previously bounded only stream *establishment* (response headers /
+  stream open); a server that accepted the stream and then went silent
+  hung the consumer forever. All three now apply the same
+  first-event timeout the WebSocket transport already had (lifted after
+  the first frame — long-running quiet tasks are unaffected because SSE
+  keep-alives and the spec-required initial Task event count as frames).
+- **`a2a-protocol-client`: streaming error responses keep `Retry-After`** —
+  a rate-limited stream start (HTTP 429/503 with `Retry-After`) surfaced
+  `retry_after: None` on the JSON-RPC and REST paths, so the retry layer
+  used its own short jittered backoff instead of the server-directed
+  delay the unary paths already honor.
+- **`a2a-protocol-client`: SSE parser accepts bare-CR line terminators** —
+  the WHATWG SSE grammar allows CRLF, LF, or CR line endings; the parser
+  handled only LF/CRLF, so a CR-only server's entire stream accumulated
+  into one "line" and was rejected as oversized. CR now terminates a
+  line, with a CRLF pair split across reads counted as one terminator.
+- **`a2a-protocol-server`: stale-token sweep can no longer evict a live
+  replacement token** — between candidate collection (read lock) and
+  removal (write lock), a cancel-then-resend race can insert a fresh live
+  cancellation token for the same task id; the sweep removed it by id
+  unconditionally, leaving the resent executor uncancelable for its whole
+  run. Removal now re-validates each entry under the write lock and
+  spares tokens that are neither cancelled nor aged.
+- **`a2a-protocol-server`: background event processor survives a missing
+  task row at startup** — if the just-saved task vanished before the
+  processor's initial store read (capacity eviction under extreme churn,
+  or a transient store fault), the processor exited early and dropped its
+  persistence receiver: every subsequent state transition and push
+  notification for the task was silently lost while the client's stream
+  kept delivering. It now falls back to the send path's task snapshot,
+  re-asserting the row on a confirmed miss.
+- **`a2a-protocol-server`: path-traversal detection decodes to a fixpoint** —
+  the REST guard decoded percent-encoding exactly twice, so
+  triple-encoded `..` passed undetected (not reachable today — routing
+  matches raw segments — but the detector no longer encodes that
+  assumption; undecodable-after-8-passes input now fails closed).
+- **Docs:** honest-limits pass — `TaskStoreConfig::max_capacity` documents
+  the last-resort eviction of non-terminal tasks under overload,
+  `HandlerLimits` sweep thresholds are documented as prune triggers
+  rather than hard bounds, `PerTenantConfig` documents fairness under
+  shared process-wide caps, the retry layer documents that interceptors
+  run once per call (not per attempt), and push-config creation documents
+  its sync-check-at-create / DNS-recheck-at-delivery split.
+
+### Changed (fourth hardening pass)
+
+- **`ListTasks` returns tasks most-recently-updated first (spec §3.1.4)** —
+  every task store previously returned tasks in ascending `id` order (an
+  arbitrary lexical order the spec does not permit), and paged with an
+  `id`-based cursor. All five stores now order by last-update time,
+  most-recent first, with a stable cursor:
+  - `InMemoryTaskStore` keys a `BTreeMap<u64, TaskId>` update-order index by
+    a monotonic per-write sequence, iterated in reverse — O(log n +
+    page_size) pagination with no per-call sort, and a collision-free
+    integer cursor. Every write (not just the first insert) re-positions the
+    task to the front, so an in-place update correctly moves it.
+  - The SQLite/PostgreSQL stores (and their tenant-scoped variants) order by
+    `(updated_at DESC, id DESC)` with a composite row-value cursor
+    `(updated_at, id) < (?, ?)`; because `id` is the primary key the pair is
+    unique, so pagination never drops or repeats a row even when many tasks
+    share a timestamp. SQLite now records `updated_at` at millisecond
+    precision (fixed-width, so `TEXT` comparison matches chronological
+    order); PostgreSQL serializes the cursor timestamp as a UTC-normalized
+    microsecond string so paging is stable regardless of session time zone.
+    New `(updated_at, id)` indexes back the ordering (added via SQLite
+    migration v4 / PostgreSQL migration v3).
+- **Capability validation enforced at the handler (spec §3.3.4)** — when an
+  `AgentCard` is configured, the server now honors its advertised
+  `capabilities`. `SendStreamingMessage` and `SubscribeToTask` return
+  `UnsupportedOperationError` unless `capabilities.streaming` is `true`; the
+  push-config operations (Create/Get/List/Delete) return
+  `PushNotificationNotSupportedError` unless `capabilities.pushNotifications`
+  is `true`. A card-less handler is unaffected (it publishes no capability
+  contract), so existing card-less deployments keep working.
+
+### Fixed (fourth hardening pass)
+
+- **`GetTaskPushNotificationConfig` reports a missing config as
+  `TaskNotFoundError`** (spec §3.1.8) instead of `InvalidParams` — over REST
+  this changes the HTTP status from 400 to 404, matching the canonical error
+  mapping and the other SDKs.
+- **`CreateTaskPushNotificationConfig` validates that the target task exists**
+  (spec §3.1.7), returning `TaskNotFoundError` instead of silently storing an
+  unroutable, orphaned config for a task that was never created.
+- **Cross-binding metadata portability** — the send path now rejects a
+  client-supplied `metadata` value (on the request, the message, or any
+  message part) that is present but not a JSON object, with a structured
+  invalid-params error. A protobuf `google.protobuf.Struct` — the gRPC wire
+  form of every `metadata` field — can only hold a JSON object, so a task
+  accepted over JSON-RPC/REST with, e.g., `metadata: [1, 2, 3]` would fail to
+  serialize the instant it was served over gRPC. Rejecting it at ingress
+  keeps every accepted task representable across all A2A transports.
+- **JWT `exp` is now fail-closed at the boundary** (`auth-jwt`) — the
+  expiration check accepted a token at exactly `exp + leeway` (`now > exp`).
+  RFC 7519 §4.1.4 requires a token to be rejected "on or after" `exp`, so the
+  check is now `now >= exp + leeway`. `nbf` was already correct (valid at
+  exactly `nbf`, per §4.1.5 "not before"). Tokens sitting exactly at their
+  expiry instant are now rejected.
+- **Mutation-test hardening of the changed surface** — closed every gap the
+  incremental mutation-testing gate found in this pass's diff, so the new and
+  touched code is covered by assertions that pin behavior, not just line
+  coverage. This added deterministic tests for JWT time-boundary and JWKS
+  parsing/redaction logic, a shared unit-tested pagination boundary helper
+  used by all five stores, and DER length-encoding tests — and extracted a
+  couple of pure helpers (`check_claims_at(now)`, `cache_is_fresh`) so the
+  crypto/validation boundaries are testable without a wall clock.
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,

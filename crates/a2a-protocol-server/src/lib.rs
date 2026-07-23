@@ -28,8 +28,9 @@
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
-//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
+//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
+//! | [`auth`] | [`ApiKeyAuthInterceptor`], [`BearerTokenAuthInterceptor`], `JwtAuthInterceptor` (`auth-jwt` feature) |
 //! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |
 //! | [`call_context`] | [`CallContext`] (includes HTTP headers for auth) |
@@ -72,6 +73,7 @@
 mod trace;
 
 pub mod agent_card;
+pub mod auth;
 pub mod builder;
 pub mod call_context;
 pub mod dispatch;
@@ -99,6 +101,7 @@ pub use agent_card::{
     AgentCardProducer, DynamicAgentCardHandler, HotReloadAgentCardHandler, StaticAgentCardHandler,
     CORS_ALLOW_ALL,
 };
+pub use auth::{ApiKeyAuthInterceptor, BearerTokenAuthInterceptor};
 pub use builder::RequestHandlerBuilder;
 pub use call_context::CallContext;
 #[cfg(feature = "axum")]

@@ -663,9 +663,17 @@ impl PushSender for HttpPushSender {
                     }
                 }
 
-                // Set notification token header if present.
+                // Set the notification token header if present.
+                //
+                // `X-A2A-Notification-Token` is the canonical name — it is what
+                // the spec's push example uses and what official-SDK webhook
+                // receivers look for. The bare `a2a-notification-token` name
+                // was this SDK's own pre-0.7 invention; it is still sent so
+                // existing receivers keep working, and will be removed in 0.8.
                 if let Some(ref token) = config.token {
-                    builder = builder.header("a2a-notification-token", token.as_str());
+                    builder = builder
+                        .header("x-a2a-notification-token", token.as_str())
+                        .header("a2a-notification-token", token.as_str());
                 }
 
                 let req = builder

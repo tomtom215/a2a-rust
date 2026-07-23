@@ -51,6 +51,15 @@ The built-in `HttpPushSender` includes:
 - **SSRF protection** — Resolves URLs and rejects private/loopback IP addresses. Uses `validate_webhook_url_with_dns()` which performs DNS resolution before IP validation, preventing DNS rebinding attacks where a hostname initially resolves to a public IP but later resolves to a private IP. For `http://` the validated IP is pinned at connect time; for `https://` the rebinding window is closed by TLS certificate verification instead (so the original hostname is preserved for SNI).
 - **Header injection prevention** — Validates credentials contain no `\r` or `\n`
 
+> **Capability + task-existence rules (spec §3.1.7, §3.3.4).** If you configure
+> an agent card, it must advertise `capabilities.pushNotifications = true` or the
+> push-config operations return `PushNotificationNotSupportedError`. Creating a
+> config also requires the **target task to already exist** — a
+> `CreateTaskPushNotificationConfig` for an unknown task returns
+> `TaskNotFoundError` rather than storing an unroutable config. A
+> `GetTaskPushNotificationConfig` for a config that does not exist likewise
+> returns `TaskNotFoundError` (HTTP 404 over REST), not an invalid-params error.
+
 ### Client Side
 
 Register a push notification configuration:

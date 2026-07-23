@@ -77,13 +77,22 @@ let dispatcher = Arc::new(RestDispatcher::new(handler));
 
 ### Multi-Tenancy
 
-Tenant routes are prefixed with `/tenants/{tenant-id}/`:
+Tenant-scoped routes accept two forms — the canonical bare-segment form from
+the spec proto's `google.api.http` additional bindings (what official-SDK
+REST clients send), and this SDK's original explicit prefix:
 
 ```
-GET /tenants/acme-corp/tasks
-GET /tenants/acme-corp/tasks/{id}
+# Canonical form
+GET  /acme-corp/tasks
+POST /acme-corp/message:send
+
+# Explicit form
+GET  /tenants/acme-corp/tasks
 POST /tenants/acme-corp/message:send
 ```
+
+In the canonical form, literal route segments always win over the tenant
+variable (a tenant named like a route head must use the explicit form).
 
 ### Built-in Security
 
@@ -158,7 +167,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.6", features = ["websocket"] }
+a2a-protocol-server = { version = "0.7", features = ["websocket"] }
 ```
 
 ```rust
@@ -179,20 +188,39 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - Client sends JSON-RPC 2.0 requests as WebSocket text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
 - Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event, followed by a final JSON-RPC success response
+- The full A2A method surface is routed — the same method names (and v0.3
+  `method/verb` aliases) as `JsonRpcDispatcher`, including the
+  push-notification-config methods and `GetExtendedAgentCard`
+
+### Authentication and tenancy
+
+The HTTP headers of the upgrade request (lowercased, plus the request path
+under `":path"`) are captured during the handshake and passed to the
+handler for **every** request on the connection. Tenant resolvers, strict
+multi-tenancy, and header-based authentication behave exactly as they do
+over HTTP — credentials are presented once, at connect time, and apply to
+the whole connection. An upgrade request whose `A2A-Version` header names
+an unsupported major version is rejected during the handshake with
+HTTP 400.
 
 ### Built-in Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
 | **Concurrent tasks per connection** | 64 | Per-connection `Semaphore(64)` prevents unbounded task spawning |
-| **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected with an error response |
+| **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected at the protocol level |
+| **Handshake timeout** | 10 s (configurable via `with_handshake_timeout`) | A peer that never completes the upgrade is disconnected instead of pinning a connection |
+
+Transient `accept()` errors (per-connection aborts, fd-table exhaustion)
+never terminate the accept loop — it retries with the same backoff policy
+as the HTTP serve path.
 
 ## GrpcDispatcher
 
 Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.6", features = ["grpc"] }
+a2a-protocol-server = { version = "0.7", features = ["grpc"] }
 ```
 
 ```rust
@@ -230,9 +258,16 @@ let bound = dispatcher.serve_with_listener(listener)?;
 
 ### Protocol
 
-All 11 A2A methods are mapped to gRPC RPCs. JSON payloads are carried inside protobuf `bytes` fields, reusing the same serde types as JSON-RPC and REST — no duplicate protobuf definitions needed.
+All 11 A2A methods are served on the canonical `lf.a2a.v1.A2AService` with
+fully-typed protobuf messages generated from the A2A specification's schema —
+wire-compatible with the official Go, Python, and Java SDKs. Requests and
+responses convert to and from the serde domain types through a fallible
+`TryFrom` layer (ProtoJSON semantics; see ADR 0009).
 
-Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming.
+Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server
+streaming. The pre-0.7 JSON-in-`bytes` tunnel (`a2a.v1.A2aService`) can still
+be served *alongside* the canonical service for 0.6 clients via the
+off-by-default `grpc-legacy-json` feature (removal planned for 0.8).
 
 ### Custom Server Setup
 

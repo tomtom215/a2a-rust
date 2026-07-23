@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use a2a_protocol_types::params::{DeletePushConfigParams, GetPushConfigParams};
 use a2a_protocol_types::push::TaskPushNotificationConfig;
+use a2a_protocol_types::task::TaskId;
 
 use crate::error::{ServerError, ServerResult};
 
@@ -39,6 +40,9 @@ impl RequestHandler {
             )
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
+            // SPEC §3.3.4: reject when the configured agent card does not
+            // advertise `capabilities.pushNotifications == true`.
+            self.ensure_push_supported()?;
             let Some(ref sender) = self.push_sender else {
                 return Err(ServerError::PushNotSupported);
             };
@@ -51,10 +55,23 @@ impl RequestHandler {
                     "taskId is required for CreateTaskPushNotificationConfig".into(),
                 ));
             }
+            // SPEC §3.1.7: the target task MUST exist. Storing a config for a
+            // task that was never created leaves an unroutable, orphaned config.
+            let target_task = TaskId::new(config.task_id.clone().unwrap_or_default());
+            if self.task_store.get(&target_task).await?.is_none() {
+                return Err(ServerError::TaskNotFound(target_task));
+            }
             // FIX(#3): Validate webhook URL at config creation time to prevent
             // SSRF attacks. Previously validation only happened at delivery time,
             // leaving a window where malicious URLs could be stored.
             // Respect the push sender's allow_private_urls setting for testing.
+            //
+            // This is deliberately the synchronous host check (scheme, IP
+            // literals, credentials, ports) — it fails fast on obviously bad
+            // URLs without adding a DNS lookup to a CRUD call. The security
+            // boundary is delivery: `validate_webhook_url_with_dns` re-checks
+            // there with resolution + IP pinning, so a hostname that resolves
+            // privately is stored but never delivered to.
             if !sender.allows_private_urls() {
                 crate::push::sender::validate_webhook_url(&config.url)?;
             }
@@ -121,7 +138,9 @@ impl RequestHandler {
     ///
     /// # Errors
     ///
-    /// Returns [`ServerError::InvalidParams`] if the config is not found.
+    /// Returns [`ServerError::PushNotSupported`] if the agent card does not
+    /// advertise push notifications, or [`ServerError::TaskNotFound`] if the
+    /// requested configuration does not exist (spec §3.1.8).
     pub async fn on_get_push_config(
         &self,
         params: GetPushConfigParams,
@@ -138,19 +157,18 @@ impl RequestHandler {
             )
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
+            // SPEC §3.3.4: reject when the agent card does not advertise push support.
+            self.ensure_push_supported()?;
             let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
+            // SPEC §3.1.8: a missing push notification configuration MUST be
+            // reported as TaskNotFoundError, not InvalidParams.
             let config = self
                 .push_config_store
                 .get(&params.task_id, &params.id)
                 .await?
-                .ok_or_else(|| {
-                    ServerError::InvalidParams(format!(
-                        "push config not found: task={}, id={}",
-                        params.task_id, params.id
-                    ))
-                })?;
+                .ok_or_else(|| ServerError::TaskNotFound(TaskId::new(&params.task_id)))?;
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(config)
@@ -193,6 +211,8 @@ impl RequestHandler {
             .await?;
         let result: ServerResult<_> =
             crate::store::tenant::TenantContext::scope(tenant_owned, async {
+                // SPEC §3.3.4: reject when the agent card does not advertise push support.
+                self.ensure_push_supported()?;
                 let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
                 self.interceptors.run_before(&call_ctx).await?;
                 let configs = self.push_config_store.list(task_id).await?;
@@ -239,6 +259,8 @@ impl RequestHandler {
             )
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
+            // SPEC §3.3.4: reject when the agent card does not advertise push support.
+            self.ensure_push_supported()?;
             let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
             self.push_config_store
@@ -289,6 +311,21 @@ mod tests {
             token: None,
             authentication: None,
         }
+    }
+
+    /// Saves a minimal task so push-config creates (which require the target
+    /// task to exist, spec §3.1.7) can succeed.
+    async fn save_task(handler: &RequestHandler, id: &str) {
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+        let task = Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(&task).await.unwrap();
     }
 
     // ── on_set_push_config ───────────────────────────────────────────────────
@@ -386,6 +423,7 @@ mod tests {
 
         // Two creates (distinct tasks) fill the global cap.
         for i in 0..2 {
+            save_task(&handler, &format!("task-{i}")).await;
             let cfg = TaskPushNotificationConfig {
                 tenant: None,
                 id: Some(format!("cfg-{i}")),
@@ -401,6 +439,7 @@ mod tests {
         }
 
         // The third distinct-task create exceeds the global ceiling.
+        save_task(&handler, "task-x").await;
         let cfg = TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-x".to_owned()),
@@ -448,6 +487,7 @@ mod tests {
             .build()
             .unwrap();
 
+        save_task(&handler, "task-1").await;
         let make = |url: &str| TaskPushNotificationConfig {
             tenant: None,
             id: Some("cfg-1".to_owned()),
@@ -479,10 +519,165 @@ mod tests {
         );
     }
 
+    /// A [`PushSender`] that accepts any URL, used to exercise handler logic
+    /// past the "no sender configured" and URL-validation gates.
+    struct NoopSender;
+    impl crate::push::PushSender for NoopSender {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a a2a_protocol_types::events::StreamResponse,
+            _config: &'a TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+        fn allows_private_urls(&self) -> bool {
+            true
+        }
+    }
+
+    /// Builds an agent card whose capabilities are exactly `caps`.
+    fn card_with(
+        caps: a2a_protocol_types::agent_card::AgentCapabilities,
+    ) -> a2a_protocol_types::agent_card::AgentCard {
+        use a2a_protocol_types::agent_card::{AgentCard, AgentInterface};
+        AgentCard {
+            url: None,
+            name: "Test Agent".into(),
+            description: "A test agent".into(),
+            version: "1.0.0".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "http://localhost:8080".into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            capabilities: caps,
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            security_schemes: None,
+            security_requirements: None,
+            signatures: None,
+        }
+    }
+
+    /// SPEC §3.1.7: creating a push config for a task that does not exist must
+    /// return `TaskNotFoundError`, not store an orphaned config.
+    #[tokio::test]
+    async fn set_push_config_for_missing_task_returns_task_not_found() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .build()
+            .unwrap();
+        let config = make_push_config("ghost-task");
+        let result = handler.on_set_push_config(config, None).await;
+        assert!(
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for a config targeting a missing task, got: {result:?}"
+        );
+    }
+
+    /// SPEC §3.3.4: when the agent card does not advertise push notifications,
+    /// every push-config operation must return `PushNotificationNotSupported` —
+    /// even when a push sender is wired.
+    #[tokio::test]
+    async fn push_ops_rejected_when_card_lacks_capability() {
+        use a2a_protocol_types::agent_card::AgentCapabilities;
+        use a2a_protocol_types::params::{DeletePushConfigParams, GetPushConfigParams};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_agent_card(card_with(AgentCapabilities::none()))
+            .build()
+            .unwrap();
+
+        let set = handler
+            .on_set_push_config(make_push_config("t1"), None)
+            .await;
+        assert!(
+            matches!(set, Err(crate::error::ServerError::PushNotSupported)),
+            "set must be rejected, got: {set:?}"
+        );
+
+        let get = handler
+            .on_get_push_config(
+                GetPushConfigParams {
+                    tenant: None,
+                    task_id: "t1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(get, Err(crate::error::ServerError::PushNotSupported)),
+            "get must be rejected, got: {get:?}"
+        );
+
+        let list = handler.on_list_push_configs("t1", None, None).await;
+        assert!(
+            matches!(list, Err(crate::error::ServerError::PushNotSupported)),
+            "list must be rejected, got: {list:?}"
+        );
+
+        let delete = handler
+            .on_delete_push_config(
+                DeletePushConfigParams {
+                    tenant: None,
+                    task_id: "t1".into(),
+                    id: "cfg-1".into(),
+                },
+                None,
+            )
+            .await;
+        assert!(
+            matches!(delete, Err(crate::error::ServerError::PushNotSupported)),
+            "delete must be rejected, got: {delete:?}"
+        );
+    }
+
+    /// When the card advertises push support and a sender is wired, push-config
+    /// operations proceed normally.
+    #[tokio::test]
+    async fn push_ops_allowed_when_card_has_capability() {
+        use a2a_protocol_types::agent_card::AgentCapabilities;
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_agent_card(card_with(
+                AgentCapabilities::none().with_push_notifications(true),
+            ))
+            .build()
+            .unwrap();
+        save_task(&handler, "t1").await;
+
+        handler
+            .on_set_push_config(make_push_config("t1"), None)
+            .await
+            .expect("set should succeed when push capability is advertised");
+        let configs = handler
+            .on_list_push_configs("t1", None, None)
+            .await
+            .expect("list should succeed");
+        assert_eq!(configs.len(), 1, "the created config should be listed");
+    }
+
     // ── on_get_push_config ───────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn get_push_config_not_found_returns_invalid_params() {
+    async fn get_push_config_not_found_returns_task_not_found() {
+        // SPEC §3.1.8: a missing push notification configuration is reported as
+        // TaskNotFoundError.
         use a2a_protocol_types::params::GetPushConfigParams;
 
         let handler = make_handler();
@@ -493,8 +688,8 @@ mod tests {
         };
         let result = handler.on_get_push_config(params, None).await;
         assert!(
-            matches!(result, Err(crate::error::ServerError::InvalidParams(_))),
-            "expected InvalidParams for missing config, got: {result:?}"
+            matches!(result, Err(crate::error::ServerError::TaskNotFound(_))),
+            "expected TaskNotFound for missing config, got: {result:?}"
         );
     }
 

@@ -44,9 +44,14 @@ use super::task_store::TaskStore;
 ///     context_id TEXT NOT NULL,
 ///     state      TEXT NOT NULL,
 ///     data       TEXT NOT NULL,
-///     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+///     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now'))
 /// );
 /// ```
+///
+/// `list()` returns tasks most-recently-updated first (spec §3.1.4), ordered by
+/// `(updated_at DESC, id DESC)` with a composite row-value cursor. `updated_at`
+/// is written at millisecond precision in a fixed-width format so TEXT
+/// comparison matches chronological order.
 #[derive(Debug, Clone)]
 pub struct SqliteTaskStore {
     pool: SqlitePool,
@@ -93,7 +98,7 @@ impl SqliteTaskStore {
                 context_id TEXT NOT NULL,
                 state      TEXT NOT NULL,
                 data       TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             )",
         )
@@ -110,6 +115,14 @@ impl SqliteTaskStore {
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state)",
+        )
+        .execute(&pool)
+        .await?;
+
+        // Supports the most-recently-updated-first ordering and composite
+        // (updated_at, id) cursor used by list().
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
         )
         .execute(&pool)
         .await?;
@@ -165,12 +178,12 @@ impl TaskStore for SqliteTaskStore {
 
             sqlx::query(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, datetime('now'))
+                 VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%d %H:%M:%f','now'))
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = datetime('now')",
+                     updated_at = strftime('%Y-%m-%d %H:%M:%f','now')",
             )
             .bind(id)
             .bind(context_id)
@@ -207,6 +220,7 @@ impl TaskStore for SqliteTaskStore {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn list<'a>(
         &'a self,
         params: &'a ListTasksParams,
@@ -224,9 +238,18 @@ impl TaskStore for SqliteTaskStore {
                 conditions.push(format!("state = ?{}", bind_values.len() + 1));
                 bind_values.push(status.to_string());
             }
+            // Composite (updated_at, id) row-value cursor: resume strictly
+            // before the last row of the previous page under the
+            // most-recently-updated-first order (spec §3.1.4). A token not
+            // produced by us decodes to None → empty page (never a full scan).
             if let Some(ref token) = params.page_token {
-                conditions.push(format!("id > ?{}", bind_values.len() + 1));
-                bind_values.push(token.clone());
+                let Some((cursor_ua, cursor_id)) = super::cursor::decode(token) else {
+                    return Ok(TaskListResponse::new(Vec::new()));
+                };
+                let p = bind_values.len();
+                conditions.push(format!("(updated_at, id) < (?{}, ?{})", p + 1, p + 2));
+                bind_values.push(cursor_ua.to_string());
+                bind_values.push(cursor_id.to_string());
             }
 
             let where_clause = if conditions.is_empty() {
@@ -240,40 +263,46 @@ impl TaskStore for SqliteTaskStore {
                 Some(n) => n.min(1000),
             };
 
-            // Fetch one extra to detect next page.
-            // FIX(L7): Use a parameterized bind for LIMIT instead of format!
-            // interpolation to follow best practices for query construction.
-            let limit = page_size + 1;
+            // Fetch one extra to detect next page. LIMIT is a parameterized
+            // bind rather than string interpolation.
+            let limit = super::pagination::fetch_limit(page_size);
             let limit_param = bind_values.len() + 1;
             let sql = format!(
-                "SELECT data FROM tasks {where_clause} ORDER BY id ASC LIMIT ?{limit_param}"
+                "SELECT updated_at, data FROM tasks {where_clause} \
+                 ORDER BY updated_at DESC, id DESC LIMIT ?{limit_param}"
             );
 
-            let mut query = sqlx::query_as::<_, (String,)>(&sql);
+            let mut query = sqlx::query_as::<_, (String, String)>(&sql);
             for val in &bind_values {
                 query = query.bind(val);
             }
             query = query.bind(limit);
 
-            let rows: Vec<(String,)> = query.fetch_all(&self.pool).await.map_err(to_a2a_error)?;
+            let rows: Vec<(String, String)> =
+                query.fetch_all(&self.pool).await.map_err(to_a2a_error)?;
 
-            let mut tasks: Vec<Task> = rows
+            let mut rows: Vec<(String, Task)> = rows
                 .into_iter()
-                .map(|(data,)| {
-                    serde_json::from_str(&data)
+                .map(|(updated_at, data)| {
+                    serde_json::from_str::<Task>(&data)
+                        .map(|task| (updated_at, task))
                         .map_err(|e| A2aError::internal(format!("deserialize: {e}")))
                 })
                 .collect::<A2aResult<Vec<_>>>()?;
 
-            let next_page_token = if tasks.len() > page_size as usize {
-                tasks.truncate(page_size as usize);
-                tasks.last().map(|t| t.id.0.clone()).unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let next_page_token =
+                if super::pagination::has_next_page(rows.len(), page_size as usize) {
+                    rows.truncate(page_size as usize);
+                    rows.last()
+                        .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
 
             #[allow(clippy::cast_possible_truncation)]
-            let page_len = tasks.len() as u32;
+            let page_len = rows.len() as u32;
+            let tasks: Vec<Task> = rows.into_iter().map(|(_, task)| task).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
             response.page_size = page_len;
@@ -294,7 +323,7 @@ impl TaskStore for SqliteTaskStore {
 
             let result = sqlx::query(
                 "INSERT OR IGNORE INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, datetime('now'))",
+                 VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%d %H:%M:%f','now'))",
             )
             .bind(id)
             .bind(context_id)
@@ -630,6 +659,112 @@ mod tests {
         assert!(
             response3.next_page_token.is_empty(),
             "last page should have no next page token"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_orders_most_recently_updated_first() {
+        let store = make_store().await;
+        // Distinct millisecond timestamps via small sleeps guarantee a strict
+        // update order regardless of ID lexical order.
+        for id in ["c", "a", "b"] {
+            store
+                .save(&make_task(id, "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+        }
+
+        let response = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["b", "a", "c"],
+            "tasks should be ordered most-recently-updated first"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_reorders_on_update() {
+        let store = make_store().await;
+        for id in ["t1", "t2", "t3"] {
+            store
+                .save(&make_task(id, "ctx1", TaskState::Submitted))
+                .await
+                .unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+        }
+
+        // Re-saving t1 must move it to the front of the update order.
+        store
+            .save(&make_task("t1", "ctx1", TaskState::Working))
+            .await
+            .unwrap();
+
+        let response = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["t1", "t3", "t2"],
+            "an updated task must move to the front of the update order"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_pagination_visits_every_task_once() {
+        // A full cursor walk must visit each task exactly once with no gaps or
+        // repeats, even when many tasks share the same millisecond timestamp
+        // (the (updated_at, id) composite cursor disambiguates ties).
+        let store = make_store().await;
+        for i in 0..25 {
+            store
+                .save(&make_task(
+                    &format!("t{i:03}"),
+                    "ctx1",
+                    TaskState::Submitted,
+                ))
+                .await
+                .unwrap();
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let mut token: Option<String> = None;
+        loop {
+            let params = ListTasksParams {
+                page_size: Some(4),
+                page_token: token.clone(),
+                ..Default::default()
+            };
+            let page = store.list(&params).await.unwrap();
+            for t in &page.tasks {
+                assert!(seen.insert(t.id.0.clone()), "task {} seen twice", t.id.0);
+            }
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            token = Some(page.next_page_token);
+        }
+        assert_eq!(seen.len(), 25, "every task must be visited exactly once");
+    }
+
+    #[tokio::test]
+    async fn list_malformed_page_token_returns_empty() {
+        let store = make_store().await;
+        store
+            .save(&make_task("t1", "ctx1", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        // A token that was not produced by the store (no separator) must yield
+        // an empty page, never a full table scan.
+        let params = ListTasksParams {
+            page_token: Some("forged-cursor-no-separator".to_string()),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        assert!(
+            response.tasks.is_empty(),
+            "malformed page_token should yield empty results"
         );
     }
 

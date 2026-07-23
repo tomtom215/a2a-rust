@@ -111,6 +111,12 @@ pub struct Message {
     ///
     /// **Spec requirement:** Must contain at least one element. The A2A
     /// protocol does not define behavior for empty parts lists.
+    ///
+    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
+    /// repeated fields; the gRPC binding already decodes it that way) — the
+    /// server rejects empty parts with a structured invalid-params error
+    /// instead of a JSON type error, uniformly across bindings.
+    #[serde(default)]
     pub parts: Vec<Part>,
 
     /// Task this message belongs to, if any.

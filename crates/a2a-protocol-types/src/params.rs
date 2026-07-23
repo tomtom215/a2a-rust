@@ -33,6 +33,11 @@ use crate::task::TaskState;
 #[serde(rename_all = "camelCase")]
 pub struct SendMessageConfiguration {
     /// MIME types the client can accept as output (e.g. `["text/plain"]`).
+    ///
+    /// `ProtoJSON` printers (all official SDKs) omit empty repeated fields, so
+    /// absent on the wire means empty — "no preference". Requiring the key
+    /// rejected real official-SDK requests at parse time.
+    #[serde(default)]
     pub accepted_output_modes: Vec<String>,
 
     /// Push notification config to register alongside this message send.

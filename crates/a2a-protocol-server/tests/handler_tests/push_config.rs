@@ -8,6 +8,19 @@
 
 use super::*;
 
+/// Sends a message through the handler and returns the created task's id.
+/// CreateTaskPushNotificationConfig requires the target task to exist (§3.1.7).
+async fn create_task(handler: &a2a_protocol_server::RequestHandler) -> String {
+    match handler
+        .on_send_message(make_send_params("hello"), false, None)
+        .await
+        .expect("send message to create a task")
+    {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.0,
+        other => panic!("expected a Task response, got {other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn push_config_crud_lifecycle() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
@@ -15,8 +28,10 @@ async fn push_config_crud_lifecycle() {
         .build()
         .expect("build handler");
 
+    let task_id = create_task(&handler).await;
+
     // Create push config.
-    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/webhook");
+    let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/webhook");
     let created = handler
         .on_set_push_config(config, None)
         .await
@@ -30,7 +45,7 @@ async fn push_config_crud_lifecycle() {
     // Get push config.
     let get_params = GetPushConfigParams {
         tenant: None,
-        task_id: "task-1".into(),
+        task_id: task_id.clone(),
         id: config_id.clone(),
     };
     let fetched = handler
@@ -44,7 +59,7 @@ async fn push_config_crud_lifecycle() {
 
     // List push configs.
     let configs = handler
-        .on_list_push_configs("task-1", None, None)
+        .on_list_push_configs(&task_id, None, None)
         .await
         .expect("list push configs");
     assert_eq!(
@@ -57,7 +72,7 @@ async fn push_config_crud_lifecycle() {
     // Delete push config.
     let delete_params = DeletePushConfigParams {
         tenant: None,
-        task_id: "task-1".into(),
+        task_id: task_id.clone(),
         id: config_id,
     };
     handler
@@ -67,7 +82,7 @@ async fn push_config_crud_lifecycle() {
 
     // Verify deleted.
     let configs = handler
-        .on_list_push_configs("task-1", None, None)
+        .on_list_push_configs(&task_id, None, None)
         .await
         .expect("list push configs after delete");
     assert!(
@@ -93,6 +108,7 @@ async fn push_config_not_supported_without_sender() {
 
 #[tokio::test]
 async fn get_push_config_not_found() {
+    // SPEC §3.1.8: a missing push config is reported as TaskNotFoundError.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_push_sender(MockPushSender)
         .build()
@@ -105,7 +121,7 @@ async fn get_push_config_not_found() {
     };
     let err = handler.on_get_push_config(params, None).await.unwrap_err();
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(ref msg) if msg.contains("nonexistent")),
-        "expected InvalidParams error, got {err:?}"
+        matches!(err, a2a_protocol_server::ServerError::TaskNotFound(_)),
+        "expected TaskNotFound error, got {err:?}"
     );
 }

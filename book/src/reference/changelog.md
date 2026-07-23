@@ -40,6 +40,29 @@ Topological order over **all** dependency edges: server precedes client
 because the client has a versioned dev-dependency on the server, which
 `cargo publish` resolves against the crates.io index.
 
+## Unreleased (v0.7.0)
+
+Highlights of the upcoming release — see [CHANGELOG.md](https://github.com/tomtom215/a2a-rust/blob/main/CHANGELOG.md) for the full list:
+
+- **Protobuf-native gRPC** — the transport speaks the canonical
+  `lf.a2a.v1.A2AService` with fully-typed messages, wire-compatible with the
+  official A2A SDKs and proven against official-SDK golden fixtures in both
+  directions (ADR 0009). The pre-0.7 JSON tunnel is deprecated behind
+  `grpc-legacy-json`.
+- **WebSocket is a full-surface, authenticated transport** — all 11 methods
+  routed, upgrade-request headers drive auth and tenant resolution, handshake
+  timeout, accept-loop resilience, and a configurable client
+  (`WebSocketTransportConfig`).
+- **TLS first-class** — `tls-rustls` is a default client/SDK feature; the
+  bundled push sender delivers to `https://` webhooks.
+- **Cross-SDK wire fixes** — ProtoJSON absent-as-empty parsing on all repeated
+  fields, canonical `/{tenant}/` REST bindings, the
+  `X-A2A-Notification-Token` push header, and the `A2A-Extensions` header
+  parsed into `CallContext`.
+- **Streaming robustness** — first-event timeouts on every transport,
+  `Retry-After` preserved on streaming errors, and full WHATWG SSE
+  line-terminator support.
+
 ## v0.6.0 (2026-06-10)
 
 ### Fixed

@@ -8,6 +8,13 @@
 pub mod task_store;
 pub mod tenant;
 
+/// Shared opaque pagination cursor for the SQL-backed stores.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub(crate) mod cursor;
+
+/// Shared page-boundary arithmetic used by every task store.
+pub(crate) mod pagination;
+
 #[cfg(feature = "sqlite")]
 pub mod migration;
 #[cfg(feature = "sqlite")]

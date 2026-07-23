@@ -19,6 +19,7 @@
 //! | `event_processing` | Event collection, state transitions, push delivery |
 //! | `shutdown` | Graceful shutdown with optional timeout |
 
+mod capability;
 mod event_processing;
 mod helpers;
 mod lifecycle;

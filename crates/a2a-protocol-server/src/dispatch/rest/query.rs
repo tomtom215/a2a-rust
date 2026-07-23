@@ -5,14 +5,48 @@
 
 //! Query string and URL parsing helpers for the REST dispatcher.
 
-/// Strips an optional `/tenants/{tenant}/` prefix, returning the tenant and
+/// Top-level route heads of the REST binding — the literal first segments a
+/// request path may start with (after any tenant prefix).
+///
+/// Used by [`strip_tenant_prefix`] to implement the canonical
+/// `google.api.http` additional bindings of the form `/{tenant}/...`:
+/// literal segments win over the `{tenant}` variable, exactly as HTTP
+/// transcoding matches them, so a real route is never swallowed as a tenant
+/// and a tenant named like a route head must use the explicit
+/// `/tenants/{tenant}/` form instead.
+fn is_route_head(segment: &str) -> bool {
+    matches!(
+        segment,
+        "message:send" | "message:stream" | "message" | "tasks" | "extendedAgentCard"
+    )
+}
+
+/// Splits an optional tenant prefix off the path, returning the tenant and
 /// remaining path.
+///
+/// Two forms are recognized:
+/// - `/tenants/{tenant}/...` — this SDK's original explicit form.
+/// - `/{tenant}/...` — the canonical form from the spec proto's
+///   `google.api.http` additional bindings (what official-SDK REST clients
+///   send when configured with a tenant). The first segment is treated as a
+///   tenant only when it is not itself a route head **and** the remainder
+///   starts with one, mirroring transcoding's literal-beats-variable rule.
 pub(super) fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
     if let Some(rest) = path.strip_prefix("/tenants/") {
         if let Some(slash_pos) = rest.find('/') {
             let tenant = &rest[..slash_pos];
             let remaining = &rest[slash_pos..];
             return (Some(tenant), remaining);
+        }
+    }
+    if let Some(no_slash) = path.strip_prefix('/') {
+        if let Some(slash_pos) = no_slash.find('/') {
+            let first = &no_slash[..slash_pos];
+            let remaining = &no_slash[slash_pos..];
+            let head = remaining[1..].split('/').next().unwrap_or("");
+            if !first.is_empty() && !is_route_head(first) && is_route_head(head) {
+                return (Some(first), remaining);
+            }
         }
     }
     (None, path)
@@ -86,20 +120,34 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Checks if a path contains traversal sequences (`..`) in either raw,
-/// percent-encoded (`%2E%2E`), or double-encoded (`%252E%252E`) form.
+/// Checks if a path contains traversal sequences (`..`) in raw or
+/// percent-encoded form, at any encoding depth.
+///
+/// Decodes until the string stops changing (bounded — each decode pass can
+/// only shrink or preserve length, and the bound caps adversarial input that
+/// alternates forms). A fixed decode-twice check let triple-encoded
+/// `%25252E%25252E` through; nothing downstream decodes three times today,
+/// but the detector should not encode that assumption.
 pub(super) fn contains_path_traversal(path: &str) -> bool {
+    const MAX_DECODE_PASSES: usize = 8;
+
     if path.contains("..") {
         return true;
     }
-    // Check single-encoded variants (%2E%2E, %2e%2e).
-    let decoded = percent_decode(path);
-    if decoded.contains("..") {
-        return true;
+    let mut current = path.to_owned();
+    for _ in 0..MAX_DECODE_PASSES {
+        let decoded = percent_decode(&current);
+        if decoded.contains("..") {
+            return true;
+        }
+        if decoded == current {
+            return false; // Fixpoint: fully decoded, no traversal found.
+        }
+        current = decoded;
     }
-    // Check double-encoded variants (%252E%252E → %2E%2E → ..).
-    let double_decoded = percent_decode(&decoded);
-    double_decoded.contains("..")
+    // Still changing after the pass bound — treat undecidable input as
+    // traversal (fail closed) rather than trusting it.
+    true
 }
 
 /// Returns the numeric value of a hex digit, or `None` if invalid.
@@ -257,11 +305,23 @@ mod tests {
         assert!(contains_path_traversal("/%252E%252E/admin"));
     }
 
+    /// Any encoding depth is detected — a fixed decode-twice check let
+    /// triple-encoded traversal through.
+    #[test]
+    fn path_traversal_deeply_encoded() {
+        // Triple: %25252E → %252E → %2E → .
+        assert!(contains_path_traversal("/%25252E%25252E/admin"));
+        // Quadruple.
+        assert!(contains_path_traversal("/%2525252E%2525252E/admin"));
+    }
+
     #[test]
     fn path_traversal_safe_paths() {
         assert!(!contains_path_traversal("/tasks/abc"));
         assert!(!contains_path_traversal("/tasks/abc.def"));
         assert!(!contains_path_traversal("/message:send"));
+        // Encoded but harmless content decodes to a fixpoint and passes.
+        assert!(!contains_path_traversal("/tasks/%2561%2562"));
     }
 
     // ── strip_tenant_prefix ──────────────────────────────────────────────
@@ -271,6 +331,49 @@ mod tests {
         let (tenant, rest) = strip_tenant_prefix("/tenants/acme/tasks");
         assert_eq!(tenant, Some("acme"));
         assert_eq!(rest, "/tasks");
+    }
+
+    /// The canonical `google.api.http` additional bindings use a bare
+    /// `/{tenant}/...` first segment — what official-SDK REST clients send
+    /// when configured with a tenant. Previously only `/tenants/{t}/` was
+    /// recognized, so canonical tenant-scoped requests 404'd.
+    #[test]
+    fn strip_tenant_bare_canonical_form() {
+        assert_eq!(strip_tenant_prefix("/acme/tasks"), (Some("acme"), "/tasks"));
+        assert_eq!(
+            strip_tenant_prefix("/acme/message:send"),
+            (Some("acme"), "/message:send")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/acme/tasks/t1:cancel"),
+            (Some("acme"), "/tasks/t1:cancel")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/acme/extendedAgentCard"),
+            (Some("acme"), "/extendedAgentCard")
+        );
+    }
+
+    /// Literal route segments always win over the `{tenant}` variable — a
+    /// real route must never be swallowed as a tenant.
+    #[test]
+    fn strip_tenant_bare_form_never_eats_routes() {
+        assert_eq!(strip_tenant_prefix("/tasks/abc"), (None, "/tasks/abc"));
+        assert_eq!(
+            strip_tenant_prefix("/message:send"),
+            (None, "/message:send")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/tasks/abc/pushNotificationConfigs"),
+            (None, "/tasks/abc/pushNotificationConfigs")
+        );
+        // A first segment followed by a non-route head is not a tenant.
+        assert_eq!(strip_tenant_prefix("/foo/bar"), (None, "/foo/bar"));
+        // The well-known card path is never tenant-prefixed.
+        assert_eq!(
+            strip_tenant_prefix("/.well-known/agent-card.json"),
+            (None, "/.well-known/agent-card.json")
+        );
     }
 
     #[test]

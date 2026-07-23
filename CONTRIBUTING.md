@@ -99,7 +99,6 @@ under CI load for dead time on every run. In order of preference:
 Never assert an asynchronous counter or store state immediately after a
 fixed sleep — that is the flaky-test signature this policy exists to
 prevent.
- Guide
 
 ### Test Categories
 
@@ -111,7 +110,7 @@ prevent.
 | Property-based tests | `crates/a2a-protocol-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-protocol-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
 | Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
-| End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent` | `cargo run -p echo-agent` |
+| End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent`, `examples/incident-response` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
 ### Running Tests
@@ -173,7 +172,8 @@ and timeout settings.
 (`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`;
 every pull request also runs an incremental `--in-diff` mutation gate that
 fails on any missed mutant in the changed lines.
-Nightly schedule and PR-gate triggers are currently disabled to save CI time.
+The nightly schedule is currently disabled to save CI time; the incremental
+PR gate runs on every pull request.
 
 When a mutant survives, the output shows the exact mutation and the file/line.
 Add or strengthen tests to cover the gap, then re-run to confirm the mutant is

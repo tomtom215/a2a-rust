@@ -135,6 +135,11 @@ pub struct AgentSkill {
     pub description: String,
 
     /// Searchable tags for the skill.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields — a skill published by
+    /// an official SDK with no tags arrives without the key. Absence means
+    /// empty; failing the whole card parse over it is not interoperable.
+    #[serde(default)]
     pub tags: Vec<String>,
 
     /// Example prompts illustrating how to invoke the skill.
@@ -192,18 +197,30 @@ pub struct AgentCard {
 
     /// Transport interfaces offered by this agent.
     ///
-    /// **Spec requirement:** Must contain at least one element.
+    /// **Spec requirement:** Must contain at least one element — enforced by
+    /// [`validate`](Self::validate), not at parse time: `ProtoJSON` printers
+    /// omit empty repeated fields, so parsing treats absence as empty and
+    /// validation reports the real problem instead of a JSON type error.
+    #[serde(default)]
     pub supported_interfaces: Vec<AgentInterface>,
 
     /// Default MIME types accepted as input.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
+    #[serde(default)]
     pub default_input_modes: Vec<String>,
 
     /// Default MIME types produced as output.
+    ///
+    /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
+    #[serde(default)]
     pub default_output_modes: Vec<String>,
 
     /// Skills offered by this agent.
     ///
-    /// **Spec requirement:** Must contain at least one element.
+    /// **Spec requirement:** Must contain at least one element. Parsing
+    /// treats absence as empty (`ProtoJSON` omits empty repeated fields).
+    #[serde(default)]
     pub skills: Vec<AgentSkill>,
 
     /// Capability flags.

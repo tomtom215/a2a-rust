@@ -109,7 +109,9 @@ fn agent_card(url: &str) -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none(),
+        // This suite exercises streaming; advertise it so the server's capability
+        // validation (spec §3.3.4) permits streaming sends.
+        capabilities: AgentCapabilities::none().with_streaming(true),
         provider: None,
         icon_url: None,
         documentation_url: None,

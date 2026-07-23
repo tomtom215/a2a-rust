@@ -32,6 +32,43 @@ pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerRes
     Ok(())
 }
 
+/// Rejects client-supplied `metadata` that is present but not a JSON object.
+///
+/// Every `metadata` field crosses the wire as `google.protobuf.Struct` on the
+/// gRPC binding, and a protobuf `Struct` can only hold a JSON **object** — never
+/// an array, string, number, or bare `null`. A task accepted over JSON-RPC or
+/// REST with, say, `metadata: [1, 2, 3]` would then fail to serialize the moment
+/// the same task is served over gRPC, so it would be representable on one
+/// binding but not another. Rejecting non-object metadata at ingress keeps every
+/// accepted task portable across all A2A transports.
+pub(super) fn validate_metadata_object(
+    metadata: Option<&serde_json::Value>,
+    field: &str,
+) -> ServerResult<()> {
+    if let Some(value) = metadata {
+        if !value.is_object() {
+            return Err(ServerError::InvalidParams(format!(
+                "{field} metadata must be a JSON object (got {}); non-object metadata \
+                 is not representable across all A2A transports (gRPC google.protobuf.Struct)",
+                json_kind(value)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Returns the JSON type name of a value, for diagnostic messages.
+const fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 /// Builds a [`CallContext`] from a method name and optional HTTP headers.
 pub(super) fn build_call_context(
     method: &str,
@@ -39,9 +76,35 @@ pub(super) fn build_call_context(
 ) -> CallContext {
     let mut ctx = CallContext::new(method);
     if let Some(h) = headers {
+        // Spec §14.2.2: the A2A-Extensions header carries a comma-separated
+        // list of extension URIs the client opts into for this request.
+        // Parse it here so interceptors and tenant resolvers can consult
+        // `CallContext::extensions` instead of re-parsing raw headers (the
+        // accessor previously always returned empty — nothing populated it).
+        let extensions = parse_extensions_header(h);
+        if !extensions.is_empty() {
+            ctx = ctx.with_extensions(extensions);
+        }
         ctx = ctx.with_http_headers(h.clone());
     }
     ctx
+}
+
+/// Parses the (lowercased) `a2a-extensions` header into extension URIs.
+///
+/// Splits on commas, trims whitespace, and drops empty segments. Returns an
+/// empty vec when the header is absent.
+fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
+    headers
+        .get("a2a-extensions")
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl RequestHandler {
@@ -205,6 +268,55 @@ mod tests {
         );
     }
 
+    // ── A2A-Extensions header parsing (spec §14.2.2) ─────────────────────
+
+    #[test]
+    fn build_call_context_parses_extensions_header() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "a2a-extensions".to_owned(),
+            "https://example.com/ext/geo/v1, https://standards.org/ext/cite/v1".to_owned(),
+        );
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert_eq!(
+            ctx.extensions(),
+            &[
+                "https://example.com/ext/geo/v1".to_owned(),
+                "https://standards.org/ext/cite/v1".to_owned(),
+            ],
+            "comma-separated extension URIs must be parsed and trimmed"
+        );
+    }
+
+    #[test]
+    fn build_call_context_no_extensions_header_is_empty() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert!(ctx.extensions().is_empty());
+    }
+
+    #[test]
+    fn parse_extensions_header_drops_empty_segments() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "a2a-extensions".to_owned(),
+            " ,https://example.com/ext/v1,, ".to_owned(),
+        );
+        assert_eq!(
+            parse_extensions_header(&headers),
+            vec!["https://example.com/ext/v1".to_owned()],
+            "whitespace-only and empty segments must be dropped"
+        );
+
+        headers.insert("a2a-extensions".to_owned(), "  ".to_owned());
+        assert!(
+            parse_extensions_header(&headers).is_empty(),
+            "a blank header value yields no extensions"
+        );
+    }
+
     // ── find_task_by_context ─────────────────────────────────────────────
 
     mod find_task_by_context_tests {
@@ -339,9 +451,12 @@ mod tests {
                 "should return a non-terminal task, got {:?}",
                 task.status.state
             );
+            // list() now yields tasks most-recently-updated first (spec §3.1.4),
+            // so the first non-terminal task is the one saved last — the more
+            // correct choice for continuing an active conversation.
             assert_eq!(
-                task.id.0, "bbb-submitted",
-                "should return the first non-terminal task in store order"
+                task.id.0, "ccc-working",
+                "should return the most-recently-updated non-terminal task"
             );
         }
     }

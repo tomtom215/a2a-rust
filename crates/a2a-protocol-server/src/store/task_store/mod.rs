@@ -272,7 +272,17 @@ mod tests {
 #[derive(Debug, Clone)]
 pub struct TaskStoreConfig {
     /// Maximum number of tasks to keep in the store. Once exceeded, the oldest
-    /// completed/failed tasks are evicted. `None` means no limit.
+    /// terminal (completed/failed/canceled/rejected) tasks are evicted first.
+    /// `None` means no limit.
+    ///
+    /// **Overload behavior:** if the overflow cannot be covered by terminal
+    /// tasks alone, the oldest *non-terminal* tasks are evicted as a last
+    /// resort — bounded memory is prioritized over retaining in-flight rows.
+    /// An evicted in-flight task answers `GetTask` with task-not-found until
+    /// its next event is persisted (the background processor re-saves it),
+    /// so under sustained over-capacity write pressure the cap is a strong
+    /// bound on steady-state size, not an absolute invariant. Size
+    /// `max_capacity` above the realistic concurrent in-flight task count.
     pub max_capacity: Option<usize>,
 
     /// Time-to-live for completed or failed tasks. Tasks in terminal states

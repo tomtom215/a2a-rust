@@ -105,7 +105,11 @@ fn minimal_agent_card() -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none(),
+        // The WebSocket binding is a streaming transport; advertise streaming so
+        // capability validation (spec §3.3.4) permits streaming sends/subscribes.
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -186,6 +190,59 @@ async fn ws_send_message_returns_task() {
             || result_str.contains("id"),
         "unexpected result: {result_str}"
     );
+}
+
+#[tokio::test]
+async fn serve_binds_and_handles_connections() {
+    // Exercises `serve()` (the run-forever variant) rather than
+    // `serve_with_addr()`: reserve a free port, release it, then have `serve`
+    // bind that port and prove it actually accepts AND handles a WebSocket
+    // request end-to-end. A stubbed `serve()` that returned `Ok(())` without
+    // binding would make every connect fail.
+    let probe = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = probe.local_addr().unwrap();
+    drop(probe);
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .with_agent_card(minimal_agent_card())
+            .with_push_sender(MockPushSender)
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+    tokio::spawn(async move {
+        let _ = dispatcher.serve(addr).await;
+    });
+
+    // Wait (with retries) for the spawned server to bind.
+    let mut ws = None;
+    for _ in 0..50 {
+        if let Ok((sock, _)) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await {
+            ws = Some(sock);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let mut ws = ws.expect("serve() must bind and accept WebSocket connections");
+
+    // Prove the connection is handled (accept_loop -> handle_connection), not
+    // merely accepted: a real request must get a real JSON-RPC reply.
+    let rpc_req = JsonRpcRequest::with_params(
+        serde_json::json!("serve-1"),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    ws.send(WsMessage::Text(
+        serde_json::to_string(&rpc_req).unwrap().into(),
+    ))
+    .await
+    .unwrap();
+    let msg = ws.next().await.expect("a reply frame").expect("ok frame");
+    let text = msg.into_text().unwrap();
+    let resp: JsonRpcSuccessResponse<serde_json::Value> = serde_json::from_str(&text)
+        .unwrap_or_else(|_| panic!("serve() must handle the request, got: {text}"));
+    assert_eq!(resp.id, Some(serde_json::json!("serve-1")));
 }
 
 #[tokio::test]

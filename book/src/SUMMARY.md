@@ -24,6 +24,7 @@
 - [Dispatchers (JSON-RPC, REST, WebSocket, Axum & gRPC)](./building-agents/dispatchers.md)
 - [Push Notifications](./building-agents/push-notifications.md)
 - [Interceptors & Middleware](./building-agents/interceptors.md)
+- [Authentication](./building-agents/authentication.md)
 - [Task & Config Stores](./building-agents/stores.md)
 
 # Client Usage

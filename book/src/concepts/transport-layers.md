@@ -92,7 +92,10 @@ The REST transport uses standard HTTP methods and URL paths:
 
 ### Multi-Tenant Paths
 
-With tenancy, paths are prefixed: `/tenants/{tenant-id}/tasks/{id}`
+With tenancy, the tenant rides in the path — either the canonical bare-segment
+form from the spec's `google.api.http` bindings (`/{tenant}/tasks/{id}`, what
+official-SDK REST clients send) or this SDK's explicit
+`/tenants/{tenant-id}/tasks/{id}` form; both are routed.
 
 ### Content Types
 
@@ -112,10 +115,10 @@ The **WebSocket** transport (`websocket` feature flag) provides a persistent bid
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.6", features = ["websocket"] }
+a2a-protocol-server = { version = "0.7", features = ["websocket"] }
 
 # Client
-a2a-protocol-client = { version = "0.6", features = ["websocket"] }
+a2a-protocol-client = { version = "0.7", features = ["websocket"] }
 ```
 
 ### Server
@@ -135,9 +138,11 @@ dispatcher.serve("0.0.0.0:3002").await?;
 
 - Client sends JSON-RPC 2.0 requests as text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
+- The full A2A method surface is routed — the same method names (and v0.3 aliases) as the JSON-RPC HTTP binding
 - For streaming methods (`SendStreamingMessage`, `SubscribeToTask`), the server sends multiple frames — one per event — followed by a `stream_complete` response
 - Ping/pong frames are handled automatically
 - Connection closes cleanly on WebSocket close frame
+- The upgrade request's HTTP headers reach the handler for every request on the connection, so authentication and tenant resolution work exactly as over HTTP; supply credentials at connect time (`WebSocketTransport::connect_with_config`)
 
 ### Client
 
@@ -162,10 +167,10 @@ The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via p
 
 ```toml
 # Server
-a2a-protocol-server = { version = "0.6", features = ["grpc"] }
+a2a-protocol-server = { version = "0.7", features = ["grpc"] }
 
 # Client
-a2a-protocol-client = { version = "0.6", features = ["grpc"] }
+a2a-protocol-client = { version = "0.7", features = ["grpc"] }
 ```
 
 ### Server

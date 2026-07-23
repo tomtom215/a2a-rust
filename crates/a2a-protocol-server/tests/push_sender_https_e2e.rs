@@ -229,9 +229,18 @@ async fn https_push_delivered_over_real_tls() {
     assert_eq!(
         captured
             .headers
+            .get("x-a2a-notification-token")
+            .map(String::as_str),
+        Some("notif-token-xyz"),
+        "canonical token header (official-SDK receiver convention)"
+    );
+    assert_eq!(
+        captured
+            .headers
             .get("a2a-notification-token")
             .map(String::as_str),
-        Some("notif-token-xyz")
+        Some("notif-token-xyz"),
+        "legacy token header kept until 0.8"
     );
     // The body is the serialized StreamResponse (externally-tagged status update).
     assert!(

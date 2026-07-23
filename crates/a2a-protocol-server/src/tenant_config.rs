@@ -9,6 +9,19 @@
 //! tenants by setting per-tenant timeouts, capacity limits, rate limits, and
 //! other resource constraints.
 //!
+//! # Fairness under shared process-wide caps
+//!
+//! Per-tenant limits bound what each tenant may *use*; they do not reserve
+//! capacity. Process-wide resources — the event-queue manager's
+//! `max_concurrent_queues`, handler sweep thresholds, and the tenant-partition
+//! cap of the tenant store wrappers — are shared pools, so a tenant running at
+//! its own limit can still exhaust a shared pool and cause other tenants'
+//! requests to be rejected as overloaded. Set per-tenant
+//! `max_concurrent_tasks` so that the sum across active tenants stays within
+//! the process-wide caps if noisy-neighbor isolation matters for your
+//! deployment. Data isolation is unaffected — it is enforced per-partition
+//! regardless of these limits.
+//!
 //! # Example
 //!
 //! ```rust

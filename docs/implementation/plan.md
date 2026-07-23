@@ -300,7 +300,7 @@ src/
   artifact.rs                       [139 lines]  Artifact, ArtifactId
   agent_card.rs                     [281 lines]  AgentCard, AgentCapabilities (+ state_transition_history), AgentSkill, AgentProvider, AgentInterface
   security.rs                       [340 lines]  SecurityScheme variants (OAuth2, HTTP, ApiKey, OIDC, MutualTLS), OAuthFlows
-  events.rs                         [181 lines]  TaskStatusUpdateEvent, TaskArtifactUpdateEvent, StreamResponse (untagged union)
+  events.rs                         [181 lines]  TaskStatusUpdateEvent, TaskArtifactUpdateEvent, StreamResponse (externally-tagged union)
   jsonrpc.rs                        [321 lines]  JsonRpcRequest, JsonRpcSuccessResponse<T>, JsonRpcErrorResponse, JsonRpcId
   params.rs                         [287 lines]  MessageSendParams, SendMessageConfiguration, TaskQueryParams, ListTasksParams, etc.
   push.rs                           [116 lines]  TaskPushNotificationConfig, AuthenticationInfo

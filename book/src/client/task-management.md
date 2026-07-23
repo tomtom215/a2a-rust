@@ -57,6 +57,11 @@ if !response.next_page_token.is_empty() {
 }
 ```
 
+Tasks are returned **most-recently-updated first** (spec §3.1.4): the first
+page holds the tasks whose state changed most recently. `page_token` is an
+opaque cursor — pass it back verbatim to fetch the next page; do not parse or
+construct it yourself.
+
 ### Filtering Options
 
 | Parameter | Description |

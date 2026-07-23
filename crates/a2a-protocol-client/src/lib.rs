@@ -124,6 +124,7 @@ pub mod retry;
 pub mod streaming;
 #[cfg(feature = "tls-rustls")]
 pub mod tls;
+pub mod token_provider;
 pub mod transport;
 
 // ── Flat re-exports ───────────────────────────────────────────────────────────
@@ -137,8 +138,11 @@ pub use error::{ClientError, ClientResult};
 pub use interceptor::{CallInterceptor, ClientRequest, ClientResponse, InterceptorChain};
 pub use retry::RetryPolicy;
 pub use streaming::EventStream;
+pub use token_provider::{
+    BearerAuthInterceptor, OAuth2ClientCredentials, StaticTokenProvider, TokenProvider,
+};
 #[cfg(feature = "grpc")]
 pub use transport::GrpcTransport;
-#[cfg(feature = "websocket")]
-pub use transport::WebSocketTransport;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};
+#[cfg(feature = "websocket")]
+pub use transport::{WebSocketTransport, WebSocketTransportConfig};

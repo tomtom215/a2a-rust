@@ -113,7 +113,13 @@ fn minimal_agent_card() -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none().with_extended_agent_card(true),
+        // These dispatch tests exercise streaming, push and the extended card,
+        // so the card advertises all three — capability validation (spec §3.3.4)
+        // rejects those operations otherwise.
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,

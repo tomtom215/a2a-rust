@@ -426,9 +426,13 @@ jobs:
     strategy:
       fail-fast: false # a survivor in one shard must not cancel the others
       matrix:
-        shard: [0, 1, 2, 3]
+        # 8-way (matching the full-sweep shard count for a2a-server): a large
+        # PR diff generates enough in-diff mutants that a 4-way split pushed the
+        # heaviest shards past the 45-minute timeout. Doubling the shard count
+        # halves each runner's mutant load so every shard finishes in time.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
-      INCREMENTAL_SHARDS: 4
+      INCREMENTAL_SHARDS: 8
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:

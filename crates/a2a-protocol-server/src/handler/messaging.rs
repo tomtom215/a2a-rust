@@ -18,7 +18,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
 
-use super::helpers::{build_call_context, validate_id};
+use super::helpers::{build_call_context, validate_id, validate_metadata_object};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
 /// Hard cap on the number of messages retained in `Task.history`.
@@ -94,6 +94,24 @@ const fn evict_aged_token(queue_live: bool) -> bool {
     !queue_live
 }
 
+/// Re-validates, under the write lock, that a sweep candidate is still
+/// evictable at removal time.
+///
+/// Between the read-lock candidate collection and the write-lock removal, a
+/// concurrent send can replace the entry with a **fresh, live** token for the
+/// same task id (a cancel-then-resend race: the cancelled token passes the
+/// in-flight check, and the resend inserts its own token). Removing by id
+/// unconditionally would delete that live token and leave the resent executor
+/// uncancelable for its whole run — so only entries that are *still* cancelled
+/// or *still* aged are removed. A freshly-inserted token is neither.
+fn token_still_evictable(
+    entry: &CancellationEntry,
+    now: Instant,
+    max_token_age: std::time::Duration,
+) -> bool {
+    entry.token.is_cancelled() || token_aged(now.duration_since(entry.created_at), max_token_age)
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -153,6 +171,13 @@ impl RequestHandler {
         let call_ctx = build_call_context(method_name, headers);
         self.interceptors.run_before(&call_ctx).await?;
 
+        // SPEC §3.3.4: a streaming send is only permitted when the configured
+        // agent card advertises `capabilities.streaming == true`. Reject with
+        // UnsupportedOperationError otherwise. (No-op when no card is configured.)
+        if streaming {
+            self.ensure_streaming_supported()?;
+        }
+
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
@@ -166,6 +191,17 @@ impl RequestHandler {
             return Err(ServerError::InvalidParams(
                 "message must contain at least one part".into(),
             ));
+        }
+
+        // Cross-binding portability: every client-supplied `metadata` field must
+        // be a JSON object so the resulting task is representable over gRPC
+        // (google.protobuf.Struct), not just over JSON-RPC/REST. Reject arrays
+        // and scalars at ingress rather than storing a task that one binding can
+        // serve and another cannot.
+        validate_metadata_object(params.message.metadata.as_ref(), "message")?;
+        validate_metadata_object(params.metadata.as_ref(), "request")?;
+        for (i, part) in params.message.parts.iter().enumerate() {
+            validate_metadata_object(part.metadata.as_ref(), &format!("message part {i}"))?;
         }
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
@@ -424,10 +460,19 @@ impl RequestHandler {
             }
 
             // Phase 2: Remove stale entries under WRITE lock (brief).
+            // Re-validate each candidate at removal time: a concurrent send
+            // may have replaced the entry with a fresh live token since the
+            // read-lock scan (see `token_still_evictable`).
             if !stale_ids.is_empty() {
+                let now = Instant::now();
                 let mut tokens = self.cancellation_tokens.write().await;
                 for id in &stale_ids {
-                    tokens.remove(id);
+                    let evict = tokens
+                        .get(id)
+                        .is_some_and(|e| token_still_evictable(e, now, self.limits.max_token_age));
+                    if evict {
+                        tokens.remove(id);
+                    }
                 }
             }
 
@@ -555,7 +600,12 @@ impl RequestHandler {
             // H5 FIX: The persistence channel is a dedicated mpsc channel that
             // is not affected by SSE consumer backpressure, so the background
             // processor never misses state transitions.
-            self.spawn_background_event_processor(task_id.clone(), executor_handle, persistence_rx);
+            self.spawn_background_event_processor(
+                task_id.clone(),
+                executor_handle,
+                persistence_rx,
+                task.clone(),
+            );
 
             if streaming {
                 // SPEC §3.1.2: The first event in a streaming response MUST be a
@@ -669,6 +719,65 @@ mod tests {
         assert!(
             matches!(result, Err(ServerError::InvalidParams(_))),
             "expected InvalidParams for oversized request metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_message_metadata_returns_invalid_params() {
+        // Cross-binding portability: array/scalar metadata is not representable
+        // over gRPC (google.protobuf.Struct) and must be rejected at ingress.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.metadata = Some(serde_json::json!([1, 2, 3]));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("JSON object") && msg.contains("array")),
+            "expected InvalidParams naming the offending kind (array), got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn scalar_request_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.metadata = Some(serde_json::json!("a bare string"));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("JSON object") && msg.contains("string")),
+            "expected InvalidParams naming the offending kind (string), got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_part_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.parts[0].metadata = Some(serde_json::json!(42));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("part 0") && msg.contains("number")),
+            "expected InvalidParams naming the part index and kind (number), got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn object_metadata_is_accepted() {
+        // An object metadata value is representable across all bindings.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.metadata = Some(serde_json::json!({"k": "v"}));
+        params.metadata = Some(serde_json::json!({"trace": 1}));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_ok(),
+            "object metadata must be accepted, got: {result:?}"
         );
     }
 
@@ -1718,5 +1827,48 @@ mod tests {
             !evict_aged_token(true),
             "a live queue means the task is still running → keep its token"
         );
+    }
+
+    /// Regression: the Phase-2 sweep removal must re-validate the entry under
+    /// the write lock. A fresh, live token inserted by a concurrent resend
+    /// between candidate collection and removal is neither cancelled nor
+    /// aged — deleting it would leave that executor uncancelable.
+    #[test]
+    fn token_still_evictable_spares_fresh_live_token() {
+        let max_age = std::time::Duration::from_secs(3600);
+        let now = Instant::now();
+
+        // A fresh, live token (the concurrent-resend replacement): spared.
+        let fresh = CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: now,
+        };
+        assert!(
+            !token_still_evictable(&fresh, now, max_age),
+            "a fresh live token must never be swept"
+        );
+
+        // A cancelled token: still evictable.
+        let cancelled = CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: now,
+        };
+        cancelled.token.cancel();
+        assert!(token_still_evictable(&cancelled, now, max_age));
+
+        // An aged live token: still evictable (its queue-liveness gate ran
+        // during candidate collection). Model "aged" by advancing the
+        // comparison instant forward by `max_age` rather than subtracting from
+        // `now` — `Instant::checked_sub` returns `None` on platforms whose
+        // monotonic-clock epoch is younger than `max_age` (e.g. a freshly
+        // booted Windows CI runner), which would spuriously fail the test.
+        let aged = CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: now,
+        };
+        let later = now
+            .checked_add(max_age)
+            .expect("now + max_age is representable");
+        assert!(token_still_evictable(&aged, later, max_age));
     }
 }

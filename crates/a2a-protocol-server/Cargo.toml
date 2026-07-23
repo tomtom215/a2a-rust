@@ -43,6 +43,10 @@ grpc-legacy-json = ["grpc"]
 otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp"]
 ## Enable Axum framework integration (Router, extractors, IntoResponse).
 axum = ["dep:axum"]
+## Enable JWT bearer-token authentication (HS256/RS256/ES256, static or remote
+## JWKS with OIDC discovery) via `ring`. The header/token interceptors
+## (`ApiKeyAuthInterceptor`, `BearerTokenAuthInterceptor`) need no feature.
+auth-jwt = ["dep:ring", "dep:base64"]
 
 [dependencies]
 a2a-protocol-types      = { version = "0.6.0", path = "../a2a-protocol-types" }
@@ -60,6 +64,11 @@ hyper-rustls   = { version = ">=0.27, <0.28", optional = true, default-features 
 rustls         = { version = ">=0.23, <0.24", optional = true, default-features = false, features = ["std", "tls12", "ring"] }
 rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
+# JWT verification (auth-jwt feature). `ring` is the same crypto backend the
+# types crate's `signing` feature already uses; `base64` is tiny with no
+# transitive deps.
+ring           = { version = "0.17", optional = true }
+base64         = { version = "0.22", optional = true }
 sqlx           = { workspace = true, optional = true }
 tokio-tungstenite = { version = ">=0.29, <0.30", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }

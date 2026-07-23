@@ -20,6 +20,14 @@ Why the CI lower bound instead of the point estimate:
   catches real regressions (accidental O(n²) loops, allocator thrash, lost
   inlining) without flaking on the runner.
 
+Per-benchmark overrides:
+  A handful of benchmarks are inherently noisier than the rest (tiny
+  absolute runtimes amplify allocator and cache-layout luck). Rather than
+  loosening the global gate for everyone, `--override PATTERN=THRESHOLD`
+  (repeatable) raises the tolerance for the benchmarks matching a glob
+  PATTERN only. The first matching override wins; everything else keeps
+  the global threshold.
+
 Exit codes:
   0 — no benchmark regressed beyond the threshold.
   1 — one or more benchmarks regressed; details printed to stderr.
@@ -28,11 +36,13 @@ Exit codes:
 Usage:
   ./benches/scripts/check_regression.py \\
       --target-dir target/criterion \\
-      --threshold 0.25
+      --threshold 0.25 \\
+      --override '*/from_str/16384=0.75'
 """
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import sys
 from pathlib import Path
@@ -97,7 +107,41 @@ def parse_change(path: Path, name: str) -> Change:
         raise ValueError(f"malformed {path}: {exc}") from exc
 
 
-def format_row(change: Change, threshold: float) -> tuple[str, bool]:
+def parse_overrides(raw: list[str]) -> list[tuple[str, float]]:
+    """Parse repeated `PATTERN=THRESHOLD` override arguments.
+
+    Raises ValueError on a malformed entry so the caller can exit with a
+    config error instead of silently gating with the wrong tolerance.
+    """
+    overrides: list[tuple[str, float]] = []
+    for entry in raw:
+        pattern, sep, value = entry.partition("=")
+        if not sep or not pattern:
+            raise ValueError(f"malformed --override {entry!r}: expected PATTERN=THRESHOLD")
+        try:
+            threshold = float(value)
+        except ValueError as exc:
+            raise ValueError(f"malformed --override {entry!r}: {exc}") from exc
+        if threshold <= 0:
+            raise ValueError(f"malformed --override {entry!r}: threshold must be > 0")
+        overrides.append((pattern, threshold))
+    return overrides
+
+
+def threshold_for(
+    name: str, default: float, overrides: list[tuple[str, float]]
+) -> tuple[float, bool]:
+    """Return the effective threshold for a benchmark and whether it was overridden.
+
+    The first matching glob pattern wins.
+    """
+    for pattern, threshold in overrides:
+        if fnmatch.fnmatch(name, pattern):
+            return threshold, True
+    return default, False
+
+
+def format_row(change: Change, threshold: float, overridden: bool) -> tuple[str, bool]:
     """Format one row of the summary table and report whether it regressed.
 
     A benchmark is considered regressed only when the 95 % CI lower bound
@@ -106,11 +150,13 @@ def format_row(change: Change, threshold: float) -> tuple[str, bool]:
     """
     is_regression = change.median_ci_lower > threshold
     marker = "REGRESSED" if is_regression else "ok"
+    note = f" [override {threshold * 100:.0f}%]" if overridden else ""
     row = (
         f"[{marker:>9}] {change.name:<55} "
         f"median {change.median_point * 100:+7.2f}% "
         f"(95% CI [{change.median_ci_lower * 100:+.2f}%, "
         f"{change.median_ci_upper * 100:+.2f}%])"
+        f"{note}"
     )
     return row, is_regression
 
@@ -129,7 +175,24 @@ def main() -> int:
         default=0.25,
         help="Fractional regression that fails the gate (default: 0.25 = 25%%)",
     )
+    parser.add_argument(
+        "--override",
+        action="append",
+        default=[],
+        metavar="PATTERN=THRESHOLD",
+        help=(
+            "Per-benchmark threshold override as a glob pattern over the "
+            "benchmark name (repeatable; first match wins). Example: "
+            "--override '*/from_str/16384=0.75'"
+        ),
+    )
     args = parser.parse_args()
+
+    try:
+        overrides = parse_overrides(args.override)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     if not args.target_dir.is_dir():
         print(
@@ -164,7 +227,8 @@ def main() -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        row, is_reg = format_row(change, args.threshold)
+        threshold, overridden = threshold_for(name, args.threshold, overrides)
+        row, is_reg = format_row(change, threshold, overridden)
         print(row)
         if is_reg:
             regressions.append(change)
@@ -172,8 +236,9 @@ def main() -> int:
     if regressions:
         print(
             f"\n{len(regressions)} benchmark(s) regressed beyond "
-            f"{args.threshold * 100:.0f}% "
-            f"(95% CI lower bound exceeds threshold):",
+            "their threshold "
+            f"(default {args.threshold * 100:.0f}%; "
+            "95% CI lower bound exceeds threshold):",
             file=sys.stderr,
         )
         for change in regressions:
