@@ -290,11 +290,11 @@ impl WebSocketDispatcher {
                         drop(permit); // Release when done
                     });
                 }
-                Ok(WsMessage::Ping(data)) => {
-                    let mut w = writer.lock().await;
-                    let _ = w.send(WsMessage::Pong(data)).await;
-                    drop(w);
-                }
+                // Pings need no handling here: tungstenite queues the Pong
+                // reply itself when the Ping is read (RFC 6455 §5.5.2) and
+                // this loop's continuous polling flushes it. A manual reply
+                // here sent a *second* pong per ping.
+                Ok(WsMessage::Ping(_)) => {}
                 Ok(WsMessage::Binary(_)) => {
                     // JSON-RPC over this binding is text-only. Answer instead
                     // of ignoring so a misconfigured client fails fast rather

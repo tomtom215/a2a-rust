@@ -179,13 +179,32 @@ let addr = dispatcher.serve_with_addr("127.0.0.1:0").await?;
 - Client sends JSON-RPC 2.0 requests as WebSocket text frames
 - Server responds with JSON-RPC 2.0 responses as text frames
 - Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) send one frame per event, followed by a final JSON-RPC success response
+- The full A2A method surface is routed — the same method names (and v0.3
+  `method/verb` aliases) as `JsonRpcDispatcher`, including the
+  push-notification-config methods and `GetExtendedAgentCard`
+
+### Authentication and tenancy
+
+The HTTP headers of the upgrade request (lowercased, plus the request path
+under `":path"`) are captured during the handshake and passed to the
+handler for **every** request on the connection. Tenant resolvers, strict
+multi-tenancy, and header-based authentication behave exactly as they do
+over HTTP — credentials are presented once, at connect time, and apply to
+the whole connection. An upgrade request whose `A2A-Version` header names
+an unsupported major version is rejected during the handshake with
+HTTP 400.
 
 ### Built-in Limits
 
 | Limit | Value | Description |
 |-------|-------|-------------|
 | **Concurrent tasks per connection** | 64 | Per-connection `Semaphore(64)` prevents unbounded task spawning |
-| **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected with an error response |
+| **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected at the protocol level |
+| **Handshake timeout** | 10 s (configurable via `with_handshake_timeout`) | A peer that never completes the upgrade is disconnected instead of pinning a connection |
+
+Transient `accept()` errors (per-connection aborts, fd-table exhaustion)
+never terminate the accept loop — it retries with the same backoff policy
+as the HTTP serve path.
 
 ## GrpcDispatcher
 
