@@ -45,37 +45,41 @@ pub(super) fn parse_query_param(query: &str, key: &str) -> Option<String> {
 /// percent-encoded non-ASCII tenant name or query value) into several garbage
 /// characters.
 fn percent_decode(input: &str) -> String {
-    let raw = input.as_bytes();
-    let mut bytes: Vec<u8> = Vec::with_capacity(raw.len());
-    let mut i = 0;
-    while i < raw.len() {
-        match raw[i] {
-            b'%' if i + 2 < raw.len() => {
-                if let (Some(h), Some(l)) = (hex_val(raw[i + 1]), hex_val(raw[i + 2])) {
-                    // `h` and `l` are single hex nibbles (0..=15), so the high
-                    // nibble (`h << 4`, bits 4-7) and low nibble (`l`, bits 0-3)
-                    // never overlap: `+` composes the byte exactly like a bitwise
-                    // OR would, but without an equivalent `| -> ^` mutation.
-                    bytes.push((h << 4) + l);
-                    i += 3;
-                    continue;
-                }
-                // Invalid percent sequence — pass the `%` through literally.
-                bytes.push(b'%');
-                i += 1;
-            }
+    let mut rest = input.as_bytes();
+    let mut bytes: Vec<u8> = Vec::with_capacity(rest.len());
+    // Advance by consuming from the front of `rest` rather than tracking a
+    // mutable index: every iteration reassigns `rest` to a strictly shorter
+    // slice, so there is no index arithmetic that a mutation could turn into a
+    // non-terminating loop.
+    while let Some((&first, tail)) = rest.split_first() {
+        match first {
+            // A `%XX` sequence needs two more bytes; `[h, l, ..]` matches iff
+            // they exist (equivalent to the old `i + 2 < len` bound).
             b'%' => {
-                // Truncated `%` at end of input — pass through as-is.
+                if let [h, l, ..] = tail {
+                    if let (Some(hv), Some(lv)) = (hex_val(*h), hex_val(*l)) {
+                        // `hv`/`lv` are single hex nibbles (0..=15), so the high
+                        // nibble (`hv << 4`, bits 4-7) and low nibble (`lv`, bits
+                        // 0-3) never overlap: `+` composes the byte exactly like a
+                        // bitwise OR would, but without an equivalent `| -> ^`
+                        // mutation.
+                        bytes.push((hv << 4) + lv);
+                        rest = &tail[2..];
+                        continue;
+                    }
+                }
+                // Truncated or invalid `%` sequence — pass the `%` through
+                // literally and keep decoding the byte(s) after it.
                 bytes.push(b'%');
-                i += 1;
+                rest = tail;
             }
             b'+' => {
                 bytes.push(b' ');
-                i += 1;
+                rest = tail;
             }
             other => {
                 bytes.push(other);
-                i += 1;
+                rest = tail;
             }
         }
     }
