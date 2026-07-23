@@ -285,6 +285,15 @@ changed shape (0.x breaking — warrants a minor bump).
 
 ### Fixed (third hardening pass)
 
+- **`a2a-protocol-server` (push): the notification token is sent as
+  `X-A2A-Notification-Token`** — the header name the spec's push example
+  uses and the official SDK's webhook receivers read. The bare
+  `a2a-notification-token` name was this SDK's own pre-0.7 invention, so
+  receivers written against the official convention never saw the token;
+  it is still sent alongside the canonical name for migration and will be
+  removed in 0.8. The default CORS allow-list now also includes
+  `a2a-version` and `a2a-extensions` — protocol headers A2A clients send
+  on every request, without which a browser client's preflight fails.
 - **`a2a-protocol-server` (REST): the canonical `/{tenant}/...` bindings
   are now routed** — the spec proto's `google.api.http` additional
   bindings put the tenant as a bare first path segment

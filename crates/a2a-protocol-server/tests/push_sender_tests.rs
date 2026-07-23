@@ -325,8 +325,13 @@ async fn notification_token_header_is_sent() {
     assert!(!reqs.is_empty());
     let req = &reqs[0];
     assert!(
+        req.contains("x-a2a-notification-token: my-notification-token"),
+        "should contain the canonical X-A2A-Notification-Token header \
+         (what official-SDK webhook receivers read), got: {req}"
+    );
+    assert!(
         req.contains("a2a-notification-token: my-notification-token"),
-        "should contain notification token header, got: {req}"
+        "should still contain the legacy header until 0.8, got: {req}"
     );
     handle.abort();
 }
@@ -359,8 +364,12 @@ async fn both_auth_and_token_headers_are_sent() {
         "should contain Bearer auth"
     );
     assert!(
+        req.contains("x-a2a-notification-token: notif-456"),
+        "should contain the canonical notification token header"
+    );
+    assert!(
         req.contains("a2a-notification-token: notif-456"),
-        "should contain notification token"
+        "should still contain the legacy header until 0.8"
     );
     handle.abort();
 }
