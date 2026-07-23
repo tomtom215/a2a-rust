@@ -1854,11 +1854,18 @@ mod tests {
         assert!(token_still_evictable(&cancelled, now, max_age));
 
         // An aged live token: still evictable (its queue-liveness gate ran
-        // during candidate collection).
+        // during candidate collection). Model "aged" by advancing the
+        // comparison instant forward by `max_age` rather than subtracting from
+        // `now` — `Instant::checked_sub` returns `None` on platforms whose
+        // monotonic-clock epoch is younger than `max_age` (e.g. a freshly
+        // booted Windows CI runner), which would spuriously fail the test.
         let aged = CancellationEntry {
             token: tokio_util::sync::CancellationToken::new(),
-            created_at: now.checked_sub(max_age).expect("test instant"),
+            created_at: now,
         };
-        assert!(token_still_evictable(&aged, now, max_age));
+        let later = now
+            .checked_add(max_age)
+            .expect("now + max_age is representable");
+        assert!(token_still_evictable(&aged, later, max_age));
     }
 }
