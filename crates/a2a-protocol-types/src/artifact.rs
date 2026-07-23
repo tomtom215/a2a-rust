@@ -80,7 +80,7 @@ pub struct Artifact {
     /// **Spec requirement:** Must contain at least one element. The A2A
     /// protocol does not define behavior for empty parts lists.
     ///
-    /// Parsing treats absence as empty (ProtoJSON printers omit empty
+    /// Parsing treats absence as empty (`ProtoJSON` printers omit empty
     /// repeated fields; the gRPC binding already decodes it that way) — the
     /// server-side event processors drop empty-parts artifacts explicitly.
     #[serde(default)]

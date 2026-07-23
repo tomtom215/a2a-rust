@@ -42,6 +42,7 @@ impl RequestHandler {
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
         persistence_rx: Option<mpsc::Receiver<A2aResult<StreamResponse>>>,
+        initial_task: a2a_protocol_types::task::Task,
     ) {
         let task_store = Arc::clone(&self.task_store);
         let push_config_store = Arc::clone(&self.push_config_store);
@@ -67,22 +68,37 @@ impl RequestHandler {
                     return;
                 };
 
-                // Get the current task from the store.
+                // Get the current task from the store. The send path saved it
+                // just before spawning this processor; a miss here means the
+                // row vanished in that tiny window (capacity eviction under
+                // extreme churn, or a store fault). Returning early would drop
+                // the persistence receiver and silently lose every subsequent
+                // state transition and push notification for the task while
+                // its stream kept delivering — so fall back to the send path's
+                // snapshot and (for a confirmed miss) re-assert the row.
                 let mut last_task = match task_store.get(&task_id).await {
                     Ok(Some(task)) => task,
                     Ok(None) => {
-                        trace_error!(
+                        trace_warn!(
                             task_id = %task_id,
-                            "background processor: task not found in store, cannot process events"
+                            "background processor: task missing at start; \
+                             re-asserting from the send-path snapshot"
                         );
-                        return;
+                        if let Err(_e) = task_store.save(&initial_task).await {
+                            trace_error!(
+                                task_id = %task_id,
+                                "background processor: failed to re-assert evicted task"
+                            );
+                        }
+                        initial_task
                     }
                     Err(_e) => {
-                        trace_error!(
+                        trace_warn!(
                             task_id = %task_id,
-                            "background processor: failed to read task from store"
+                            "background processor: store read failed at start; \
+                             continuing from the send-path snapshot"
                         );
-                        return;
+                        initial_task
                     }
                 };
 

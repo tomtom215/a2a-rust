@@ -28,6 +28,11 @@ pub struct HandlerLimits {
     /// Maximum allowed serialized size for metadata fields in bytes. Default: 1 MiB.
     pub max_metadata_size: usize,
     /// Maximum cancellation token map entries before cleanup sweep. Default: 10,000.
+    ///
+    /// A sweep threshold, not a hard bound: the sweep only evicts cancelled
+    /// or aged-out entries whose executor is gone — a token belonging to a
+    /// live task is never removed, so with more than this many tasks
+    /// genuinely in flight the map tracks the in-flight count instead.
     pub max_cancellation_tokens: usize,
     /// Maximum age for cancellation tokens. Default: 1 hour.
     pub max_token_age: Duration,
@@ -47,7 +52,10 @@ pub struct HandlerLimits {
     ///
     /// Context locks serialize concurrent `SendMessage` requests for the same
     /// `context_id`. Stale entries (where no other reference is held) are
-    /// pruned when this limit is reached.
+    /// pruned when this limit is reached. Like
+    /// [`max_cancellation_tokens`](Self::max_cancellation_tokens) this is a
+    /// prune threshold, not a hard bound — entries currently held by
+    /// in-flight requests are never pruned.
     pub max_context_locks: usize,
     /// Maximum number of push notification configs per task. Default: 100.
     ///

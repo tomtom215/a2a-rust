@@ -509,11 +509,16 @@ impl GrpcTransport {
 
         // gRPC does not use HTTP status codes for application responses;
         // a successful stream establishment is analogous to HTTP 200.
-        Ok(EventStream::with_status(
-            rx,
-            task_handle.abort_handle(),
-            200,
-        ))
+        //
+        // The connect timeout above only bounds stream establishment. Bound
+        // the wait for the first event too (the spec requires streams to
+        // begin with a Task/Message event immediately), so a server that
+        // accepts the stream and then goes silent cannot hang the consumer
+        // forever. The bound lifts after the first frame.
+        Ok(
+            EventStream::with_status(rx, task_handle.abort_handle(), 200)
+                .with_first_event_timeout(self.inner.config.timeout),
+        )
     }
 }
 

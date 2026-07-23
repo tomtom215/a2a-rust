@@ -341,6 +341,10 @@ impl JsonRpcTransport {
 
         let status = resp.status();
         if !status.is_success() {
+            // Capture Retry-After before the body is consumed, matching the
+            // unary path — a rate-limited stream start must honor the
+            // server-directed backoff, not the client's own jitter.
+            let retry_after = crate::error::parse_retry_after(resp.headers());
             let body_bytes = super::collect_response_limited(
                 resp,
                 self.inner.max_response_size,
@@ -351,7 +355,7 @@ impl JsonRpcTransport {
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
                 body: super::truncate_body(&body_str),
-                retry_after: None,
+                retry_after,
             });
         }
 
@@ -384,11 +388,15 @@ impl JsonRpcTransport {
             body_reader_task(body, tx).await;
         });
 
-        Ok(EventStream::with_status(
-            rx,
-            task_handle.abort_handle(),
-            actual_status,
-        ))
+        // `stream_connect_timeout` above only bounds header arrival. Bound
+        // the wait for the first SSE event too (the spec requires streams to
+        // begin with a Task/Message event immediately), so a server that
+        // sends headers and then goes silent cannot hang the consumer
+        // forever. The bound lifts after the first frame.
+        Ok(
+            EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
+                .with_first_event_timeout(self.inner.stream_connect_timeout),
+        )
     }
 }
 

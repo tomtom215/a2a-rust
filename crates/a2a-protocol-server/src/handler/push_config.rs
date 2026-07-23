@@ -55,6 +55,13 @@ impl RequestHandler {
             // SSRF attacks. Previously validation only happened at delivery time,
             // leaving a window where malicious URLs could be stored.
             // Respect the push sender's allow_private_urls setting for testing.
+            //
+            // This is deliberately the synchronous host check (scheme, IP
+            // literals, credentials, ports) — it fails fast on obviously bad
+            // URLs without adding a DNS lookup to a CRUD call. The security
+            // boundary is delivery: `validate_webhook_url_with_dns` re-checks
+            // there with resolution + IP pinning, so a hostname that resolves
+            // privately is stored but never delivered to.
             if !sender.allows_private_urls() {
                 crate::push::sender::validate_webhook_url(&config.url)?;
             }

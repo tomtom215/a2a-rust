@@ -45,22 +45,7 @@ impl RestTransport {
 
         let status = resp.status();
         if !status.is_success() {
-            // Enforce the response-size cap during the read: a hostile server
-            // answering with a 500 and an endless chunked body previously made
-            // the client buffer without bound (limited only by the connect
-            // timeout). Mirrors the JSON-RPC transport.
-            let body_bytes = super::super::collect_response_limited(
-                resp,
-                self.inner.max_response_size,
-                self.inner.stream_connect_timeout,
-            )
-            .await?;
-            let body_str = String::from_utf8_lossy(&body_bytes);
-            return Err(ClientError::UnexpectedStatus {
-                status: status.as_u16(),
-                body: super::super::truncate_body(&body_str),
-                retry_after: None,
-            });
+            return Err(self.stream_error_status(status, resp).await);
         }
 
         // A non-SSE 200 (e.g. an `application/json` error envelope or a proxy
@@ -89,15 +74,48 @@ impl RestTransport {
         let actual_status = status.as_u16();
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
         let body = resp.into_body();
-
         let task_handle = tokio::spawn(async move {
             body_reader_task(body, tx).await;
         });
-
+        // `stream_connect_timeout` above only bounds header arrival; the
+        // first-event bound (lifted after the first frame) keeps a server
+        // that sends headers then goes silent from hanging the consumer.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), actual_status)
-                .with_jsonrpc_envelope(false),
+                .with_jsonrpc_envelope(false)
+                .with_first_event_timeout(self.inner.stream_connect_timeout),
         )
+    }
+
+    /// Turns a non-success streaming response into `UnexpectedStatus`.
+    ///
+    /// Captures `Retry-After` before the body is consumed (matching the unary
+    /// path) so retries honor server-directed backoff, and enforces the
+    /// response-size cap during the read — a hostile server answering with an
+    /// endless chunked error body previously buffered without bound. Mirrors
+    /// the JSON-RPC transport.
+    async fn stream_error_status(
+        &self,
+        status: hyper::StatusCode,
+        resp: hyper::Response<hyper::body::Incoming>,
+    ) -> ClientError {
+        let retry_after = crate::error::parse_retry_after(resp.headers());
+        let body_bytes = match super::super::collect_response_limited(
+            resp,
+            self.inner.max_response_size,
+            self.inner.stream_connect_timeout,
+        )
+        .await
+        {
+            Ok(bytes) => bytes,
+            Err(e) => return e,
+        };
+        let body_str = String::from_utf8_lossy(&body_bytes);
+        ClientError::UnexpectedStatus {
+            status: status.as_u16(),
+            body: super::super::truncate_body(&body_str),
+            retry_after,
+        }
     }
 }
 

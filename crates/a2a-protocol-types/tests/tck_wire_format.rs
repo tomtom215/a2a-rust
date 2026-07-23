@@ -1584,7 +1584,10 @@ fn tck_agent_card_with_omitted_repeated_fields_parses() {
         "capabilities": {}
     }))
     .expect("interface-less card parses");
-    assert!(card.validate().is_err(), "validate() must reject it instead");
+    assert!(
+        card.validate().is_err(),
+        "validate() must reject it instead"
+    );
 }
 
 /// A message or artifact without `parts` parses to an empty vec — the server

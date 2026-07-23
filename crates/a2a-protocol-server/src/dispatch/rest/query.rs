@@ -86,20 +86,34 @@ fn percent_decode(input: &str) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Checks if a path contains traversal sequences (`..`) in either raw,
-/// percent-encoded (`%2E%2E`), or double-encoded (`%252E%252E`) form.
+/// Checks if a path contains traversal sequences (`..`) in raw or
+/// percent-encoded form, at any encoding depth.
+///
+/// Decodes until the string stops changing (bounded — each decode pass can
+/// only shrink or preserve length, and the bound caps adversarial input that
+/// alternates forms). A fixed decode-twice check let triple-encoded
+/// `%25252E%25252E` through; nothing downstream decodes three times today,
+/// but the detector should not encode that assumption.
 pub(super) fn contains_path_traversal(path: &str) -> bool {
+    const MAX_DECODE_PASSES: usize = 8;
+
     if path.contains("..") {
         return true;
     }
-    // Check single-encoded variants (%2E%2E, %2e%2e).
-    let decoded = percent_decode(path);
-    if decoded.contains("..") {
-        return true;
+    let mut current = path.to_owned();
+    for _ in 0..MAX_DECODE_PASSES {
+        let decoded = percent_decode(&current);
+        if decoded.contains("..") {
+            return true;
+        }
+        if decoded == current {
+            return false; // Fixpoint: fully decoded, no traversal found.
+        }
+        current = decoded;
     }
-    // Check double-encoded variants (%252E%252E → %2E%2E → ..).
-    let double_decoded = percent_decode(&decoded);
-    double_decoded.contains("..")
+    // Still changing after the pass bound — treat undecidable input as
+    // traversal (fail closed) rather than trusting it.
+    true
 }
 
 /// Returns the numeric value of a hex digit, or `None` if invalid.
@@ -257,11 +271,23 @@ mod tests {
         assert!(contains_path_traversal("/%252E%252E/admin"));
     }
 
+    /// Any encoding depth is detected — a fixed decode-twice check let
+    /// triple-encoded traversal through.
+    #[test]
+    fn path_traversal_deeply_encoded() {
+        // Triple: %25252E → %252E → %2E → .
+        assert!(contains_path_traversal("/%25252E%25252E/admin"));
+        // Quadruple.
+        assert!(contains_path_traversal("/%2525252E%2525252E/admin"));
+    }
+
     #[test]
     fn path_traversal_safe_paths() {
         assert!(!contains_path_traversal("/tasks/abc"));
         assert!(!contains_path_traversal("/tasks/abc.def"));
         assert!(!contains_path_traversal("/message:send"));
+        // Encoded but harmless content decodes to a fixpoint and passes.
+        assert!(!contains_path_traversal("/tasks/%2561%2562"));
     }
 
     // ── strip_tenant_prefix ──────────────────────────────────────────────

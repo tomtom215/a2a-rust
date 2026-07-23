@@ -49,7 +49,7 @@ pub enum SendMessageResponse {
 pub struct TaskListResponse {
     /// The tasks in this page of results.
     ///
-    /// ProtoJSON printers omit empty repeated fields, so an official-SDK
+    /// `ProtoJSON` printers omit empty repeated fields, so an official-SDK
     /// server with zero matching tasks legitimately sends no `tasks` key.
     #[serde(default)]
     pub tasks: Vec<Task>,
@@ -93,7 +93,7 @@ impl TaskListResponse {
 pub struct ListPushConfigsResponse {
     /// The push notification configs in this page of results.
     ///
-    /// ProtoJSON printers omit empty repeated fields, so absence means empty.
+    /// `ProtoJSON` printers omit empty repeated fields, so absence means empty.
     #[serde(default)]
     pub configs: Vec<crate::push::TaskPushNotificationConfig>,
 

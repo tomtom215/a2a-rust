@@ -56,6 +56,10 @@ pub struct SseParser {
     /// line). Prevents the tail of an over-limit event from being re-parsed as
     /// a fresh, seemingly-valid frame.
     discarding: bool,
+    /// Whether the previous byte (possibly at the end of the prior `feed`
+    /// chunk) was a `\r` that already terminated a line — the `\n` of a CRLF
+    /// pair split across chunks must not terminate a second, empty line.
+    prev_byte_was_cr: bool,
 }
 
 /// Default maximum number of frames buffered before the oldest is dropped.
@@ -75,6 +79,7 @@ impl Default for SseParser {
             ready: VecDeque::new(),
             bom_checked: false,
             discarding: false,
+            prev_byte_was_cr: false,
         }
     }
 }
@@ -125,12 +130,27 @@ impl SseParser {
         // check done and lose the first event. (A previous feed-time fast-path
         // duplicated this strip; it was redundant with `process_line` and has
         // been removed.)
+        // WHATWG SSE: lines end with CRLF, LF, or CR. A CR terminates the
+        // line immediately; an LF directly after it is the second half of a
+        // CRLF pair and is consumed without ending a second (empty) line.
+        // (The previous loop dropped every `\r` and only terminated on `\n`,
+        // so a CR-only server never produced a line at all — its bytes
+        // accumulated until the line-length guard and the whole stream was
+        // rejected as one oversized line.)
         for &byte in bytes {
             if byte == b'\n' {
+                if self.prev_byte_was_cr {
+                    self.prev_byte_was_cr = false;
+                    continue;
+                }
                 self.process_line();
                 self.line_buf.clear();
-            } else if byte != b'\r' {
-                // Ignore bare \r (Windows-style \r\n handled by ignoring \r).
+            } else if byte == b'\r' {
+                self.process_line();
+                self.line_buf.clear();
+                self.prev_byte_was_cr = true;
+            } else {
+                self.prev_byte_was_cr = false;
                 // Guard against unbounded line_buf growth from lines without
                 // newlines (e.g., a malicious server sending a single very long
                 // line). We use 2x max_event_size as the limit since a single
@@ -911,5 +931,64 @@ mod tests {
         let frame = p.next_frame().expect("should have a frame");
         let frame = frame.expect("event should be accepted (data fits in max)");
         assert_eq!(frame.data, "ABCDEF", "extra byte 'X' must be dropped");
+    }
+
+    // ── WHATWG line terminators: CRLF, LF, and bare CR ────────────────────
+
+    /// A server using CR-only line endings (legal per the WHATWG SSE spec)
+    /// must parse identically to an LF server. Previously every `\r` was
+    /// dropped and no line ever terminated, so the whole stream accumulated
+    /// into one "line" and was rejected as oversized.
+    #[test]
+    fn cr_only_line_endings_parse() {
+        let mut p = SseParser::new();
+        p.feed(b"data: hello\r\rdata: world\r\r");
+
+        let f1 = p.next_frame().expect("first frame").expect("ok");
+        assert_eq!(f1.data, "hello");
+        let f2 = p.next_frame().expect("second frame").expect("ok");
+        assert_eq!(f2.data, "world");
+        assert!(p.next_frame().is_none());
+    }
+
+    /// CRLF endings still produce exactly one line per pair (no phantom
+    /// empty lines, which would prematurely dispatch events).
+    #[test]
+    fn crlf_line_endings_parse() {
+        let mut p = SseParser::new();
+        p.feed(b"event: update\r\ndata: x\r\n\r\n");
+
+        let f = p.next_frame().expect("frame").expect("ok");
+        assert_eq!(f.event_type.as_deref(), Some("update"));
+        assert_eq!(f.data, "x");
+        assert!(p.next_frame().is_none(), "no spurious extra frames");
+    }
+
+    /// A CRLF pair split across two `feed` chunks must count as ONE line
+    /// terminator — the `\n` arriving in the next chunk must not terminate
+    /// a second, empty line (which would end the event early).
+    #[test]
+    fn crlf_split_across_feeds_is_one_terminator() {
+        let mut p = SseParser::new();
+        p.feed(b"data: a\r");
+        p.feed(b"\ndata: b\r\n");
+        p.feed(b"\r\n"); // blank line → dispatch
+
+        let f = p.next_frame().expect("frame").expect("ok");
+        assert_eq!(f.data, "a\nb", "both data lines belong to one event");
+        assert!(p.next_frame().is_none());
+    }
+
+    /// Mixed terminators within one stream (LF, CRLF, CR) all behave as
+    /// single line boundaries.
+    #[test]
+    fn mixed_line_terminators_parse() {
+        let mut p = SseParser::new();
+        p.feed(b"data: one\n\ndata: two\r\n\r\ndata: three\r\r");
+
+        assert_eq!(p.next_frame().unwrap().unwrap().data, "one");
+        assert_eq!(p.next_frame().unwrap().unwrap().data, "two");
+        assert_eq!(p.next_frame().unwrap().unwrap().data, "three");
+        assert!(p.next_frame().is_none());
     }
 }

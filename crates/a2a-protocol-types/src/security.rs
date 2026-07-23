@@ -35,7 +35,7 @@ pub type NamedSecuritySchemes = HashMap<String, SecurityScheme>;
 pub struct StringList {
     /// The string values (e.g. OAuth scopes).
     ///
-    /// ProtoJSON printers omit empty repeated fields: an empty `StringList`
+    /// `ProtoJSON` printers omit empty repeated fields: an empty `StringList`
     /// arrives as `{}`, so absence means empty (a scheme requiring no scopes
     /// is common and valid).
     #[serde(default)]
@@ -50,7 +50,7 @@ pub struct StringList {
 pub struct SecurityRequirement {
     /// Map from scheme name to required scopes.
     ///
-    /// ProtoJSON printers omit empty maps, so absence means empty.
+    /// `ProtoJSON` printers omit empty maps, so absence means empty.
     #[serde(default)]
     pub schemes: HashMap<String, StringList>,
 }

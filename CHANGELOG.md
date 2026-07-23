@@ -332,6 +332,51 @@ changed shape (0.x breaking — warrants a minor bump).
   tolerance instead of the whole gate being loosened. Overridden rows are
   labelled in the gate output, and a regression past the raised threshold
   still fails.
+- **`a2a-protocol-client`: every streaming transport now bounds the wait for
+  the first event** — the HTTP JSON-RPC, REST, and gRPC streaming paths
+  previously bounded only stream *establishment* (response headers /
+  stream open); a server that accepted the stream and then went silent
+  hung the consumer forever. All three now apply the same
+  first-event timeout the WebSocket transport already had (lifted after
+  the first frame — long-running quiet tasks are unaffected because SSE
+  keep-alives and the spec-required initial Task event count as frames).
+- **`a2a-protocol-client`: streaming error responses keep `Retry-After`** —
+  a rate-limited stream start (HTTP 429/503 with `Retry-After`) surfaced
+  `retry_after: None` on the JSON-RPC and REST paths, so the retry layer
+  used its own short jittered backoff instead of the server-directed
+  delay the unary paths already honor.
+- **`a2a-protocol-client`: SSE parser accepts bare-CR line terminators** —
+  the WHATWG SSE grammar allows CRLF, LF, or CR line endings; the parser
+  handled only LF/CRLF, so a CR-only server's entire stream accumulated
+  into one "line" and was rejected as oversized. CR now terminates a
+  line, with a CRLF pair split across reads counted as one terminator.
+- **`a2a-protocol-server`: stale-token sweep can no longer evict a live
+  replacement token** — between candidate collection (read lock) and
+  removal (write lock), a cancel-then-resend race can insert a fresh live
+  cancellation token for the same task id; the sweep removed it by id
+  unconditionally, leaving the resent executor uncancelable for its whole
+  run. Removal now re-validates each entry under the write lock and
+  spares tokens that are neither cancelled nor aged.
+- **`a2a-protocol-server`: background event processor survives a missing
+  task row at startup** — if the just-saved task vanished before the
+  processor's initial store read (capacity eviction under extreme churn,
+  or a transient store fault), the processor exited early and dropped its
+  persistence receiver: every subsequent state transition and push
+  notification for the task was silently lost while the client's stream
+  kept delivering. It now falls back to the send path's task snapshot,
+  re-asserting the row on a confirmed miss.
+- **`a2a-protocol-server`: path-traversal detection decodes to a fixpoint** —
+  the REST guard decoded percent-encoding exactly twice, so
+  triple-encoded `..` passed undetected (not reachable today — routing
+  matches raw segments — but the detector no longer encodes that
+  assumption; undecodable-after-8-passes input now fails closed).
+- **Docs:** honest-limits pass — `TaskStoreConfig::max_capacity` documents
+  the last-resort eviction of non-terminal tasks under overload,
+  `HandlerLimits` sweep thresholds are documented as prune triggers
+  rather than hard bounds, `PerTenantConfig` documents fairness under
+  shared process-wide caps, the retry layer documents that interceptors
+  run once per call (not per attempt), and push-config creation documents
+  its sync-check-at-create / DNS-recheck-at-delivery split.
 
 ## [0.6.0] - 2026-06-10
 

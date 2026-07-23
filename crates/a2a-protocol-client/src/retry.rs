@@ -9,6 +9,16 @@
 //! (connection errors, timeouts, server 5xx responses) with exponential
 //! backoff.
 //!
+//! # Interceptors run once per call, not per attempt
+//!
+//! The retry layer sits *below* the client's interceptor chain: headers an
+//! [`AuthInterceptor`](crate::AuthInterceptor) produces are computed once and
+//! reused for every attempt. A server-directed `Retry-After` is honored up to
+//! one hour, so a short-lived credential can expire between attempts — the
+//! retried request then fails with a non-retryable auth error rather than
+//! re-deriving the header. Refresh credentials in the store and issue a new
+//! call if that matters for your deployment.
+//!
 //! # Example
 //!
 //! ```rust,no_run
