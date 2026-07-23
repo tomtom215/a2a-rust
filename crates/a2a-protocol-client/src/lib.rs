@@ -139,6 +139,6 @@ pub use retry::RetryPolicy;
 pub use streaming::EventStream;
 #[cfg(feature = "grpc")]
 pub use transport::GrpcTransport;
-#[cfg(feature = "websocket")]
-pub use transport::WebSocketTransport;
 pub use transport::{JsonRpcTransport, RestTransport, Transport};
+#[cfg(feature = "websocket")]
+pub use transport::{WebSocketTransport, WebSocketTransportConfig};

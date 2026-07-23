@@ -17,6 +17,11 @@
 //!   server sends multiple frames: one per SSE event, followed by a final
 //!   JSON-RPC success response
 //! - Connection closes cleanly on WebSocket close frame
+//! - The full A2A method surface is routed — the same names (and v0.3
+//!   aliases) as the JSON-RPC HTTP dispatcher
+//! - The upgrade request's HTTP headers are captured at the handshake and
+//!   passed to the handler for every request on the connection, so
+//!   authentication and tenant resolution behave as they do over HTTP
 //!
 //! # Feature gate
 //!
@@ -29,10 +34,14 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio_tungstenite::tungstenite::handshake::server::{
+    ErrorResponse, Request as WsUpgradeRequest, Response as WsUpgradeResponse,
+};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use tokio_tungstenite::WebSocketStream;
 
@@ -55,6 +64,14 @@ use crate::streaming::EventQueueReader;
 /// [`WebSocketConfig`]: tokio_tungstenite::tungstenite::protocol::WebSocketConfig
 const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 
+/// Default bound on how long a peer may take to complete the WebSocket
+/// handshake after the TCP connection is accepted.
+///
+/// Without this bound, a client that opens a TCP connection and never sends
+/// the HTTP upgrade request pins a file descriptor and a task for the life of
+/// the process (slowloris) — `accept_async` has no timeout of its own.
+const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// WebSocket-based A2A dispatcher.
 ///
 /// Accepts WebSocket connections and processes JSON-RPC 2.0 messages over the
@@ -62,18 +79,48 @@ const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 ///
 /// Incoming messages are capped at 4 MiB at the WebSocket protocol level;
 /// a connection sending a larger message or frame is terminated.
+///
+/// # Authentication, tenancy, and headers
+///
+/// The HTTP headers of the upgrade request that establishes the connection
+/// (lowercased, plus the request path under `":path"`) are captured during the
+/// handshake and passed to the handler for **every** request on the
+/// connection. Tenant resolvers and interceptors therefore see the same header
+/// context they would on the HTTP bindings — credentials are presented once,
+/// at connect time, and apply to the whole connection.
+///
+/// An upgrade request carrying an `A2A-Version` header with a major version
+/// other than `1` is rejected during the handshake with HTTP 400.
 pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
+    handshake_timeout: Duration,
 }
 
 impl WebSocketDispatcher {
     /// Creates a new WebSocket dispatcher.
     #[must_use]
     pub const fn new(handler: Arc<RequestHandler>) -> Self {
-        Self { handler }
+        Self {
+            handler,
+            handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
+        }
+    }
+
+    /// Overrides the handshake timeout (default: 10 seconds).
+    ///
+    /// A peer that does not complete the WebSocket handshake within this bound
+    /// is disconnected.
+    #[must_use]
+    pub const fn with_handshake_timeout(mut self, timeout: Duration) -> Self {
+        self.handshake_timeout = timeout;
+        self
     }
 
     /// Starts a WebSocket server on the given address.
+    ///
+    /// The accept loop never terminates on transient `accept()` errors
+    /// (per-connection aborts, fd-table exhaustion) — it logs, backs off when
+    /// the fd table is full, and keeps accepting.
     ///
     /// # Errors
     ///
@@ -89,16 +136,8 @@ impl WebSocketDispatcher {
             "A2A WebSocket server listening"
         );
 
-        loop {
-            let (stream, _peer) = listener.accept().await?;
-            let dispatcher = Arc::clone(&self);
-            tokio::spawn(async move {
-                trace_debug!("WebSocket connection accepted");
-                if let Err(_e) = dispatcher.handle_connection(stream).await {
-                    trace_warn!("WebSocket connection error");
-                }
-            });
-        }
+        self.accept_loop(listener).await;
+        Ok(())
     }
 
     /// Starts a WebSocket server and returns the bound address.
@@ -118,34 +157,97 @@ impl WebSocketDispatcher {
         trace_info!(%local_addr, "A2A WebSocket server listening");
 
         tokio::spawn(async move {
-            loop {
-                let Ok((stream, _peer)) = listener.accept().await else {
-                    break;
-                };
-                let dispatcher = Arc::clone(&self);
-                tokio::spawn(async move {
-                    let _ = dispatcher.handle_connection(stream).await;
-                });
-            }
+            self.accept_loop(listener).await;
         });
 
         Ok(local_addr)
     }
 
+    /// Accepts connections forever, surviving transient `accept()` errors.
+    async fn accept_loop(self: Arc<Self>, listener: TcpListener) {
+        loop {
+            let (stream, _peer) = match listener.accept().await {
+                Ok(pair) => pair,
+                Err(e) => {
+                    // A transient accept() error (per-connection abort, or
+                    // fd-table exhaustion) must not tear down the whole server.
+                    // Same policy as the HTTP accept loops in `serve.rs`.
+                    trace_warn!(error = %e, "accept() failed; retrying");
+                    let backoff = crate::serve::accept_retry_backoff(&e);
+                    if !backoff.is_zero() {
+                        tokio::time::sleep(backoff).await;
+                    }
+                    continue;
+                }
+            };
+            let dispatcher = Arc::clone(&self);
+            tokio::spawn(async move {
+                trace_debug!("WebSocket connection accepted");
+                if let Err(_e) = dispatcher.handle_connection(stream).await {
+                    trace_warn!(error = %_e, "WebSocket connection error");
+                }
+            });
+        }
+    }
+
     /// Handles a single WebSocket connection.
+    // The handshake callback's Err type (an HTTP response) is dictated by
+    // tungstenite's `Callback` trait — it cannot be boxed or shrunk here.
+    #[allow(clippy::result_large_err)]
     async fn handle_connection(&self, stream: TcpStream) -> Result<(), WsError> {
+        // Match the HTTP serve path: avoid ~40ms delayed-ACK latency on the
+        // small text frames JSON-RPC produces.
+        let _ = stream.set_nodelay(true);
+
         // Cap message/frame sizes at the protocol level so oversized input is
         // rejected during the read, before it is buffered in memory.
         let ws_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
             .max_message_size(Some(MAX_WS_MESSAGE_SIZE))
             .max_frame_size(Some(MAX_WS_MESSAGE_SIZE));
-        let ws_stream = tokio_tungstenite::accept_async_with_config(stream, Some(ws_config))
-            .await
-            .map_err(WsError::Handshake)?;
 
-        let (writer, mut reader) = ws_stream.split();
+        // Capture the upgrade request's headers during the handshake so that
+        // auth material and tenancy context reach the handler exactly as they
+        // do on the HTTP bindings. Also validates the A2A-Version header.
+        let mut upgrade_headers: Option<HashMap<String, String>> = None;
+        let callback = |req: &WsUpgradeRequest, resp: WsUpgradeResponse| {
+            check_a2a_version(req)?;
+            upgrade_headers = Some(extract_upgrade_headers(req));
+            Ok(resp)
+        };
+
+        // Bound the handshake so a peer that connects and stalls cannot pin
+        // this task (and its fd) forever.
+        let ws_stream = tokio::time::timeout(
+            self.handshake_timeout,
+            tokio_tungstenite::accept_hdr_async_with_config(stream, callback, Some(ws_config)),
+        )
+        .await
+        .map_err(|_| WsError::HandshakeTimeout)?
+        .map_err(WsError::Handshake)?;
+
+        let headers = Arc::new(upgrade_headers.unwrap_or_default());
+
+        let (writer, reader) = ws_stream.split();
         let writer = Arc::new(tokio::sync::Mutex::new(writer));
 
+        self.read_loop(reader, &writer, &headers).await;
+
+        // Best-effort close handshake: sends any pending close reply so the
+        // peer sees a clean WebSocket close rather than a bare TCP teardown.
+        let mut w = writer.lock().await;
+        let _ = w.close().await;
+        drop(w);
+
+        Ok(())
+    }
+
+    /// Reads and dispatches frames until the connection ends.
+    async fn read_loop(
+        &self,
+        mut reader: futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
+        writer: &WsSink,
+        headers: &Arc<HashMap<String, String>>,
+    ) {
         // FIX(M9): Limit concurrent tasks per connection to prevent unbounded spawning.
         let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
 
@@ -156,30 +258,35 @@ impl WebSocketDispatcher {
                     // rejects oversized messages before buffering.
                     if text.len() > MAX_WS_MESSAGE_SIZE {
                         let err_resp = JsonRpcErrorResponse::new(
-                            None,
+                            best_effort_request_id(&text),
                             JsonRpcError::new(-32000, "message too large".to_string()),
                         );
-                        send_json(&writer, &err_resp).await;
+                        send_json(writer, &err_resp).await;
                         continue;
                     }
 
                     // FIX(M9): Acquire permit before spawning; back-pressure if at capacity.
                     let Ok(permit) = semaphore.clone().try_acquire_owned() else {
+                        // Extract the request id (bounded work: the message is
+                        // already in memory and ≤ 4 MiB) so the client can
+                        // correlate the rejection instead of waiting for its
+                        // request timeout on an unroutable null-id error.
                         let err_resp = JsonRpcErrorResponse::new(
-                            None,
+                            best_effort_request_id(&text),
                             JsonRpcError::new(
                                 -32000,
                                 "server busy: too many concurrent requests".to_string(),
                             ),
                         );
-                        send_json(&writer, &err_resp).await;
+                        send_json(writer, &err_resp).await;
                         continue;
                     };
 
-                    let writer = Arc::clone(&writer);
+                    let writer = Arc::clone(writer);
                     let handler = Arc::clone(&self.handler);
+                    let headers = Arc::clone(headers);
                     tokio::spawn(async move {
-                        process_ws_message(&handler, &text, writer).await;
+                        process_ws_message(&handler, &text, writer, &headers).await;
                         drop(permit); // Release when done
                     });
                 }
@@ -188,12 +295,91 @@ impl WebSocketDispatcher {
                     let _ = w.send(WsMessage::Pong(data)).await;
                     drop(w);
                 }
+                Ok(WsMessage::Binary(_)) => {
+                    // JSON-RPC over this binding is text-only. Answer instead
+                    // of ignoring so a misconfigured client fails fast rather
+                    // than hanging until its request timeout.
+                    let err_resp = JsonRpcErrorResponse::new(
+                        None,
+                        JsonRpcError::new(
+                            -32700,
+                            "binary frames are not supported; send JSON-RPC as text frames"
+                                .to_string(),
+                        ),
+                    );
+                    send_json(writer, &err_resp).await;
+                }
                 Ok(WsMessage::Close(_)) | Err(_) => break,
-                Ok(_) => {} // Binary frames, pongs — ignore
+                Ok(_) => {} // Pongs, raw frames — ignore
             }
         }
+    }
+}
 
-        Ok(())
+/// Extracts the upgrade request's headers (lowercased) plus the request path
+/// (under `":path"`), mirroring `extract_headers` in the HTTP dispatchers.
+///
+/// Values that are not valid UTF-8 are skipped, matching HTTP behavior.
+fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
+    let mut map: HashMap<String, String> = req
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|val| (k.as_str().to_lowercase(), val.to_owned()))
+        })
+        .collect();
+    // The pseudo-header name cannot collide with a real HTTP/1 header (colons
+    // are not valid in field names), and it is what
+    // `PathSegmentTenantResolver` documents reading.
+    map.insert(":path".to_owned(), req.uri().path().to_owned());
+    map
+}
+
+/// Validates the `A2A-Version` header on the upgrade request, mirroring the
+/// JSON-RPC dispatcher: absent or empty is accepted; any `1.x` is accepted;
+/// other major versions are rejected with HTTP 400 during the handshake.
+// The Err type (an HTTP response) is dictated by tungstenite's `Callback`
+// trait contract — it cannot be boxed or shrunk here.
+#[allow(clippy::result_large_err)]
+fn check_a2a_version(req: &WsUpgradeRequest) -> Result<(), ErrorResponse> {
+    let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) else {
+        return Ok(());
+    };
+    let Ok(v) = version.to_str() else {
+        return Ok(());
+    };
+    let v = v.trim();
+    // Empty header → interpret as 0.3 per spec Section 3.6.2 (accepted for
+    // upgrade parity with the HTTP dispatchers).
+    if v.is_empty() {
+        return Ok(());
+    }
+    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+    if major == Some(1) {
+        return Ok(());
+    }
+    let body = format!(r#"{{"error":"unsupported A2A version: {v}; this server supports 1.x"}}"#);
+    let resp = tokio_tungstenite::tungstenite::http::Response::builder()
+        .status(400)
+        .header("content-type", "application/json")
+        .body(Some(body))
+        .unwrap_or_else(|_| {
+            let mut r = ErrorResponse::new(Some(String::new()));
+            *r.status_mut() = tokio_tungstenite::tungstenite::http::StatusCode::BAD_REQUEST;
+            r
+        });
+    Err(resp)
+}
+
+/// Best-effort extraction of the JSON-RPC `id` from a raw message, for error
+/// responses produced before full request parsing (busy/oversize rejections).
+fn best_effort_request_id(text: &str) -> JsonRpcId {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    match v.get("id") {
+        Some(serde_json::Value::Null) | None => None,
+        Some(id) => Some(id.clone()),
     }
 }
 
@@ -201,12 +387,14 @@ impl WebSocketDispatcher {
 #[derive(Debug)]
 enum WsError {
     Handshake(tokio_tungstenite::tungstenite::Error),
+    HandshakeTimeout,
 }
 
 impl std::fmt::Display for WsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Handshake(e) => write!(f, "WebSocket handshake failed: {e}"),
+            Self::HandshakeTimeout => write!(f, "WebSocket handshake timed out"),
         }
     }
 }
@@ -214,8 +402,17 @@ impl std::fmt::Display for WsError {
 type WsSink = Arc<tokio::sync::Mutex<SplitSink<WebSocketStream<TcpStream>, WsMessage>>>;
 
 /// Processes a single JSON-RPC message received over WebSocket.
+///
+/// Routes the same method surface as the JSON-RPC HTTP dispatcher — both the
+/// v1.0 `PascalCase` names and the v0.3 `method/verb` aliases — so a client
+/// can switch bindings without changing method names.
 #[allow(clippy::too_many_lines)]
-async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink) {
+async fn process_ws_message(
+    handler: &RequestHandler,
+    text: &str,
+    writer: WsSink,
+    headers: &HashMap<String, String>,
+) {
     let rpc_req: JsonRpcRequest = match serde_json::from_str(text) {
         Ok(req) => req,
         Err(e) => {
@@ -229,17 +426,16 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
     };
 
     let id = rpc_req.id.to_response_id();
-    let headers = HashMap::new();
 
     match rpc_req.method.as_str() {
-        "SendMessage" => {
-            dispatch_send_message(handler, &rpc_req, false, &headers, id, &writer).await;
+        "SendMessage" | "message/send" => {
+            dispatch_send_message(handler, &rpc_req, false, headers, id, &writer).await;
         }
-        "SendStreamingMessage" => {
-            dispatch_send_message(handler, &rpc_req, true, &headers, id, &writer).await;
+        "SendStreamingMessage" | "message/stream" => {
+            dispatch_send_message(handler, &rpc_req, true, headers, id, &writer).await;
         }
-        "GetTask" => {
-            dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
+        "GetTask" | "tasks/get" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::TaskQueryParams =
                         serde_json::from_value(p).map_err(|e| {
@@ -253,8 +449,8 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             })
             .await;
         }
-        "ListTasks" => {
-            dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
+        "ListTasks" | "tasks/list" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListTasksParams =
                         serde_json::from_value(p).map_err(|e| {
@@ -268,8 +464,8 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             })
             .await;
         }
-        "CancelTask" => {
-            dispatch_simple(handler, &rpc_req, id, &headers, &writer, |h, p, hdr| {
+        "CancelTask" | "tasks/cancel" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::CancelTaskParams =
                         serde_json::from_value(p).map_err(|e| {
@@ -283,7 +479,7 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
             })
             .await;
         }
-        "SubscribeToTask" => {
+        "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
             let params = match parse_params::<a2a_protocol_types::params::TaskIdParams>(
                 rpc_req.params.as_ref(),
             ) {
@@ -293,7 +489,7 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
                     return;
                 }
             };
-            match handler.on_resubscribe(params, Some(&headers)).await {
+            match handler.on_resubscribe(params, Some(headers)).await {
                 Ok(reader) => {
                     stream_events(&writer, reader, id).await;
                 }
@@ -301,6 +497,83 @@ async fn process_ws_message(handler: &RequestHandler, text: &str, writer: WsSink
                     send_error(&writer, id, &e).await;
                 }
             }
+        }
+        "CreateTaskPushNotificationConfig" | "tasks/pushNotificationConfig/set" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+                Box::pin(async move {
+                    let params: a2a_protocol_types::push::TaskPushNotificationConfig =
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
+                    h.on_set_push_config(params, Some(hdr))
+                        .await
+                        .map(|r| serde_json::to_value(&r).unwrap_or_default())
+                        .map_err(|e| e.to_a2a_error())
+                })
+            })
+            .await;
+        }
+        "GetTaskPushNotificationConfig" | "tasks/pushNotificationConfig/get" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+                Box::pin(async move {
+                    let params: a2a_protocol_types::params::GetPushConfigParams =
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
+                    h.on_get_push_config(params, Some(hdr))
+                        .await
+                        .map(|r| serde_json::to_value(&r).unwrap_or_default())
+                        .map_err(|e| e.to_a2a_error())
+                })
+            })
+            .await;
+        }
+        "ListTaskPushNotificationConfigs" | "tasks/pushNotificationConfig/list" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+                Box::pin(async move {
+                    let params: a2a_protocol_types::params::ListPushConfigsParams =
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
+                    h.on_list_push_configs(&params.task_id, params.tenant.as_deref(), Some(hdr))
+                        .await
+                        .map(|configs| {
+                            let resp = a2a_protocol_types::responses::ListPushConfigsResponse {
+                                configs,
+                                next_page_token: None,
+                            };
+                            serde_json::to_value(&resp).unwrap_or_default()
+                        })
+                        .map_err(|e| e.to_a2a_error())
+                })
+            })
+            .await;
+        }
+        "DeleteTaskPushNotificationConfig" | "tasks/pushNotificationConfig/delete" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
+                Box::pin(async move {
+                    let params: a2a_protocol_types::params::DeletePushConfigParams =
+                        serde_json::from_value(p).map_err(|e| {
+                            a2a_protocol_types::error::A2aError::invalid_params(e.to_string())
+                        })?;
+                    h.on_delete_push_config(params, Some(hdr))
+                        .await
+                        .map(|()| serde_json::json!({}))
+                        .map_err(|e| e.to_a2a_error())
+                })
+            })
+            .await;
+        }
+        "GetExtendedAgentCard" | "agent/authenticatedExtendedCard" => {
+            dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, _p, hdr| {
+                Box::pin(async move {
+                    h.on_get_extended_agent_card(Some(hdr))
+                        .await
+                        .map(|r| serde_json::to_value(&r).unwrap_or_default())
+                        .map_err(|e| e.to_a2a_error())
+                })
+            })
+            .await;
         }
         other => {
             let err = ServerError::MethodNotFound(other.to_owned());
@@ -491,6 +764,33 @@ mod tests {
         let err = WsError::Handshake(tokio_tungstenite::tungstenite::Error::ConnectionClosed);
         let s = err.to_string();
         assert!(s.contains("WebSocket handshake failed"));
+    }
+
+    #[test]
+    fn ws_error_display_handshake_timeout() {
+        let s = WsError::HandshakeTimeout.to_string();
+        assert!(s.contains("timed out"), "got: {s}");
+    }
+
+    // ── best_effort_request_id ─────────────────────────────────────────────
+
+    #[test]
+    fn best_effort_request_id_extracts_string_and_number() {
+        assert_eq!(
+            best_effort_request_id(r#"{"jsonrpc":"2.0","id":"req-1","method":"GetTask"}"#),
+            Some(serde_json::json!("req-1"))
+        );
+        assert_eq!(
+            best_effort_request_id(r#"{"jsonrpc":"2.0","id":7,"method":"GetTask"}"#),
+            Some(serde_json::json!(7))
+        );
+    }
+
+    #[test]
+    fn best_effort_request_id_none_for_missing_null_or_invalid() {
+        assert_eq!(best_effort_request_id(r#"{"jsonrpc":"2.0"}"#), None);
+        assert_eq!(best_effort_request_id(r#"{"id":null}"#), None);
+        assert_eq!(best_effort_request_id("not json {{"), None);
     }
 
     // WebSocketDispatcher construction
@@ -954,5 +1254,342 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(v["id"], "ltf-1");
         assert!(v.get("result").is_some(), "expected result: {text}");
+    }
+
+    // ── New coverage: headers, tenancy, aliases, full method surface ───────
+
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    /// Sends a request and reads the response as parsed JSON.
+    async fn ws_call(
+        ws: &mut tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        req: serde_json::Value,
+    ) -> serde_json::Value {
+        ws.send(WsMessage::Text(req.to_string().into()))
+            .await
+            .expect("send");
+        let text = read_text(ws).await;
+        serde_json::from_str(&text).expect("response should be JSON")
+    }
+
+    // 16. The v0.3 method aliases route like their PascalCase counterparts.
+    #[tokio::test]
+    async fn ws_method_aliases_are_routed() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "message/send",
+                "id": "alias-1",
+                "params": {
+                    "message": {
+                        "messageId": "msg-a1",
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "hello"}]
+                    }
+                }
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "message/send should work: {v}");
+
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "tasks/list",
+                "id": "alias-2",
+                "params": {}
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "tasks/list should work: {v}");
+    }
+
+    // 17. Push-config methods are routed over WebSocket (parity with the
+    // JSON-RPC dispatcher; they previously fell through to MethodNotFound).
+    #[tokio::test]
+    #[allow(clippy::too_many_lines)]
+    async fn ws_push_config_methods_routed() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(()) })
+            }
+            fn allows_private_urls(&self) -> bool {
+                true
+            }
+        }
+
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .with_push_sender(NoopSender)
+                .build()
+                .unwrap(),
+        );
+        let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+        let addr = dispatcher
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let mut ws = ws_connect(addr).await;
+
+        // Create a task first so the push config has something to attach to.
+        let v = ws_call(
+            &mut ws,
+            serde_json::from_str::<serde_json::Value>(&send_message_json("pc-0")).unwrap(),
+        )
+        .await;
+        let task_id = v["result"]["task"]["id"]
+            .as_str()
+            .expect("task id in send result")
+            .to_owned();
+
+        // Set.
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "CreateTaskPushNotificationConfig",
+                "id": "pc-1",
+                "params": {
+                    "taskId": task_id,
+                    "url": "https://example.com/hook"
+                }
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "set push config failed: {v}");
+        let config_id = v["result"]["id"]
+            .as_str()
+            .expect("server-assigned config id")
+            .to_owned();
+
+        // Get.
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "GetTaskPushNotificationConfig",
+                "id": "pc-2",
+                "params": {"taskId": task_id, "id": config_id}
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "get push config failed: {v}");
+
+        // List.
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "ListTaskPushNotificationConfigs",
+                "id": "pc-3",
+                "params": {"taskId": task_id}
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "list push configs failed: {v}");
+        assert!(
+            v["result"]["configs"].is_array(),
+            "expected configs array: {v}"
+        );
+
+        // Delete.
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "DeleteTaskPushNotificationConfig",
+                "id": "pc-4",
+                "params": {"taskId": task_id, "id": config_id}
+            }),
+        )
+        .await;
+        assert!(v.get("result").is_some(), "delete push config failed: {v}");
+    }
+
+    // 18. GetExtendedAgentCard is routed (an unconfigured card is a domain
+    // error, NOT MethodNotFound).
+    #[tokio::test]
+    async fn ws_get_extended_agent_card_routed() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "GetExtendedAgentCard",
+                "id": "card-1",
+                "params": {}
+            }),
+        )
+        .await;
+        // No extended card configured on this test server — expect an error,
+        // but it must not be method-not-found (-32601).
+        let err = v.get("error").expect("expected an error response");
+        assert_ne!(
+            err["code"], -32601,
+            "GetExtendedAgentCard must be routed, got: {v}"
+        );
+    }
+
+    // 19. Upgrade-request headers reach the handler: with strict tenancy and a
+    // header resolver, a connection without the tenant header is rejected and
+    // one with it is served.
+    #[tokio::test]
+    async fn ws_upgrade_headers_drive_tenant_resolution() {
+        use crate::tenant_resolver::HeaderTenantResolver;
+
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(EchoExec)
+                .with_tenant_resolver(HeaderTenantResolver::default())
+                .require_resolved_tenant()
+                .build()
+                .unwrap(),
+        );
+        let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+        let addr = dispatcher
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind");
+
+        // Without the tenant header: strict tenancy must reject the request.
+        let mut ws = ws_connect(addr).await;
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "ListTasks",
+                "id": "t-1",
+                "params": {}
+            }),
+        )
+        .await;
+        let err = v.get("error").expect("headerless request must be rejected");
+        let msg = err["message"].as_str().unwrap_or("");
+        assert!(
+            msg.contains("tenant"),
+            "expected strict-tenancy rejection, got: {v}"
+        );
+
+        // With the tenant header on the upgrade request: served normally.
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("x-tenant-id", "acme".parse().unwrap());
+        let (mut ws, _) = tokio_tungstenite::connect_async(req)
+            .await
+            .expect("connect");
+        let v = ws_call(
+            &mut ws,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "ListTasks",
+                "id": "t-2",
+                "params": {}
+            }),
+        )
+        .await;
+        assert!(
+            v.get("result").is_some(),
+            "tenant header on the upgrade request must reach the resolver: {v}"
+        );
+    }
+
+    // 20. A2A-Version major mismatch is rejected during the handshake.
+    #[tokio::test]
+    async fn ws_version_mismatch_rejects_handshake() {
+        let addr = spawn_ws_server().await;
+
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "2.0".parse().unwrap());
+        let outcome = tokio_tungstenite::connect_async(req).await;
+        assert!(
+            outcome.is_err(),
+            "handshake with A2A-Version 2.0 must be rejected"
+        );
+
+        // 1.x is accepted.
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().unwrap());
+        assert!(
+            tokio_tungstenite::connect_async(req).await.is_ok(),
+            "handshake with A2A-Version 1.0 must succeed"
+        );
+    }
+
+    // 21. A peer that never completes the handshake is disconnected after the
+    // configured handshake timeout instead of pinning the connection forever.
+    #[tokio::test]
+    async fn ws_handshake_timeout_disconnects_stalled_peer() {
+        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let dispatcher = Arc::new(
+            WebSocketDispatcher::new(handler)
+                .with_handshake_timeout(std::time::Duration::from_millis(200)),
+        );
+        let addr = dispatcher
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind");
+
+        // Raw TCP connect, never send the HTTP upgrade.
+        let mut stream = tokio::net::TcpStream::connect(addr).await.expect("tcp");
+        let mut buf = [0u8; 16];
+        // The server must close the socket (read returns Ok(0)) within a
+        // bounded window — comfortably above the 200ms timeout.
+        let read = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            tokio::io::AsyncReadExt::read(&mut stream, &mut buf),
+        )
+        .await
+        .expect("server should close the stalled connection");
+        assert!(
+            matches!(read, Ok(0) | Err(_)),
+            "expected EOF/reset from server, got: {read:?}"
+        );
+    }
+
+    // 22. Binary frames get an explicit error response instead of silence.
+    #[tokio::test]
+    async fn ws_binary_frame_gets_error_response() {
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+
+        ws.send(WsMessage::Binary(vec![1, 2, 3].into()))
+            .await
+            .unwrap();
+
+        let text = read_text(&mut ws).await;
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(v["error"]["code"], -32700, "expected parse-error code: {v}");
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap_or("")
+                .contains("binary"),
+            "error should explain binary frames are unsupported: {v}"
+        );
     }
 }

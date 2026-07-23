@@ -33,7 +33,7 @@ pub use grpc::GrpcTransport;
 pub use jsonrpc::JsonRpcTransport;
 pub use rest::RestTransport;
 #[cfg(feature = "websocket")]
-pub use websocket::WebSocketTransport;
+pub use websocket::{WebSocketTransport, WebSocketTransportConfig};
 
 /// Maximum length for response body snippets included in error messages.
 const MAX_ERROR_BODY_LEN: usize = 512;

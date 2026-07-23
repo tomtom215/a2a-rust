@@ -245,6 +245,62 @@ changed shape (0.x breaking — warrants a minor bump).
   won't-compile `credentials` example) and the "all features off by default"
   note (now that `tls-rustls` is a default).
 
+### Changed (third hardening pass)
+
+- **WebSocket is a full-surface, authenticated transport** — the WebSocket
+  binding now matches the JSON-RPC HTTP dispatcher's method surface and
+  security posture:
+  - `a2a-protocol-server`: the upgrade request's HTTP headers (plus the
+    request path, under `":path"`) are captured during the handshake and
+    passed to the handler for every request on the connection — tenant
+    resolvers, strict multi-tenancy, and header-based auth now work over
+    WebSocket exactly as over HTTP. Previously the dispatcher passed an
+    **empty** header map, so every WebSocket client resolved to the default
+    tenant partition and header-based authentication was impossible.
+  - `a2a-protocol-server`: all push-notification-config methods
+    (`CreateTaskPushNotificationConfig`, `GetTaskPushNotificationConfig`,
+    `ListTaskPushNotificationConfigs`, `DeleteTaskPushNotificationConfig`)
+    and `GetExtendedAgentCard` are now routed over WebSocket, and every
+    method also accepts its v0.3 `method/verb` alias (`message/send`,
+    `tasks/get`, …) for parity with the HTTP dispatcher. Previously only
+    6 of the 11 A2A methods were reachable over WebSocket.
+  - `a2a-protocol-server`: an upgrade request carrying an `A2A-Version`
+    header with a major version other than 1 is rejected during the
+    handshake (HTTP 400), mirroring the HTTP dispatchers.
+  - `a2a-protocol-client`: new `WebSocketTransportConfig` +
+    `WebSocketTransport::connect_with_config` configure the request
+    timeout, upgrade headers, and the incoming message-size cap in one
+    place. Incoming messages are now capped (default 32 MiB, the shared
+    response-size ceiling of the HTTP/gRPC transports) at the WebSocket
+    protocol level — previously tungstenite's 64 MiB default applied.
+
+### Fixed (third hardening pass)
+
+- **`a2a-protocol-server` (WebSocket): accept-loop and handshake
+  resilience** — a transient `accept()` error (per-connection abort,
+  fd-table exhaustion) no longer tears down the WebSocket server; the
+  accept loop now follows the same retry-with-backoff policy as the HTTP
+  serve path. A peer that opens a TCP connection but never completes the
+  WebSocket handshake is disconnected after a bounded handshake timeout
+  (default 10 s, configurable via `with_handshake_timeout`) instead of
+  pinning a connection and file descriptor indefinitely. The server also
+  completes the WebSocket close handshake on shutdown paths, disables
+  Nagle's algorithm to match the HTTP path's latency profile, answers
+  binary frames with an explicit error instead of silence, and correlates
+  "server busy"/"message too large" rejections with the request `id` so
+  clients fail fast instead of timing out on an unroutable null-id error.
+- **`a2a-protocol-client` (WebSocket): dropped transports leaked their
+  connection; disconnects hung in-flight requests** — dropping a
+  `WebSocketTransport` now aborts its background reader/writer tasks and
+  closes the socket (a tokio `JoinHandle` detaches on drop, so every
+  dropped transport previously leaked a task and an open TCP connection
+  until the server closed it). A server-initiated close, end-of-stream, or
+  write failure now fails **all** in-flight requests promptly with a
+  transport error and marks the connection dead so subsequent requests
+  fail fast — previously a clean server close left pending requests
+  hanging for their full request timeout, and new requests kept queuing
+  against the dead socket.
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,

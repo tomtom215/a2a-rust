@@ -218,7 +218,7 @@ pub async fn serve_with_addr(
 /// of the process the first time the fd table momentarily fills. For fd
 /// exhaustion we pause briefly so we don't busy-spin while the table is full;
 /// other errors retry immediately.
-fn accept_retry_backoff(err: &std::io::Error) -> std::time::Duration {
+pub(crate) fn accept_retry_backoff(err: &std::io::Error) -> std::time::Duration {
     // EMFILE (24) / ENFILE (23) on Unix. On platforms that report other codes
     // the loop still retries — just without the extra pause.
     match err.raw_os_error() {
