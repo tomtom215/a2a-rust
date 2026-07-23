@@ -39,6 +39,11 @@ impl RequestHandler {
             let call_ctx = build_call_context("SubscribeToTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
 
+            // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
+            // permitted when the configured agent card advertises
+            // `capabilities.streaming == true`. (No-op when no card is configured.)
+            self.ensure_streaming_supported()?;
+
             let task_id = TaskId::new(&params.id);
 
             // Verify the task exists.

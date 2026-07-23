@@ -207,8 +207,32 @@ async fn jsonrpc_push_config_crud() {
     let (addr, _handle) = start_jsonrpc_server().await;
     let client = http_client();
 
+    // Create a task first — CreateTaskPushNotificationConfig requires the target
+    // task to exist (spec §3.1.7).
+    let rpc = JsonRpcRequest::with_params(
+        serde_json::json!(9),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let send_result: JsonRpcSuccessResponse<SendMessageResponse> =
+        serde_json::from_slice(&body).expect("parse send response");
+    let task_id = match send_result.result {
+        SendMessageResponse::Task(t) => t.id.0,
+        other => panic!("expected Task variant, got {other:?}"),
+    };
+
     // Create push config.
-    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+    let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/hook");
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(10),
         "CreateTaskPushNotificationConfig",
@@ -240,7 +264,7 @@ async fn jsonrpc_push_config_crud() {
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(11),
         "GetTaskPushNotificationConfig",
-        serde_json::json!({"taskId": "task-1", "id": config_id}),
+        serde_json::json!({"taskId": task_id, "id": config_id}),
     );
     let body = serde_json::to_vec(&rpc).unwrap();
 
@@ -263,7 +287,7 @@ async fn jsonrpc_push_config_crud() {
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(12),
         "ListTaskPushNotificationConfigs",
-        serde_json::json!({"taskId": "task-1"}),
+        serde_json::json!({"taskId": task_id}),
     );
     let body = serde_json::to_vec(&rpc).unwrap();
 
@@ -286,7 +310,7 @@ async fn jsonrpc_push_config_crud() {
     let rpc = JsonRpcRequest::with_params(
         serde_json::json!(13),
         "DeleteTaskPushNotificationConfig",
-        serde_json::json!({"taskId": "task-1", "id": config_id}),
+        serde_json::json!({"taskId": task_id, "id": config_id}),
     );
     let body = serde_json::to_vec(&rpc).unwrap();
 

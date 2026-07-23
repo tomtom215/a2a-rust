@@ -5,22 +5,21 @@
 
 //! Server-side authentication interceptors.
 //!
-//! These implement [`ServerInterceptor`](crate::interceptor::ServerInterceptor)
-//! and reject unauthenticated requests before the handler runs. They read the
-//! request's HTTP headers from the [`CallContext`](crate::CallContext) — which
-//! the JSON-RPC, REST, gRPC, and WebSocket bindings all populate — so a single
-//! interceptor guards every transport.
+//! These implement [`ServerInterceptor`] and reject unauthenticated requests
+//! before the handler runs. They read the request's HTTP headers from the
+//! [`CallContext`] — which the JSON-RPC, REST, gRPC, and WebSocket bindings all
+//! populate — so a single interceptor guards every transport.
 //!
 //! | Interceptor | Validates | Feature |
 //! |---|---|---|
 //! | [`ApiKeyAuthInterceptor`] | A configurable header against allowed keys (constant-time) | always |
 //! | [`BearerTokenAuthInterceptor`] | `Authorization: Bearer <token>` against allowed tokens (constant-time) | always |
-//! | [`JwtAuthInterceptor`](jwt::JwtAuthInterceptor) | A signed JWT (HS256/RS256/ES256), with static or remote (JWKS) keys | `auth-jwt` |
+//! | `JwtAuthInterceptor` (`auth-jwt` feature) | A signed JWT (HS256/RS256/ES256), with static or remote (JWKS) keys | `auth-jwt` |
 //!
 //! # Error mapping
 //!
 //! An interceptor rejects a request by returning an
-//! [`A2aError`](a2a_protocol_types::error::A2aError). The A2A protocol has no
+//! [`A2aError`]. The A2A protocol has no
 //! dedicated "unauthenticated" error code (the spec models authentication at
 //! the transport/security-scheme layer, e.g. an HTTP `401` with
 //! `WWW-Authenticate`), so a rejection surfaces as
@@ -174,7 +173,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
 /// token is not in the allowed set.
 ///
 /// For tokens that are *validated* rather than *enumerated* (signed JWTs), use
-/// [`JwtAuthInterceptor`](jwt::JwtAuthInterceptor) (the `auth-jwt` feature).
+/// `JwtAuthInterceptor` (the `auth-jwt` feature).
 pub struct BearerTokenAuthInterceptor {
     allowed: HashSet<Vec<u8>>,
 }

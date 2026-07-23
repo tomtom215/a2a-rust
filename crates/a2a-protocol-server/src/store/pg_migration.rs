@@ -72,6 +72,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state)",
         description: "Add composite index on (context_id, state) for combined filter queries",
         sql: "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state)",
     },
+    PgMigration {
+        version: 3,
+        description: "Add (updated_at, id) index for most-recently-updated-first list ordering",
+        sql: "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC)",
+    },
 ];
 
 /// Runs schema migrations against a `PostgreSQL` database.

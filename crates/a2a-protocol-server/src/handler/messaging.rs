@@ -18,7 +18,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
 
-use super::helpers::{build_call_context, validate_id};
+use super::helpers::{build_call_context, validate_id, validate_metadata_object};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
 /// Hard cap on the number of messages retained in `Task.history`.
@@ -171,6 +171,13 @@ impl RequestHandler {
         let call_ctx = build_call_context(method_name, headers);
         self.interceptors.run_before(&call_ctx).await?;
 
+        // SPEC §3.3.4: a streaming send is only permitted when the configured
+        // agent card advertises `capabilities.streaming == true`. Reject with
+        // UnsupportedOperationError otherwise. (No-op when no card is configured.)
+        if streaming {
+            self.ensure_streaming_supported()?;
+        }
+
         // Validate incoming IDs: reject empty/whitespace-only and excessively long values (AP-1).
         if let Some(ref ctx_id) = params.message.context_id {
             validate_id(&ctx_id.0, "context_id", self.limits.max_id_length)?;
@@ -184,6 +191,17 @@ impl RequestHandler {
             return Err(ServerError::InvalidParams(
                 "message must contain at least one part".into(),
             ));
+        }
+
+        // Cross-binding portability: every client-supplied `metadata` field must
+        // be a JSON object so the resulting task is representable over gRPC
+        // (google.protobuf.Struct), not just over JSON-RPC/REST. Reject arrays
+        // and scalars at ingress rather than storing a task that one binding can
+        // serve and another cannot.
+        validate_metadata_object(params.message.metadata.as_ref(), "message")?;
+        validate_metadata_object(params.metadata.as_ref(), "request")?;
+        for (i, part) in params.message.parts.iter().enumerate() {
+            validate_metadata_object(part.metadata.as_ref(), &format!("message part {i}"))?;
         }
 
         // PR-8: Reject oversized metadata to prevent memory exhaustion.
@@ -701,6 +719,62 @@ mod tests {
         assert!(
             matches!(result, Err(ServerError::InvalidParams(_))),
             "expected InvalidParams for oversized request metadata"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_message_metadata_returns_invalid_params() {
+        // Cross-binding portability: array/scalar metadata is not representable
+        // over gRPC (google.protobuf.Struct) and must be rejected at ingress.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.metadata = Some(serde_json::json!([1, 2, 3]));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("JSON object")),
+            "expected InvalidParams for array message metadata, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn scalar_request_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.metadata = Some(serde_json::json!("a bare string"));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("JSON object")),
+            "expected InvalidParams for scalar request metadata, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn non_object_part_metadata_returns_invalid_params() {
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.parts[0].metadata = Some(serde_json::json!(42));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("part 0")),
+            "expected InvalidParams for scalar part metadata, got: {result:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn object_metadata_is_accepted() {
+        // An object metadata value is representable across all bindings.
+        let handler = make_handler();
+        let mut params = make_params(None);
+        params.message.metadata = Some(serde_json::json!({"k": "v"}));
+        params.metadata = Some(serde_json::json!({"trace": 1}));
+
+        let result = handler.on_send_message(params, false, None).await;
+        assert!(
+            result.is_ok(),
+            "object metadata must be accepted, got: {result:?}"
         );
     }
 

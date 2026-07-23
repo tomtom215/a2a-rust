@@ -109,7 +109,13 @@ fn minimal_agent_card() -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none().with_extended_agent_card(true),
+        // The handler under test serves streaming (SSE), push notifications and
+        // an extended card, so the card advertises all three — capability
+        // validation (spec §3.3.4) rejects those operations otherwise.
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -528,8 +534,8 @@ async fn get_push_config_nonexistent_returns_error() {
         None,
     )
     .await;
-    // InvalidParams maps to 400.
-    assert_eq!(status, 400);
+    // SPEC §3.1.8: a missing push config is reported as TaskNotFound → 404.
+    assert_eq!(status, 404);
 }
 
 #[tokio::test]
@@ -609,7 +615,7 @@ async fn delete_push_config_no_push_sender_still_works() {
 }
 
 #[tokio::test]
-async fn get_push_config_no_push_sender_returns_400() {
+async fn get_push_config_no_push_sender_returns_404() {
     let handler = make_handler_no_push();
     let (addr, _handle) = start_rest_server_with_cors(handler, None).await;
 
@@ -621,8 +627,8 @@ async fn get_push_config_no_push_sender_returns_400() {
         None,
     )
     .await;
-    // Config not found -> InvalidParams -> 400.
-    assert_eq!(status, 400);
+    // SPEC §3.1.8: a missing push config is reported as TaskNotFound → 404.
+    assert_eq!(status, 404);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -718,14 +724,33 @@ async fn push_config_crud_with_cors_headers() {
     let cors = CorsConfig::new("https://crud-cors.example.com");
     let (addr, _handle) = start_rest_server_with_cors(make_handler(), Some(cors)).await;
 
-    // Create push config.
-    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+    // Create a task first: CreateTaskPushNotificationConfig requires the target
+    // task to exist (spec §3.1.7), so drive one into being via message:send and
+    // use its generated id for the push-config CRUD below.
+    let client = http_client();
+    let send_body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:send"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(send_body)))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let task_id = match serde_json::from_slice::<SendMessageResponse>(&body).expect("parse") {
+        SendMessageResponse::Task(t) => t.id.0,
+        other => panic!("expected Task variant, got {other:?}"),
+    };
+
+    // Create push config for the real task.
+    let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/hook");
     let body = serde_json::to_vec(&config).unwrap();
 
     let (status, headers, resp_body) = http_request_full(
         addr,
         "POST",
-        "/tasks/task-1/pushNotificationConfigs",
+        &format!("/tasks/{task_id}/pushNotificationConfigs"),
         Some(&String::from_utf8(body).unwrap()),
         Some("application/json"),
     )
@@ -747,7 +772,7 @@ async fn push_config_crud_with_cors_headers() {
     let (status, headers, _body) = http_request_full(
         addr,
         "GET",
-        &format!("/tasks/task-1/pushNotificationConfigs/{config_id}"),
+        &format!("/tasks/{task_id}/pushNotificationConfigs/{config_id}"),
         None,
         None,
     )
@@ -763,7 +788,7 @@ async fn push_config_crud_with_cors_headers() {
     let (status, headers, _body) = http_request_full(
         addr,
         "GET",
-        "/tasks/task-1/pushNotificationConfigs",
+        &format!("/tasks/{task_id}/pushNotificationConfigs"),
         None,
         None,
     )
@@ -779,7 +804,7 @@ async fn push_config_crud_with_cors_headers() {
     let (status, headers, _body) = http_request_full(
         addr,
         "DELETE",
-        &format!("/tasks/task-1/pushNotificationConfigs/{config_id}"),
+        &format!("/tasks/{task_id}/pushNotificationConfigs/{config_id}"),
         None,
         None,
     )

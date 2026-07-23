@@ -93,6 +93,20 @@ let caps = AgentCapabilities::none()
 
 > **Note:** `AgentCapabilities` is `#[non_exhaustive]` — always construct it via `AgentCapabilities::none()` and the builder methods, never with a struct literal.
 
+> **The server enforces these flags (spec §3.3.4).** When you configure an
+> agent card on the handler (`RequestHandlerBuilder::with_agent_card`), the
+> declared capabilities become a contract the server honors:
+> - If `streaming` is not `true`, `SendStreamingMessage` and `SubscribeToTask`
+>   return `UnsupportedOperationError`.
+> - If `pushNotifications` is not `true`, the push-config operations
+>   (Create/Get/List/Delete) return `PushNotificationNotSupportedError`.
+> - If `extendedAgentCard` is not `true`, `GetExtendedAgentCard` returns
+>   `UnsupportedOperationError`.
+>
+> So if your agent serves streaming or push, **set the matching flag to `true`**
+> — otherwise clients are told the operation is unsupported. A handler with no
+> agent card configured publishes no contract and is not gated.
+
 ## Interfaces
 
 Each interface describes a transport endpoint:

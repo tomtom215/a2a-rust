@@ -11,7 +11,7 @@
 //! `save()` write lock so that writers are not blocked during the O(n)
 //! cleanup.
 //!
-//! All eviction operations maintain the secondary indexes (`sorted_ids`
+//! All eviction operations maintain the secondary indexes (`order_index`
 //! and `context_index`) via [`StoreData::remove`].
 
 use std::time::Instant;

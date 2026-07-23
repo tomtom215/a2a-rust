@@ -105,7 +105,11 @@ fn minimal_agent_card() -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none(),
+        // The WebSocket binding is a streaming transport; advertise streaming so
+        // capability validation (spec §3.3.4) permits streaming sends/subscribes.
+        capabilities: AgentCapabilities::none()
+            .with_streaming(true)
+            .with_push_notifications(true),
         provider: None,
         icon_url: None,
         documentation_url: None,

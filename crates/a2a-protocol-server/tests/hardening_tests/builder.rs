@@ -55,8 +55,19 @@ async fn builder_with_push_sender_enables_push() {
         .build()
         .expect("build with push sender");
 
+    // Create a task first — CreateTaskPushNotificationConfig requires the target
+    // task to exist (spec §3.1.7).
+    let task_id = match handler
+        .on_send_message(make_send_params("hello"), false, None)
+        .await
+        .expect("send message to create a task")
+    {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t.id.0,
+        other => panic!("expected a Task response, got {other:?}"),
+    };
+
     // Push config operations should succeed (not return PushNotSupported).
-    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+    let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/hook");
     let saved = handler
         .on_set_push_config(config, None)
         .await

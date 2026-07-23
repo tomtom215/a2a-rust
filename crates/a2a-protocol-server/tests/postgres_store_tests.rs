@@ -268,6 +268,64 @@ async fn task_list_basic() -> A2aResult<()> {
 
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn task_list_orders_most_recently_updated_first() -> A2aResult<()> {
+    let db = TestDb::create("list_order").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    // Insert c, a, b with distinct timestamps; then re-save a so it jumps to
+    // the front of the update order (spec §3.1.4).
+    for id in ["c", "a", "b"] {
+        store.save(&make_task(id, "ctx1")).await?;
+        tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    }
+    let ordered = store.list(&ListTasksParams::default()).await?;
+    let ids: Vec<&str> = ordered.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(ids, vec!["b", "a", "c"], "most-recently-updated first");
+
+    tokio::time::sleep(std::time::Duration::from_millis(3)).await;
+    store.save(&make_task("a", "ctx1")).await?;
+    let reordered = store.list(&ListTasksParams::default()).await?;
+    let ids: Vec<&str> = reordered.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(ids, vec!["a", "b", "c"], "updated task moves to the front");
+
+    // A full cursor walk must visit every task exactly once.
+    let mut seen = std::collections::HashSet::new();
+    let mut token: Option<String> = None;
+    loop {
+        let page = store
+            .list(&ListTasksParams {
+                page_size: Some(2),
+                page_token: token.clone(),
+                ..Default::default()
+            })
+            .await?;
+        for t in &page.tasks {
+            assert!(seen.insert(t.id.0.clone()), "task {} seen twice", t.id.0);
+        }
+        if page.next_page_token.is_empty() {
+            break;
+        }
+        token = Some(page.next_page_token);
+    }
+    assert_eq!(seen.len(), 3, "every task visited exactly once");
+
+    // A forged cursor (no separator) yields an empty page.
+    let forged = store
+        .list(&ListTasksParams {
+            page_token: Some("forged-no-separator".into()),
+            ..Default::default()
+        })
+        .await?;
+    assert!(forged.tasks.is_empty(), "forged cursor yields empty page");
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_list_pagination() -> A2aResult<()> {
     let db = TestDb::create("pagination").await;
     let store = PostgresTaskStore::with_migrations(&db.url)
@@ -324,13 +382,13 @@ async fn migrations_apply_in_order_and_are_idempotent() {
             .await
             .expect("pending_migrations")
             .len(),
-        2,
-        "both built-in migrations should be pending"
+        3,
+        "all built-in migrations should be pending"
     );
 
     let applied = runner.run_pending().await.expect("run_pending");
-    assert_eq!(applied, vec![1, 2], "migrations apply in version order");
-    assert_eq!(runner.current_version().await.expect("current_version"), 2);
+    assert_eq!(applied, vec![1, 2, 3], "migrations apply in version order");
+    assert_eq!(runner.current_version().await.expect("current_version"), 3);
 
     let reapplied = runner.run_pending().await.expect("run_pending again");
     assert!(reapplied.is_empty(), "second run applies nothing");

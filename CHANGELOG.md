@@ -433,6 +433,55 @@ changed shape (0.x breaking — warrants a minor bump).
   run once per call (not per attempt), and push-config creation documents
   its sync-check-at-create / DNS-recheck-at-delivery split.
 
+### Changed (fourth hardening pass)
+
+- **`ListTasks` returns tasks most-recently-updated first (spec §3.1.4)** —
+  every task store previously returned tasks in ascending `id` order (an
+  arbitrary lexical order the spec does not permit), and paged with an
+  `id`-based cursor. All five stores now order by last-update time,
+  most-recent first, with a stable cursor:
+  - `InMemoryTaskStore` keys a `BTreeMap<u64, TaskId>` update-order index by
+    a monotonic per-write sequence, iterated in reverse — O(log n +
+    page_size) pagination with no per-call sort, and a collision-free
+    integer cursor. Every write (not just the first insert) re-positions the
+    task to the front, so an in-place update correctly moves it.
+  - The SQLite/PostgreSQL stores (and their tenant-scoped variants) order by
+    `(updated_at DESC, id DESC)` with a composite row-value cursor
+    `(updated_at, id) < (?, ?)`; because `id` is the primary key the pair is
+    unique, so pagination never drops or repeats a row even when many tasks
+    share a timestamp. SQLite now records `updated_at` at millisecond
+    precision (fixed-width, so `TEXT` comparison matches chronological
+    order); PostgreSQL serializes the cursor timestamp as a UTC-normalized
+    microsecond string so paging is stable regardless of session time zone.
+    New `(updated_at, id)` indexes back the ordering (added via SQLite
+    migration v4 / PostgreSQL migration v3).
+- **Capability validation enforced at the handler (spec §3.3.4)** — when an
+  `AgentCard` is configured, the server now honors its advertised
+  `capabilities`. `SendStreamingMessage` and `SubscribeToTask` return
+  `UnsupportedOperationError` unless `capabilities.streaming` is `true`; the
+  push-config operations (Create/Get/List/Delete) return
+  `PushNotificationNotSupportedError` unless `capabilities.pushNotifications`
+  is `true`. A card-less handler is unaffected (it publishes no capability
+  contract), so existing card-less deployments keep working.
+
+### Fixed (fourth hardening pass)
+
+- **`GetTaskPushNotificationConfig` reports a missing config as
+  `TaskNotFoundError`** (spec §3.1.8) instead of `InvalidParams` — over REST
+  this changes the HTTP status from 400 to 404, matching the canonical error
+  mapping and the other SDKs.
+- **`CreateTaskPushNotificationConfig` validates that the target task exists**
+  (spec §3.1.7), returning `TaskNotFoundError` instead of silently storing an
+  unroutable, orphaned config for a task that was never created.
+- **Cross-binding metadata portability** — the send path now rejects a
+  client-supplied `metadata` value (on the request, the message, or any
+  message part) that is present but not a JSON object, with a structured
+  invalid-params error. A protobuf `google.protobuf.Struct` — the gRPC wire
+  form of every `metadata` field — can only hold a JSON object, so a task
+  accepted over JSON-RPC/REST with, e.g., `metadata: [1, 2, 3]` would fail to
+  serialize the instant it was served over gRPC. Rejecting it at ingress
+  keeps every accepted task representable across all A2A transports.
+
 ## [0.6.0] - 2026-06-10
 
 Released as a **minor** (not patch) bump: no public API signatures changed,

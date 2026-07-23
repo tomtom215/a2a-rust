@@ -194,14 +194,31 @@ async fn rest_push_config_crud() {
     let (addr, _handle) = start_rest_server().await;
     let client = http_client();
 
+    // Create a task first — CreateTaskPushNotificationConfig requires the target
+    // task to exist (spec §3.1.7).
+    let send_body = serde_json::to_vec(&make_send_params()).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message:send"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(send_body)))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(resp.status(), 200);
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let task_id = match serde_json::from_slice::<SendMessageResponse>(&body).expect("parse") {
+        SendMessageResponse::Task(t) => t.id.0,
+        other => panic!("expected Task variant, got {other:?}"),
+    };
+
     // Create push config.
-    let config = TaskPushNotificationConfig::new("task-1", "https://example.com/hook");
+    let config = TaskPushNotificationConfig::new(&task_id, "https://example.com/hook");
     let body = serde_json::to_vec(&config).unwrap();
 
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!(
-            "http://{addr}/tasks/task-1/pushNotificationConfigs"
+            "http://{addr}/tasks/{task_id}/pushNotificationConfigs"
         ))
         .header("content-type", "application/json")
         .body(Full::new(Bytes::from(body)))
@@ -223,7 +240,7 @@ async fn rest_push_config_crud() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!(
-            "http://{addr}/tasks/task-1/pushNotificationConfigs/{config_id}"
+            "http://{addr}/tasks/{task_id}/pushNotificationConfigs/{config_id}"
         ))
         .body(Full::new(Bytes::new()))
         .unwrap();
@@ -235,7 +252,7 @@ async fn rest_push_config_crud() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!(
-            "http://{addr}/tasks/task-1/pushNotificationConfigs"
+            "http://{addr}/tasks/{task_id}/pushNotificationConfigs"
         ))
         .body(Full::new(Bytes::new()))
         .unwrap();
@@ -252,7 +269,7 @@ async fn rest_push_config_crud() {
     let req = hyper::Request::builder()
         .method("DELETE")
         .uri(format!(
-            "http://{addr}/tasks/task-1/pushNotificationConfigs/{config_id}"
+            "http://{addr}/tasks/{task_id}/pushNotificationConfigs/{config_id}"
         ))
         .body(Full::new(Bytes::new()))
         .unwrap();

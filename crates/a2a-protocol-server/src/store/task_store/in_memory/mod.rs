@@ -10,11 +10,13 @@
 //! `max_capacity`, eliminating latency spikes from internal table resizing
 //! under load.
 //!
-//! The `list()` method uses a `BTreeSet<TaskId>` sorted index for O(log n)
-//! cursor positioning and a `HashMap<String, BTreeSet<TaskId>>` context index
-//! for O(log m + page\_size) filtered queries (where m = tasks matching the
-//! `context_id` filter). Without filters, pagination is O(log n + page\_size)
-//! via [`BTreeSet::range()`].
+//! The `list()` method returns tasks most-recently-updated first (spec §3.1.4)
+//! by iterating a `BTreeMap<u64, TaskId>` update-order index in reverse for
+//! O(log n + page\_size) cursor pagination, plus a
+//! `HashMap<String, BTreeMap<u64, TaskId>>` context index for O(log m +
+//! page\_size) filtered queries (where m = tasks matching the `context_id`
+//! filter). The monotonic `seq` key is both the sort order and a collision-free
+//! pagination cursor.
 //!
 //! # Module structure
 //!
@@ -25,7 +27,7 @@
 
 mod eviction;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Instant;
@@ -45,6 +47,10 @@ pub(super) struct TaskEntry {
     pub(super) task: Task,
     /// When this entry was last written (for TTL-based eviction).
     pub(super) last_updated: Instant,
+    /// Monotonic update-order sequence, assigned on every write. Higher means
+    /// more recently updated. Drives the spec-required "most recently updated
+    /// first" ordering of `list()` (§3.1.4) and is the pagination cursor.
+    pub(super) seq: u64,
 }
 
 /// Internal data structure holding the primary store and secondary indexes.
@@ -56,14 +62,19 @@ pub(super) struct TaskEntry {
 pub(super) struct StoreData {
     /// Primary storage: O(1) get/save by `TaskId`.
     pub(super) entries: HashMap<TaskId, TaskEntry>,
-    /// Sorted index for O(log n + page\_size) cursor-based pagination.
-    /// Eliminates the O(n log n) per-call sort that previously dominated
-    /// `list()` latency at scale.
-    pub(super) sorted_ids: BTreeSet<TaskId>,
-    /// Secondary index: `context_id` string → sorted set of task IDs.
-    /// Enables O(log m + page\_size) filtered `list()` where m = matching tasks,
-    /// instead of O(n) full-scan filtering.
-    pub(super) context_index: HashMap<String, BTreeSet<TaskId>>,
+    /// Update-order index keyed by the monotonic sequence: `seq → TaskId`.
+    /// Iterated in reverse for the spec-required "most recently updated first"
+    /// ordering (§3.1.4), giving O(log n + page\_size) cursor pagination
+    /// without an O(n log n) per-call sort. Because `seq` is unique and
+    /// strictly increasing, it is also a collision-free pagination cursor.
+    pub(super) order_index: BTreeMap<u64, TaskId>,
+    /// Secondary index: `context_id` string → (`seq → TaskId`), so a
+    /// context-filtered `list()` is O(log m + page\_size) in that context's
+    /// tasks *and* returns them in the same update-order.
+    pub(super) context_index: HashMap<String, BTreeMap<u64, TaskId>>,
+    /// Next update-order sequence to assign. Monotonic across the store's
+    /// lifetime; guarded by the same write lock as the maps.
+    pub(super) next_seq: u64,
 }
 
 impl StoreData {
@@ -71,8 +82,9 @@ impl StoreData {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             entries: HashMap::with_capacity(capacity),
-            sorted_ids: BTreeSet::new(),
+            order_index: BTreeMap::new(),
             context_index: HashMap::new(),
+            next_seq: 0,
         }
     }
 
@@ -82,57 +94,56 @@ impl StoreData {
         self.entries.len()
     }
 
-    /// Inserts or updates a task, maintaining all indexes.
+    /// Inserts or updates a task, assigning it a fresh update-order sequence
+    /// and maintaining every index.
     ///
-    /// Optimized for the common update path: when a task already exists with
-    /// the same `context_id`, we skip all index operations (both `BTreeSet` inserts
-    /// and the `context_id` string clone) and only update the primary `HashMap`
-    /// entry. This reduces the update-path cost from ~2.5µs to ~700ns and
-    /// eliminates the variance from occasional `BTreeSet` node splits.
-    pub(super) fn insert(&mut self, task_id: TaskId, entry: TaskEntry) {
-        if let Some(old_entry) = self.entries.get(&task_id) {
-            // Fast path: updating an existing task.
-            let old_ctx = &old_entry.task.context_id.0;
-            let new_ctx = &entry.task.context_id.0;
-            if old_ctx == new_ctx {
-                // Context unchanged — sorted_ids already contains this task_id
-                // and context_index already maps this context_id → task_id.
-                // Skip all index operations; only update the primary entry.
-                self.entries.insert(task_id, entry);
-                return;
-            }
-            // Context changed — remove old context_id index entry.
-            if let Some(set) = self.context_index.get_mut(old_ctx) {
-                set.remove(&task_id);
-                if set.is_empty() {
-                    self.context_index.remove(old_ctx);
+    /// Every write (not just a first insert) advances the task to the front of
+    /// the update order — the spec requires `list()` to return most-recently-
+    /// updated tasks first (§3.1.4), so an in-place update must re-position the
+    /// task. The old sequence's index entries are removed and new ones inserted
+    /// under the fresh sequence, keeping `order_index`/`context_index` in sync.
+    pub(super) fn insert(&mut self, task_id: TaskId, task: Task, last_updated: Instant) {
+        let seq = self.next_seq;
+        self.next_seq += 1;
+
+        // On update, drop the task's previous position from both indexes.
+        if let Some(old) = self.entries.get(&task_id) {
+            let old_seq = old.seq;
+            let old_ctx = old.task.context_id.0.clone();
+            self.order_index.remove(&old_seq);
+            if let Some(map) = self.context_index.get_mut(&old_ctx) {
+                map.remove(&old_seq);
+                if map.is_empty() {
+                    self.context_index.remove(&old_ctx);
                 }
             }
-            // Fall through to add new context_id index entry below.
-        } else {
-            // New task — add to sorted index.
-            self.sorted_ids.insert(task_id.clone());
         }
 
-        // Update context_id index (new task or context changed).
-        let ctx_key = entry.task.context_id.0.clone();
+        // Position under the new sequence.
+        self.order_index.insert(seq, task_id.clone());
         self.context_index
-            .entry(ctx_key)
+            .entry(task.context_id.0.clone())
             .or_default()
-            .insert(task_id.clone());
+            .insert(seq, task_id.clone());
 
-        // Insert into primary store.
-        self.entries.insert(task_id, entry);
+        self.entries.insert(
+            task_id,
+            TaskEntry {
+                task,
+                last_updated,
+                seq,
+            },
+        );
     }
 
     /// Removes a task by ID, maintaining all indexes.
     pub(super) fn remove(&mut self, id: &TaskId) -> Option<TaskEntry> {
         if let Some(entry) = self.entries.remove(id) {
-            self.sorted_ids.remove(id);
+            self.order_index.remove(&entry.seq);
             let ctx = &entry.task.context_id.0;
-            if let Some(set) = self.context_index.get_mut(ctx) {
-                set.remove(id);
-                if set.is_empty() {
+            if let Some(map) = self.context_index.get_mut(ctx) {
+                map.remove(&entry.seq);
+                if map.is_empty() {
                     self.context_index.remove(ctx);
                 }
             }
@@ -160,12 +171,14 @@ impl StoreData {
 /// | Index | Structure | Purpose |
 /// |---|---|---|
 /// | Primary | `HashMap<TaskId, TaskEntry>` | O(1) get/save |
-/// | Sorted | `BTreeSet<TaskId>` | O(log n + page\_size) pagination |
-/// | Context | `HashMap<String, BTreeSet<TaskId>>` | O(log m + page\_size) filtered list |
+/// | Order | `BTreeMap<u64, TaskId>` | O(log n + page\_size) update-order pagination |
+/// | Context | `HashMap<String, BTreeMap<u64, TaskId>>` | O(log m + page\_size) filtered list |
 ///
-/// The sorted index eliminates the O(n log n) sort in `list()` that
-/// previously caused 20-70× regressions at 10K+ tasks. The context index
-/// avoids full-scan filtering by pre-partitioning task IDs by context.
+/// The order index is keyed by a monotonic per-write sequence and iterated in
+/// reverse to return most-recently-updated tasks first (spec §3.1.4) without
+/// the O(n log n) per-call sort that previously caused 20-70× regressions at
+/// 10K+ tasks. The context index avoids full-scan filtering by pre-partitioning
+/// task IDs by context, preserving the same update-order within each context.
 ///
 /// # Eviction behavior
 ///
@@ -251,13 +264,7 @@ impl TaskStore for InMemoryTaskStore {
             // Insert under write lock, then release immediately.
             let needs_eviction = {
                 let mut store = self.data.write().await;
-                store.insert(
-                    task.id.clone(),
-                    TaskEntry {
-                        task,
-                        last_updated: Instant::now(),
-                    },
-                );
+                store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
                 drop(store);
                 self.should_evict(len)
@@ -299,92 +306,71 @@ impl TaskStore for InMemoryTaskStore {
                 Some(n) => (n.min(self.config.max_page_size)) as usize,
             };
 
-            // Validate cursor if present.
-            if let Some(ref token) = params.page_token {
-                let cursor = TaskId::new(token.clone());
-                if !store.entries.contains_key(&cursor) {
-                    let empty: Vec<Task> = Vec::new();
-                    let response = TaskListResponse::new(empty);
-                    return Ok(response);
-                }
-            }
+            // Decode the cursor: the opaque page token is the `seq` of the last
+            // item on the previous page. A malformed token yields an empty page
+            // (matching the previous "unknown cursor → empty" contract) rather
+            // than starting from the top. `None` starts a fresh listing.
+            let cursor_seq: Option<u64> = match params.page_token.as_deref() {
+                None => None,
+                Some(tok) => match tok.parse::<u64>() {
+                    Ok(seq) => Some(seq),
+                    Err(_) => {
+                        return Ok(TaskListResponse::new(Vec::new()));
+                    }
+                },
+            };
 
-            // Build the cursor for BTreeSet range queries.
-            let cursor = params
-                .page_token
-                .as_ref()
-                .map(|token| TaskId::new(token.clone()));
-
-            // Choose the iteration source based on whether a context_id
-            // filter is present. When filtering by context_id, we use the
-            // secondary context index which contains only matching task IDs,
-            // giving O(log m + page_size) instead of O(n) full-scan.
-            let tasks: Vec<Task> = if let Some(ref ctx) = params.context_id {
-                // Context-filtered path: iterate only matching task IDs.
-                if let Some(ctx_set) = store.context_index.get(ctx.as_str()) {
-                    let iter: Box<dyn Iterator<Item = &TaskId>> = if let Some(ref c) = cursor {
-                        // Start after the cursor position.
-                        // range(Excluded(cursor)..) would be ideal but Bound
-                        // syntax is verbose; we use range(cursor..) and skip
-                        // the cursor itself.
-                        Box::new(store_range_after(ctx_set, c))
-                    } else {
-                        Box::new(ctx_set.iter())
-                    };
-                    iter.filter_map(|id| {
+            // Iterate the chosen index in DESCENDING seq order (most recently
+            // updated first, spec §3.1.4). `range(..cursor)` excludes the
+            // cursor itself; the unbounded `range(..)` covers a fresh listing.
+            // Both forms return the same `btree_map::Range` type, so `.rev()`
+            // (descending) unifies without boxing. Collect `(seq, Task)` so the
+            // next-page token is exact.
+            let take = page_size + 1; // one extra to detect a further page
+            let collect_from = |index: &BTreeMap<u64, TaskId>| -> Vec<(u64, Task)> {
+                let base = match cursor_seq {
+                    Some(c) => index.range(..c),
+                    None => index.range(..),
+                };
+                base.rev()
+                    .filter_map(|(seq, id)| {
                         let entry = store.entries.get(id)?;
-                        // Context filter already satisfied by index; only
-                        // check status filter if present.
                         if let Some(ref status) = params.status {
                             if entry.task.status.state != *status {
                                 return None;
                             }
                         }
-                        Some(entry.task.clone())
+                        Some((*seq, entry.task.clone()))
                     })
-                    .take(page_size + 1)
+                    .take(take)
                     .collect()
-                } else {
-                    // No tasks match this context_id.
-                    Vec::new()
-                }
+            };
+
+            let collected: Vec<(u64, Task)> = if let Some(ref ctx) = params.context_id {
+                store
+                    .context_index
+                    .get(ctx.as_str())
+                    .map_or_else(Vec::new, collect_from)
             } else {
-                // Unfiltered path: iterate the global sorted index.
-                let iter: Box<dyn Iterator<Item = &TaskId>> = if let Some(ref c) = cursor {
-                    Box::new(store_range_after(&store.sorted_ids, c))
-                } else {
-                    Box::new(store.sorted_ids.iter())
-                };
-                iter.filter_map(|id| {
-                    let entry = store.entries.get(id)?;
-                    if let Some(ref status) = params.status {
-                        if entry.task.status.state != *status {
-                            return None;
-                        }
-                    }
-                    Some(entry.task.clone())
-                })
-                .take(page_size + 1)
-                .collect()
+                collect_from(&store.order_index)
             };
 
             #[allow(clippy::cast_possible_truncation)]
             let total_size = store.len() as u32;
             drop(store);
 
-            let has_next_page = tasks.len() > page_size;
+            let has_next_page = collected.len() > page_size;
+            let mut collected = collected;
+            collected.truncate(page_size);
             let next_page_token = if has_next_page {
-                tasks
-                    .get(page_size.saturating_sub(1))
-                    .map(|t| t.id.0.clone())
-                    .unwrap_or_default()
+                collected
+                    .last()
+                    .map_or_else(String::new, |(seq, _)| seq.to_string())
             } else {
                 String::new()
             };
 
-            let mut tasks = tasks;
-            tasks.truncate(page_size);
-
+            let tasks: Vec<Task> = collected.into_iter().map(|(_, t)| t).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
             #[allow(clippy::cast_possible_truncation)]
@@ -407,13 +393,7 @@ impl TaskStore for InMemoryTaskStore {
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
                 }
-                store.insert(
-                    task.id.clone(),
-                    TaskEntry {
-                        task,
-                        last_updated: Instant::now(),
-                    },
-                );
+                store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
                 drop(store);
                 (true, self.should_evict(len))
@@ -444,16 +424,6 @@ impl TaskStore for InMemoryTaskStore {
             Ok(store.len() as u64)
         })
     }
-}
-
-/// Returns an iterator over a `BTreeSet` starting after the given cursor
-/// (exclusive). Uses `range()` for O(log n) positioning.
-fn store_range_after<'a>(
-    set: &'a BTreeSet<TaskId>,
-    cursor: &TaskId,
-) -> impl Iterator<Item = &'a TaskId> {
-    use std::ops::Bound;
-    set.range((Bound::Excluded(cursor), Bound::Unbounded))
 }
 
 #[cfg(test)]
@@ -621,8 +591,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn list_returns_all_tasks_sorted_by_id() {
+    async fn list_returns_all_tasks_most_recently_updated_first() {
         let store = InMemoryTaskStore::new();
+        // Saved in the order c, a, b — the spec (§3.1.4) requires the most
+        // recently updated task first, so the result order is the reverse of
+        // insertion (b, a, c), independent of the lexical ID order.
         store
             .save(&make_task("c", TaskState::Submitted))
             .await
@@ -639,7 +612,122 @@ mod tests {
         let params = ListTasksParams::default();
         let response = store.list(&params).await.unwrap();
         let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
-        assert_eq!(ids, vec!["a", "b", "c"], "tasks should be sorted by ID");
+        assert_eq!(
+            ids,
+            vec!["b", "a", "c"],
+            "tasks should be ordered most-recently-updated first"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_reorders_on_update() {
+        // Updating a task must move it to the front of the update order, even
+        // though its position in the store map is unchanged (spec §3.1.4).
+        let store = InMemoryTaskStore::new();
+        store
+            .save(&make_task("t1", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(&make_task("t2", TaskState::Submitted))
+            .await
+            .unwrap();
+        store
+            .save(&make_task("t3", TaskState::Submitted))
+            .await
+            .unwrap();
+
+        // Re-save t1 — it should jump to the front.
+        store
+            .save(&make_task("t1", TaskState::Working))
+            .await
+            .unwrap();
+
+        let response = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["t1", "t3", "t2"],
+            "an updated task must move to the front of the update order"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_pagination_is_stable_across_pages() {
+        // Walking every page with a cursor must visit each task exactly once,
+        // in strict most-recently-updated-first order, with no gaps or repeats.
+        let store = InMemoryTaskStore::new();
+        for i in 0..10 {
+            store
+                .save(&make_task(&format!("t{i:02}"), TaskState::Submitted))
+                .await
+                .unwrap();
+        }
+
+        let mut seen: Vec<String> = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let params = ListTasksParams {
+                page_size: Some(3),
+                page_token: token.clone(),
+                ..Default::default()
+            };
+            let page = store.list(&params).await.unwrap();
+            for t in &page.tasks {
+                seen.push(t.id.0.clone());
+            }
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            token = Some(page.next_page_token);
+        }
+
+        // Insertion order t00..t09 → most-recent-first is t09..t00.
+        let expected: Vec<String> = (0..10).rev().map(|i| format!("t{i:02}")).collect();
+        assert_eq!(
+            seen, expected,
+            "cursor walk must yield every task once in update-order"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_same_instant_updates_have_stable_order() {
+        // Even if two saves land in the same wall-clock instant, the monotonic
+        // `seq` gives a total order, so pagination never drops or duplicates a
+        // task. Save many tasks as fast as possible (no sleeps).
+        let store = InMemoryTaskStore::new();
+        for i in 0..100 {
+            store
+                .save(&make_task(&format!("t{i:03}"), TaskState::Submitted))
+                .await
+                .unwrap();
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        let mut token: Option<String> = None;
+        let mut last_seq: Option<u64> = None;
+        loop {
+            let params = ListTasksParams {
+                page_size: Some(7),
+                page_token: token.clone(),
+                ..Default::default()
+            };
+            let page = store.list(&params).await.unwrap();
+            for t in &page.tasks {
+                assert!(seen.insert(t.id.0.clone()), "task {} seen twice", t.id.0);
+            }
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            // The cursor (a seq) must strictly decrease as we page downward.
+            let tok_seq: u64 = page.next_page_token.parse().unwrap();
+            if let Some(prev) = last_seq {
+                assert!(tok_seq < prev, "cursor must strictly decrease");
+            }
+            last_seq = Some(tok_seq);
+            token = Some(page.next_page_token);
+        }
+        assert_eq!(seen.len(), 100, "every task must be visited exactly once");
     }
 
     #[tokio::test]

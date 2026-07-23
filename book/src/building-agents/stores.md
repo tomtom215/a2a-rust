@@ -53,12 +53,15 @@ Features:
 - Pre-allocated `HashMap::with_capacity(max_capacity)` — eliminates resize-induced latency spikes under load
 - O(1) amortized `save()`/`get()`/`delete()` via `HashMap` (no log(n) tree traversal overhead)
 - **O(log n + page\_size) `list()` with secondary indexes**:
-  - `BTreeSet<TaskId>` sorted index — eliminates O(n log n) per-call sort
-  - `HashMap<String, BTreeSet<TaskId>>` context index — O(log m + page\_size) filtered queries
-  - Uses `BTreeSet::range()` for O(log n) cursor positioning
+  - `BTreeMap<u64, TaskId>` update-order index keyed by a monotonic per-write
+    sequence — iterated in reverse to return tasks most-recently-updated first
+    (spec §3.1.4), with no O(n log n) per-call sort
+  - `HashMap<String, BTreeMap<u64, TaskId>>` context index — O(log m + page\_size) filtered queries
+  - The sequence is a collision-free integer pagination cursor; every write
+    re-positions its task to the front of the update order
 - Automatic TTL eviction on access (maintains all indexes)
 - Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — hard capacity guarantee
-- Cursor-based pagination with deterministic ordering
+- Cursor-based pagination, most-recently-updated first
 - Filtering by `context_id` (index-accelerated) and `status`
 
 ### SqliteTaskStore (feature-gated)
@@ -81,7 +84,9 @@ let store = SqliteTaskStore::new("sqlite::memory:").await?;
 Features:
 - Auto-creates schema on first use
 - Stores tasks as JSON blobs with indexed `context_id` and `state` columns
-- Cursor-based pagination via `id > ?` ordering
+- Cursor-based pagination ordered by `(updated_at DESC, id DESC)` — tasks
+  most-recently-updated first (spec §3.1.4), with a composite row-value cursor
+  that never drops or repeats a row even when timestamps tie
 - Atomic `insert_if_absent` via `INSERT OR IGNORE`
 - Upsert via `ON CONFLICT DO UPDATE`
 - **Production-ready defaults:** WAL journal mode, `busy_timeout=5000ms`,
@@ -258,7 +263,13 @@ The `list` method receives `ListTasksParams` with:
 - `page_token` — Opaque cursor for the next page
 - Various filter fields
 
-Your implementation should return a `TaskListResponse` with a `next_page_token` if more results exist.
+Your implementation should return a `TaskListResponse` with a `next_page_token`
+if more results exist. Per spec §3.1.4, tasks **must** be returned
+most-recently-updated first; the built-in stores order by last-update time
+(descending) with a stable cursor, and a custom store should do the same so
+pagination is deterministic across updates. The `page_token` is opaque — encode
+whatever your ordering needs into it; treat a token you did not issue as an
+empty page rather than scanning from the top.
 
 ### Concurrency
 

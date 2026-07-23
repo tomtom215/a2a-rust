@@ -89,6 +89,11 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         description: "Add composite index on (context_id, state) for combined filter queries",
         sql: "CREATE INDEX IF NOT EXISTS idx_tasks_context_id_state ON tasks(context_id, state);",
     },
+    Migration {
+        version: 4,
+        description: "Add (updated_at, id) index for most-recently-updated-first list ordering",
+        sql: "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC);",
+    },
 ];
 
 /// Runs schema migrations against a `SQLite` database.
@@ -263,8 +268,8 @@ mod tests {
         let runner = MigrationRunner::new(pool.clone());
 
         let applied = runner.run_pending().await.unwrap();
-        assert_eq!(applied, vec![1, 2, 3]);
-        assert_eq!(runner.current_version().await.unwrap(), 3);
+        assert_eq!(applied, vec![1, 2, 3, 4]);
+        assert_eq!(runner.current_version().await.unwrap(), 4);
 
         // Verify the tasks table exists with the expected columns.
         let row = sqlx::query("PRAGMA table_info(tasks)")
@@ -286,12 +291,12 @@ mod tests {
         let runner = MigrationRunner::new(pool);
 
         let first = runner.run_pending().await.unwrap();
-        assert_eq!(first, vec![1, 2, 3]);
+        assert_eq!(first, vec![1, 2, 3, 4]);
 
         let second = runner.run_pending().await.unwrap();
         assert!(second.is_empty());
 
-        assert_eq!(runner.current_version().await.unwrap(), 3);
+        assert_eq!(runner.current_version().await.unwrap(), 4);
     }
 
     #[tokio::test]
@@ -300,10 +305,11 @@ mod tests {
         let runner = MigrationRunner::new(pool);
 
         let pending = runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), 3);
+        assert_eq!(pending.len(), 4);
         assert_eq!(pending[0].version, 1);
         assert_eq!(pending[1].version, 2);
         assert_eq!(pending[2].version, 3);
+        assert_eq!(pending[3].version, 4);
 
         runner.run_pending().await.unwrap();
 
@@ -324,16 +330,17 @@ mod tests {
         assert_eq!(applied, vec![1]);
         assert_eq!(runner.current_version().await.unwrap(), 1);
 
-        // Now create a runner with all migrations — only V2 and V3 should be pending.
+        // Now create a runner with all migrations — V2, V3 and V4 should be pending.
         let full_runner = MigrationRunner::new(pool);
         let pending = full_runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), 2);
+        assert_eq!(pending.len(), 3);
         assert_eq!(pending[0].version, 2);
         assert_eq!(pending[1].version, 3);
+        assert_eq!(pending[2].version, 4);
 
         let applied = full_runner.run_pending().await.unwrap();
-        assert_eq!(applied, vec![2, 3]);
-        assert_eq!(full_runner.current_version().await.unwrap(), 3);
+        assert_eq!(applied, vec![2, 3, 4]);
+        assert_eq!(full_runner.current_version().await.unwrap(), 4);
     }
 
     #[tokio::test]
@@ -349,10 +356,26 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 4);
         assert_eq!(rows[0].get::<i32, _>("version"), 1);
         assert!(!rows[0].get::<String, _>("description").is_empty());
         assert!(!rows[0].get::<String, _>("applied_at").is_empty());
+    }
+
+    #[tokio::test]
+    async fn updated_at_index_exists_after_migrations() {
+        let pool = memory_pool().await;
+        let runner = MigrationRunner::new(pool.clone());
+        runner.run_pending().await.unwrap();
+
+        let rows = sqlx::query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_tasks_updated_at'",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(rows.len(), 1);
     }
 
     #[tokio::test]

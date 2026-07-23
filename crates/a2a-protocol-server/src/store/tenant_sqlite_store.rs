@@ -19,10 +19,14 @@
 //!     context_id TEXT NOT NULL,
 //!     state      TEXT NOT NULL,
 //!     data       TEXT NOT NULL,
-//!     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+//!     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
 //!     PRIMARY KEY (tenant_id, id)
 //! );
 //! ```
+//!
+//! `list()` returns tasks most-recently-updated first (spec §3.1.4) within the
+//! current tenant, ordered by `(updated_at DESC, id DESC)` with a composite
+//! row-value cursor. `updated_at` is written at millisecond precision.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -86,7 +90,7 @@ impl TenantAwareSqliteTaskStore {
                 context_id TEXT NOT NULL,
                 state      TEXT NOT NULL,
                 data       TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 PRIMARY KEY (tenant_id, id)
             )",
@@ -108,6 +112,14 @@ impl TenantAwareSqliteTaskStore {
 
         sqlx::query(
             "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_ctx_state ON tenant_tasks(tenant_id, context_id, state)",
+        )
+        .execute(&pool)
+        .await?;
+
+        // Supports per-tenant most-recently-updated-first ordering and the
+        // composite (updated_at, id) cursor used by list().
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_tenant_tasks_updated_at ON tenant_tasks(tenant_id, updated_at DESC, id DESC)",
         )
         .execute(&pool)
         .await?;
@@ -154,12 +166,12 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
             sqlx::query(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
+                 VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%d %H:%M:%f','now'))
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = datetime('now')",
+                     updated_at = strftime('%Y-%m-%d %H:%M:%f','now')",
             )
             .bind(&tenant)
             .bind(id)
@@ -199,6 +211,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     fn list<'a>(
         &'a self,
         params: &'a ListTasksParams,
@@ -216,9 +229,17 @@ impl TaskStore for TenantAwareSqliteTaskStore {
                 conditions.push(format!("state = ?{}", bind_values.len() + 1));
                 bind_values.push(status.to_string());
             }
+            // Composite (updated_at, id) row-value cursor: most-recently-updated
+            // first (spec §3.1.4), disambiguated by id when timestamps tie. A
+            // token not produced by us decodes to None → empty page.
             if let Some(ref token) = params.page_token {
-                conditions.push(format!("id > ?{}", bind_values.len() + 1));
-                bind_values.push(token.clone());
+                let Some((cursor_ua, cursor_id)) = super::cursor::decode(token) else {
+                    return Ok(TaskListResponse::new(Vec::new()));
+                };
+                let p = bind_values.len();
+                conditions.push(format!("(updated_at, id) < (?{}, ?{})", p + 1, p + 2));
+                bind_values.push(cursor_ua.to_string());
+                bind_values.push(cursor_id.to_string());
             }
 
             let where_clause = format!("WHERE {}", conditions.join(" AND "));
@@ -230,36 +251,41 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
             let limit = page_size + 1;
             let sql = format!(
-                "SELECT data FROM tenant_tasks {where_clause} ORDER BY id ASC LIMIT {limit}"
+                "SELECT updated_at, data FROM tenant_tasks {where_clause} \
+                 ORDER BY updated_at DESC, id DESC LIMIT {limit}"
             );
 
-            let mut query = sqlx::query_as::<_, (String,)>(&sql);
+            let mut query = sqlx::query_as::<_, (String, String)>(&sql);
             for val in &bind_values {
                 query = query.bind(val);
             }
 
-            let rows: Vec<(String,)> = query
+            let rows: Vec<(String, String)> = query
                 .fetch_all(&self.pool)
                 .await
                 .map_err(|e| to_a2a_error(&e))?;
 
-            let mut tasks: Vec<Task> = rows
+            let mut rows: Vec<(String, Task)> = rows
                 .into_iter()
-                .map(|(data,)| {
-                    serde_json::from_str(&data)
+                .map(|(updated_at, data)| {
+                    serde_json::from_str::<Task>(&data)
+                        .map(|task| (updated_at, task))
                         .map_err(|e| A2aError::internal(format!("deserialize: {e}")))
                 })
                 .collect::<A2aResult<Vec<_>>>()?;
 
-            let next_page_token = if tasks.len() > page_size as usize {
-                tasks.truncate(page_size as usize);
-                tasks.last().map(|t| t.id.0.clone()).unwrap_or_default()
+            let next_page_token = if rows.len() > page_size as usize {
+                rows.truncate(page_size as usize);
+                rows.last()
+                    .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
+                    .unwrap_or_default()
             } else {
                 String::new()
             };
 
             #[allow(clippy::cast_possible_truncation)]
-            let page_len = tasks.len() as u32;
+            let page_len = rows.len() as u32;
+            let tasks: Vec<Task> = rows.into_iter().map(|(_, task)| task).collect();
             let mut response = TaskListResponse::new(tasks);
             response.next_page_token = next_page_token;
             response.page_size = page_len;
@@ -281,7 +307,7 @@ impl TaskStore for TenantAwareSqliteTaskStore {
 
             let result = sqlx::query(
                 "INSERT OR IGNORE INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))",
+                 VALUES (?1, ?2, ?3, ?4, ?5, strftime('%Y-%m-%d %H:%M:%f','now'))",
             )
             .bind(&tenant)
             .bind(id)

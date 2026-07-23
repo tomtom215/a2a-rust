@@ -228,7 +228,7 @@ These were reviewed and are correct for the HTTP+JSON protocol binding.
 | # | Difference | Why it's OK |
 |---|---|---|
 | A1 | `u32` instead of `int32` for page_size, history_length | Negative values are nonsensical; JSON numbers are the same either way |
-| A2 | `serde_json::Value` instead of proto `Struct` | JSON is a superset; `Value` handles all JSON types. Proto `Struct` is specifically for JSON objects, but in practice agents send arbitrary JSON |
+| A2 | `serde_json::Value` instead of proto `Struct` | JSON is a superset; `Value` handles all JSON types. Proto `Struct` only holds JSON *objects*, so to keep every task representable across all bindings the server rejects non-object `metadata` (array/scalar) at JSON-RPC/REST ingress with an invalid-params error — a task accepted on one binding then serializes cleanly over gRPC (spec §3.3.4 cross-binding consistency) |
 | A3 | `timestamp: Option<String>` instead of proto `Timestamp` | ProtoJSON serializes `google.protobuf.Timestamp` as an RFC 3339 string — same wire format |
 | A4 | `OAuthFlows` as struct with optional fields instead of proto `oneof` | JSON schema defines OAuthFlows as an object with optional properties (not oneOf). Our struct matches the JSON binding correctly. Proto `oneof` is a gRPC-specific constraint |
 | A5 | `TaskVersion` newtype exists but is not in spec | Internal convenience type; never appears on the wire |

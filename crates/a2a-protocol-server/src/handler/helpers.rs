@@ -32,6 +32,43 @@ pub(super) fn validate_id(raw: &str, name: &str, max_length: usize) -> ServerRes
     Ok(())
 }
 
+/// Rejects client-supplied `metadata` that is present but not a JSON object.
+///
+/// Every `metadata` field crosses the wire as `google.protobuf.Struct` on the
+/// gRPC binding, and a protobuf `Struct` can only hold a JSON **object** — never
+/// an array, string, number, or bare `null`. A task accepted over JSON-RPC or
+/// REST with, say, `metadata: [1, 2, 3]` would then fail to serialize the moment
+/// the same task is served over gRPC, so it would be representable on one
+/// binding but not another. Rejecting non-object metadata at ingress keeps every
+/// accepted task portable across all A2A transports.
+pub(super) fn validate_metadata_object(
+    metadata: Option<&serde_json::Value>,
+    field: &str,
+) -> ServerResult<()> {
+    if let Some(value) = metadata {
+        if !value.is_object() {
+            return Err(ServerError::InvalidParams(format!(
+                "{field} metadata must be a JSON object (got {}); non-object metadata \
+                 is not representable across all A2A transports (gRPC google.protobuf.Struct)",
+                json_kind(value)
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Returns the JSON type name of a value, for diagnostic messages.
+const fn json_kind(value: &serde_json::Value) -> &'static str {
+    match value {
+        serde_json::Value::Null => "null",
+        serde_json::Value::Bool(_) => "boolean",
+        serde_json::Value::Number(_) => "number",
+        serde_json::Value::String(_) => "string",
+        serde_json::Value::Array(_) => "array",
+        serde_json::Value::Object(_) => "object",
+    }
+}
+
 /// Builds a [`CallContext`] from a method name and optional HTTP headers.
 pub(super) fn build_call_context(
     method: &str,
@@ -414,9 +451,12 @@ mod tests {
                 "should return a non-terminal task, got {:?}",
                 task.status.state
             );
+            // list() now yields tasks most-recently-updated first (spec §3.1.4),
+            // so the first non-terminal task is the one saved last — the more
+            // correct choice for continuing an active conversation.
             assert_eq!(
-                task.id.0, "bbb-submitted",
-                "should return the first non-terminal task in store order"
+                task.id.0, "ccc-working",
+                "should return the most-recently-updated non-terminal task"
             );
         }
     }
