@@ -409,11 +409,26 @@ jobs:
           echo "All mutants caught across all crates."
 
   # ── Incremental mutation testing (PR only) ────────────────────────────────
-  mutants-incremental:
-    name: "Mutation Testing (incremental)"
+  #
+  # A large PR can produce hundreds of in-diff mutants; a single job at 4-way
+  # parallelism does not finish inside the 60-minute timeout (it gets cancelled,
+  # so the gate silently stops enforcing). We shard the in-diff mutant set
+  # across parallel runners with cargo-mutants' `--shard K/N` (which composes
+  # with `--in-diff`, splitting the selected mutants deterministically and
+  # evenly). Each shard fails on its own surviving mutants; the lightweight
+  # `mutants-incremental` aggregator below keeps the stable required-check name
+  # and fails if any shard failed.
+  mutants-incremental-shard:
+    name: "Mutants incremental (shard ${{ matrix.shard }})"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false # a survivor in one shard must not cancel the others
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      INCREMENTAL_SHARDS: 4
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -461,10 +476,13 @@ jobs:
           # changed in this PR's diff, so renames contribute nothing and only
           # genuinely edited code is mutated. --timeout matches `cap_timeout`
           # in mutants.toml (see the lint there for context).
+          # `--shard K/N` partitions the in-diff mutant set across the matrix
+          # so each runner tests roughly 1/N of the mutants and fits the timeout.
           cargo mutants --in-diff pr-src.diff \
             --output mutants.out \
             --timeout 300 \
             --jobs 4 \
+            --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
             -- --all-features 2>&1 | tee /tmp/mutants-run.log
@@ -595,8 +613,77 @@ jobs:
         if: always() && steps.diff.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: mutation-report-incremental
+          name: mutation-report-incremental-shard-${{ matrix.shard }}
           path: |
             mutants.out/
             /tmp/mutants-run.log
           retention-days: 14
+
+  # ── Incremental aggregator (stable required-check name) ───────────────────
+  #
+  # Keeps the branch-protection check name "Mutation Testing (incremental)"
+  # stable while the heavy work runs in the sharded matrix above. Fails if any
+  # shard failed (surviving mutants or an infrastructure error). `if: always()`
+  # so it still runs — and can fail — when a shard reports survivors.
+  mutants-incremental:
+    name: "Mutation Testing (incremental)"
+    needs: mutants-incremental-shard
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download shard reports
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          pattern: mutation-report-incremental-shard-*
+          path: shards/
+
+      - name: Aggregate shard results and gate
+        run: |
+          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+
+          # Sum surviving mutants across every shard's report (if any ran).
+          TOTAL_MISSED=0
+          shopt -s nullglob
+          MISSED_ANY=""
+          for f in shards/*/missed.txt; do
+            n=$(count "$f")
+            TOTAL_MISSED=$((TOTAL_MISSED + n))
+            if [ "$n" -gt 0 ]; then MISSED_ANY="${MISSED_ANY}${f}"$'\n'; fi
+          done
+
+          {
+            echo "# Mutation Testing — incremental (aggregated)"
+            echo ""
+            echo "Sharded across parallel runners; only PR-diff changes were mutated."
+            echo ""
+            if [ "$TOTAL_MISSED" -gt 0 ]; then
+              echo "## ${TOTAL_MISSED} surviving mutant(s)"
+              echo ""
+              echo '```'
+              cat shards/*/missed.txt 2>/dev/null
+              echo '```'
+            else
+              echo "No surviving mutants across all shards."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Gate 1: any shard that failed (survivors OR an error/timeout) makes
+          # the matrix result non-success. This is the authoritative gate.
+          SHARD_RESULT="${{ needs.mutants-incremental-shard.result }}"
+          echo "Shard matrix result: ${SHARD_RESULT}"
+          echo "Aggregated surviving mutants: ${TOTAL_MISSED}"
+
+          if [ "$SHARD_RESULT" != "success" ]; then
+            echo "::error::Incremental mutation testing failed (a shard reported survivors or errored). See the per-shard jobs."
+            exit 1
+          fi
+
+          # Gate 2: defence in depth — fail if any survivor slipped through even
+          # though the shard job reported success.
+          if [ "$TOTAL_MISSED" -gt 0 ]; then
+            echo "::error::${TOTAL_MISSED} mutant(s) survived in changed files."
+            exit 1
+          fi
+
+          echo "All incremental mutants caught across all shards."
