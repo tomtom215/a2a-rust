@@ -168,10 +168,10 @@ impl EventStream {
     /// only to establishment — once any data is received, subsequent waits are
     /// unbounded so long-idle subscriptions are not interrupted.
     ///
-    /// Currently wired by the WebSocket transport, which otherwise has no
-    /// establishment timeout at all.
+    /// Wired by every streaming transport (JSON-RPC, REST, gRPC, WebSocket):
+    /// their connect timeouts only bound establishment, and a server that
+    /// establishes a stream and then goes silent must not hang the consumer.
     #[must_use]
-    #[cfg(any(test, feature = "websocket"))]
     pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
         self
