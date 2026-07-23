@@ -612,6 +612,17 @@ mod tests {
     }
 
     #[test]
+    fn server_error_status_overloaded() {
+        use crate::error::ServerError;
+        // A transient overload maps to 503 (retryable), NOT the generic 500 that
+        // deleting this arm would fall through to.
+        assert_eq!(
+            server_error_status(&ServerError::Overloaded("at capacity".into())),
+            503
+        );
+    }
+
+    #[test]
     fn server_error_status_internal() {
         use crate::error::ServerError;
         assert_eq!(

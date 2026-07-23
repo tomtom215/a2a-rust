@@ -394,6 +394,72 @@ mod tests {
         let _ = std::fs::remove_dir(&dir);
     }
 
+    /// Verifies that `signal_watcher_loop` actually reloads the card on
+    /// `SIGHUP` — not merely that the task can be spawned and aborted. Kills
+    /// the `replace signal_watcher_loop with ()` mutant, which would otherwise
+    /// leave the reload behavior (the entire point of the loop) untested.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn signal_watcher_reloads_on_sighup() {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        // Register a guard SIGHUP stream up front. This overrides the default
+        // "terminate" disposition for the whole process so raising SIGHUP
+        // below does not kill the test runner, independent of how quickly the
+        // watcher task gets scheduled.
+        let _guard = signal(SignalKind::hangup()).expect("register guard SIGHUP handler");
+
+        let dir = std::env::temp_dir().join("a2a_signal_reload_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("agent_card.json");
+
+        let initial = minimal_agent_card();
+        std::fs::write(&file, serde_json::to_string(&initial).unwrap()).unwrap();
+
+        let handler = HotReloadAgentCardHandler::new(initial);
+        let handle = handler.spawn_signal_watcher(&file);
+
+        // Give the watcher task time to run and register its own SIGHUP stream
+        // before we raise the signal. A signal delivered before a stream is
+        // created is not observed by that stream.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Write an updated card, then raise SIGHUP to trigger the reload.
+        let mut updated = minimal_agent_card();
+        updated.name = "SIGHUP Reloaded".into();
+        std::fs::write(&file, serde_json::to_string(&updated).unwrap()).unwrap();
+
+        // Raise SIGHUP to this process. Using `kill(1)` keeps the test free of
+        // a `libc`/`nix` dependency; `kill` is always present under `#[cfg(unix)]`.
+        let status = std::process::Command::new("kill")
+            .args(["-HUP", &std::process::id().to_string()])
+            .status()
+            .expect("send SIGHUP via kill(1)");
+        assert!(status.success(), "kill -HUP <self> should succeed");
+
+        // Poll for the reload with a bounded timeout so a regression fails
+        // fast instead of hanging.
+        let reloaded = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                if handler.current().name == "SIGHUP Reloaded" {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        })
+        .await
+        .unwrap_or(false);
+
+        handle.abort();
+        let _ = std::fs::remove_file(&file);
+        let _ = std::fs::remove_dir(&dir);
+
+        assert!(
+            reloaded,
+            "signal_watcher_loop should reload the agent card on SIGHUP"
+        );
+    }
+
     /// Covers `file_mtime` helper function (line 182-184).
     #[test]
     fn file_mtime_returns_none_for_missing_file() {

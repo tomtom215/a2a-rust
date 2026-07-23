@@ -416,6 +416,69 @@ mod tests {
         );
     }
 
+    /// Updating an existing config (matching id) is allowed even when the task
+    /// is already at `max_push_configs_per_task` — the per-task cap only blocks
+    /// *new* configs. Pins the `is_update` id-match check.
+    #[tokio::test]
+    async fn set_push_config_update_allowed_at_per_task_cap() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        struct NoopSender;
+        impl PushSender for NoopSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        // Per-task cap of 1: one config fills the task.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(NoopSender)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default().with_max_push_configs_per_task(1),
+            )
+            .build()
+            .unwrap();
+
+        let make = |url: &str| TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-1".to_owned()),
+            task_id: Some("task-1".to_owned()),
+            url: url.to_owned(),
+            token: None,
+            authentication: None,
+        };
+
+        // First create fills the task to its cap.
+        handler
+            .on_set_push_config(make("https://example.com/a"), None)
+            .await
+            .expect("first create should succeed");
+
+        // Re-setting the SAME id is an update, not a new config → allowed at cap.
+        handler
+            .on_set_push_config(make("https://example.com/b"), None)
+            .await
+            .expect("updating an existing config at the cap must be allowed");
+
+        // A DIFFERENT id would be a new config and must be rejected at the cap.
+        let mut newcfg = make("https://example.com/c");
+        newcfg.id = Some("cfg-2".to_owned());
+        let rejected = handler.on_set_push_config(newcfg, None).await;
+        assert!(
+            matches!(rejected, Err(crate::error::ServerError::InvalidParams(_))),
+            "a new config beyond the per-task cap must be rejected, got {rejected:?}"
+        );
+    }
+
     // ── on_get_push_config ───────────────────────────────────────────────────
 
     #[tokio::test]

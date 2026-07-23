@@ -68,6 +68,32 @@ fn json_byte_len(value: &serde_json::Value) -> serde_json::Result<usize> {
     Ok(w.0)
 }
 
+// ── Send-path decision helpers ────────────────────────────────────────────────
+//
+// Extracted from `send_message_inner` so the branch conditions are unit-testable
+// in isolation (the enclosing async handler is not easily driven to these exact
+// states).
+
+/// A second `SendMessage` targeting a task that still has a **live**
+/// (non-cancelled) cancellation token must be rejected: an executor is already
+/// in flight for that `task_id`.
+fn second_send_blocked(entry: &CancellationEntry) -> bool {
+    !entry.token.is_cancelled()
+}
+
+/// Whether a non-cancelled cancellation token has aged at or past
+/// `max_token_age` and is therefore a candidate for the stale-token sweep.
+fn token_aged(elapsed: std::time::Duration, max_token_age: std::time::Duration) -> bool {
+    elapsed >= max_token_age
+}
+
+/// Whether an aged token should actually be evicted: only when its event queue
+/// is gone (the executor has finished). A token whose queue is still live is
+/// kept so the running task stays cancelable.
+const fn evict_aged_token(queue_live: bool) -> bool {
+    !queue_live
+}
+
 impl RequestHandler {
     /// Handles `SendMessage` / `SendStreamingMessage`.
     ///
@@ -258,7 +284,7 @@ impl RequestHandler {
         {
             let tokens = self.cancellation_tokens.read().await;
             if let Some(entry) = tokens.get(&task_id) {
-                if !entry.token.is_cancelled() {
+                if second_send_blocked(entry) {
                     return Err(ServerError::UnsupportedOperation(format!(
                         "task {task_id} is already being processed; \
                          wait for it to reach input-required or a terminal state before sending again"
@@ -371,8 +397,10 @@ impl RequestHandler {
                     for (id, entry) in tokens.iter() {
                         if entry.token.is_cancelled() {
                             cancelled.push(id.clone());
-                        } else if now.duration_since(entry.created_at) >= self.limits.max_token_age
-                        {
+                        } else if token_aged(
+                            now.duration_since(entry.created_at),
+                            self.limits.max_token_age,
+                        ) {
                             aged.push(id.clone());
                         }
                     }
@@ -389,7 +417,8 @@ impl RequestHandler {
             // cancelable.
             let mut stale_ids = cancelled_ids;
             for id in aged_candidates {
-                if !self.event_queue_manager.has_queue(&id).await {
+                let queue_live = self.event_queue_manager.has_queue(&id).await;
+                if evict_aged_token(queue_live) {
                     stale_ids.push(id);
                 }
             }
@@ -1636,5 +1665,58 @@ mod tests {
             }
             _ => panic!("expected Response(Task)"),
         }
+    }
+
+    // ── Send-path decision helpers ────────────────────────────────────────
+
+    #[test]
+    fn second_send_blocked_iff_token_live() {
+        let live = CancellationEntry {
+            token: tokio_util::sync::CancellationToken::new(),
+            created_at: Instant::now(),
+        };
+        assert!(
+            second_send_blocked(&live),
+            "a live token means an executor is in flight → block the second send"
+        );
+
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        let cancelled = CancellationEntry {
+            token,
+            created_at: Instant::now(),
+        };
+        assert!(
+            !second_send_blocked(&cancelled),
+            "a cancelled token no longer blocks a resend"
+        );
+    }
+
+    #[test]
+    fn token_aged_at_or_past_max_age() {
+        let max = std::time::Duration::from_secs(3600);
+        assert!(
+            !token_aged(std::time::Duration::from_secs(3599), max),
+            "younger than max is not aged"
+        );
+        // Boundary: exactly max_age counts as aged (>=), which distinguishes
+        // the correct operator from both `<` and `>`.
+        assert!(
+            token_aged(std::time::Duration::from_secs(3600), max),
+            "exactly max_age is aged"
+        );
+        assert!(token_aged(std::time::Duration::from_secs(3601), max));
+    }
+
+    #[test]
+    fn evict_aged_token_only_when_queue_gone() {
+        assert!(
+            evict_aged_token(false),
+            "no live queue → the executor finished → evict the lingering token"
+        );
+        assert!(
+            !evict_aged_token(true),
+            "a live queue means the task is still running → keep its token"
+        );
     }
 }
