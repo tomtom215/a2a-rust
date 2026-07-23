@@ -12,6 +12,9 @@ pub mod tenant;
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub(crate) mod cursor;
 
+/// Shared page-boundary arithmetic used by every task store.
+pub(crate) mod pagination;
+
 #[cfg(feature = "sqlite")]
 pub mod migration;
 #[cfg(feature = "sqlite")]

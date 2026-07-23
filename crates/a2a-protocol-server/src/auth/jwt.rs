@@ -61,6 +61,25 @@ const DEFAULT_JWKS_TTL: Duration = Duration::from_secs(3600);
 /// Maximum accepted size of a JWKS or discovery response body.
 const MAX_JWKS_RESPONSE_SIZE: usize = 256 * 1024;
 
+/// Whether appending `chunk_len` more bytes to an already-`collected_len`-byte
+/// body would exceed [`MAX_JWKS_RESPONSE_SIZE`].
+///
+/// Extracted so the denial-of-service size bound is unit-testable without
+/// performing a network fetch — the streaming accumulator in `http_get_json`
+/// calls this per chunk.
+const fn jwks_body_exceeds_limit(collected_len: usize, chunk_len: usize) -> bool {
+    collected_len + chunk_len > MAX_JWKS_RESPONSE_SIZE
+}
+
+/// Whether a cached JWKS aged `elapsed` is still within its `ttl`.
+///
+/// The bound is **strict**: an entry that has reached exactly its TTL is
+/// treated as stale so a refetch is allowed. Extracted so the freshness
+/// boundary is unit-testable without sleeping for a real TTL.
+fn cache_is_fresh(elapsed: Duration, ttl: Duration) -> bool {
+    elapsed < ttl
+}
+
 // ── Verification keys ─────────────────────────────────────────────────────────
 
 /// A single verification key with its optional key id.
@@ -421,11 +440,22 @@ impl JwtValidator {
             .duration_since(UNIX_EPOCH)
             .map_err(|_| ())?
             .as_secs();
+        self.check_claims_at(claims, now)
+    }
+
+    /// Validates time and identity claims against an explicit `now` (Unix
+    /// seconds). Separated from [`check_claims`] so the `exp`/`nbf` boundary
+    /// comparisons are deterministically testable without depending on the
+    /// wall clock.
+    fn check_claims_at(&self, claims: &JwtClaims, now: u64) -> Result<(), ()> {
         let leeway = self.leeway.as_secs();
 
         match claims.exp {
             Some(exp) => {
-                if now > exp.saturating_add(leeway) {
+                // RFC 7519 §4.1.4: the token MUST NOT be accepted "on or after"
+                // exp — so reject at exactly exp (+ leeway). `>=`, not `>`, keeps
+                // this fail-closed at the boundary.
+                if now >= exp.saturating_add(leeway) {
                     return Err(()); // expired
                 }
             }
@@ -457,6 +487,7 @@ impl JwtValidator {
 }
 
 /// The outcome of a validation attempt that the interceptor can act on.
+#[cfg_attr(test, derive(Debug))]
 enum ValidateOutcome {
     /// Reject the request outright.
     Rejected,
@@ -690,7 +721,7 @@ impl RemoteJwks {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.as_ref().and_then(|c| {
-            if c.fetched_at.elapsed() < self.ttl {
+            if cache_is_fresh(c.fetched_at.elapsed(), self.ttl) {
                 Some(c.jwks.clone())
             } else {
                 None
@@ -777,7 +808,7 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
         let frame =
             frame.map_err(|e| A2aError::internal(format!("{what} body read failed: {e}")))?;
         if let Some(chunk) = frame.data_ref() {
-            if collected.len() + chunk.len() > MAX_JWKS_RESPONSE_SIZE {
+            if jwks_body_exceeds_limit(collected.len(), chunk.len()) {
                 return Err(A2aError::internal(format!("{what} response too large")));
             }
             collected.extend_from_slice(chunk);
@@ -860,13 +891,19 @@ fn der_tlv(tag: u8, content: &[u8]) -> Vec<u8> {
         out.push(len as u8);
     } else {
         let len_bytes = len.to_be_bytes();
+        // `len >= 0x80` guarantees at least one non-zero big-endian byte, so
+        // `position` is always `Some` here — no fallback index is reachable.
         let first_nonzero = len_bytes
             .iter()
             .position(|&b| b != 0)
-            .unwrap_or(len_bytes.len() - 1);
+            .expect("len >= 0x80 has a non-zero big-endian byte");
         let significant = &len_bytes[first_nonzero..];
+        // Long-form initial octet is `0x80 + <number of length octets>` per
+        // X.690 §8.1.3.5. `significant.len()` is at most the width of `usize`
+        // (≤ 8 ≪ 0x80), so `+` is exact — written as `+` rather than `|` so the
+        // arithmetic is expressed (and tested) directly.
         #[allow(clippy::cast_possible_truncation)]
-        out.push(0x80 | significant.len() as u8);
+        out.push(0x80 + significant.len() as u8);
         out.extend_from_slice(significant);
     }
     out.extend_from_slice(content);
@@ -1048,5 +1085,272 @@ mod tests {
         // Only the sig-use RSA key is loaded.
         assert_eq!(jwks.keys.len(), 1);
         assert_eq!(jwks.keys[0].kid.as_deref(), Some("sig1"));
+    }
+
+    // -- Jwks key-set bookkeeping ---------------------------------------------
+
+    #[test]
+    fn jwks_is_empty_reflects_key_count() {
+        assert!(Jwks::new().is_empty(), "a fresh key set is empty");
+        assert!(!rsa_jwks().is_empty(), "a key set with a key is not empty");
+    }
+
+    #[test]
+    fn jwks_from_json_loads_ec_p256_key() {
+        // The `EC`/`P-256` match arm must actually load the key — if the curve
+        // guard is bypassed, a P-256 key is silently skipped and ES256 tokens
+        // can never be verified.
+        let json = format!(
+            r#"{{"keys":[{{"kty":"EC","crv":"P-256","kid":"ek1","x":"{ES256_X}","y":"{ES256_Y}"}}]}}"#
+        );
+        let jwks = Jwks::from_json(json.as_bytes()).unwrap();
+        assert_eq!(jwks.keys.len(), 1, "the P-256 key must be loaded");
+        assert_eq!(jwks.keys[0].kid.as_deref(), Some("ek1"));
+    }
+
+    #[test]
+    fn ec_p256_rejects_wrong_length_coordinate() {
+        // Both coordinates must be exactly 32 bytes; a wrong length in EITHER
+        // one is rejected (an `&&` here would accept a malformed point).
+        let ok_y = ES256_Y;
+        let short_x = URL_SAFE_NO_PAD.encode([0u8; 31]);
+        assert!(
+            Jwks::new().with_ec_p256("k", &short_x, ok_y).is_err(),
+            "a 31-byte x coordinate must be rejected"
+        );
+        let long_y = URL_SAFE_NO_PAD.encode([0u8; 33]);
+        assert!(
+            Jwks::new().with_ec_p256("k", ES256_X, &long_y).is_err(),
+            "a 33-byte y coordinate must be rejected"
+        );
+        // The genuine 32/32 pair is accepted.
+        assert!(Jwks::new().with_ec_p256("k", ES256_X, ES256_Y).is_ok());
+    }
+
+    // -- Debug redaction / non-emptiness --------------------------------------
+
+    #[test]
+    fn debug_impls_render_type_and_redact_secrets() {
+        // Each custom Debug impl must render its type name (a stubbed-out impl
+        // that writes nothing would be a silent regression) and must never leak
+        // the HS256 secret.
+        let jwks_dbg = format!("{:?}", rsa_jwks());
+        assert!(jwks_dbg.contains("Jwks"), "Jwks Debug: {jwks_dbg}");
+        assert!(jwks_dbg.contains("keys"), "Jwks Debug lists key count");
+
+        let secret = b"super-secret-value-1234567890";
+        let validator = base_validator().with_hs256_secret(secret.to_vec());
+        let v_dbg = format!("{validator:?}");
+        assert!(
+            v_dbg.contains("JwtValidator"),
+            "JwtValidator Debug: {v_dbg}"
+        );
+        assert!(v_dbg.contains("redacted"), "the secret must be redacted");
+        assert!(
+            !v_dbg.contains("super-secret"),
+            "the raw HS256 secret must never appear in Debug output"
+        );
+
+        let interceptor = JwtAuthInterceptor::new(validator, rsa_jwks());
+        let i_dbg = format!("{interceptor:?}");
+        assert!(
+            i_dbg.contains("JwtAuthInterceptor"),
+            "JwtAuthInterceptor Debug: {i_dbg}"
+        );
+        assert!(i_dbg.contains("static"), "static key source is labelled");
+    }
+
+    // -- check_claims_at time boundaries (deterministic) ----------------------
+
+    fn claims_at(exp: Option<u64>, nbf: Option<u64>) -> JwtClaims {
+        JwtClaims {
+            iss: None,
+            sub: None,
+            aud: None,
+            exp,
+            nbf,
+        }
+    }
+
+    #[test]
+    fn check_claims_require_exp_boundary() {
+        // require_exp (the default) rejects a token with no `exp`.
+        let strict = JwtValidator::new();
+        assert!(
+            strict
+                .check_claims_at(&claims_at(None, None), 1_000)
+                .is_err(),
+            "no exp must be rejected when exp is required"
+        );
+        // allow_missing_exp accepts it.
+        let lax = JwtValidator::new().allow_missing_exp();
+        assert!(
+            lax.check_claims_at(&claims_at(None, None), 1_000).is_ok(),
+            "no exp must be accepted when exp is optional"
+        );
+        // With an exp present, expiry is enforced regardless.
+        assert!(
+            strict
+                .check_claims_at(&claims_at(Some(2_000), None), 1_000)
+                .is_ok(),
+            "unexpired token passes"
+        );
+        assert!(
+            strict
+                .check_claims_at(&claims_at(Some(500), None), 1_000)
+                .is_err(),
+            "expired token fails (now past exp + leeway)"
+        );
+    }
+
+    #[test]
+    fn check_claims_nbf_boundary_is_strict() {
+        // Zero leeway so the boundary is exact and deterministic.
+        let v = JwtValidator::new()
+            .allow_missing_exp()
+            .with_leeway(std::time::Duration::ZERO);
+        // now (1000) strictly before nbf (2000): not yet valid → rejected.
+        assert!(
+            v.check_claims_at(&claims_at(None, Some(2_000)), 1_000)
+                .is_err(),
+            "a token whose nbf is in the future must be rejected"
+        );
+        // now exactly equals nbf: valid (the check is `now < nbf`, not `<=`).
+        assert!(
+            v.check_claims_at(&claims_at(None, Some(1_000)), 1_000)
+                .is_ok(),
+            "a token is valid at exactly its nbf instant"
+        );
+        // now after nbf: valid.
+        assert!(
+            v.check_claims_at(&claims_at(None, Some(500)), 1_000)
+                .is_ok(),
+            "a token whose nbf is in the past is valid"
+        );
+    }
+
+    #[test]
+    fn check_claims_exp_boundary_is_fail_closed() {
+        // RFC 7519 §4.1.4: the token MUST NOT be accepted "on or after" exp.
+        // Zero leeway → exact, deterministic boundary.
+        let v = JwtValidator::new().with_leeway(std::time::Duration::ZERO);
+        assert!(
+            v.check_claims_at(&claims_at(Some(999), None), 1_000)
+                .is_err(),
+            "a token past its exp is expired"
+        );
+        // Exactly at exp: rejected (fail-closed — this is the RFC boundary).
+        assert!(
+            v.check_claims_at(&claims_at(Some(1_000), None), 1_000)
+                .is_err(),
+            "a token is expired at exactly its exp instant"
+        );
+        // Strictly before exp: valid.
+        assert!(
+            v.check_claims_at(&claims_at(Some(1_001), None), 1_000)
+                .is_ok(),
+            "a token strictly before its exp is valid"
+        );
+        // Leeway widens the window up to — but not including — exp + leeway.
+        let lenient = JwtValidator::new().with_leeway(std::time::Duration::from_secs(60));
+        assert!(
+            lenient
+                .check_claims_at(&claims_at(Some(1_000), None), 1_059)
+                .is_ok(),
+            "within leeway of exp: still valid"
+        );
+        assert!(
+            lenient
+                .check_claims_at(&claims_at(Some(1_000), None), 1_060)
+                .is_err(),
+            "at exactly exp + leeway: expired (fail-closed)"
+        );
+    }
+
+    #[test]
+    fn cached_jwks_freshness_is_strict() {
+        let ttl = std::time::Duration::from_secs(3600);
+        assert!(
+            cache_is_fresh(std::time::Duration::from_secs(3599), ttl),
+            "an entry younger than its TTL is fresh"
+        );
+        // Exactly at the TTL is stale (strict `<`): distinguishes `<` from `<=`.
+        assert!(
+            !cache_is_fresh(ttl, ttl),
+            "an entry at exactly its TTL is stale"
+        );
+        assert!(
+            !cache_is_fresh(std::time::Duration::from_secs(3601), ttl),
+            "an entry past its TTL is stale"
+        );
+    }
+
+    // -- validate() KeyMiss vs Rejected distinction ---------------------------
+
+    #[test]
+    fn matching_kid_bad_signature_is_rejected_not_keymiss() {
+        // kid "rk1" matches the JWKS key, but the token is signed by a different
+        // key: signature fails with a MATCHED kid, so this is a hard rejection,
+        // not a rotation signal.
+        let outcome = base_validator().validate(RS256_WRONG_KEY, &rsa_jwks());
+        assert!(
+            matches!(outcome, Err(ValidateOutcome::Rejected)),
+            "matched-kid bad-signature must be Rejected, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn no_kid_bad_signature_is_rejected_not_keymiss() {
+        // A token with NO kid whose signature does not verify against any key is
+        // a hard rejection (kid absent → not a rotation signal).
+        let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256","typ":"JWT"}"#);
+        let parts: Vec<&str> = RS256_VALID.split('.').collect();
+        // Valid claims + a signature that was computed over a DIFFERENT header
+        // (the original had a kid), so it cannot verify here.
+        let token = format!("{header}.{}.{}", parts[1], parts[2]);
+        let outcome = base_validator().validate(&token, &rsa_jwks());
+        assert!(
+            matches!(outcome, Err(ValidateOutcome::Rejected)),
+            "no-kid bad-signature must be Rejected, got {outcome:?}"
+        );
+    }
+
+    #[test]
+    fn unknown_kid_is_keymiss() {
+        // A present-but-unknown kid against a keyed JWKS is a rotation signal.
+        let outcome = base_validator().validate(RS256_UNKNOWN_KID, &rsa_jwks());
+        assert!(
+            matches!(outcome, Err(ValidateOutcome::KeyMiss)),
+            "unknown-kid must be KeyMiss, got {outcome:?}"
+        );
+    }
+
+    // -- DER length encoding (RSA SPKI construction) --------------------------
+
+    #[test]
+    fn der_tlv_short_and_long_form_lengths() {
+        // Short form (content < 128): the length is a single octet.
+        assert_eq!(&der_tlv(0x04, &[0u8; 5])[..2], &[0x04, 0x05]);
+        assert_eq!(&der_tlv(0x04, &[0u8; 127])[..2], &[0x04, 0x7f]);
+        // Long form (content >= 128): 0x80 + <number of length octets>, then the
+        // big-endian length. 128 → `0x81 0x80`.
+        assert_eq!(&der_tlv(0x04, &[0u8; 128])[..3], &[0x04, 0x81, 0x80]);
+        // 300 = 0x012C → two length octets: `0x82 0x01 0x2C`.
+        assert_eq!(&der_tlv(0x04, &[0u8; 300])[..4], &[0x04, 0x82, 0x01, 0x2c]);
+        // The content is appended verbatim after the header.
+        assert_eq!(der_tlv(0x02, &[0xAA, 0xBB]), vec![0x02, 0x02, 0xAA, 0xBB]);
+    }
+
+    // -- JWKS response size bound ---------------------------------------------
+
+    #[test]
+    fn jwks_body_size_limit() {
+        // A body within 256 KiB is accepted; note 200_000 is far above any
+        // degenerate limit (e.g. 256 + 1024) a broken constant might produce.
+        assert!(!jwks_body_exceeds_limit(0, 200_000));
+        assert!(!jwks_body_exceeds_limit(0, 256 * 1024));
+        // One byte over the limit — in a single chunk or accumulated — is rejected.
+        assert!(jwks_body_exceeds_limit(0, 256 * 1024 + 1));
+        assert!(jwks_body_exceeds_limit(256 * 1024, 1));
     }
 }

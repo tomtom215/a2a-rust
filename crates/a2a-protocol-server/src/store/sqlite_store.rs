@@ -265,7 +265,7 @@ impl TaskStore for SqliteTaskStore {
 
             // Fetch one extra to detect next page. LIMIT is a parameterized
             // bind rather than string interpolation.
-            let limit = page_size + 1;
+            let limit = super::pagination::fetch_limit(page_size);
             let limit_param = bind_values.len() + 1;
             let sql = format!(
                 "SELECT updated_at, data FROM tasks {where_clause} \
@@ -290,14 +290,15 @@ impl TaskStore for SqliteTaskStore {
                 })
                 .collect::<A2aResult<Vec<_>>>()?;
 
-            let next_page_token = if rows.len() > page_size as usize {
-                rows.truncate(page_size as usize);
-                rows.last()
-                    .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let next_page_token =
+                if super::pagination::has_next_page(rows.len(), page_size as usize) {
+                    rows.truncate(page_size as usize);
+                    rows.last()
+                        .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
 
             #[allow(clippy::cast_possible_truncation)]
             let page_len = rows.len() as u32;

@@ -351,4 +351,36 @@ mod tests {
         assert_eq!(missing.message, wrong.message);
         assert_eq!(missing.message, "authentication required");
     }
+
+    #[test]
+    fn debug_impls_render_type_and_redact_secrets() {
+        // Debug must render the type name (a stubbed-out impl that writes
+        // nothing would be a silent regression) and must never leak the raw
+        // API keys or bearer tokens.
+        let api = ApiKeyAuthInterceptor::new(["super-secret-api-key"]).with_header("X-Company-Key");
+        let api_dbg = format!("{api:?}");
+        assert!(
+            api_dbg.contains("ApiKeyAuthInterceptor"),
+            "ApiKey Debug: {api_dbg}"
+        );
+        assert!(
+            api_dbg.contains("x-company-key"),
+            "header name is shown (lowercased)"
+        );
+        assert!(
+            !api_dbg.contains("super-secret-api-key"),
+            "raw API keys must never appear in Debug output"
+        );
+
+        let bearer = BearerTokenAuthInterceptor::new(["super-secret-bearer-token"]);
+        let bearer_dbg = format!("{bearer:?}");
+        assert!(
+            bearer_dbg.contains("BearerTokenAuthInterceptor"),
+            "Bearer Debug: {bearer_dbg}"
+        );
+        assert!(
+            !bearer_dbg.contains("super-secret-bearer-token"),
+            "raw bearer tokens must never appear in Debug output"
+        );
+    }
 }

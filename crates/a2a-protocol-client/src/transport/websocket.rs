@@ -721,6 +721,24 @@ mod tests {
     }
 
     #[test]
+    fn with_extra_headers_sets_the_headers() {
+        // The builder must actually store the headers (a default-returning stub
+        // would silently drop upgrade headers like Authorization).
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_string(), "Bearer tok".to_string());
+        headers.insert("x-custom".to_string(), "v".to_string());
+        let config = WebSocketTransportConfig::default().with_extra_headers(headers.clone());
+        assert_eq!(config.extra_headers, headers);
+        assert_eq!(
+            config
+                .extra_headers
+                .get("authorization")
+                .map(String::as_str),
+            Some("Bearer tok")
+        );
+    }
+
+    #[test]
     fn validate_ws_url_rejects_http() {
         assert!(validate_ws_url("http://localhost:8080").is_err());
     }

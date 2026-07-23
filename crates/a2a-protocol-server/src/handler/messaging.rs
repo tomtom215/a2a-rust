@@ -732,8 +732,9 @@ mod tests {
 
         let result = handler.on_send_message(params, false, None).await;
         assert!(
-            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("JSON object")),
-            "expected InvalidParams for array message metadata, got: {result:?}"
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("JSON object") && msg.contains("array")),
+            "expected InvalidParams naming the offending kind (array), got: {result:?}"
         );
     }
 
@@ -745,8 +746,9 @@ mod tests {
 
         let result = handler.on_send_message(params, false, None).await;
         assert!(
-            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("JSON object")),
-            "expected InvalidParams for scalar request metadata, got: {result:?}"
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("JSON object") && msg.contains("string")),
+            "expected InvalidParams naming the offending kind (string), got: {result:?}"
         );
     }
 
@@ -758,8 +760,9 @@ mod tests {
 
         let result = handler.on_send_message(params, false, None).await;
         assert!(
-            matches!(result, Err(ServerError::InvalidParams(ref msg)) if msg.contains("part 0")),
-            "expected InvalidParams for scalar part metadata, got: {result:?}"
+            matches!(result, Err(ServerError::InvalidParams(ref msg))
+                if msg.contains("part 0") && msg.contains("number")),
+            "expected InvalidParams naming the part index and kind (number), got: {result:?}"
         );
     }
 

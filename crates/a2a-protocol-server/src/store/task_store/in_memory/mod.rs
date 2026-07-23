@@ -359,7 +359,7 @@ impl TaskStore for InMemoryTaskStore {
             let total_size = store.len() as u32;
             drop(store);
 
-            let has_next_page = collected.len() > page_size;
+            let has_next_page = crate::store::pagination::has_next_page(collected.len(), page_size);
             let mut collected = collected;
             collected.truncate(page_size);
             let next_page_token = if has_next_page {

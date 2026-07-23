@@ -174,9 +174,10 @@ impl WebSocketDispatcher {
                     // Same policy as the HTTP accept loops in `serve.rs`.
                     trace_warn!(error = %e, "accept() failed; retrying");
                     let backoff = crate::serve::accept_retry_backoff(&e);
-                    if !backoff.is_zero() {
-                        tokio::time::sleep(backoff).await;
-                    }
+                    // Sleep unconditionally: a zero backoff (immediate-retry
+                    // error classes) makes this a single scheduler yield, which
+                    // also guards against a hot spin if the error recurs.
+                    tokio::time::sleep(backoff).await;
                     continue;
                 }
             };

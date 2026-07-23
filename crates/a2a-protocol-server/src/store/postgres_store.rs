@@ -260,7 +260,7 @@ impl TaskStore for PostgresTaskStore {
             // Fetch one extra to detect next page. `updated_at` is emitted as a
             // UTC wall-clock string at microsecond precision so it round-trips
             // through the cursor exactly.
-            let limit = page_size + 1;
+            let limit = super::pagination::fetch_limit(page_size);
             let sql = format!(
                 "SELECT to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US') AS ua, \
                  data FROM tasks {where_clause} ORDER BY updated_at DESC, id DESC LIMIT {limit}"
@@ -283,14 +283,15 @@ impl TaskStore for PostgresTaskStore {
                 })
                 .collect::<A2aResult<Vec<_>>>()?;
 
-            let next_page_token = if rows.len() > page_size as usize {
-                rows.truncate(page_size as usize);
-                rows.last()
-                    .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
-                    .unwrap_or_default()
-            } else {
-                String::new()
-            };
+            let next_page_token =
+                if super::pagination::has_next_page(rows.len(), page_size as usize) {
+                    rows.truncate(page_size as usize);
+                    rows.last()
+                        .map(|(ua, task)| super::cursor::encode(ua, task.id.0.as_str()))
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
 
             #[allow(clippy::cast_possible_truncation)]
             let page_len = rows.len() as u32;

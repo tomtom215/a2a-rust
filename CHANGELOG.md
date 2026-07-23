@@ -481,6 +481,20 @@ changed shape (0.x breaking — warrants a minor bump).
   accepted over JSON-RPC/REST with, e.g., `metadata: [1, 2, 3]` would fail to
   serialize the instant it was served over gRPC. Rejecting it at ingress
   keeps every accepted task representable across all A2A transports.
+- **JWT `exp` is now fail-closed at the boundary** (`auth-jwt`) — the
+  expiration check accepted a token at exactly `exp + leeway` (`now > exp`).
+  RFC 7519 §4.1.4 requires a token to be rejected "on or after" `exp`, so the
+  check is now `now >= exp + leeway`. `nbf` was already correct (valid at
+  exactly `nbf`, per §4.1.5 "not before"). Tokens sitting exactly at their
+  expiry instant are now rejected.
+- **Mutation-test hardening of the changed surface** — closed every gap the
+  incremental mutation-testing gate found in this pass's diff, so the new and
+  touched code is covered by assertions that pin behavior, not just line
+  coverage. This added deterministic tests for JWT time-boundary and JWKS
+  parsing/redaction logic, a shared unit-tested pagination boundary helper
+  used by all five stores, and DER length-encoding tests — and extracted a
+  couple of pure helpers (`check_claims_at(now)`, `cache_is_fresh`) so the
+  crypto/validation boundaries are testable without a wall clock.
 
 ## [0.6.0] - 2026-06-10
 
