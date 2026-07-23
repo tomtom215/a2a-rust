@@ -85,6 +85,10 @@ jobs:
         run: cargo clippy -p a2a-protocol-server --all-targets --features postgres -- -D warnings
       - name: Clippy (axum)
         run: cargo clippy -p a2a-protocol-server --all-targets --features axum -- -D warnings
+      # Lint auth-jwt in isolation (no TLS): exercises the plaintext JWKS
+      # client path that --all-features (TLS on) never compiles.
+      - name: Clippy (auth-jwt feature, no default features)
+        run: cargo clippy -p a2a-protocol-server --all-targets --no-default-features --features auth-jwt -- -D warnings
       - name: Clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -119,6 +123,8 @@ jobs:
         run: cargo test -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
         run: cargo test -p a2a-protocol-server --features axum
+      - name: Test (auth-jwt feature)
+        run: cargo test -p a2a-protocol-server --features auth-jwt
       - name: Test (all features)
         run: cargo test --workspace --all-features
       - name: Test (no default features)
