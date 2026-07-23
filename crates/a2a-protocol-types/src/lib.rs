@@ -6,7 +6,8 @@
 //! A2A protocol v1.0 — pure data types with serde support.
 //!
 //! This crate provides all wire types for the A2A protocol with zero I/O
-//! dependencies. Add `a2a-client` or `a2a-server` for HTTP transport.
+//! dependencies. Add `a2a-protocol-client` or `a2a-protocol-server` for
+//! transport support.
 //!
 //! # Module overview
 //!

@@ -86,7 +86,7 @@ The agent team runs **81 base E2E tests** across 8 test modules (94 with all opt
 | 53 | tenant-isolation | JSON-RPC | Different tenants cannot see each other's tasks |
 | 54 | tenant-id-independence | Direct store | Same task ID in different tenants doesn't collide |
 | 55 | tenant-count | Direct store | `TenantAwareInMemoryTaskStore::tenant_count()` tracking |
-| 56 | grpc-send-message | gRPC | JSON-RPC `SendMessage` over gRPC transport (feature-gated) |
+| 56 | grpc-send-message | gRPC | `SendMessage` over the gRPC transport (feature-gated) |
 | 57 | grpc-streaming | gRPC | `SendStreamingMessage` over gRPC transport (feature-gated) |
 | 58 | grpc-get-task | gRPC | `GetTask` after `SendMessage` over gRPC (feature-gated) |
 

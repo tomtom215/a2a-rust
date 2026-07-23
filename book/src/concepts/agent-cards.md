@@ -203,7 +203,7 @@ Agent card responses include standard HTTP caching headers (RFC 7232):
 |--------|---------|
 | `ETag` | Content hash for cache validation |
 | `Last-Modified` | Timestamp of last change |
-| `Cache-Control` | `public, max-age=60` (configurable) |
+| `Cache-Control` | `public, max-age=3600` (configurable) |
 
 Clients should send `If-None-Match` or `If-Modified-Since` headers. If the card hasn't changed, the server returns `304 Not Modified` with no body.
 

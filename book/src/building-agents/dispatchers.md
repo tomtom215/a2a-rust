@@ -77,13 +77,22 @@ let dispatcher = Arc::new(RestDispatcher::new(handler));
 
 ### Multi-Tenancy
 
-Tenant routes are prefixed with `/tenants/{tenant-id}/`:
+Tenant-scoped routes accept two forms — the canonical bare-segment form from
+the spec proto's `google.api.http` additional bindings (what official-SDK
+REST clients send), and this SDK's original explicit prefix:
 
 ```
-GET /tenants/acme-corp/tasks
-GET /tenants/acme-corp/tasks/{id}
+# Canonical form
+GET  /acme-corp/tasks
+POST /acme-corp/message:send
+
+# Explicit form
+GET  /tenants/acme-corp/tasks
 POST /tenants/acme-corp/message:send
 ```
+
+In the canonical form, literal route segments always win over the tenant
+variable (a tenant named like a route head must use the explicit form).
 
 ### Built-in Security
 
@@ -158,7 +167,7 @@ No web framework required — the dispatchers work directly with hyper's service
 Provides bidirectional A2A communication over WebSocket. Enable with the `websocket` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.6", features = ["websocket"] }
+a2a-protocol-server = { version = "0.7", features = ["websocket"] }
 ```
 
 ```rust
@@ -211,7 +220,7 @@ as the HTTP serve path.
 Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature flag:
 
 ```toml
-a2a-protocol-server = { version = "0.6", features = ["grpc"] }
+a2a-protocol-server = { version = "0.7", features = ["grpc"] }
 ```
 
 ```rust
@@ -249,9 +258,16 @@ let bound = dispatcher.serve_with_listener(listener)?;
 
 ### Protocol
 
-All 11 A2A methods are mapped to gRPC RPCs. JSON payloads are carried inside protobuf `bytes` fields, reusing the same serde types as JSON-RPC and REST — no duplicate protobuf definitions needed.
+All 11 A2A methods are served on the canonical `lf.a2a.v1.A2AService` with
+fully-typed protobuf messages generated from the A2A specification's schema —
+wire-compatible with the official Go, Python, and Java SDKs. Requests and
+responses convert to and from the serde domain types through a fallible
+`TryFrom` layer (ProtoJSON semantics; see ADR 0009).
 
-Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server streaming.
+Streaming methods (`SendStreamingMessage`, `SubscribeToTask`) use gRPC server
+streaming. The pre-0.7 JSON-in-`bytes` tunnel (`a2a.v1.A2aService`) can still
+be served *alongside* the canonical service for 0.6 clients via the
+off-by-default `grpc-legacy-json` feature (removal planned for 0.8).
 
 ### Custom Server Setup
 

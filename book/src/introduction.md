@@ -53,7 +53,7 @@ a2a-rust is organized as a Cargo workspace with four crates:
 | Crate | Purpose |
 |-------|---------|
 | **`a2a-protocol-types`** | All A2A wire types with serde serialization. Pure data — no I/O, no async. |
-| **`a2a-protocol-client`** | HTTP client for calling remote A2A agents. Supports JSON-RPC and REST transports. |
+| **`a2a-protocol-client`** | HTTP client for calling remote A2A agents. Supports JSON-RPC and REST transports, plus WebSocket and gRPC behind feature flags. |
 | **`a2a-protocol-server`** | Server framework for *building* A2A agents. Pluggable stores, interceptors, and dispatchers. |
 | **`a2a-protocol-sdk`** | Umbrella crate that re-exports everything with a convenient `prelude` module. |
 

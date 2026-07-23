@@ -64,7 +64,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 | | |
 |---|---|
 | **Retry policy** | Configurable `RetryPolicy` with jittered exponential backoff (connection errors, timeouts, 429/502/503/504) |
-| **TLS support** | HTTPS via `rustls`, no OpenSSL dependency (`tls-rustls` feature) |
+| **TLS support** | HTTPS via `rustls`, no OpenSSL dependency — on by default in the client/SDK (`tls-rustls`; opt out with `default-features = false`), and the server's push sender delivers to HTTPS webhooks with it |
 | **Axum integration** | Feature-gated `A2aRouter` for idiomatic Axum servers (`axum` feature) |
 | **Zero framework lock-in** | Core built on raw `hyper` 1.x; Axum optional, or bring your own |
 
@@ -93,7 +93,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 |---|---|
 | **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
 | **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
-| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
+| **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % (default; individually noisy benchmarks carry documented per-benchmark overrides, e.g. `from_str/16384` at 75 %) — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
 | **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request, covering the JSON-RPC and REST bindings; the WebSocket and gRPC transports are exercised by the agent-team end-to-end suite rather than the TCK |
 
 ## Crate Structure
@@ -113,7 +113,7 @@ This project aims to be the first **v1.0.0-compliant** Rust SDK for A2A. We inte
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.6"
+a2a-protocol-sdk = "0.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

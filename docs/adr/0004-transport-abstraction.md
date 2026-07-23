@@ -1,7 +1,7 @@
 # ADR 0004: Transport Abstraction Design
 
 **Date:** 2026-03-15
-**Status:** Accepted
+**Status:** Accepted (superseded in part by ADR 0009 — the gRPC transport is protobuf-native as of 0.7, no longer JSON-over-gRPC)
 **Author:** Tom F.
 
 ---
@@ -48,7 +48,7 @@ Four concrete implementations ship in `a2a-protocol-client`:
 - `JsonRpcTransport` — HTTP POST to agent's `url` field.
 - `RestTransport` — HTTP verbs to REST paths.
 - `WebSocketTransport` — JSON-RPC over WebSocket (`websocket` feature).
-- `GrpcTransport` — JSON-over-gRPC (`grpc` feature).
+- `GrpcTransport` — gRPC (`grpc` feature; JSON-over-gRPC through 0.6, protobuf-native `lf.a2a.v1.A2AService` since 0.7 — see ADR 0009).
 
 ### Server-Side Transport Adapters
 

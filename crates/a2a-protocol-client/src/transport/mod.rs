@@ -10,12 +10,14 @@
 //! [`Transport::send_request`] for non-streaming methods and
 //! [`Transport::send_streaming_request`] for SSE-streaming methods.
 //!
-//! Two implementations ship with this crate:
+//! Four implementations ship with this crate (two behind feature flags):
 //!
 //! | Type | Protocol | When to use |
 //! |---|---|---|
 //! | [`JsonRpcTransport`] | JSON-RPC 2.0 over HTTP POST | Default; most widely supported |
 //! | [`RestTransport`] | HTTP REST (verbs + paths) | When the agent card requires it |
+//! | `GrpcTransport` | Canonical `lf.a2a.v1.A2AService` (protobuf) | `grpc` feature; service-mesh / cross-language gRPC peers |
+//! | `WebSocketTransport` | JSON-RPC 2.0 over a persistent WebSocket | `websocket` feature; long-lived low-latency connections |
 //!
 //! [`A2aClient`]: crate::A2aClient
 //! [`JsonRpcTransport`]: jsonrpc::JsonRpcTransport

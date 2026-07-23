@@ -381,7 +381,7 @@ Each flow type mirrors the OpenAPI 3.x OAuth2 flow structure.
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
 | `scheme` | `scheme` | `String` | Yes (e.g., `"bearer"`) |
-| `credentials` | `credentials` | `String` | Yes |
+| `credentials` | `credentials` | `Option<String>` | No (redacted in `Debug`) |
 
 ### `TaskPushNotificationConfig`
 
@@ -391,7 +391,7 @@ Single flat type in v1.0 (combines the previous `PushNotificationConfig` and `Ta
 |---|---|---|---|
 | `tenant` | `tenant` | `Option<String>` | No |
 | `id` | `id` | `Option<String>` | No (server-assigned) |
-| `taskId` | `task_id` | `String` | Yes |
+| `taskId` | `task_id` | `Option<String>` | No on the wire (a config nested in `SendMessageConfiguration` omits it); a standalone `CreateTaskPushNotificationConfig` without it is rejected with invalid-params |
 | `url` | `url` | `String` | Yes (HTTPS webhook) |
 | `token` | `token` | `Option<String>` | No (shared secret) |
 | `authentication` | `authentication` | `Option<AuthenticationInfo>` | No |
@@ -404,7 +404,7 @@ Single flat type in v1.0 (combines the previous `PushNotificationConfig` and `Ta
 
 | Spec field | Rust field | Type | Required |
 |---|---|---|---|
-| `acceptedOutputModes` | `accepted_output_modes` | `Vec<String>` | Yes (MIME types) |
+| `acceptedOutputModes` | `accepted_output_modes` | `Vec<String>` | No — absent parses as empty (ProtoJSON printers omit empty repeated fields); same rule applies to every repeated field in the wire types |
 | `taskPushNotificationConfig` | `task_push_notification_config` | `Option<TaskPushNotificationConfig>` | No |
 | `historyLength` | `history_length` | `Option<u32>` | No |
 | `returnImmediately` | `return_immediately` | `Option<bool>` | No |
@@ -534,20 +534,23 @@ pub struct JsonRpcVersion;
 // Deserializer rejects any other value
 ```
 
-### `JsonRpcId`
+### `JsonRpcId` / `JsonRpcRequestId`
 
 ```rust
-pub type JsonRpcId = Option<serde_json::Value>;
-// Valid values per JSON-RPC 2.0: string, number, or null
-// Notification: id field absent entirely
+pub type JsonRpcId = Option<serde_json::Value>; // response id
+pub enum JsonRpcRequestId { Absent, Null, Value(serde_json::Value) } // request id
 ```
+
+`JsonRpcRequestId` is three-state so an explicit `"id": null` (a *call* per
+JSON-RPC 2.0, answered with a null-id response) round-trips faithfully instead
+of collapsing into a notification (`Absent`).
 
 ### `JsonRpcRequest`
 
 | Field | Rust type | Notes |
 |---|---|---|
 | `jsonrpc` | `JsonRpcVersion` | Must be `"2.0"` |
-| `id` | `JsonRpcId` | `None` = notification (no response expected) |
+| `id` | `JsonRpcRequestId` | `Absent` = notification; `Null` = null-id call; `Value` = normal call |
 | `method` | `String` | A2A method name |
 | `params` | `Option<serde_json::Value>` | Method-specific params |
 
@@ -562,7 +565,10 @@ pub enum JsonRpcResponse<T> {
 }
 ```
 
-Disambiguation: `JsonRpcErrorResponse` has an `error` field; `JsonRpcSuccessResponse` has a `result` field. The `untagged` enum tries `Success` first; falls back to `Error` if `result` field is absent.
+Disambiguation: serialization keeps the untagged shape, but deserialization is
+hand-written and enforces JSON-RPC 2.0 §5 — exactly one of `result`/`error`
+must be present. A malformed response carrying both (or neither) is rejected
+instead of being silently read as a success.
 
 ---
 

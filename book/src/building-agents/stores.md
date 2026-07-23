@@ -67,7 +67,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.6", features = ["sqlite"] }
+a2a-protocol-server = { version = "0.7", features = ["sqlite"] }
 ```
 
 ```rust
@@ -194,6 +194,15 @@ pub trait PushConfigStore: Send + Sync + 'static {
 
     fn delete<'a>(&'a self, task_id: &'a str, id: &'a str)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    // Optional: total stored configs, counted against the handler's global
+    // push-config ceiling. The default implementation returns `None`
+    // (only the per-task cap is then enforced), so existing custom
+    // implementations keep compiling unchanged.
+    fn count(&self)
+        -> Pin<Box<dyn Future<Output = A2aResult<Option<usize>>> + Send + '_>> {
+        Box::pin(async { Ok(None) })
+    }
 }
 ```
 

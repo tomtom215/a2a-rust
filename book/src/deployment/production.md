@@ -6,7 +6,11 @@ A checklist and guide for deploying a2a-rust agents in production.
 
 ### HTTPS
 
-Always use HTTPS in production. a2a-rust doesn't bundle TLS — terminate TLS at your reverse proxy (nginx, Caddy, cloud load balancer) or use a TLS library:
+Always use HTTPS in production. The **client** (and the server's push sender)
+ship TLS out of the box via the default `tls-rustls` feature — `https://`
+agents and webhooks work with no extra setup. The **server** does not
+terminate inbound TLS itself; put it behind a reverse proxy (nginx, Caddy,
+cloud load balancer):
 
 ```
 Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
@@ -31,12 +35,13 @@ The built-in `HttpPushSender` includes:
 - **Header injection prevention** — Validates credentials for `\r`/`\n` characters
 - **Per-request timeout** — Each push delivery HTTP request is capped at 30 seconds
 
-> **Transport note:** the bundled `HttpPushSender` delivers over plaintext HTTP
-> only (it does not pull a TLS stack into the server's default dependencies) and
-> rejects an `https://` webhook with a clear error. To deliver to `https://`
-> webhooks — the norm for production — supply a TLS-capable `PushSender`
-> implementation via `with_push_sender`; `PushSender` is a public, pluggable
-> trait and the SSRF-validation helpers are reusable.
+> **Transport note:** with the `tls-rustls` feature (enabled by default when
+> using `a2a-protocol-sdk`) the bundled `HttpPushSender` delivers to both
+> `http://` and `https://` webhooks. Without the feature it is plaintext-only
+> and rejects an `https://` webhook with a clear error; supply a TLS-capable
+> `PushSender` implementation via `with_push_sender` in that configuration —
+> `PushSender` is a public, pluggable trait and the SSRF-validation helpers
+> are reusable.
 
 ### Path Traversal Protection
 
@@ -161,7 +166,7 @@ Enable the `tracing` feature for structured logs:
 
 ```toml
 [dependencies]
-a2a-protocol-server = { version = "0.6", features = ["tracing"] }
+a2a-protocol-server = { version = "0.7", features = ["tracing"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 

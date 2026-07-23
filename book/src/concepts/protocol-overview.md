@@ -78,7 +78,7 @@ A **Message** is a structured payload sent between agents. Each message has:
 
 ### Parts
 
-A **Part** is a content unit within a message. Three content types are supported:
+A **Part** is a content unit within a message. Four content types are supported:
 
 | Type | Description | Example |
 |------|-------------|---------|

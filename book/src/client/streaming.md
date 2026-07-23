@@ -109,7 +109,7 @@ let client = ClientBuilder::new(url)
     .build()?;
 ```
 
-The connect timeout applies to establishing the SSE connection. Once connected, the stream stays open until the server closes it or an error occurs.
+The connect timeout applies to establishing the SSE connection. The same duration also bounds the wait for the *first* event (lifted once any data arrives — the spec requires streams to begin with a Task/Message event immediately, and SSE keep-alives count), so a server that accepts the stream and then goes silent fails fast instead of hanging the consumer. After the first frame the stream stays open until the server closes it or an error occurs.
 
 ## Safety Limits
 

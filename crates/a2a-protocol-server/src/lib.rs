@@ -28,7 +28,7 @@
 //! | [`push`] | Push config store, push sender |
 //! | [`agent_card`] | Static/dynamic agent card handlers |
 //! | [`serve`](mod@serve) | [`serve()`](serve::serve), [`serve_with_addr`], [`Dispatcher`] |
-//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`] |
+//! | [`dispatch`] | [`JsonRpcDispatcher`], [`RestDispatcher`], `GrpcDispatcher` (`grpc` feature), `WebSocketDispatcher` (`websocket` feature) |
 //! | [`interceptor`] | [`ServerInterceptor`], [`ServerInterceptorChain`] |
 //! | [`rate_limit`] | [`RateLimitInterceptor`], [`RateLimitConfig`] |
 //! | [`request_context`] | [`RequestContext`] |

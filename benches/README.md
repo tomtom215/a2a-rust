@@ -66,7 +66,8 @@ benches/
 │   ├── memory_overhead.rs          # heap allocation profiling
 │   ├── enterprise_scenarios.rs     # multi-tenant, CORS, eviction, rate limiting
 │   ├── production_scenarios.rs     # real-world E2E workflows
-│   └── advanced_scenarios.rs       # SDK capability gap coverage
+│   ├── advanced_scenarios.rs       # SDK capability gap coverage
+│   └── coordinator_chain_under_fault.rs  # agent-level 5-hop chain under injected faults
 ├── dashboard/
 │   └── template.html               # Interactive dashboard HTML template
 ├── cross_language/
@@ -261,7 +262,7 @@ The `benchmarks.yml` workflow runs three distinct modes:
 |---|---|---|
 | Push to `main` | `Run Benchmarks` | Runs all benchmark suites, commits results to `book/` for the public dashboard, archives criterion HTML reports. |
 | `workflow_dispatch` | `Run Benchmarks` | Same as above, on demand. |
-| Pull request to `main` | `Regression Gate` | Runs `transport_throughput` and `protocol_overhead` twice (base branch, then PR), compares via `check_regression.py` at the 50 % threshold, fails CI on a statistically-significant regression. |
+| Pull request to `main` | `Regression Gate` | Runs `transport_throughput` and `protocol_overhead` twice (base branch, then PR), compares via `check_regression.py` at the 50 % default threshold (with per-benchmark overrides for known-noisy benches, e.g. `from_str/16384` at 75 %), fails CI on a statistically-significant regression. |
 
 ### The PR Regression Gate
 

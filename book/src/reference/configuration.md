@@ -17,7 +17,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_executor_timeout` | `Duration` | None | Max time for executor completion |
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
-| `with_max_concurrent_streams` | `usize` | Unbounded | Limit concurrent SSE connections |
+| `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
 | `with_event_queue_write_timeout` | `Duration` | 5s | Write timeout for event queue sends |
 | `with_metrics` | `impl Metrics` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
@@ -33,6 +33,9 @@ Complete reference of all configuration options across a2a-rust crates.
 | `push_delivery_timeout` | `Duration` | 5s | Per-webhook delivery timeout |
 | `max_artifacts_per_task` | `usize` | 1,000 | Maximum artifacts per task (prevents O(n²) serialization) |
 | `max_context_locks` | `usize` | 10,000 | Max per-context locks before cleanup |
+| `max_push_configs_per_task` | `usize` | 100 | Maximum push configs per task (uniform across store backends) |
+| `max_parts_per_artifact` | `usize` | 10,000 | Maximum parts a single artifact may accumulate |
+| `max_total_push_configs` | `usize` | 100,000 | Global push-config ceiling across all tasks |
 
 > **Build-time validation:** `max_id_length`, `max_metadata_size`, and
 > `push_delivery_timeout` must be non-zero. Zero values are rejected by
@@ -95,6 +98,8 @@ Configurable retry policy for `HttpPushSender`. Pass via
 |-------|------|---------|-------------|
 | `requests_per_window` | `u64` | 100 | Max requests per caller per window |
 | `window_secs` | `u64` | 60 | Window duration in seconds |
+| `trusted_proxy_hops` | `usize` | 0 | How many `X-Forwarded-For` hops to trust (0 = ignore XFF entirely) |
+| `max_buckets` | `usize` | 10,000 | Hard bound on tracked caller buckets (fail-closed when full) |
 
 ### Internal Limits
 

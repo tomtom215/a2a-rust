@@ -4,7 +4,7 @@
 
 - **Rust 1.93+** (stable; also tested on 1.94)
 - A working internet connection for downloading crates
-- **`protoc`** (Protocol Buffers compiler) — required only when enabling the `grpc` feature. Install via `apt-get install protobuf-compiler` (Debian/Ubuntu), `brew install protobuf` (macOS), or download from the [protobuf releases page](https://github.com/protocolbuffers/protobuf/releases). Not needed for default features.
+- **`protoc`** (Protocol Buffers compiler) — bundled automatically: the `grpc`/`proto` build scripts use a vendored `protoc` (`protoc-bin-vendored`), so a clean `cargo build --features grpc` works with no system install. Set the `PROTOC` environment variable only to override with your own binary (or on a platform the vendored binaries don't cover).
 
 ## Adding to Your Project
 
@@ -12,7 +12,7 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.6"
+a2a-protocol-sdk = "0.7"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -24,13 +24,13 @@ If you prefer fine-grained control, depend on individual crates:
 
 ```toml
 # Types only (no I/O, no async runtime)
-a2a-protocol-types = "0.6"
+a2a-protocol-types = "0.7"
 
 # Client only
-a2a-protocol-client = "0.6"
+a2a-protocol-client = "0.7"
 
 # Server only
-a2a-protocol-server = "0.6"
+a2a-protocol-server = "0.7"
 ```
 
 This is useful when:
