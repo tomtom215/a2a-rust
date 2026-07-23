@@ -52,7 +52,11 @@ fn percent_decode(input: &str) -> String {
         match raw[i] {
             b'%' if i + 2 < raw.len() => {
                 if let (Some(h), Some(l)) = (hex_val(raw[i + 1]), hex_val(raw[i + 2])) {
-                    bytes.push(h << 4 | l);
+                    // `h` and `l` are single hex nibbles (0..=15), so the high
+                    // nibble (`h << 4`, bits 4-7) and low nibble (`l`, bits 0-3)
+                    // never overlap: `+` composes the byte exactly like a bitwise
+                    // OR would, but without an equivalent `| -> ^` mutation.
+                    bytes.push((h << 4) + l);
                     i += 3;
                     continue;
                 }
@@ -219,6 +223,15 @@ mod tests {
         assert_eq!(percent_decode("%252E"), "%2E");
         // Second pass decodes %2E to .
         assert_eq!(percent_decode("%2E"), ".");
+    }
+
+    #[test]
+    fn percent_decode_composes_high_and_low_nibbles() {
+        // Pin the exact byte a `%XX` pair decodes to, with both nibbles
+        // non-zero and distinct, so the nibble composition (`h << 4` + `l`)
+        // is verified independently of any traversal-detection behaviour.
+        assert_eq!(percent_decode("%4A"), "J"); // 0x4A: h=4, l=0xA
+        assert_eq!(percent_decode("%7E"), "~"); // 0x7E: h=7, l=0xE
     }
 
     // ── contains_path_traversal ──────────────────────────────────────────

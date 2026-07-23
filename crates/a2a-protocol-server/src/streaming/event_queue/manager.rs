@@ -439,6 +439,19 @@ mod tests {
 
     // ── EventQueueManager ────────────────────────────────────────────────
 
+    #[test]
+    fn max_concurrent_queues_reports_configured_limit() {
+        // Unbounded by default.
+        assert_eq!(EventQueueManager::new().max_concurrent_queues(), None);
+        // Reflects the configured cap exactly — not None, 0, or 1.
+        assert_eq!(
+            EventQueueManager::new()
+                .with_max_concurrent_queues(42)
+                .max_concurrent_queues(),
+            Some(42)
+        );
+    }
+
     #[tokio::test]
     async fn manager_get_or_create_new_task() {
         let manager = EventQueueManager::new();

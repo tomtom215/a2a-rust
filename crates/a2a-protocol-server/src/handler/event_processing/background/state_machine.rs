@@ -100,9 +100,11 @@ pub(super) async fn process_event_bg(
                     // Bound cumulative per-artifact growth: an unbounded stream
                     // of append updates would otherwise grow one artifact's
                     // parts (and the re-serialized task record) without limit.
-                    if existing.parts.len() + update.artifact.parts.len()
-                        > limits.max_parts_per_artifact
-                    {
+                    if crate::handler::event_processing::append_exceeds_parts_cap(
+                        existing.parts.len(),
+                        update.artifact.parts.len(),
+                        limits.max_parts_per_artifact,
+                    ) {
                         trace_warn!(
                             task_id = %task_id,
                             "dropping artifact append: would exceed max_parts_per_artifact"
