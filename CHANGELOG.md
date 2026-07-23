@@ -274,7 +274,27 @@ changed shape (0.x breaking — warrants a minor bump).
     response-size ceiling of the HTTP/gRPC transports) at the WebSocket
     protocol level — previously tungstenite's 64 MiB default applied.
 
+### Added (third hardening pass)
+
+- **`A2A-Extensions` header wired end to end (spec §14.2.2)** — new
+  `A2A_EXTENSIONS_HEADER` constant in `a2a-protocol-types`, and every
+  server binding now parses the comma-separated extension URIs into
+  `CallContext::extensions` for interceptors and resolvers (the accessor
+  existed but nothing populated it — it always returned empty). Extension
+  *data* continues to ride in-band in `Message::extensions`/metadata.
+
 ### Fixed (third hardening pass)
+
+- **`a2a-protocol-server` (REST): the canonical `/{tenant}/...` bindings
+  are now routed** — the spec proto's `google.api.http` additional
+  bindings put the tenant as a bare first path segment
+  (`/{tenant}/message:send`, `/{tenant}/tasks`, …), which is exactly what
+  official-SDK REST clients send when configured with a tenant; only this
+  SDK's own `/tenants/{tenant}/...` form was recognized, so canonical
+  tenant-scoped requests 404'd. Both forms now work, with
+  literal-beats-variable matching so a real route is never swallowed as a
+  tenant. Verified live with the official Python SDK's `RestTransport`
+  (tenant-scoped send/list/get all round-trip).
 
 - **`a2a-protocol-types`: ProtoJSON empty-repeated omission no longer breaks
   cross-SDK parsing** — ProtoJSON printers (what every official A2A SDK

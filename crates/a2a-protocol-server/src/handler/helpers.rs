@@ -39,9 +39,35 @@ pub(super) fn build_call_context(
 ) -> CallContext {
     let mut ctx = CallContext::new(method);
     if let Some(h) = headers {
+        // Spec §14.2.2: the A2A-Extensions header carries a comma-separated
+        // list of extension URIs the client opts into for this request.
+        // Parse it here so interceptors and tenant resolvers can consult
+        // `CallContext::extensions` instead of re-parsing raw headers (the
+        // accessor previously always returned empty — nothing populated it).
+        let extensions = parse_extensions_header(h);
+        if !extensions.is_empty() {
+            ctx = ctx.with_extensions(extensions);
+        }
         ctx = ctx.with_http_headers(h.clone());
     }
     ctx
+}
+
+/// Parses the (lowercased) `a2a-extensions` header into extension URIs.
+///
+/// Splits on commas, trims whitespace, and drops empty segments. Returns an
+/// empty vec when the header is absent.
+fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
+    headers
+        .get("a2a-extensions")
+        .map(|v| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 impl RequestHandler {
@@ -202,6 +228,55 @@ mod tests {
         assert!(
             ctx.http_headers().is_empty(),
             "an empty map should result in empty headers"
+        );
+    }
+
+    // ── A2A-Extensions header parsing (spec §14.2.2) ─────────────────────
+
+    #[test]
+    fn build_call_context_parses_extensions_header() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "a2a-extensions".to_owned(),
+            "https://example.com/ext/geo/v1, https://standards.org/ext/cite/v1".to_owned(),
+        );
+
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert_eq!(
+            ctx.extensions(),
+            &[
+                "https://example.com/ext/geo/v1".to_owned(),
+                "https://standards.org/ext/cite/v1".to_owned(),
+            ],
+            "comma-separated extension URIs must be parsed and trimmed"
+        );
+    }
+
+    #[test]
+    fn build_call_context_no_extensions_header_is_empty() {
+        let mut headers = HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
+        let ctx = build_call_context("message/send", Some(&headers));
+        assert!(ctx.extensions().is_empty());
+    }
+
+    #[test]
+    fn parse_extensions_header_drops_empty_segments() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "a2a-extensions".to_owned(),
+            " ,https://example.com/ext/v1,, ".to_owned(),
+        );
+        assert_eq!(
+            parse_extensions_header(&headers),
+            vec!["https://example.com/ext/v1".to_owned()],
+            "whitespace-only and empty segments must be dropped"
+        );
+
+        headers.insert("a2a-extensions".to_owned(), "  ".to_owned());
+        assert!(
+            parse_extensions_header(&headers).is_empty(),
+            "a blank header value yields no extensions"
         );
     }
 

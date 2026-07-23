@@ -5,14 +5,48 @@
 
 //! Query string and URL parsing helpers for the REST dispatcher.
 
-/// Strips an optional `/tenants/{tenant}/` prefix, returning the tenant and
+/// Top-level route heads of the REST binding — the literal first segments a
+/// request path may start with (after any tenant prefix).
+///
+/// Used by [`strip_tenant_prefix`] to implement the canonical
+/// `google.api.http` additional bindings of the form `/{tenant}/...`:
+/// literal segments win over the `{tenant}` variable, exactly as HTTP
+/// transcoding matches them, so a real route is never swallowed as a tenant
+/// and a tenant named like a route head must use the explicit
+/// `/tenants/{tenant}/` form instead.
+fn is_route_head(segment: &str) -> bool {
+    matches!(
+        segment,
+        "message:send" | "message:stream" | "message" | "tasks" | "extendedAgentCard"
+    )
+}
+
+/// Splits an optional tenant prefix off the path, returning the tenant and
 /// remaining path.
+///
+/// Two forms are recognized:
+/// - `/tenants/{tenant}/...` — this SDK's original explicit form.
+/// - `/{tenant}/...` — the canonical form from the spec proto's
+///   `google.api.http` additional bindings (what official-SDK REST clients
+///   send when configured with a tenant). The first segment is treated as a
+///   tenant only when it is not itself a route head **and** the remainder
+///   starts with one, mirroring transcoding's literal-beats-variable rule.
 pub(super) fn strip_tenant_prefix(path: &str) -> (Option<&str>, &str) {
     if let Some(rest) = path.strip_prefix("/tenants/") {
         if let Some(slash_pos) = rest.find('/') {
             let tenant = &rest[..slash_pos];
             let remaining = &rest[slash_pos..];
             return (Some(tenant), remaining);
+        }
+    }
+    if let Some(no_slash) = path.strip_prefix('/') {
+        if let Some(slash_pos) = no_slash.find('/') {
+            let first = &no_slash[..slash_pos];
+            let remaining = &no_slash[slash_pos..];
+            let head = remaining[1..].split('/').next().unwrap_or("");
+            if !first.is_empty() && !is_route_head(first) && is_route_head(head) {
+                return (Some(first), remaining);
+            }
         }
     }
     (None, path)
@@ -297,6 +331,49 @@ mod tests {
         let (tenant, rest) = strip_tenant_prefix("/tenants/acme/tasks");
         assert_eq!(tenant, Some("acme"));
         assert_eq!(rest, "/tasks");
+    }
+
+    /// The canonical `google.api.http` additional bindings use a bare
+    /// `/{tenant}/...` first segment — what official-SDK REST clients send
+    /// when configured with a tenant. Previously only `/tenants/{t}/` was
+    /// recognized, so canonical tenant-scoped requests 404'd.
+    #[test]
+    fn strip_tenant_bare_canonical_form() {
+        assert_eq!(strip_tenant_prefix("/acme/tasks"), (Some("acme"), "/tasks"));
+        assert_eq!(
+            strip_tenant_prefix("/acme/message:send"),
+            (Some("acme"), "/message:send")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/acme/tasks/t1:cancel"),
+            (Some("acme"), "/tasks/t1:cancel")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/acme/extendedAgentCard"),
+            (Some("acme"), "/extendedAgentCard")
+        );
+    }
+
+    /// Literal route segments always win over the `{tenant}` variable — a
+    /// real route must never be swallowed as a tenant.
+    #[test]
+    fn strip_tenant_bare_form_never_eats_routes() {
+        assert_eq!(strip_tenant_prefix("/tasks/abc"), (None, "/tasks/abc"));
+        assert_eq!(
+            strip_tenant_prefix("/message:send"),
+            (None, "/message:send")
+        );
+        assert_eq!(
+            strip_tenant_prefix("/tasks/abc/pushNotificationConfigs"),
+            (None, "/tasks/abc/pushNotificationConfigs")
+        );
+        // A first segment followed by a non-route head is not a tenant.
+        assert_eq!(strip_tenant_prefix("/foo/bar"), (None, "/foo/bar"));
+        // The well-known card path is never tenant-prefixed.
+        assert_eq!(
+            strip_tenant_prefix("/.well-known/agent-card.json"),
+            (None, "/.well-known/agent-card.json")
+        );
     }
 
     #[test]

@@ -41,6 +41,14 @@ pub const A2A_CONTENT_TYPE: &str = "application/a2a+json";
 /// HTTP header name for the A2A protocol version.
 pub const A2A_VERSION_HEADER: &str = "A2A-Version";
 
+/// HTTP header name for extension activation (spec §14.2.2).
+///
+/// Carries a comma-separated list of extension URIs the client wants to use
+/// for the request. Servers surface the parsed list to interceptors via
+/// `CallContext::extensions` (in `a2a-protocol-server`); extension *data*
+/// rides in-band in `Message::extensions` / metadata.
+pub const A2A_EXTENSIONS_HEADER: &str = "A2A-Extensions";
+
 pub mod agent_card;
 pub mod artifact;
 pub mod error;
