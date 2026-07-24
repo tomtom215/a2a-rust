@@ -32,6 +32,36 @@ pub mod tenant_postgres_store;
 pub use task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 
+/// Normalizes a status timestamp to the `SQLite` `updated_at` column shape,
+/// or `None` when the value is missing/unparseable (the SQL then falls back
+/// to the write wall-clock).
+///
+/// The `updated_at` column carries the task's *status* timestamp so that
+/// `list()` is "sorted by status timestamp descending" (spec §3.1.4) and
+/// `statusTimestampAfter` filters on the same value — a re-save that does
+/// not change the status (e.g. an artifact append) keeps its list position.
+///
+/// `SQLite` compares `updated_at` lexicographically, so the value must match
+/// the column's `strftime('%Y-%m-%d %H:%M:%f')` shape exactly
+/// (`YYYY-MM-DD HH:MM:SS.mmm`, UTC).
+#[cfg(feature = "sqlite")]
+pub(crate) fn status_timestamp_sqlite(ts: Option<&str>) -> Option<String> {
+    let millis = ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?;
+    let iso = a2a_protocol_types::unix_millis_to_iso8601(millis);
+    // "YYYY-MM-DDTHH:MM:SS.mmmZ" → "YYYY-MM-DD HH:MM:SS.mmm"
+    Some(format!("{} {}", &iso[..10], &iso[11..23]))
+}
+
+/// Normalizes a status timestamp to canonical RFC 3339 UTC for binding into
+/// `Postgres` `::timestamptz` casts, or `None` when missing/unparseable (the
+/// SQL then falls back to the write wall-clock). Same ordering rationale as
+/// [`status_timestamp_sqlite`].
+#[cfg(feature = "postgres")]
+pub(crate) fn status_timestamp_rfc3339(ts: Option<&str>) -> Option<String> {
+    let millis = ts.and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)?;
+    Some(a2a_protocol_types::unix_millis_to_iso8601(millis))
+}
+
 #[cfg(feature = "sqlite")]
 pub use migration::{Migration, MigrationRunner};
 #[cfg(feature = "sqlite")]

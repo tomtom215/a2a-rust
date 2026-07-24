@@ -109,13 +109,13 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
             AgentInterface {
                 url: jsonrpc_url.into(),
                 protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
             AgentInterface {
                 url: rest_url.into(),
                 protocol_binding: "REST".into(),
-                protocol_version: "1.0.0".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
         ],

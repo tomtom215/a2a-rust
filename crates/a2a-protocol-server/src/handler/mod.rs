@@ -81,6 +81,19 @@ pub struct RequestHandler {
     /// be determined) causes the request to be **rejected** rather than falling
     /// back to the shared default (`""`) partition. Opt-in strict multi-tenancy.
     pub(crate) require_resolved_tenant: bool,
+    /// When `true`, `GetExtendedAgentCard` is served even though no
+    /// authenticating interceptor guards the chain. Spec §13.3 says the
+    /// operation MUST require authentication, so the default is `false`:
+    /// without an authenticator the endpoint refuses to serve the card.
+    pub(crate) allow_unauthenticated_extended_card: bool,
+    /// URIs of agent-card extensions marked `required: true`. Every
+    /// data-plane operation checks the client's `A2A-Extensions` declaration
+    /// against this set (§3.3.4) and rejects with
+    /// `ExtensionSupportRequiredError` when one is missing.
+    pub(crate) required_extensions: Vec<String>,
+    /// URIs of all agent-card extensions (for computing the activated set
+    /// echoed back on HTTP responses).
+    pub(crate) declared_extensions: Vec<String>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
     /// Per-context-ID locks to serialize find + save operations for the same

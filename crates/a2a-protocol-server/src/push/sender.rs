@@ -635,26 +635,32 @@ impl PushSender for HttpPushSender {
                     builder = builder.uri(url);
                 }
 
-                // Set authentication headers from config. A scheme without a
+                // Set authentication headers from config. Auth scheme names are
+                // case-insensitive per RFC 9110 §11.1, so "Bearer"/"BASIC"
+                // configs must match; the canonical capitalization is emitted
+                // regardless of how the scheme was spelled. A scheme without a
                 // credential value cannot produce an auth header — skip it
                 // rather than sending an empty "Bearer "/"Basic " header.
                 if let Some(ref auth) = config.authentication {
-                    match (auth.scheme.as_str(), auth.credentials.as_deref()) {
-                        ("bearer", Some(credentials)) => {
+                    let canonical_scheme = if auth.scheme.eq_ignore_ascii_case("bearer") {
+                        Some("Bearer")
+                    } else if auth.scheme.eq_ignore_ascii_case("basic") {
+                        Some("Basic")
+                    } else {
+                        None
+                    };
+                    match (canonical_scheme, auth.credentials.as_deref()) {
+                        (Some(prefix), Some(credentials)) => {
                             builder =
-                                builder.header("authorization", format!("Bearer {credentials}"));
+                                builder.header("authorization", format!("{prefix} {credentials}"));
                         }
-                        ("basic", Some(credentials)) => {
-                            builder =
-                                builder.header("authorization", format!("Basic {credentials}"));
-                        }
-                        ("bearer" | "basic", None) => {
+                        (Some(_), None) => {
                             trace_warn!(
                                 scheme = auth.scheme.as_str(),
                                 "authentication scheme has no credentials; no auth header set"
                             );
                         }
-                        _ => {
+                        (None, _) => {
                             trace_warn!(
                                 scheme = auth.scheme.as_str(),
                                 "unknown authentication scheme; no auth header set"
@@ -689,8 +695,23 @@ impl PushSender for HttpPushSender {
                         return Ok(());
                     }
                     Ok(Ok(resp)) => {
-                        last_err = format!("push notification got HTTP {}", resp.status());
-                        trace_warn!(url, attempt, status = %resp.status(), "push delivery failed");
+                        let status = resp.status();
+                        // A non-retryable client error (400/401/403/404/…) will
+                        // fail identically on every attempt — retrying it only
+                        // hammers the webhook and delays the failure signal.
+                        // Retry is reserved for transient statuses: 408
+                        // (request timeout), 429 (rate limited), and 5xx.
+                        let retryable = status.is_server_error()
+                            || status == hyper::StatusCode::REQUEST_TIMEOUT
+                            || status == hyper::StatusCode::TOO_MANY_REQUESTS;
+                        if !retryable {
+                            trace_warn!(url, attempt, status = %status, "push delivery rejected; not retrying");
+                            return Err(A2aError::internal(format!(
+                                "push notification got non-retryable HTTP {status}"
+                            )));
+                        }
+                        last_err = format!("push notification got HTTP {status}");
+                        trace_warn!(url, attempt, status = %status, "push delivery failed");
                     }
                     Ok(Err(e)) => {
                         last_err = format!("push notification failed: {e}");

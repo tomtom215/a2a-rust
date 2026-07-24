@@ -144,10 +144,14 @@ impl RestDispatcher {
                 if !v.is_empty() {
                     let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
                     if major != Some(1) {
-                        return error_json_response(
-                            400,
-                            &format!("unsupported A2A version: {v}; this server supports 1.x"),
-                        );
+                        // §3.6.2: rejected versions produce the real
+                        // VersionNotSupportedError (with its ErrorInfo
+                        // detail), not an anonymous 400.
+                        return server_error_to_response(&crate::error::ServerError::Protocol(
+                            a2a_protocol_types::error::A2aError::version_not_supported(format!(
+                                "unsupported A2A version: {v}; this server supports 1.x"
+                            )),
+                        ));
                     }
                 }
             }
@@ -177,6 +181,18 @@ impl RestDispatcher {
         let mut resp = self
             .dispatch_rest(req, method.as_str(), rest_path, &query, tenant, &headers)
             .await;
+        // Echo the activated extension set (requested ∩ card-declared) so
+        // clients see which requested extensions the agent honored
+        // (official-SDK convention).
+        if let Some(hval) = self
+            .handler
+            .activated_extensions_header_value(headers.get("a2a-extensions").map(String::as_str))
+        {
+            if let Ok(v) = hyper::header::HeaderValue::from_str(&hval) {
+                resp.headers_mut()
+                    .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
+            }
+        }
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
         }
@@ -214,6 +230,14 @@ impl RestDispatcher {
                         ("POST", "cancel") => {
                             return self.handle_cancel_task(id, tenant, headers).await;
                         }
+                        // Spec §11.3.2 (and the §5.3 method-mapping table)
+                        // define `POST /tasks/{id}:subscribe`; the upstream
+                        // a2a.proto's google.api.http annotation says `get:`
+                        // instead. Accepting both verbs keeps this server
+                        // interoperable with peers generated from either
+                        // source (e.g. grpc-gateway transcoders emit GET,
+                        // browser EventSource can only GET), while this SDK's
+                        // client sends the spec-prose POST.
                         ("POST" | "GET", "subscribe") => {
                             return self.handle_resubscribe(id, tenant, headers).await;
                         }
@@ -300,7 +324,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
-                false, // REST: bare StreamResponse per Section 11.7
+                None, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }
@@ -370,7 +394,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
-                false, // REST: bare StreamResponse per Section 11.7
+                None, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }

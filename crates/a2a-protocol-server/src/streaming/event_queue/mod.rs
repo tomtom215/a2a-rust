@@ -17,6 +17,7 @@
 mod in_memory;
 mod manager;
 
+pub(crate) use in_memory::is_lag_error;
 pub use in_memory::{InMemoryQueueReader, InMemoryQueueWriter};
 pub use manager::EventQueueManager;
 pub(crate) use manager::QueueLease;

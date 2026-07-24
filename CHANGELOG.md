@@ -14,6 +14,95 @@ Interop, hardening, and edge-case fixes from an independent protocol audit,
 plus a protobuf-native rewrite of the gRPC transport. Several public types
 changed shape (0.x breaking — warrants a minor bump).
 
+### Added (spec-compliance closure pass)
+
+- **gRPC errors carry `google.rpc.ErrorInfo`** (spec §10.6) — every
+  A2A-specific error now attaches the machine-readable
+  `reason`/`domain: a2a-protocol.org` detail to `status.details` via
+  `tonic-types`, making the three bindings error-equivalent (§5.1). The
+  gRPC client decodes it back to the exact `ErrorCode` instead of the lossy
+  status-code inverse mapping, and the REST client now decodes AIP-193
+  error bodies (§11.6) into structured `A2aError`s the same way.
+- **`taskId`-only continuations** (spec §3.4.3) — `SendMessage` with a
+  `taskId` and no `contextId` now infers the context from the referenced
+  task instead of rejecting with `InvalidParams`; an unknown `taskId`
+  returns `TaskNotFoundError` per §3.4.2.
+- **`statusTimestampAfter` is enforced** (spec §3.1.4) — previously parsed
+  and silently ignored by every store; now applied as a strictly-after
+  filter in the in-memory, SQLite, Postgres, and tenant-aware stores, with
+  malformed timestamps rejected as `InvalidParams` at the handler.
+- **`ListTasks` sorts by status timestamp** (spec §3.1.4) — ordering now
+  follows `status.timestamp` descending (write wall-clock only as the
+  fallback for tasks without one), so a re-save that does not change the
+  status — e.g. an artifact append — no longer spuriously bumps a task to
+  the front. Status timestamps gained millisecond precision (§5.6.1) to
+  keep the order deterministic. The in-memory store's page tokens changed
+  format (`millis:seq`); SQL cursors are unchanged.
+- **Required-extension negotiation** (spec §3.3.4) — agent-card extensions
+  marked `required: true` are now enforced on every data-plane operation:
+  clients that do not declare them in `A2A-Extensions` get
+  `ExtensionSupportRequiredError` (previously never emitted). The HTTP
+  bindings also echo the activated extension set (requested ∩ declared)
+  in the response `A2A-Extensions` header, matching official-SDK behavior.
+- **JSON-RPC SSE envelopes echo the request `id`** (spec §9.4.2) —
+  streaming frames previously carried `"id": null`.
+- **gRPC validates the `a2a-version` service parameter** (spec §3.6.2 /
+  §10.2), matching the JSON-RPC/REST/WebSocket bindings; REST and the
+  WebSocket handshake now reject unsupported versions with the real
+  `VersionNotSupportedError` shape (AIP-193 body with `ErrorInfo`) instead
+  of an anonymous 400. The client WebSocket transport now sends
+  `A2A-Version` on the upgrade request (§3.6.1).
+- **OIDC discovery test coverage** — `from_oidc_issuer`/`discover_jwks_uri`
+  now have end-to-end tests (live issuer, missing `jwks_uri`, invalid
+  JSON, HTTP error, unreachable issuer), plus a live-TLS JWKS end-to-end
+  test and a new `JwtAuthInterceptor::from_jwks_url_with_tls_config` for
+  identity providers behind private CAs.
+
+### Changed (spec-compliance closure pass)
+
+- **Extended agent card requires authentication by default** (spec §13.3,
+  **breaking**) — when the agent card declares
+  `capabilities.extendedAgentCard: true` but the interceptor chain contains
+  no authenticating interceptor, `GetExtendedAgentCard` now refuses to
+  serve the card instead of handing the "authenticated" card to anonymous
+  callers. `ServerInterceptor` gained a `authenticates()` marker (default
+  `false`; the built-in API-key/bearer/JWT interceptors return `true` —
+  custom auth interceptors should override it), and
+  `RequestHandlerBuilder::allow_unauthenticated_extended_card()` is the
+  explicit opt-out for deployments that authenticate upstream.
+- **Slow streaming consumers get an explicit lag error** (**breaking
+  semantics**) — a consumer that falls behind the broadcast ring previously
+  had the gap silently skipped; it now receives a marked stream error
+  (`data.streamLagged`) and the stream closes, so the client knows its view
+  is truncated and can resubscribe for a fresh snapshot (§3.5.2). Task
+  persistence was never affected (it uses a dedicated lossless channel).
+  Relatedly, `with_event_queue_write_timeout` / `with_write_timeout` are
+  deprecated no-ops (queue writes never block) slated for removal in 0.8.
+- **Resubscribe after a process restart serves snapshot-then-EOF** — a
+  non-terminal task with no live event queue previously produced
+  `Internal ("no active event queue")`; per §3.5.2 reconnection the stream
+  now delivers the current `Task` snapshot and ends cleanly.
+- **Wire form of the protocol version is `1.0`** (spec §3.6, **breaking
+  constant**) — `A2A_VERSION` changed from `"1.0.0"` to `"1.0"` ("patch
+  version numbers SHOULD NOT be used in requests, responses and Agent
+  Cards"); the `A2A-Version` response header and the examples' agent cards
+  follow.
+- **HTTP responses emit `Content-Type: application/json`** (spec §9.1 and
+  §11.1; previously `application/a2a+json`). Both media types remain
+  accepted on ingress, and the registered `application/a2a+json` constant
+  is still exported.
+- **Push webhook auth scheme matching is case-insensitive** (RFC 9110) —
+  a config spelling the scheme `Bearer`/`BASIC` previously fell through
+  and silently sent **no** `Authorization` header; canonical
+  capitalization is now emitted regardless of config spelling.
+- **Push delivery no longer retries non-retryable 4xx** — 400/401/403/404
+  and similar fail fast after one attempt; retry with backoff is reserved
+  for 408, 429, 5xx, timeouts, and connection errors.
+- **Weekly full mutation sweep re-enabled** in CI (the incremental gate
+  only covers files a PR touches), and dedicated `websocket`/`grpc`
+  feature test legs were added alongside a combined
+  `auth-jwt + tls-rustls` leg.
+
 ### Changed
 
 - **gRPC is now protobuf-native and wire-compatible with the official A2A
@@ -1187,25 +1276,28 @@ will need to update.
 
 ### Known Limitations
 
-The following issues were identified during deep analysis and are documented for
-future hardening. They do not affect correctness for typical usage but may
-manifest at extreme scale or under adversarial conditions:
+The following issues were identified during deep analysis at the time of this
+release. **Every one of them has since been fixed** — the historical text is
+kept for the record, with resolution notes:
 
-- **Broadcast channel lag** — If an SSE consumer falls behind, the broadcast
-  channel drops events for both the SSE reader and the background event
-  processor. State transitions missed by the background processor are not
-  persisted to the task store. Mitigation: size the event queue capacity
-  (`with_event_queue_capacity`) for your workload.
-- **SSRF DNS rebinding** — `HttpPushSender` validates webhook URLs against
-  private IP patterns but does not resolve DNS. A public domain resolving to a
-  private IP bypasses the check. Mitigation: deploy a network-level egress
-  filter.
-- **WebSocket message size** — The WebSocket dispatcher does not enforce a
-  message size limit (unlike JSON-RPC/REST which cap at 4 MiB). Mitigation:
-  use a reverse proxy with WebSocket frame size limits.
-- **SQL push config stores** — Unlike `InMemoryPushConfigStore`, the SQLite and
-  Postgres push config stores do not enforce per-task or global config limits.
-  Mitigation: implement application-level limits or periodic cleanup.
+- **Broadcast channel lag** — *(Resolved: the background event processor now
+  consumes a dedicated lossless mpsc persistence channel that is unaffected
+  by SSE backpressure, and a lagging streaming consumer receives an explicit
+  marked stream error instead of silent event loss — see 0.7.0.)* If an SSE
+  consumer falls behind, the broadcast channel drops events for both the SSE
+  reader and the background event processor. State transitions missed by the
+  background processor are not persisted to the task store.
+- **SSRF DNS rebinding** — *(Resolved: `HttpPushSender` resolves DNS and pins
+  the validated address for the actual connection.)* `HttpPushSender`
+  validates webhook URLs against private IP patterns but does not resolve
+  DNS.
+- **WebSocket message size** — *(Resolved: the WebSocket dispatcher enforces
+  a configurable message/frame size cap at the protocol level.)* The
+  WebSocket dispatcher does not enforce a message size limit.
+- **SQL push config stores** — *(Resolved: the SQLite and Postgres push
+  config stores enforce per-task and global bounds.)* Unlike
+  `InMemoryPushConfigStore`, the SQLite and Postgres push config stores do
+  not enforce per-task or global config limits.
 
 ### Fixed (v0.3.0 Hardening — Pass 11)
 

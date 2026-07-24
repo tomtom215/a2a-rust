@@ -175,20 +175,25 @@ impl TaskStore for SqliteTaskStore {
             let state = task.status.state.to_string();
             let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
+            // `updated_at` carries the status timestamp (spec §3.1.4 ordering
+            // + statusTimestampAfter); write wall-clock is the fallback for
+            // tasks without one.
+            let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
 
             sqlx::query(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%d %H:%M:%f','now'))
+                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')))
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = excluded.context_id,
                      state = excluded.state,
                      data = excluded.data,
-                     updated_at = strftime('%Y-%m-%d %H:%M:%f','now')",
+                     updated_at = excluded.updated_at",
             )
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;
@@ -238,9 +243,21 @@ impl TaskStore for SqliteTaskStore {
                 conditions.push(format!("state = ?{}", bind_values.len() + 1));
                 bind_values.push(status.to_string());
             }
+            // §3.1.4 statusTimestampAfter: strictly-after filter on the
+            // status timestamp, which is what `updated_at` stores. An
+            // unparseable value cannot reach the store through the handler
+            // (which validates it); treat it as matching nothing rather than
+            // silently returning everything.
+            if let Some(ref after) = params.status_timestamp_after {
+                let Some(after_dt) = super::status_timestamp_sqlite(Some(after)) else {
+                    return Ok(TaskListResponse::new(Vec::new()));
+                };
+                conditions.push(format!("updated_at > ?{}", bind_values.len() + 1));
+                bind_values.push(after_dt);
+            }
             // Composite (updated_at, id) row-value cursor: resume strictly
             // before the last row of the previous page under the
-            // most-recently-updated-first order (spec §3.1.4). A token not
+            // status-timestamp-descending order (spec §3.1.4). A token not
             // produced by us decodes to None → empty page (never a full scan).
             if let Some(ref token) = params.page_token {
                 let Some((cursor_ua, cursor_id)) = super::cursor::decode(token) else {
@@ -321,14 +338,16 @@ impl TaskStore for SqliteTaskStore {
             let data = serde_json::to_string(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
+            let status_ts = super::status_timestamp_sqlite(task.status.timestamp.as_deref());
             let result = sqlx::query(
                 "INSERT OR IGNORE INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, strftime('%Y-%m-%d %H:%M:%f','now'))",
+                 VALUES (?1, ?2, ?3, ?4, COALESCE(?5, strftime('%Y-%m-%d %H:%M:%f','now')))",
             )
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;
@@ -681,6 +700,111 @@ mod tests {
             ids,
             vec!["b", "a", "c"],
             "tasks should be ordered most-recently-updated first"
+        );
+    }
+
+    /// Helper: a task whose status carries an explicit ISO 8601 timestamp.
+    fn make_task_with_ts(id: &str, ctx: &str, state: TaskState, ts: &str) -> Task {
+        let mut task = make_task(id, ctx, state);
+        task.status.timestamp = Some(ts.to_owned());
+        task
+    }
+
+    /// §3.1.4: list is sorted by status timestamp descending — NOT by write
+    /// order — for tasks that carry status timestamps.
+    #[tokio::test]
+    async fn list_orders_by_status_timestamp_not_write_order() {
+        let store = make_store().await;
+        // Write order: middle, newest, oldest.
+        for (id, ts) in [
+            ("middle", "2026-01-02T00:00:00.000Z"),
+            ("newest", "2026-01-03T00:00:00.000Z"),
+            ("oldest", "2026-01-01T00:00:00.000Z"),
+        ] {
+            store
+                .save(&make_task_with_ts(id, "ctx1", TaskState::Working, ts))
+                .await
+                .unwrap();
+        }
+
+        let response = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["newest", "middle", "oldest"],
+            "list must sort by status timestamp descending"
+        );
+    }
+
+    /// A re-save that does not change the status timestamp (e.g. an artifact
+    /// append) must NOT bump the task to the front of the list.
+    #[tokio::test]
+    async fn list_resave_without_status_change_keeps_position() {
+        let store = make_store().await;
+        store
+            .save(&make_task_with_ts(
+                "older",
+                "ctx1",
+                TaskState::Working,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "newer",
+                "ctx1",
+                TaskState::Working,
+                "2026-01-02T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        // Re-save "older" with the same status timestamp.
+        store
+            .save(&make_task_with_ts(
+                "older",
+                "ctx1",
+                TaskState::Working,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        let response = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["newer", "older"],
+            "a status-preserving re-save must not reorder the list"
+        );
+    }
+
+    /// §3.1.4 statusTimestampAfter: strictly-after filter, boundary excluded.
+    #[tokio::test]
+    async fn list_filters_by_status_timestamp_after() {
+        let store = make_store().await;
+        for (id, ts) in [
+            ("old", "2026-01-01T00:00:00.000Z"),
+            ("boundary", "2026-01-02T00:00:00.000Z"),
+            ("new", "2026-01-03T00:00:00.000Z"),
+        ] {
+            store
+                .save(&make_task_with_ts(id, "ctx1", TaskState::Working, ts))
+                .await
+                .unwrap();
+        }
+
+        let params = ListTasksParams {
+            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
+            ..Default::default()
+        };
+        let response = store.list(&params).await.unwrap();
+        let ids: Vec<&str> = response.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["new"],
+            "filter must be strictly-after (boundary excluded)"
         );
     }
 

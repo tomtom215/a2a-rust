@@ -220,6 +220,17 @@ impl RequestHandler {
             Ok(_) => {
                 // Future stream response variants — continue.
             }
+            Err(ref e) if crate::streaming::event_queue::is_lag_error(e) => {
+                // The collector fell behind the broadcast ring and missed
+                // events. That is a delivery gap, not a task failure: later
+                // events (including the terminal one) still arrive and each
+                // status update supersedes the last, so keep draining rather
+                // than marking the task Failed.
+                trace_warn!(
+                    task_id = %task_id,
+                    "sync collector lagged; continuing with subsequent events"
+                );
+            }
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 self.task_store.save(last_task).await?;

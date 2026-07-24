@@ -165,6 +165,10 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move { Ok(()) })
     }
+
+    fn authenticates(&self) -> bool {
+        true
+    }
 }
 
 // ── BearerTokenAuthInterceptor ────────────────────────────────────────────────
@@ -239,6 +243,10 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
         _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move { Ok(()) })
+    }
+
+    fn authenticates(&self) -> bool {
+        true
     }
 }
 

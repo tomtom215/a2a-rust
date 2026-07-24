@@ -360,7 +360,24 @@ fn check_a2a_version(req: &WsUpgradeRequest) -> Result<(), ErrorResponse> {
     if major == Some(1) {
         return Ok(());
     }
-    let body = format!(r#"{{"error":"unsupported A2A version: {v}; this server supports 1.x"}}"#);
+    // Emit the same AIP-193 error shape (code/status/message/details with
+    // google.rpc.ErrorInfo) as the REST binding, so a version-rejected
+    // upgrade is machine-readable identically across HTTP surfaces.
+    let a2a_err = a2a_protocol_types::error::A2aError::version_not_supported(format!(
+        "unsupported A2A version: {v}; this server supports 1.x"
+    ));
+    let mut error_obj = serde_json::json!({
+        "error": {
+            "code": a2a_err.code.http_status(),
+            "status": a2a_err.code.grpc_status(),
+            "message": a2a_err.message,
+        }
+    });
+    let details = a2a_err.error_info_data(None);
+    if !details.is_null() {
+        error_obj["error"]["details"] = details;
+    }
+    let body = error_obj.to_string();
     let resp = tokio_tungstenite::tungstenite::http::Response::builder()
         .status(400)
         .header("content-type", "application/json")

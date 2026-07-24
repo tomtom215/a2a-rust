@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-client"
-version     = "0.6.0"
+version     = "0.7.0"
 description = "Agent2Agent (A2A) protocol v1.0 — HTTP client (hyper-backed)"
 readme      = "README.md"
 
@@ -32,10 +32,10 @@ tracing = ["dep:tracing"]
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Speaks the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
 
 [dependencies]
-a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.7.0", path = "../a2a-protocol-types" }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
 # RFC 6749 §2.3.1 Basic client authentication for the token_provider module.
@@ -56,6 +56,7 @@ rustls-pki-types = { version = ">=1.7, <2", optional = true }
 webpki-roots   = { version = ">=1.0, <2", optional = true }
 tonic          = { workspace = true, optional = true }
 tonic-prost    = { workspace = true, optional = true }
+tonic-types    = { workspace = true, optional = true }
 prost          = { workspace = true, optional = true }
 tokio-stream   = { workspace = true, optional = true }
 
@@ -78,8 +79,8 @@ rustls-pki-types = { version = ">=1.7, <2" }
 hyper = { workspace = true }
 http-body-util = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }
-a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
-a2a-protocol-server = { version = "0.6.0", path = "../a2a-protocol-server", features = ["websocket"] }
+a2a-protocol-types = { version = "0.7.0", path = "../a2a-protocol-types" }
+a2a-protocol-server = { version = "0.7.0", path = "../a2a-protocol-server", features = ["websocket"] }
 futures-util = { version = ">=0.3.30, <0.4", default-features = false, features = ["sink"] }
 
 [[bench]]

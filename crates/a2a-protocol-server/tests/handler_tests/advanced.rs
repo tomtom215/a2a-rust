@@ -147,6 +147,122 @@ async fn task_continuation_same_context_finds_stored_task() {
     );
 }
 
+/// An executor that pauses at `input-required` — a non-terminal state — so
+/// continuation flows can target the same task again.
+struct InputRequiredExecutor;
+
+impl a2a_protocol_server::executor::AgentExecutor for InputRequiredExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a a2a_protocol_server::request_context::RequestContext,
+        queue: &'a dyn a2a_protocol_server::streaming::EventQueueWriter,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::A2aResult<()>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            for state in [TaskState::Working, TaskState::InputRequired] {
+                queue
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        status: TaskStatus::new(state),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+            Ok(())
+        })
+    }
+}
+
+/// SPEC §3.4.3: "Agents MUST infer contextId from the task if only taskId is
+/// provided." A continuation carrying just the taskId of an input-required
+/// task must resolve that task's context and continue it.
+#[tokio::test]
+async fn task_id_only_continuation_infers_context_from_task() {
+    let handler = RequestHandlerBuilder::new(InputRequiredExecutor)
+        .build()
+        .expect("build handler");
+
+    // First message creates a task that pauses at input-required.
+    let mut msg1 = make_message("first");
+    msg1.context_id = Some(a2a_protocol_types::task::ContextId::new("ctx-infer"));
+    let result1 = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg1,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+            None,
+        )
+        .await
+        .expect("first send");
+    let task1 = match result1 {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+        _ => panic!("expected task"),
+    };
+    assert_eq!(task1.status.state, TaskState::InputRequired);
+
+    // Continuation with ONLY the taskId — no contextId.
+    let mut msg2 = make_message("second");
+    msg2.task_id = Some(task1.id.clone());
+    let result2 = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg2,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+            None,
+        )
+        .await
+        .expect("taskId-only continuation must succeed");
+    let task2 = match result2 {
+        SendMessageResult::Response(SendMessageResponse::Task(t)) => t,
+        _ => panic!("expected task"),
+    };
+    assert_eq!(task2.id, task1.id, "continuation must reuse the task");
+    assert_eq!(
+        task2.context_id.0.as_str(),
+        "ctx-infer",
+        "contextId must be inferred from the referenced task"
+    );
+}
+
+/// SPEC §3.4.2: a taskId that references no existing task must produce
+/// TaskNotFound — including on the taskId-only inference path.
+#[tokio::test]
+async fn task_id_only_unknown_task_returns_task_not_found() {
+    let handler = RequestHandlerBuilder::new(EchoExecutor)
+        .build()
+        .expect("build handler");
+
+    let mut msg = make_message("hello");
+    msg.task_id = Some(TaskId::new("no-such-task"));
+    let err = handler
+        .on_send_message(
+            MessageSendParams {
+                tenant: None,
+                message: msg,
+                configuration: None,
+                metadata: None,
+            },
+            false,
+            None,
+        )
+        .await
+        .expect_err("unknown taskId must fail");
+    assert!(
+        matches!(err, a2a_protocol_server::ServerError::TaskNotFound(ref id) if id.0.as_str() == "no-such-task"),
+        "expected TaskNotFound, got {err:?}"
+    );
+}
+
 #[tokio::test]
 async fn context_task_mismatch_rejected() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)

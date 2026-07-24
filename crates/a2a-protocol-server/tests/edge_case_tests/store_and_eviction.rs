@@ -58,14 +58,15 @@ async fn task_store_eviction_on_write() {
 #[tokio::test]
 async fn utc_now_iso8601_format() {
     let ts = a2a_protocol_types::utc_now_iso8601();
-    // Should be in format "YYYY-MM-DDTHH:MM:SSZ"
-    assert_eq!(ts.len(), 20, "timestamp should be 20 chars: {ts}");
+    // Should be in format "YYYY-MM-DDTHH:MM:SS.mmmZ" (ms precision, §5.6.1)
+    assert_eq!(ts.len(), 24, "timestamp should be 24 chars: {ts}");
     assert!(ts.ends_with('Z'), "timestamp must end with Z: {ts}");
     assert!(ts.contains('T'), "timestamp must contain T: {ts}");
     assert_eq!(&ts[4..5], "-", "char at index 4 must be '-': {ts}");
     assert_eq!(&ts[7..8], "-", "char at index 7 must be '-': {ts}");
     assert_eq!(&ts[13..14], ":", "char at index 13 must be ':': {ts}");
     assert_eq!(&ts[16..17], ":", "char at index 16 must be ':': {ts}");
+    assert_eq!(&ts[19..20], ".", "char at index 19 must be '.': {ts}");
 }
 
 #[tokio::test]

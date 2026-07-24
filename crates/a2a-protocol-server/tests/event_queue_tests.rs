@@ -168,11 +168,13 @@ async fn broadcast_writes_never_block() {
 }
 
 #[tokio::test]
-async fn slow_reader_skips_lagged_events() {
-    // Capacity of 2: write 3 events so the reader lags behind.
-    // The broadcast channel holds the 2 most recent events and the reader
-    // receives a Lagged notification (silently skipped by our reader impl),
-    // then reads the remaining buffered events.
+async fn slow_reader_gets_explicit_lag_error() {
+    // Capacity of 2: write 3 events so the reader lags behind. The broadcast
+    // channel drops the oldest event for this reader, and instead of
+    // silently skipping ahead (which would hide the gap from the client),
+    // the reader surfaces an explicit marked error so streaming consumers
+    // can tell the client its view is truncated (resubscribe → fresh
+    // snapshot). Subsequent reads continue with the buffered events.
     let (writer, mut reader) = new_in_memory_queue_with_capacity(2);
 
     writer
@@ -189,21 +191,30 @@ async fn slow_reader_skips_lagged_events() {
         .unwrap();
     drop(writer);
 
-    // Reader was lagged — it silently skips the missed event(s) and reads
-    // the remaining buffered events. Collect everything the reader returns.
-    let mut events = Vec::new();
-    while let Some(Ok(event)) = reader.read().await {
-        events.push(event);
-    }
+    // First read observes the lag as an explicit, data-marked error.
+    let first = reader.read().await.expect("stream must not end on lag");
+    let err = first.expect_err("lagged reader must yield an explicit error");
+    assert!(
+        err.message.contains("lagged"),
+        "error must explain the gap: {err:?}"
+    );
+    assert!(
+        err.data
+            .as_ref()
+            .is_some_and(|d| d.get("streamLagged").is_some()),
+        "lag error must carry the streamLagged marker: {err:?}"
+    );
 
-    // We should get at least 1 event (the most recent ones that weren't
-    // overwritten). The exact count depends on broadcast internals, but
-    // the important property is: the reader does NOT hang or error out.
+    // The reader is still usable: remaining buffered events arrive, ending
+    // with Completed, then clean EOF.
+    let mut events = Vec::new();
+    while let Some(item) = reader.read().await {
+        events.push(item.expect("post-lag events must be ordinary events"));
+    }
     assert!(
         !events.is_empty(),
         "slow reader should still receive buffered events after lag"
     );
-    // The last event received should be Completed.
     let last = events.last().unwrap();
     assert!(
         matches!(last, StreamResponse::StatusUpdate(ref u) if u.status.state == TaskState::Completed),

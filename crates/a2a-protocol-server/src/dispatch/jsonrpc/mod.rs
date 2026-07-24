@@ -114,7 +114,26 @@ impl JsonRpcDispatcher {
             return resp;
         }
 
+        // Capture the raw A2A-Extensions request header before the request is
+        // consumed, so the activated set can be echoed on the response
+        // (official-SDK convention; lets clients see which requested
+        // extensions the agent honored).
+        let requested_extensions = req
+            .headers()
+            .get(a2a_protocol_types::A2A_EXTENSIONS_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned);
+
         let mut resp = self.dispatch_inner(req).await;
+        if let Some(hval) = self
+            .handler
+            .activated_extensions_header_value(requested_extensions.as_deref())
+        {
+            if let Ok(v) = hyper::header::HeaderValue::from_str(&hval) {
+                resp.headers_mut()
+                    .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
+            }
+        }
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
         }
@@ -262,7 +281,9 @@ impl JsonRpcDispatcher {
                             reader,
                             Some(self.config.sse_keep_alive_interval),
                             Some(self.config.sse_channel_capacity),
-                            true, // JSON-RPC envelope per Section 9.4.2
+                            // JSON-RPC envelope echoing the request id
+                            // per Section 9.4.2.
+                            Some(id.clone()),
                         ),
                         Err(e) => error_response(id, &e),
                     },
@@ -458,7 +479,8 @@ impl JsonRpcDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
-                true, // JSON-RPC envelope per Section 9.4.2
+                // JSON-RPC envelope echoing the request id per Section 9.4.2.
+                Some(id.clone()),
             ),
             Err(e) => error_response(id, &e),
         }

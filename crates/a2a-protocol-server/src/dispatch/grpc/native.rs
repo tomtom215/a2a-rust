@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
-use super::helpers::{extract_metadata, server_error_to_status};
+use super::helpers::{server_error_to_status, validated_metadata};
 use super::pb::a2a_service_server::A2aService;
 use super::GrpcConfig;
 use crate::handler::{RequestHandler, SendMessageResult};
@@ -109,7 +109,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -133,7 +133,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -161,7 +161,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::TaskQueryParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_get_task(params, Some(&headers)).await {
@@ -174,7 +174,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTasksRequest>,
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::ListTasksParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_list_tasks(params, Some(&headers)).await {
@@ -187,7 +187,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::CancelTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::CancelTaskParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_cancel_task(params, Some(&headers)).await {
@@ -202,7 +202,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SubscribeToTaskRequest>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::TaskIdParams = request.into_inner().into();
         match self.handler.on_resubscribe(params, Some(&headers)).await {
             Ok(reader) => Ok(Response::new(reader_to_native_stream(
@@ -219,7 +219,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::TaskPushNotificationConfig>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             request.into_inner().into();
         match self
@@ -236,7 +236,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskPushNotificationConfigRequest>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::GetPushConfigParams = request.into_inner().into();
         match self
             .handler
@@ -252,7 +252,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTaskPushNotificationConfigsRequest>,
     ) -> Result<Response<apb::ListTaskPushNotificationConfigsResponse>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -274,7 +274,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::DeleteTaskPushNotificationConfigRequest>,
     ) -> Result<Response<()>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::DeletePushConfigParams =
             request.into_inner().into();
         match self
@@ -293,7 +293,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         match self
             .handler
             .on_get_extended_agent_card(Some(&headers))

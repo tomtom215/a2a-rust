@@ -1484,7 +1484,7 @@ fn tck_full_round_trip_agent_card_with_security() {
 
 #[test]
 fn tck_protocol_constants() {
-    assert_eq!(a2a_protocol_types::A2A_VERSION, "1.0.0");
+    assert_eq!(a2a_protocol_types::A2A_VERSION, "1.0");
     assert_eq!(a2a_protocol_types::A2A_CONTENT_TYPE, "application/a2a+json");
     assert_eq!(a2a_protocol_types::A2A_VERSION_HEADER, "A2A-Version");
 }

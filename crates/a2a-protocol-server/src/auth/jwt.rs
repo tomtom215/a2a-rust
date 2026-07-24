@@ -616,6 +616,35 @@ impl JwtAuthInterceptor {
         }
     }
 
+    /// Like [`from_jwks_url`](Self::from_jwks_url), but with a caller-supplied
+    /// rustls [`ClientConfig`](rustls::ClientConfig) for the JWKS fetch —
+    /// for identity providers behind a private CA, where the default
+    /// webpki-roots trust store cannot verify the JWKS endpoint.
+    #[cfg(feature = "tls-rustls")]
+    #[must_use]
+    pub fn from_jwks_url_with_tls_config(
+        validator: JwtValidator,
+        jwks_url: impl Into<String>,
+        tls_config: rustls::ClientConfig,
+    ) -> Self {
+        let https = hyper_rustls::HttpsConnectorBuilder::new()
+            .with_tls_config(tls_config)
+            .https_or_http()
+            .enable_http1()
+            .enable_http2()
+            .build();
+        Self {
+            validator,
+            keys: KeySource::Remote(Box::new(RemoteJwks {
+                url: jwks_url.into(),
+                ttl: DEFAULT_JWKS_TTL,
+                cache: RwLock::new(None),
+                refresh_lock: tokio::sync::Mutex::new(()),
+                client: Client::builder(TokioExecutor::new()).build(https),
+            })),
+        }
+    }
+
     /// Discovers the issuer's `jwks_uri` via OIDC discovery
     /// (`{issuer}/.well-known/openid-configuration`) and builds a
     /// remote-JWKS interceptor for it.
@@ -685,6 +714,10 @@ impl ServerInterceptor for JwtAuthInterceptor {
         _ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move { Ok(()) })
+    }
+
+    fn authenticates(&self) -> bool {
+        true
     }
 }
 

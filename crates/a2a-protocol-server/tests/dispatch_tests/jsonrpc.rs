@@ -378,7 +378,7 @@ async fn jsonrpc_response_has_a2a_version_header() {
         resp.headers()
             .get("A2A-Version")
             .and_then(|v| v.to_str().ok()),
-        Some("1.0.0"),
+        Some("1.0"),
     );
 }
 

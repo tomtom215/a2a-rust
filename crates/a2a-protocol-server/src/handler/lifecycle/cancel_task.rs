@@ -39,6 +39,9 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("CancelTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
 
             let task_id = TaskId::new(&params.id);
             let task = self

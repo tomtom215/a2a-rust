@@ -14,7 +14,7 @@ pub fn code_analyzer_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],
@@ -50,7 +50,7 @@ pub fn build_monitor_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "REST".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],
@@ -86,7 +86,7 @@ pub fn health_monitor_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into(), "application/json".into()],
@@ -124,7 +124,7 @@ pub fn grpc_analyzer_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "GRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],
@@ -160,7 +160,7 @@ pub fn coordinator_card(url: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "REST".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],

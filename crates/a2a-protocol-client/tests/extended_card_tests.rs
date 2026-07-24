@@ -78,6 +78,9 @@ async fn get_extended_agent_card_returns_card() {
     let handler = Arc::new(
         RequestHandlerBuilder::new(NoopExecutor)
             .with_agent_card(test_agent_card())
+            // §13.3: the test fixture has no auth interceptor, so serving the
+            // extended card needs the explicit unauthenticated opt-in.
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),
     );

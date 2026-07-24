@@ -85,6 +85,10 @@ jobs:
         run: cargo clippy -p a2a-protocol-server --all-targets --features postgres -- -D warnings
       - name: Clippy (axum)
         run: cargo clippy -p a2a-protocol-server --all-targets --features axum -- -D warnings
+      - name: Clippy (websocket)
+        run: cargo clippy --workspace --all-targets --features websocket -- -D warnings
+      - name: Clippy (grpc)
+        run: cargo clippy --workspace --all-targets --features grpc -- -D warnings
       # Lint auth-jwt in isolation (no TLS): exercises the plaintext JWKS
       # client path that --all-features (TLS on) never compiles.
       - name: Clippy (auth-jwt feature, no default features)
@@ -123,8 +127,17 @@ jobs:
         run: cargo test -p a2a-protocol-server --features postgres
       - name: Test (axum feature)
         run: cargo test -p a2a-protocol-server --features axum
+      # Dedicated websocket/grpc legs: --all-features also compiles these,
+      # but a feature-specific regression (missing gate, dep drift) only
+      # surfaces when the feature is built in isolation.
+      - name: Test (websocket feature)
+        run: cargo test --workspace --features websocket
+      - name: Test (grpc feature)
+        run: cargo test --workspace --features grpc
       - name: Test (auth-jwt feature)
         run: cargo test -p a2a-protocol-server --features auth-jwt
+      - name: Test (auth-jwt + tls-rustls — live-TLS JWKS E2E)
+        run: cargo test -p a2a-protocol-server --features auth-jwt,tls-rustls
       - name: Test (all features)
         run: cargo test --workspace --all-features
       - name: Test (no default features)

@@ -153,6 +153,9 @@ async fn start_jsonrpc_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(minimal_agent_card())
             .with_push_sender(MockPushSender)
+            // These fixtures run without auth interceptors; the extended-card
+            // route needs the explicit unauthenticated opt-in (§13.3).
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),
     );
@@ -194,6 +197,9 @@ async fn start_rest_server() -> (SocketAddr, tokio::task::JoinHandle<()>) {
         RequestHandlerBuilder::new(SimpleExecutor)
             .with_agent_card(minimal_agent_card())
             .with_push_sender(MockPushSender)
+            // These fixtures run without auth interceptors; the extended-card
+            // route needs the explicit unauthenticated opt-in (§13.3).
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),
     );

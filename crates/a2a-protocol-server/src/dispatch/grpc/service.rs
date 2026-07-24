@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
 use super::helpers::{
-    decode_json, encode_json, extract_metadata, reader_to_grpc_stream, server_error_to_status,
+    decode_json, encode_json, reader_to_grpc_stream, server_error_to_status, validated_metadata,
     GrpcStream,
 };
 use super::proto::a2a_service_server::A2aService;
@@ -36,7 +36,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self
             .handler
@@ -57,7 +57,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self
             .handler
@@ -84,7 +84,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self.handler.on_get_task(params, Some(&headers)).await {
             Ok(task) => Ok(Response::new(encode_json(&task)?)),
@@ -96,7 +96,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self.handler.on_list_tasks(params, Some(&headers)).await {
             Ok(resp) => Ok(Response::new(encode_json(&resp)?)),
@@ -108,7 +108,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self.handler.on_cancel_task(params, Some(&headers)).await {
             Ok(task) => Ok(Response::new(encode_json(&task)?)),
@@ -122,7 +122,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self.handler.on_resubscribe(params, Some(&headers)).await {
             Ok(reader) => {
@@ -139,7 +139,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let config = decode_json(request.get_ref())?;
         match self
             .handler
@@ -155,7 +155,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self
             .handler
@@ -171,7 +171,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             decode_json(request.get_ref())?;
         match self
@@ -194,7 +194,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         let params = decode_json(request.get_ref())?;
         match self
             .handler
@@ -212,7 +212,7 @@ impl A2aService for GrpcServiceImpl {
         &self,
         request: Request<JsonPayload>,
     ) -> Result<Response<JsonPayload>, Status> {
-        let headers = extract_metadata(request.metadata());
+        let headers = validated_metadata(request.metadata())?;
         match self
             .handler
             .on_get_extended_agent_card(Some(&headers))

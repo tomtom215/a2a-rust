@@ -260,3 +260,144 @@ async fn remote_jwks_refetches_on_key_rotation() {
         "rotation retry performs exactly one additional fetch"
     );
 }
+
+// ── OIDC discovery (`from_oidc_issuer`) ───────────────────────────────────────
+
+/// Spawns an issuer-style HTTP server: `/.well-known/openid-configuration`
+/// serves `discovery_body` and `/jwks` serves `jwks_body`. Unknown paths 404.
+async fn spawn_oidc_issuer(
+    discovery_body: Arc<std::sync::Mutex<String>>,
+    jwks_body: String,
+    discovery_status: u16,
+) -> std::net::SocketAddr {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let discovery_body = Arc::clone(&discovery_body);
+            let jwks_body = jwks_body.clone();
+            tokio::spawn(async move {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let svc = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                    let discovery_body = Arc::clone(&discovery_body);
+                    let jwks_body = jwks_body.clone();
+                    async move {
+                        let (status, body) = match req.uri().path() {
+                            "/.well-known/openid-configuration" => {
+                                (discovery_status, discovery_body.lock().unwrap().clone())
+                            }
+                            "/jwks" => (200, jwks_body),
+                            _ => (404, String::from("{}")),
+                        };
+                        Ok::<_, std::convert::Infallible>(
+                            hyper::Response::builder()
+                                .status(status)
+                                .header("content-type", "application/json")
+                                .body(Full::new(Bytes::from(body)))
+                                .unwrap(),
+                        )
+                    }
+                });
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, svc)
+                    .await;
+            });
+        }
+    });
+    addr
+}
+
+/// Full path: discovery document → jwks_uri → JWKS fetch → token validation
+/// over a real guarded server. Also covers trailing-slash issuer
+/// normalization.
+#[tokio::test]
+async fn oidc_discovery_end_to_end_validates_tokens() {
+    // The discovery body needs the issuer's own address, so bind first with a
+    // placeholder and patch it after.
+    let discovery = Arc::new(std::sync::Mutex::new(String::new()));
+    let issuer_addr = spawn_oidc_issuer(Arc::clone(&discovery), jwks_json("rk1"), 200).await;
+    *discovery.lock().unwrap() =
+        format!(r#"{{"issuer":"http://{issuer_addr}","jwks_uri":"http://{issuer_addr}/jwks"}}"#);
+
+    // Trailing slash on the issuer must be normalized away.
+    let interceptor =
+        JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}/"), validator())
+            .await
+            .expect("discovery against a live issuer must succeed");
+    let addr = spawn_guarded_server(interceptor).await;
+
+    let ok = post_send_message(addr, Some(RS256_VALID)).await;
+    assert!(
+        ok.contains("result"),
+        "valid token must be served after OIDC discovery: {ok}"
+    );
+    let rejected = post_send_message(addr, Some(RS256_WRONG_KEY)).await;
+    assert!(
+        rejected.contains("error"),
+        "wrong-key token must be rejected: {rejected}"
+    );
+}
+
+/// A discovery document without `jwks_uri` is a hard, described error.
+#[tokio::test]
+async fn oidc_discovery_missing_jwks_uri_errors() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::from(
+        r#"{"issuer":"http://example.invalid"}"#,
+    )));
+    let issuer_addr = spawn_oidc_issuer(discovery, jwks_json("rk1"), 200).await;
+
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("discovery without jwks_uri must fail");
+    assert!(
+        err.message.contains("jwks_uri"),
+        "error must name the missing field: {err}"
+    );
+}
+
+/// A discovery endpoint returning non-JSON is a described error.
+#[tokio::test]
+async fn oidc_discovery_invalid_json_errors() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::from("<html>not json</html>")));
+    let issuer_addr = spawn_oidc_issuer(discovery, jwks_json("rk1"), 200).await;
+
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("non-JSON discovery must fail");
+    assert!(
+        err.message.contains("invalid JSON"),
+        "error must describe the parse failure: {err}"
+    );
+}
+
+/// An HTTP error status from the discovery endpoint is a described error, not
+/// a panic or a silent fallback.
+#[tokio::test]
+async fn oidc_discovery_http_error_errors() {
+    let discovery = Arc::new(std::sync::Mutex::new(String::from("{}")));
+    let issuer_addr = spawn_oidc_issuer(discovery, jwks_json("rk1"), 500).await;
+
+    let err = JwtAuthInterceptor::from_oidc_issuer(&format!("http://{issuer_addr}"), validator())
+        .await
+        .expect_err("a 500 from discovery must fail");
+    assert!(
+        err.message.contains("OIDC discovery"),
+        "error must name the failing step: {err}"
+    );
+}
+
+/// An unreachable issuer is a described error.
+#[tokio::test]
+async fn oidc_discovery_unreachable_issuer_errors() {
+    // Port 1 is essentially never listening.
+    let err = JwtAuthInterceptor::from_oidc_issuer("http://127.0.0.1:1", validator())
+        .await
+        .expect_err("unreachable issuer must fail");
+    assert!(
+        err.message.contains("OIDC discovery"),
+        "error must name the failing step: {err}"
+    );
+}

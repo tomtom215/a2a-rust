@@ -22,6 +22,7 @@ impl RequestHandler {
     /// # Errors
     ///
     /// Returns a [`ServerError`](crate::error::ServerError) if the store query fails.
+    #[allow(clippy::too_many_lines)]
     pub async fn on_list_tasks(
         &self,
         params: ListTasksParams,
@@ -39,11 +40,27 @@ impl RequestHandler {
         if let Some(ps) = params.page_size {
             params.page_size = Some(ps.min(1000));
         }
+        // Validate statusTimestampAfter up front so every store backend sees
+        // a well-formed value; a malformed timestamp is a client error, not
+        // an empty result set.
+        if let Some(ref after) = params.status_timestamp_after {
+            if a2a_protocol_types::parse_iso8601_to_unix_millis(after).is_none() {
+                let err = crate::error::ServerError::InvalidParams(format!(
+                    "statusTimestampAfter is not a valid ISO 8601 timestamp: {after:?}"
+                ));
+                self.metrics.on_error("ListTasks", err.metric_label());
+                self.metrics.on_latency("ListTasks", start.elapsed());
+                return Err(err);
+            }
+        }
         let history_length = params.history_length;
         let include_artifacts = params.include_artifacts;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("ListTasks", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
             let mut result = self.task_store.list(&params).await?;
 
             // Apply historyLength: truncate each task's history to the
@@ -140,6 +157,45 @@ mod tests {
             .await
             .expect("list_tasks should succeed");
         assert_eq!(result.tasks.len(), 1, "should return the one saved task");
+    }
+
+    #[tokio::test]
+    async fn list_tasks_invalid_status_timestamp_after_is_invalid_params() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let params = ListTasksParams {
+            status_timestamp_after: Some("not-a-timestamp".into()),
+            ..Default::default()
+        };
+        let err = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect_err("malformed statusTimestampAfter must be rejected");
+        assert!(
+            matches!(err, crate::error::ServerError::InvalidParams(ref m) if m.contains("statusTimestampAfter")),
+            "expected InvalidParams naming the field, got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_tasks_status_timestamp_after_filters_results() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let mut old_task = make_completed_task("t-old");
+        old_task.status.timestamp = Some("2026-01-01T00:00:00.000Z".into());
+        let mut new_task = make_completed_task("t-new");
+        new_task.status.timestamp = Some("2026-01-03T00:00:00.000Z".into());
+        handler.task_store.save(&old_task).await.unwrap();
+        handler.task_store.save(&new_task).await.unwrap();
+
+        let params = ListTasksParams {
+            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
+            ..Default::default()
+        };
+        let result = handler
+            .on_list_tasks(params, None)
+            .await
+            .expect("filtered list must succeed");
+        let ids: Vec<&str> = result.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(ids, vec!["t-new"], "only strictly-after tasks are returned");
     }
 
     #[tokio::test]

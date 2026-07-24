@@ -56,6 +56,7 @@ prost-build        = { version = "0.14" }
 tonic-build        = { version = "0.14" }
 tonic-prost        = { version = "0.14" }
 tonic-prost-build  = { version = "0.14" }
+tonic-types        = { version = "0.14" }
 tokio-stream       = { version = "0.1" }
 # Ships prebuilt `protoc` binaries for linux/{x86,aarch64}, macos/{x86,aarch64},
 # and windows x86_64. Used by the grpc-feature build scripts so that contributors

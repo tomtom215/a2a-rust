@@ -38,6 +38,9 @@ impl RequestHandler {
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
             let call_ctx = build_call_context("SubscribeToTask", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
 
             // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
             // permitted when the configured agent card advertises
@@ -67,9 +70,14 @@ impl RequestHandler {
             let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
             let reader = self
                 .event_queue_manager
-                .subscribe_with_snapshot(&task_id, snapshot)
+                .subscribe_with_snapshot(&task_id, snapshot.clone())
                 .await
-                .ok_or_else(|| ServerError::Internal("no active event queue for task".into()))?;
+                // No live event queue for a non-terminal task — e.g. the
+                // process restarted since the task was created, so no
+                // executor is attached. §3.5.2 lets a reconnecting client
+                // open a new stream: serve the current snapshot, then end
+                // the stream cleanly (no further events can be produced).
+                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot));
 
             self.interceptors.run_after(&call_ctx).await?;
             Ok(reader)
@@ -144,8 +152,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resubscribe_nonterminal_no_queue_returns_internal_error() {
-        // Non-terminal task exists but has no active event queue.
+    async fn resubscribe_nonterminal_no_queue_returns_snapshot_then_eof() {
+        // Non-terminal task exists but has no active event queue (e.g. the
+        // process restarted since the task was created). §3.5.2 reconnection:
+        // the stream serves the current Task snapshot, then ends cleanly.
+        use crate::streaming::event_queue::EventQueueReader as _;
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
         let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
@@ -163,10 +174,29 @@ mod tests {
             tenant: None,
             id: "t-resub-nonterminal".to_owned(),
         };
-        let result = handler.on_resubscribe(params, None).await;
+        let mut reader = handler
+            .on_resubscribe(params, None)
+            .await
+            .expect("resubscribe to a queueless non-terminal task must serve a snapshot stream");
+
+        // First event: the current Task snapshot.
+        let first = reader
+            .read()
+            .await
+            .expect("stream must yield the snapshot")
+            .expect("snapshot must not be an error");
+        match first {
+            a2a_protocol_types::events::StreamResponse::Task(t) => {
+                assert_eq!(t.id.0.as_str(), "t-resub-nonterminal");
+                assert_eq!(t.status.state, TaskState::Working);
+            }
+            other => panic!("expected Task snapshot first, got: {other:?}"),
+        }
+
+        // Then clean EOF — no executor is attached to produce more events.
         assert!(
-            matches!(result, Err(ServerError::Internal(_))),
-            "expected Internal error when no event queue exists for non-terminal task, got: {result:?}"
+            reader.read().await.is_none(),
+            "stream must end cleanly after the snapshot"
         );
     }
 

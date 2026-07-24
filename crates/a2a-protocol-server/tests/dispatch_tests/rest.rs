@@ -325,6 +325,97 @@ async fn rest_push_config_not_supported_error_status() {
     assert_eq!(resp.status(), 400);
 }
 
+/// Required-extension negotiation and activated-extension echo over REST:
+/// a card-required extension gates data-plane calls (§3.3.4), and honored
+/// extensions are echoed in the response `A2A-Extensions` header.
+#[tokio::test]
+async fn rest_required_extension_enforced_and_echoed() {
+    use a2a_protocol_types::extensions::AgentExtension;
+
+    let mut card = minimal_agent_card();
+    let mut caps = card.capabilities;
+    caps.extensions = Some(vec![AgentExtension {
+        uri: "https://example.com/ext/required/v1".into(),
+        description: None,
+        required: Some(true),
+        params: None,
+    }]);
+    card.capabilities = caps;
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = Arc::new(RestDispatcher::new(handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let d = Arc::clone(&dispatcher);
+            let service = hyper::service::service_fn(move |req| {
+                let d = Arc::clone(&d);
+                async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+            });
+            tokio::spawn(async move {
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+
+    let client = http_client();
+
+    // Without the required extension: 400 with EXTENSION_SUPPORT_REQUIRED.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/some-task"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 400, "undeclared client must get 400");
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["error"]["details"][0]["reason"], "EXTENSION_SUPPORT_REQUIRED",
+        "error must carry the EXTENSION_SUPPORT_REQUIRED reason: {json}"
+    );
+
+    // With it declared: request proceeds (404 for the unknown task) and the
+    // activated extension is echoed back.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/some-task"))
+        .header("A2A-Extensions", "https://example.com/ext/required/v1")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(
+        resp.status(),
+        404,
+        "declared client reaches normal handling"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("A2A-Extensions")
+            .and_then(|v| v.to_str().ok()),
+        Some("https://example.com/ext/required/v1"),
+        "activated extensions must be echoed on the response"
+    );
+}
+
 // ── REST full send + get roundtrip ──────────────────────────────────────────
 
 #[tokio::test]
@@ -388,15 +479,15 @@ async fn rest_response_has_a2a_version_header() {
         resp.headers()
             .get("A2A-Version")
             .and_then(|v| v.to_str().ok()),
-        Some("1.0.0"),
-        "response should have A2A-Version: 1.0.0 header"
+        Some("1.0"),
+        "response should have A2A-Version: 1.0 header"
     );
     assert_eq!(
         resp.headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok()),
-        Some("application/a2a+json"),
-        "response should have application/a2a+json content type"
+        Some("application/json"),
+        "responses emit application/json per spec §11.1"
     );
 }
 

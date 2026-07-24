@@ -33,10 +33,12 @@ on:
   # the full sweep runs on schedule / workflow_dispatch.
   pull_request:
     branches: ["main"]
-  # Full sweep runs manually or on-demand. A nightly schedule is available
-  # below but disabled to save CI minutes — uncomment to re-enable.
-  # schedule:
-  #   - cron: "0 3 * * *" # 03:00 UTC daily
+  # Full sweep runs weekly (and on-demand via workflow_dispatch). The
+  # incremental PR gate only re-checks mutation adequacy of files a PR
+  # touches; without a recurring whole-repo sweep, code outside recent diffs
+  # would never be re-verified.
+  schedule:
+    - cron: "0 3 * * 1" # 03:00 UTC every Monday
   workflow_dispatch:
     inputs:
       package:

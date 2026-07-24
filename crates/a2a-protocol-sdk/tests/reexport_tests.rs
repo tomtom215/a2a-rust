@@ -54,7 +54,7 @@ fn types_module_reexports_core_types() {
 
 #[test]
 fn types_module_reexports_protocol_constants() {
-    assert_eq!(a2a_protocol_sdk::types::A2A_VERSION, "1.0.0");
+    assert_eq!(a2a_protocol_sdk::types::A2A_VERSION, "1.0");
     assert_eq!(
         a2a_protocol_sdk::types::A2A_CONTENT_TYPE,
         "application/a2a+json"
