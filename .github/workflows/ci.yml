@@ -212,6 +212,26 @@ jobs:
         with:
           command: check
 
+  # ── Semver compatibility ─────────────────────────────────────────────────
+  #
+  # From 0.7.0 onward, catch accidental breaking changes to the public API of
+  # the three published crates against the last release on crates.io. On a
+  # 0.x baseline a MINOR bump is allowed to break, so this reports rather than
+  # hard-fails until the first 1.0 — but it makes every break visible in review.
+  semver:
+    name: cargo-semver-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Check semver (types, client, server)
+        uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
+        with:
+          package: a2a-protocol-types, a2a-protocol-client, a2a-protocol-server
+          # 0.x: report breaks in the PR without blocking merge until 1.0.
+          feature-group: default-features
+
   # ── Package validation ──────────────────────────────────────────────────
   #
   # Uses `cargo package --workspace` so that inter-workspace path+version

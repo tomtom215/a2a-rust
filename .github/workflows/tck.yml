@@ -58,6 +58,20 @@ jobs:
       - name: TCK — REST binding
         run: ./target/release/a2a-tck --url http://127.0.0.1:9090 --binding rest
 
+      - name: Setup Python (a2a-inspector card check)
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      # Reproduces the official a2a-inspector's agent-card validation
+      # (vendored from its backend/validators.py) headlessly against our
+      # card. The inspector ships web-UI-only, so this is the scriptable
+      # equivalent of "open it in the inspector and check it's green".
+      - name: a2a-inspector card validation
+        run: |
+          pip install httpx
+          python itk/interop/inspector_card_check.py http://127.0.0.1:9090
+
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})
     runs-on: ubuntu-latest

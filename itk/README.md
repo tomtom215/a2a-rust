@@ -84,3 +84,19 @@ docker compose -f itk/docker-compose.yml up --build --abort-on-container-exit
    cargo run -p a2a-tck -- --url http://localhost:9103 --binding rest
    ```
 
+
+## a2a-inspector validation
+
+The official [a2a-inspector](https://github.com/a2aproject/a2a-inspector)
+is a web-only debugging tool; its agent-card validation logic lives in
+`backend/validators.py`. `interop/inspector_card_check.py` vendors that
+exact ruleset and runs it headlessly against a live agent's card — the
+scriptable equivalent of opening the agent in the inspector and confirming
+it validates. Our `echo-agent` passes it; CI runs it in the TCK self-test
+job.
+
+Note: the inspector still lists the top-level `url` field as *required*,
+which A2A v1.0 made optional (superseded by `supportedInterfaces`). Our
+echo-agent sets `url` and passes; the official Python/Go/Java SDK echo
+agents omit it and are flagged by the inspector — an inspector-lags-spec
+issue, not a card defect.
