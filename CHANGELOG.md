@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-24
+
 Interop, hardening, and edge-case fixes from an independent protocol audit,
 plus a protobuf-native rewrite of the gRPC transport. Several public types
 changed shape (0.x breaking — warrants a minor bump).
