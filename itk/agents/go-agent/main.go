@@ -307,6 +307,16 @@ func writeJsonRpc(w http.ResponseWriter, id json.RawMessage, result interface{},
 	json.NewEncoder(w).Encode(resp)
 }
 
+// writeRestError emits an AIP-193-shaped error body (spec §11.6) with the
+// given HTTP status, used to reject malformed REST requests.
+func writeRestError(w http.ResponseWriter, status, code int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]interface{}{"code": code, "message": message},
+	})
+}
+
 func main() {
 	flag.Parse()
 
@@ -341,7 +351,12 @@ func main() {
 	// REST endpoints
 	mux.HandleFunc("POST /message:send", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
-		json.NewDecoder(r.Body).Decode(&params)
+		if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+			// A malformed request body is a client error, not an echo — the
+			// other reference stubs and SDKs reject it (spec §11.6).
+			writeRestError(w, http.StatusBadRequest, -32700, "Parse error")
+			return
+		}
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})
@@ -349,7 +364,10 @@ func main() {
 
 	mux.HandleFunc("POST /message:stream", func(w http.ResponseWriter, r *http.Request) {
 		var params SendParams
-		json.NewDecoder(r.Body).Decode(&params)
+		if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+			writeRestError(w, http.StatusBadRequest, -32700, "Parse error")
+			return
+		}
 		task := processMessage(params)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(SendMessageResponse{Task: task})

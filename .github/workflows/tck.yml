@@ -129,7 +129,10 @@ jobs:
             port: 9112
           - sdk: java-sdk
             setup: |
-              cd itk/agents/java-sdk && mvn -q package -DskipTests
+              # Build in a subshell so the `java -jar` below runs from the
+              # repo root with the repo-root-relative jar path (a plain `cd`
+              # would double the prefix and fail with "Unable to access jarfile").
+              ( cd itk/agents/java-sdk && mvn -q package -DskipTests )
               PORT=9113 java -jar itk/agents/java-sdk/target/quarkus-app/quarkus-run.jar &
               sleep 5
             port: 9113

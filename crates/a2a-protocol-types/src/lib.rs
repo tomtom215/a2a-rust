@@ -167,25 +167,37 @@ pub fn parse_iso8601_to_unix_millis(s: &str) -> Option<i64> {
     let y: i64 = date_parts.next()?.parse().ok()?;
     let m: i64 = date_parts.next()?.parse().ok()?;
     let d: i64 = date_parts.next()?.parse().ok()?;
-    if date_parts.next().is_some() || !(1..=12).contains(&m) || !(1..=31).contains(&d) {
+    // RFC 3339 uses a 4-digit year (`0000`..=`9999`). Bounding it here also
+    // keeps the civil-date arithmetic in `days_from_civil` (unchecked
+    // multiplication) well within `i64` range — an unbounded year parsed
+    // from arbitrary digits would otherwise overflow it. Found by the
+    // `iso8601` fuzz target.
+    if date_parts.next().is_some()
+        || !(0..=9999).contains(&y)
+        || !(1..=12).contains(&m)
+        || !(1..=31).contains(&d)
+    {
         return None;
     }
 
     // Split off the suffix: 'Z', or an explicit +HH:MM / -HH:MM offset.
     let (time, offset_minutes) = if let Some(t) = rest.strip_suffix(['Z', 'z']) {
         (t, 0_i64)
-    } else if let Some(idx) = rest.rfind(['+', '-']) {
+    } else {
+        // No 'Z': an explicit numeric offset is required (a bare local time
+        // is ambiguous and rejected).
+        let idx = rest.rfind(['+', '-'])?;
         let (t, off) = rest.split_at(idx);
         let sign = if off.starts_with('-') { -1_i64 } else { 1 };
         let mut off_parts = off[1..].split(':');
         let oh: i64 = off_parts.next()?.parse().ok()?;
         let om: i64 = off_parts.next().map_or(Some(0), |p| p.parse().ok())?;
-        if off_parts.next().is_some() || oh > 23 || om > 59 {
+        // Bound both ends: a `-` inside the numeric field lets `parse` accept
+        // a negative value that an upper-bound-only check would miss.
+        if off_parts.next().is_some() || !(0..=23).contains(&oh) || !(0..=59).contains(&om) {
             return None;
         }
         (t, sign * (oh * 60 + om))
-    } else {
-        return None;
     };
 
     let (hms, frac) = time.split_once('.').map_or((time, ""), |(a, b)| (a, b));
@@ -193,7 +205,15 @@ pub fn parse_iso8601_to_unix_millis(s: &str) -> Option<i64> {
     let hh: i64 = time_parts.next()?.parse().ok()?;
     let mm: i64 = time_parts.next()?.parse().ok()?;
     let ss: i64 = time_parts.next()?.parse().ok()?;
-    if time_parts.next().is_some() || hh > 23 || mm > 59 || ss > 60 {
+    // Bound both ends. Upper bounds alone let a negative component (e.g. an
+    // hour left as `-5115111111111111110` after the offset split) pass and
+    // then overflow the unchecked `hh * 3600` below. Found by the `iso8601`
+    // fuzz target.
+    if time_parts.next().is_some()
+        || !(0..=23).contains(&hh)
+        || !(0..=59).contains(&mm)
+        || !(0..=60).contains(&ss)
+    {
         return None;
     }
     let millis: i64 = if frac.is_empty() {
@@ -216,7 +236,15 @@ pub fn parse_iso8601_to_unix_millis(s: &str) -> Option<i64> {
         .checked_mul(86_400)?
         .checked_add(hh * 3600 + mm * 60 + ss)?
         .checked_sub(offset_minutes * 60)?;
-    secs.checked_mul(1000)?.checked_add(millis)
+    let total = secs.checked_mul(1000)?.checked_add(millis)?;
+    // Reject pre-epoch instants. A2A timestamps are wall-clock event times,
+    // which are always post-1970 (§5.6.1), and the canonical formatter
+    // (`unix_millis_to_iso8601`) clamps pre-epoch to the epoch — so accepting
+    // a negative value here would make parse and format disagree (parse a
+    // 1969 date, format it back as 1970). Treating pre-epoch input as "not a
+    // valid timestamp" keeps the two functions consistent on the same domain,
+    // exactly like any other malformed value.
+    (total >= 0).then_some(total)
 }
 
 /// Converts a civil date to days since 1970-01-01 (Howard Hinnant's
@@ -444,10 +472,28 @@ mod tests {
     }
 
     #[test]
-    fn parse_pre_epoch_dates_are_negative() {
+    fn parse_rejects_pre_epoch_dates() {
+        // A2A timestamps are post-1970 wall-clock event times, and the
+        // canonical formatter clamps pre-epoch instants to the epoch — so
+        // parse rejects them rather than returning a negative value that
+        // could never round-trip through `unix_millis_to_iso8601`. Found by
+        // the `iso8601` fuzz target (parse∘format round-trip).
+        for pre_epoch in [
+            "1969-12-31T23:59:59Z",      // one second before the epoch
+            "0001-01-01T00:00:00Z",      // year 1
+            "1970-01-01T00:00:00+05:30", // epoch pushed pre-epoch by offset
+        ] {
+            assert_eq!(
+                parse_iso8601_to_unix_millis(pre_epoch),
+                None,
+                "pre-epoch {pre_epoch:?} must be rejected"
+            );
+        }
+        // The exact epoch instant, however parenthesized by an offset, is
+        // accepted (it is not before the epoch).
         assert_eq!(
-            parse_iso8601_to_unix_millis("1969-12-31T23:59:59Z"),
-            Some(-1000)
+            parse_iso8601_to_unix_millis("1969-12-31T22:00:00-02:00"),
+            Some(0)
         );
     }
 
@@ -465,6 +511,12 @@ mod tests {
             "2026-03-15T14:30:45.abcZ",    // non-digit fraction
             "2026-03-15T14:30:45+25:00",   // offset hour out of range
             "2026-03-15T14:30:45Z extra ", // trailing garbage past suffix
+            "10000-01-01T00:00:00Z",       // year > 9999 (RFC 3339 is 4-digit)
+            // Negative numeric components must be rejected, not overflow the
+            // unchecked arithmetic. `iso8601` fuzz-target regressions:
+            "2-4-5t-5115111111111111110:5:0-2", // huge-negative hour
+            "2026-03-15T-1:30:45Z",             // negative hour
+            "2026-03-15T14:-1:45Z",             // negative minute
         ] {
             assert_eq!(
                 parse_iso8601_to_unix_millis(bad),
