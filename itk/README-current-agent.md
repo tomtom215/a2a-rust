@@ -55,10 +55,20 @@ Two layers, both in CI (`.github/workflows/itk.yml`):
    and runs every `current` scenario against the official Python v1.0
    baseline agent (multi-hop send / streaming / push / resubscribe across
    JSONRPC, gRPC, HTTP+JSON). This is the LF's own harness exercising our
-   agent against agents built on the reference SDK.
+   agent against agents built on the reference SDK, and our agent starts
+   and serves correctly under it.
 
    ```bash
    git clone https://github.com/a2aproject/a2a-itk
    ln -s "$(git -C .. rev-parse --show-toplevel)" a2a-itk/agents/repo
    cd a2a-itk && uv run run_tests.py --sdks current,python_v10
    ```
+
+   In CI this runs as the **`workflow_dispatch`-only** (manual)
+   `itk-current-mount` job, not as a PR gate: the upstream a2a-itk's
+   `uv.lock` pins several baseline dependencies (e.g. `aiosqlite` via
+   `a2a-sdk[sqlite]`) to a **private** Google Artifact Registry that
+   returns `401` to public runners, so the baseline cluster cannot be
+   provisioned on GitHub-hosted CI. A maintainer with registry access (or
+   a future public ITK lockfile) can trigger it from the Actions tab. The
+   in-repo self-test (1) is the authoritative automated gate.

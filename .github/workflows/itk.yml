@@ -80,13 +80,24 @@ jobs:
     name: ITK current vs python_v10 baseline
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Informational cross-check, not a merge gate. This job drives our agent
-    # through the *real* upstream ITK against the official python_v10
-    # baseline, but its success depends on the upstream a2a-itk project's own
-    # environment (its pinned baseline SDK, its `uv`-managed venv, its mock
-    # notification server). The deterministic in-repo `itk-traversal-selftest`
-    # job above is the authoritative gate; this one surfaces upstream interop
-    # signal without letting upstream flakiness block a release.
+    # Manual (workflow_dispatch) only — NOT a PR/push gate.
+    #
+    # This job drives our agent through the *real* upstream ITK against the
+    # official python_v10 baseline, and our agent starts and serves correctly
+    # under it (confirmed in CI: "current is ready"). But it cannot run to
+    # completion on a public runner: the upstream a2a-itk project's `uv.lock`
+    # pins several baseline dependencies (e.g. aiosqlite via
+    # a2a-sdk[sqlite] -> sqlalchemy) to a PRIVATE Google Artifact Registry
+    # (us-python.pkg.dev/artifact-foundry-prod/…) that returns 401 to
+    # unauthenticated clients. That is fixed in the upstream project's env,
+    # not here.
+    #
+    # So this is opt-in: a maintainer with access to that registry (or a
+    # future public ITK lockfile) can run it via the Actions "Run workflow"
+    # button. The deterministic in-repo `itk-traversal-selftest` job above —
+    # which exercises the exact ITK protobuf instruction contract over every
+    # transport with no external dependencies — is the authoritative gate.
+    if: github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
