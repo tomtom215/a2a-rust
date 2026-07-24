@@ -154,12 +154,14 @@ jobs:
   # sit above the threshold gives a much higher-signal gate.
   #
   # Threshold: 50 % — not 25. Observation showed that even tight-CI
-  # regressions of ~25-30 % appear on pristine code due to
-  # GitHub-runner heterogeneity (CPU frequency, thermal throttling,
-  # LTO-driven inlining shifts from unrelated code). A 50 % threshold
-  # tolerates those systematic effects while still catching the
-  # regressions worth blocking: accidental O(n²) loops, allocator
-  # thrash, lost inlining in hot paths, etc. See
+  # regressions of ~25-30 % appear on pristine code due to GitHub-runner
+  # heterogeneity (CPU frequency, thermal throttling). The other big
+  # false-positive source — whole-program-LTO inlining shifts caused by
+  # unrelated code in a sibling crate — is removed here by building the
+  # gate's benches without LTO (see the `bench-regression` job's `env`).
+  # A 50 % threshold tolerates the residual runner effects while still
+  # catching the regressions worth blocking: accidental O(n²) loops,
+  # allocator thrash, lost inlining in hot paths, etc. See
   # `book/src/reference/regression-gate.md` for the full analysis.
   #
   # Scope: we deliberately restrict the PR gate to `transport_throughput`
@@ -174,6 +176,32 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # The gate builds its comparison benches WITHOUT whole-program LTO,
+    # even though the shipping profile (and the `main` dashboard `bench`
+    # job above) is `lto = true` + `codegen-units = 1`. Rationale:
+    #
+    # Under fat LTO the optimizer re-inlines across every workspace crate,
+    # so adding unrelated code to a hot crate — e.g. a cold ISO-8601 helper
+    # in `a2a-protocol-types` — shifts the inlining and code layout of
+    # serde_json's string serializer and surfaces as a tight-CI "regression"
+    # on serialize micro-benchmarks whose own source is byte-identical to
+    # the base branch. Observed on this repo: `payload_scaling` serialize
+    # benches +54..84 % with ~2 %-wide CIs, while every deserialize bench
+    # stayed flat, the serialize path's source was proven unchanged, and the
+    # delta did not reproduce under a different compiler (classic code-layout
+    # luck, not an algorithmic change).
+    #
+    # Building the gate without whole-program LTO compiles serde_json (and
+    # every other dependency) independently, so their hot loops are immune to
+    # unrelated changes in *our* crates. The comparison then measures the
+    # algorithmic delta of the diff — the gate's actual job — instead of
+    # LTO layout roulette. `codegen-units = 16` is the stock `cargo bench`
+    # default. Baseline and PR are built with the same settings, so the
+    # comparison stays apples-to-apples. See
+    # book/src/reference/regression-gate.md for the full analysis.
+    env:
+      CARGO_PROFILE_BENCH_LTO: "false"
+      CARGO_PROFILE_BENCH_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -235,9 +263,9 @@ jobs:
           # this repo has shown that GitHub-hosted runners occasionally
           # produce *tight-CI* regressions of ~25-30% on individual
           # benches even when the benchmarked code is provably unchanged
-          # (suspected: runner-to-runner CPU frequency / thermal
-          # differences, or LTO inlining shifts caused by compiling
-          # additional test code in sibling crates). See
+          # (runner-to-runner CPU frequency / thermal differences; the
+          # LTO-inlining source of these is removed by the job's non-LTO
+          # build env). See
           # `book/src/reference/regression-gate.md` for the full
           # analysis. 50% still catches the regressions we want to
           # block — accidental O(n²) loops, allocator thrash, lost

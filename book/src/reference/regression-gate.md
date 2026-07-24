@@ -83,15 +83,34 @@ change at all** in the PR. Two plausible mechanisms:
    consistent — even though the absolute numbers reflect the runner,
    not the code.
 
-2. **Release-mode LTO inlining shifts.** `cargo bench` uses the
-   release profile, which has `lto = true` and `codegen-units = 1`
-   in this workspace. Under whole-program LTO, the optimizer
-   considers *all* code in *all* workspace crates when making
-   inlining decisions. Adding unrelated test code in a sibling crate
-   can shift which functions the optimizer decides to inline,
-   changing instruction-cache hit rates on the benchmarked hot path.
-   This is real behaviour — not a bug in criterion — and it appears
-   as a tight-CI regression on benches that touch the hot path.
+2. **Whole-program-LTO inlining shifts.** The shipping profile has
+   `lto = true` and `codegen-units = 1`, and by default `cargo bench`
+   inherits it. Under whole-program LTO the optimizer considers *all*
+   code in *all* workspace crates when making inlining decisions, so
+   adding unrelated code in a sibling crate can shift which functions
+   the optimizer inlines, changing the code layout and instruction-cache
+   behaviour of a hot path whose own source did not change. This is real
+   compiler behaviour — not a bug in criterion — and it appears as a
+   *tight-CI* regression on benches that touch the affected hot path,
+   large enough to blow past even a 50 % threshold.
+
+   A concrete instance: a change that added a cold ISO-8601 helper to
+   `a2a-protocol-types` produced +54..84 % tight-CI "regressions" on the
+   `payload_scaling` **serialize** micro-benchmarks (which route through
+   serde_json's string serializer), while every **deserialize** bench
+   stayed flat, the serialize path's source was byte-identical to the
+   base branch, and the delta vanished under a different compiler — the
+   signature of code-layout luck rather than an algorithmic change.
+
+   To stop this false-positive class at the source, **the gate builds its
+   comparison benches without whole-program LTO** (`CARGO_PROFILE_BENCH_LTO=false`,
+   `CARGO_PROFILE_BENCH_CODEGEN_UNITS=16` on the `bench-regression` job).
+   Every dependency — including serde_json — is then compiled
+   independently, so its hot loops are immune to unrelated changes in our
+   crates, and the comparison measures the diff's algorithmic delta rather
+   than LTO layout roulette. The full `main`-only suite that feeds the
+   [dashboard][dashboard] still runs under the real fat-LTO shipping
+   profile, so the published absolute numbers stay faithful to what ships.
 
 A threshold of 25 % was therefore unreliable: it failed PRs whose
 code demonstrably could not have caused a regression. Lifting the
