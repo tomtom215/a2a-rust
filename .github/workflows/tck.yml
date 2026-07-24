@@ -88,7 +88,14 @@ jobs:
             port: 9100
           - sdk: javascript
             setup: |
-              cd itk/agents/js-agent && npm install && node index.js &
+              # Install deps in the FOREGROUND so a slow npm registry can't eat
+              # the readiness-poll window; background only the server. A
+              # backgrounded `npm install` that hasn't finished when the poll
+              # starts leaves the agent unstarted → spurious "failed to start".
+              # Matches the python-sdk / java-sdk legs.
+              cd itk/agents/js-agent
+              npm install
+              node index.js &
               sleep 3
             port: 9101
           - sdk: go
@@ -111,7 +118,12 @@ jobs:
             port: 9110
           - sdk: js-sdk
             setup: |
-              cd itk/agents/js-sdk && npm install && PORT=9111 node index.js &
+              # Install deps in the FOREGROUND so a slow npm registry can't eat
+              # the readiness-poll window; background only the server (see the
+              # `javascript` leg above). Matches the python-sdk / java-sdk legs.
+              cd itk/agents/js-sdk
+              npm install
+              PORT=9111 node index.js &
               sleep 3
             port: 9111
             # Documented @a2a-js/sdk 1.0.0 bugs (not our deviations):
