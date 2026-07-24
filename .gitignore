@@ -36,3 +36,7 @@ itk/agents/js-agent/package-lock.json
 # cargo-mutants output
 mutants.out/
 mutants.out.old/
+/itk/target
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/target/

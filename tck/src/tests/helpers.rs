@@ -34,6 +34,51 @@ async fn http_post(url: &str, body: &Value) -> Result<Value, String> {
     http_post_with_content_type(url, body, "application/json").await
 }
 
+/// POSTs raw (possibly malformed) bytes and returns the parsed JSON body
+/// (or `Value::Null` when the response is not JSON).
+pub async fn post_raw(
+    url: &str,
+    path: &str,
+    body: &[u8],
+    content_type: &str,
+) -> Result<Value, String> {
+    let (_status, value) = post_raw_status(url, path, body, content_type).await?;
+    Ok(value)
+}
+
+/// POSTs raw bytes and returns `(status, body)`; the body is `Value::Null`
+/// when the response is not JSON.
+pub async fn post_raw_status(
+    url: &str,
+    path: &str,
+    body: &[u8],
+    content_type: &str,
+) -> Result<(u16, Value), String> {
+    let full_url = format!("{url}{path}");
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http();
+    let req = hyper::Request::builder()
+        .method(hyper::Method::POST)
+        .uri(&full_url)
+        .header("content-type", content_type)
+        .header("a2a-version", "1.0")
+        .body(http_body_util::Full::new(hyper::body::Bytes::from(
+            body.to_vec(),
+        )))
+        .map_err(|e| format!("build request: {e}"))?;
+    let resp = client
+        .request(req)
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let bytes = http_body_util::BodyExt::collect(resp.into_body())
+        .await
+        .map_err(|e| format!("read body: {e}"))?
+        .to_bytes();
+    let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    Ok((status, value))
+}
+
 /// Low-level HTTP POST with an explicit Content-Type header.
 async fn http_post_with_content_type(
     url: &str,

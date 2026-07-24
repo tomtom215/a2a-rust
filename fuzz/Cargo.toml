@@ -12,14 +12,57 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-a2a-protocol-types = { path = "../crates/a2a-protocol-types" }
+a2a-protocol-types = { path = "../crates/a2a-protocol-types", features = ["proto"] }
+a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["auth-jwt"] }
 serde_json = "1"
+prost = ">=0.14.1, <0.15"
 
 # Prevent this from interfering with the workspace
 [workspace]
 members = ["."]
 
+[profile.release]
+debug = 1
+
 [[bin]]
 name = "json_deser"
 path = "fuzz_targets/json_deser.rs"
+test = false
 doc = false
+bench = false
+
+[[bin]]
+name = "jsonrpc_envelope"
+path = "fuzz_targets/jsonrpc_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sse_parser"
+path = "fuzz_targets/sse_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "proto_convert"
+path = "fuzz_targets/proto_convert.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iso8601"
+path = "fuzz_targets/iso8601.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "jwks_parse"
+path = "fuzz_targets/jwks_parse.rs"
+test = false
+doc = false
+bench = false

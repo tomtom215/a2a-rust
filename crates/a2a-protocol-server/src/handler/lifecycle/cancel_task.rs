@@ -92,12 +92,18 @@ impl RequestHandler {
 
             // Re-read the task to narrow the TOCTOU window: if the background
             // processor completed/failed the task between our initial check and
-            // now, we must not overwrite the terminal state with Canceled.
+            // now, we must not overwrite the terminal state with Canceled. A
+            // re-read of Canceled is NOT that race — it means the cancel event
+            // the executor just emitted already persisted, i.e. success.
             let current = self
                 .task_store
                 .get(&task_id)
                 .await?
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+            if current.status.state == a2a_protocol_types::task::TaskState::Canceled {
+                self.interceptors.run_after(&call_ctx).await?;
+                return Ok(current);
+            }
             if current.status.state.is_terminal() {
                 return Err(ServerError::TaskNotCancelable(task_id));
             }
@@ -282,5 +288,30 @@ mod tests {
             "expected TaskNotFound, got: {result:?}"
         );
         // The error metrics path (on_error + on_latency) was exercised.
+    }
+
+    /// The default `AgentExecutor::cancel` must make a WORKING task
+    /// cancelable out of the box: the pre-0.7 default refused with
+    /// `TaskNotCancelable` even though the handler had already triggered the
+    /// cancellation token (every reference SDK requires working cancel).
+    #[tokio::test]
+    async fn cancel_working_task_with_default_executor_succeeds() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        let mut task = make_submitted_task("cancel-default-1");
+        task.status = TaskStatus::new(TaskState::Working);
+        handler.task_store.save(&task).await.unwrap();
+
+        let result = handler
+            .on_cancel_task(
+                CancelTaskParams {
+                    tenant: None,
+                    id: "cancel-default-1".to_owned(),
+                    metadata: None,
+                },
+                None,
+            )
+            .await
+            .expect("cancel of a WORKING task must succeed with the default executor");
+        assert_eq!(result.status.state, TaskState::Canceled);
     }
 }

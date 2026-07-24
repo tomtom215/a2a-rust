@@ -57,7 +57,10 @@ async fn main() -> ExitCode {
     println!();
 
     if !skips.is_empty() {
-        println!("Skipping (documented target deviations): {}", skips.join(", "));
+        println!(
+            "Skipping (documented target deviations): {}",
+            skips.join(", ")
+        );
         println!();
     }
 
@@ -76,7 +79,11 @@ async fn main() -> ExitCode {
     let failed = total - passed;
 
     for r in &skipped {
-        let outcome = if r.passed { "passed anyway" } else { "failed as documented" };
+        let outcome = if r.passed {
+            "passed anyway"
+        } else {
+            "failed as documented"
+        };
         println!("  SKIP  {} — {outcome}", r.name);
     }
     println!();

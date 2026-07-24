@@ -103,12 +103,33 @@ pub trait AgentExecutor: Send + Sync + 'static {
     fn cancel<'a>(
         &'a self,
         ctx: &'a RequestContext,
-        _queue: &'a dyn EventQueueWriter,
+        queue: &'a dyn EventQueueWriter,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            Err(a2a_protocol_types::error::A2aError::task_not_cancelable(
-                &ctx.task_id,
-            ))
+            // Cooperative default: the handler has already triggered the
+            // task's cancellation token (which a running `execute` should
+            // observe); emit the terminal Canceled status so subscribers see
+            // it. Every reference SDK requires agents to support cancel —
+            // the pre-0.7 default of refusing with TaskNotCancelable made
+            // WORKING tasks uncancelable out of the box and mislabeled the
+            // failure as the task's fault.
+            let event = a2a_protocol_types::events::TaskStatusUpdateEvent {
+                task_id: ctx.task_id.clone(),
+                context_id: a2a_protocol_types::task::ContextId::new(ctx.context_id.clone()),
+                status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                    a2a_protocol_types::task::TaskState::Canceled,
+                ),
+                metadata: None,
+            };
+            // Best-effort delivery: a task with no live subscribers has no
+            // queue receivers, and that must not fail the cancel — the
+            // handler persists the Canceled state either way.
+            let _ = queue
+                .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                    event,
+                ))
+                .await;
+            Ok(())
         })
     }
 
