@@ -31,7 +31,9 @@ pub struct AgentInterface {
     /// Base URL of this interface endpoint.
     pub url: String,
 
-    /// Protocol binding identifier (e.g. `"JSONRPC"`, `"REST"`, `"GRPC"`).
+    /// Protocol binding identifier — the spec's canonical values are
+    /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3); custom bindings such
+    /// as `"WEBSOCKET"` are permitted (§12).
     pub protocol_binding: String,
 
     /// A2A protocol version string in `Major.Minor` form (e.g. `"1.0"`).

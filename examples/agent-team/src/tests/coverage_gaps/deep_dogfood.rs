@@ -92,7 +92,7 @@ pub async fn test_state_transition_ordering(ctx: &TestContext) -> TestResult {
 pub async fn test_executor_error_produces_failed(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = a2a_protocol_client::ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -436,7 +436,7 @@ pub async fn test_rapid_sequential_requests(ctx: &TestContext) -> TestResult {
 pub async fn test_cancel_already_failed(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = a2a_protocol_client::ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 

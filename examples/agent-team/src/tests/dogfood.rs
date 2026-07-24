@@ -151,7 +151,7 @@ pub async fn test_push_list_jsonrpc_regression(ctx: &TestContext) -> TestResult 
 pub async fn test_push_event_classification(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -300,7 +300,7 @@ pub async fn test_concurrent_streams(ctx: &TestContext) -> TestResult {
         let url = ctx.build_url.clone();
         handles.push(tokio::spawn(async move {
             let client = ClientBuilder::new(&url)
-                .with_protocol_binding("REST")
+                .with_protocol_binding("HTTP+JSON")
                 .build()
                 .unwrap();
             let mut stream = client.stream_message(make_send_params("check")).await?;

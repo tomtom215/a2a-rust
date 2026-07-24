@@ -49,7 +49,7 @@ pub fn build_monitor_card(url: &str) -> AgentCard {
         version: "1.0.0".into(),
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
-            protocol_binding: "REST".into(),
+            protocol_binding: "HTTP+JSON".into(),
             protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
@@ -159,7 +159,7 @@ pub fn coordinator_card(url: &str) -> AgentCard {
         version: "1.0.0".into(),
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
-            protocol_binding: "REST".into(),
+            protocol_binding: "HTTP+JSON".into(),
             protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],

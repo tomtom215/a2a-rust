@@ -31,16 +31,21 @@ mod tests;
 async fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
 
-    let (url, binding) = match parse_args(&args) {
+    let (url, binding, skips) = match parse_args(&args) {
         Ok(config) => config,
         Err(msg) => {
             eprintln!("Error: {msg}");
             eprintln!();
-            eprintln!("Usage: a2a-tck --url <server-url> [--binding jsonrpc|rest]");
+            eprintln!(
+                "Usage: a2a-tck --url <server-url> [--binding jsonrpc|rest] [--skip <tests>]"
+            );
             eprintln!();
             eprintln!("Options:");
             eprintln!("  --url <url>        Base URL of the A2A server (required)");
             eprintln!("  --binding <type>   Protocol binding: jsonrpc (default) or rest");
+            eprintln!("  --skip <tests>     Comma-separated test names to skip (repeatable).");
+            eprintln!("                     For documented target-implementation deviations");
+            eprintln!("                     only — a skipped test is reported, not silent.");
             return ExitCode::from(2);
         }
     };
@@ -51,19 +56,43 @@ async fn main() -> ExitCode {
     println!("Binding: {binding}");
     println!();
 
+    if !skips.is_empty() {
+        println!("Skipping (documented target deviations): {}", skips.join(", "));
+        println!();
+    }
+
     let results = runner::run_all(&url, &binding).await;
 
-    let total = results.len();
-    let passed = results.iter().filter(|r| r.passed).count();
+    let skipped: Vec<_> = results
+        .iter()
+        .filter(|r| skips.iter().any(|s| s == &r.name))
+        .collect();
+    let counted: Vec<_> = results
+        .iter()
+        .filter(|r| !skips.iter().any(|s| s == &r.name))
+        .collect();
+    let total = counted.len();
+    let passed = counted.iter().filter(|r| r.passed).count();
     let failed = total - passed;
 
+    for r in &skipped {
+        let outcome = if r.passed { "passed anyway" } else { "failed as documented" };
+        println!("  SKIP  {} — {outcome}", r.name);
+    }
     println!();
-    println!("Results: {passed}/{total} passed, {failed} failed");
+    println!(
+        "Results: {passed}/{total} passed, {failed} failed{}",
+        if skipped.is_empty() {
+            String::new()
+        } else {
+            format!(", {} skipped", skipped.len())
+        }
+    );
 
     if failed > 0 {
         println!();
         println!("Failed tests:");
-        for result in &results {
+        for result in &counted {
             if !result.passed {
                 println!("  FAIL  {} — {}", result.name, result.message);
             }
@@ -75,9 +104,11 @@ async fn main() -> ExitCode {
     }
 }
 
-fn parse_args(args: &[String]) -> Result<(String, String), String> {
+#[allow(clippy::type_complexity)]
+fn parse_args(args: &[String]) -> Result<(String, String, Vec<String>), String> {
     let mut url = None;
     let mut binding = "jsonrpc".to_string();
+    let mut skips: Vec<String> = Vec::new();
 
     let mut i = 1;
     while i < args.len() {
@@ -99,11 +130,21 @@ fn parse_args(args: &[String]) -> Result<(String, String), String> {
                 }
                 binding = b;
             }
+            "--skip" => {
+                i += 1;
+                let list = args.get(i).ok_or("--skip requires a value")?;
+                skips.extend(
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_owned),
+                );
+            }
             other => return Err(format!("unknown argument '{other}'")),
         }
         i += 1;
     }
 
     let url = url.ok_or("--url is required")?;
-    Ok((url, binding))
+    Ok((url, binding, skips))
 }

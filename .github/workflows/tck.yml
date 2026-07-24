@@ -87,31 +87,68 @@ jobs:
               cd itk/agents/java-agent && mvn -q compile exec:java &
               sleep 5
             port: 9103
+          # ── Agents built on the OFFICIAL SDKs — the runs that prove real
+          # cross-SDK interop rather than agreement with our own stubs. ──
+          - sdk: python-sdk
+            setup: |
+              pip install 'a2a-sdk[http-server]' uvicorn httpx
+              PORT=9110 python itk/agents/python-sdk/agent.py &
+              sleep 3
+            port: 9110
+          - sdk: js-sdk
+            setup: |
+              cd itk/agents/js-sdk && npm install && PORT=9111 node index.js &
+              sleep 3
+            port: 9111
+            # Documented @a2a-js/sdk 1.0.0 bugs (not our deviations):
+            # - ListTasks: ListTasksRequest.fromJSON({}) materializes the
+            #   proto3 default status=TASK_STATE_UNSPECIFIED and the store
+            #   filters on it, so an unfiltered list always returns empty.
+            # - application/a2a+json requests are rejected despite spec §6.1
+            #   examples using that media type (Python/Go SDKs accept it).
+            skip_jsonrpc: list_tasks_basic,a2a_media_type_accepted
+            skip_rest: list_tasks_basic
+          - sdk: go-sdk
+            setup: |
+              cd itk/agents/go-sdk && go mod tidy && PORT=9112 go run . &
+              sleep 5
+            port: 9112
+          - sdk: java-sdk
+            setup: |
+              cd itk/agents/java-sdk && mvn -q package -DskipTests
+              PORT=9113 java -jar itk/agents/java-sdk/target/quarkus-app/quarkus-run.jar &
+              sleep 5
+            port: 9113
+            # Documented a2a-java 1.0.0.CR1 divergence: rejects
+            # application/a2a+json (spec §6.1 examples use it; Python/Go
+            # reference SDKs accept it).
+            skip_jsonrpc: a2a_media_type_accepted
+            skip_rest: a2a_media_type_accepted
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Setup Python
-        if: matrix.sdk == 'python'
+        if: matrix.sdk == 'python' || matrix.sdk == 'python-sdk'
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
       - name: Setup Node.js
-        if: matrix.sdk == 'javascript'
+        if: matrix.sdk == 'javascript' || matrix.sdk == 'js-sdk'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
 
       - name: Setup Go
-        if: matrix.sdk == 'go'
+        if: matrix.sdk == 'go' || matrix.sdk == 'go-sdk'
         uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version: '1.22'
+          go-version: '1.25'
 
       - name: Setup Java
-        if: matrix.sdk == 'java'
+        if: matrix.sdk == 'java' || matrix.sdk == 'java-sdk'
         uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: 'temurin'
@@ -136,10 +173,51 @@ jobs:
           exit 1
 
       - name: TCK — ${{ matrix.sdk }} (JSON-RPC)
-        run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding jsonrpc
+        run: >
+          ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }}
+          --binding jsonrpc
+          ${{ matrix.skip_jsonrpc && format('--skip {0}', matrix.skip_jsonrpc) || '' }}
 
       - name: TCK — ${{ matrix.sdk }} (REST)
-        run: ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }} --binding rest
+        run: >
+          ./target/release/a2a-tck --url http://127.0.0.1:${{ matrix.port }}
+          --binding rest
+          ${{ matrix.skip_rest && format('--skip {0}', matrix.skip_rest) || '' }}
+
+  official-client-vs-rust-server:
+    name: Official Python SDK client vs our server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install official A2A Python SDK (client)
+        run: pip install 'a2a-sdk[http-server]' httpx
+
+      - name: Build and start our echo agent
+        run: |
+          cargo build --release -p echo-agent
+          A2A_BIND_ADDR="127.0.0.1:9090" ./target/release/echo-agent &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9090/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "echo-agent ready"; exit 0
+            fi
+            sleep 1
+          done
+          echo "echo-agent failed to start"; exit 1
+
+      # The reverse direction of the matrix above: the reference client
+      # driving a server built on a2a-protocol-server, over both bindings —
+      # send (plain + streaming), get, list, cancel semantics, push-config
+      # CRUD, and terminal-subscribe rejection.
+      - name: Official Python client interop suite
+        run: python itk/interop/python_client_vs_rust.py http://127.0.0.1:9090
 
   grpc-wire-compat:
     name: gRPC wire compatibility (official Python SDK)

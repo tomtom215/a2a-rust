@@ -23,7 +23,7 @@ pub async fn test_cancel_nonexistent(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 21: Cancel nonexistent task");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
     match client.cancel_task("totally-fake-id".to_owned()).await {
@@ -48,7 +48,7 @@ pub async fn test_return_immediately(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 22: return_immediately mode");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .with_return_immediately(true)
         .build()
         .unwrap();
@@ -175,7 +175,7 @@ pub async fn test_get_task_rest(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 25: GetTask via REST");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -221,7 +221,7 @@ pub async fn test_list_tasks_rest(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 26: ListTasks via REST");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
     match client
@@ -325,7 +325,7 @@ pub async fn test_resubscribe_rest(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 28: SubscribeToTask via REST");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
