@@ -275,7 +275,7 @@ jobs:
           echo "::notice::CycloneDX SBOMs written to target/package/sbom/"
 
       - name: Attest SBOM provenance
-        uses: actions/attest-sbom@bd218ad7dbfd8ce29ba013dfea656c96f4d24c46 # v3.0.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: target/package/*.crate
           sbom-path: target/package/sbom/a2a-protocol-server.cdx.json
