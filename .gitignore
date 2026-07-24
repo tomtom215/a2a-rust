@@ -40,3 +40,8 @@ mutants.out.old/
 fuzz/corpus/
 fuzz/artifacts/
 fuzz/target/
+
+# ITK official-SDK agent build artifacts
+itk/agents/java-sdk/target/
+itk/agents/go-sdk/a2a-itk-go-sdk-agent
+itk/agents/*/node_modules/

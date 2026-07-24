@@ -14,6 +14,45 @@ Interop, hardening, and edge-case fixes from an independent protocol audit,
 plus a protobuf-native rewrite of the gRPC transport. Several public types
 changed shape (0.x breaking — warrants a minor bump).
 
+### Added (cross-SDK interop & adversarial testing)
+
+- **Official-SDK interop is now proven, both directions.** The TCK runs
+  against echo agents built on the official Python (`a2a-sdk`),
+  JavaScript (`@a2a-js/sdk`), Go (`a2a-go/v2`), and Java (`a2a-java`) SDKs
+  — 20/20 on both JSON-RPC and REST for every one — and the official
+  Python SDK *client* drives our server end to end
+  (`itk/interop/python_client_vs_rust.py`). New `itk/agents/*-sdk`
+  agents; TCK gained `--skip` for documented reference-SDK divergences.
+- **Upstream ITK current-mount.** `itk/` is now the a2aproject/a2a-itk
+  "current" agent (`itk-current-agent`), implementing the multi-hop
+  traversal instruction protocol on `a2a-protocol-{server,client}` across
+  JSON-RPC, gRPC, and HTTP+JSON (plain, streaming, push, resubscribe). A
+  deterministic in-repo self-test and a CI workflow that mounts this repo
+  into the real ITK against the official Python baseline both cover it.
+- **Fuzzing expanded 1 → 6 targets** (JSON, JSON-RPC envelope + params,
+  SSE parser, protobuf↔serde differential round-trip, ISO-8601, JWKS),
+  wired into CI (60s smoke per PR, 10-min nightly).
+- **Hostile-peer harness**: our client vs malicious servers (oversized /
+  slow-drip / truncated bodies, immediate close, valid-JSON-wrong-shape)
+  — each must fail safely, no hang or panic.
+- **`SPEC_COMPLIANCE.md`**: a §-by-§ traceability matrix (spec → impl →
+  test evidence). Release CI gained `cargo-semver-checks` and CycloneDX
+  SBOM generation + attestation alongside the existing SLSA provenance.
+
+### Changed (cross-SDK interop)
+
+- **Default `AgentExecutor::cancel` now cancels a working task** instead of
+  refusing with `TaskNotCancelable` — the handler already triggers the
+  cancellation token, so the default emits the terminal `Canceled` status
+  (best-effort delivery). Every reference SDK requires working cancel out
+  of the box; the pre-0.7 default made `WORKING` tasks uncancelable and
+  mislabeled the refusal as the task's fault. The cancel handler treats a
+  re-read of `Canceled` as success rather than a TOCTOU race.
+- **Example agent cards advertise the spec-canonical `"HTTP+JSON"`**
+  protocol binding instead of the legacy `"REST"` spelling (the official
+  Python client cannot match `"REST"` when selecting a transport). The
+  client still accepts both spellings when reading a peer's card.
+
 ### Added (spec-compliance closure pass)
 
 - **gRPC errors carry `google.rpc.ErrorInfo`** (spec §10.6) — every

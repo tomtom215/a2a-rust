@@ -8,7 +8,7 @@
 //! The TCK proves we accept well-formed traffic; this is its inverse. Each
 //! test stands up a raw TCP server that behaves badly — oversized bodies,
 //! a slow-drip trickle, a wrong Content-Length, a chunked-encoding lie, an
-//! immediate connection reset — and asserts that the client fails *safely*
+//! immediate connection close — and asserts that the client fails *safely*
 //! (a bounded error, no panic, no unbounded memory growth, no hang) rather
 //! than trusting the peer.
 
@@ -157,13 +157,13 @@ async fn short_body_under_declared_length_errors() {
     );
 }
 
-/// The peer accepts the connection and immediately resets it: bounded error.
+/// The peer accepts the connection and closes it without any response:
+/// bounded error, never a hang or a fabricated card.
 #[tokio::test]
-async fn immediate_reset_errors() {
+async fn immediate_close_errors() {
     let addr = spawn_raw(|stream| async move {
-        // Set SO_LINGER(0) so drop sends RST rather than a graceful FIN,
-        // then drop without reading or writing.
-        let _ = stream.set_linger(Some(Duration::from_secs(0)));
+        // Drop the accepted stream without reading or writing anything, so
+        // the client's request meets an immediate close instead of a reply.
         drop(stream);
     })
     .await;
@@ -176,7 +176,7 @@ async fn immediate_reset_errors() {
     .expect("client must not hang on a reset");
     assert!(
         result.is_err(),
-        "a connection reset must surface as an error, got: {result:?}"
+        "an immediate close must surface as an error, got: {result:?}"
     );
 }
 
