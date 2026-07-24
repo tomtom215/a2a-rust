@@ -269,16 +269,42 @@ jobs:
           # cargo-cyclonedx writes <crate>.cdx.json next to each Cargo.toml.
           for crate in a2a-protocol-types a2a-protocol-client a2a-protocol-server a2a-protocol-sdk; do
             src="crates/$crate/$crate.cdx.json"
-            [ -f "$src" ] && cp "$src" "target/package/sbom/$crate.cdx.json"
+            # Fail loudly rather than release with an incomplete SBOM set —
+            # each crate is attested against its own SBOM below.
+            if [ ! -f "$src" ]; then
+              echo "::error::Expected CycloneDX SBOM not found: $src"
+              exit 1
+            fi
+            cp "$src" "target/package/sbom/$crate.cdx.json"
           done
           ls -lh target/package/sbom/
           echo "::notice::CycloneDX SBOMs written to target/package/sbom/"
 
-      - name: Attest SBOM provenance
-        uses: actions/attest-sbom@bd218ad7dbfd8ce29ba013dfea656c96f4d24c46 # v3.0.0
+      # Attest each crate against its OWN CycloneDX SBOM (not one shared SBOM
+      # for all four), so `gh attestation verify <crate>.crate` resolves the
+      # exact dependency inventory for that specific crate. The per-subject
+      # globs (`<crate>-*.crate`) each match exactly one archive, independent
+      # of the version embedded in the filename.
+      - name: Attest SBOM — a2a-protocol-types
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
-          subject-path: target/package/*.crate
+          subject-path: target/package/a2a-protocol-types-*.crate
+          sbom-path: target/package/sbom/a2a-protocol-types.cdx.json
+      - name: Attest SBOM — a2a-protocol-client
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: target/package/a2a-protocol-client-*.crate
+          sbom-path: target/package/sbom/a2a-protocol-client.cdx.json
+      - name: Attest SBOM — a2a-protocol-server
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: target/package/a2a-protocol-server-*.crate
           sbom-path: target/package/sbom/a2a-protocol-server.cdx.json
+      - name: Attest SBOM — a2a-protocol-sdk
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: target/package/a2a-protocol-sdk-*.crate
+          sbom-path: target/package/sbom/a2a-protocol-sdk.cdx.json
 
       # SLSA Level 2 build provenance — creates signed attestations linking
       # the .crate artifacts to this workflow run, verifiable with `gh attestation verify`.
@@ -397,7 +423,8 @@ jobs:
             gh release upload "$TAG" \
               --clobber \
               release-artifacts/*.crate \
-              release-artifacts/SHA256SUMS
+              release-artifacts/SHA256SUMS \
+              release-artifacts/sbom/*.cdx.json
             echo "::endgroup::"
             echo "::notice::GitHub release updated: $RELEASE_URL"
           else
@@ -407,7 +434,8 @@ jobs:
               --title "a2a-rust ${TAG}" \
               --notes-file release_notes.md \
               release-artifacts/*.crate \
-              release-artifacts/SHA256SUMS
+              release-artifacts/SHA256SUMS \
+              release-artifacts/sbom/*.cdx.json
             echo "::endgroup::"
             echo "::notice::GitHub release created: $RELEASE_URL"
           fi
