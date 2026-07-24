@@ -49,6 +49,10 @@ async fn http_post_with_content_type(
         .method(hyper::Method::POST)
         .uri(url)
         .header("content-type", content_type)
+        // Spec §3.6.1: an absent A2A-Version header is interpreted as 0.3,
+        // which a v1.0-only server MUST reject — so every conformance
+        // request declares the version it is testing.
+        .header("a2a-version", "1.0")
         .body(http_body_util::Full::new(hyper::body::Bytes::from(
             body_bytes,
         )))
@@ -80,6 +84,7 @@ async fn http_get(url: &str) -> Result<(u16, Value), String> {
     let req = hyper::Request::builder()
         .method(hyper::Method::GET)
         .uri(url)
+        .header("a2a-version", "1.0")
         .body(http_body_util::Full::new(hyper::body::Bytes::new()))
         .map_err(|e| format!("build request: {e}"))?;
 
@@ -95,12 +100,12 @@ async fn http_get(url: &str) -> Result<(u16, Value), String> {
         .map_err(|e| format!("read body: {e}"))?
         .to_bytes();
 
-    let json: Value = serde_json::from_slice(&body).map_err(|e| {
-        format!(
-            "parse response: {e} (body: {})",
-            String::from_utf8_lossy(&body)
-        )
-    })?;
+    // Error responses from paths outside the A2A surface (e.g. a framework
+    // 404 for an unrouted path) are legitimately non-JSON — the reference
+    // Python SDK returns a plain-text "Not Found". Callers decide from the
+    // status code; surface a non-JSON body as `Value::Null` rather than
+    // failing the test on body shape.
+    let json: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
 
     Ok((status, json))
 }

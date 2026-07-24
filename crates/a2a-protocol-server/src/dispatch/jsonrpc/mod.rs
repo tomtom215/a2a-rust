@@ -159,26 +159,17 @@ impl JsonRpcDispatcher {
             }
         }
 
-        // Validate A2A-Version header if present.
-        // Per Section 3.6.2: empty value MUST be interpreted as 0.3.
-        // Accept any 1.x version; reject 0.x or 2.x+.
-        if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
-            if let Ok(v) = version.to_str() {
-                let v = v.trim();
-                // Empty header → interpret as 0.3 per spec Section 3.6.2.
-                if !v.is_empty() {
-                    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-                    if major != Some(1) {
-                        return error_response(
-                            None,
-                            &ServerError::Protocol(a2a_protocol_types::error::A2aError::new(
-                                a2a_protocol_types::error::ErrorCode::VersionNotSupported,
-                                format!("unsupported A2A version: {v}; this server supports 1.x"),
-                            )),
-                        );
-                    }
-                }
-            }
+        // Validate the A2A-Version header per spec §3.6.2: an absent or
+        // empty value is interpreted as protocol 0.3 and rejected under the
+        // strict default (reference-SDK parity); any 1.x is accepted.
+        let version_value = req
+            .headers()
+            .get(a2a_protocol_types::A2A_VERSION_HEADER)
+            .and_then(|v| v.to_str().ok());
+        if let Err(err) =
+            super::validate_version_header(version_value, self.config.require_version_header)
+        {
+            return error_response(None, &ServerError::Protocol(err));
         }
 
         // Extract HTTP headers BEFORE consuming the body.
@@ -271,10 +262,10 @@ impl JsonRpcDispatcher {
 
         // Streaming methods return SSE, not JSON.
         match rpc_req.method.as_str() {
-            "SendStreamingMessage" | "message/stream" => {
+            "SendStreamingMessage" => {
                 return self.dispatch_send_message(id, rpc_req, true, headers).await;
             }
-            "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
+            "SubscribeToTask" => {
                 return match parse_params::<a2a_protocol_types::params::TaskIdParams>(rpc_req) {
                     Ok(p) => match self.handler.on_resubscribe(p, Some(headers)).await {
                         Ok(reader) => build_sse_response(
@@ -309,7 +300,7 @@ impl JsonRpcDispatcher {
         let id = rpc_req.id.to_response_id();
 
         match rpc_req.method.as_str() {
-            "SendMessage" | "message/send" => {
+            "SendMessage" => {
                 match self
                     .dispatch_send_message_inner(id.clone(), rpc_req, false, headers)
                     .await
@@ -318,7 +309,7 @@ impl JsonRpcDispatcher {
                     Err(body) => body,
                 }
             }
-            "SendStreamingMessage" | "message/stream" => {
+            "SendStreamingMessage" => {
                 // In batch context, streaming is not supported — return error.
                 let err = ServerError::InvalidParams(
                     "SendStreamingMessage not supported in batch requests".into(),
@@ -330,7 +321,7 @@ impl JsonRpcDispatcher {
                 );
                 serde_json::to_vec(&resp).unwrap_or_default()
             }
-            "GetTask" | "tasks/get" => {
+            "GetTask" => {
                 match parse_params::<a2a_protocol_types::params::TaskQueryParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_task(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -339,7 +330,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "ListTasks" | "tasks/list" => {
+            "ListTasks" => {
                 match parse_params::<a2a_protocol_types::params::ListTasksParams>(rpc_req) {
                     Ok(p) => match self.handler.on_list_tasks(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -348,7 +339,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "CancelTask" | "tasks/cancel" => {
+            "CancelTask" => {
                 match parse_params::<a2a_protocol_types::params::CancelTaskParams>(rpc_req) {
                     Ok(p) => match self.handler.on_cancel_task(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -357,13 +348,13 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
+            "SubscribeToTask" => {
                 let err = ServerError::InvalidParams(
                     "SubscribeToTask not supported in batch requests".into(),
                 );
                 error_response_bytes(id, &err)
             }
-            "CreateTaskPushNotificationConfig" | "tasks/pushNotificationConfig/set" => {
+            "CreateTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::push::TaskPushNotificationConfig>(rpc_req)
                 {
                     Ok(p) => match self.handler.on_set_push_config(p, Some(headers)).await {
@@ -373,7 +364,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "GetTaskPushNotificationConfig" | "tasks/pushNotificationConfig/get" => {
+            "GetTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::params::GetPushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_get_push_config(p, Some(headers)).await {
                         Ok(r) => success_response_bytes(id, &r),
@@ -382,7 +373,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "ListTaskPushNotificationConfigs" | "tasks/pushNotificationConfig/list" => {
+            "ListTaskPushNotificationConfigs" => {
                 match parse_params::<a2a_protocol_types::params::ListPushConfigsParams>(rpc_req) {
                     Ok(p) => match self
                         .handler
@@ -401,7 +392,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "DeleteTaskPushNotificationConfig" | "tasks/pushNotificationConfig/delete" => {
+            "DeleteTaskPushNotificationConfig" => {
                 match parse_params::<a2a_protocol_types::params::DeletePushConfigParams>(rpc_req) {
                     Ok(p) => match self.handler.on_delete_push_config(p, Some(headers)).await {
                         Ok(()) => success_response_bytes(id, &serde_json::json!({})),
@@ -410,7 +401,7 @@ impl JsonRpcDispatcher {
                     Err(e) => error_response_bytes(id, &e),
                 }
             }
-            "GetExtendedAgentCard" | "agent/authenticatedExtendedCard" => {
+            "GetExtendedAgentCard" => {
                 match self.handler.on_get_extended_agent_card(Some(headers)).await {
                     Ok(r) => success_response_bytes(id, &r),
                     Err(e) => error_response_bytes(id, &e),

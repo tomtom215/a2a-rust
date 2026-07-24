@@ -10,7 +10,7 @@
 
 `AgentExecutor` is the primary extension point users implement to plug
 business logic into the A2A server. It is called by `RequestHandler` for
-every incoming `message/send` / `message/stream` request, and again for
+every incoming `SendMessage` / `SendStreamingMessage` request, and again for
 `tasks/cancel`. Every concrete server type downstream of the executor —
 `RequestHandler`, `JsonRpcDispatcher`, `RestDispatcher`, the Axum integration
 — stores the executor and must remain usable as a non-generic type.

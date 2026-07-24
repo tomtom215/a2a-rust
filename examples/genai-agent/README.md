@@ -85,8 +85,8 @@ impl AgentExecutor for GenaiAgentExecutor {
 curl http://127.0.0.1:<port>/.well-known/agent-card.json
 
 # Send a message
-curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -d '{
-  "jsonrpc": "2.0", "id": 1, "method": "message/send",
+curl -X POST http://127.0.0.1:<port> -H 'Content-Type: application/json' -H 'A2A-Version: 1.0' -d '{
+  "jsonrpc": "2.0", "id": 1, "method": "SendMessage",
   "params": {"message": {"messageId": "m1", "role": "ROLE_USER",
              "parts": [{"text": "What is 2+2?"}]}}
 }'

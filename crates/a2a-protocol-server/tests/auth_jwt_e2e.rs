@@ -98,6 +98,7 @@ async fn post_send_message(addr: std::net::SocketAddr, token: Option<&str>) -> S
         builder = builder.header("authorization", format!("Bearer {t}"));
     }
     let req = builder
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(send_message_body())))
         .unwrap();
     let resp = client.request(req).await.unwrap();

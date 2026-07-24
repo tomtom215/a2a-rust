@@ -229,7 +229,8 @@ async fn http_request_full(
 
     let mut builder = hyper::Request::builder()
         .method(method)
-        .uri(format!("http://{addr}{path}"));
+        .uri(format!("http://{addr}{path}"))
+        .header("a2a-version", "1.0");
 
     if let Some(ct) = content_type {
         builder = builder.header("content-type", ct);
@@ -398,6 +399,7 @@ async fn send_message_streaming_returns_sse() {
         .method("POST")
         .uri(format!("http://{addr}/message:stream"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -697,6 +699,7 @@ async fn dispatcher_trait_dispatch_via_real_server() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/health"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -736,6 +739,7 @@ async fn push_config_crud_with_cors_headers() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(send_body)))
         .unwrap();
     let resp = client.request(req).await.expect("send");
@@ -835,6 +839,7 @@ async fn subscribe_existing_task_returns_sse() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -851,6 +856,7 @@ async fn subscribe_existing_task_returns_sse() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/{task_id}:subscribe"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -879,6 +885,7 @@ async fn cancel_existing_task() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -895,6 +902,7 @@ async fn cancel_existing_task() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/{task_id}:cancel"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 

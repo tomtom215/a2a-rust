@@ -37,6 +37,7 @@ pub async fn test_streaming_send_message(url: &str, binding: &str) -> Result<(),
         .method(hyper::Method::POST)
         .uri(&stream_url)
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .header("accept", "text/event-stream")
         .body(http_body_util::Full::new(hyper::body::Bytes::from(
             body_bytes,

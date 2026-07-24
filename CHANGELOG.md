@@ -58,6 +58,37 @@ changed shape (0.x breaking — warrants a minor bump).
   test and a new `JwtAuthInterceptor::from_jwks_url_with_tls_config` for
   identity providers behind private CAs.
 
+### Changed (reference-SDK interop pass)
+
+Running our TCK against an echo agent built on the **official Python
+`a2a-sdk` (1.1.2)** — instead of hand-written stubs — surfaced three
+interop deviations, all fixed for exact reference parity (TCK now passes
+20/20 against the official SDK on both JSON-RPC and REST):
+
+- **Missing `A2A-Version` request header is now rejected** (spec §3.6.2,
+  **breaking**) — a request without the header (or with an empty value)
+  MUST be interpreted as protocol 0.3, which this server does not
+  implement, so all data-plane HTTP/WebSocket calls now fail with
+  `VersionNotSupported` exactly like the reference SDK. Agent-card
+  discovery (`/.well-known/agent-card.json`) stays versionless — clients
+  fetch it before they know anything about the agent. Opt out via
+  `DispatchConfig::accept_missing_version_header()` (HTTP) or
+  `WebSocketDispatcher::accept_missing_version_header()` for manual
+  testing / trusted deployments. The TCK itself now sends
+  `A2A-Version: 1.0` on every request — previously its requests were,
+  per spec, 0.3 requests, and the reference SDK correctly refused them.
+- **v0.3-style method names and paths removed** (**breaking**) — the
+  JSON-RPC and WebSocket dispatchers no longer accept `message/send`,
+  `tasks/get`, `tasks/pushNotificationConfig/*`, etc. as aliases for the
+  v1.0 PascalCase RPC names (`SendMessage`, `GetTask`, …), and the REST
+  binding no longer accepts `/message/send` for `/message:send`. The
+  reference SDK returns `MethodNotFound`/404 for these (its 0.3 support
+  is a separate opt-in adapter with real 0.3 payload semantics — which
+  the aliases never provided).
+- **TCK tolerates non-JSON error bodies on non-A2A paths** — a framework
+  plain-text 404 for an unrouted path is legitimate (the reference SDK
+  returns one); the status code is the conformance signal.
+
 ### Changed (spec-compliance closure pass)
 
 - **Extended agent card requires authentication by default** (spec §13.3,

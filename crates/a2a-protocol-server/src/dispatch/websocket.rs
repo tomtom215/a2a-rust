@@ -17,8 +17,10 @@
 //!   server sends multiple frames: one per SSE event, followed by a final
 //!   JSON-RPC success response
 //! - Connection closes cleanly on WebSocket close frame
-//! - The full A2A method surface is routed — the same names (and v0.3
-//!   aliases) as the JSON-RPC HTTP dispatcher
+//! - The full A2A method surface is routed — the same v1.0 `PascalCase`
+//!   method names as the JSON-RPC HTTP dispatcher (v0.3-style names such
+//!   as `message/send` are rejected with `MethodNotFound`, matching the
+//!   reference SDK)
 //! - The upgrade request's HTTP headers are captured at the handshake and
 //!   passed to the handler for every request on the connection, so
 //!   authentication and tenant resolution behave as they do over HTTP
@@ -94,6 +96,7 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
     handshake_timeout: Duration,
+    require_version_header: bool,
 }
 
 impl WebSocketDispatcher {
@@ -103,7 +106,20 @@ impl WebSocketDispatcher {
         Self {
             handler,
             handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
+            require_version_header: true,
         }
+    }
+
+    /// Accepts upgrade requests without an `A2A-Version` header.
+    ///
+    /// Spec §3.6.2 interprets a missing/empty header as protocol 0.3, which
+    /// this server does not implement, so the strict default rejects such
+    /// handshakes (parity with the HTTP dispatchers). This opt-out restores
+    /// the tolerant pre-0.7 behavior.
+    #[must_use]
+    pub const fn accept_missing_version_header(mut self) -> Self {
+        self.require_version_header = false;
+        self
     }
 
     /// Overrides the handshake timeout (default: 10 seconds).
@@ -210,8 +226,9 @@ impl WebSocketDispatcher {
         // auth material and tenancy context reach the handler exactly as they
         // do on the HTTP bindings. Also validates the A2A-Version header.
         let mut upgrade_headers: Option<HashMap<String, String>> = None;
+        let require_version = self.require_version_header;
         let callback = |req: &WsUpgradeRequest, resp: WsUpgradeResponse| {
-            check_a2a_version(req)?;
+            check_a2a_version(req, require_version)?;
             upgrade_headers = Some(extract_upgrade_headers(req));
             Ok(resp)
         };
@@ -338,34 +355,39 @@ fn extract_upgrade_headers(req: &WsUpgradeRequest) -> HashMap<String, String> {
 }
 
 /// Validates the `A2A-Version` header on the upgrade request, mirroring the
-/// JSON-RPC dispatcher: absent or empty is accepted; any `1.x` is accepted;
-/// other major versions are rejected with HTTP 400 during the handshake.
+/// JSON-RPC dispatcher: absent or empty is interpreted as protocol 0.3 per
+/// spec §3.6.2 and rejected under the strict default; any `1.x` is
+/// accepted; other major versions are rejected with HTTP 400 during the
+/// handshake.
 // The Err type (an HTTP response) is dictated by tungstenite's `Callback`
 // trait contract — it cannot be boxed or shrunk here.
 #[allow(clippy::result_large_err)]
-fn check_a2a_version(req: &WsUpgradeRequest) -> Result<(), ErrorResponse> {
-    let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) else {
-        return Ok(());
-    };
-    let Ok(v) = version.to_str() else {
-        return Ok(());
-    };
-    let v = v.trim();
-    // Empty header → interpret as 0.3 per spec Section 3.6.2 (accepted for
-    // upgrade parity with the HTTP dispatchers).
+fn check_a2a_version(req: &WsUpgradeRequest, require: bool) -> Result<(), ErrorResponse> {
+    let value = req
+        .headers()
+        .get(a2a_protocol_types::A2A_VERSION_HEADER)
+        .and_then(|v| v.to_str().ok());
+    let v = value.unwrap_or("").trim();
     if v.is_empty() {
-        return Ok(());
-    }
-    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-    if major == Some(1) {
-        return Ok(());
+        if !require {
+            return Ok(());
+        }
+        // Fall through to the rejection below with the 0.3 interpretation.
+    } else {
+        let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+        if major == Some(1) {
+            return Ok(());
+        }
     }
     // Emit the same AIP-193 error shape (code/status/message/details with
     // google.rpc.ErrorInfo) as the REST binding, so a version-rejected
     // upgrade is machine-readable identically across HTTP surfaces.
-    let a2a_err = a2a_protocol_types::error::A2aError::version_not_supported(format!(
-        "unsupported A2A version: {v}; this server supports 1.x"
-    ));
+    let a2a_err = a2a_protocol_types::error::A2aError::version_not_supported(if v.is_empty() {
+        "A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)"
+            .to_owned()
+    } else {
+        format!("unsupported A2A version: {v}; this server supports 1.x")
+    });
     let mut error_obj = serde_json::json!({
         "error": {
             "code": a2a_err.code.http_status(),
@@ -445,13 +467,13 @@ async fn process_ws_message(
     let id = rpc_req.id.to_response_id();
 
     match rpc_req.method.as_str() {
-        "SendMessage" | "message/send" => {
+        "SendMessage" => {
             dispatch_send_message(handler, &rpc_req, false, headers, id, &writer).await;
         }
         "SendStreamingMessage" | "message/stream" => {
             dispatch_send_message(handler, &rpc_req, true, headers, id, &writer).await;
         }
-        "GetTask" | "tasks/get" => {
+        "GetTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::TaskQueryParams =
@@ -466,7 +488,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "ListTasks" | "tasks/list" => {
+        "ListTasks" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListTasksParams =
@@ -481,7 +503,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "CancelTask" | "tasks/cancel" => {
+        "CancelTask" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::CancelTaskParams =
@@ -496,7 +518,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "SubscribeToTask" | "tasks/subscribe" | "tasks/resubscribe" => {
+        "SubscribeToTask" => {
             let params = match parse_params::<a2a_protocol_types::params::TaskIdParams>(
                 rpc_req.params.as_ref(),
             ) {
@@ -515,7 +537,7 @@ async fn process_ws_message(
                 }
             }
         }
-        "CreateTaskPushNotificationConfig" | "tasks/pushNotificationConfig/set" => {
+        "CreateTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::push::TaskPushNotificationConfig =
@@ -530,7 +552,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "GetTaskPushNotificationConfig" | "tasks/pushNotificationConfig/get" => {
+        "GetTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::GetPushConfigParams =
@@ -545,7 +567,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "ListTaskPushNotificationConfigs" | "tasks/pushNotificationConfig/list" => {
+        "ListTaskPushNotificationConfigs" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::ListPushConfigsParams =
@@ -566,7 +588,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "DeleteTaskPushNotificationConfig" | "tasks/pushNotificationConfig/delete" => {
+        "DeleteTaskPushNotificationConfig" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, p, hdr| {
                 Box::pin(async move {
                     let params: a2a_protocol_types::params::DeletePushConfigParams =
@@ -581,7 +603,7 @@ async fn process_ws_message(
             })
             .await;
         }
-        "GetExtendedAgentCard" | "agent/authenticatedExtendedCard" => {
+        "GetExtendedAgentCard" => {
             dispatch_simple(handler, &rpc_req, id, headers, &writer, |h, _p, hdr| {
                 Box::pin(async move {
                     h.on_get_extended_agent_card(Some(hdr))
@@ -864,7 +886,11 @@ mod tests {
         addr: std::net::SocketAddr,
     ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>
     {
-        let (ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}"))
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+        let mut req = format!("ws://{addr}").into_client_request().expect("url");
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().expect("header"));
+        let (ws, _) = tokio_tungstenite::connect_async(req)
             .await
             .expect("ws connect");
         ws
@@ -1291,41 +1317,32 @@ mod tests {
         serde_json::from_str(&text).expect("response should be JSON")
     }
 
-    // 16. The v0.3 method aliases route like their PascalCase counterparts.
+    // 16. v0.3-style method names are rejected with MethodNotFound —
+    // reference-SDK parity (its v1.0 dispatcher only routes the PascalCase
+    // RPC names; 0.3 compatibility is a separate opt-in adapter there and
+    // is not implemented here).
     #[tokio::test]
-    async fn ws_method_aliases_are_routed() {
+    async fn ws_legacy_method_names_rejected() {
         let addr = spawn_ws_server().await;
         let mut ws = ws_connect(addr).await;
 
-        let v = ws_call(
-            &mut ws,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "message/send",
-                "id": "alias-1",
-                "params": {
-                    "message": {
-                        "messageId": "msg-a1",
-                        "role": "ROLE_USER",
-                        "parts": [{"text": "hello"}]
-                    }
-                }
-            }),
-        )
-        .await;
-        assert!(v.get("result").is_some(), "message/send should work: {v}");
-
-        let v = ws_call(
-            &mut ws,
-            serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "tasks/list",
-                "id": "alias-2",
-                "params": {}
-            }),
-        )
-        .await;
-        assert!(v.get("result").is_some(), "tasks/list should work: {v}");
+        for legacy in ["message/send", "tasks/list", "tasks/get"] {
+            let v = ws_call(
+                &mut ws,
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": legacy,
+                    "id": format!("legacy-{legacy}"),
+                    "params": {}
+                }),
+            )
+            .await;
+            assert_eq!(
+                v["error"]["code"].as_i64(),
+                Some(-32601),
+                "v0.3-style name {legacy} must be MethodNotFound: {v}"
+            );
+        }
     }
 
     // 17. Push-config methods are routed over WebSocket (parity with the
@@ -1512,6 +1529,8 @@ mod tests {
 
         // With the tenant header on the upgrade request: served normally.
         let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().unwrap());
         req.headers_mut()
             .insert("x-tenant-id", "acme".parse().unwrap());
         let (mut ws, _) = tokio_tungstenite::connect_async(req)

@@ -135,28 +135,6 @@ impl RestDispatcher {
             }
         }
 
-        // Validate A2A-Version header if present.
-        // Per Section 3.6.2: empty value MUST be interpreted as 0.3.
-        if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
-            if let Ok(v) = version.to_str() {
-                let v = v.trim();
-                // Empty header → interpret as 0.3 per spec Section 3.6.2.
-                if !v.is_empty() {
-                    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-                    if major != Some(1) {
-                        // §3.6.2: rejected versions produce the real
-                        // VersionNotSupportedError (with its ErrorInfo
-                        // detail), not an anonymous 400.
-                        return server_error_to_response(&crate::error::ServerError::Protocol(
-                            a2a_protocol_types::error::A2aError::version_not_supported(format!(
-                                "unsupported A2A version: {v}; this server supports 1.x"
-                            )),
-                        ));
-                    }
-                }
-            }
-        }
-
         // Reject path traversal attempts (check both raw and percent-decoded forms).
         if contains_path_traversal(&path) {
             return error_json_response(400, "invalid path: path traversal not allowed");
@@ -170,6 +148,21 @@ impl RestDispatcher {
                 .map_or_else(not_found_response, |h| {
                     h.handle(&req).map(http_body_util::BodyExt::boxed)
                 });
+        }
+
+        // Validate the A2A-Version header per spec §3.6.2: absent or empty
+        // is interpreted as protocol 0.3 and rejected under the strict
+        // default (reference-SDK parity); any 1.x is accepted. Rejections
+        // produce the real VersionNotSupportedError (with its ErrorInfo
+        // detail), not an anonymous 400.
+        let version_value = req
+            .headers()
+            .get(a2a_protocol_types::A2A_VERSION_HEADER)
+            .and_then(|v| v.to_str().ok());
+        if let Err(err) =
+            super::validate_version_header(version_value, self.config.require_version_header)
+        {
+            return server_error_to_response(&crate::error::ServerError::Protocol(err));
         }
 
         // Strip optional /tenants/{tenant}/ prefix.
@@ -213,10 +206,10 @@ impl RestDispatcher {
         // Colon-suffixed routes: /message:send, /message:stream.
         // Also accept slash-separated variants: /message/send, /message/stream.
         match (method, path) {
-            ("POST", "/message:send" | "/message/send") => {
+            ("POST", "/message:send") => {
                 return self.handle_send(req, false, headers).await;
             }
-            ("POST", "/message:stream" | "/message/stream") => {
+            ("POST", "/message:stream") => {
                 return self.handle_send(req, true, headers).await;
             }
             _ => {}

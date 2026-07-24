@@ -5,7 +5,7 @@
 //! behind the A2A protocol.
 //!
 //! A real `rig-core` agent (OpenAI-compatible provider) serves A2A traffic:
-//! incoming `message/send` text is passed to [`rig_core::completion::Prompt`],
+//! incoming `SendMessage` text is passed to [`rig_core::completion::Prompt`],
 //! and the completion comes back as an A2A artifact. The executor is
 //! generic over [`rig_core::completion::CompletionModel`], so the same bridge
 //! works with any rig provider (Anthropic, Gemini, Ollama, …) — swap the

@@ -87,6 +87,7 @@ impl AgentCardProducer for ErrorProducer {
 
 fn make_request() -> hyper::Request<Full<Bytes>> {
     hyper::Request::builder()
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap()
 }
@@ -94,6 +95,7 @@ fn make_request() -> hyper::Request<Full<Bytes>> {
 fn make_request_with_header(name: &str, value: &str) -> hyper::Request<Full<Bytes>> {
     hyper::Request::builder()
         .header(name, value)
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap()
 }
@@ -489,6 +491,7 @@ async fn if_none_match_takes_precedence_over_if_modified_since() {
     let req = hyper::Request::builder()
         .header("if-none-match", &etag)
         .header("if-modified-since", "Thu, 01 Jan 1970 00:00:00 GMT")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
     let resp2 = handler.handle(&req).await;

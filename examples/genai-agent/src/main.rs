@@ -26,7 +26,7 @@
 //!
 //! # How it works
 //!
-//! 1. The A2A server receives a `message/send` request.
+//! 1. The A2A server receives a `SendMessage` request.
 //! 2. `GenaiAgentExecutor` extracts the user's text from the A2A message.
 //!    A message with no text part fails the task with `InvalidParams`.
 //! 3. The text is passed to `genai::Client` for LLM completion.
