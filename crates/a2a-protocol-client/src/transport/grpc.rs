@@ -289,10 +289,17 @@ impl GrpcTransport {
                 retry_after: None,
             },
             _ => {
-                let a2a = a2a_protocol_types::A2aError::new(
-                    grpc_code_to_error_code(status.code()),
-                    status.message().to_owned(),
-                );
+                // §10.6: an A2A server attaches google.rpc.ErrorInfo to
+                // status.details with the exact A2A reason. Prefer that over
+                // the lossy code-based inverse mapping (FailedPrecondition
+                // alone cannot distinguish TaskNotCancelable from
+                // ExtensionSupportRequired, for example).
+                use tonic_types::StatusExt as _;
+                let code = status
+                    .get_details_error_info()
+                    .and_then(|info| a2a_protocol_types::ErrorCode::from_a2a_reason(&info.reason))
+                    .unwrap_or_else(|| grpc_code_to_error_code(status.code()));
+                let a2a = a2a_protocol_types::A2aError::new(code, status.message().to_owned());
                 ClientError::Protocol(a2a)
             }
         }
@@ -870,6 +877,56 @@ mod tests {
             matches!(err, ClientError::Protocol(_)),
             "other codes should map to Protocol, got: {err:?}"
         );
+    }
+
+    /// §10.6: when the server attaches `google.rpc.ErrorInfo`, the exact A2A
+    /// reason wins over the lossy status-code inverse mapping.
+    #[test]
+    fn status_to_error_prefers_error_info_reason() {
+        use tonic_types::StatusExt as _;
+        let mut details = tonic_types::ErrorDetails::new();
+        details.set_error_info(
+            "TASK_NOT_CANCELABLE",
+            "a2a-protocol.org",
+            std::collections::HashMap::<String, String>::new(),
+        );
+        // FailedPrecondition alone would be ambiguous between three A2A codes.
+        let status = tonic::Status::with_error_details(
+            tonic::Code::FailedPrecondition,
+            "task done",
+            details,
+        );
+        let err = GrpcTransport::status_to_error(&status);
+        match err {
+            ClientError::Protocol(a2a) => assert_eq!(
+                a2a.code,
+                a2a_protocol_types::ErrorCode::TaskNotCancelable,
+                "ErrorInfo reason must resolve the exact A2A code"
+            ),
+            other => panic!("expected Protocol error, got: {other:?}"),
+        }
+    }
+
+    /// Unknown `ErrorInfo` reasons fall back to the status-code mapping.
+    #[test]
+    fn status_to_error_unknown_reason_falls_back_to_code() {
+        use tonic_types::StatusExt as _;
+        let mut details = tonic_types::ErrorDetails::new();
+        details.set_error_info(
+            "SOMETHING_NOVEL",
+            "a2a-protocol.org",
+            std::collections::HashMap::<String, String>::new(),
+        );
+        let status = tonic::Status::with_error_details(tonic::Code::NotFound, "missing", details);
+        let err = GrpcTransport::status_to_error(&status);
+        match err {
+            ClientError::Protocol(a2a) => assert_eq!(
+                a2a.code,
+                a2a_protocol_types::ErrorCode::TaskNotFound,
+                "unknown reason must fall back to code-based mapping"
+            ),
+            other => panic!("expected Protocol error, got: {other:?}"),
+        }
     }
 
     // ── grpc_stream_reader_task tests ─────────────────────────────────────

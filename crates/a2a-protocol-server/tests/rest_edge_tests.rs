@@ -93,7 +93,8 @@ async fn http_request(
 
     let mut builder = hyper::Request::builder()
         .method(method)
-        .uri(format!("http://{addr}{path}"));
+        .uri(format!("http://{addr}{path}"))
+        .header("a2a-version", "1.0");
 
     if let Some(ct) = content_type {
         builder = builder.header("content-type", ct);

@@ -130,6 +130,16 @@ pub async fn run_all(url: &str, binding: &str) -> Vec<TestResult> {
     })
     .await;
 
+    run_test(&mut results, "get_unknown_task_returns_error", async {
+        tests::errors::test_get_unknown_task_returns_error(url, binding).await
+    })
+    .await;
+
+    run_test(&mut results, "malformed_body_returns_error", async {
+        tests::errors::test_malformed_body_returns_error(url, binding).await
+    })
+    .await;
+
     // ── Wire Format ───────────────────────────────────────────────────────
     run_test(&mut results, "jsonrpc_envelope_format", async {
         tests::wire_format::test_jsonrpc_envelope_format(url, binding).await

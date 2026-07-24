@@ -138,9 +138,13 @@ async fn duplicate_task_id_rejected() {
 
     let err = unwrap_send_err(handler.on_send_message(params, false, None).await);
     let err_msg = format!("{err:?}");
+    // §3.4.3 infers the context from the referenced task, so the send
+    // resolves to the existing (completed) task and is rejected because a
+    // terminal task cannot accept new messages — a client can never hijack
+    // an existing task id to create a new task.
     assert!(
-        matches!(err, a2a_protocol_server::ServerError::InvalidParams(_)),
-        "duplicate task_id should be rejected with InvalidParams, got {err_msg}"
+        matches!(err, a2a_protocol_server::ServerError::UnsupportedOperation(ref m) if m.contains("terminal")),
+        "duplicate task_id must be rejected via terminal-state protection, got {err_msg}"
     );
 }
 

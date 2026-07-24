@@ -18,7 +18,7 @@ Complete reference of all configuration options across a2a-rust crates.
 | `with_event_queue_capacity` | `usize` | 256 | Bounded channel size per stream. Increased from 64 to push the per-event cost inflection from ~52 to ~252 events. Increase further for tasks producing >250 events. |
 | `with_max_event_size` | `usize` | 16 MiB | Max serialized SSE event size |
 | `with_max_concurrent_streams` | `usize` | 1,024 | Limit concurrent SSE connections (pass `usize::MAX` to disable) |
-| `with_event_queue_write_timeout` | `Duration` | 5s | Write timeout for event queue sends |
+| `with_event_queue_write_timeout` | `Duration` | — | Deprecated no-op (queue writes never block; slow consumers get an explicit lag error). Removal planned for 0.8 |
 | `with_metrics` | `impl Metrics` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_handler_limits` | `HandlerLimits` | See below | Configurable validation limits |
 

@@ -12,6 +12,15 @@
 
 use std::sync::Arc;
 
+/// Builds a WS upgrade request carrying the mandatory `A2A-Version` header.
+fn ws_request(url: &str) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+    let mut req = url.into_client_request().expect("ws url");
+    req.headers_mut()
+        .insert("a2a-version", "1.0".parse().expect("header value"));
+    req
+}
+
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 
@@ -156,7 +165,7 @@ async fn connect(
     addr: std::net::SocketAddr,
 ) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
     let url = format!("ws://{addr}");
-    let (ws, _) = tokio_tungstenite::connect_async(&url)
+    let (ws, _) = tokio_tungstenite::connect_async(ws_request(&url))
         .await
         .expect("WebSocket connect");
     ws
@@ -218,7 +227,9 @@ async fn serve_binds_and_handles_connections() {
     // Wait (with retries) for the spawned server to bind.
     let mut ws = None;
     for _ in 0..50 {
-        if let Ok((sock, _)) = tokio_tungstenite::connect_async(format!("ws://{addr}")).await {
+        if let Ok((sock, _)) =
+            tokio_tungstenite::connect_async(ws_request(&format!("ws://{addr}"))).await
+        {
             ws = Some(sock);
             break;
         }
@@ -318,7 +329,7 @@ async fn ws_malformed_json_returns_parse_error() {
 #[tokio::test]
 async fn ws_ping_pong() {
     let addr = start_ws_server().await;
-    let (mut ws, _) = tokio_tungstenite::connect_async(format!("ws://{addr}"))
+    let (mut ws, _) = tokio_tungstenite::connect_async(ws_request(&format!("ws://{addr}")))
         .await
         .unwrap();
 

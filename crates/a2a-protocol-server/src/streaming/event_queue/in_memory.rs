@@ -213,6 +213,51 @@ impl InMemoryQueueReader {
             pending_first: Some(Ok(first)),
         }
     }
+
+    /// Creates a reader that yields `first` and then cleanly ends the stream.
+    ///
+    /// Used when a task exists in the store but has no live event queue —
+    /// e.g. a resubscribe after a process restart (§3.5.2 reconnection): the
+    /// client gets the current Task snapshot, then EOF, since no executor is
+    /// attached that could produce further events.
+    pub(crate) fn snapshot_then_end(first: StreamResponse) -> Self {
+        // Dropping the sender immediately closes the channel, so the read
+        // after `pending_first` observes `Closed` → end of stream.
+        let (tx, rx) = broadcast::channel(1);
+        drop(tx);
+        Self {
+            rx,
+            pending_first: Some(Ok(first)),
+        }
+    }
+}
+
+/// Marker key set in [`A2aError::data`] on the error a reader yields after
+/// falling behind the broadcast channel (events were dropped for THIS
+/// consumer only). Streaming bindings forward the error to the client — an
+/// explicit truncation signal beats silently skipping events — while the
+/// in-process sync collector recognizes the marker via [`is_lag_error`] and
+/// keeps draining (the store, fed by the lossless persistence channel or the
+/// collector's own writes, remains authoritative).
+const LAG_ERROR_MARKER: &str = "streamLagged";
+
+/// Builds the consumer-lag stream error.
+fn lag_error(dropped: u64) -> a2a_protocol_types::error::A2aError {
+    let mut err = a2a_protocol_types::error::A2aError::internal(format!(
+        "event stream lagged: {dropped} events were dropped because this consumer read too \
+         slowly; resubscribe to resynchronize from a fresh task snapshot"
+    ));
+    err.data = Some(serde_json::json!({ LAG_ERROR_MARKER: dropped }));
+    err
+}
+
+/// Returns `true` when `err` is the consumer-lag error produced by
+/// [`InMemoryQueueReader::read`] (as opposed to a task-execution failure).
+#[allow(clippy::redundant_pub_crate)] // Re-exported crate-wide via event_queue/mod.rs.
+pub(crate) fn is_lag_error(err: &a2a_protocol_types::error::A2aError) -> bool {
+    err.data
+        .as_ref()
+        .is_some_and(|d| d.get(LAG_ERROR_MARKER).is_some())
 }
 
 impl EventQueueReader for InMemoryQueueReader {
@@ -225,17 +270,21 @@ impl EventQueueReader for InMemoryQueueReader {
             if let Some(first) = self.pending_first.take() {
                 return Some(first);
             }
-            loop {
-                match self.rx.recv().await {
-                    Ok(event) => return Some(event),
-                    Err(broadcast::error::RecvError::Lagged(_n)) => {
-                        trace_warn!(
-                            dropped_events = _n,
-                            "event queue reader lagged, {_n} events skipped"
-                        );
-                    }
-                    Err(broadcast::error::RecvError::Closed) => return None,
+            match self.rx.recv().await {
+                Ok(event) => Some(event),
+                Err(broadcast::error::RecvError::Lagged(n)) => {
+                    // This consumer fell behind and the broadcast ring dropped
+                    // events it never saw. Surfacing an explicit, marked error
+                    // (instead of skipping ahead silently) lets streaming
+                    // clients know their view is truncated and resubscribe
+                    // for a fresh snapshot (§3.5.2 reconnection).
+                    trace_warn!(
+                        dropped_events = n,
+                        "event queue reader lagged, {n} events dropped"
+                    );
+                    Some(Err(lag_error(n)))
                 }
+                Err(broadcast::error::RecvError::Closed) => None,
             }
         })
     }

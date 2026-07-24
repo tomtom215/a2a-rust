@@ -324,6 +324,71 @@ async fn task_list_orders_most_recently_updated_first() -> A2aResult<()> {
     Ok(())
 }
 
+/// Helper: a task whose status carries an explicit ISO 8601 timestamp.
+fn make_task_with_ts(id: &str, context_id: &str, ts: &str) -> Task {
+    let mut task = make_task(id, context_id);
+    task.status.timestamp = Some(ts.to_owned());
+    task
+}
+
+/// §3.1.4: tasks with status timestamps sort by that timestamp (descending),
+/// not by write order; a status-preserving re-save keeps its position; and
+/// `statusTimestampAfter` filters strictly-after.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn task_list_status_timestamp_ordering_and_filter() -> A2aResult<()> {
+    let db = TestDb::create("status_ts").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    // Write order: middle, newest, oldest.
+    for (id, ts) in [
+        ("middle", "2026-01-02T00:00:00.000Z"),
+        ("newest", "2026-01-03T00:00:00.500Z"),
+        ("oldest", "2026-01-01T00:00:00.000Z"),
+    ] {
+        store.save(&make_task_with_ts(id, "ctx1", ts)).await?;
+    }
+
+    let ordered = store.list(&ListTasksParams::default()).await?;
+    let ids: Vec<&str> = ordered.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["newest", "middle", "oldest"],
+        "list must sort by status timestamp descending"
+    );
+
+    // A status-preserving re-save must not reorder.
+    store
+        .save(&make_task_with_ts(
+            "oldest",
+            "ctx1",
+            "2026-01-01T00:00:00.000Z",
+        ))
+        .await?;
+    let after_resave = store.list(&ListTasksParams::default()).await?;
+    let ids: Vec<&str> = after_resave.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["newest", "middle", "oldest"],
+        "a status-preserving re-save must not reorder the list"
+    );
+
+    // statusTimestampAfter is strictly-after (boundary excluded).
+    let filtered = store
+        .list(&ListTasksParams {
+            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
+            ..Default::default()
+        })
+        .await?;
+    let ids: Vec<&str> = filtered.tasks.iter().map(|t| t.id.0.as_str()).collect();
+    assert_eq!(ids, vec!["newest"], "boundary task must be excluded");
+
+    db.drop_db().await;
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn task_list_pagination() -> A2aResult<()> {

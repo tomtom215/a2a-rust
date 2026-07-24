@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# The a2a-itk "current" traversal agent for this repository.
+#
+# The upstream Integration Testing Kit (a2aproject/a2a-itk) mounts an SDK
+# repository at agents/repo/ and runs the agent it finds at <repo>/itk/
+# (test_suite/current.py detects Cargo.toml here, runs
+# `cargo build --release`, and spawns the itk-* binary with
+# `--httpPort N --grpcPort N`). This crate implements the ITK's multi-hop
+# traversal instruction protocol on top of a2a-protocol-{server,client}.
+
+[package]
+name        = "itk-current-agent"
+version     = "0.7.0"
+edition     = "2021"
+license     = "Apache-2.0"
+publish     = false
+
+# Standalone: not a member of the parent workspace (the ITK builds this
+# directory in isolation).
+[workspace]
+
+[dependencies]
+a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
+a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = ["grpc"] }
+a2a-protocol-client = { path = "../crates/a2a-protocol-client", default-features = false, features = ["grpc"] }
+tokio       = { version = ">=1.47.1, <2", features = ["macros", "rt-multi-thread", "net", "time", "signal"] }
+serde_json  = { version = ">=1.0.145, <2" }
+hyper       = { version = ">=1.7.0, <2", features = ["http1", "server"] }
+hyper-util  = { version = ">=0.1.17, <0.2", features = ["server", "server-auto", "tokio"] }
+prost       = ">=0.14.1, <0.15"
+base64      = "0.22"
+
+[build-dependencies]
+prost-build         = ">=0.14.1, <0.15"
+protoc-bin-vendored = "3"
+
+[[bin]]
+name = "itk-current-agent"
+path = "src/main.rs"

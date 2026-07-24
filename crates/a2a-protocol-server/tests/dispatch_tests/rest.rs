@@ -23,6 +23,7 @@ async fn rest_send_message() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -50,6 +51,7 @@ async fn rest_send_streaming() {
         .method("POST")
         .uri(format!("http://{addr}/message:stream"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -71,6 +73,7 @@ async fn rest_get_task_not_found() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks/nonexistent"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -86,6 +89,7 @@ async fn rest_list_tasks() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -108,6 +112,7 @@ async fn rest_cancel_nonexistent_task() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/no-such-task:cancel"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -123,6 +128,7 @@ async fn rest_subscribe_nonexistent_task() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/no-such-task:subscribe"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -138,6 +144,7 @@ async fn rest_wellknown_agent_card() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/.well-known/agent-card.json"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -163,6 +170,7 @@ async fn rest_extended_agent_card() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/extendedAgentCard"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -182,6 +190,7 @@ async fn rest_not_found_route() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/nonexistent/route"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -201,6 +210,7 @@ async fn rest_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(send_body)))
         .unwrap();
     let resp = client.request(req).await.expect("send");
@@ -221,6 +231,7 @@ async fn rest_push_config_crud() {
             "http://{addr}/tasks/{task_id}/pushNotificationConfigs"
         ))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -242,6 +253,7 @@ async fn rest_push_config_crud() {
         .uri(format!(
             "http://{addr}/tasks/{task_id}/pushNotificationConfigs/{config_id}"
         ))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -254,6 +266,7 @@ async fn rest_push_config_crud() {
         .uri(format!(
             "http://{addr}/tasks/{task_id}/pushNotificationConfigs"
         ))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -271,6 +284,7 @@ async fn rest_push_config_crud() {
         .uri(format!(
             "http://{addr}/tasks/{task_id}/pushNotificationConfigs/{config_id}"
         ))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -317,12 +331,106 @@ async fn rest_push_config_not_supported_error_status() {
             "http://{addr}/tasks/task-1/pushNotificationConfigs"
         ))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
     let resp = client.request(req).await.expect("request");
     // PushNotSupported should map to 400 (bad request).
     assert_eq!(resp.status(), 400);
+}
+
+/// Required-extension negotiation and activated-extension echo over REST:
+/// a card-required extension gates data-plane calls (§3.3.4), and honored
+/// extensions are echoed in the response `A2A-Extensions` header.
+#[tokio::test]
+async fn rest_required_extension_enforced_and_echoed() {
+    use a2a_protocol_types::extensions::AgentExtension;
+
+    let mut card = minimal_agent_card();
+    let mut caps = card.capabilities;
+    caps.extensions = Some(vec![AgentExtension {
+        uri: "https://example.com/ext/required/v1".into(),
+        description: None,
+        required: Some(true),
+        params: None,
+    }]);
+    card.capabilities = caps;
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = Arc::new(RestDispatcher::new(handler));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let d = Arc::clone(&dispatcher);
+            let service = hyper::service::service_fn(move |req| {
+                let d = Arc::clone(&d);
+                async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+            });
+            tokio::spawn(async move {
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+
+    let client = http_client();
+
+    // Without the required extension: 400 with EXTENSION_SUPPORT_REQUIRED.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/some-task"))
+        .header("a2a-version", "1.0")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(resp.status(), 400, "undeclared client must get 400");
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json["error"]["details"][0]["reason"], "EXTENSION_SUPPORT_REQUIRED",
+        "error must carry the EXTENSION_SUPPORT_REQUIRED reason: {json}"
+    );
+
+    // With it declared: request proceeds (404 for the unknown task) and the
+    // activated extension is echoed back.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks/some-task"))
+        .header("A2A-Extensions", "https://example.com/ext/required/v1")
+        .header("a2a-version", "1.0")
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("request");
+    assert_eq!(
+        resp.status(),
+        404,
+        "declared client reaches normal handling"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("A2A-Extensions")
+            .and_then(|v| v.to_str().ok()),
+        Some("https://example.com/ext/required/v1"),
+        "activated extensions must be echoed on the response"
+    );
 }
 
 // ── REST full send + get roundtrip ──────────────────────────────────────────
@@ -338,6 +446,7 @@ async fn rest_send_then_get_task() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -355,6 +464,7 @@ async fn rest_send_then_get_task() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks/{task_id}"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -379,6 +489,7 @@ async fn rest_response_has_a2a_version_header() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -388,15 +499,15 @@ async fn rest_response_has_a2a_version_header() {
         resp.headers()
             .get("A2A-Version")
             .and_then(|v| v.to_str().ok()),
-        Some("1.0.0"),
-        "response should have A2A-Version: 1.0.0 header"
+        Some("1.0"),
+        "response should have A2A-Version: 1.0 header"
     );
     assert_eq!(
         resp.headers()
             .get("content-type")
             .and_then(|v| v.to_str().ok()),
-        Some("application/a2a+json"),
-        "response should have application/a2a+json content type"
+        Some("application/json"),
+        "responses emit application/json per spec §11.1"
     );
 }
 
@@ -411,6 +522,7 @@ async fn rest_tenant_prefix_routing() {
         .method("POST")
         .uri(format!("http://{addr}/tenants/acme/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -429,6 +541,7 @@ async fn rest_get_subscribe_allowed() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -444,6 +557,7 @@ async fn rest_get_subscribe_allowed() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks/{task_id}:subscribe"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -540,6 +654,7 @@ async fn rest_error_task_not_found_has_aip193_body() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks/nonexistent"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -556,6 +671,7 @@ async fn rest_error_cancel_not_found_has_aip193_body() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/no-such-task:cancel"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -572,6 +688,7 @@ async fn rest_error_subscribe_not_found_has_aip193_body() {
     let req = hyper::Request::builder()
         .method("POST")
         .uri(format!("http://{addr}/tasks/no-such-task:subscribe"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -589,6 +706,7 @@ async fn rest_error_invalid_json_body_returns_error_object() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from("{not valid json!!")))
         .unwrap();
 
@@ -642,6 +760,7 @@ async fn rest_error_push_not_supported_has_aip193_body() {
             "http://{addr}/tasks/task-1/pushNotificationConfigs"
         ))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -666,6 +785,7 @@ async fn rest_streaming_events_are_bare_stream_response() {
         .method("POST")
         .uri(format!("http://{addr}/message:stream"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -708,4 +828,71 @@ async fn rest_streaming_events_are_bare_stream_response() {
             "SSE event should be a recognized StreamResponse variant.\nGot: {data}"
         );
     }
+}
+
+/// Spec §3.6.2: a REST request without an `A2A-Version` header is
+/// interpreted as protocol 0.3 and rejected (reference-SDK parity), while
+/// agent-card discovery stays versionless — a client must be able to fetch
+/// the card before it knows anything about the agent.
+#[tokio::test]
+async fn rest_missing_version_header_rejected_but_card_discovery_versionless() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    // Data-plane call without the header: VersionNotSupported.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/tasks"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(
+        resp.status(),
+        400,
+        "headerless data-plane call must be rejected"
+    );
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+    let msg = v["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("0.3"),
+        "rejection must explain the 0.3 interpretation: {v}"
+    );
+
+    // Card discovery without the header: served normally.
+    let req = hyper::Request::builder()
+        .method("GET")
+        .uri(format!("http://{addr}/.well-known/agent-card.json"))
+        .body(Full::new(Bytes::new()))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(
+        resp.status(),
+        200,
+        "agent-card discovery must not require the version header"
+    );
+}
+
+/// The v0.3-style slash path aliases are gone: only the spec's
+/// colon-suffixed custom methods are routed (reference-SDK parity).
+#[tokio::test]
+async fn rest_legacy_slash_paths_not_found() {
+    let (addr, _handle) = start_rest_server().await;
+    let client = http_client();
+
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/message/send"))
+        .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
+        .body(Full::new(Bytes::from(
+            serde_json::to_vec(&make_send_params()).unwrap(),
+        )))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    assert_eq!(
+        resp.status(),
+        404,
+        "legacy /message/send path must be 404 in v1.0"
+    );
 }

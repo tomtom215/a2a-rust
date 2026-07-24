@@ -31,10 +31,14 @@ pub struct AgentInterface {
     /// Base URL of this interface endpoint.
     pub url: String,
 
-    /// Protocol binding identifier (e.g. `"JSONRPC"`, `"REST"`, `"GRPC"`).
+    /// Protocol binding identifier — the spec's canonical values are
+    /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3); custom bindings such
+    /// as `"WEBSOCKET"` are permitted (§12).
     pub protocol_binding: String,
 
-    /// A2A protocol version string (e.g. `"1.0.0"`).
+    /// A2A protocol version string in `Major.Minor` form (e.g. `"1.0"`).
+    ///
+    /// Spec §3.6: patch version numbers SHOULD NOT be used in Agent Cards.
     pub protocol_version: String,
 
     /// Optional tenant identifier for multi-tenancy.
@@ -285,7 +289,7 @@ mod tests {
             supported_interfaces: vec![AgentInterface {
                 url: "https://agent.example.com/rpc".into(),
                 protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
+                protocol_version: "1.0".into(),
                 tenant: None,
             }],
             default_input_modes: vec!["text/plain".into()],
@@ -316,7 +320,7 @@ mod tests {
         let json = serde_json::to_string(&card).expect("serialize");
         assert!(json.contains("\"supportedInterfaces\""));
         assert!(json.contains("\"protocolBinding\":\"JSONRPC\""));
-        assert!(json.contains("\"protocolVersion\":\"1.0.0\""));
+        assert!(json.contains("\"protocolVersion\":\"1.0\""));
         assert!(
             !json.contains("\"preferredTransport\""),
             "v1.0 removed this field"

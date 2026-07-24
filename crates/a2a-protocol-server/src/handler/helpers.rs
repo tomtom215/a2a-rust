@@ -94,7 +94,7 @@ pub(super) fn build_call_context(
 ///
 /// Splits on commas, trims whitespace, and drops empty segments. Returns an
 /// empty vec when the header is absent.
-fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
+pub(super) fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<String> {
     headers
         .get("a2a-extensions")
         .map(|v| {

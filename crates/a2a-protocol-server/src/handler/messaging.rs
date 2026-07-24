@@ -170,6 +170,9 @@ impl RequestHandler {
     ) -> ServerResult<SendMessageResult> {
         let call_ctx = build_call_context(method_name, headers);
         self.interceptors.run_before(&call_ctx).await?;
+        // SPEC §3.3.4: reject clients that do not declare support for
+        // extensions the agent card marks required.
+        self.ensure_required_extensions(&call_ctx)?;
 
         // SPEC §3.3.4: a streaming send is only permitted when the configured
         // agent card advertises `capabilities.streaming == true`. Reject with
@@ -228,13 +231,23 @@ impl RequestHandler {
             }
         }
 
-        // Resolve context ID from the message per proto SendMessageRequest definition.
-        // If the message doesn't include a context_id, generate a new one.
-        let context_id = params
-            .message
-            .context_id
-            .as_ref()
-            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |c| c.0.clone());
+        // Resolve context ID from the message per proto SendMessageRequest
+        // definition. SPEC §3.4.3: "Agents MUST infer contextId from the task
+        // if only taskId is provided" — so a taskId-only continuation looks up
+        // the referenced task's context instead of being rejected. A message
+        // with neither id starts a fresh context.
+        let context_id = if let Some(ref ctx) = params.message.context_id {
+            ctx.0.clone()
+        } else if let Some(ref msg_task_id) = params.message.task_id {
+            match self.task_store.get(msg_task_id).await? {
+                Some(task) => task.context_id.0.clone(),
+                // SPEC §3.4.2: a client-supplied taskId MUST reference an
+                // existing task.
+                None => return Err(ServerError::TaskNotFound(msg_task_id.clone())),
+            }
+        } else {
+            uuid::Uuid::new_v4().to_string()
+        };
 
         // Acquire a per-context lock to serialize the find + save sequence for
         // the same context_id, preventing two concurrent SendMessage requests

@@ -11,7 +11,7 @@ A minimal end-to-end example of the [A2A protocol](https://github.com/a2aproject
 |---------|-----|
 | **AgentExecutor** | Implements the `AgentExecutor` trait with Working → Artifact → Completed lifecycle |
 | **JSON-RPC transport** | Server via `JsonRpcDispatcher`, client via `ClientBuilder` (default binding) |
-| **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("REST")` |
+| **REST transport** | Server via `RestDispatcher`, client via `ClientBuilder::with_protocol_binding("HTTP+JSON")` |
 | **Streaming (SSE)** | `stream_message()` consumes `StatusUpdate` and `ArtifactUpdate` events |
 | **Agent card discovery** | `resolve_agent_card()` fetches `/.well-known/agent-card.json` at runtime |
 | **Task retrieval** | `get_task()` retrieves a completed task by ID |

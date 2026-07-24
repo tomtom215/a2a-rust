@@ -40,6 +40,17 @@ use tokio::sync::RwLock;
 
 use super::{TaskStore, TaskStoreConfig};
 
+/// Sort key for the update-order indexes: `(status timestamp in Unix millis,
+/// monotonic write sequence)`.
+///
+/// The first component implements the spec-required "sorted by status
+/// timestamp descending" ordering of `list()` (§3.1.4); the second breaks
+/// ties deterministically (same-millisecond updates) and keeps every key
+/// unique, which also makes the pair a collision-free pagination cursor.
+/// Tasks whose status carries no parseable timestamp fall back to the write
+/// wall-clock, preserving "most recently written first" for them.
+pub(super) type OrderKey = (i64, u64);
+
 /// Entry in the in-memory task store, tracking creation time for TTL eviction.
 #[derive(Debug, Clone)]
 pub(super) struct TaskEntry {
@@ -47,10 +58,8 @@ pub(super) struct TaskEntry {
     pub(super) task: Task,
     /// When this entry was last written (for TTL-based eviction).
     pub(super) last_updated: Instant,
-    /// Monotonic update-order sequence, assigned on every write. Higher means
-    /// more recently updated. Drives the spec-required "most recently updated
-    /// first" ordering of `list()` (§3.1.4) and is the pagination cursor.
-    pub(super) seq: u64,
+    /// This entry's position in the update-order indexes.
+    pub(super) order_key: OrderKey,
 }
 
 /// Internal data structure holding the primary store and secondary indexes.
@@ -62,16 +71,16 @@ pub(super) struct TaskEntry {
 pub(super) struct StoreData {
     /// Primary storage: O(1) get/save by `TaskId`.
     pub(super) entries: HashMap<TaskId, TaskEntry>,
-    /// Update-order index keyed by the monotonic sequence: `seq → TaskId`.
-    /// Iterated in reverse for the spec-required "most recently updated first"
-    /// ordering (§3.1.4), giving O(log n + page\_size) cursor pagination
-    /// without an O(n log n) per-call sort. Because `seq` is unique and
-    /// strictly increasing, it is also a collision-free pagination cursor.
-    pub(super) order_index: BTreeMap<u64, TaskId>,
-    /// Secondary index: `context_id` string → (`seq → TaskId`), so a
+    /// Update-order index keyed by [`OrderKey`]: `(status millis, seq) → TaskId`.
+    /// Iterated in reverse for the spec-required "sorted by status timestamp
+    /// descending" ordering (§3.1.4), giving O(log n + page\_size) cursor
+    /// pagination without an O(n log n) per-call sort. Because the key is
+    /// unique, it is also a collision-free pagination cursor.
+    pub(super) order_index: BTreeMap<OrderKey, TaskId>,
+    /// Secondary index: `context_id` string → ([`OrderKey`] → `TaskId`), so a
     /// context-filtered `list()` is O(log m + page\_size) in that context's
-    /// tasks *and* returns them in the same update-order.
-    pub(super) context_index: HashMap<String, BTreeMap<u64, TaskId>>,
+    /// tasks *and* returns them in the same order.
+    pub(super) context_index: HashMap<String, BTreeMap<OrderKey, TaskId>>,
     /// Next update-order sequence to assign. Monotonic across the store's
     /// lifetime; guarded by the same write lock as the maps.
     pub(super) next_seq: u64,
@@ -94,44 +103,54 @@ impl StoreData {
         self.entries.len()
     }
 
-    /// Inserts or updates a task, assigning it a fresh update-order sequence
-    /// and maintaining every index.
+    /// Inserts or updates a task, positioning it in the order indexes by its
+    /// status timestamp (with a fresh tie-breaking sequence) and maintaining
+    /// every index.
     ///
-    /// Every write (not just a first insert) advances the task to the front of
-    /// the update order — the spec requires `list()` to return most-recently-
-    /// updated tasks first (§3.1.4), so an in-place update must re-position the
-    /// task. The old sequence's index entries are removed and new ones inserted
-    /// under the fresh sequence, keeping `order_index`/`context_index` in sync.
+    /// The order position is derived from `task.status.timestamp` (§3.1.4:
+    /// list results are sorted by status timestamp descending), so a re-save
+    /// that does not change the status — e.g. appending an artifact — keeps
+    /// the task's list position instead of spuriously bumping it to the
+    /// front. Tasks without a parseable status timestamp are positioned at
+    /// the write wall-clock. The old index entries are removed and new ones
+    /// inserted, keeping `order_index`/`context_index` in sync.
     pub(super) fn insert(&mut self, task_id: TaskId, task: Task, last_updated: Instant) {
         let seq = self.next_seq;
         self.next_seq += 1;
+        let millis = task
+            .status
+            .timestamp
+            .as_deref()
+            .and_then(a2a_protocol_types::parse_iso8601_to_unix_millis)
+            .unwrap_or_else(now_unix_millis);
+        let key: OrderKey = (millis, seq);
 
         // On update, drop the task's previous position from both indexes.
         if let Some(old) = self.entries.get(&task_id) {
-            let old_seq = old.seq;
+            let old_key = old.order_key;
             let old_ctx = old.task.context_id.0.clone();
-            self.order_index.remove(&old_seq);
+            self.order_index.remove(&old_key);
             if let Some(map) = self.context_index.get_mut(&old_ctx) {
-                map.remove(&old_seq);
+                map.remove(&old_key);
                 if map.is_empty() {
                     self.context_index.remove(&old_ctx);
                 }
             }
         }
 
-        // Position under the new sequence.
-        self.order_index.insert(seq, task_id.clone());
+        // Position under the new key.
+        self.order_index.insert(key, task_id.clone());
         self.context_index
             .entry(task.context_id.0.clone())
             .or_default()
-            .insert(seq, task_id.clone());
+            .insert(key, task_id.clone());
 
         self.entries.insert(
             task_id,
             TaskEntry {
                 task,
                 last_updated,
-                seq,
+                order_key: key,
             },
         );
     }
@@ -139,10 +158,10 @@ impl StoreData {
     /// Removes a task by ID, maintaining all indexes.
     pub(super) fn remove(&mut self, id: &TaskId) -> Option<TaskEntry> {
         if let Some(entry) = self.entries.remove(id) {
-            self.order_index.remove(&entry.seq);
+            self.order_index.remove(&entry.order_key);
             let ctx = &entry.task.context_id.0;
             if let Some(map) = self.context_index.get_mut(ctx) {
-                map.remove(&entry.seq);
+                map.remove(&entry.order_key);
                 if map.is_empty() {
                     self.context_index.remove(ctx);
                 }
@@ -216,6 +235,28 @@ impl Default for InMemoryTaskStore {
 
 /// Default pre-allocation capacity when no `max_capacity` is configured.
 const DEFAULT_INITIAL_CAPACITY: usize = 256;
+
+/// Current wall-clock time in Unix milliseconds — the order-key fallback for
+/// tasks whose status carries no parseable timestamp.
+#[allow(clippy::cast_possible_truncation)]
+fn now_unix_millis() -> i64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
+}
+
+/// Encodes an [`OrderKey`] as the opaque `millis:seq` page token.
+fn encode_order_key((millis, seq): OrderKey) -> String {
+    format!("{millis}:{seq}")
+}
+
+/// Decodes a `millis:seq` page token; `None` for malformed tokens.
+fn decode_order_key(token: &str) -> Option<OrderKey> {
+    let (millis, seq) = token.split_once(':')?;
+    Some((millis.parse().ok()?, seq.parse().ok()?))
+}
 
 impl InMemoryTaskStore {
     /// Creates a new empty in-memory task store with default configuration.
@@ -306,47 +347,64 @@ impl TaskStore for InMemoryTaskStore {
                 Some(n) => (n.min(self.config.max_page_size)) as usize,
             };
 
-            // Decode the cursor: the opaque page token is the `seq` of the last
-            // item on the previous page. A malformed token yields an empty page
-            // (matching the previous "unknown cursor → empty" contract) rather
-            // than starting from the top. `None` starts a fresh listing.
-            let cursor_seq: Option<u64> = match params.page_token.as_deref() {
+            // Decode the cursor: the opaque page token is the `millis:seq`
+            // order key of the last item on the previous page. A malformed
+            // token yields an empty page (matching the previous "unknown
+            // cursor → empty" contract) rather than starting from the top.
+            // `None` starts a fresh listing.
+            let cursor_key: Option<OrderKey> = match params.page_token.as_deref() {
                 None => None,
-                Some(tok) => match tok.parse::<u64>() {
-                    Ok(seq) => Some(seq),
-                    Err(_) => {
+                Some(tok) => match decode_order_key(tok) {
+                    Some(key) => Some(key),
+                    None => {
                         return Ok(TaskListResponse::new(Vec::new()));
                     }
                 },
             };
 
-            // Iterate the chosen index in DESCENDING seq order (most recently
-            // updated first, spec §3.1.4). `range(..cursor)` excludes the
-            // cursor itself; the unbounded `range(..)` covers a fresh listing.
-            // Both forms return the same `btree_map::Range` type, so `.rev()`
-            // (descending) unifies without boxing. Collect `(seq, Task)` so the
-            // next-page token is exact.
+            // §3.1.4 statusTimestampAfter: only tasks whose status timestamp
+            // is strictly after the given instant. Because the index is keyed
+            // by (millis, seq), the filter is a lower range bound rather than
+            // a per-entry check. An unparseable filter value cannot reach the
+            // store through the handler (which validates it); treat it as
+            // matching nothing rather than silently returning everything.
+            let lower = match params.status_timestamp_after.as_deref() {
+                None => std::ops::Bound::Unbounded,
+                Some(ts) => match a2a_protocol_types::parse_iso8601_to_unix_millis(ts) {
+                    Some(millis) => std::ops::Bound::Excluded((millis, u64::MAX)),
+                    None => {
+                        return Ok(TaskListResponse::new(Vec::new()));
+                    }
+                },
+            };
+
+            // Iterate the chosen index in DESCENDING key order (status
+            // timestamp descending, spec §3.1.4). The upper bound excludes
+            // the cursor itself; `Unbounded` covers a fresh listing. Collect
+            // `(key, Task)` so the next-page token is exact.
             let take = page_size + 1; // one extra to detect a further page
-            let collect_from = |index: &BTreeMap<u64, TaskId>| -> Vec<(u64, Task)> {
-                let base = match cursor_seq {
-                    Some(c) => index.range(..c),
-                    None => index.range(..),
+            let collect_from = |index: &BTreeMap<OrderKey, TaskId>| -> Vec<(OrderKey, Task)> {
+                let upper = match cursor_key {
+                    Some(c) => std::ops::Bound::Excluded(c),
+                    None => std::ops::Bound::Unbounded,
                 };
-                base.rev()
-                    .filter_map(|(seq, id)| {
+                index
+                    .range((lower, upper))
+                    .rev()
+                    .filter_map(|(key, id)| {
                         let entry = store.entries.get(id)?;
                         if let Some(ref status) = params.status {
                             if entry.task.status.state != *status {
                                 return None;
                             }
                         }
-                        Some((*seq, entry.task.clone()))
+                        Some((*key, entry.task.clone()))
                     })
                     .take(take)
                     .collect()
             };
 
-            let collected: Vec<(u64, Task)> = if let Some(ref ctx) = params.context_id {
+            let collected: Vec<(OrderKey, Task)> = if let Some(ref ctx) = params.context_id {
                 store
                     .context_index
                     .get(ctx.as_str())
@@ -365,7 +423,7 @@ impl TaskStore for InMemoryTaskStore {
             let next_page_token = if has_next_page {
                 collected
                     .last()
-                    .map_or_else(String::new, |(seq, _)| seq.to_string())
+                    .map_or_else(String::new, |(key, _)| encode_order_key(*key))
             } else {
                 String::new()
             };
@@ -705,7 +763,7 @@ mod tests {
 
         let mut seen = std::collections::HashSet::new();
         let mut token: Option<String> = None;
-        let mut last_seq: Option<u64> = None;
+        let mut last_key: Option<super::OrderKey> = None;
         loop {
             let params = ListTasksParams {
                 page_size: Some(7),
@@ -719,15 +777,201 @@ mod tests {
             if page.next_page_token.is_empty() {
                 break;
             }
-            // The cursor (a seq) must strictly decrease as we page downward.
-            let tok_seq: u64 = page.next_page_token.parse().unwrap();
-            if let Some(prev) = last_seq {
-                assert!(tok_seq < prev, "cursor must strictly decrease");
+            // The cursor (an order key) must strictly decrease as we page
+            // downward.
+            let tok_key = super::decode_order_key(&page.next_page_token)
+                .expect("cursor must be a valid millis:seq order key");
+            if let Some(prev) = last_key {
+                assert!(tok_key < prev, "cursor must strictly decrease");
             }
-            last_seq = Some(tok_seq);
+            last_key = Some(tok_key);
             token = Some(page.next_page_token);
         }
         assert_eq!(seen.len(), 100, "every task must be visited exactly once");
+    }
+
+    /// Helper: a task whose status carries an explicit ISO 8601 timestamp.
+    fn make_task_with_ts(id: &str, state: TaskState, ts: &str) -> Task {
+        let mut task = make_task(id, state);
+        task.status = TaskStatus {
+            state,
+            message: None,
+            timestamp: Some(ts.to_owned()),
+        };
+        task
+    }
+
+    /// §3.1.4: list is sorted by status timestamp descending — NOT by write
+    /// order. Tasks saved out of chronological order must come back in
+    /// timestamp order.
+    #[tokio::test]
+    async fn list_orders_by_status_timestamp_not_write_order() {
+        let store = InMemoryTaskStore::new();
+        // Write order: middle, newest, oldest.
+        store
+            .save(&make_task_with_ts(
+                "middle",
+                TaskState::Working,
+                "2026-01-02T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "newest",
+                TaskState::Working,
+                "2026-01-03T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "oldest",
+                TaskState::Working,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        let page = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = page.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["newest", "middle", "oldest"],
+            "list must sort by status timestamp descending"
+        );
+    }
+
+    /// A re-save that does not change the status timestamp (e.g. an artifact
+    /// append) must NOT bump the task to the front of the list.
+    #[tokio::test]
+    async fn list_resave_without_status_change_keeps_position() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(&make_task_with_ts(
+                "older",
+                TaskState::Working,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "newer",
+                TaskState::Working,
+                "2026-01-02T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        // Re-save "older" (same status timestamp, e.g. artifact update).
+        store
+            .save(&make_task_with_ts(
+                "older",
+                TaskState::Working,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        let page = store.list(&ListTasksParams::default()).await.unwrap();
+        let ids: Vec<&str> = page.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["newer", "older"],
+            "a status-preserving re-save must not reorder the list"
+        );
+    }
+
+    /// §3.1.4 statusTimestampAfter: only tasks whose status changed strictly
+    /// after the given instant are returned.
+    #[tokio::test]
+    async fn list_filters_by_status_timestamp_after() {
+        let store = InMemoryTaskStore::new();
+        store
+            .save(&make_task_with_ts(
+                "old",
+                TaskState::Completed,
+                "2026-01-01T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "boundary",
+                TaskState::Working,
+                "2026-01-02T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+        store
+            .save(&make_task_with_ts(
+                "new",
+                TaskState::Working,
+                "2026-01-03T00:00:00.000Z",
+            ))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            status_timestamp_after: Some("2026-01-02T00:00:00.000Z".into()),
+            ..Default::default()
+        };
+        let page = store.list(&params).await.unwrap();
+        let ids: Vec<&str> = page.tasks.iter().map(|t| t.id.0.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["new"],
+            "filter must be strictly-after (boundary excluded)"
+        );
+
+        // Filter combined with context filter.
+        let params = ListTasksParams {
+            context_id: Some("ctx-default".into()),
+            status_timestamp_after: Some("2025-12-31T00:00:00.000Z".into()),
+            ..Default::default()
+        };
+        let page = store.list(&params).await.unwrap();
+        assert_eq!(page.tasks.len(), 3, "all three are after 2025-12-31");
+    }
+
+    /// Pagination remains stable when statusTimestampAfter is combined with a
+    /// cursor.
+    #[tokio::test]
+    async fn list_status_timestamp_after_with_pagination() {
+        let store = InMemoryTaskStore::new();
+        for i in 0..10 {
+            store
+                .save(&make_task_with_ts(
+                    &format!("t{i}"),
+                    TaskState::Working,
+                    &format!("2026-01-01T00:00:{i:02}.000Z"),
+                ))
+                .await
+                .unwrap();
+        }
+
+        let mut seen = Vec::new();
+        let mut token: Option<String> = None;
+        loop {
+            let params = ListTasksParams {
+                status_timestamp_after: Some("2026-01-01T00:00:04.000Z".into()),
+                page_size: Some(2),
+                page_token: token,
+                ..Default::default()
+            };
+            let page = store.list(&params).await.unwrap();
+            seen.extend(page.tasks.iter().map(|t| t.id.0.clone()));
+            if page.next_page_token.is_empty() {
+                break;
+            }
+            token = Some(page.next_page_token);
+        }
+        assert_eq!(
+            seen,
+            vec!["t9", "t8", "t7", "t6", "t5"],
+            "filtered pagination must visit exactly the strictly-after tasks in order"
+        );
     }
 
     #[tokio::test]

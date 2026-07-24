@@ -27,6 +27,7 @@ async fn jsonrpc_send_message_returns_task() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -61,6 +62,7 @@ async fn jsonrpc_get_task_not_found() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -91,6 +93,7 @@ async fn jsonrpc_unknown_method() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -112,6 +115,7 @@ async fn jsonrpc_invalid_json() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from("not json at all")))
         .unwrap();
 
@@ -137,6 +141,7 @@ async fn jsonrpc_missing_params() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -161,6 +166,7 @@ async fn jsonrpc_get_extended_agent_card() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -185,6 +191,7 @@ async fn jsonrpc_list_tasks() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -219,6 +226,7 @@ async fn jsonrpc_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
     let resp = client.request(req).await.expect("send");
@@ -244,6 +252,7 @@ async fn jsonrpc_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -272,6 +281,7 @@ async fn jsonrpc_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -295,6 +305,7 @@ async fn jsonrpc_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -318,6 +329,7 @@ async fn jsonrpc_push_config_crud() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -341,6 +353,7 @@ async fn jsonrpc_send_streaming_returns_sse() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -369,6 +382,7 @@ async fn jsonrpc_response_has_a2a_version_header() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -378,7 +392,7 @@ async fn jsonrpc_response_has_a2a_version_header() {
         resp.headers()
             .get("A2A-Version")
             .and_then(|v| v.to_str().ok()),
-        Some("1.0.0"),
+        Some("1.0"),
     );
 }
 
@@ -398,6 +412,7 @@ async fn jsonrpc_rejects_wrong_content_type() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "text/plain")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -427,6 +442,7 @@ async fn jsonrpc_accepts_a2a_content_type() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/a2a+json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -460,6 +476,7 @@ async fn jsonrpc_streaming_events_are_jsonrpc_enveloped() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -495,4 +512,134 @@ async fn jsonrpc_streaming_events_are_jsonrpc_enveloped() {
             "JSON-RPC SSE event must have a result field.\nGot: {data}"
         );
     }
+}
+
+/// Spec §3.6.2: a request without an `A2A-Version` header is interpreted as
+/// protocol 0.3 and MUST be rejected by a v1.0-only server (reference-SDK
+/// parity: the official Python SDK rejects with VersionNotSupported).
+#[tokio::test]
+async fn jsonrpc_missing_version_header_rejected() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    let rpc_req = a2a_protocol_types::JsonRpcRequest::with_params(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let body = serde_json::to_vec(&rpc_req).unwrap();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(body)))
+        .unwrap();
+
+    let resp = client.request(req).await.expect("send");
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(
+        v["error"]["code"].as_i64(),
+        Some(-32009),
+        "missing A2A-Version must yield VersionNotSupported: {v}"
+    );
+    assert!(
+        v["error"]["message"].as_str().unwrap_or("").contains("0.3"),
+        "rejection must explain the 0.3 interpretation: {v}"
+    );
+}
+
+/// The legacy v0.3-style method names are MethodNotFound in v1.0
+/// (reference-SDK parity — 0.3 compatibility is a separate adapter there
+/// and is not implemented here).
+#[tokio::test]
+async fn jsonrpc_legacy_method_names_rejected() {
+    let (addr, _handle) = start_jsonrpc_server().await;
+    let client = http_client();
+
+    for legacy in ["message/send", "tasks/get", "tasks/list", "tasks/cancel"] {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": legacy, "params": {}
+        });
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/"))
+            .header("content-type", "application/json")
+            .header("a2a-version", "1.0")
+            .body(Full::new(Bytes::from(serde_json::to_vec(&body).unwrap())))
+            .unwrap();
+        let resp = client.request(req).await.expect("send");
+        let body = resp.into_body().collect().await.unwrap().to_bytes();
+        let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+        assert_eq!(
+            v["error"]["code"].as_i64(),
+            Some(-32601),
+            "legacy name {legacy} must be MethodNotFound: {v}"
+        );
+    }
+}
+
+/// `DispatchConfig::accept_missing_version_header` restores the tolerant
+/// pre-0.7 behavior for deployments that opt out of strict validation.
+#[tokio::test]
+async fn jsonrpc_missing_version_header_accepted_with_opt_out() {
+    use a2a_protocol_server::dispatch::DispatchConfig;
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(SimpleExecutor)
+            .with_agent_card(minimal_agent_card())
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = Arc::new(JsonRpcDispatcher::with_config(
+        handler,
+        DispatchConfig::default().accept_missing_version_header(),
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let _handle = tokio::spawn(async move {
+        loop {
+            let (stream, _) = match listener.accept().await {
+                Ok(s) => s,
+                Err(_) => break,
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let dispatcher = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&dispatcher);
+                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+    let client = http_client();
+
+    let rpc_req = a2a_protocol_types::JsonRpcRequest::with_params(
+        serde_json::json!(1),
+        "SendMessage",
+        serde_json::to_value(make_send_params()).unwrap(),
+    );
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("http://{addr}/"))
+        .header("content-type", "application/json")
+        .body(Full::new(Bytes::from(
+            serde_json::to_vec(&rpc_req).unwrap(),
+        )))
+        .unwrap();
+    let resp = client.request(req).await.expect("send");
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let v: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+    assert!(
+        v.get("result").is_some(),
+        "opt-out must accept headerless requests: {v}"
+    );
 }

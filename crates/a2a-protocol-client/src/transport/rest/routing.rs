@@ -134,6 +134,73 @@ mod tests {
         assert!(route_for("unknown/method").is_none());
     }
 
+    /// Pins every RPC's route to the URL patterns of spec §11.3 verbatim.
+    ///
+    /// Notably `SubscribeToTask` is `POST` per §11.3.2 and the §5.3
+    /// method-mapping table (the upstream proto's `google.api.http`
+    /// annotation says `get:`, an upstream inconsistency; servers — ours
+    /// included — accept both, and the spec prose wins for what we emit).
+    #[test]
+    fn all_routes_match_spec_url_patterns() {
+        let spec_table: &[(&str, HttpMethod, &str, bool)] = &[
+            ("SendMessage", HttpMethod::Post, "/message:send", false),
+            (
+                "SendStreamingMessage",
+                HttpMethod::Post,
+                "/message:stream",
+                true,
+            ),
+            ("GetTask", HttpMethod::Get, "/tasks/{id}", false),
+            ("ListTasks", HttpMethod::Get, "/tasks", false),
+            ("CancelTask", HttpMethod::Post, "/tasks/{id}:cancel", false),
+            (
+                "SubscribeToTask",
+                HttpMethod::Post,
+                "/tasks/{id}:subscribe",
+                true,
+            ),
+            (
+                "CreateTaskPushNotificationConfig",
+                HttpMethod::Post,
+                "/tasks/{taskId}/pushNotificationConfigs",
+                false,
+            ),
+            (
+                "GetTaskPushNotificationConfig",
+                HttpMethod::Get,
+                "/tasks/{taskId}/pushNotificationConfigs/{id}",
+                false,
+            ),
+            (
+                "ListTaskPushNotificationConfigs",
+                HttpMethod::Get,
+                "/tasks/{taskId}/pushNotificationConfigs",
+                false,
+            ),
+            (
+                "DeleteTaskPushNotificationConfig",
+                HttpMethod::Delete,
+                "/tasks/{taskId}/pushNotificationConfigs/{id}",
+                false,
+            ),
+            (
+                "GetExtendedAgentCard",
+                HttpMethod::Get,
+                "/extendedAgentCard",
+                false,
+            ),
+        ];
+        for (method, want_verb, want_path, want_streaming) in spec_table {
+            let route = route_for(method).unwrap_or_else(|| panic!("{method} must have a route"));
+            assert_eq!(&route.http_method, want_verb, "{method}: wrong verb");
+            assert_eq!(&route.path_template, want_path, "{method}: wrong path");
+            assert_eq!(
+                route.streaming, *want_streaming,
+                "{method}: wrong streaming flag"
+            );
+        }
+    }
+
     // ── Mutation-killing tests for route_for arms ─────────────────────────
 
     #[test]

@@ -48,7 +48,7 @@ pub async fn test_axum_send_message(ctx: &TestContext) -> TestResult {
 
     // Send via REST client (Axum serves REST-style routes).
     let client = a2a_protocol_client::ClientBuilder::new(&url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -112,7 +112,7 @@ pub async fn test_axum_streaming(ctx: &TestContext) -> TestResult {
     tokio::task::yield_now().await;
 
     let client = a2a_protocol_client::ClientBuilder::new(&url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -381,7 +381,7 @@ pub async fn test_sqlite_push_config(ctx: &TestContext) -> TestResult {
     serve_rest(listener, Arc::clone(&handler));
 
     let client = a2a_protocol_client::ClientBuilder::new(&url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -496,7 +496,7 @@ pub async fn test_axum_with_sqlite(ctx: &TestContext) -> TestResult {
     tokio::task::yield_now().await;
 
     let client = a2a_protocol_client::ClientBuilder::new(&url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 

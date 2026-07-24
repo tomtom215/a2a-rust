@@ -155,10 +155,11 @@ impl hyper::body::Body for ChannelBody {
 
 /// Builds an SSE streaming response from an event queue reader.
 ///
-/// When `jsonrpc_envelope` is `true` (JSON-RPC binding), each event is wrapped
-/// in a JSON-RPC 2.0 success response: `{"jsonrpc":"2.0","id":0,"result":{...}}`.
+/// When `jsonrpc_envelope_id` is `Some` (JSON-RPC binding), each event is
+/// wrapped in a JSON-RPC 2.0 success response echoing the original request
+/// id per Section 9.4.2: `{"jsonrpc":"2.0","id":<request id>,"result":{...}}`.
 ///
-/// When `jsonrpc_envelope` is `false` (REST/HTTP binding), each event is
+/// When `jsonrpc_envelope_id` is `None` (REST/HTTP binding), each event is
 /// a bare `StreamResponse` JSON object per Section 11.7 of the spec.
 ///
 /// Spawns a background task that:
@@ -172,7 +173,7 @@ pub fn build_sse_response(
     mut reader: InMemoryQueueReader,
     keep_alive_interval: Option<Duration>,
     channel_capacity: Option<usize>,
-    jsonrpc_envelope: bool,
+    jsonrpc_envelope_id: Option<JsonRpcId>,
 ) -> hyper::Response<http_body_util::combinators::BoxBody<Bytes, Infallible>> {
     trace_info!("building SSE response stream");
     let interval = keep_alive_interval.unwrap_or(DEFAULT_KEEP_ALIVE);
@@ -213,10 +214,12 @@ pub fn build_sse_response(
                             // frame buffer, avoiding the intermediate String
                             // allocation from serde_json::to_string(). This
                             // reduces per-event allocations from 2 to 1.
-                            let frame_bytes = if jsonrpc_envelope {
+                            let frame_bytes = if let Some(ref envelope_id) = jsonrpc_envelope_id {
+                                // §9.4.2: every stream envelope echoes the
+                                // originating request's id.
                                 let envelope = JsonRpcSuccessResponse {
                                     jsonrpc: JsonRpcVersion,
-                                    id: JsonRpcId::default(),
+                                    id: envelope_id.clone(),
                                     result: stream_response,
                                 };
                                 build_sse_message_frame(&envelope)
@@ -430,7 +433,7 @@ mod tests {
     async fn build_sse_response_has_correct_headers() {
         let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, None, None, true);
+        let response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
         assert_eq!(response.status(), 200, "status should be 200 OK");
         assert_eq!(
@@ -464,7 +467,12 @@ mod tests {
         // Covers lines 128-129: custom keep_alive_interval and channel_capacity.
         let (_writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, Some(Duration::from_secs(5)), Some(16), true);
+        let response = build_sse_response(
+            reader,
+            Some(Duration::from_secs(5)),
+            Some(16),
+            Some(Some(serde_json::json!(1))),
+        );
 
         assert_eq!(response.status(), 200);
         assert_eq!(
@@ -485,7 +493,7 @@ mod tests {
 
         let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
 
-        let response = build_sse_response(reader, None, None, true);
+        let response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
         // Drop the response body (simulating client disconnect).
         drop(response);
@@ -520,7 +528,7 @@ mod tests {
         // Close the writer immediately — reader should return None.
         drop(writer);
 
-        let mut response = build_sse_response(reader, None, None, true);
+        let mut response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
         // The stream should end (return None after all events are consumed).
         let frame = response.body_mut().frame().await;
@@ -550,7 +558,7 @@ mod tests {
         tx.send(Err(err)).expect("send should succeed");
         drop(tx);
 
-        let mut response = build_sse_response(reader, None, None, true);
+        let mut response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
         let frame = response
             .body_mut()
@@ -591,7 +599,7 @@ mod tests {
         writer.write(event).await.expect("write should succeed");
         drop(writer);
 
-        let mut response = build_sse_response(reader, None, None, true);
+        let mut response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
         // Collect the first data frame from the body.
         let frame = response
@@ -620,5 +628,61 @@ mod tests {
             text.contains("\"result\""),
             "data should contain result field"
         );
+        // §9.4.2: the envelope must echo the originating request's id.
+        let json_part = text
+            .lines()
+            .find_map(|l| l.strip_prefix("data: "))
+            .expect("frame must carry a data line");
+        let envelope: serde_json::Value =
+            serde_json::from_str(json_part).expect("data must be valid JSON");
+        assert_eq!(
+            envelope["id"],
+            serde_json::json!(1),
+            "SSE envelope must echo the request id, got: {envelope}"
+        );
+    }
+
+    /// §9.4.2 with a string request id — the echo must preserve the exact
+    /// JSON value, not coerce it.
+    #[tokio::test]
+    async fn build_sse_response_echoes_string_request_id() {
+        use crate::streaming::event_queue::EventQueueWriter;
+        use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+        use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
+        use http_body_util::BodyExt;
+
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
+        writer
+            .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: TaskId::new("t1"),
+                context_id: ContextId::new("c1"),
+                status: TaskStatus {
+                    state: TaskState::Working,
+                    message: None,
+                    timestamp: None,
+                },
+                metadata: None,
+            }))
+            .await
+            .expect("write should succeed");
+        drop(writer);
+
+        let mut response =
+            build_sse_response(reader, None, None, Some(Some(serde_json::json!("req-abc"))));
+        let frame = response
+            .body_mut()
+            .frame()
+            .await
+            .expect("should have a frame")
+            .expect("frame should be Ok");
+        let data = frame.into_data().expect("should be a data frame");
+        let text = String::from_utf8_lossy(&data);
+        let json_part = text
+            .lines()
+            .find_map(|l| l.strip_prefix("data: "))
+            .expect("frame must carry a data line");
+        let envelope: serde_json::Value =
+            serde_json::from_str(json_part).expect("data must be valid JSON");
+        assert_eq!(envelope["id"], serde_json::json!("req-abc"));
     }
 }

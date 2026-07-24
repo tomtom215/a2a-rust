@@ -407,17 +407,17 @@ Malformed UTF-8 lines were silently discarded (`return` on `from_utf8` failure).
 
 **Fix:** Added `max_queued_frames` limit (default 4096) with `with_max_queued_frames()` builder. When the limit is reached, the oldest frame/error is dropped via `pop_front()` before pushing the new one.
 
-### Bug 38: Background Event Processor Misses Fast Executor Events (Known Limitation)
+### Bug 38: Background Event Processor Misses Fast Executor Events (Fixed)
 
 **Severity:** High | **Component:** Server `RequestHandler` background event processor
 
-In streaming mode, `spawn_background_event_processor` subscribes to the broadcast channel *after* `yield_now()`. If the executor completes before the subscription is active, the background processor misses all events. This means the task store may not be updated to the terminal state for fast executors in streaming mode.
+In streaming mode, `spawn_background_event_processor` originally subscribed to the broadcast channel *after* `yield_now()`. If the executor completed before the subscription was active, the background processor missed all events, so the task store might never record the terminal state for fast executors in streaming mode.
 
-The root cause is architectural: `tokio::sync::broadcast::subscribe()` only delivers events sent *after* the subscription. Events already in the channel are lost.
+The root cause was architectural: `tokio::sync::broadcast::subscribe()` only delivers events sent *after* the subscription. Events already in the channel are lost.
 
 **Why tests missed it:** Most test executors include artificial delays. The bug only manifests with very fast executors (e.g., pure computation without I/O).
 
-**Status:** Documented as known limitation. The SSE consumer (which has the reader from queue creation) sees all events correctly. Only the background store-update path is affected. A proper fix requires either: (1) subscribing before spawning the executor, or (2) replaying missed events from the channel's buffer.
+**Status:** **Fixed** (the "H5" redesign). The background processor no longer consumes the lossy broadcast channel at all: the queue lease creates a dedicated bounded **mpsc persistence channel** *before* the executor is spawned, and the processor drains it — including a post-executor drain pass — so a pure-compute executor that finishes instantly cannot outrun the subscription. Every state transition reaches the store exactly once; the broadcast channel now only fans out to streaming consumers. Covered by `event_processing_tests/background_processor.rs` (including `streaming_mode_background_drains_after_executor_done`).
 
 ### Bug 39: Retry Backoff Float Overflow Can Panic
 

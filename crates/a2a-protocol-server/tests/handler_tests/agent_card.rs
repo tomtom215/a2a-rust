@@ -12,8 +12,11 @@ use super::*;
 
 #[tokio::test]
 async fn get_extended_agent_card_returns_card() {
+    // §13.3: no auth interceptor in this fixture, so the unauthenticated
+    // opt-in is required for the endpoint to serve the card.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_agent_card(minimal_agent_card())
+        .allow_unauthenticated_extended_card()
         .build()
         .expect("build handler");
 
@@ -71,6 +74,7 @@ async fn builder_with_agent_card() {
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_agent_card(minimal_agent_card())
         .with_push_sender(MockPushSender)
+        .allow_unauthenticated_extended_card()
         .build()
         .expect("build with card + push");
 

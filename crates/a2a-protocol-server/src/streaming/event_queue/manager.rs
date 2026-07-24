@@ -131,8 +131,16 @@ impl EventQueueManager {
 
     /// Sets the write timeout for event queue sends.
     ///
-    /// Retained for API compatibility. Broadcast-based queues do not block
-    /// on writes, so this value is not actively used for backpressure.
+    /// Retained for API compatibility only. Broadcast-based queues never
+    /// block on writes, so this value has no effect — a slow consumer
+    /// instead receives an explicit lag error on its reader when it falls
+    /// behind the broadcast ring.
+    #[deprecated(
+        since = "0.7.0",
+        note = "has no effect: broadcast-based queues never block on writes; \
+                slow consumers receive an explicit lag error instead. \
+                Will be removed in 0.8."
+    )]
     #[must_use]
     pub const fn with_write_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.write_timeout = timeout;
@@ -612,6 +620,7 @@ mod tests {
 
     /// Covers lines 99-102 (`with_write_timeout` builder method).
     #[tokio::test]
+    #[allow(deprecated)] // The no-op option must keep building until removed in 0.8.
     async fn manager_with_write_timeout() {
         let manager =
             EventQueueManager::new().with_write_timeout(std::time::Duration::from_secs(10));

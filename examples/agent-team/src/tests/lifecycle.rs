@@ -21,7 +21,7 @@ pub async fn test_full_orchestration(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 11: Full-check orchestration (Coordinator -> multiple agents)");
     let client = ClientBuilder::new(&ctx.coordinator_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build coord client");
 
@@ -62,7 +62,7 @@ pub async fn test_health_orchestration(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 12: Health orchestration (Coordinator -> HealthMonitor)");
     let client = ClientBuilder::new(&ctx.coordinator_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build coord client");
 
@@ -152,7 +152,7 @@ pub async fn test_cancel_task(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 14: CancelTask mid-stream (BuildMonitor)");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
 
@@ -434,7 +434,7 @@ pub async fn test_cancel_completed(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 20: Cancel completed task");
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 

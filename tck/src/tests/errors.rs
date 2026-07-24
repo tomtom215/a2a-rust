@@ -80,3 +80,70 @@ pub async fn test_invalid_params_returns_error(url: &str, binding: &str) -> Resu
         _ => Err(format!("unknown binding: {binding}")),
     }
 }
+
+/// Spec §3.4.2: `GetTask` for a task the server has never seen MUST return
+/// an error (TaskNotFound), never a fabricated task. Portable across every
+/// reference SDK — no server may invent a task for an unknown id.
+pub async fn test_get_unknown_task_returns_error(url: &str, binding: &str) -> Result<(), String> {
+    let unknown = "tck-nonexistent-task-2f9c8e11-does-not-exist";
+    match binding {
+        "jsonrpc" => {
+            let resp =
+                helpers::jsonrpc_request(url, "GetTask", serde_json::json!({ "id": unknown }))
+                    .await?;
+            if resp.get("error").is_none() {
+                return Err(format!(
+                    "GetTask on an unknown id must return an error, got: {resp}"
+                ));
+            }
+            Ok(())
+        }
+        "rest" => {
+            let (status, body) = helpers::rest_get(url, &format!("/tasks/{unknown}")).await?;
+            if status < 400 && body.get("error").is_none() {
+                return Err(format!(
+                    "GET /tasks/<unknown> must be a 4xx or an error body, got status {status}: {body}"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(format!("unknown binding: {binding}")),
+    }
+}
+
+/// A syntactically invalid JSON body on the JSON-RPC endpoint MUST produce a
+/// JSON-RPC error envelope (parse error), not a task or a silent 200. The
+/// REST binding must answer any non-2xx / error for a malformed body.
+pub async fn test_malformed_body_returns_error(url: &str, binding: &str) -> Result<(), String> {
+    match binding {
+        "jsonrpc" => {
+            let resp =
+                helpers::post_raw(url, "/", b"{ this is not valid json ", "application/json")
+                    .await?;
+            // Either a JSON-RPC error envelope or a non-JSON error page is
+            // acceptable; a parsed success result is not.
+            if resp.get("result").is_some() {
+                return Err(format!(
+                    "a malformed JSON-RPC body must not yield a result, got: {resp}"
+                ));
+            }
+            Ok(())
+        }
+        "rest" => {
+            let (status, body) = helpers::post_raw_status(
+                url,
+                "/message:send",
+                b"{ this is not valid json ",
+                "application/json",
+            )
+            .await?;
+            if status < 400 && body.get("error").is_none() {
+                return Err(format!(
+                    "a malformed REST body must be rejected, got status {status}: {body}"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(format!("unknown binding: {binding}")),
+    }
+}

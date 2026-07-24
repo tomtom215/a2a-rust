@@ -111,7 +111,9 @@ pub(super) fn build_json_response(
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE)
+        // §11.1: the REST binding emits application/json; the registered
+        // a2a+json media type remains accepted on ingress.
+        .header("content-type", a2a_protocol_types::JSON_CONTENT_TYPE)
         .header(
             a2a_protocol_types::A2A_VERSION_HEADER,
             a2a_protocol_types::A2A_VERSION,
@@ -234,7 +236,7 @@ mod tests {
             resp.headers()
                 .get("content-type")
                 .and_then(|v| v.to_str().ok()),
-            Some(a2a_protocol_types::A2A_CONTENT_TYPE),
+            Some(a2a_protocol_types::JSON_CONTENT_TYPE),
         );
     }
 
@@ -384,7 +386,7 @@ mod tests {
                 resp.headers()
                     .get("content-type")
                     .and_then(|v| v.to_str().ok()),
-                Some(a2a_protocol_types::A2A_CONTENT_TYPE),
+                Some(a2a_protocol_types::JSON_CONTENT_TYPE),
             );
         }
     }

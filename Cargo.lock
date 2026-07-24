@@ -23,7 +23,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -49,6 +49,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tonic-types",
  "tracing",
  "uuid",
  "webpki-roots 1.0.6",
@@ -56,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-sdk"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -70,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "a2a-protocol-types",
  "axum",
@@ -102,6 +103,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tonic-types",
  "tracing",
  "uuid",
  "webpki-roots 1.0.6",
@@ -109,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64",
  "criterion",
@@ -3962,6 +3964,17 @@ dependencies = [
  "syn",
  "tempfile",
  "tonic-build",
+]
+
+[[package]]
+name = "tonic-types"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a875a902255423d34c1f20838ab374126db8eb41625b7947a1d54113b0b7399"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
 ]
 
 [[package]]

@@ -186,7 +186,9 @@ pub(super) fn json_response(
 ) -> hyper::Response<BoxBody<Bytes, Infallible>> {
     hyper::Response::builder()
         .status(status)
-        .header("content-type", a2a_protocol_types::A2A_CONTENT_TYPE)
+        // §9.1: the JSON-RPC binding emits application/json; the registered
+        // a2a+json media type remains accepted on ingress.
+        .header("content-type", a2a_protocol_types::JSON_CONTENT_TYPE)
         .header(a2a_protocol_types::A2A_VERSION_HEADER, a2a_protocol_types::A2A_VERSION)
         .body(Full::new(Bytes::from(body)).boxed())
         .unwrap_or_else(|_| {

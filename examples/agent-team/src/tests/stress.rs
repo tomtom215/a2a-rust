@@ -68,7 +68,7 @@ pub async fn test_mixed_transport_concurrent(ctx: &TestContext) -> TestResult {
     });
     let rest_handle = tokio::spawn(async move {
         let client = ClientBuilder::new(&rest_url)
-            .with_protocol_binding("REST")
+            .with_protocol_binding("HTTP+JSON")
             .build()
             .unwrap();
         client.send_message(make_send_params("check")).await
@@ -188,7 +188,7 @@ pub async fn test_large_payload(ctx: &TestContext) -> TestResult {
 pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
 
@@ -241,7 +241,7 @@ pub async fn test_stream_with_get_task(ctx: &TestContext) -> TestResult {
 pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .unwrap();
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);

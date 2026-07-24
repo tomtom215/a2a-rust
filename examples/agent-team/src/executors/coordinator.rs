@@ -44,7 +44,7 @@ impl CoordinatorExecutor {
         for (name, url) in &agent_urls {
             // Use REST for build_monitor, JSON-RPC for others.
             let builder = if name == "build_monitor" {
-                ClientBuilder::new(url).with_protocol_binding("REST")
+                ClientBuilder::new(url).with_protocol_binding("HTTP+JSON")
             } else {
                 ClientBuilder::new(url)
             };

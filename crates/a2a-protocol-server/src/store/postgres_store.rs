@@ -163,20 +163,25 @@ impl TaskStore for PostgresTaskStore {
             let state = task.status.state.to_string();
             let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
+            // `updated_at` carries the status timestamp (spec §3.1.4 ordering
+            // + statusTimestampAfter); write wall-clock is the fallback for
+            // tasks without one.
+            let status_ts = super::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
             sqlx::query(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, now())
+                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
                  ON CONFLICT(id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
                      data = EXCLUDED.data,
-                     updated_at = now()",
+                     updated_at = EXCLUDED.updated_at",
             )
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;
@@ -227,8 +232,22 @@ impl TaskStore for PostgresTaskStore {
                 bind_values.push(status.to_string());
                 conditions.push(format!("state = ${}", bind_values.len()));
             }
-            // Composite (updated_at, id) row-value cursor for most-recently-
-            // updated-first pagination (spec §3.1.4). The cursor timestamp is a
+            // §3.1.4 statusTimestampAfter: strictly-after filter on the
+            // status timestamp, which is what `updated_at` stores. An
+            // unparseable value cannot reach the store through the handler
+            // (which validates it); treat it as matching nothing.
+            if let Some(ref after) = params.status_timestamp_after {
+                let Some(after_ts) = super::status_timestamp_rfc3339(Some(after)) else {
+                    return Ok(TaskListResponse::new(Vec::new()));
+                };
+                bind_values.push(after_ts);
+                conditions.push(format!(
+                    "updated_at > (${})::timestamptz",
+                    bind_values.len()
+                ));
+            }
+            // Composite (updated_at, id) row-value cursor for status-
+            // timestamp-descending pagination (spec §3.1.4). The cursor timestamp is a
             // UTC wall-clock string; casting it back through
             // `::timestamp AT TIME ZONE 'UTC'` reconstructs the exact instant
             // independent of the session time zone. A token not produced by us
@@ -314,15 +333,17 @@ impl TaskStore for PostgresTaskStore {
             let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
 
+            let status_ts = super::status_timestamp_rfc3339(task.status.timestamp.as_deref());
             let result = sqlx::query(
                 "INSERT INTO tasks (id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, now())
+                 VALUES ($1, $2, $3, $4, COALESCE(($5)::timestamptz, now()))
                  ON CONFLICT(id) DO NOTHING",
             )
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;

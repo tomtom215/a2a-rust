@@ -607,14 +607,14 @@ All demos complete successfully, validating the full client-server pipeline acro
 | Tenant-prefixed REST routes | ✅ Done | `strip_tenant_prefix()` supports optional `/tenants/{tenant}/` prefix on all routes. |
 | `SubscribeToTask` as GET | ✅ Done | `GET /tasks/{id}:subscribe` now allowed alongside POST. |
 | GetTask `historyLength` query param | ✅ Done | Parsed from URL query string via `parse_query_param_u32()`. |
-| Protocol headers in responses | ✅ Done | All REST responses include `A2A-Version: 1.0.0` and `Content-Type: application/a2a+json`. |
+| Protocol headers in responses | ✅ Done | All REST responses include `A2A-Version: 1.0` and `Content-Type: application/json` (spec §3.6/§11.1; a2a+json accepted on ingress). |
 
 #### 7C. Protocol Headers (`a2a-protocol-server` + `a2a-protocol-client`) ✅
 
 | Header | Direction | Status |
 |---|---|---|
-| `A2A-Version: 1.0.0` | Server responses | ✅ Added to both JSON-RPC and REST dispatchers |
-| `A2A-Version: 1.0.0` | Client requests | ✅ Added to both JSON-RPC and REST transports |
+| `A2A-Version: 1.0` | Server responses | ✅ Added to both JSON-RPC and REST dispatchers |
+| `A2A-Version: 1.0` | Client requests | ✅ Added to both JSON-RPC and REST transports |
 | `Content-Type: application/a2a+json` | Server responses | ✅ Added to both dispatchers |
 | `Content-Type: application/a2a+json` | Client requests | ✅ Added to both transports |
 | `A2A-Extensions` | Both | ⏭️ Deferred — no extensions implemented yet |
@@ -649,8 +649,8 @@ All demos complete successfully, validating the full client-server pipeline acro
 | `task_continuation_same_context_finds_stored_task` | `handler_tests.rs` | Second request with same `context_id` finds stored task |
 | `context_task_mismatch_rejected` | `handler_tests.rs` | Mismatched `task_id` returns `InvalidParams` error |
 | `interceptor_rejection_stops_processing` | `handler_tests.rs` | `RejectInterceptor.before()` error stops request processing |
-| `rest_response_has_a2a_version_header` | `dispatch_tests.rs` | REST responses include `A2A-Version: 1.0.0` |
-| `jsonrpc_response_has_a2a_version_header` | `dispatch_tests.rs` | JSON-RPC responses include `A2A-Version: 1.0.0` |
+| `rest_response_has_a2a_version_header` | `dispatch_tests.rs` | REST responses include `A2A-Version: 1.0` |
+| `jsonrpc_response_has_a2a_version_header` | `dispatch_tests.rs` | JSON-RPC responses include `A2A-Version: 1.0` |
 | `rest_tenant_prefix_routing` | `dispatch_tests.rs` | `/tenants/acme/tasks/{id}` routes correctly |
 | `rest_get_subscribe_allowed` | `dispatch_tests.rs` | `GET /tasks/{id}:subscribe` returns SSE stream |
 

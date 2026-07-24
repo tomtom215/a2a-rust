@@ -20,6 +20,7 @@ async fn rest_rejects_wrong_content_type_on_post() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "text/xml")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -35,6 +36,7 @@ async fn rest_health_endpoint_returns_ok() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/health"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -53,6 +55,7 @@ async fn rest_ready_endpoint_returns_ok() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/ready"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -68,6 +71,7 @@ async fn rest_rejects_path_traversal() {
     let req = hyper::Request::builder()
         .method("GET")
         .uri(format!("http://{addr}/tasks/../../../etc/passwd"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 
@@ -182,6 +186,7 @@ async fn jsonrpc_rejects_oversized_body() {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -215,6 +220,7 @@ async fn rest_rejects_oversized_body() {
         .method("POST")
         .uri(format!("http://{addr}/message:send"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .unwrap();
 
@@ -355,7 +361,7 @@ async fn send_chunked_oversized_then_stall(
     // Request head declaring chunked transfer encoding (no Content-Length).
     let head = format!(
         "POST {path} HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n\
-         Transfer-Encoding: chunked\r\n\r\n"
+         A2A-Version: 1.0\r\nTransfer-Encoding: chunked\r\n\r\n"
     );
     stream.write_all(head.as_bytes()).await.expect("write head");
 

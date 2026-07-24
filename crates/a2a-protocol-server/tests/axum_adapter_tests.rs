@@ -178,6 +178,7 @@ async fn http_post_json(url: &str, body: &str) -> (u16, Bytes) {
         .method("POST")
         .uri(url)
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body.to_owned())))
         .unwrap();
     let resp = client.request(req).await.unwrap();

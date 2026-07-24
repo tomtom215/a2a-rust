@@ -88,6 +88,7 @@ async fn post_jsonrpc(addr: std::net::SocketAddr, body: &str) -> (u16, String) {
         .method("POST")
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body.to_owned())))
         .unwrap();
 
@@ -356,6 +357,7 @@ async fn jsonrpc_options_returns_204_or_200() {
     let req = hyper::Request::builder()
         .method("OPTIONS")
         .uri(format!("http://{addr}/"))
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::new()))
         .unwrap();
 

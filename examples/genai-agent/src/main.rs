@@ -26,7 +26,7 @@
 //!
 //! # How it works
 //!
-//! 1. The A2A server receives a `message/send` request.
+//! 1. The A2A server receives a `SendMessage` request.
 //! 2. `GenaiAgentExecutor` extracts the user's text from the A2A message.
 //!    A message with no text part fails the task with `InvalidParams`.
 //! 3. The text is passed to `genai::Client` for LLM completion.
@@ -154,7 +154,7 @@ fn make_agent_card(url: &str, model: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],

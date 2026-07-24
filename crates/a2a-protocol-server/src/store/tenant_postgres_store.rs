@@ -127,21 +127,26 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let state = task.status.state.to_string();
             let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("failed to serialize task: {e}")))?;
+            // `updated_at` carries the status timestamp (spec §3.1.4 ordering
+            // + statusTimestampAfter); write wall-clock is the fallback for
+            // tasks without one.
+            let status_ts = super::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
             sqlx::query(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, now())
+                 VALUES ($1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()))
                  ON CONFLICT(tenant_id, id) DO UPDATE SET
                      context_id = EXCLUDED.context_id,
                      state = EXCLUDED.state,
                      data = EXCLUDED.data,
-                     updated_at = now()",
+                     updated_at = EXCLUDED.updated_at",
             )
             .bind(&tenant)
             .bind(id)
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(|e| to_a2a_error(&e))?;
@@ -193,8 +198,22 @@ impl TaskStore for TenantAwarePostgresTaskStore {
                 bind_values.push(status.to_string());
                 conditions.push(format!("state = ${}", bind_values.len()));
             }
-            // Composite (updated_at, id) row-value cursor: most-recently-updated
-            // first (spec §3.1.4) within the current tenant. The cursor
+            // §3.1.4 statusTimestampAfter: strictly-after filter on the
+            // status timestamp, which is what `updated_at` stores. An
+            // unparseable value cannot reach the store through the handler
+            // (which validates it); treat it as matching nothing.
+            if let Some(ref after) = params.status_timestamp_after {
+                let Some(after_ts) = super::status_timestamp_rfc3339(Some(after)) else {
+                    return Ok(TaskListResponse::new(Vec::new()));
+                };
+                bind_values.push(after_ts);
+                conditions.push(format!(
+                    "updated_at > (${})::timestamptz",
+                    bind_values.len()
+                ));
+            }
+            // Composite (updated_at, id) row-value cursor: status-timestamp
+            // descending (spec §3.1.4) within the current tenant. The cursor
             // timestamp is a UTC wall-clock string reconstructed via
             // `::timestamp AT TIME ZONE 'UTC'`, independent of session time
             // zone. A token not produced by us decodes to None → empty page.
@@ -274,10 +293,11 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             let state = task.status.state.to_string();
             let data = serde_json::to_value(task)
                 .map_err(|e| A2aError::internal(format!("serialize: {e}")))?;
+            let status_ts = super::status_timestamp_rfc3339(task.status.timestamp.as_deref());
 
             let result = sqlx::query(
                 "INSERT INTO tenant_tasks (tenant_id, id, context_id, state, data, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, now())
+                 VALUES ($1, $2, $3, $4, $5, COALESCE(($6)::timestamptz, now()))
                  ON CONFLICT(tenant_id, id) DO NOTHING",
             )
             .bind(&tenant)
@@ -285,6 +305,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
             .bind(context_id)
             .bind(&state)
             .bind(&data)
+            .bind(&status_ts)
             .execute(&self.pool)
             .await
             .map_err(|e| to_a2a_error(&e))?;

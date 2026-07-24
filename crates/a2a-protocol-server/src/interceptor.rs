@@ -50,6 +50,20 @@ pub trait ServerInterceptor: Send + Sync + 'static {
         &'a self,
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
+
+    /// Returns `true` if this interceptor authenticates requests — i.e. its
+    /// [`before`](Self::before) hook rejects callers that do not present
+    /// valid credentials.
+    ///
+    /// The extended agent card endpoint MUST require authentication (spec
+    /// §13.3); the handler uses this marker to verify that at least one
+    /// authenticating interceptor guards the chain before serving the card.
+    /// The default is `false` (logging/metrics-style interceptors do not
+    /// authenticate); auth interceptors — including custom ones — should
+    /// override this to `true`.
+    fn authenticates(&self) -> bool {
+        false
+    }
 }
 
 /// An ordered chain of [`ServerInterceptor`] instances.
@@ -99,6 +113,13 @@ impl ServerInterceptorChain {
             interceptor.after(ctx).await?;
         }
         Ok(())
+    }
+
+    /// Returns `true` when at least one interceptor in the chain
+    /// [authenticates](ServerInterceptor::authenticates) requests.
+    #[must_use]
+    pub fn has_authenticator(&self) -> bool {
+        self.interceptors.iter().any(|i| i.authenticates())
     }
 }
 

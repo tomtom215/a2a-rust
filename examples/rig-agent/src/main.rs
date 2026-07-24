@@ -5,7 +5,7 @@
 //! behind the A2A protocol.
 //!
 //! A real `rig-core` agent (OpenAI-compatible provider) serves A2A traffic:
-//! incoming `message/send` text is passed to [`rig_core::completion::Prompt`],
+//! incoming `SendMessage` text is passed to [`rig_core::completion::Prompt`],
 //! and the completion comes back as an A2A artifact. The executor is
 //! generic over [`rig_core::completion::CompletionModel`], so the same bridge
 //! works with any rig provider (Anthropic, Gemini, Ollama, …) — swap the
@@ -152,7 +152,7 @@ fn make_agent_card(url: &str, model: &str) -> AgentCard {
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],

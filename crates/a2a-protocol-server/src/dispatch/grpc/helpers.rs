@@ -41,6 +41,32 @@ pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashM
     map
 }
 
+/// Extracts gRPC metadata into headers and validates the `a2a-version`
+/// service parameter (§3.6.2, §10.2), mirroring the JSON-RPC/REST/WebSocket
+/// bindings: any `1.x` is accepted, an empty/absent value is accepted
+/// (legacy clients), and anything else fails with `VersionNotSupported`
+/// carrying its `google.rpc.ErrorInfo` detail.
+#[allow(clippy::result_large_err)]
+pub(super) fn validated_metadata(
+    metadata: &tonic::metadata::MetadataMap,
+) -> Result<HashMap<String, String>, Status> {
+    let headers = extract_metadata(metadata);
+    if let Some(v) = headers.get("a2a-version") {
+        let v = v.trim();
+        if !v.is_empty() {
+            let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+            if major != Some(1) {
+                return Err(server_error_to_status(&ServerError::Protocol(
+                    a2a_protocol_types::error::A2aError::version_not_supported(format!(
+                        "unsupported A2A version: {v}; this server supports 1.x"
+                    )),
+                )));
+            }
+        }
+    }
+    Ok(headers)
+}
+
 /// Deserializes a JSON payload from a legacy-tunnel gRPC request.
 #[cfg(feature = "grpc-legacy-json")]
 #[allow(clippy::result_large_err)]
@@ -63,6 +89,11 @@ pub(super) fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload,
 /// Converts a [`ServerError`] into a tonic [`Status`].
 ///
 /// Per Section 5.4, each A2A error type maps to a specific gRPC status code.
+/// Per Section 10.6, A2A-specific errors additionally carry a
+/// `google.rpc.ErrorInfo` message in `status.details` with the
+/// `UPPER_SNAKE_CASE` reason and the `a2a-protocol.org` domain, so gRPC
+/// clients get the same machine-readable error identity as the JSON-RPC
+/// (`error.data`) and REST (`error.details`) bindings.
 pub(super) fn server_error_to_status(err: &ServerError) -> Status {
     use a2a_protocol_types::ErrorCode;
     // Resource-limit rejections have no A2A/JSON-RPC code but map cleanly to the
@@ -87,6 +118,16 @@ pub(super) fn server_error_to_status(err: &ServerError) -> Status {
         | ErrorCode::VersionNotSupported => tonic::Code::Unimplemented,
         ErrorCode::InvalidAgentResponse | ErrorCode::InternalError | _ => tonic::Code::Internal,
     };
+    if let Some(reason) = a2a_err.code.a2a_reason() {
+        use tonic_types::StatusExt as _;
+        let mut details = tonic_types::ErrorDetails::new();
+        details.set_error_info(
+            reason,
+            a2a_protocol_types::error::A2A_ERROR_DOMAIN,
+            HashMap::<String, String>::new(),
+        );
+        return Status::with_error_details(code, a2a_err.message, details);
+    }
     Status::new(code, a2a_err.message)
 }
 
@@ -196,6 +237,65 @@ mod tests {
         assert_eq!(status.code(), tonic::Code::Internal);
     }
 
+    // §10.6: A2A-specific errors carry google.rpc.ErrorInfo in status.details.
+
+    #[test]
+    fn a2a_error_status_carries_error_info_detail() {
+        use tonic_types::StatusExt as _;
+        let status = server_error_to_status(&ServerError::TaskNotFound("t1".into()));
+        let info = status
+            .get_details_error_info()
+            .expect("A2A error must carry google.rpc.ErrorInfo in status.details");
+        assert_eq!(info.reason, "TASK_NOT_FOUND");
+        assert_eq!(info.domain, a2a_protocol_types::error::A2A_ERROR_DOMAIN);
+    }
+
+    #[test]
+    fn every_a2a_reason_maps_to_error_info_detail() {
+        use tonic_types::StatusExt as _;
+        let cases: Vec<(ServerError, &str)> = vec![
+            (ServerError::TaskNotFound("t".into()), "TASK_NOT_FOUND"),
+            (
+                ServerError::TaskNotCancelable("t".into()),
+                "TASK_NOT_CANCELABLE",
+            ),
+            (
+                ServerError::PushNotSupported,
+                "PUSH_NOTIFICATION_NOT_SUPPORTED",
+            ),
+            (
+                ServerError::UnsupportedOperation("u".into()),
+                "UNSUPPORTED_OPERATION",
+            ),
+        ];
+        for (err, want_reason) in cases {
+            let status = server_error_to_status(&err);
+            let info = status
+                .get_details_error_info()
+                .unwrap_or_else(|| panic!("missing ErrorInfo for {want_reason}"));
+            assert_eq!(info.reason, want_reason);
+            assert_eq!(info.domain, "a2a-protocol.org");
+        }
+    }
+
+    #[test]
+    fn standard_errors_have_no_error_info_detail() {
+        use tonic_types::StatusExt as _;
+        // InternalError and InvalidParams are standard JSON-RPC codes without
+        // an A2A reason — no ErrorInfo detail is attached.
+        for err in [
+            ServerError::Internal("oops".into()),
+            ServerError::InvalidParams("bad".into()),
+            ServerError::Overloaded("busy".into()),
+        ] {
+            let status = server_error_to_status(&err);
+            assert!(
+                status.get_details_error_info().is_none(),
+                "standard error unexpectedly carried ErrorInfo: {err:?}"
+            );
+        }
+    }
+
     // extract_metadata
     #[test]
     fn extract_metadata_ascii_keys() {
@@ -213,5 +313,37 @@ mod tests {
         let meta = tonic::metadata::MetadataMap::new();
         let map = extract_metadata(&meta);
         assert!(map.is_empty());
+    }
+
+    // ── validated_metadata (§3.6.2 / §10.2 version negotiation) ──────────
+
+    #[test]
+    fn validated_metadata_accepts_1x_and_absent() {
+        for version in [Some("1.0"), Some("1.5"), Some(""), None] {
+            let mut meta = tonic::metadata::MetadataMap::new();
+            if let Some(v) = version {
+                meta.insert("a2a-version", v.parse().unwrap());
+            }
+            assert!(
+                validated_metadata(&meta).is_ok(),
+                "version {version:?} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validated_metadata_rejects_unsupported_versions() {
+        use tonic_types::StatusExt as _;
+        for version in ["0.3", "2.0", "not-a-version"] {
+            let mut meta = tonic::metadata::MetadataMap::new();
+            meta.insert("a2a-version", version.parse().unwrap());
+            let status =
+                validated_metadata(&meta).expect_err("unsupported version must be rejected");
+            assert_eq!(status.code(), tonic::Code::Unimplemented);
+            let info = status
+                .get_details_error_info()
+                .expect("version rejection must carry ErrorInfo");
+            assert_eq!(info.reason, "VERSION_NOT_SUPPORTED");
+        }
     }
 }

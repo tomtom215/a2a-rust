@@ -248,6 +248,15 @@ impl WebSocketTransport {
             .as_str()
             .into_client_request()
             .map_err(|e| ClientError::Transport(format!("WebSocket request build failed: {e}")))?;
+        // §3.6.1: clients MUST send A2A-Version with each request; for a
+        // WebSocket that is the upgrade handshake. Inserted before
+        // extra_headers so a caller-supplied override still wins.
+        ws_request.headers_mut().insert(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            tokio_tungstenite::tungstenite::http::HeaderValue::from_static(
+                a2a_protocol_types::A2A_VERSION,
+            ),
+        );
         for (k, v) in &config.extra_headers {
             // Fail closed on an unparseable header rather than silently dropping
             // it: a rejected `Authorization` header must not let the handshake

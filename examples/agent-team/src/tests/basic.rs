@@ -101,7 +101,7 @@ pub async fn test_streaming_jsonrpc(ctx: &TestContext) -> TestResult {
 pub async fn test_sync_rest_send(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
     match client.send_message(make_send_params("check")).await {
@@ -129,7 +129,7 @@ pub async fn test_sync_rest_send(ctx: &TestContext) -> TestResult {
 pub async fn test_streaming_rest(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
     match client.stream_message(make_send_params("check")).await {
@@ -161,7 +161,7 @@ pub async fn test_streaming_rest(ctx: &TestContext) -> TestResult {
 pub async fn test_build_failure_path(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
     match client.send_message(make_send_params("fail")).await {
@@ -269,7 +269,7 @@ pub async fn test_list_tasks(ctx: &TestContext) -> TestResult {
 pub async fn test_push_config_crud(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     let client = ClientBuilder::new(&ctx.build_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
     let task_id = match client.send_message(make_send_params("ping")).await {
@@ -419,7 +419,7 @@ pub async fn test_agent_to_agent(ctx: &TestContext) -> TestResult {
     let start = Instant::now();
     println!("\nTest 10: Agent-to-agent coordination");
     let client = ClientBuilder::new(&ctx.coordinator_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build coord client");
 

@@ -213,6 +213,7 @@ async fn send_request(client: &HttpClient, addr: SocketAddr, id: usize) -> Resul
         .method(hyper::Method::POST)
         .uri(format!("http://{addr}/"))
         .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
         .body(Full::new(Bytes::from(body)))
         .map_err(|e| format!("build request: {e}"))?;
 

@@ -17,9 +17,14 @@ use super::*;
 fn utc_now_iso8601_returns_valid_iso_format() {
     let ts = a2a_protocol_types::utc_now_iso8601();
 
-    // Should match YYYY-MM-DDTHH:MM:SSZ
+    // Should match YYYY-MM-DDTHH:MM:SS.mmmZ (millisecond precision, §5.6.1)
     assert!(ts.ends_with('Z'), "timestamp should end with Z: {ts}");
-    assert_eq!(ts.len(), 20, "expected 20-char ISO 8601 string: {ts}");
+    assert_eq!(ts.len(), 24, "expected 24-char ISO 8601 string: {ts}");
+    assert_eq!(
+        ts.as_bytes()[19],
+        b'.',
+        "expected fractional-second dot at position 19: {ts}"
+    );
 
     // Verify the T separator is in the right place.
     assert_eq!(
@@ -42,10 +47,10 @@ fn utc_now_iso8601_returns_valid_iso_format() {
         "expected colon at position 16: {ts}"
     );
 
-    // All other positions should be digits.
+    // All other positions should be digits (23 is the trailing 'Z').
     for (i, ch) in ts.chars().enumerate() {
-        if [4, 7, 10, 13, 16, 19].contains(&i) {
-            continue; // separators
+        if [4, 7, 10, 13, 16, 19, 23].contains(&i) {
+            continue; // separators and the 'Z' suffix
         }
         assert!(ch.is_ascii_digit(), "expected digit at position {i}: {ts}");
     }
@@ -261,8 +266,11 @@ async fn get_extended_agent_card_configured_with_capability() {
     use a2a_protocol_types::agent_card::AgentCapabilities;
     let mut card = minimal_agent_card();
     card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+    // §13.3: the endpoint requires authentication; the unauthenticated test
+    // handler must opt in explicitly to serve the card.
     let handler = RequestHandlerBuilder::new(EchoExecutor)
         .with_agent_card(card)
+        .allow_unauthenticated_extended_card()
         .build()
         .expect("build handler");
 

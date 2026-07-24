@@ -96,7 +96,7 @@ impl RestTransport {
         let mut builder = hyper::Request::builder()
             .method(hyper_method)
             .uri(uri)
-            .header(header::CONTENT_TYPE, a2a_protocol_types::A2A_CONTENT_TYPE)
+            .header(header::CONTENT_TYPE, a2a_protocol_types::JSON_CONTENT_TYPE)
             .header(
                 a2a_protocol_types::A2A_VERSION_HEADER,
                 a2a_protocol_types::A2A_VERSION,
@@ -159,6 +159,13 @@ impl RestTransport {
         };
 
         if !status.is_success() {
+            // §11.6: an A2A REST server reports errors in the AIP-193 shape
+            // with a google.rpc.ErrorInfo detail. Decode that into the exact
+            // structured A2A error (matching what the JSON-RPC and gRPC
+            // transports surface) before falling back to the raw status.
+            if let Some(a2a) = parse_aip193_error(&body_bytes) {
+                return Err(ClientError::Protocol(a2a));
+            }
             let body_str = String::from_utf8_lossy(&body_bytes);
             return Err(ClientError::UnexpectedStatus {
                 status: status.as_u16(),
@@ -186,6 +193,68 @@ impl RestTransport {
 
         // Fall back to raw JSON value.
         serde_json::from_slice(&body_bytes).map_err(ClientError::Serialization)
+    }
+}
+
+/// Decodes an AIP-193 error body (`{"error": {"code", "status", "message",
+/// "details": [ErrorInfo, ...]}}`, spec §11.6) into a structured [`A2aError`].
+///
+/// The exact A2A code is recovered from the `google.rpc.ErrorInfo` detail's
+/// `reason`; bodies without a recognizable A2A reason return `None` so the
+/// caller can fall back to the raw HTTP status.
+fn parse_aip193_error(body: &[u8]) -> Option<a2a_protocol_types::A2aError> {
+    let value: serde_json::Value = serde_json::from_slice(body).ok()?;
+    let error = value.get("error")?;
+    let message = error.get("message")?.as_str()?.to_owned();
+    let details = error.get("details")?.as_array()?;
+    let reason = details.iter().find_map(|d| {
+        (d.get("@type")?.as_str()? == "type.googleapis.com/google.rpc.ErrorInfo")
+            .then(|| d.get("reason")?.as_str())
+            .flatten()
+    })?;
+    let code = a2a_protocol_types::ErrorCode::from_a2a_reason(reason)?;
+    Some(a2a_protocol_types::A2aError::new(code, message))
+}
+
+#[cfg(test)]
+mod aip193_tests {
+    use super::parse_aip193_error;
+
+    #[test]
+    fn parses_aip193_error_with_error_info() {
+        let body = br#"{
+            "error": {
+                "code": 404,
+                "status": "NOT_FOUND",
+                "message": "The specified task ID does not exist",
+                "details": [
+                    {
+                        "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                        "reason": "TASK_NOT_FOUND",
+                        "domain": "a2a-protocol.org"
+                    }
+                ]
+            }
+        }"#;
+        let err = parse_aip193_error(body).expect("must parse");
+        assert_eq!(err.code, a2a_protocol_types::ErrorCode::TaskNotFound);
+        assert_eq!(err.message, "The specified task ID does not exist");
+    }
+
+    #[test]
+    fn ignores_bodies_without_a2a_reason() {
+        for body in [
+            &b"not json"[..],
+            br#"{"error":{"code":500,"message":"boom"}}"#,
+            br#"{"error":{"code":400,"message":"x","details":[{"@type":"other","reason":"TASK_NOT_FOUND"}]}}"#,
+            br#"{"error":{"code":400,"message":"x","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"NOT_A_REAL_REASON"}]}}"#,
+        ] {
+            assert!(
+                parse_aip193_error(body).is_none(),
+                "must not parse: {}",
+                String::from_utf8_lossy(body)
+            );
+        }
     }
 }
 

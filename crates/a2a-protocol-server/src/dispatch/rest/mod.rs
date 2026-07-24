@@ -135,24 +135,6 @@ impl RestDispatcher {
             }
         }
 
-        // Validate A2A-Version header if present.
-        // Per Section 3.6.2: empty value MUST be interpreted as 0.3.
-        if let Some(version) = req.headers().get(a2a_protocol_types::A2A_VERSION_HEADER) {
-            if let Ok(v) = version.to_str() {
-                let v = v.trim();
-                // Empty header → interpret as 0.3 per spec Section 3.6.2.
-                if !v.is_empty() {
-                    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-                    if major != Some(1) {
-                        return error_json_response(
-                            400,
-                            &format!("unsupported A2A version: {v}; this server supports 1.x"),
-                        );
-                    }
-                }
-            }
-        }
-
         // Reject path traversal attempts (check both raw and percent-decoded forms).
         if contains_path_traversal(&path) {
             return error_json_response(400, "invalid path: path traversal not allowed");
@@ -168,6 +150,21 @@ impl RestDispatcher {
                 });
         }
 
+        // Validate the A2A-Version header per spec §3.6.2: absent or empty
+        // is interpreted as protocol 0.3 and rejected under the strict
+        // default (reference-SDK parity); any 1.x is accepted. Rejections
+        // produce the real VersionNotSupportedError (with its ErrorInfo
+        // detail), not an anonymous 400.
+        let version_value = req
+            .headers()
+            .get(a2a_protocol_types::A2A_VERSION_HEADER)
+            .and_then(|v| v.to_str().ok());
+        if let Err(err) =
+            super::validate_version_header(version_value, self.config.require_version_header)
+        {
+            return server_error_to_response(&crate::error::ServerError::Protocol(err));
+        }
+
         // Strip optional /tenants/{tenant}/ prefix.
         let (tenant, rest_path) = strip_tenant_prefix(&path);
 
@@ -177,6 +174,18 @@ impl RestDispatcher {
         let mut resp = self
             .dispatch_rest(req, method.as_str(), rest_path, &query, tenant, &headers)
             .await;
+        // Echo the activated extension set (requested ∩ card-declared) so
+        // clients see which requested extensions the agent honored
+        // (official-SDK convention).
+        if let Some(hval) = self
+            .handler
+            .activated_extensions_header_value(headers.get("a2a-extensions").map(String::as_str))
+        {
+            if let Ok(v) = hyper::header::HeaderValue::from_str(&hval) {
+                resp.headers_mut()
+                    .insert(a2a_protocol_types::A2A_EXTENSIONS_HEADER, v);
+            }
+        }
         if let Some(ref cors) = self.cors {
             cors.apply_headers(&mut resp);
         }
@@ -197,10 +206,10 @@ impl RestDispatcher {
         // Colon-suffixed routes: /message:send, /message:stream.
         // Also accept slash-separated variants: /message/send, /message/stream.
         match (method, path) {
-            ("POST", "/message:send" | "/message/send") => {
+            ("POST", "/message:send") => {
                 return self.handle_send(req, false, headers).await;
             }
-            ("POST", "/message:stream" | "/message/stream") => {
+            ("POST", "/message:stream") => {
                 return self.handle_send(req, true, headers).await;
             }
             _ => {}
@@ -214,6 +223,14 @@ impl RestDispatcher {
                         ("POST", "cancel") => {
                             return self.handle_cancel_task(id, tenant, headers).await;
                         }
+                        // Spec §11.3.2 (and the §5.3 method-mapping table)
+                        // define `POST /tasks/{id}:subscribe`; the upstream
+                        // a2a.proto's google.api.http annotation says `get:`
+                        // instead. Accepting both verbs keeps this server
+                        // interoperable with peers generated from either
+                        // source (e.g. grpc-gateway transcoders emit GET,
+                        // browser EventSource can only GET), while this SDK's
+                        // client sends the spec-prose POST.
                         ("POST" | "GET", "subscribe") => {
                             return self.handle_resubscribe(id, tenant, headers).await;
                         }
@@ -300,7 +317,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
-                false, // REST: bare StreamResponse per Section 11.7
+                None, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }
@@ -370,7 +387,7 @@ impl RestDispatcher {
                 reader,
                 Some(self.config.sse_keep_alive_interval),
                 Some(self.config.sse_channel_capacity),
-                false, // REST: bare StreamResponse per Section 11.7
+                None, // REST: bare StreamResponse per Section 11.7
             ),
             Err(e) => server_error_to_response(&e),
         }

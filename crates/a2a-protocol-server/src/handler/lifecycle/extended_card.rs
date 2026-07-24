@@ -43,6 +43,26 @@ impl RequestHandler {
                             "agent does not support extended agent card".into(),
                         ));
                     }
+                    // SPEC §13.3: this operation MUST require authentication.
+                    // The interceptor chain (which already ran above) is the
+                    // enforcement point — but when it contains no
+                    // authenticating interceptor at all, a default deployment
+                    // would serve the "authenticated" card to anyone. Refuse
+                    // unless the operator explicitly opted in.
+                    if !self.interceptors.has_authenticator()
+                        && !self.allow_unauthenticated_extended_card
+                    {
+                        return Err(ServerError::Protocol(
+                            a2a_protocol_types::error::A2aError::new(
+                                a2a_protocol_types::error::ErrorCode::InvalidRequest,
+                                "extended agent card requires authentication, but no \
+                                 authenticating interceptor is configured; register one \
+                                 (e.g. BearerTokenAuthInterceptor / JwtAuthInterceptor) or \
+                                 opt in explicitly with \
+                                 RequestHandlerBuilder::allow_unauthenticated_extended_card()",
+                            ),
+                        ));
+                    }
                     card.clone()
                 }
                 None => {
@@ -136,8 +156,11 @@ mod tests {
         );
     }
 
+    /// §13.3: with no authenticating interceptor, the extended card is
+    /// refused by default — a bare deployment must not serve the
+    /// "authenticated" card to anonymous callers.
     #[tokio::test]
-    async fn get_extended_agent_card_with_capability_returns_ok() {
+    async fn get_extended_agent_card_without_authenticator_is_refused() {
         let mut card = make_agent_card();
         card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
         let handler = RequestHandlerBuilder::new(DummyExecutor)
@@ -146,10 +169,58 @@ mod tests {
             .unwrap();
         let result = handler.on_get_extended_agent_card(None).await;
         assert!(
+            matches!(result, Err(ServerError::Protocol(ref e))
+                if e.message.contains("requires authentication")),
+            "expected an authentication-required refusal, got: {result:?}"
+        );
+    }
+
+    /// The explicit opt-out restores unauthenticated serving.
+    #[tokio::test]
+    async fn get_extended_agent_card_with_optout_returns_ok() {
+        let mut card = make_agent_card();
+        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card)
+            .allow_unauthenticated_extended_card()
+            .build()
+            .unwrap();
+        let result = handler.on_get_extended_agent_card(None).await;
+        assert!(
             result.is_ok(),
-            "expected Ok when agent card is configured, got: {result:?}"
+            "expected Ok with explicit unauthenticated opt-in, got: {result:?}"
         );
         assert_eq!(result.unwrap().name, "Test Agent");
+    }
+
+    /// With an authenticating interceptor, valid credentials get the card and
+    /// missing credentials are rejected by the interceptor itself.
+    #[tokio::test]
+    async fn get_extended_agent_card_with_authenticator_gates_on_credentials() {
+        let mut card = make_agent_card();
+        card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card)
+            .with_interceptor(crate::auth::BearerTokenAuthInterceptor::new(["sekret"]))
+            .build()
+            .unwrap();
+
+        // No credentials → the auth interceptor rejects.
+        let anon = handler.on_get_extended_agent_card(None).await;
+        assert!(
+            anon.is_err(),
+            "unauthenticated request must be rejected, got: {anon:?}"
+        );
+
+        // Valid credentials → the card is served.
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("authorization".to_owned(), "Bearer sekret".to_owned());
+        let authed = handler.on_get_extended_agent_card(Some(&headers)).await;
+        assert!(
+            authed.is_ok(),
+            "authenticated request must be served, got: {authed:?}"
+        );
+        assert_eq!(authed.unwrap().name, "Test Agent");
     }
 
     #[tokio::test]

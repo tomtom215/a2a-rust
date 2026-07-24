@@ -74,6 +74,7 @@ pub struct RequestHandlerBuilder {
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
     tenant_config: Option<PerTenantConfig>,
     require_resolved_tenant: bool,
+    allow_unauthenticated_extended_card: bool,
 }
 
 impl RequestHandlerBuilder {
@@ -100,6 +101,7 @@ impl RequestHandlerBuilder {
             tenant_resolver: None,
             tenant_config: None,
             require_resolved_tenant: false,
+            allow_unauthenticated_extended_card: false,
         }
     }
 
@@ -218,8 +220,15 @@ impl RequestHandlerBuilder {
 
     /// Sets the write timeout for event queue sends.
     ///
-    /// Prevents executors from blocking indefinitely when a client is slow or
-    /// disconnected. Default: 5 seconds.
+    /// Retained for API compatibility only. Event queue writes never block
+    /// (the broadcast channel is non-blocking), so this value has no effect;
+    /// a slow streaming consumer receives an explicit lag error on its
+    /// reader instead of exerting backpressure on the executor.
+    #[deprecated(
+        since = "0.7.0",
+        note = "has no effect: event queue writes never block; slow consumers \
+                receive an explicit lag error instead. Will be removed in 0.8."
+    )]
     #[must_use]
     pub const fn with_event_queue_write_timeout(mut self, timeout: Duration) -> Self {
         self.event_queue_write_timeout = Some(timeout);
@@ -272,6 +281,24 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn require_resolved_tenant(mut self) -> Self {
         self.require_resolved_tenant = true;
+        self
+    }
+
+    /// Serves `GetExtendedAgentCard` even when no authenticating interceptor
+    /// is registered.
+    ///
+    /// Spec §13.3 requires the extended card endpoint to be authenticated, so
+    /// by default a handler whose card declares
+    /// `capabilities.extendedAgentCard: true` refuses to serve the card
+    /// unless the interceptor chain contains at least one interceptor whose
+    /// [`authenticates()`](crate::interceptor::ServerInterceptor::authenticates)
+    /// returns `true`. Call this only when the extended card genuinely
+    /// contains nothing sensitive (e.g. it is identical to the public card)
+    /// or authentication is enforced upstream of this process (API gateway,
+    /// service mesh, mTLS sidecar).
+    #[must_use]
+    pub const fn allow_unauthenticated_extended_card(mut self) -> Self {
+        self.allow_unauthenticated_extended_card = true;
         self
     }
 
@@ -332,6 +359,22 @@ impl RequestHandlerBuilder {
                 "push_delivery_timeout must be greater than zero".into(),
             ));
         }
+        // §3.3.4: precompute the extension sets from the agent card so each
+        // request checks required-extension support in O(request extensions).
+        let (required_extensions, declared_extensions) = self
+            .agent_card
+            .as_ref()
+            .and_then(|c| c.capabilities.extensions.as_ref())
+            .map(|exts| {
+                let declared: Vec<String> = exts.iter().map(|e| e.uri.clone()).collect();
+                let required: Vec<String> = exts
+                    .iter()
+                    .filter(|e| e.required == Some(true))
+                    .map(|e| e.uri.clone())
+                    .collect();
+                (required, declared)
+            })
+            .unwrap_or_default();
 
         Ok(RequestHandler {
             executor: self.executor,
@@ -350,7 +393,10 @@ impl RequestHandlerBuilder {
                     mgr = mgr.with_max_event_size(max_size);
                 }
                 if let Some(timeout) = self.event_queue_write_timeout {
-                    mgr = mgr.with_write_timeout(timeout);
+                    #[allow(deprecated)] // Forwarding a deprecated no-op option until 0.8.
+                    {
+                        mgr = mgr.with_write_timeout(timeout);
+                    }
                 }
                 mgr = mgr.with_max_concurrent_queues(
                     self.max_concurrent_streams
@@ -366,6 +412,9 @@ impl RequestHandlerBuilder {
             limits: self.handler_limits,
             tenant_resolver: self.tenant_resolver,
             require_resolved_tenant: self.require_resolved_tenant,
+            allow_unauthenticated_extended_card: self.allow_unauthenticated_extended_card,
+            required_extensions,
+            declared_extensions,
             tenant_config: self.tenant_config,
             cancellation_tokens: Arc::new(tokio::sync::RwLock::new(
                 std::collections::HashMap::new(),
@@ -395,6 +444,10 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("tenant_resolver", &self.tenant_resolver.is_some())
             .field("tenant_config", &self.tenant_config)
             .field("require_resolved_tenant", &self.require_resolved_tenant)
+            .field(
+                "allow_unauthenticated_extended_card",
+                &self.allow_unauthenticated_extended_card,
+            )
             .finish()
     }
 }
@@ -589,6 +642,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)] // The no-op option must keep building until removed in 0.8.
     fn builder_with_event_queue_write_timeout_builds_ok() {
         let result = RequestHandlerBuilder::new(TestExecutor)
             .with_event_queue_write_timeout(Duration::from_secs(10))

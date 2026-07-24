@@ -13,6 +13,12 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+/// The `google.rpc.ErrorInfo.domain` value for A2A-specific errors.
+///
+/// Spec §9.5/§10.6/§11.6: every A2A error's `ErrorInfo` detail carries
+/// `domain: "a2a-protocol.org"` across all three protocol bindings.
+pub const A2A_ERROR_DOMAIN: &str = "a2a-protocol.org";
+
 // ── Error codes ──────────────────────────────────────────────────────────────
 
 /// Numeric error codes defined by JSON-RPC 2.0 and the A2A v1.0 specification.
@@ -100,6 +106,28 @@ impl ErrorCode {
             Self::ExtendedAgentCardNotConfigured => Some("EXTENDED_AGENT_CARD_NOT_CONFIGURED"),
             Self::ExtensionSupportRequired => Some("EXTENSION_SUPPORT_REQUIRED"),
             Self::VersionNotSupported => Some("VERSION_NOT_SUPPORTED"),
+            _ => None,
+        }
+    }
+
+    /// Resolves an `UPPER_SNAKE_CASE` A2A reason (as carried in
+    /// `google.rpc.ErrorInfo.reason`) back to its [`ErrorCode`].
+    ///
+    /// The exact inverse of [`ErrorCode::a2a_reason`]; returns `None` for
+    /// unknown reasons and for standard JSON-RPC codes (which have no
+    /// A2A reason).
+    #[must_use]
+    pub fn from_a2a_reason(reason: &str) -> Option<Self> {
+        match reason {
+            "TASK_NOT_FOUND" => Some(Self::TaskNotFound),
+            "TASK_NOT_CANCELABLE" => Some(Self::TaskNotCancelable),
+            "PUSH_NOTIFICATION_NOT_SUPPORTED" => Some(Self::PushNotificationNotSupported),
+            "UNSUPPORTED_OPERATION" => Some(Self::UnsupportedOperation),
+            "CONTENT_TYPE_NOT_SUPPORTED" => Some(Self::ContentTypeNotSupported),
+            "INVALID_AGENT_RESPONSE" => Some(Self::InvalidAgentResponse),
+            "EXTENDED_AGENT_CARD_NOT_CONFIGURED" => Some(Self::ExtendedAgentCardNotConfigured),
+            "EXTENSION_SUPPORT_REQUIRED" => Some(Self::ExtensionSupportRequired),
+            "VERSION_NOT_SUPPORTED" => Some(Self::VersionNotSupported),
             _ => None,
         }
     }
@@ -312,7 +340,7 @@ impl A2aError {
                 let mut info = serde_json::json!({
                     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
                     "reason": reason,
-                    "domain": "a2a-protocol.org"
+                    "domain": A2A_ERROR_DOMAIN
                 });
                 if let Some(meta) = metadata {
                     info["metadata"] = meta;
@@ -652,6 +680,31 @@ mod tests {
         assert_eq!(ErrorCode::MethodNotFound.a2a_reason(), None);
         assert_eq!(ErrorCode::InvalidParams.a2a_reason(), None);
         assert_eq!(ErrorCode::InternalError.a2a_reason(), None);
+    }
+
+    #[test]
+    fn from_a2a_reason_is_exact_inverse_of_a2a_reason() {
+        let all = [
+            ErrorCode::TaskNotFound,
+            ErrorCode::TaskNotCancelable,
+            ErrorCode::PushNotificationNotSupported,
+            ErrorCode::UnsupportedOperation,
+            ErrorCode::ContentTypeNotSupported,
+            ErrorCode::InvalidAgentResponse,
+            ErrorCode::ExtendedAgentCardNotConfigured,
+            ErrorCode::ExtensionSupportRequired,
+            ErrorCode::VersionNotSupported,
+        ];
+        for code in all {
+            let reason = code.a2a_reason().expect("A2A code must have a reason");
+            assert_eq!(
+                ErrorCode::from_a2a_reason(reason),
+                Some(code),
+                "round-trip failed for {reason}"
+            );
+        }
+        assert_eq!(ErrorCode::from_a2a_reason("NOT_A_REAL_REASON"), None);
+        assert_eq!(ErrorCode::from_a2a_reason(""), None);
     }
 
     #[test]

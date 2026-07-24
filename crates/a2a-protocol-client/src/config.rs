@@ -14,8 +14,11 @@ use std::time::Duration;
 
 /// Protocol binding identifier.
 ///
-/// In v1.0, protocol bindings are free-form strings (`"JSONRPC"`, `"REST"`,
-/// `"GRPC"`) rather than a fixed enum.
+/// In v1.0, protocol bindings are free-form strings rather than a fixed
+/// enum; the spec's canonical values are `"JSONRPC"`, `"GRPC"`, and
+/// `"HTTP+JSON"`. The legacy `"REST"` spelling is still accepted when
+/// matching agent-card interfaces, but cards should advertise the
+/// canonical name.
 pub const BINDING_JSONRPC: &str = "JSONRPC";
 
 /// HTTP+JSON protocol binding (spec name for the REST transport).

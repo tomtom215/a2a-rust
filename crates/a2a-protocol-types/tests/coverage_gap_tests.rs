@@ -17,7 +17,7 @@ use a2a_protocol_types::*;
 
 #[test]
 fn protocol_constants() {
-    assert_eq!(A2A_VERSION, "1.0.0");
+    assert_eq!(A2A_VERSION, "1.0");
     assert_eq!(A2A_CONTENT_TYPE, "application/a2a+json");
     assert_eq!(A2A_VERSION_HEADER, "A2A-Version");
 }
@@ -592,14 +592,15 @@ fn task_list_response_roundtrip() {
 #[test]
 fn utc_now_iso8601_produces_valid_format() {
     let ts = a2a_protocol_types::utc_now_iso8601();
-    // Format: "YYYY-MM-DDTHH:MM:SSZ"
-    assert_eq!(ts.len(), 20);
+    // Format: "YYYY-MM-DDTHH:MM:SS.mmmZ" (millisecond precision, §5.6.1)
+    assert_eq!(ts.len(), 24);
     assert!(ts.ends_with('Z'));
     assert_eq!(&ts[4..5], "-");
     assert_eq!(&ts[7..8], "-");
     assert_eq!(&ts[10..11], "T");
     assert_eq!(&ts[13..14], ":");
     assert_eq!(&ts[16..17], ":");
+    assert_eq!(&ts[19..20], ".");
 
     // Parse components
     let year: u32 = ts[0..4].parse().unwrap();

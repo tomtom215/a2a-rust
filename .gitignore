@@ -36,3 +36,12 @@ itk/agents/js-agent/package-lock.json
 # cargo-mutants output
 mutants.out/
 mutants.out.old/
+/itk/target
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/target/
+
+# ITK official-SDK agent build artifacts
+itk/agents/java-sdk/target/
+itk/agents/go-sdk/a2a-itk-go-sdk-agent
+itk/agents/*/node_modules/

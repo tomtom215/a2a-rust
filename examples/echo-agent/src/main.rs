@@ -109,13 +109,13 @@ fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
             AgentInterface {
                 url: jsonrpc_url.into(),
                 protocol_binding: "JSONRPC".into(),
-                protocol_version: "1.0.0".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
             AgentInterface {
                 url: rest_url.into(),
-                protocol_binding: "REST".into(),
-                protocol_version: "1.0.0".into(),
+                protocol_binding: "HTTP+JSON".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
         ],
@@ -430,7 +430,7 @@ async fn main() {
 
     println!("--- Demo 3: Synchronous SendMessage (REST) ---");
     let rest_client = ClientBuilder::new(&rest_url)
-        .with_protocol_binding("REST")
+        .with_protocol_binding("HTTP+JSON")
         .build()
         .expect("build REST client");
 

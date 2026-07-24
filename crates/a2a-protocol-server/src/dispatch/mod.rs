@@ -61,6 +61,16 @@ pub struct DispatchConfig {
     /// Batches exceeding this limit are rejected with a parse error before
     /// any individual request is dispatched.
     pub max_batch_size: usize,
+    /// Whether data-plane requests must carry an `A2A-Version` header.
+    /// Default: `true`.
+    ///
+    /// Spec §3.6.2: a request without the header (or with an empty value)
+    /// MUST be interpreted as protocol version 0.3 — which this server does
+    /// not implement — so by default such requests are rejected with
+    /// `VersionNotSupported`, exactly like the reference Python SDK.
+    /// Disable via [`accept_missing_version_header`](Self::accept_missing_version_header)
+    /// for manual `curl` testing or trusted internal deployments.
+    pub require_version_header: bool,
 }
 
 impl Default for DispatchConfig {
@@ -72,6 +82,7 @@ impl Default for DispatchConfig {
             sse_keep_alive_interval: std::time::Duration::from_secs(30),
             sse_channel_capacity: 64,
             max_batch_size: 100,
+            require_version_header: true,
         }
     }
 }
@@ -118,6 +129,49 @@ impl DispatchConfig {
         self.max_batch_size = size;
         self
     }
+
+    /// Accepts data-plane requests without an `A2A-Version` header.
+    ///
+    /// Spec §3.6.2 interprets a missing/empty header as protocol 0.3, which
+    /// this server does not implement, so the strict default rejects such
+    /// requests with `VersionNotSupported` (reference-SDK parity). This
+    /// opt-out restores the pre-0.7 tolerant behavior for manual testing or
+    /// deployments where every client is known to speak 1.x.
+    #[must_use]
+    pub const fn accept_missing_version_header(mut self) -> Self {
+        self.require_version_header = false;
+        self
+    }
+}
+
+/// Validates an `A2A-Version` header value per spec §3.6.2.
+///
+/// `value` is the raw header value (`None` when the header is absent).
+/// Absent or empty MUST be interpreted as protocol 0.3; when `require` is
+/// set (the strict default) that yields the same `VersionNotSupported`
+/// rejection the reference Python SDK produces. Any `1.x` value is
+/// accepted; patch segments are ignored per §3.6. Other versions are
+/// rejected.
+pub(crate) fn validate_version_header(
+    value: Option<&str>,
+    require: bool,
+) -> Result<(), a2a_protocol_types::error::A2aError> {
+    let v = value.unwrap_or("").trim();
+    if v.is_empty() {
+        if require {
+            return Err(a2a_protocol_types::error::A2aError::version_not_supported(
+                "A2A version '0.3' is not supported by this server; expected '1.0' (send the A2A-Version header)",
+            ));
+        }
+        return Ok(());
+    }
+    let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
+    if major == Some(1) {
+        return Ok(());
+    }
+    Err(a2a_protocol_types::error::A2aError::version_not_supported(
+        format!("unsupported A2A version: {v}; this server supports 1.x"),
+    ))
 }
 
 #[cfg(test)]

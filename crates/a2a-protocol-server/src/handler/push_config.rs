@@ -78,6 +78,9 @@ impl RequestHandler {
 
             let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
 
             // Enforce the per-task config cap here so it holds for EVERY store
             // backend (the SQL stores do not self-enforce). Creating a new
@@ -161,6 +164,9 @@ impl RequestHandler {
             self.ensure_push_supported()?;
             let call_ctx = build_call_context("GetTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
 
             // SPEC §3.1.8: a missing push notification configuration MUST be
             // reported as TaskNotFoundError, not InvalidParams.
@@ -215,6 +221,9 @@ impl RequestHandler {
                 self.ensure_push_supported()?;
                 let call_ctx = build_call_context("ListTaskPushNotificationConfigs", headers);
                 self.interceptors.run_before(&call_ctx).await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
                 let configs = self.push_config_store.list(task_id).await?;
                 self.interceptors.run_after(&call_ctx).await?;
                 Ok(configs)
@@ -263,6 +272,9 @@ impl RequestHandler {
             self.ensure_push_supported()?;
             let call_ctx = build_call_context("DeleteTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
+            // SPEC §3.3.4: reject clients that do not declare support for
+            // extensions the agent card marks required.
+            self.ensure_required_extensions(&call_ctx)?;
             self.push_config_store
                 .delete(&params.task_id, &params.id)
                 .await?;

@@ -457,7 +457,7 @@ fn make_card(url: &str, name: &str, description: &str, skill: &str) -> AgentCard
         supported_interfaces: vec![AgentInterface {
             url: url.into(),
             protocol_binding: "JSONRPC".into(),
-            protocol_version: "1.0.0".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
             tenant: None,
         }],
         default_input_modes: vec!["text/plain".into()],

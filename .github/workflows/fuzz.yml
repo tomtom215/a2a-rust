@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Fuzzing: a short smoke run of every target on each PR (catch panics a PR
+# introduces), and a longer nightly sweep that persists the corpus.
+
+name: Fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 03:41 UTC.
+    - cron: '41 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: fuzz ${{ matrix.target }} (${{ github.event_name == 'schedule' && 'nightly' || 'smoke' }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - json_deser
+          - jsonrpc_envelope
+          - sse_parser
+          - proto_convert
+          - iso8601
+          - jwks_parse
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install nightly + cargo-fuzz
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add --toolchain nightly rust-src
+          cargo install cargo-fuzz --version '^0.12' --locked
+
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: fuzz
+
+      # PRs/pushes: 60s smoke per target. Nightly: 10 min per target.
+      - name: Run fuzz target
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            SECONDS_LIMIT=600
+          else
+            SECONDS_LIMIT=60
+          fi
+          cargo +nightly fuzz run "${{ matrix.target }}" -- \
+            -max_total_time="$SECONDS_LIMIT" -print_final_stats=1
+        working-directory: .
+
+      - name: Upload crash artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/
+          if-no-files-found: ignore

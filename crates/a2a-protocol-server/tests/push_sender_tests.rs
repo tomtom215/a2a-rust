@@ -166,8 +166,10 @@ async fn retries_on_server_error_and_eventually_fails() {
     handle.abort();
 }
 
+/// A 403 (or any non-transient 4xx) will fail identically on every attempt,
+/// so the sender must fail fast after a single delivery instead of retrying.
 #[tokio::test]
-async fn retries_on_client_error_status() {
+async fn non_retryable_client_error_fails_without_retry() {
     let counter = Arc::new(AtomicUsize::new(0));
     let (addr, handle) = mock_server(403, Arc::clone(&counter)).await;
 
@@ -176,8 +178,36 @@ async fn retries_on_client_error_status() {
     let config = base_config(&url);
 
     let result = sender.send(&url, &status_event(), &config).await;
-    assert!(result.is_err());
-    assert_eq!(counter.load(Ordering::SeqCst), 3);
+    let err_msg = result.unwrap_err().to_string();
+    assert!(
+        err_msg.contains("non-retryable") && err_msg.contains("403"),
+        "error should identify the non-retryable status: {err_msg}"
+    );
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        1,
+        "a non-retryable 4xx must not be retried"
+    );
+    handle.abort();
+}
+
+/// 429 is a transient rate-limit signal and must stay retryable.
+#[tokio::test]
+async fn retries_on_rate_limit_status() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let (addr, handle) = mock_server(429, Arc::clone(&counter)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let config = base_config(&url);
+
+    let result = sender.send(&url, &status_event(), &config).await;
+    assert!(result.is_err(), "should fail after exhausting retries");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        3,
+        "429 must be retried up to max_attempts"
+    );
     handle.abort();
 }
 
@@ -301,6 +331,69 @@ async fn basic_auth_header_is_sent() {
         req.contains("authorization: Basic dXNlcjpwYXNz")
             || req.contains("Authorization: Basic dXNlcjpwYXNz"),
         "should contain Basic auth header, got: {req}"
+    );
+    handle.abort();
+}
+
+/// RFC 9110 §11.1: auth scheme names are case-insensitive. A config written
+/// as "Bearer" (the RFC's own capitalization) must still produce the header.
+#[tokio::test]
+async fn mixed_case_scheme_still_sends_auth_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "Bearer".into(),
+        credentials: Some("my-secret-token".into()),
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    assert!(!reqs.is_empty());
+    let req = &reqs[0];
+    assert!(
+        req.contains("authorization: Bearer my-secret-token")
+            || req.contains("Authorization: Bearer my-secret-token"),
+        "a \"Bearer\"-spelled scheme must still send the auth header, got: {req}"
+    );
+    handle.abort();
+}
+
+/// An uppercase "BASIC" scheme must also match and emit canonical "Basic".
+#[tokio::test]
+async fn uppercase_basic_scheme_sends_canonical_header() {
+    let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_with_headers(Arc::clone(&captured)).await;
+
+    let sender = HttpPushSender::new().allow_private_urls();
+    let url = format!("http://{addr}/webhook");
+    let mut config = base_config(&url);
+    config.authentication = Some(AuthenticationInfo {
+        scheme: "BASIC".into(),
+        credentials: Some("dXNlcjpwYXNz".into()),
+    });
+
+    sender.send(&url, &status_event(), &config).await.unwrap();
+    wait_for("the mock server to capture the request", || {
+        !captured.lock().unwrap().is_empty()
+    })
+    .await;
+
+    let reqs = captured.lock().unwrap();
+    assert!(!reqs.is_empty());
+    let req = &reqs[0];
+    assert!(
+        req.contains("authorization: Basic dXNlcjpwYXNz")
+            || req.contains("Authorization: Basic dXNlcjpwYXNz"),
+        "a \"BASIC\"-spelled scheme must emit the canonical Basic header, got: {req}"
     );
     handle.abort();
 }

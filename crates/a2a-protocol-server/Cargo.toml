@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.6.0"
+version     = "0.7.0"
 description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 
@@ -34,7 +34,7 @@ postgres = ["dep:sqlx", "sqlx/postgres", "sqlx/json"]
 websocket = ["dep:tokio-tungstenite", "dep:futures-util"]
 ## Enable gRPC transport via `tonic`. Serves the canonical `lf.a2a.v1.A2AService`
 ## (protobuf-native, wire-compatible with the official Go/Python/Java A2A SDKs).
-grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:prost", "dep:tokio-stream", "dep:tonic-types", "dep:tonic-prost-build", "dep:protoc-bin-vendored", "a2a-protocol-types/proto"]
 ## Additionally serve the deprecated pre-0.7 JSON-in-`bytes` tunnel service
 ## (`a2a.v1.A2aService`) alongside the canonical one, for compatibility with
 ## a2a-rust 0.6 gRPC clients during rolling upgrades. Will be removed in 0.8.
@@ -49,7 +49,7 @@ axum = ["dep:axum"]
 auth-jwt = ["dep:ring", "dep:base64"]
 
 [dependencies]
-a2a-protocol-types      = { version = "0.6.0", path = "../a2a-protocol-types" }
+a2a-protocol-types      = { version = "0.7.0", path = "../a2a-protocol-types" }
 serde           = { workspace = true }
 serde_json     = { workspace = true }
 hyper          = { workspace = true }
@@ -74,6 +74,7 @@ tokio-tungstenite = { version = ">=0.29, <0.30", optional = true }
 futures-util      = { version = ">=0.3.30, <0.4", optional = true, default-features = false, features = ["sink"] }
 tonic             = { workspace = true, optional = true }
 tonic-prost       = { workspace = true, optional = true }
+tonic-types       = { workspace = true, optional = true }
 prost             = { workspace = true, optional = true }
 tokio-stream      = { workspace = true, optional = true }
 opentelemetry     = { version = "0.31", optional = true }
@@ -100,7 +101,7 @@ hyper-util = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes = "1"
 serde_json = { workspace = true }
-a2a-protocol-types = { version = "0.6.0", path = "../a2a-protocol-types" }
+a2a-protocol-types = { version = "0.7.0", path = "../a2a-protocol-types" }
 criterion = { workspace = true }
 sqlx      = { workspace = true }
 axum      = { version = "0.8", features = ["json", "query", "tokio"] }
