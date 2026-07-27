@@ -60,11 +60,13 @@ as a merge.**
 - `a2a-rust` has all of those things, a much larger test suite, and — as of
   three days ago — a protobuf-native gRPC binding that closes the interop gap
   that previously disqualified it.
-- `a2a-rust` also carries a provenance problem that is, in its current form, a
-  blocker for donation: **478 of its 608 commits are authored by
-  `Claude <noreply@anthropic.com>`, and none of the 608 carry a DCO
-  sign-off.** This is fixable, but it has to be fixed before any code moves,
-  not after.
+- `a2a-rust` also carries a provenance question: **478 of its 608 commits are
+  authored by `Claude <noreply@anthropic.com>`, and none of the 608 carry a
+  per-commit DCO sign-off.** As of 2026-07-27 the project has adopted the DCO,
+  gated it in CI, discontinued AI-identity authorship, and published a
+  disclosure plus a blanket certification of the existing history
+  (`PROVENANCE.md`). What remains is not engineering work but a ruling from LF
+  counsel on whether that blanket certification is sufficient — see 5.1.
 
 **Recommendation (Section 7):** do not merge repositories. Port capabilities
 into `a2a-rs` as discrete, individually reviewed pull requests under DCO,
@@ -107,7 +109,7 @@ surface, not in scope.
 | Commits | 114 | 608 |
 | Human committers | 6 (+ release bot) | 1 (+ 478 AI-authored commits, + bot) |
 | Formal maintainers | 1 (`MAINTAINERS.md`) | 1 (`GOVERNANCE.md`) |
-| DCO sign-off rate | 87 / 114 (76%) | **0 / 608** |
+| DCO sign-off rate | 87 / 114 (76%) | 0 / 608 historical; DCO adopted and CI-gated 2026-07-27, history covered by blanket certification (see 5.1) |
 | Copyright attribution | "AGNTCY Contributors" | Single named individual |
 | Stars / forks / open issues | 55 / 14 / 6 | 19 / 0 / 0 |
 | crates.io downloads (recent 90d) | `a2a-lf` 23.2k, `a2a-client-lf` 18.0k, `a2a-server-lf` 14.9k | `a2a-protocol-sdk` 526, `-server` 616, `-client` 589 |
@@ -312,7 +314,7 @@ just Rust — and turn the job into a gate.
 
 ## 5. Risk register
 
-### 5.1 `a2a-rust` — provenance is the blocker
+### 5.1 `a2a-rust` — provenance
 
 This needs to be stated plainly because it will be the first thing LF counsel
 asks about.
@@ -338,8 +340,51 @@ written provenance statement from the maintainer covering the AI-assisted
 authorship and their rights in the output; a retroactive sign-off or a squashed
 re-submission under DCO; and an explicit ruling from LF counsel on whether that
 is sufficient. **This should be settled before
-technical discussions proceed, not in parallel with them** — it is the item
-most likely to stop the whole thing, and it is cheapest to resolve first.
+substantial code moves, not in parallel with it** — it is the item most likely
+to stop the whole thing, and it is cheapest to resolve first.
+
+### 5.1.1 What the project has since done about it
+
+*Added 2026-07-27, after the first draft of this assessment. Verifiable at
+`docs/rust-sdk-assessment.md`'s own commit and later.*
+
+The mechanical half of the problem has been closed:
+
+- **`DCO`** — the Developer Certificate of Origin 1.1, verbatim, at the
+  repository root.
+- **`PROVENANCE.md`** — discloses the AI-assisted development with reproducible
+  authorship figures; records a **one-time blanket DCO certification** by the
+  maintainer covering every commit through `b416c1a`, in his own name and
+  email; and inventories the third-party material in the tree (the spec's
+  `a2a.proto`, vendored googleapis stubs, the ITK `instruction.proto`, the
+  a2a-inspector card ruleset) with its licensing.
+- **`.github/workflows/dco.yml`** — a merge gate that fails any pull request
+  containing a non-merge commit without a `Signed-off-by:` matching its git
+  author, **and** rejects any commit authored by a known AI-assistant service
+  account. The second check is what stops the original problem recurring: a
+  sign-off is an assertion by a person, so the human must be the git author and
+  the assistant goes in a `Co-Authored-By:` trailer.
+- `CONTRIBUTING.md`, `GOVERNANCE.md`, `README.md` and a new PR template carry
+  the requirement.
+
+**What this does not settle.** Two things are still open and are not the
+project's to decide:
+
+1. Whether a blanket certification is acceptable to the receiving project, or
+   whether per-commit sign-off on historical commits is required. The
+   maintainer has stated in `PROVENANCE.md` that he will rewrite the history
+   with `git filter-repo` on request; the cost is that all 608 SHAs change,
+   ten tags must be re-cut, and the SLSA provenance attestations bound to the
+   published v0.2.0–v0.7.0 crates stop resolving to real commits. That is a
+   real loss of supply-chain metadata in exchange for a formality, which is why
+   it was not done unprompted.
+2. Whether the Linux Foundation's policy on AI-generated contributions permits
+   this arrangement at all. Unchanged from the note above: a counsel question,
+   not an engineering one.
+
+So the correct reading is that this has moved from *blocker* to *open item
+awaiting a ruling*, with the engineering-side remediation already in place and
+the more expensive option pre-agreed if the ruling requires it.
 
 ### 5.2 `a2a-rust` — other risks
 
@@ -477,10 +522,12 @@ as a fallback if Option B stalls on provenance.
 
 **Option B**, with three gates before any code moves:
 
-1. **Provenance cleared.** Written statement from the `a2a-rust` maintainer on
-   AI-assisted authorship and rights; DCO adopted; LF counsel signs off.
+1. **Provenance cleared.** The maintainer-side work is done as of 2026-07-27
+   (`DCO`, `PROVENANCE.md`, CI gate — see 5.1.1). What is still needed is a
+   ruling from LF counsel on whether the blanket certification suffices or
+   history must be rewritten, and on AI-generated contributions generally.
    Blocking for all substantial ports; items 3 and 7 above are small enough to
-   be rewritten from scratch if counsel prefers.
+   be rewritten from scratch if counsel prefers that to any transfer.
 2. **Second reviewer in place.** The point of the exercise is to get Rust off
    a bus factor of 1. If the outcome is one maintainer reviewing another's
    large PRs with no third party, the risk has moved rather than reduced.
@@ -495,8 +542,10 @@ as a fallback if Option B stalls on provenance.
 
 ## 8. Questions worth putting to both maintainers
 
-1. To `a2a-rust`: are you willing to adopt DCO, re-submit under it, and make a
-   written provenance statement covering the AI-assisted authorship?
+1. To LF counsel: is the blanket DCO certification in `a2a-rust`'s
+   `PROVENANCE.md` sufficient for these commits, or is a per-commit
+   `Signed-off-by:` on rewritten history required? The maintainer has adopted
+   the DCO and pre-agreed to the rewrite if it is.
 2. To `a2a-rs`: is the `HTTP_JSON — Resubscribe` failure a defect in `a2a-rs`
    or in the Go/Java baselines, and what is the plan?
 3. To both: what is the intended MSRV policy for the official Rust SDK? This
@@ -517,6 +566,7 @@ as a fallback if Option B stalls on provenance.
 |---|---|
 | a2a-rs is the official Rust SDK | Raw HTML of `a2a-protocol.org/latest/sdk/`, SDK table, row "Rust → a2a-rs" |
 | Commit / author / DCO counts | `git log --format=...` on full (unshallowed) histories of both repos |
+| a2a-rust DCO remediation | `DCO`, `PROVENANCE.md`, `.github/workflows/dco.yml` in this repository, added 2026-07-27 |
 | a2a-rs task stores | Directory listing of `a2a-server/src/task_store/` |
 | a2a-rs has no OTel | `grep -rn "opentelemetry\|otel\|OTLP"` over the workspace — no hits |
 | a2a-rs server auth | `a2a-server/src/middleware.rs` — only `LoggingInterceptor` implements `CallInterceptor` |

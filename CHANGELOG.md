@@ -10,6 +10,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Developer Certificate of Origin adopted.** The project now requires a
+  `Signed-off-by:` trailer on every commit, certified under the
+  [DCO 1.1](DCO) (verbatim text added at the repository root). A new
+  `.github/workflows/dco.yml` gate fails any pull request containing a
+  non-merge commit without a sign-off matching its git author, and
+  additionally rejects commits whose author is a known AI-assistant service
+  account — a sign-off is an assertion by a person, so a tool identity cannot
+  make one.
+- **`PROVENANCE.md`** — a provenance record covering (1) a full disclosure of
+  this project's AI-assisted development, with reproducible commit-authorship
+  figures; (2) a one-time blanket DCO certification by the maintainer covering
+  every commit through `b416c1a`, made because rewriting history would
+  invalidate all ten release tags and the SLSA attestations bound to the
+  published v0.2.0–v0.7.0 crates; and (3) an inventory of third-party material
+  in the tree (the spec's `a2a.proto`, vendored googleapis stubs, the ITK
+  `instruction.proto`, and the a2a-inspector card ruleset) with its licensing.
+- **`.github/PULL_REQUEST_TEMPLATE.md`**, leading with the sign-off
+  requirement.
+- **`docs/rust-sdk-assessment.md`** — a source-verified technical and
+  governance comparison of this SDK against `a2aproject/a2a-rs`, prepared for
+  A2A project / Linux Foundation review.
+
+### Changed
+
+- **AI-assisted commits are now authored by the human who directed them**,
+  with the assistant credited via a `Co-Authored-By:` trailer, replacing the
+  prior pattern of `Claude <noreply@anthropic.com>` in the git author field.
+  `CONTRIBUTING.md` documents the convention; CI enforces it.
+- `CONTRIBUTING.md`, `GOVERNANCE.md`, `README.md`, and
+  `.github/workflows/README.md` updated for the DCO requirement.
+
 ## [0.7.0] - 2026-07-24
 
 Interop, hardening, and edge-case fixes from an independent protocol audit,

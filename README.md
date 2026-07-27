@@ -358,6 +358,19 @@ All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `
 
 Rust **1.93** or later (stable).
 
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for coding
+standards, testing requirements, and quality gates, and
+[GOVERNANCE.md](GOVERNANCE.md) for how decisions get made.
+
+Every commit must be signed off under the
+[Developer Certificate of Origin](DCO) (`git commit -s`) by a human git author;
+CI enforces this. [PROVENANCE.md](PROVENANCE.md) documents this project's use
+of AI coding assistants, the provenance of third-party material in the tree,
+and the blanket DCO certification covering commits made before the DCO was
+adopted.
+
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
