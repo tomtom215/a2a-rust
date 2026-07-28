@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-tck-sut"
+version     = "0.0.0"
+description = "System Under Test for the official a2aproject/a2a-tck conformance suite"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+
+serde_json     = { workspace = true }
+tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
+hyper          = { workspace = true }
+hyper-util     = { workspace = true, features = ["server", "server-auto"] }
+http-body-util = { workspace = true }

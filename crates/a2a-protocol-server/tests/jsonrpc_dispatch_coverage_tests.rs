@@ -290,16 +290,25 @@ async fn regular_dispatch_with_cors_has_cors_headers() {
 // ── Content-Type validation (line 139) ───────────────────────────────────────
 
 #[tokio::test]
-async fn unsupported_content_type_returns_parse_error() {
+async fn unsupported_content_type_returns_content_type_not_supported() {
     let addr = start_server(make_plain_dispatcher()).await;
     let (status, body, _) = http_request(addr, "POST", "/", Some("{}"), Some("text/xml")).await;
 
     assert_eq!(status, 200);
-    assert!(
-        body.contains("Parse error"),
-        "should return parse error for unsupported content type"
-    );
+    // Spec §5.4 error-code mapping: ContentTypeNotSupportedError is -32005.
+    // This previously returned ParseError (-32700), which both misreported
+    // the cause (the body was never parsed) and denied the client the
+    // machine-readable reason. Caught by the official a2aproject/a2a-tck.
+    let v: serde_json::Value = serde_json::from_str(&body).expect("JSON-RPC error body");
+    assert_eq!(v["error"]["code"], -32005, "body: {body}");
     assert!(body.contains("unsupported Content-Type"));
+    // §10.6: A2A errors carry the machine-readable ErrorInfo reason.
+    // `data` is the AIP-193 details *array* (§10.6), not a bare object.
+    assert_eq!(
+        v["error"]["data"][0]["reason"], "CONTENT_TYPE_NOT_SUPPORTED",
+        "body: {body}"
+    );
+    assert_eq!(v["error"]["data"][0]["domain"], "a2a-protocol.org");
 }
 
 #[tokio::test]

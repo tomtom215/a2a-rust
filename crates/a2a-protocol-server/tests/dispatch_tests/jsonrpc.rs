@@ -420,9 +420,14 @@ async fn jsonrpc_rejects_wrong_content_type() {
     assert_eq!(resp.status(), 200);
     let body = resp.into_body().collect().await.unwrap().to_bytes();
     let result: JsonRpcErrorResponse = serde_json::from_slice(&body).expect("parse error");
+    // Spec §5.4: an unsupported media type maps to
+    // ContentTypeNotSupportedError (-32005). It was ParseError (-32700)
+    // until the official a2a-tck flagged it — the body is never parsed, so
+    // "parse error" both misreports the cause and withholds the
+    // machine-readable reason.
     assert_eq!(
-        result.error.code, -32700,
-        "wrong content type should be ParseError"
+        result.error.code, -32005,
+        "wrong content type should be ContentTypeNotSupportedError"
     );
 }
 

@@ -7,6 +7,70 @@ Thank you for contributing! Please read this document before opening a PR.
 
 ---
 
+## Developer Certificate of Origin (DCO)
+
+Every contribution to this project must be certified under the
+[Developer Certificate of Origin](DCO) version 1.1. The DCO is a short
+statement that you wrote the contribution, or otherwise have the right to
+submit it under this project's Apache-2.0 licence. It is not a copyright
+assignment and it does not require signing a separate agreement — you certify
+it per commit, by adding a `Signed-off-by:` line:
+
+```sh
+git commit -s -m "your message"
+```
+
+which appends:
+
+```
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+The name and email must be real and must match your git author identity. Set
+them once with:
+
+```sh
+git config user.name  "Your Name"
+git config user.email "your.email@example.com"
+```
+
+### Fixing a missing sign-off
+
+```sh
+# The most recent commit
+git commit --amend -s --no-edit && git push --force-with-lease
+
+# Every commit on your branch
+git rebase --signoff origin/main && git push --force-with-lease
+```
+
+### AI-assisted contributions
+
+AI assistance is welcome, and this project uses it heavily — see
+[`PROVENANCE.md`](PROVENANCE.md) for a full disclosure of how the existing code
+was produced.
+
+Two rules apply:
+
+1. **You are the author.** Commit as yourself, not as the assistant. A DCO
+   sign-off is an assertion by a person; a commit whose git author is a tool
+   identity cannot carry a meaningful one. Credit the assistant in a trailer:
+
+   ```
+   Signed-off-by: Your Name <your.email@example.com>
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   ```
+
+2. **You are responsible for it.** Signing off means you have reviewed the
+   code, you understand what it does, and you have the right to submit it —
+   regardless of what typed it.
+
+CI enforces both rules (`.github/workflows/dco.yml`): a pull request fails if
+any non-merge commit lacks a matching sign-off, or is authored by a known
+assistant identity.
+
+---
+
 ## Coding Standards
 
 ### Every file starts with the SPDX header
@@ -289,6 +353,7 @@ cargo mutants --workspace
 
 ## PR Checklist
 
+- [ ] Every commit signed off (`git commit -s`) by a human author — see [DCO](#developer-certificate-of-origin-dco)
 - [ ] SPDX header on every new file
 - [ ] No file exceeds 500 lines
 - [ ] `cargo fmt --all` passes
@@ -305,4 +370,6 @@ cargo mutants --workspace
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the Apache-2.0 license.
+By contributing, you agree that your contributions will be licensed under the
+Apache-2.0 license, and you certify the [Developer Certificate of Origin](DCO)
+for each commit via its `Signed-off-by:` trailer.

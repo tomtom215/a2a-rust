@@ -30,6 +30,17 @@ final decision-making authority.
 | ------ | ------------- | ------------------ |
 | Tom F. | @tomtom215    | Initial Maintainer |
 
+## Contribution Certification
+
+All contributions are certified under the
+[Developer Certificate of Origin](DCO) version 1.1. Every commit must carry a
+`Signed-off-by:` trailer from a human author; this is enforced in CI.
+
+Commits made before the DCO was adopted are covered by the one-time blanket
+certification in [`PROVENANCE.md`](PROVENANCE.md), which also discloses this
+project's use of AI coding assistants and the provenance of third-party
+material incorporated into the tree.
+
 ## Decision-Making Process
 
 The project uses **lazy consensus**:

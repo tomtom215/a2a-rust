@@ -57,9 +57,15 @@ async fn task_state_transitions_comprehensive() {
     assert!(!TaskState::Canceled.can_transition_to(TaskState::Working));
     assert!(!TaskState::Rejected.can_transition_to(TaskState::Working));
 
-    // Invalid transitions — can't go backwards
-    assert!(!TaskState::Submitted.can_transition_to(TaskState::Completed));
-    assert!(!TaskState::Submitted.can_transition_to(TaskState::InputRequired));
+    // A one-step agent completes without ever entering Working; the spec
+    // (§4.1.3) defines no required transition path and the reference SDKs
+    // emit this sequence.
+    assert!(TaskState::Submitted.can_transition_to(TaskState::Completed));
+    assert!(TaskState::Submitted.can_transition_to(TaskState::InputRequired));
+
+    // Invalid transitions — nothing re-enters the entry state.
+    assert!(!TaskState::Working.can_transition_to(TaskState::Submitted));
+    assert!(!TaskState::InputRequired.can_transition_to(TaskState::Submitted));
 
     // Unspecified can transition to anything
     assert!(TaskState::Unspecified.can_transition_to(TaskState::Working));

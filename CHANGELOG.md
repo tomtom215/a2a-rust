@@ -10,6 +10,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (found by the official A2A TCK)
+
+Adopted the A2A project's own conformance suite
+([`a2aproject/a2a-tck`](https://github.com/a2aproject/a2a-tck)) alongside the
+in-repo one, with a new `tck/sut` System Under Test implementing its
+`messageId`-keyed behaviour contract. It immediately found two real defects:
+
+- **Unsupported `Content-Type` returned the wrong JSON-RPC error code**
+  (**breaking**, error code only) — the JSON-RPC binding rejected an
+  unsupported media type with `ParseError` (-32700); spec §5.4 maps it to
+  `ContentTypeNotSupportedError` (-32005). The body is never parsed on that
+  path, so the old code both misreported the cause and withheld the §10.6
+  `CONTENT_TYPE_NOT_SUPPORTED` reason, which is now attached. Three in-repo
+  tests had asserted the incorrect code and passed.
+- **The task state machine rejected conformant agents** — six MUST-level
+  checks failed because `TaskState::can_transition_to` required
+  `Submitted → Working` before any finish state, so an agent that answered in
+  one step got `InvalidParams` from its own SDK. Spec §4.1.3 defines no
+  transition matrix and requires no intermediate state, and the reference SDKs
+  complete directly from `Submitted`. The table now enforces only that
+  terminal states are final and that nothing re-enters `Submitted` /
+  `Unspecified`; `Working → Rejected` is permitted too (§4.1.3 allows
+  rejecting "later"). `state_validation_tests.rs` was rewritten to pin all 81
+  matrix cells against an independently-computed predicate.
+
+Conformance went from 87 to 158 passing checks against the same SUT.
+
+The remaining failures are recorded in `docs/official-tck-findings.md` rather
+than skipped. That document also carries a correction: an earlier revision
+claimed a bug in the TCK's JSON-RPC client (snake_case params vs spec §5.5).
+**That claim was wrong and is retracted.** The A2A JSON data model is
+generated from protobuf, and ProtoJSON parsers accept both the camelCase
+`json_name` and the original snake_case field name; the official Python SDK
+was measured doing exactly that. §5.5 governs emission, not acceptance.
+
+The real defect the TCK surfaced is this SDK's own: **unrecognised request
+parameters are silently ignored** where the reference rejects them, so a
+`ListTasks` filter misspelled by any means — snake_case, wrong case, or a
+typo — returns every task instead of an error or a filtered set. The reported
+`historyLength` overrun has the same single root cause (`historyLength` is
+honoured; the ignored `history_length` is not). Scope and fix direction are in
+the findings document; the fix is deliberately not rushed in here, since it
+needs an alias list generated from the protobuf schema and a per-field test,
+not patches for the six spellings the TCK happens to send.
+
+### Added
+
+- **Developer Certificate of Origin adopted.** The project now requires a
+  `Signed-off-by:` trailer on every commit, certified under the
+  [DCO 1.1](DCO) (verbatim text added at the repository root). A new
+  `.github/workflows/dco.yml` gate fails any pull request containing a
+  non-merge commit without a sign-off matching its git author, and
+  additionally rejects commits whose author is a known AI-assistant service
+  account — a sign-off is an assertion by a person, so a tool identity cannot
+  make one.
+- **`PROVENANCE.md`** — a provenance record covering (1) a full disclosure of
+  this project's AI-assisted development, with reproducible commit-authorship
+  figures; (2) a one-time blanket DCO certification by the maintainer covering
+  every commit through `b416c1a`, made because rewriting history would
+  invalidate all ten release tags and the SLSA attestations bound to the
+  published v0.2.0–v0.7.0 crates; and (3) an inventory of third-party material
+  in the tree (the spec's `a2a.proto`, vendored googleapis stubs, the ITK
+  `instruction.proto`, and the a2a-inspector card ruleset) with its licensing.
+- **`.github/PULL_REQUEST_TEMPLATE.md`**, leading with the sign-off
+  requirement.
+- **`docs/rust-sdk-assessment.md`** — a source-verified technical and
+  governance comparison of this SDK against `a2aproject/a2a-rs`, prepared for
+  A2A project / Linux Foundation review.
+
+### Changed
+
+- **AI-assisted commits are now authored by the human who directed them**,
+  with the assistant credited via a `Co-Authored-By:` trailer, replacing the
+  prior pattern of `Claude <noreply@anthropic.com>` in the git author field.
+  `CONTRIBUTING.md` documents the convention; CI enforces it.
+- `CONTRIBUTING.md`, `GOVERNANCE.md`, `README.md`, and
+  `.github/workflows/README.md` updated for the DCO requirement.
+
 ## [0.7.0] - 2026-07-24
 
 Interop, hardening, and edge-case fixes from an independent protocol audit,

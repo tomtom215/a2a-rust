@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Developer Certificate of Origin (DCO) enforcement.
+#
+# Two checks run over every non-merge commit in a pull request:
+#
+#   1. Sign-off  — the commit message must carry a `Signed-off-by:` trailer
+#      whose email matches the commit's git author email.
+#   2. Authorship — the git author must be a human identity, not an AI
+#      assistant's service account. A sign-off is an assertion by a person;
+#      a commit authored by a tool identity cannot carry a meaningful one.
+#      See PROVENANCE.md §3.2 for why this check exists.
+#
+# Implemented in plain git + bash rather than a third-party action: this job
+# gates every contribution, so it should not depend on a supply chain outside
+# the repository.
+
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Sign-off and authorship
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the base..head range needs both endpoints present.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Fetch the base branch
+        run: git fetch --no-tags origin "$BASE_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+      - name: Check sign-off and authorship
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          # Author emails that identify a tool rather than a person. Extend
+          # this list if the project adopts another assistant.
+          NON_HUMAN='^(noreply@anthropic\.com|.*\[bot\]@users\.noreply\.github\.com)$'
+
+          failed=0
+
+          # %H<TAB>%ae<TAB>%an — one line per non-merge commit in the range.
+          # `--no-merges` skips merge commits, which have no authored content.
+          while IFS=$'\t' read -r sha author_email author_name; do
+            [ -n "$sha" ] || continue
+
+            subject=$(git log -1 --format='%s' "$sha")
+
+            # ── 1. Authorship ────────────────────────────────────────────────
+            if printf '%s' "$author_email" | grep -Eqi "$NON_HUMAN"; then
+              echo "::error::${sha:0:8} (\"$subject\") is authored by a non-human identity <$author_email>."
+              echo "         A DCO sign-off is an assertion by a person. Re-author this commit"
+              echo "         as yourself and credit the assistant with a Co-Authored-By trailer."
+              echo "         See PROVENANCE.md section 3.2."
+              failed=1
+              continue
+            fi
+
+            # ── 2. Sign-off ──────────────────────────────────────────────────
+            # Accept a trailer whose email matches the author's, case-insensitively.
+            if git log -1 --format='%B' "$sha" \
+                 | grep -Eqi "^[[:space:]]*Signed-off-by:[[:space:]]+.+<${author_email//./\\.}>[[:space:]]*$"; then
+              echo "  ok  ${sha:0:8}  $author_name <$author_email>"
+            else
+              echo "::error::${sha:0:8} (\"$subject\") has no Signed-off-by trailer matching <$author_email>."
+              failed=1
+            fi
+          done < <(git log --no-merges --format='%H%x09%ae%x09%an' "$BASE_SHA..$HEAD_SHA")
+
+          if [ "$failed" -ne 0 ]; then
+            cat <<'REMEDY'
+
+          ─────────────────────────────────────────────────────────────────────
+          This project requires the Developer Certificate of Origin (see ./DCO).
+
+          Sign off new commits as you make them:
+
+              git commit -s -m "your message"
+
+          To add a sign-off to the last commit:
+
+              git commit --amend -s --no-edit && git push --force-with-lease
+
+          To sign off every commit in this branch:
+
+              git rebase --signoff origin/main && git push --force-with-lease
+
+          If a commit is authored by an assistant identity, reset the author
+          at the same time:
+
+              git rebase origin/main \
+                --exec 'git commit --amend --no-edit --reset-author -s'
+          ─────────────────────────────────────────────────────────────────────
+          REMEDY
+            exit 1
+          fi
+
+          echo "All commits carry a matching sign-off from a human author."

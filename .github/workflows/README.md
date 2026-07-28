@@ -9,7 +9,9 @@ GitHub Actions workflows for the a2a-rust project.
 
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
+| **DCO** | `dco.yml` | PRs | Every non-merge commit carries a `Signed-off-by:` matching a human git author (see `../../DCO`, `../../PROVENANCE.md`) |
 | **CI** | `ci.yml` | Push to `main`/`claude/**`, PRs | Format, clippy, tests across nine feature combinations, docs, cargo-deny, MSRV, package validation |
+| **Official TCK** | `official-tck.yml` | Push to `main`, PRs, nightly | The A2A project's own conformance suite (`a2aproject/a2a-tck`) against `tck/sut`; RFC 2119-graded. See `docs/official-tck-findings.md` |
 | **TCK** | `tck.yml` | Push to `main`, PRs | Conformance self-test (echo-agent) plus cross-language agents (Python, JS, Go, Java) over the JSON-RPC and REST bindings |
 | **Coverage** | `coverage.yml` | Push to `main`, PRs | Code coverage via `cargo-llvm-cov`, Codecov upload (policy in `codecov.yml`) |
 | **Documentation** | `docs.yml` | Push to `main` | Build mdbook, deploy to GitHub Pages |
@@ -25,6 +27,7 @@ If you administer the repo, keep Settings → Branches → required status
 checks in sync with this list (job renames here silently drop the
 requirement there):
 
+- `DCO / Sign-off and authorship`
 - All `CI` jobs (Format, Clippy, Test, Documentation, cargo-deny, Package validation)
 - `TCK self-test (echo-agent)` and the `TCK cross-language` matrix
 - `Mutation Testing (incremental)`

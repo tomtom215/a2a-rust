@@ -13,8 +13,9 @@ spec section, where it lives in the code, and how it is verified.
 
 | Layer | What it proves |
 |---|---|
-| Unit / integration tests | Per-crate behavior (`cargo test --workspace --all-features`, 4000+ tests). |
-| **TCK** (`a2a-tck`) | 22 conformance checks × {JSON-RPC, REST}, run against our `echo-agent` **and** against echo agents built on the official Python, JavaScript, Go, and Java SDKs (`itk/agents/*-sdk`). |
+| Unit / integration tests | Per-crate behavior (`cargo test --workspace --all-features`, ~2,500 tests). |
+| **Official TCK** (`a2aproject/a2a-tck`) | The A2A project's own conformance suite, RFC 2119-graded, run against `tck/sut`. Authoritative where it overlaps the in-repo TCK. Score and open findings: `docs/official-tck-findings.md`. |
+| **In-repo TCK** (`a2a-tck`) | 22 conformance checks × {JSON-RPC, REST}, run against our `echo-agent` **and** against echo agents built on the official Python, JavaScript, Go, and Java SDKs (`itk/agents/*-sdk`) — the cross-SDK client direction the official TCK does not cover. |
 | **Bidirectional interop** | The official Python `a2a-sdk` **client** driving our server (`itk/interop/python_client_vs_rust.py`, 26 checks). |
 | **ITK** | The upstream `a2aproject/a2a-itk` multi-hop traversal harness with this repo mounted as the `current` agent, plus the deterministic in-repo `itk/interop/itk_traversal_selftest.py`. |
 | **gRPC wire fixtures** | Golden protobuf bytes serialized by the official Python SDK, decoded/re-encoded and diffed (`tck/fixtures/grpc/`). |

@@ -152,9 +152,18 @@ impl JsonRpcDispatcher {
             if !ct_str.starts_with("application/json")
                 && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
             {
-                return parse_error_response(
+                // Spec §5.4 maps an unsupported media type to
+                // ContentTypeNotSupportedError (-32005), not ParseError
+                // (-32700): the body was never parsed, so "parse error" both
+                // misreports the cause and denies the client the machine-
+                // readable `CONTENT_TYPE_NOT_SUPPORTED` reason. Routing it
+                // through `error_response` also attaches the §10.6 ErrorInfo
+                // detail like every other A2A error.
+                return error_response(
                     None,
-                    &format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
+                    &ServerError::Protocol(a2a_protocol_types::error::A2aError::content_type_not_supported(
+                        format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
+                    )),
                 );
             }
         }

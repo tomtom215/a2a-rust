@@ -16,6 +16,7 @@ members = [
     "examples/incident-response",
     "benches",
     "tck",
+    "tck/sut",
 ]
 
 [workspace.package]
