@@ -46,7 +46,7 @@ one client tells you the two disagree. It does not tell you which is wrong.
 
 ---
 
-## 1. Score
+## 1. Score, and how CI gates on it
 
 | Run | Passed | Failed | Skipped |
 |---|---|---|---|
@@ -62,6 +62,43 @@ real before/after.
 
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
+
+**All 12 remaining failures are at `MUST` level.** An earlier revision of this
+document listed them without saying so, which understated them — the
+MUST-only run is `12 failed, 139 passed`, i.e. every failure is a hard
+conformance requirement, not a `SHOULD` or `MAY`. Reported MUST compatibility
+is **85.4%**, computed over tested requirements only; 21 further MUST
+requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and `BIND-EQUIV-*`
+families) report `NOT TESTED` because the SUT does not exercise them, and are
+a coverage gap rather than a pass.
+
+### The gate
+
+`.github/workflows/official-tck.yml` does **not** simply require a clean run,
+and it does not paper over the failures either. It runs
+`tck/scripts/check_conformance.py` against a checked-in baseline
+(`tck/conformance-baseline.json`) at (requirement, transport) granularity, and
+fails the job on:
+
+- any MUST-level failure **not** in the baseline — a regression; **and**
+- any baseline entry that **now passes** — a stale baseline.
+
+The second direction is what keeps the first honest. A baseline that is
+allowed to rot becomes a blanket exemption, at which point the check is green
+for the same bad reason `continue-on-error: true` was.
+
+Transport granularity matters because `PUSH-CREATE-001` fails on `jsonrpc` and
+passes on `http_json` today; a requirement-level baseline would not notice it
+starting to fail on `http_json` too. The baseline currently holds **16
+(requirement, transport) pairs across 12 requirements**.
+
+> **An earlier revision of this workflow reported `Success` while these 12
+> checks failed**, because both suite steps carried `continue-on-error: true`.
+> The annotation said `Process completed with exit code 1` and the badge said
+> green. That is precisely the defect this document criticises elsewhere — a
+> published signal that does not reflect reality — and it was shipped here. A
+> green check nobody can trust is worse than a red one, because nobody reads
+> a green check.
 
 ## 2. Fixed as a result
 
@@ -230,7 +267,8 @@ One root cause, two reported symptoms.
 
 ## 5. Still open — genuinely unclassified
 
-Listed rather than diagnosed. No claim is made about cause.
+All `MUST` level, all baselined in `tck/conformance-baseline.json`. Listed
+rather than diagnosed: no claim is made about cause.
 
 | Requirement | Symptom | Status |
 |---|---|---|
@@ -266,5 +304,17 @@ SUT_HOST=127.0.0.1:9999 SUT_ADVERTISE_URL=http://127.0.0.1:9990 \
   ./target/release/a2a-tck-sut &
 ```
 
-`--level must` restricts a run to hard conformance requirements. Reports land
-in `reports/` as HTML, JSON, and JUnit XML.
+```sh
+# The gate CI runs (exit 0 only if failures match the baseline exactly)
+python3 tck/scripts/check_conformance.py \
+  --report /tmp/a2a-tck/reports/compatibility.json \
+  --baseline tck/conformance-baseline.json
+
+# After fixing something, shrink the baseline in the same commit
+python3 tck/scripts/check_conformance.py --report … --baseline … --update
+```
+
+`--level must` restricts a run to hard conformance requirements; it was
+verified to yield an identical set of gated failures to the full run, so CI
+runs the full suite once. Reports land in `reports/` as HTML, JSON, and JUnit
+XML; the gate reads `compatibility.json`.

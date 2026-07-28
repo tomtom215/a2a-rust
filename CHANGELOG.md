@@ -10,6 +10,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The official-TCK workflow reported `Success` while 12 MUST-level checks
+  failed.** Both suite steps carried `continue-on-error: true`, so the job
+  went green with `Process completed with exit code 1` sitting in the
+  annotations. That is the same class of defect this project criticises
+  elsewhere — a published signal that does not reflect reality — and a green
+  check nobody can trust is worse than a red one, because nobody reads a green
+  check.
+
+  Replaced with a differential gate. `tck/scripts/check_conformance.py`
+  compares the suite's machine-readable `compatibility.json` against a
+  checked-in baseline (`tck/conformance-baseline.json`) at
+  (requirement, transport) granularity, and fails the job on **either**
+  direction:
+
+  - a MUST-level failure not in the baseline — a regression;
+  - a baseline entry that now passes — a stale baseline.
+
+  The second direction is what keeps the gate honest: a baseline allowed to
+  rot is `continue-on-error` with extra steps. Transport granularity matters
+  because `PUSH-CREATE-001` fails on `jsonrpc` and passes on `http_json`
+  today, and a requirement-level baseline would miss it spreading. A missing
+  or malformed report also fails, so "the suite never ran" cannot read as
+  success.
+
+  The gate was counter-tested against injected regressions, an injected fix,
+  a failure spreading to a second transport, missing/malformed/wrong-shaped
+  reports, and a SHOULD-level failure (which must not gate) — plus an
+  end-to-end simulation of the job's two shell steps confirming the run
+  step's `|| true` cannot mask the gate's exit code.
+
+  CI now runs the full suite once rather than twice: the `--level must` run
+  was verified to produce an identical set of gated failures.
+
+- `docs/official-tck-findings.md` now states that **all 12 remaining failures
+  are `MUST` level** (previously listed without their level, which understated
+  them), records that reported MUST compatibility of 85.4% is computed over
+  tested requirements only — 21 further MUST requirements report `NOT TESTED`
+  — and documents the baseline and gate.
+
 ### Fixed (found by the official A2A TCK)
 
 Adopted the A2A project's own conformance suite
