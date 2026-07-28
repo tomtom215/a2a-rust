@@ -10,6 +10,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (found by the official A2A TCK)
+
+Adopted the A2A project's own conformance suite
+([`a2aproject/a2a-tck`](https://github.com/a2aproject/a2a-tck)) alongside the
+in-repo one, with a new `tck/sut` System Under Test implementing its
+`messageId`-keyed behaviour contract. It immediately found two real defects:
+
+- **Unsupported `Content-Type` returned the wrong JSON-RPC error code**
+  (**breaking**, error code only) — the JSON-RPC binding rejected an
+  unsupported media type with `ParseError` (-32700); spec §5.4 maps it to
+  `ContentTypeNotSupportedError` (-32005). The body is never parsed on that
+  path, so the old code both misreported the cause and withheld the §10.6
+  `CONTENT_TYPE_NOT_SUPPORTED` reason, which is now attached. Three in-repo
+  tests had asserted the incorrect code and passed.
+- **The task state machine rejected conformant agents** — six MUST-level
+  checks failed because `TaskState::can_transition_to` required
+  `Submitted → Working` before any finish state, so an agent that answered in
+  one step got `InvalidParams` from its own SDK. Spec §4.1.3 defines no
+  transition matrix and requires no intermediate state, and the reference SDKs
+  complete directly from `Submitted`. The table now enforces only that
+  terminal states are final and that nothing re-enters `Submitted` /
+  `Unspecified`; `Working → Rejected` is permitted too (§4.1.3 allows
+  rejecting "later"). `state_validation_tests.rs` was rewritten to pin all 81
+  matrix cells against an independently-computed predicate.
+
+Conformance went from 87 to 158 passing checks. Remaining failures — two of
+which look like genuine defects (`historyLength` overrun, subscribe stream not
+ending on a terminal event) and one of which is a snake_case bug in the TCK's
+own JSON-RPC client (spec §5.5 requires camelCase) — are recorded in
+`docs/official-tck-findings.md` rather than skipped.
+
 ### Added
 
 - **Developer Certificate of Origin adopted.** The project now requires a

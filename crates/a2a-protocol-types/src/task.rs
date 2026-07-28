@@ -258,32 +258,45 @@ impl TaskState {
     /// Returns `true` if transitioning from `self` to `next` is a valid
     /// state transition per the A2A protocol.
     ///
-    /// Terminal states cannot transition to any other state.
-    /// `Unspecified` can transition to any state.
+    /// The specification (§4.1.3) enumerates the task states and classifies
+    /// them as terminal or interrupted, but it deliberately does **not**
+    /// define a transition matrix — it never requires a task to pass through
+    /// any intermediate state. Two rules follow from what it does say, and
+    /// they are the only two enforced here:
+    ///
+    /// 1. **Terminal states are final.** `Completed`, `Failed`, `Canceled`,
+    ///    and `Rejected` transition nowhere, including to themselves.
+    /// 2. **`Submitted` is an entry state.** Nothing transitions *into* it,
+    ///    and nothing transitions into the proto-default `Unspecified`.
+    ///    `Unspecified` as a *source* still transitions anywhere, since a
+    ///    task decoded with no state set must be able to take its real one.
+    ///
+    /// Everything else is permitted. In particular `Submitted → Completed`
+    /// is valid: an agent that answers a trivial request in one step never
+    /// enters `Working`, and the reference SDKs emit exactly that sequence
+    /// (the official `a2a-tck` SUT contract completes straight from
+    /// `Submitted`). A stricter table here rejected conformant agents —
+    /// including this SDK's own users — with a spurious `InvalidParams`.
     #[inline]
     #[must_use]
     pub const fn can_transition_to(self, next: Self) -> bool {
-        // Terminal states are final — no transitions allowed.
+        // Rule 1: terminal states are final.
         if self.is_terminal() {
             return false;
         }
-        // Allow any transition from Unspecified (proto default).
+        // `Unspecified` is the proto default, not a real state: it carries no
+        // information, so it constrains nothing. Checked before rule 2 so a
+        // task decoded with no state set can still be given its real one.
         if matches!(self, Self::Unspecified) {
             return true;
         }
-        matches!(
-            (self, next),
-            // Submitted → Working, Failed, Canceled, Rejected
-            (Self::Submitted, Self::Working | Self::Failed | Self::Canceled | Self::Rejected)
-            // Working → Working (status refresh carrying a new progress
-            // message — how an agent narrates long-running work),
-            // Completed, Failed, Canceled, InputRequired, AuthRequired
-            | (Self::Working,
-               Self::Working | Self::Completed | Self::Failed | Self::Canceled | Self::InputRequired | Self::AuthRequired)
-            // InputRequired / AuthRequired → Working, Failed, Canceled
-            | (Self::InputRequired | Self::AuthRequired,
-               Self::Working | Self::Failed | Self::Canceled)
-        )
+        // Rule 2: nothing re-enters the entry state or the proto default.
+        if matches!(next, Self::Submitted | Self::Unspecified) {
+            return false;
+        }
+        // `Working → Working` is deliberately allowed: repeated `Working`
+        // status updates are how an agent narrates progress on long work.
+        true
     }
 }
 
@@ -621,28 +634,36 @@ mod tests {
             );
         }
 
-        // Submitted → Working, Failed, Canceled, Rejected
+        // Submitted → any non-entry state. `Submitted → Completed` matters
+        // most: a one-step agent never enters Working, and the official
+        // a2a-tck SUT contract completes directly from Submitted.
         assert!(Submitted.can_transition_to(Working));
         assert!(Submitted.can_transition_to(Failed));
         assert!(Submitted.can_transition_to(Canceled));
         assert!(Submitted.can_transition_to(Rejected));
+        assert!(Submitted.can_transition_to(Completed));
+        assert!(Submitted.can_transition_to(InputRequired));
+        assert!(Submitted.can_transition_to(AuthRequired));
 
-        // Working → Completed, Failed, Canceled, InputRequired, AuthRequired
+        // Working → any non-entry state, including Rejected: §4.1.3 says an
+        // agent may reject "later once an agent has determined it can't or
+        // won't proceed".
         assert!(Working.can_transition_to(Completed));
         assert!(Working.can_transition_to(Failed));
         assert!(Working.can_transition_to(Canceled));
         assert!(Working.can_transition_to(InputRequired));
         assert!(Working.can_transition_to(AuthRequired));
+        assert!(Working.can_transition_to(Rejected));
 
-        // InputRequired → Working, Failed, Canceled
-        assert!(InputRequired.can_transition_to(Working));
-        assert!(InputRequired.can_transition_to(Failed));
-        assert!(InputRequired.can_transition_to(Canceled));
-
-        // AuthRequired → Working, Failed, Canceled
-        assert!(AuthRequired.can_transition_to(Working));
-        assert!(AuthRequired.can_transition_to(Failed));
-        assert!(AuthRequired.can_transition_to(Canceled));
+        // Interrupted states resume or finish.
+        for &from in &[InputRequired, AuthRequired] {
+            for &to in &[Working, Failed, Canceled, Completed, Rejected] {
+                assert!(
+                    from.can_transition_to(to),
+                    "{from:?} → {to:?} should be valid"
+                );
+            }
+        }
     }
 
     /// All invalid transitions per A2A protocol spec.
@@ -670,37 +691,22 @@ mod tests {
             }
         }
 
-        // Submitted cannot go to Completed, InputRequired, AuthRequired, Submitted, Unspecified
-        assert!(!Submitted.can_transition_to(Completed));
-        assert!(!Submitted.can_transition_to(InputRequired));
-        assert!(!Submitted.can_transition_to(AuthRequired));
-        assert!(!Submitted.can_transition_to(Submitted));
-        assert!(!Submitted.can_transition_to(Unspecified));
+        // Nothing re-enters the entry state or the proto default, from any
+        // non-terminal state.
+        for &from in &[Submitted, Working, InputRequired, AuthRequired] {
+            assert!(
+                !from.can_transition_to(Submitted),
+                "{from:?} → Submitted should be invalid (entry state)"
+            );
+            assert!(
+                !from.can_transition_to(Unspecified),
+                "{from:?} → Unspecified should be invalid (proto default)"
+            );
+        }
 
         // Working CAN refresh itself (progress narration via repeated
         // Working status updates carrying new messages).
         assert!(Working.can_transition_to(Working));
-
-        // Working cannot go to Submitted, Unspecified, Rejected
-        assert!(!Working.can_transition_to(Submitted));
-        assert!(!Working.can_transition_to(Unspecified));
-        assert!(!Working.can_transition_to(Rejected));
-
-        // InputRequired cannot go to Completed, Submitted, InputRequired, AuthRequired, Unspecified, Rejected
-        assert!(!InputRequired.can_transition_to(Completed));
-        assert!(!InputRequired.can_transition_to(Submitted));
-        assert!(!InputRequired.can_transition_to(InputRequired));
-        assert!(!InputRequired.can_transition_to(AuthRequired));
-        assert!(!InputRequired.can_transition_to(Unspecified));
-        assert!(!InputRequired.can_transition_to(Rejected));
-
-        // AuthRequired cannot go to Completed, Submitted, InputRequired, AuthRequired, Unspecified, Rejected
-        assert!(!AuthRequired.can_transition_to(Completed));
-        assert!(!AuthRequired.can_transition_to(Submitted));
-        assert!(!AuthRequired.can_transition_to(InputRequired));
-        assert!(!AuthRequired.can_transition_to(AuthRequired));
-        assert!(!AuthRequired.can_transition_to(Unspecified));
-        assert!(!AuthRequired.can_transition_to(Rejected));
     }
 
     // ── Newtype coverage ──────────────────────────────────────────────────

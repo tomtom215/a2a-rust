@@ -403,5 +403,15 @@ async fn jsonrpc_unsupported_content_type() {
 
     let (status, resp_body) = http_request(addr, "POST", "/", Some("{}"), Some("text/xml")).await;
     assert_eq!(status, 200);
-    assert!(resp_body.contains("Parse error"));
+    // Spec §5.4: an unsupported media type is ContentTypeNotSupportedError
+    // (-32005), not ParseError (-32700) — the body was never parsed.
+    assert!(
+        resp_body.contains("-32005"),
+        "expected ContentTypeNotSupportedError, got: {resp_body}"
+    );
+    assert!(resp_body.contains("unsupported Content-Type"));
+    assert!(
+        !resp_body.contains("-32700"),
+        "must not report a parse error: {resp_body}"
+    );
 }

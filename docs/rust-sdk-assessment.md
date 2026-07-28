@@ -240,15 +240,22 @@ the field."
 | MSRV leg in CI | ❌ | ✅ (1.93) |
 | Feature-combination linting | ✅ (`cargo hack --each-feature`) | ✅ (explicit per-feature legs) |
 
-**On the Codecov discrepancy.** `a2a-rust`'s coverage workflow reports
-`success` on every recent run, but the Codecov API shows no commit ingested
-since `739d2e0e` on 2026-05-25. The 92.23% badge in the README therefore
-describes pre-v0.6 code, and the `codecov.yml` patch-coverage gate (75% on
-changed lines) is not actually enforcing anything on current PRs. This is a
-small operational defect, not a substantive one — but it is exactly the kind
-of thing that erodes confidence in a self-reported quality story, and it
-should be fixed before this project's testing claims are used as an argument
-for anything.
+**On the Codecov discrepancy.** The Codecov API shows no commit ingested for
+`a2a-rust` since `739d2e0e` on 2026-05-25, so the 92.23% badge describes
+pre-v0.6 code and the `codecov.yml` patch-coverage gate (75% on changed lines)
+is not currently enforcing anything.
+
+In fairness to the project, most of this is a documented upstream outage, not
+neglect: `coverage.yml` carries a dated comment recording that Codecov's
+public-key distribution broke on 2026-06-10, leaving the action unable to
+verify its own CLI, and `continue-on-error: true` was added deliberately with
+`fail_ci_if_error: true` left intact underneath and a note to remove the
+override when the key returns. That is the right way to handle it.
+
+What the outage does not explain is the two weeks between the last ingested
+commit (05-25) and the outage starting (06-10). Whatever the cause there, the
+practical position stands: the published coverage figure is stale and the
+patch gate is dark. `a2a-rs`, on the same service, is current at 96.56%.
 
 ### 4.5 Cross-SDK interop evidence — the decisive difference
 

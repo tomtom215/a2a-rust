@@ -55,15 +55,31 @@ fn submitted_valid_transitions() {
 
 #[test]
 fn submitted_invalid_transitions() {
-    let invalid = [
-        TaskState::Completed,
-        TaskState::InputRequired,
-        TaskState::AuthRequired,
-    ];
+    // `Submitted` is the entry state: nothing transitions back into it, nor
+    // into the proto-default `Unspecified`. Everything else is reachable —
+    // the spec (§4.1.3) defines no required transition path, and a one-step
+    // agent goes `Submitted -> Completed` without ever entering `Working`.
+    let invalid = [TaskState::Submitted, TaskState::Unspecified];
     for target in &invalid {
         assert!(
             !TaskState::Submitted.can_transition_to(*target),
             "Submitted -> {target} should be invalid"
+        );
+    }
+
+    let valid = [
+        TaskState::Working,
+        TaskState::Completed,
+        TaskState::InputRequired,
+        TaskState::AuthRequired,
+        TaskState::Failed,
+        TaskState::Canceled,
+        TaskState::Rejected,
+    ];
+    for target in &valid {
+        assert!(
+            TaskState::Submitted.can_transition_to(*target),
+            "Submitted -> {target} should be valid"
         );
     }
 }
@@ -86,14 +102,16 @@ fn working_valid_transitions() {
 }
 
 #[test]
-fn working_cannot_go_to_submitted_or_rejected() {
+fn working_cannot_go_back_to_submitted() {
     assert!(
         !TaskState::Working.can_transition_to(TaskState::Submitted),
-        "Working -> Submitted should be invalid"
+        "Working -> Submitted should be invalid (Submitted is the entry state)"
     );
+    // §4.1.3: an agent may reject "later once an agent has determined it
+    // can't or won't proceed" — not only at task creation.
     assert!(
-        !TaskState::Working.can_transition_to(TaskState::Rejected),
-        "Working -> Rejected should be invalid"
+        TaskState::Working.can_transition_to(TaskState::Rejected),
+        "Working -> Rejected should be valid"
     );
 }
 

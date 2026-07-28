@@ -142,6 +142,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "a2a-tck-sut"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-server",
+ "a2a-protocol-types",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "agent-team"
 version = "0.0.0"
 dependencies = [
