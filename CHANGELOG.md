@@ -12,6 +12,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Mid-stream SSE errors escaped their JSON-RPC envelope, so no conformant
+  client could read them.** Success frames on the JSON-RPC binding are wrapped
+  in a `JsonRpcSuccessResponse` (§9.4.2), but error frames were emitted as a
+  bare `A2aError` — a payload carrying neither `result` nor `error`. This
+  SDK's own client reported
+
+      Serialization("JSON-RPC 2.0 response carries neither `result` nor
+      `error`; §5 requires exactly one")
+
+  instead of the error the server was sending, which made the 0.7.0
+  `streamLagged` truncation signal **unreadable over JSON-RPC**: a consumer
+  that fell behind learned only that the frame was malformed, not that its
+  view was truncated or that it should resubscribe. Error frames are now
+  `JsonRpcErrorResponse` envelopes echoing the request id, with `error.data`
+  preserved so the `streamLagged` marker survives. The REST binding keeps
+  bare payloads per §11.7, asserted so the fix cannot leak across bindings.
+
+  A second site had the same defect: the serialization-failure fallback
+  emitted an ad-hoc `{"error":"serialization failed: …"}` string, which is
+  neither a JSON-RPC error response nor an `A2aError`. Both sites now share
+  one enveloping helper.
+
+  Surfaced by `cargo bench -p a2a-benchmarks --bench backpressure`, which
+  panicked at `stream_volume/502_events`. Confirmed pre-existing: the same
+  panic reproduces on `b416c1a` (v0.7.0), so it is not a regression from the
+  TCK work. Pinned by `streaming_error_envelope_tests.rs`, which forces a
+  deterministic lag by overflowing a 2-slot ring before the reader is polled,
+  rather than depending on benchmark timing.
+
+### Changed
+
+- **`backpressure` benchmark: the event queue is sized above the event
+  count.** `stream_volume/502_events` ran against the default 256-slot
+  broadcast ring, so the reader lagged and the stream ended in a
+  `streamLagged` error — that configuration was measuring event loss as much
+  as streaming cost. The historical "252→502 events: ~193µs/event" figure in
+  the source comment was taken from such a run and has been removed as not
+  comparable. Slow-consumer behaviour is still exercised deliberately in
+  `bench_slow_consumer`.
+
+### Fixed
+
 - **The official-TCK workflow reported `Success` while 12 MUST-level checks
   failed.** Both suite steps carried `continue-on-error: true`, so the job
   went green with `Process completed with exit code 1` sitting in the

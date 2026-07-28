@@ -55,9 +55,20 @@ fn rt() -> tokio::runtime::Runtime {
 /// Starts a JSON-RPC server with a MultiEventExecutor that emits N event pairs.
 async fn start_multi_event_server(event_pairs: usize) -> (String, std::net::SocketAddr) {
     let executor = MultiEventExecutor { event_pairs };
+    // Size the broadcast ring above the event count. The default is 256, so
+    // the 502-event case used to overflow it: the reader lagged, the stream
+    // ended in a `streamLagged` error, and the benchmark panicked on it.
+    //
+    // That made this configuration measure "how fast do we drop events"
+    // rather than per-event streaming cost — the published
+    // "252→502 events: ~193µs/event" figure was taken from a run that could
+    // be shedding events. Headroom keeps the measurement honest; slow-consumer
+    // behaviour is exercised deliberately in `bench_slow_consumer` instead.
+    let queue_capacity = (event_pairs + 2).next_power_of_two().max(256) * 2;
     let handler = Arc::new(
         RequestHandlerBuilder::new(executor)
             .with_agent_card(fixtures::agent_card("http://127.0.0.1:0"))
+            .with_event_queue_capacity(queue_capacity)
             .build()
             .expect("build handler"),
     );
@@ -84,10 +95,18 @@ fn bench_stream_volume(c: &mut Criterion) {
     // the 3-101 event range shows an inverted scaling curve because CI
     // scheduler variance exceeds the per-event overhead.
     //
-    // KNOWN SCALING BEHAVIOR: Per-event cost inflects at ~252 events:
+    // KNOWN SCALING BEHAVIOR: per-event cost inflects as volume grows.
     //   3→52 events:  ~4µs/event marginal cost (fast path)
     //   52→252 events: ~46µs/event (12× jump — broadcast buffer pressure)
-    //   252→502 events: ~193µs/event (4× more — SSE frame accumulation)
+    //
+    // The historical "252→502 events: ~193µs/event" figure is NOT comparable
+    // to current runs and has been removed. It was measured with the default
+    // 256-slot broadcast ring, which 502 events overflow: the reader lagged
+    // and the stream ended in a `streamLagged` error, so that configuration
+    // was partly measuring event loss rather than streaming cost. (It also
+    // panicked outright once the client could decode the lag error instead of
+    // failing to parse the malformed frame the server used to emit.)
+    // `start_multi_event_server` now sizes the ring above the event count.
     //
     // The inflection is caused by the broadcast channel's default capacity
     // (64 events). At >64 in-flight events, the producer outpaces the SSE
