@@ -35,11 +35,25 @@ in-repo one, with a new `tck/sut` System Under Test implementing its
   rejecting "later"). `state_validation_tests.rs` was rewritten to pin all 81
   matrix cells against an independently-computed predicate.
 
-Conformance went from 87 to 158 passing checks. Remaining failures — two of
-which look like genuine defects (`historyLength` overrun, subscribe stream not
-ending on a terminal event) and one of which is a snake_case bug in the TCK's
-own JSON-RPC client (spec §5.5 requires camelCase) — are recorded in
-`docs/official-tck-findings.md` rather than skipped.
+Conformance went from 87 to 158 passing checks against the same SUT.
+
+The remaining failures are recorded in `docs/official-tck-findings.md` rather
+than skipped. That document also carries a correction: an earlier revision
+claimed a bug in the TCK's JSON-RPC client (snake_case params vs spec §5.5).
+**That claim was wrong and is retracted.** The A2A JSON data model is
+generated from protobuf, and ProtoJSON parsers accept both the camelCase
+`json_name` and the original snake_case field name; the official Python SDK
+was measured doing exactly that. §5.5 governs emission, not acceptance.
+
+The real defect the TCK surfaced is this SDK's own: **unrecognised request
+parameters are silently ignored** where the reference rejects them, so a
+`ListTasks` filter misspelled by any means — snake_case, wrong case, or a
+typo — returns every task instead of an error or a filtered set. The reported
+`historyLength` overrun has the same single root cause (`historyLength` is
+honoured; the ignored `history_length` is not). Scope and fix direction are in
+the findings document; the fix is deliberately not rushed in here, since it
+needs an alias list generated from the protobuf schema and a per-field test,
+not patches for the six spellings the TCK happens to send.
 
 ### Added
 

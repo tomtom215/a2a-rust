@@ -358,9 +358,16 @@ async fn main() {
     let host = std::env::var("SUT_HOST").unwrap_or_else(|_| "127.0.0.1:9999".into());
     let addr: SocketAddr = host.parse().expect("SUT_HOST must be host:port");
 
+    // The card's advertised URL is what the TCK actually connects to after
+    // discovery. Allowing it to differ from the bind address lets the SUT run
+    // behind a recording proxy, which is how the on-the-wire evidence in
+    // `docs/official-tck-findings.md` was captured.
+    let advertised =
+        std::env::var("SUT_ADVERTISE_URL").unwrap_or_else(|_| format!("http://{addr}"));
+
     let handler = Arc::new(
         RequestHandlerBuilder::new(TckSutExecutor)
-            .with_agent_card(make_agent_card(&format!("http://{addr}")))
+            .with_agent_card(make_agent_card(&advertised))
             .with_push_config_store(InMemoryPushConfigStore::new())
             // The TCK runs its webhook receiver on loopback, which the
             // sender's SSRF guard blocks by default — correct in production,
