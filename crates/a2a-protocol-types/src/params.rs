@@ -38,19 +38,23 @@ pub struct SendMessageConfiguration {
     /// absent on the wire means empty — "no preference". Requiring the key
     /// rejected real official-SDK requests at parse time.
     #[serde(default)]
+    #[serde(alias = "accepted_output_modes")]
     pub accepted_output_modes: Vec<String>,
 
     /// Push notification config to register alongside this message send.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "task_push_notification_config")]
     pub task_push_notification_config: Option<TaskPushNotificationConfig>,
 
     /// Number of historical messages to include in the response.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "history_length")]
     pub history_length: Option<u32>,
 
     /// If `true`, return immediately with the task object rather than waiting
     /// for completion.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "return_immediately")]
     pub return_immediately: Option<bool>,
 }
 
@@ -105,6 +109,7 @@ pub struct TaskQueryParams {
 
     /// Number of historical messages to include in the response.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "history_length")]
     pub history_length: Option<u32>,
 }
 
@@ -157,6 +162,7 @@ pub struct ListTasksParams {
 
     /// Filter to tasks belonging to this conversation context.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "context_id")]
     pub context_id: Option<String>,
 
     /// Filter to tasks in this state.
@@ -167,22 +173,27 @@ pub struct ListTasksParams {
     /// to `max_page_size` (default 1000). Clients may request any `u32` value
     /// but the server will cap it.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "page_size")]
     pub page_size: Option<u32>,
 
     /// Pagination cursor returned by the previous response.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "page_token")]
     pub page_token: Option<String>,
 
     /// Return only tasks whose status changed after this ISO 8601 timestamp.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "status_timestamp_after")]
     pub status_timestamp_after: Option<String>,
 
     /// If `true`, include artifact data in the returned tasks.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "include_artifacts")]
     pub include_artifacts: Option<bool>,
 
     /// Number of historical messages to include per task.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "history_length")]
     pub history_length: Option<u32>,
 }
 
@@ -197,6 +208,7 @@ pub struct GetPushConfigParams {
     pub tenant: Option<String>,
 
     /// The task whose push config to retrieve.
+    #[serde(alias = "task_id")]
     pub task_id: String,
 
     /// The server-assigned push config identifier.
@@ -214,6 +226,7 @@ pub struct DeletePushConfigParams {
     pub tenant: Option<String>,
 
     /// The task whose push config to delete.
+    #[serde(alias = "task_id")]
     pub task_id: String,
 
     /// The server-assigned push config identifier.
@@ -231,14 +244,17 @@ pub struct ListPushConfigsParams {
     pub tenant: Option<String>,
 
     /// The task whose push configs to list.
+    #[serde(alias = "task_id")]
     pub task_id: String,
 
     /// Maximum number of configs to return per page.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "page_size")]
     pub page_size: Option<u32>,
 
     /// Pagination cursor returned by the previous response.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "page_token")]
     pub page_token: Option<String>,
 }
 

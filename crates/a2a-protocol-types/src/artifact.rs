@@ -65,6 +65,7 @@ impl AsRef<str> for ArtifactId {
 pub struct Artifact {
     /// Unique artifact identifier.
     #[serde(rename = "artifactId")]
+    #[serde(alias = "artifact_id")]
     pub id: ArtifactId,
 
     /// Optional human-readable name.

@@ -53,6 +53,7 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `examples/echo-agent`, before fixes | 128 | 12 | 125 |
 | Against `tck/sut`, before fixes | 87 | 15 | 157 |
 | Against `tck/sut`, after the §2 fixes | 158 | 12 | 94 |
+| Against `tck/sut`, after the §3.3 alias fix | 166 | 10 | 89 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -63,11 +64,11 @@ real before/after.
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
 
-**All 12 remaining failures are at `MUST` level.** An earlier revision of this
-document listed them without saying so, which understated them — the
-MUST-only run is `12 failed, 139 passed`, i.e. every failure is a hard
-conformance requirement, not a `SHOULD` or `MAY`. Reported MUST compatibility
-is **85.4%**, computed over tested requirements only; 21 further MUST
+**All 10 remaining failures are at `MUST` level**, as were the 12 before them.
+An earlier revision of this document listed them without saying so, which
+understated them — every failure is a hard conformance requirement, not a
+`SHOULD` or `MAY`. Reported MUST compatibility is **93.9%** (was 85.4% before
+the §3.3 fix), computed over tested requirements only; 21 further MUST
 requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and `BIND-EQUIV-*`
 families) report `NOT TESTED` because the SUT does not exercise them, and are
 a coverage gap rather than a pass.
@@ -87,10 +88,21 @@ The second direction is what keeps the first honest. A baseline that is
 allowed to rot becomes a blanket exemption, at which point the check is green
 for the same bad reason `continue-on-error: true` was.
 
-Transport granularity matters because `PUSH-CREATE-001` fails on `jsonrpc` and
-passes on `http_json` today; a requirement-level baseline would not notice it
-starting to fail on `http_json` too. The baseline currently holds **16
-(requirement, transport) pairs across 12 requirements**.
+Transport granularity matters: `PUSH-CREATE-001` used to fail on `jsonrpc`
+while passing on `http_json`, and a requirement-level baseline would not have
+noticed it starting to fail on `http_json` too. The baseline now holds **9
+(requirement, transport) pairs across 5 requirements**, down from 16 across 12
+when the §3.3 fix landed.
+
+The stale-baseline direction is not theoretical — it fired on exactly that
+commit, which is how the shrink was forced:
+
+```
+STALE BASELINE — 7 baselined check(s) now pass:
+  CORE-HIST-002 [jsonrpc]   PUSH-CREATE-001 [jsonrpc]  PUSH-CREATE-002 [jsonrpc]
+  PUSH-DEL-001 [jsonrpc]    PUSH-DEL-002 [jsonrpc]     PUSH-GET-001 [jsonrpc]
+  PUSH-LIST-001 [jsonrpc]
+```
 
 > **An earlier revision of this workflow reported `Success` while these 12
 > checks failed**, because both suite steps carried `continue-on-error: true`.
@@ -202,55 +214,104 @@ that determines who is at fault.
 
 ### 3.3 The real defect: this SDK silently ignores unrecognised parameters
 
-*Open. Not yet fixed.*
+*Part (a) fixed. Part (b) still open — see below.*
 
 The reference rejects unknown fields (§3.1). This SDK ignores them, and for
 filter parameters that converts a client-side mistake into **silently wrong
-data** rather than an error:
+data** rather than an error. Measured on the wire against `tck/sut`, seeded
+with 5 tasks of which 3 are in `ctx-A`:
 
-| `ListTasks` params | Result |
-|---|---|
-| *(none)* | 50 tasks |
-| `{"contextId": "<nonexistent>"}` | **0 tasks** — correct |
-| `{"context_id": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"contextID": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"contxtId": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"totallyBogusField": 1}` | 50 tasks — ignored |
-| `{"pageSize": 1}` | 1 task — correct |
-| `{"pagesize": 1}` | 50 tasks — ignored |
+| `ListTasks` params | Before | After |
+|---|---|---|
+| *(none)* | 5 tasks | 5 tasks |
+| `{"contextId": "ctx-A"}` | **3** — correct | **3** — correct |
+| `{"context_id": "ctx-A"}` | **5** — filter ignored | **3** — correct |
+| `{"contextID": "ctx-A"}` | **5** — filter ignored | **5** — still ignored |
+| `{"contxtId": "ctx-A"}` | **5** — filter ignored | **5** — still ignored |
+| `{"totallyBogusField": 1}` | 5 — ignored | 5 — still ignored |
+| `{"pageSize": 1}` | 1 task — correct | 1 task — correct |
+| `{"page_size": 1}` | **5** — filter ignored | **1** — correct |
+| `{"pagesize": 1}` | **5** — filter ignored | **5** — still ignored |
 
 A caller who asks for one context's tasks and misspells the key by any means
 receives **every** task instead of an error. The snake_case spelling the TCK
-sends is one instance of this; a typo is another, and neither is reported.
+sends is one instance of this; a typo is another. Only the first is fixed.
 
 The same class of bug is loud rather than silent where the field is required:
-`CreateTaskPushNotificationConfig` with `task_id` fails with
-`-32602 taskId is required`, which is at least visible.
+`CreateTaskPushNotificationConfig` with `task_id` used to fail with
+`-32602 taskId is required`, which was at least visible. It now succeeds.
 
-**Scope:** 41 multi-word public fields across the request-facing types
-(`params.rs` 16, `agent_card.rs` 14, `events.rs` 5, `message.rs` 4,
-`push.rs` 1, `task.rs` 1) currently accept only the camelCase spelling.
+**Scope:** 73 multi-word fields across the 44 messages in
+`proto/a2a_v1/a2a.proto`. An earlier revision of this document said 41, which
+counted only the request-facing types — a client parsing another
+implementation's *responses* and agent cards hits the same wall, so the fix
+covers the whole schema.
 
-**Fix direction, not yet applied** — two changes, and they are separable:
+#### (a) Accept the proto field name as an alias — **done**
 
-1. *Accept the proto field name as an alias* on every request-facing field,
-   matching the reference's ProtoJSON acceptance. Mechanical, but the alias
-   list must be generated from `proto/a2a_v1/a2a.proto` rather than from the
-   Rust field names, and pinned by a test asserting both spellings
-   deserialize identically for every field in the schema.
-2. *Reject unknown fields* rather than ignoring them, matching the
-   reference's `ParseError`. This is the change that actually prevents the
-   silent-wrong-data case, and it is a deliberate semantic decision with a
-   forward-compatibility cost — the types are `#[non_exhaustive]` precisely
-   so the spec can grow. Worth doing, worth discussing first.
+`#[serde(alias = "<proto_name>")]` on all 67 fields that lacked it (`Part`
+already accepted `media_type` by hand, and 5 are exempt — see below).
 
-Neither is applied here, because doing them properly means generating the
-field list from the schema and testing every field — not fixing the six
-spellings the TCK happens to exercise.
+The list is derived from `a2a.proto`, not from the Rust field names, by
+`crates/a2a-protocol-types/tests/proto_field_alias.rs`. Deriving it from the
+Rust names would have been circular: it would prove the aliases match the Rust
+identifiers rather than the wire contract, and would go stale silently when
+the schema grows a field. The test parses the schema, computes the camelCase
+spelling with protobuf's own `ToJsonName` rather than serde's `rename_all`,
+and for every multi-word field asserts that:
+
+- both spellings deserialize, and to **the same value**;
+- the sample value is **distinguishable from the field being absent** — a case
+  that would pass with no alias at all is reported as a bad case, not a pass;
+- only the `json_name` is **emitted** (spec §5.5 governs emission), so a
+  `rename`/`alias` swap cannot quietly put snake_case on the wire;
+- every multi-word field in the schema is either covered or explicitly
+  exempt, and no case references a field the schema no longer has.
+
+Five counter-tests drive each of those directions to a failure on purpose, so
+none of them is a gate that has never been observed firing. Two of them earned
+their keep immediately: the first draft of the schema parser matched
+`starts_with("option")`, which silently swallowed every `optional` field
+(`page_size`, `history_length`, `include_artifacts`), and scanned for
+`"message "` anywhere in the text, which the field `Message message = 2;`
+derailed into skipping `Part`, `GetTaskRequest`, `StreamResponse` and
+`ListTaskPushNotificationConfigsResponse`. Both produced a *smaller* case list
+that passed everything asked of it.
+
+**Deliberate divergence, recorded:** a request carrying *both* spellings of one
+field is rejected here (`-32602 duplicate field`) where the reference accepts
+it and takes the last key.
+
+```text
+ParseDict({"context_id": "A", "contextId": "B"}, ListTasksRequest())
+  -> {"contextId": "B"}     # reference: accepted, last wins
+  -> -32602 duplicate field `contextId`      # here
+```
+
+No conformant ProtoJSON printer emits both spellings, so only a hand-built or
+buggy request reaches this path; refusing to guess which one the caller meant
+is safer than silently picking one. Pinned by
+`both_spellings_at_once_is_an_error` so it stays a decision.
+
+**Exempt, and why:** the 5 arms of the `SecurityScheme` oneof. This SDK
+encodes that type as an internally tagged union (`{"type": "apiKey", …}`)
+rather than as a ProtoJSON oneof (`{"apiKeySecurityScheme": {…}}`). That is a
+wire divergence an alias cannot fix — see §7.
+
+#### (b) Reject unknown fields — **open, not applied**
+
+This is the change that actually closes the silent-wrong-data hole: the four
+typo rows above are still wrong after (a). It matches the reference's
+`ParseError`, and it is a deliberate semantic decision with a
+forward-compatibility cost — the types are `#[non_exhaustive]` precisely so
+the spec can grow, and `#[serde(deny_unknown_fields)]` is additionally
+incompatible with the `#[serde(flatten)]` that `Part` relies on. Worth doing,
+worth agreeing on first.
 
 ## 4. `CORE-HIST-002` is the §3.3 bug, not a `historyLength` defect
 
-*Earlier called a probable genuine defect. Retracted.*
+*Earlier called a probable genuine defect. Retracted. Closed by the §3.3(a)
+alias fix — it no longer appears in the baseline.*
 
 The TCK reported "`GetTask` with `historyLength=1` returned 2 messages".
 `historyLength` is in fact honoured correctly; the TCK sends
@@ -267,15 +328,20 @@ One root cause, two reported symptoms.
 
 ## 5. Still open — genuinely unclassified
 
-All `MUST` level, all baselined in `tck/conformance-baseline.json`. Listed
-rather than diagnosed: no claim is made about cause.
+All `MUST` level, all baselined in `tck/conformance-baseline.json` (9 pairs
+across 5 requirements). Listed rather than diagnosed: **no claim is made about
+cause.** Confidence label for every row below: *observed symptom only, not
+reproduced by hand, no root cause established.*
 
 | Requirement | Symptom | Status |
 |---|---|---|
-| `DM-MSG-001` (×2) | `tck-message-response` yields a Task, not a bare `Message` | Unknown. Likely a SUT gap — writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. |
-| `PUSH-CREATE-001` (jsonrpc) | `task_id` rejected | Explained by §3.3. Fixed when §3.3 is. |
-| `PUSH-DELIVER-001/002/003` (×6) | No webhook delivery observed | Unknown. The `jsonrpc` legs follow from `PUSH-CREATE-001`; the `http_json` legs do not and need separate investigation. |
+| `DM-MSG-001` (`*`) | `tck-message-response` yields a Task, not a bare `Message` | Unknown. Likely a SUT gap — writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. Note the report marks it `FAIL` overall while both transports read `PASS`, so the baseline keys it `*`; that aggregation quirk is itself unexplained. |
+| `PUSH-DELIVER-001/002/003` (×6) | No webhook delivery observed | Unknown. The `jsonrpc` legs were previously assumed to follow from `PUSH-CREATE-001` — **that assumption is now disproven**: `PUSH-CREATE-001` passes after §3.3(a) and all six `PUSH-DELIVER-*` legs still fail. Both bindings need the same separate investigation. |
 | `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | Unknown. Needs a hand-built reproduction against §3.1.6 before it is called a defect. |
+
+Closed since the previous revision, all by §3.3(a): `CORE-HIST-002`,
+`PUSH-CREATE-001`, `PUSH-CREATE-002`, `PUSH-DEL-001`, `PUSH-DEL-002`,
+`PUSH-GET-001`, `PUSH-LIST-001` — 7 pairs, all on `jsonrpc`.
 
 ## 6. Reproducing every measurement
 
@@ -318,3 +384,70 @@ python3 tck/scripts/check_conformance.py --report … --baseline … --update
 verified to yield an identical set of gated failures to the full run, so CI
 runs the full suite once. Reports land in `reports/` as HTML, JSON, and JUnit
 XML; the gate reads `compatibility.json`.
+
+## 7. `securitySchemes` is emitted in the v0.3 shape, not the v1.0 shape
+
+*Open. Found while doing §3.3, not by the TCK — no `CARD-*` check covers it.
+Confidence: verified by cross-implementation test against `a2a-sdk` 1.1.2 and
+against the checked-in schema.*
+
+`proto/a2a_v1/a2a.proto` is byte-identical to the specification copy vendored
+by the TCK (`a2aproject/A2A` at `v1.0.0`, commit `1736957`; verified by
+`diff`, 0 lines). It defines `SecurityScheme` as a **oneof of five arms** and
+`APIKeySecurityScheme` with a field named **`location`**. The specification
+text generates its data-model tables directly from that proto
+(`{{ proto_to_table("SecurityScheme") }}`), so the proto is normative for the
+JSON shape. This SDK instead encodes the type as an internally tagged union
+with `"type"` and `"in"` — the OpenAPI-style v0.3 shape.
+
+What this SDK emits today:
+
+```json
+"securitySchemes": {
+  "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+  "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+}
+```
+
+What the v1.0 schema defines:
+
+```json
+"securitySchemes": {
+  "apiKeyAuth": {"apiKeySecurityScheme": {"location": "header", "name": "X-API-Key"}},
+  "bearerAuth":  {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
+}
+```
+
+**Severity, measured rather than assumed.** That card JSON — emitted by this
+SDK's own serializer — was fed to three parsers in the reference SDK:
+
+| Parser | Result |
+|---|---|
+| `a2a.client.card_resolver.parse_agent_card` (what a reference client calls) | **accepted**, both schemes recovered in full |
+| `json_format.ParseDict(..., AgentCard())`, strict | **rejected** — `has no field named "type"` |
+| `json_format.ParseDict(..., AgentCard(), ignore_unknown_fields=True)` | **accepted, schemes silently empty** — `{"apiKeyAuth": {}, "bearerAuth": {}}` |
+
+So this is **not** an interop break with the reference SDK: its resolver
+carries an explicit backward-compatibility shim that maps `type` → the oneof
+arm and `in` → `location`, and its docstring calls the input "legacy". Row 1
+is the path a real reference client takes.
+
+It is nonetheless worth fixing, and row 3 is why: a peer that parses the card
+with ProtoJSON and `ignore_unknown_fields=True` — the same option the
+reference resolver itself passes — gets an agent card declaring **two security
+schemes with no contents**, and would conclude the agent supports no usable
+authentication. That is the §3.3 failure mode again (silently wrong data
+rather than an error), pointed the other way across the wire.
+
+**Not fixed here, deliberately.** Changing it alters the bytes on
+`/.well-known/agent-card.json` for every existing consumer of this SDK, which
+is a breaking change to a published wire format and a decision to take
+explicitly rather than as a side effect of a serde-alias commit. The five
+oneof arms are listed in `EXEMPT` in
+`crates/a2a-protocol-types/tests/proto_field_alias.rs` with a pointer here, so
+the coverage check stays honest about not covering them.
+
+Two questions to settle before doing it: whether to emit the v1.0 shape while
+*accepting* both (the low-risk path, mirroring what the reference client
+does), and whether `ApiKeyLocation` should serialize as `header`/`query`/
+`cookie` or as the proto's plain `string location`.

@@ -134,6 +134,7 @@ pub struct HttpAuthSecurityScheme {
 
     /// Format hint for Bearer tokens (e.g. `"JWT"`).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "bearer_format")]
     pub bearer_format: Option<String>,
 
     /// Optional human-readable description.
@@ -152,6 +153,7 @@ pub struct OAuth2SecurityScheme {
 
     /// URL of the OAuth 2.0 server metadata document (RFC 8414).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "oauth2_metadata_url")]
     pub oauth2_metadata_url: Option<String>,
 
     /// Optional human-readable description.
@@ -168,12 +170,15 @@ pub struct OAuth2SecurityScheme {
 #[serde(rename_all = "camelCase")]
 pub enum OAuthFlows {
     /// Authorization code flow.
+    #[serde(alias = "authorization_code")]
     AuthorizationCode(AuthorizationCodeFlow),
 
     /// Client credentials flow.
+    #[serde(alias = "client_credentials")]
     ClientCredentials(ClientCredentialsFlow),
 
     /// Device authorization flow (RFC 8628).
+    #[serde(alias = "device_code")]
     DeviceCode(DeviceCodeFlow),
 
     /// Implicit flow (deprecated — use Authorization Code + PKCE instead).
@@ -188,13 +193,16 @@ pub enum OAuthFlows {
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizationCodeFlow {
     /// URL of the authorization endpoint.
+    #[serde(alias = "authorization_url")]
     pub authorization_url: String,
 
     /// URL of the token endpoint.
+    #[serde(alias = "token_url")]
     pub token_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "refresh_url")]
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
@@ -202,6 +210,7 @@ pub struct AuthorizationCodeFlow {
 
     /// Whether PKCE (RFC 7636) is required for this flow.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "pkce_required")]
     pub pkce_required: Option<bool>,
 }
 
@@ -210,10 +219,12 @@ pub struct AuthorizationCodeFlow {
 #[serde(rename_all = "camelCase")]
 pub struct ClientCredentialsFlow {
     /// URL of the token endpoint.
+    #[serde(alias = "token_url")]
     pub token_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "refresh_url")]
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
@@ -225,13 +236,16 @@ pub struct ClientCredentialsFlow {
 #[serde(rename_all = "camelCase")]
 pub struct DeviceCodeFlow {
     /// URL of the device authorization endpoint.
+    #[serde(alias = "device_authorization_url")]
     pub device_authorization_url: String,
 
     /// URL of the token endpoint.
+    #[serde(alias = "token_url")]
     pub token_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "refresh_url")]
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
@@ -243,10 +257,12 @@ pub struct DeviceCodeFlow {
 #[serde(rename_all = "camelCase")]
 pub struct ImplicitFlow {
     /// URL of the authorization endpoint.
+    #[serde(alias = "authorization_url")]
     pub authorization_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "refresh_url")]
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
@@ -258,10 +274,12 @@ pub struct ImplicitFlow {
 #[serde(rename_all = "camelCase")]
 pub struct PasswordOAuthFlow {
     /// URL of the token endpoint.
+    #[serde(alias = "token_url")]
     pub token_url: String,
 
     /// URL of the refresh token endpoint.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "refresh_url")]
     pub refresh_url: Option<String>,
 
     /// Available scopes: name → description.
@@ -275,6 +293,7 @@ pub struct PasswordOAuthFlow {
 #[serde(rename_all = "camelCase")]
 pub struct OpenIdConnectSecurityScheme {
     /// URL of the OpenID Connect discovery document.
+    #[serde(alias = "open_id_connect_url")]
     pub open_id_connect_url: String,
 
     /// Optional human-readable description.

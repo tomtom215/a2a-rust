@@ -391,6 +391,7 @@ pub struct Task {
     pub id: TaskId,
 
     /// Conversation context this task belongs to.
+    #[serde(alias = "context_id")]
     pub context_id: ContextId,
 
     /// Current status of the task.

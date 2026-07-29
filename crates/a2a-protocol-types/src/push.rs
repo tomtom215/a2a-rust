@@ -79,6 +79,7 @@ pub struct TaskPushNotificationConfig {
     /// `CreateTaskPushNotificationConfig` call does require it — the server
     /// rejects a missing task ID there with an invalid-params error.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "task_id")]
     pub task_id: Option<String>,
 
     /// HTTPS URL of the client's webhook endpoint.

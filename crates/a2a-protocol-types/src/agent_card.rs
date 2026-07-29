@@ -34,11 +34,13 @@ pub struct AgentInterface {
     /// Protocol binding identifier — the spec's canonical values are
     /// `"JSONRPC"`, `"GRPC"`, and `"HTTP+JSON"` (§5.3); custom bindings such
     /// as `"WEBSOCKET"` are permitted (§12).
+    #[serde(alias = "protocol_binding")]
     pub protocol_binding: String,
 
     /// A2A protocol version string in `Major.Minor` form (e.g. `"1.0"`).
     ///
     /// Spec §3.6: patch version numbers SHOULD NOT be used in Agent Cards.
+    #[serde(alias = "protocol_version")]
     pub protocol_version: String,
 
     /// Optional tenant identifier for multi-tenancy.
@@ -59,10 +61,12 @@ pub struct AgentCapabilities {
 
     /// Whether the agent supports push notification delivery.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "push_notifications")]
     pub push_notifications: Option<bool>,
 
     /// Whether this agent serves an authenticated extended card.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "extended_agent_card")]
     pub extended_agent_card: Option<bool>,
 
     /// Optional extensions supported by this agent.
@@ -152,14 +156,17 @@ pub struct AgentSkill {
 
     /// MIME types accepted as input by this skill.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "input_modes")]
     pub input_modes: Option<Vec<String>>,
 
     /// MIME types produced as output by this skill.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "output_modes")]
     pub output_modes: Option<Vec<String>>,
 
     /// Security requirements specific to this skill.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "security_requirements")]
     pub security_requirements: Option<Vec<SecurityRequirement>>,
 }
 
@@ -206,18 +213,21 @@ pub struct AgentCard {
     /// omit empty repeated fields, so parsing treats absence as empty and
     /// validation reports the real problem instead of a JSON type error.
     #[serde(default)]
+    #[serde(alias = "supported_interfaces")]
     pub supported_interfaces: Vec<AgentInterface>,
 
     /// Default MIME types accepted as input.
     ///
     /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
     #[serde(default)]
+    #[serde(alias = "default_input_modes")]
     pub default_input_modes: Vec<String>,
 
     /// Default MIME types produced as output.
     ///
     /// `ProtoJSON` printers omit empty repeated fields; absence means empty.
     #[serde(default)]
+    #[serde(alias = "default_output_modes")]
     pub default_output_modes: Vec<String>,
 
     /// Skills offered by this agent.
@@ -236,18 +246,22 @@ pub struct AgentCard {
 
     /// URL of the agent's icon image.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "icon_url")]
     pub icon_url: Option<String>,
 
     /// URL of the agent's documentation.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "documentation_url")]
     pub documentation_url: Option<String>,
 
     /// Named security scheme definitions (OpenAPI-style).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "security_schemes")]
     pub security_schemes: Option<NamedSecuritySchemes>,
 
     /// Global security requirements for the agent.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "security_requirements")]
     pub security_requirements: Option<Vec<SecurityRequirement>>,
 
     /// Cryptographic signatures over this card.

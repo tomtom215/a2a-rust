@@ -12,6 +12,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Request parameters spelled with the protobuf field name were silently
+  ignored, turning a filter into wrong data.** The A2A JSON model is generated
+  from `a2a.proto`, and protobuf's canonical JSON mapping requires parsers to
+  accept **both** the proto field name (`context_id`) and its `json_name`
+  (`contextId`). This SDK accepted only the latter and ignored the former, so
+  `ListTasks` with `{"context_id": "ctx-A"}` returned **every** task instead of
+  the 3 in that context — no error, just the wrong answer. The official TCK
+  sends the snake_case spelling for six fields; the reference implementation
+  (`a2a-sdk` 1.1.2, whose types *are* protobuf messages) accepts both.
+
+  All 73 multi-word fields across the 44 schema messages now accept both
+  spellings and still emit only the `json_name`, per spec §5.5.
+
+  The alias list is derived from `a2a.proto` rather than from the Rust field
+  names — deriving it from the Rust names would prove only that the aliases
+  match the Rust identifiers, and would go stale silently as the schema grows.
+  `proto_field_alias.rs` parses the schema, computes camelCase with protobuf's
+  own `ToJsonName` rather than serde's `rename_all`, and asserts per field that
+  both spellings parse to the same value, that the sample used is
+  distinguishable from the field being absent, that only the `json_name` is
+  emitted, and that every schema field is covered or explicitly exempt. Five
+  counter-tests drive each direction to a deliberate failure.
+
+  Against the official TCK this closes 7 MUST-level (requirement, transport)
+  pairs — `CORE-HIST-002`, `PUSH-CREATE-001/002`, `PUSH-DEL-001/002`,
+  `PUSH-GET-001`, `PUSH-LIST-001` — taking the run from 158/12 to 166/10 and
+  MUST compatibility from 85.4% to 93.9%. `tck/conformance-baseline.json`
+  shrinks from 16 pairs across 12 requirements to 9 across 5.
+
+  **Not fixed:** a parameter misspelled any *other* way (`contextID`,
+  `contxtId`, `pagesize`) is still ignored. Closing that means rejecting
+  unknown fields, which trades against the `#[non_exhaustive]`
+  forward-compatibility guarantee and is tracked separately in
+  `docs/official-tck-findings.md` §3.3(b).
+
+  Two deliberate divergences are recorded rather than papered over: a request
+  carrying *both* spellings of one field is rejected here (`-32602 duplicate
+  field`) where the reference takes the last key, and `AgentCard.securitySchemes`
+  is still emitted in the v0.3 shape (§7 of the same document).
+
 - **Mid-stream SSE errors escaped their JSON-RPC envelope, so no conformant
   client could read them.** Success frames on the JSON-RPC binding are wrapped
   in a `JsonRpcSuccessResponse` (§9.4.2), but error frames were emitted as a
