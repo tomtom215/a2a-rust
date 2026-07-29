@@ -152,6 +152,20 @@ impl TaskPushNotificationConfig {
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
+impl crate::params::AcceptedFields for TaskPushNotificationConfig {
+    fn accepted_fields() -> &'static [&'static str] {
+        &[
+            "authentication",
+            "id",
+            "taskId",
+            "task_id",
+            "tenant",
+            "token",
+            "url",
+        ]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

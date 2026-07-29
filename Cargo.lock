@@ -152,6 +152,7 @@ dependencies = [
  "hyper-util",
  "serde_json",
  "tokio",
+ "tonic",
 ]
 
 [[package]]

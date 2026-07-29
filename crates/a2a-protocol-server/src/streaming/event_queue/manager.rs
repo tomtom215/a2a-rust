@@ -361,6 +361,20 @@ impl EventQueueManager {
         map.get(task_id).map(|writer| writer.subscribe())
     }
 
+    /// Returns a raw broadcast receiver for a task's live queue, if one exists.
+    ///
+    /// Unlike [`Self::subscribe`] this hands back the channel itself rather
+    /// than a reader, so a reader that has outlived one queue can swap onto
+    /// the next without being rebuilt — see
+    /// [`InMemoryQueueReader::with_reattach`].
+    pub(crate) async fn raw_subscribe(
+        &self,
+        task_id: &TaskId,
+    ) -> Option<tokio::sync::broadcast::Receiver<A2aResult<StreamResponse>>> {
+        let map = self.writers.read().await;
+        map.get(task_id).map(|writer| writer.raw_subscribe())
+    }
+
     /// Subscribes to a task's event queue with an initial snapshot event.
     ///
     /// Per A2A spec, the first event in a `SubscribeToTask` stream MUST be a

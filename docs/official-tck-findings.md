@@ -56,6 +56,8 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `tck/sut`, after the §3.3 alias fix | 166 | 10 | 89 |
 | Against `tck/sut`, after the §8 inline-push fix | 172 | 4 | 89 |
 | Against `tck/sut`, after the §10 direct-message fix | 174 | 2 | 89 |
+| Against `tck/sut`, after the §9 subscribe fix | 176 | 0 | 89 |
+| …with the gRPC binding advertised too (§11) | **244** | **0** | 21 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -66,12 +68,36 @@ real before/after.
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
 
-**Both remaining failures are at `MUST` level**, as were the 12 before them.
-An earlier revision of this document listed them without saying so, which
-understated them — every failure is a hard conformance requirement, not a
-`SHOULD` or `MAY`. Reported MUST compatibility is **98.8%** (85.4% → 93.9%
-after §3.3 → 97.6% after §8 → 98.8% after §10), computed over tested
-requirements only; 21
+**There are no remaining failures.** Reported MUST compatibility is
+**100.0%** (85.4% → 93.9% after §3.3 → 97.6% after §8 → 98.8% after §10 →
+100% after §9). Every failure closed along the way was at `MUST` level; an
+earlier revision listed them without saying so, which understated them.
+
+**100% here does not mean fully conformant, and the number should not be
+quoted without this sentence.** It is computed over *tested* requirements
+only. Of the **114 MUST requirements** the suite knows about:
+
+| | Count | Meaning |
+|---|---|---|
+| Passing | 88 | measured and conformant |
+| Failing | **0** | — |
+| `SKIPPED` | 5 | the SUT does not advertise the capability (§11) |
+| `NOT TESTED` | 21 | **the TCK has no test for them at all** |
+
+The last row is not something this SDK can close: those requirements
+(`CARD-SIGN-*`, `AUTH-*`, `VER-*`, `BIND-EQUIV-*`, `GRPC-SVC-003`) have no
+implementation in `a2a-tck`. Closing them means contributing tests upstream,
+and until someone does, **no implementation's score says anything about
+them** — including the reference's.
+
+An earlier revision of this document said "21 further MUST requirements …
+report `NOT TESTED` because the SUT does not exercise them". Two things were
+wrong with that. `NOT TESTED` means the *suite* has no test, not that the SUT
+declined one — that is what `SKIPPED` means — and the two were being counted
+as one number, hiding 11 requirements that *were* the SUT's to fix. Six of
+those are now closed (§11); the remaining 5 are the `SKIPPED` row above.
+
+Historically the denominator was smaller; 21
 further MUST requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and
 `BIND-EQUIV-*` families) report `NOT TESTED` because the SUT does not
 exercise them, and are a coverage gap rather than a pass — **not** progress
@@ -94,8 +120,11 @@ for the same bad reason `continue-on-error: true` was.
 
 Transport granularity matters: `PUSH-CREATE-001` used to fail on `jsonrpc`
 while passing on `http_json`, and a requirement-level baseline would not have
-noticed it starting to fail on `http_json` too. The baseline now holds **2
-(requirement, transport) pairs across 1 requirement**, down from 16 across 12.
+noticed it starting to fail on `http_json` too. The baseline is now **empty**,
+down from 16 pairs across 12 requirements — so the gate has become a plain
+"no MUST-level failure" check, and any regression fails CI immediately. That
+it still fires with nothing baselined was verified rather than assumed (table
+below).
 
 The stale-baseline direction is not theoretical — it fired on both fix
 commits, which is how each shrink was forced:
@@ -113,6 +142,9 @@ STALE BASELINE — 6 baselined check(s) now pass:      # after §8
 
 STALE BASELINE — 1 baselined check(s) now pass:      # after §10
   DM-MSG-001 [*]
+
+STALE BASELINE — 2 baselined check(s) now pass:      # after §9
+  STREAM-SUB-002 [jsonrpc]   STREAM-SUB-002 [http_json]
 ```
 
 Both directions of the gate, and its behaviour on malformed input, are
@@ -406,14 +438,14 @@ history entries:
 
 One root cause, two reported symptoms.
 
-## 5. Still open — genuinely unclassified
+## 5. Still open
 
-All `MUST` level, all baselined in `tck/conformance-baseline.json` (2 pairs
-across 1 requirement).
+**Nothing.** `tck/conformance-baseline.json` is empty and the suite reports
+`176 passed, 0 failed, 89 skipped`.
 
-| Requirement | Symptom | Status |
-|---|---|---|
-| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | **Diagnosed — genuine defect. See §9.** Confidence: verified by hand reproduction plus the spec text. |
+That is not the same as "fully conformant" — see the warning in §1 about the
+21 `NOT TESTED` MUST requirements, which is now the single largest gap in what
+this measurement can tell you.
 
 
 Closed since the previous revision:
@@ -623,21 +655,15 @@ directly, so the inline path cannot become an unguarded back door; four
 counter-tests in `inline_push_config_tests.rs` drive those guards to failure
 through the inline path specifically.
 
-## 9. `STREAM-SUB-002`: the subscribe stream ends with the executor, not with the task
+## 9. `STREAM-SUB-002`: the subscribe stream ended with the executor, not with the task
 
-*Open. Diagnosed, not yet fixed.*
+*Fixed. Confirmed by re-run. Confidence: verified by hand reproduction, the
+spec text, and a wire capture of the fixed stream.*
 
-*Confidence: verified by hand reproduction plus the spec text; root cause
-located in the code but no fix attempted.*
-
-Spec §3.1.6 is unambiguous:
+Spec §3.1.6:
 
 > The stream MUST terminate when the task reaches a terminal state
 > (`completed`, `failed`, `canceled`, or `rejected`).
-
-and §3.5.2 adds:
-
-> The task lifecycle is independent of any individual stream's lifecycle.
 
 Hand reproduction — create a task the executor leaves in `input_required`,
 `SubscribeToTask`, then complete it from another thread:
@@ -651,62 +677,88 @@ subscribe HTTP 200 content-type=text/event-stream
 VERDICT: last frame terminal? False
 ```
 
-The stream closes **while the task is still non-terminal**, before the
-transition it exists to report. That is a violation of §3.1.6 on its face.
+The stream closed **while the task was still non-terminal**, before the
+transition it existed to report.
 
-**Root cause.** The event queue's lifetime is tied to an *executor
-invocation*, not to the task. In `handler/messaging.rs` the spawned executor
-ends with `drop(writer)` and `event_queue_manager.destroy(&task_id)`,
-unconditionally — including when the executor deliberately leaves the task in
-a non-terminal interrupted state such as `input_required` (spec §4.1.3). So:
+**Root cause.** A task's event queue lives exactly as long as one *executor
+invocation*: the spawned executor ends with `drop(writer)` and
+`event_queue_manager.destroy(&task_id)`, unconditionally — including when it
+deliberately parks the task in a non-terminal interrupted state such as
+`input_required` (§4.1.3). So the queue, and every stream reading it, died at
+the turn boundary. The follow-up `SendMessage` that completed the task created
+a *new* queue the earlier subscriber was not attached to.
 
-1. `SubscribeToTask` on such a task finds no queue and falls back to
-   `InMemoryQueueReader::snapshot_then_end` — snapshot, then EOF.
-2. A subscriber attached *before* the executor finished would fare no better:
-   the channel closes at executor exit regardless.
-3. The later `SendMessage` that completes the task creates a *new* queue,
-   which the earlier subscriber is not attached to.
+### The design that was tried first, and why it was abandoned
 
-Fixing this means decoupling queue lifetime from executor-invocation lifetime:
-keep the queue alive while the task is non-terminal and close it at the
-terminal transition.
+The obvious fix is to keep the queue alive while the task is non-terminal and
+destroy it at the terminal transition. That was implemented — queue retention,
+a `rebind` that hands a continuation a fresh persistence channel over the
+existing broadcast channel, and TTL eviction of retained queues under capacity
+pressure — and then reverted, because it **deadlocks the background event
+processor**:
 
-**The hazard that makes this non-trivial**, found while scoping the fix and
-recorded here so the next attempt does not walk into it: `send_message_inner`
-currently *rejects* a send whose task already has a queue —
+> the persistence channel closes only when *all* senders drop, and the manager
+> holds one of them. Retaining a queue therefore means `persistence_reader.recv()`
+> never returns `None`, and the background processor's drain loop never exits —
+> one leaked task per parked task.
 
-```rust
-crate::streaming::QueueLease::Existing => {
-    return Err(ServerError::UnsupportedOperation(format!(
-        "task {task_id} is already being processed; wait for it to reach \
-         input-required or a terminal state before sending again"
-    )));
-}
+Fixing *that* means reworking both drain loops (the background processor's and
+the sync collector's) to stop on executor-exit rather than channel-close, on
+top of the `QueueLease::Existing` rework that continuations already needed.
+That is a redesign of the streaming core with real concurrency risk, and it is
+not what this defect requires.
+
+### What was actually done
+
+The fix lives entirely in the subscribe path. `InMemoryQueueReader` gained an
+optional **reattach hook**, consulted when its broadcast channel closes:
+
+- the task is **terminal** → emit a `TaskStatusUpdateEvent` carrying that
+  terminal status, then end;
+- the task is **gone** → end;
+- the task is still running → wait for the next turn's queue and continue on
+  it.
+
+Nothing else changes. The send path, the executor lifecycle, the persistence
+channel and the queue manager's destroy semantics are all untouched, so none of
+the deadlock hazards above arise. Every binding that already accepts an
+`InMemoryQueueReader` inherits the behaviour with no signature change.
+
+**The synthesized final frame is not cosmetic.** With only "wait for the next
+queue", the reproduction still failed: the task completed in the window
+between one queue closing and the next opening, so the hook saw a terminal
+task and ended the stream — correct in *duration*, but the client never
+observed a terminal state, which is exactly what `STREAM-SUB-002` asserts. The
+frame is built from the authoritative stored status, and is suppressed when a
+terminal frame has already been delivered, so a client never sees it twice.
+
+Wire capture after the fix:
+
+```
+2 SSE data frame(s):
+  [0] task          state=TASK_STATE_INPUT_REQUIRED
+  [1] statusUpdate  state=TASK_STATE_COMPLETED  <-- TERMINAL
+VERDICT: last frame terminal? True
 ```
 
-That guard is correct today precisely *because* a queue implies a live
-executor. Make queues outlive executors and the implication breaks: every
-`input_required` continuation — the single most common multi-turn flow, and
-the one the TCK's own reproduction uses — would find `Existing` and be
-rejected. So the fix is not "stop calling `destroy`". It is at minimum:
+**Two bounds, because "wait until terminal" is otherwise unbounded.**
+`subscribe_reattach_interval` (250 ms) is how often an idle stream re-checks,
+and `subscribe_max_idle` (5 min) is how long it waits on a task that never
+progresses before ending — §3.5.2 makes reconnection an expected flow, and a
+task parked forever must not pin a connection forever. Both are on
+`HandlerLimits`.
 
-1. queue lifetime tied to task non-terminality, closed at the terminal
-   transition rather than at executor exit;
-2. `QueueLease` distinguishing *a queue exists* from *an executor is running*,
-   so a continuation **reuses** the queue (attaching a fresh persistence
-   channel) instead of being rejected;
-3. an eviction story for tasks parked non-terminal indefinitely, interacting
-   with `max_concurrent_queues`, plus the shutdown path in `handler/shutdown.rs`.
-
-That is a redesign of the streaming core with real concurrency risk, not a
-patch, and it is deliberately left for its own commit rather than bolted onto
-a serde change.
-
-`resubscribe_nonterminal_no_queue_returns_snapshot_then_eof` in
-`handler/lifecycle/subscribe.rs` currently *asserts* the non-conformant
-behaviour, citing §3.5.2 reconnection. That test encodes the bug and will need
-to change with the fix — the same trap §2.1 records, where three in-repo tests
-asserted the wrong JSON-RPC error code and passed confidently.
+**A test that asserted the defect.**
+`resubscribe_nonterminal_no_queue_returns_snapshot_then_eof` explicitly
+required the non-conformant behaviour — snapshot, then immediate EOF — citing
+§3.5.2 reconnection. It is now
+`resubscribe_nonterminal_no_queue_waits_for_the_terminal_state`, and asserts
+the stream stays open while the task is `Working`, then reports `Completed`,
+then ends. A second test pins the idle bound, since "stay open until terminal"
+without one is a connection leak. That makes **four** in-repo tests found
+encoding a defect over this work (§2.1's three error codes, §7's five security
+schemes, and this one) — the pattern is worth more attention than any
+individual instance.
 
 ## 10. `DM-MSG-001`: a blocking `SendMessage` could never return a `Message`
 
@@ -771,3 +823,56 @@ emits no message still returns the Task, and the message-only interaction
 still records a fetchable task. Without the second of those, "return the
 message whenever there is one" would pass the first and break progress
 narration.
+
+## 11. Six MUST requirements were never being graded, because the SUT hid them
+
+*Fixed. Confirmed by re-run. Confidence: verified by a full suite run with the
+gRPC binding enabled.*
+
+The score in §1 was computed over the requirements the suite actually ran, and
+the SUT was quietly shrinking that set. Its agent card advertised only
+`JSONRPC` and `HTTP+JSON`. The TCK builds one client per advertised interface,
+so the entire `GRPC-*` family — and every core requirement's gRPC leg —
+reported `SKIPPED`.
+
+`SKIPPED` looks benign next to `FAIL`. It is not: this SDK **ships a gRPC
+binding**, so those checks were not inapplicable, they were unmeasured. A
+green run said nothing about a third of the product.
+
+The SUT now serves gRPC on its own listener (`SUT_GRPC_HOST`, default one port
+below the HTTP one) and advertises it. The result:
+
+| | Before | After |
+|---|---|---|
+| Passed | 176 | **244** |
+| Skipped | 89 | **21** |
+| Failed | 0 | **0** |
+| MUST `SKIPPED` | 11 | **5** |
+
+The gRPC binding passed everything on first exposure — 68/72, the other 4
+skipped — so this closed no defects. That is the finding: the binding was
+already right, and had simply never been asked.
+
+**Two measurement artifacts nearly got recorded as 25 gRPC defects**, and both
+are worth writing down because both looked exactly like real failures:
+
+1. `failed to connect to all addresses … HTTP proxy returned response code`.
+   `grpcio` honours `http_proxy` even for loopback, and this sandbox sets one.
+   The suite reported 25 failing MUST requirements. Running with the proxy
+   variables unset fixed it — and cut the run from 8 minutes to 64 seconds,
+   because the "failures" were proxy timeouts.
+2. `errors resolving http://127.0.0.1:9998 … Misformatted domain name`. A gRPC
+   target is a name-resolver string (`host:port`), **not** a URL, and the card
+   was advertising a scheme. Same 25 failures, different cause, still nothing
+   to do with the binding.
+
+Both produced a plausible-looking list of binding defects. The tell in each
+case was that the *errors* were transport-establishment failures, not
+assertion failures — a distinction the summary line does not make. Reading the
+grouped error text before believing the count is what separated them.
+
+**What is left.** Five MUST requirements still report `SKIPPED`:
+`CARD-EXT-001`, `CARD-EXT-002` (the SUT configures no extended agent card) and
+`CORE-CAP-001`, `CORE-CAP-002`, `CORE-CAP-004` (capability-validation checks
+that need a card advertising *less* than this one does). Both are SUT
+configuration, not SDK defects, and both are closable the same way this was.

@@ -10,6 +10,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Unrecognised request parameters are now logged instead of vanishing.** The
+  specification requires implementations to *ignore* unknown fields for
+  forward compatibility (§11; the official TCK grades this as
+  `DM-SERIAL-005`), so `ListTasks` with `{"contxtId": …}` must keep returning
+  every task rather than erroring. It no longer does so invisibly: the
+  JSON-RPC binding diffs each request's top-level keys against the ones the
+  method understands and warns about the difference, naming them. Honouring
+  §11 on the wire and telling the operator what was discarded are not in
+  conflict.
+
+  The accepted-key lists live on a new `AcceptedFields` trait and are verified
+  against `a2a.proto` by `proto_field_alias.rs`, so a list that drifts short
+  (spurious warnings) or long (silenced real ones) fails the build.
+
+- **The TCK SUT serves gRPC.** Its agent card advertised only `JSONRPC` and
+  `HTTP+JSON`, and the TCK builds one client per advertised interface — so the
+  whole `GRPC-*` family and every core requirement's gRPC leg reported
+  `SKIPPED` while this SDK shipped a gRPC binding. The suite went from
+  `176 passed / 89 skipped` to **`244 passed / 21 skipped`, still 0 failed**,
+  and MUST-level `SKIPPED` from 11 to 5. The binding passed everything on
+  first exposure, so this closed no defects — it closed a hole in what the
+  score was measuring. `SUT_GRPC_HOST` overrides the port.
+
+### Fixed
+
+- **A `SubscribeToTask` stream ended when the executor exited, not when the
+  task finished.** Spec §3.1.6: "The stream MUST terminate when the task
+  reaches a terminal state." A task's event queue lives exactly as long as one
+  executor invocation, so an agent that parked a task in `input_required`
+  destroyed the queue at every turn boundary — closing the stream while the
+  task was still running, having reported no terminal state at all.
+
+  `InMemoryQueueReader` gained an optional reattach hook, consulted when its
+  channel closes: terminal task → emit a `TaskStatusUpdateEvent` carrying that
+  status and end; task gone → end; still running → wait for the next turn's
+  queue and continue. The send path, executor lifecycle and queue manager are
+  untouched.
+
+  Two new `HandlerLimits` bound the wait: `subscribe_reattach_interval`
+  (250 ms) and `subscribe_max_idle` (5 min), after which the stream ends and
+  the client may resubscribe per §3.5.2.
+
+  One in-repo test asserted the defect as a requirement and was rewritten.
+
+  This closes the last baselined failure: the official TCK now reports
+  **176 passed, 0 failed**, MUST compatibility **100%**, and
+  `tck/conformance-baseline.json` is empty. That figure covers *tested*
+  requirements only — 21 MUST requirements still report `NOT TESTED` because
+  the SUT does not exercise them, and are a coverage gap rather than a pass.
+
+- **A blocking `SendMessage` could never return a direct `Message`.** Spec
+  §3.1.1 allows either a `Task` or a `Message`; `SendMessageResponse::Message`
+  was never constructed anywhere in the server, so an agent that replied with
+  a message got back a task stuck in `Submitted`. The response is now a
+  `Message` when the executor produced a message and nothing task-shaped —
+  narrower than the reference, which errors on mixed streams and would break
+  agents that narrate progress. Closes `DM-MSG-001`.
+
 ### Changed
 
 - **`AgentCard.securitySchemes` is now emitted in the v1.0 wire shape.**

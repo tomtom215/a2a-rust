@@ -124,7 +124,11 @@ impl JsonRpcDispatcher {
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
 
-        let mut resp = self.dispatch_inner(req).await;
+        // Boxed on clippy's own recommendation: the dispatch future is ~16 KiB,
+        // and moving that much state around on the stack per request costs
+        // more than one allocation. It crossed the `large_futures` threshold
+        // when `InMemoryQueueReader` gained its reattach hook (STREAM-SUB-002).
+        let mut resp = Box::pin(self.dispatch_inner(req)).await;
         if let Some(hval) = self
             .handler
             .activated_extensions_header_value(requested_extensions.as_deref())

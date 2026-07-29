@@ -79,15 +79,35 @@ jobs:
 
       - name: Start the SUT
         run: |
-          SUT_HOST=127.0.0.1:9999 ./target/release/a2a-tck-sut &
+          # The SUT serves JSON-RPC and HTTP+JSON on :9999 and gRPC on :9998,
+          # and advertises all three in its agent card. The TCK builds one
+          # client per advertised interface, so this is what makes it grade
+          # the gRPC binding at all — without it, 30 checks report SKIPPED.
+          SUT_HOST=127.0.0.1:9999 SUT_GRPC_HOST=127.0.0.1:9998 \
+            ./target/release/a2a-tck-sut &
+          ready_http=0
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:9999/.well-known/agent-card.json > /dev/null 2>&1; then
-              echo "SUT ready"
+              ready_http=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready_http" -ne 1 ]; then
+            echo "SUT HTTP listener failed to start"
+            exit 1
+          fi
+          # Fail loudly if gRPC is not listening. A silent miss here shows up
+          # as SKIPPED requirements, which read as a coverage gap in the TCK
+          # rather than a broken harness — the gate would stay green.
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/9998) 2>/dev/null; then
+              echo "SUT ready (http :9999, grpc :9998)"
               exit 0
             fi
             sleep 1
           done
-          echo "SUT failed to start"
+          echo "SUT gRPC listener failed to start on :9998"
           exit 1
 
       # One full-suite run covers every level and emits the machine-readable

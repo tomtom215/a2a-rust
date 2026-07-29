@@ -1093,3 +1093,87 @@ fn unrecognised_fields_are_ignored_not_rejected() {
     .expect("an unknown field nested in `message` must not fail the request");
     assert_eq!(sent.message.parts.len(), 1);
 }
+
+// ── accepted-field lists ─────────────────────────────────────────────────────
+
+/// `AcceptedFields` lists exactly the keys the schema defines, both spellings.
+///
+/// These lists drive what the JSON-RPC binding reports as an unrecognised
+/// parameter. A list that drifts short of the schema turns a *recognised*
+/// field into a spurious warning; a list that drifts long silences a real one.
+/// Deriving the expectation from `a2a.proto` here is what stops either.
+#[test]
+fn accepted_field_lists_match_the_schema() {
+    use a2a_protocol_types::params::{
+        AcceptedFields, CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams,
+        GetPushConfigParams, ListPushConfigsParams, ListTasksParams, MessageSendParams,
+        SendMessageConfiguration, TaskIdParams, TaskQueryParams,
+    };
+    use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+    let schema = parse_messages(PROTO);
+    let mut failures = Vec::new();
+
+    let mut check = |message: &str, actual: &[&str]| {
+        let Some(fields) = schema.get(message) else {
+            failures.push(format!("{message}: not in a2a.proto"));
+            return;
+        };
+        let expected: BTreeSet<String> = fields
+            .iter()
+            .flat_map(|f| [f.clone(), to_json_name(f)])
+            .collect();
+        let actual_set: BTreeSet<String> = actual.iter().map(|s| (*s).to_owned()).collect();
+        if actual_set != expected {
+            let missing: Vec<_> = expected.difference(&actual_set).cloned().collect();
+            let extra: Vec<_> = actual_set.difference(&expected).cloned().collect();
+            failures.push(format!(
+                "{message}: missing {missing:?}, unexpected {extra:?}"
+            ));
+        }
+        // The list is documented as sorted and duplicate-free; a binary search
+        // over it would silently misbehave otherwise.
+        let mut sorted = actual.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.as_slice() != actual {
+            failures.push(format!("{message}: list is not sorted/deduplicated"));
+        }
+    };
+
+    check("SendMessageRequest", MessageSendParams::accepted_fields());
+    check(
+        "SendMessageConfiguration",
+        SendMessageConfiguration::accepted_fields(),
+    );
+    check("GetTaskRequest", TaskQueryParams::accepted_fields());
+    check("ListTasksRequest", ListTasksParams::accepted_fields());
+    check("CancelTaskRequest", CancelTaskParams::accepted_fields());
+    check("SubscribeToTaskRequest", TaskIdParams::accepted_fields());
+    check(
+        "GetTaskPushNotificationConfigRequest",
+        GetPushConfigParams::accepted_fields(),
+    );
+    check(
+        "DeleteTaskPushNotificationConfigRequest",
+        DeletePushConfigParams::accepted_fields(),
+    );
+    check(
+        "ListTaskPushNotificationConfigsRequest",
+        ListPushConfigsParams::accepted_fields(),
+    );
+    check(
+        "TaskPushNotificationConfig",
+        TaskPushNotificationConfig::accepted_fields(),
+    );
+    check(
+        "GetExtendedAgentCardRequest",
+        GetExtendedAgentCardParams::accepted_fields(),
+    );
+
+    assert!(
+        failures.is_empty(),
+        "accepted-field lists disagree with a2a.proto:\n  {}",
+        failures.join("\n  ")
+    );
+}
