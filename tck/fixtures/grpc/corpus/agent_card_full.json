@@ -187,7 +187,6 @@
   },
   "domain_json": {
     "name": "Full Agent",
-    "url": "https://grpc.example.com/a2a",
     "description": "Exercises the whole card graph",
     "version": "2.0.0",
     "supportedInterfaces": [

@@ -261,7 +261,32 @@ impl AgentExecutor for TckSutExecutor {
 
 // ── Agent card ───────────────────────────────────────────────────────────────
 
-fn make_agent_card(base_url: &str, grpc_url: &str) -> AgentCard {
+/// Which capability set the SUT advertises.
+///
+/// Several MUST requirements are only *reachable* when the agent advertises
+/// **less**: `CORE-CAP-001/002/004` check that a server rejects push and
+/// streaming operations it never claimed to support, and the TCK skips them
+/// against an agent that does claim them. One SUT cannot exercise both sides,
+/// so the profile is selectable and CI runs the suite once per profile.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Profile {
+    /// Everything on — the profile the conformance gate runs against.
+    Full,
+    /// Streaming, push and extended card all absent, so the capability
+    /// *rejection* paths become observable.
+    Minimal,
+}
+
+impl Profile {
+    fn from_env() -> Self {
+        match std::env::var("SUT_PROFILE").as_deref() {
+            Ok("minimal") => Self::Minimal,
+            _ => Self::Full,
+        }
+    }
+}
+
+fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCard {
     AgentCard {
         url: Some(base_url.into()),
         name: "a2a-rust System Under Test (SUT)".into(),
@@ -303,9 +328,15 @@ fn make_agent_card(base_url: &str, grpc_url: &str) -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true),
+        capabilities: match profile {
+            Profile::Full => AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
+            // Advertising nothing is the point: it is what lets the suite ask
+            // whether unsupported operations are rejected.
+            Profile::Minimal => AgentCapabilities::none(),
+        },
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -387,17 +418,27 @@ async fn main() {
     let grpc_advertised =
         std::env::var("SUT_GRPC_ADVERTISE_URL").unwrap_or_else(|_| grpc_addr.to_string());
 
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(TckSutExecutor)
-            .with_agent_card(make_agent_card(&advertised, &grpc_advertised))
+    let profile = Profile::from_env();
+    let mut builder = RequestHandlerBuilder::new(TckSutExecutor).with_agent_card(make_agent_card(
+        &advertised,
+        &grpc_advertised,
+        profile,
+    ));
+    if profile == Profile::Full {
+        builder = builder
             .with_push_config_store(InMemoryPushConfigStore::new())
             // The TCK runs its webhook receiver on loopback, which the
             // sender's SSRF guard blocks by default — correct in production,
             // wrong for a conformance harness pointing at its own listener.
             .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .build()
-            .expect("build SUT request handler"),
-    );
+            // §13.3 requires the extended-card endpoint to be authenticated,
+            // and the builder refuses to serve it without an authenticating
+            // interceptor. The TCK has no credentials to present, so the SUT
+            // opts in explicitly rather than shipping an auth scheme the suite
+            // cannot satisfy.
+            .allow_unauthenticated_extended_card();
+    }
+    let handler = Arc::new(builder.build().expect("build SUT request handler"));
 
     let grpc = a2a_protocol_server::dispatch::GrpcDispatcher::new(
         Arc::clone(&handler),

@@ -57,7 +57,9 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `tck/sut`, after the §8 inline-push fix | 172 | 4 | 89 |
 | Against `tck/sut`, after the §10 direct-message fix | 174 | 2 | 89 |
 | Against `tck/sut`, after the §9 subscribe fix | 176 | 0 | 89 |
-| …with the gRPC binding advertised too (§11) | **244** | **0** | 21 |
+| …with the gRPC binding advertised too (§11) | 244 | 0 | 21 |
+| …after §13, `full` profile | **246** | **0** | 19 |
+| `minimal` profile (§12), which reaches `CORE-CAP-*` | 181 | 0 | 83 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -79,9 +81,9 @@ only. Of the **114 MUST requirements** the suite knows about:
 
 | | Count | Meaning |
 |---|---|---|
-| Passing | 88 | measured and conformant |
+| Passing | 88 | measured and conformant on the `full` profile |
 | Failing | **0** | — |
-| `SKIPPED` | 5 | the SUT does not advertise the capability (§11) |
+| `SKIPPED` | 5 | need a differently-configured SUT; 2 of them pass on the `minimal` profile (§12) |
 | `NOT TESTED` | 21 | **the TCK has no test for them at all** |
 
 The last row is not something this SDK can close: those requirements
@@ -871,8 +873,111 @@ case was that the *errors* were transport-establishment failures, not
 assertion failures — a distinction the summary line does not make. Reading the
 grouped error text before believing the count is what separated them.
 
-**What is left.** Five MUST requirements still report `SKIPPED`:
-`CARD-EXT-001`, `CARD-EXT-002` (the SUT configures no extended agent card) and
-`CORE-CAP-001`, `CORE-CAP-002`, `CORE-CAP-004` (capability-validation checks
-that need a card advertising *less* than this one does). Both are SUT
-configuration, not SDK defects, and both are closable the same way this was.
+**What was left, and what happened to it** — see §12.
+
+## 12. The capability-*rejection* paths were unreachable from one SUT
+
+*Partly closed. Confidence: verified by a second full suite run.*
+
+After §11, five MUST requirements still reported `SKIPPED`, and three of them
+were unreachable **by construction**: `CORE-CAP-001/002/004` check that a
+server rejects push and streaming operations it never advertised, and the
+suite skips them against an agent that *does* advertise them. No single SUT
+can be on both sides of that. The gate could never have caught a regression in
+`ensure_streaming_supported` / `ensure_push_supported`, because nothing
+official ever called them.
+
+The SUT now takes a `SUT_PROFILE`. `full` (default) is the profile the gate
+runs against; `minimal` advertises no streaming, no push and no extended card,
+which is what makes the rejection paths observable. CI runs the suite once per
+profile and applies the same requirement-level gate to both.
+
+Result on the `minimal` profile:
+
+| Requirement | Before | After |
+|---|---|---|
+| `CORE-CAP-001` (push rejected when unsupported) | SKIPPED | **PASS** (both bindings) |
+| `CORE-CAP-002` (streaming rejected when unsupported) | SKIPPED | **PASS** (`jsonrpc`) |
+| `CORE-CAP-004` | SKIPPED | SKIPPED |
+
+### One test errors under this profile, and no fault is assigned yet
+
+`TestRestStreaming::test_streaming_content_type` (`HTTP_JSON-SSE-001`) errors
+rather than skipping. What is established:
+
+- **This SDK's response is correct**, captured on the wire. With streaming
+  unadvertised, `POST /v1/message:stream` returns
+  `400` + `{"error": {..., "reason": "UNSUPPORTED_OPERATION"}}`, and the
+  JSON-RPC binding returns `-32004` with the same reason. That is exactly what
+  `CORE-CAP-002` requires, and `CORE-CAP-002` passes.
+- **The error is raised inside the suite's own client**, in
+  `http_json_client.py::_extract_error` → `response.json()`, while the test is
+  building the message for a `pytest.skip` it had already decided to take.
+  The response was opened as a stream and never read.
+
+**No claim is made about whose defect that is.** It would be reached by any
+server that returns a non-2xx to `send_streaming_message`, which a conformant
+server with streaming disabled must — but "must" is a reading of the spec, not
+a measurement, and the decisive test (does the reference implementation, run
+with streaming disabled, produce the same error?) **has not been run.** That
+is the precise mistake recorded in this document's correction notice, and it
+is not being repeated. Until that test exists, this is an observation about a
+suite/SUT interaction, not a bug report.
+
+The requirement-level gate is unaffected — the erroring test records no
+requirement result, and the gate returns 0 on the minimal-profile report.
+
+### Still open
+
+- `CORE-CAP-004`: skipped under both profiles; the precondition has not been
+  identified.
+- `CARD-EXT-002`: needs a server that *declares* `extendedAgentCard` while
+  having no extended card configured. This SDK cannot enter that state — the
+  handler derives the extended card from the configured agent card, so
+  declaring the capability and having no card are mutually exclusive. The
+  requirement is structurally inapplicable here rather than unmeasured.
+- `CARD-EXT-001`: the `full` profile now declares `extendedAgentCard` and opts
+  into serving it unauthenticated (§13.3 otherwise refuses without an
+  authenticating interceptor, and the suite has no credentials to present).
+  It still reports `SKIPPED`; why has not been diagnosed.
+- The 21 `NOT TESTED` MUSTs remain untouchable from here — `a2a-tck` has no
+  tests for them.
+
+## 13. `AgentCard.url` is a v0.3 field the v1.0 schema does not have
+
+*Fixed. Confirmed by re-run. Found only because §11 and §12 made
+`CARD-EXT-001` runnable at all.*
+
+Declaring `extendedAgentCard` on the SUT (§12) let `CARD-EXT-001` execute for
+the first time, and it failed on both JSON bindings while **passing on gRPC**:
+
+```
+$: 'url' does not match any of the regexes: '^(default_input_modes)$',
+   '^(default_output_modes)$', '^(documentation_url)$', '^(icon_url)$',
+   '^(security_requirements)$', '^(security_schemes)$',
+   '^(supported_interfaces)$'
+```
+
+The split by binding is the whole diagnosis. The suite validates JSON payloads
+against a schema generated from `a2a.proto`, and the v1.0 `AgentCard` has **no
+`url` field** — `supported_interfaces` replaced it. gRPC passed because
+protobuf physically cannot carry a field the schema does not define; the JSON
+bindings emitted it and were rejected.
+
+`url` is still **accepted**, because a card published by a v0.3 peer carries
+it and refusing those cards outright would be worse than ignoring an extra
+key. That is what the reference implementation does too — its resolver pops
+`url` and folds it into `supportedInterfaces`. So the field is now
+`#[serde(skip_serializing)]`: parsed, never emitted. Same policy as §7 —
+accept both vintages, emit only v1.0.
+
+Result: `246 passed, 0 failed, 19 skipped`, `CARD-EXT-001` PASS on all three
+bindings.
+
+**Worth noting how this was found.** It was not found by looking for it. It
+surfaced because closing a *coverage* gap (§11, §12) made a requirement
+runnable that had been quietly skipped since the beginning — and the skip was
+caused by the SUT's own configuration, not by the suite. Two of the three
+things fixed in §11–§13 were harness gaps rather than SDK defects, and the
+third was only reachable through them. A conformance score is only as
+trustworthy as the set of checks it was allowed to run.

@@ -159,6 +159,36 @@ jobs:
             echo 'only when the failures match that baseline exactly.'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # A second run against a deliberately less-capable card. CORE-CAP-001,
+      # CORE-CAP-002 and CORE-CAP-004 check that a server *rejects* push and
+      # streaming operations it never advertised, and the suite skips them
+      # against an agent that does advertise them — so one SUT cannot reach
+      # both sides. This run is what makes those requirements observable.
+      #
+      # Not part of the gate: the suite currently errors out on one
+      # HTTP+JSON streaming check under this profile from inside its own
+      # client, while building a skip message (see
+      # docs/official-tck-findings.md §12). The requirement-level gate is
+      # still applied, and still has to come back clean.
+      - name: Run the suite against the minimal-capability profile
+        continue-on-error: true
+        run: |
+          SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \
+            ./target/release/a2a-tck-sut &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9997/.well-known/agent-card.json > /dev/null 2>&1 && break
+            sleep 1
+          done
+          cd /tmp/a2a-tck
+          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 || true
+          cp reports/compatibility.json /tmp/minimal-compatibility.json
+
+      - name: Gate the minimal-profile run
+        run: |
+          python3 tck/scripts/check_conformance.py \
+            --report /tmp/minimal-compatibility.json \
+            --baseline tck/conformance-baseline.json
+
       - name: Upload TCK reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

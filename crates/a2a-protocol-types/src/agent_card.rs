@@ -187,17 +187,22 @@ pub struct AgentCard {
     /// Display name of the agent.
     pub name: String,
 
-    /// Primary URL of the agent.
+    /// Primary URL of the agent — **accepted on input, never emitted.**
     ///
-    /// Convenience field that typically matches the URL of the first
-    /// entry in `supported_interfaces`.
+    /// This is the v0.3 top-level URL. The v1.0 `lf.a2a.v1` `AgentCard` has no
+    /// `url` field at all; `supported_interfaces` replaced it. Emitting it made
+    /// this SDK's card fail the specification's own JSON schema —
+    /// `'url' does not match any of the regexes: …` — which is what
+    /// `CARD-EXT-001` reports (see `docs/official-tck-findings.md` §13).
     ///
-    /// The canonical `lf.a2a.v1` protobuf `AgentCard` has no dedicated `url`
-    /// field, so a card round-tripped through the gRPC binding derives `url`
-    /// from the first supported interface. If you set `url` to something other
-    /// than `supported_interfaces[0].url`, that difference is not preserved over
-    /// gRPC. It is preserved over the JSON-RPC/REST bindings.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// It is still **parsed**, because a card published by a v0.3 peer carries
+    /// it and dropping the field would fail those cards outright. The reference
+    /// implementation does the same, popping `url` and folding it into
+    /// `supportedInterfaces`.
+    ///
+    /// Read it if you have it; to publish an agent's address, use
+    /// `supported_interfaces`.
+    #[serde(skip_serializing)]
     pub url: Option<String>,
 
     /// Human-readable description of the agent's purpose.

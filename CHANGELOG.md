@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against `a2a.proto` by `proto_field_alias.rs`, so a list that drifts short
   (spurious warnings) or long (silenced real ones) fails the build.
 
+- **The TCK SUT takes a `SUT_PROFILE`.** `CORE-CAP-001/002/004` check that a
+  server rejects push and streaming operations it never advertised, and the
+  suite skips them against an agent that does advertise them — so those paths
+  were unreachable from a single SUT, and the gate could never have caught a
+  regression in `ensure_streaming_supported` / `ensure_push_supported`.
+  `SUT_PROFILE=minimal` advertises nothing; CI runs the suite once per profile
+  and gates both. `CORE-CAP-001` and `CORE-CAP-002` now pass rather than skip.
+
 - **The TCK SUT serves gRPC.** Its agent card advertised only `JSONRPC` and
   `HTTP+JSON`, and the TCK builds one client per advertised interface — so the
   whole `GRPC-*` family and every core requirement's gRPC leg reported
@@ -34,6 +42,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and MUST-level `SKIPPED` from 11 to 5. The binding passed everything on
   first exposure, so this closed no defects — it closed a hole in what the
   score was measuring. `SUT_GRPC_HOST` overrides the port.
+
+### Changed
+
+- **`AgentCard.url` is no longer emitted.** It is the v0.3 top-level URL; the
+  v1.0 `AgentCard` has no `url` field, `supportedInterfaces` replaced it, and
+  emitting it made this SDK's card fail the specification's own JSON schema
+  (`'url' does not match any of the regexes: …`) — reported by `CARD-EXT-001`
+  on both JSON bindings while gRPC passed, since protobuf cannot carry a field
+  the schema does not define.
+
+  The field is still **parsed**, so a card published by a v0.3 peer still
+  loads; the reference implementation does the same, folding `url` into
+  `supportedInterfaces`. To publish an agent's address, use
+  `supported_interfaces`. Same policy as the `securitySchemes` change below:
+  accept both vintages, emit only v1.0.
 
 ### Fixed
 
