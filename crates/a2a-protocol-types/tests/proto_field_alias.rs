@@ -316,35 +316,7 @@ fn to_value<T: Serialize>(v: &T) -> Value {
 ///
 /// This list is the escape hatch that keeps the coverage check meaningful:
 /// anything in it is a documented decision, not an oversight.
-const EXEMPT: &[(&str, &str, &str)] = &[
-    (
-        "SecurityScheme",
-        "api_key_security_scheme",
-        "SecurityScheme is internally tagged (`\"type\": \"apiKey\"`) rather than \
-         encoded as a ProtoJSON oneof — a wire divergence tracked separately in \
-         docs/official-tck-findings.md §7, not something an alias can fix",
-    ),
-    (
-        "SecurityScheme",
-        "http_auth_security_scheme",
-        "see SecurityScheme.api_key_security_scheme",
-    ),
-    (
-        "SecurityScheme",
-        "oauth2_security_scheme",
-        "see SecurityScheme.api_key_security_scheme",
-    ),
-    (
-        "SecurityScheme",
-        "open_id_connect_security_scheme",
-        "see SecurityScheme.api_key_security_scheme",
-    ),
-    (
-        "SecurityScheme",
-        "mtls_security_scheme",
-        "see SecurityScheme.api_key_security_scheme",
-    ),
-];
+const EXEMPT: &[(&str, &str, &str)] = &[];
 
 // ── sample bases ─────────────────────────────────────────────────────────────
 
@@ -380,7 +352,7 @@ fn run_all_cases() -> Registry {
         security::{
             AuthorizationCodeFlow, ClientCredentialsFlow, DeviceCodeFlow, HttpAuthSecurityScheme,
             ImplicitFlow, OAuth2SecurityScheme, OAuthFlows, OpenIdConnectSecurityScheme,
-            PasswordOAuthFlow,
+            PasswordOAuthFlow, SecurityScheme,
         },
         task::Task,
     };
@@ -740,6 +712,40 @@ fn run_all_cases() -> Registry {
         json!("https://r"),
     );
 
+    // `SecurityScheme` is an externally tagged enum over the schema's oneof
+    // arms — it emitted the v0.3 internally tagged form until 0.8 (§7).
+    let api_key = json!({"location": "header", "name": "X-Api-Key"});
+    r.check::<SecurityScheme>(
+        "SecurityScheme",
+        "api_key_security_scheme",
+        &json!({}),
+        api_key,
+    );
+    r.check::<SecurityScheme>(
+        "SecurityScheme",
+        "http_auth_security_scheme",
+        &json!({}),
+        json!({"scheme": "bearer", "bearerFormat": "JWT"}),
+    );
+    r.check::<SecurityScheme>(
+        "SecurityScheme",
+        "oauth2_security_scheme",
+        &json!({}),
+        json!({"flows": {"password": {"tokenUrl": "https://t", "scopes": {}}}}),
+    );
+    r.check::<SecurityScheme>(
+        "SecurityScheme",
+        "open_id_connect_security_scheme",
+        &json!({}),
+        json!({"openIdConnectUrl": "https://a"}),
+    );
+    r.check::<SecurityScheme>(
+        "SecurityScheme",
+        "mtls_security_scheme",
+        &json!({}),
+        json!({"description": "mTLS"}),
+    );
+
     // `OAuthFlows` is an externally tagged enum over the schema's oneof arms.
     r.check::<OAuthFlows>(
         "OAuthFlows",
@@ -1035,4 +1041,55 @@ fn wrong_alias_target_is_reported() {
         "wrong failure: {}",
         r.failures[0]
     );
+}
+
+// ── forward compatibility ────────────────────────────────────────────────────
+
+/// Unrecognised fields are **ignored**, not rejected.
+///
+/// This looks like the opposite of what the rest of this file is for, so it is
+/// pinned deliberately. Aliases fix the case where a *known* field arrives
+/// under its other legal spelling. They do not — and must not — turn an
+/// unknown field into an error:
+///
+/// > **Unrecognized Fields:** Implementations **SHOULD** ignore unrecognized
+/// > fields in messages, allowing for forward compatibility as the protocol
+/// > evolves.
+/// >
+/// > — A2A specification §11, graded by the official TCK as `DM-SERIAL-005`
+///
+/// Adding `#[serde(deny_unknown_fields)]` to the request types was tried and
+/// reverted: it closes the "misspelled filter silently returns everything"
+/// hole, but it fails `DM-SERIAL-005` on both bindings and breaks the
+/// forward-compatibility guarantee `#[non_exhaustive]` exists to provide. The
+/// residual wart — `{"contxtId": …}` returning every task — is a cost the
+/// specification has explicitly chosen, and is documented as such in
+/// `docs/official-tck-findings.md` §3.3(b).
+#[test]
+fn unrecognised_fields_are_ignored_not_rejected() {
+    use a2a_protocol_types::params::{ListTasksParams, MessageSendParams};
+
+    let params: ListTasksParams = serde_json::from_value(json!({
+        "contextId": "ctx-1",
+        "tckExtraParam": 42,
+    }))
+    .expect("an unknown parameter must not fail the request — spec §11, DM-SERIAL-005");
+    assert_eq!(
+        params.context_id.as_deref(),
+        Some("ctx-1"),
+        "the recognised field must still be honoured"
+    );
+
+    // The nested case the TCK actually sends: an unknown key inside `message`.
+    let sent: MessageSendParams = serde_json::from_value(json!({
+        "message": {
+            "role": "ROLE_USER",
+            "parts": [{"text": "unrecognized field test"}],
+            "messageId": "m-1",
+            "tckUnknownField": "should-be-ignored",
+        },
+        "tckExtraParam": 42,
+    }))
+    .expect("an unknown field nested in `message` must not fail the request");
+    assert_eq!(sent.message.parts.len(), 1);
 }

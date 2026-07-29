@@ -10,6 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`AgentCard.securitySchemes` is now emitted in the v1.0 wire shape.**
+  `SecurityScheme` is a protobuf `oneof` in `a2a.proto`, so its ProtoJSON
+  encoding is a single-key object naming the arm
+  (`{"apiKeySecurityScheme": {"location": "header", …}}`). This SDK emitted the
+  v0.3 OpenAPI-style form instead (`{"type": "apiKey", "in": "header", …}`).
+
+  A reference `a2a-sdk` client parsed that via its own legacy-compatibility
+  shim, so this was not an interop break with the reference. But a peer feeding
+  the card straight to `ParseDict(…, ignore_unknown_fields=True)` — the same
+  option the reference resolver itself passes — got schemes with **empty
+  contents**, and would conclude the agent supports no usable authentication.
+  That is the silent-wrong-data failure mode again, pointed the other way
+  across the wire. Verified by feeding this SDK's own card bytes to three
+  reference parsers.
+
+  **Both encodings are accepted** (the v1.0 form under either the `json_name`
+  or the proto field-name spelling of the arm, and the v0.3 form), and a v0.3
+  scheme normalises to the v1.0 form on re-emission. `ApiKeySecurityScheme`
+  emits `location` — the proto field name — with `in` kept as an alias.
+
+  This is a breaking change to a published wire format: the bytes on
+  `/.well-known/agent-card.json` change. It only affects a consumer reading the
+  card's raw JSON keys rather than parsing it with an A2A implementation, and
+  deserialization is strictly more permissive than before. Five in-repo tests
+  asserted the old encoding and passed confidently; they now assert the v1.0
+  encoding plus v0.3 acceptance. See `docs/official-tck-findings.md` §7.
+
 ### Fixed
 
 - **`SendMessageConfiguration.taskPushNotificationConfig` was parsed and
@@ -69,11 +98,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   MUST compatibility from 85.4% to 93.9%. `tck/conformance-baseline.json`
   shrinks from 16 pairs across 12 requirements to 9 across 5.
 
-  **Not fixed:** a parameter misspelled any *other* way (`contextID`,
-  `contxtId`, `pagesize`) is still ignored. Closing that means rejecting
-  unknown fields, which trades against the `#[non_exhaustive]`
-  forward-compatibility guarantee and is tracked separately in
-  `docs/official-tck-findings.md` §3.3(b).
+  **Not fixed, and deliberately not fixable this way:** a parameter misspelled
+  any *other* way (`contextID`, `contxtId`, `pagesize`) is still ignored.
+  Rejecting unknown fields would close it, and was implemented and then
+  reverted — the specification says implementations **SHOULD** ignore
+  unrecognized fields for forward compatibility (§11), and the official TCK
+  grades that as `DM-SERIAL-005`, which the change failed on both bindings.
+  Pinned by `unrecognised_fields_are_ignored_not_rejected` so it is not
+  re-attempted; see `docs/official-tck-findings.md` §3.3(b).
 
   Two deliberate divergences are recorded rather than papered over: a request
   carrying *both* spellings of one field is rejected here (`-32602 duplicate

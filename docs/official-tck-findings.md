@@ -316,15 +316,72 @@ encodes that type as an internally tagged union (`{"type": "apiKey", …}`)
 rather than as a ProtoJSON oneof (`{"apiKeySecurityScheme": {…}}`). That is a
 wire divergence an alias cannot fix — see §7.
 
-#### (b) Reject unknown fields — **open, not applied**
+#### (b) Reject unknown fields — **tried, measured, reverted. Must not be done.**
 
-This is the change that actually closes the silent-wrong-data hole: the four
-typo rows above are still wrong after (a). It matches the reference's
-`ParseError`, and it is a deliberate semantic decision with a
-forward-compatibility cost — the types are `#[non_exhaustive]` precisely so
-the spec can grow, and `#[serde(deny_unknown_fields)]` is additionally
-incompatible with the `#[serde(flatten)]` that `Part` relies on. Worth doing,
-worth agreeing on first.
+*An earlier revision of this section called this "worth doing, worth agreeing
+on first", on the grounds that it matches the reference's `ParseError`. That
+recommendation was wrong and is retracted.*
+
+The specification says the opposite, in as many words:
+
+> **Unrecognized Fields:**
+>
+> Implementations **SHOULD** ignore unrecognized fields in messages, allowing
+> for forward compatibility as the protocol evolves.
+>
+> — `specification.md` §11
+
+The official TCK grades exactly this as **`DM-SERIAL-005`**, sending
+
+```json
+{"params": {"message": {…, "tckUnknownField": "should-be-ignored"},
+            "tckExtraParam": 42}}
+```
+
+and failing the implementation if the server returns an error.
+
+This was not reasoned about — it was **measured**.
+`#[serde(deny_unknown_fields)]` was added to all ten request-parameter types,
+the whole workspace stayed green (2,099 tests), and the official suite then
+reported:
+
+```
+DM-SERIAL-005 SHOULD {"jsonrpc": "FAIL", "http_json": "FAIL"}
+  Server rejected request with unrecognized fields: invalid params:
+  unknown field `tckExtraParam`, expected one of `tenant`, `message`, …
+```
+
+The run went from `172 passed` to `170 passed, 2 xfailed`. The change was
+reverted.
+
+**Two things are worth recording about how this was nearly shipped.**
+
+First, the recommendation came from reading what the reference implementation
+does — its JSON-RPC dispatcher calls `ParseDict` strictly — rather than from
+the normative text. That is the §Correction-notice mistake in a new costume:
+*an implementation's behaviour was treated as the authority when the
+specification was sitting right there.* The spec is the authority. (What that
+implies about the reference's own `DM-SERIAL-005` result is not claimed here:
+this SDK's TCK run says nothing about another implementation's, and no run
+against the reference server was made.)
+
+Second, **the conformance gate would not have caught it.** The gate is
+MUST-only by design, and this is a `SHOULD`. It went green on the exact commit
+that introduced the regression; only reading the full suite output caught the
+`170 passed, 2 xfailed` line. A MUST-only gate is still the right choice — a
+`SHOULD` regression should not block a merge — but "the gate is green" and
+"nothing regressed" are not the same statement, and this is the second time in
+this document that a green signal proved narrower than it looked.
+
+So the residual wart stands: `ListTasks` with `{"contxtId": …}` returns every
+task. That is a cost the specification has explicitly chosen in exchange for
+forward compatibility, and it is not this SDK's to unilaterally reprice. It is
+pinned by `unrecognised_fields_are_ignored_not_rejected`, which exists to stop
+someone re-applying the fix that was just measured to be wrong.
+
+A mitigation that would satisfy both — counting or logging unrecognised fields
+so an operator can *see* the silent case without the request failing — is not
+implemented here, and is the shape any future attempt at this should take.
 
 ## 4. `CORE-HIST-002` is the §3.3 bug, not a `historyLength` defect
 
@@ -413,9 +470,9 @@ verified to yield an identical set of gated failures to the full run, so CI
 runs the full suite once. Reports land in `reports/` as HTML, JSON, and JUnit
 XML; the gate reads `compatibility.json`.
 
-## 7. `securitySchemes` is emitted in the v0.3 shape, not the v1.0 shape
+## 7. `securitySchemes` was emitted in the v0.3 shape, not the v1.0 shape
 
-*Open. Found while doing §3.3, not by the TCK — no `CARD-*` check covers it.
+*Fixed. Found while doing §3.3, not by the TCK — no `CARD-*` check covers it.
 Confidence: verified by cross-implementation test against `a2a-sdk` 1.1.2 and
 against the checked-in schema.*
 
@@ -449,11 +506,14 @@ What the v1.0 schema defines:
 **Severity, measured rather than assumed.** That card JSON — emitted by this
 SDK's own serializer — was fed to three parsers in the reference SDK:
 
-| Parser | Result |
-|---|---|
-| `a2a.client.card_resolver.parse_agent_card` (what a reference client calls) | **accepted**, both schemes recovered in full |
-| `json_format.ParseDict(..., AgentCard())`, strict | **rejected** — `has no field named "type"` |
-| `json_format.ParseDict(..., AgentCard(), ignore_unknown_fields=True)` | **accepted, schemes silently empty** — `{"apiKeyAuth": {}, "bearerAuth": {}}` |
+| Parser | Before | After |
+|---|---|---|
+| `a2a.client.card_resolver.parse_agent_card` (what a reference client calls) | **accepted**, both schemes recovered in full | accepted, in full |
+| `json_format.ParseDict(..., AgentCard())`, strict | **rejected** — `has no field named "type"` | **accepted**, in full |
+| `json_format.ParseDict(..., AgentCard(), ignore_unknown_fields=True)` | **accepted, schemes silently empty** — `{"apiKeyAuth": {}, "bearerAuth": {}}` | **accepted**, in full |
+
+Both columns were measured the same way: this SDK's own serializer produced the
+card bytes, which were then fed to each parser.
 
 So this is **not** an interop break with the reference SDK: its resolver
 carries an explicit backward-compatibility shim that maps `type` → the oneof
@@ -467,18 +527,38 @@ schemes with no contents**, and would conclude the agent supports no usable
 authentication. That is the §3.3 failure mode again (silently wrong data
 rather than an error), pointed the other way across the wire.
 
-**Not fixed here, deliberately.** Changing it alters the bytes on
-`/.well-known/agent-card.json` for every existing consumer of this SDK, which
-is a breaking change to a published wire format and a decision to take
-explicitly rather than as a side effect of a serde-alias commit. The five
-oneof arms are listed in `EXEMPT` in
-`crates/a2a-protocol-types/tests/proto_field_alias.rs` with a pointer here, so
-the coverage check stays honest about not covering them.
+**Fixed by emitting the v1.0 shape while accepting both.** `SecurityScheme`
+now has a hand-written `Serialize`/`Deserialize` pair: it emits the ProtoJSON
+`oneof` encoding unconditionally, and accepts the v1.0 encoding under either
+spelling of the arm name (`apiKeySecurityScheme` or
+`api_key_security_scheme`) *and* the v0.3 encoding, which normalises to the
+v1.0 form on re-emission. `ApiKeySecurityScheme.location` is emitted as
+`location`, the proto field name, with `in` retained as an alias.
+`ApiKeyLocation` keeps its `header`/`query`/`cookie` string values, which are
+exactly what the proto comment enumerates for `string location`.
 
-Two questions to settle before doing it: whether to emit the v1.0 shape while
-*accepting* both (the low-risk path, mirroring what the reference client
-does), and whether `ApiKeyLocation` should serialize as `header`/`query`/
-`cookie` or as the proto's plain `string location`.
+This is a breaking change to a published wire format — the bytes on
+`/.well-known/agent-card.json` change for every consumer of this SDK — so it
+is deliberate rather than incidental, and it only breaks a consumer that reads
+the card's raw JSON keys rather than parsing it with an A2A implementation.
+Deserialization is strictly more permissive than before.
+
+Deserialization is buffered through `serde_json::Map` rather than streamed,
+because telling the two encodings apart needs the whole object: the v0.3
+discriminator `type` may arrive after other keys. Agent cards are parsed at
+discovery time, not per request, so this is not on a hot path — unlike `Part`,
+which is, and therefore keeps its hand-rolled single-pass visitor.
+
+With the arms no longer exempt, `proto_field_alias.rs` now covers **all 73**
+multi-word schema fields with an empty `EXEMPT` list.
+
+**Five in-repo tests asserted the old encoding and passed confidently** —
+`tck_security_scheme_*_wire_format` in `tck_wire_format.rs` checked
+`ser["type"] == "apiKey"`. That is the §2.1 trap a third time: a suite that
+encodes a defect validates it forever. They now assert the v1.0 encoding
+round-trips, that a v0.3 scheme still parses *and* normalises to the v1.0
+form, and that an object matching neither encoding is rejected rather than
+silently defaulted.
 
 ## 8. Inline push notification configs were parsed and dropped
 
@@ -582,11 +662,38 @@ a non-terminal interrupted state such as `input_required` (spec §4.1.3). So:
 
 Fixing this means decoupling queue lifetime from executor-invocation lifetime:
 keep the queue alive while the task is non-terminal and close it at the
-terminal transition. That has real resource consequences — a task parked in
-`input_required` forever would hold a queue — so it needs an eviction story,
-interaction with `max_concurrent_queues`, and a shutdown path. It is a larger
-change than either fix above and is deliberately left for its own commit
-rather than bolted onto this one.
+terminal transition.
+
+**The hazard that makes this non-trivial**, found while scoping the fix and
+recorded here so the next attempt does not walk into it: `send_message_inner`
+currently *rejects* a send whose task already has a queue —
+
+```rust
+crate::streaming::QueueLease::Existing => {
+    return Err(ServerError::UnsupportedOperation(format!(
+        "task {task_id} is already being processed; wait for it to reach \
+         input-required or a terminal state before sending again"
+    )));
+}
+```
+
+That guard is correct today precisely *because* a queue implies a live
+executor. Make queues outlive executors and the implication breaks: every
+`input_required` continuation — the single most common multi-turn flow, and
+the one the TCK's own reproduction uses — would find `Existing` and be
+rejected. So the fix is not "stop calling `destroy`". It is at minimum:
+
+1. queue lifetime tied to task non-terminality, closed at the terminal
+   transition rather than at executor exit;
+2. `QueueLease` distinguishing *a queue exists* from *an executor is running*,
+   so a continuation **reuses** the queue (attaching a fresh persistence
+   channel) instead of being rejected;
+3. an eviction story for tasks parked non-terminal indefinitely, interacting
+   with `max_concurrent_queues`, plus the shutdown path in `handler/shutdown.rs`.
+
+That is a redesign of the streaming core with real concurrency risk, not a
+patch, and it is deliberately left for its own commit rather than bolted onto
+a serde change.
 
 `resubscribe_nonterminal_no_queue_returns_snapshot_then_eof` in
 `handler/lifecycle/subscribe.rs` currently *asserts* the non-conformant
