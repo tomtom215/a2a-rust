@@ -67,7 +67,18 @@ jobs:
       # (vendored from its backend/validators.py) headlessly against our
       # card. The inspector ships web-UI-only, so this is the scriptable
       # equivalent of "open it in the inspector and check it's green".
+      #
+      # continue-on-error, deliberately and narrowly: confirmed 2026-07-29
+      # that a2aproject/a2a-inspector's validate_agent_card (fetched
+      # byte-for-byte from its upstream main, so our vendored copy is not
+      # stale) still hard-requires a top-level `url` field. The v1.0
+      # AgentCard proto has no such field — `supported_interfaces` replaced
+      # it (see docs/official-tck-findings.md §13-14) — so a fully
+      # v1.0-compliant card will always fail this specific check until the
+      # inspector itself is updated upstream. This does not loosen the TCK
+      # conformance steps above, which stay hard gates.
       - name: a2a-inspector card validation
+        continue-on-error: true
         run: |
           pip install httpx
           python itk/interop/inspector_card_check.py http://127.0.0.1:9090

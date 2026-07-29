@@ -981,3 +981,61 @@ caused by the SUT's own configuration, not by the suite. Two of the three
 things fixed in §11–§13 were harness gaps rather than SDK defects, and the
 third was only reachable through them. A conformance score is only as
 trustworthy as the set of checks it was allowed to run.
+
+## 14. §13's fix broke `a2a-inspector`'s card check — a real, external tool lag, not an a2a-rust bug
+
+*Waived, narrowly, in CI. Not "fixed" — this is upstream's gap to close, and
+this repo does not control that timeline.*
+
+`tck.yml`'s `TCK self-test (echo-agent)` job runs an additional check beyond
+the TCK conformance suite: `itk/interop/inspector_card_check.py`, a headless
+reproduction of the official [a2a-inspector](https://github.com/a2aproject/a2a-inspector)'s
+agent-card validation (vendored from its `backend/validators.py`, since the
+inspector itself ships web-UI-only with no CLI to script directly). PR #99
+turned this red:
+
+```
+a2a-inspector card validation FAILED for http://127.0.0.1:9090:
+  - Required field is missing: 'url'.
+```
+
+§13 is what caused it — `AgentCard.url` stopped being emitted there, for a
+verified reason (the v1.0 schema, generated from `a2a.proto`, has no `url`
+field). Before changing anything, that reasoning was re-checked against two
+independent, live sources rather than trusted from memory:
+
+1. `proto/a2a_v1/a2a.proto`'s `message AgentCard` (re-read directly): still no
+   `url` field. `supported_interfaces` is still what carries it.
+2. `a2aproject/a2a-inspector`'s `backend/validators.py`, fetched byte-for-byte
+   from its upstream `main` branch on 2026-07-29 (not from memory, not from
+   the vendored copy — the live file, to rule out our copy having drifted).
+   It is **identical** to what's vendored in `itk/interop/inspector_card_check.py`,
+   and it unconditionally requires a top-level `url`:
+   ```python
+   required_fields = frozenset([
+       "name", "description", "url", "version", "capabilities",
+       "defaultInputModes", "defaultOutputModes", "skills",
+   ])
+   ```
+   No fallback to `supportedInterfaces` anywhere in the file.
+
+So this is a genuine, confirmed conflict between two authoritative-ish
+sources, not a stale vendored copy and not an a2a-rust defect: **any**
+strictly v1.0-schema-compliant `AgentCard` — from any SDK, not just this one
+— will fail the inspector's check today, because the inspector predates the
+v1.0 schema's `url` → `supported_interfaces` change and hasn't been updated
+for it.
+
+**Resolution.** `a2a-inspector card validation` in `tck.yml` is now
+`continue-on-error: true`, scoped to that one step only — the TCK conformance
+steps above it in the same job (22/22 on both JSON-RPC and REST) are
+untouched hard gates. §13's fix is not reverted: emitting `url` again to
+satisfy a lagging external tool would reopen the real JSON-schema violation
+`CARD-EXT-001` and `golden_fixtures_from_official_sdk_roundtrip` both exist to
+catch. This is a documented, narrowly-scoped waiver for a known, cited,
+external cause — not the "make it green and move on" pattern that's
+otherwise off the table for this project.
+
+**Not done here:** no issue has been filed against `a2aproject/a2a-inspector`
+by this session — that's a human call on a repo this project doesn't own.
+The actual fix is upstream, whenever it lands.
