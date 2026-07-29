@@ -134,11 +134,11 @@ impl RequestHandler {
     async fn on_executor_finished(
         &self,
         result: &Result<(), tokio::task::JoinError>,
-        task_id: &TaskId,
+        _task_id: &TaskId,
         state: &mut CollectState,
     ) -> ServerResult<()> {
         if result.is_err() {
-            trace_error!(task_id = %task_id, "executor task panicked");
+            trace_error!(task_id = %_task_id, "executor task panicked");
             if !state.task.status.state.is_terminal() {
                 state.task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 state.saw_task_shaped_event = true;

@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Note on crate versions in this section
+
+`a2a-protocol-server`'s `Cargo.toml` is at **0.8.0** while
+`a2a-protocol-types`/`a2a-protocol-client`/`a2a-protocol-sdk` remain at 0.7.0,
+ahead of the lockstep bump `RELEASING.md` otherwise calls for. This is
+deliberate, not a mismatch to fix: `cargo-semver-checks` (which compares
+against the last crates.io release) correctly flagged two breaking changes in
+this section — `InMemoryQueueReader`/`SendMessageResult` losing
+`UnwindSafe`/`RefUnwindSafe` (the streaming reattach hook below adds a
+`dyn Fn` field) and `HandlerLimits` gaining two `pub` fields (the same fix's
+reattach/idle bounds) — and per Rust's 0.x convention a breaking change bumps
+the minor position. Bumping only the crate that actually broke, rather than
+all four in lockstep, keeps that check meaningful without pre-deciding the
+next release's version for crates it found no issue with. The next real
+release should reconcile all four to whatever version it cuts, per the
+existing `RELEASING.md` checklist.
+
 ### Added
 
 - **Unrecognised request parameters are now logged instead of vanishing.** The

@@ -106,9 +106,13 @@ impl GrpcDispatcher {
     /// Returns an [`A2aServiceServer`] (the `lf.a2a.v1.A2AService` binding)
     /// that can be added to a [`tonic::transport::Server`] via `add_service`.
     /// Note this does **not** include the legacy JSON-tunnel service; with
-    /// the `grpc-legacy-json` feature, add
-    /// [`into_legacy_service`](Self::into_legacy_service) separately or use
-    /// [`serve`](Self::serve), which registers both.
+    /// the `grpc-legacy-json` feature, add `into_legacy_service` separately
+    /// or use [`serve`](Self::serve), which registers both.
+    ///
+    /// `into_legacy_service` is deliberately plain text, not an intra-doc
+    /// link: it only exists under `grpc-legacy-json`, and a link that some
+    /// feature combinations can't resolve is a broken-link doc-build failure
+    /// under `-D warnings` rather than a dead link readers might click.
     #[must_use]
     pub fn into_service(&self) -> A2aServiceServer<A2aServiceImpl> {
         let inner = A2aServiceImpl {
