@@ -18,6 +18,93 @@ use super::helpers::build_call_context;
 use super::RequestHandler;
 
 impl RequestHandler {
+    /// Validates a push notification config and writes it to the store.
+    ///
+    /// Shared by `CreateTaskPushNotificationConfig` and by the inline
+    /// `SendMessageConfiguration.task_push_notification_config` path, so a
+    /// config registered as part of `SendMessage` gets exactly the same
+    /// capability check, task-existence check, SSRF screening and quota
+    /// enforcement as a standalone create. Splitting the two would let the
+    /// inline path drift into an unguarded back door.
+    ///
+    /// The caller owns tenant resolution, interceptors and metrics — the
+    /// inline path runs inside `SendMessage`'s and must not fire a second set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ServerError::PushNotSupported`] when the agent card does not
+    /// advertise push notifications or no sender is configured,
+    /// [`ServerError::TaskNotFound`] when the target task does not exist, and
+    /// [`ServerError::InvalidParams`] / [`ServerError::Overloaded`] when the
+    /// URL is rejected or a quota is exhausted.
+    pub(super) async fn validate_and_store_push_config(
+        &self,
+        config: TaskPushNotificationConfig,
+    ) -> ServerResult<TaskPushNotificationConfig> {
+        // SPEC §3.3.4: reject when the configured agent card does not
+        // advertise `capabilities.pushNotifications == true`.
+        self.ensure_push_supported()?;
+        let Some(ref sender) = self.push_sender else {
+            return Err(ServerError::PushNotSupported);
+        };
+
+        // SPEC §3.1.7: the target task MUST exist. Storing a config for a
+        // task that was never created leaves an unroutable, orphaned config.
+        let target_task = TaskId::new(config.task_id.clone().unwrap_or_default());
+        if self.task_store.get(&target_task).await?.is_none() {
+            return Err(ServerError::TaskNotFound(target_task));
+        }
+
+        // FIX(#3): Validate webhook URL at config creation time to prevent
+        // SSRF attacks. Previously validation only happened at delivery time,
+        // leaving a window where malicious URLs could be stored.
+        // Respect the push sender's allow_private_urls setting for testing.
+        //
+        // This is deliberately the synchronous host check (scheme, IP
+        // literals, credentials, ports) — it fails fast on obviously bad
+        // URLs without adding a DNS lookup to a CRUD call. The security
+        // boundary is delivery: `validate_webhook_url_with_dns` re-checks
+        // there with resolution + IP pinning, so a hostname that resolves
+        // privately is stored but never delivered to.
+        if !sender.allows_private_urls() {
+            crate::push::sender::validate_webhook_url(&config.url)?;
+        }
+
+        // Enforce the per-task config cap here so it holds for EVERY store
+        // backend (the SQL stores do not self-enforce). Creating a new
+        // config for a task already at the cap is rejected; updating an
+        // existing config (matching id) is always allowed.
+        let task_key = config.task_id.clone().unwrap_or_default();
+        let existing = self.push_config_store.list(&task_key).await?;
+        let is_update = config
+            .id
+            .as_deref()
+            .is_some_and(|id| existing.iter().any(|c| c.id.as_deref() == Some(id)));
+        if !is_update && existing.len() >= self.limits.max_push_configs_per_task {
+            return Err(ServerError::InvalidParams(format!(
+                "task {task_key} already has the maximum of {} push notification configs",
+                self.limits.max_push_configs_per_task
+            )));
+        }
+
+        // Global (per-tenant, for tenant stores) ceiling so configs spread
+        // across many distinct task ids cannot grow a SQL-backed store
+        // without bound. Only enforced when the backend reports a count.
+        if !is_update {
+            if let Some(total) = self.push_config_store.count().await? {
+                if total >= self.limits.max_total_push_configs {
+                    return Err(ServerError::Overloaded(format!(
+                        "server is at the maximum of {} push notification configs; \
+                         delete unused configs before creating more",
+                        self.limits.max_total_push_configs
+                    )));
+                }
+            }
+        }
+
+        Ok(self.push_config_store.set(config).await?)
+    }
+
     /// Handles `CreateTaskPushNotificationConfig`.
     ///
     /// # Errors
@@ -40,12 +127,6 @@ impl RequestHandler {
             )
             .await?;
         let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            // SPEC §3.3.4: reject when the configured agent card does not
-            // advertise `capabilities.pushNotifications == true`.
-            self.ensure_push_supported()?;
-            let Some(ref sender) = self.push_sender else {
-                return Err(ServerError::PushNotSupported);
-            };
             // taskId is optional on the wire (a config nested in
             // SendMessageConfiguration omits it), but a standalone create has
             // no task context to infer it from — reject explicitly instead of
@@ -55,26 +136,6 @@ impl RequestHandler {
                     "taskId is required for CreateTaskPushNotificationConfig".into(),
                 ));
             }
-            // SPEC §3.1.7: the target task MUST exist. Storing a config for a
-            // task that was never created leaves an unroutable, orphaned config.
-            let target_task = TaskId::new(config.task_id.clone().unwrap_or_default());
-            if self.task_store.get(&target_task).await?.is_none() {
-                return Err(ServerError::TaskNotFound(target_task));
-            }
-            // FIX(#3): Validate webhook URL at config creation time to prevent
-            // SSRF attacks. Previously validation only happened at delivery time,
-            // leaving a window where malicious URLs could be stored.
-            // Respect the push sender's allow_private_urls setting for testing.
-            //
-            // This is deliberately the synchronous host check (scheme, IP
-            // literals, credentials, ports) — it fails fast on obviously bad
-            // URLs without adding a DNS lookup to a CRUD call. The security
-            // boundary is delivery: `validate_webhook_url_with_dns` re-checks
-            // there with resolution + IP pinning, so a hostname that resolves
-            // privately is stored but never delivered to.
-            if !sender.allows_private_urls() {
-                crate::push::sender::validate_webhook_url(&config.url)?;
-            }
 
             let call_ctx = build_call_context("CreateTaskPushNotificationConfig", headers);
             self.interceptors.run_before(&call_ctx).await?;
@@ -82,39 +143,7 @@ impl RequestHandler {
             // extensions the agent card marks required.
             self.ensure_required_extensions(&call_ctx)?;
 
-            // Enforce the per-task config cap here so it holds for EVERY store
-            // backend (the SQL stores do not self-enforce). Creating a new
-            // config for a task already at the cap is rejected; updating an
-            // existing config (matching id) is always allowed.
-            let task_key = config.task_id.clone().unwrap_or_default();
-            let existing = self.push_config_store.list(&task_key).await?;
-            let is_update = config
-                .id
-                .as_deref()
-                .is_some_and(|id| existing.iter().any(|c| c.id.as_deref() == Some(id)));
-            if !is_update && existing.len() >= self.limits.max_push_configs_per_task {
-                return Err(ServerError::InvalidParams(format!(
-                    "task {task_key} already has the maximum of {} push notification configs",
-                    self.limits.max_push_configs_per_task
-                )));
-            }
-
-            // Global (per-tenant, for tenant stores) ceiling so configs spread
-            // across many distinct task ids cannot grow a SQL-backed store
-            // without bound. Only enforced when the backend reports a count.
-            if !is_update {
-                if let Some(total) = self.push_config_store.count().await? {
-                    if total >= self.limits.max_total_push_configs {
-                        return Err(ServerError::Overloaded(format!(
-                            "server is at the maximum of {} push notification configs; \
-                             delete unused configs before creating more",
-                            self.limits.max_total_push_configs
-                        )));
-                    }
-                }
-            }
-
-            let result = self.push_config_store.set(config).await?;
+            let result = self.validate_and_store_push_config(config).await?;
             self.interceptors.run_after(&call_ctx).await?;
             Ok(result)
         })

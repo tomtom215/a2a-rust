@@ -4,18 +4,6 @@
     "DM-MSG-001": {
       "*": "FAIL"
     },
-    "PUSH-DELIVER-001": {
-      "jsonrpc": "FAIL",
-      "http_json": "FAIL"
-    },
-    "PUSH-DELIVER-002": {
-      "jsonrpc": "FAIL",
-      "http_json": "FAIL"
-    },
-    "PUSH-DELIVER-003": {
-      "jsonrpc": "FAIL",
-      "http_json": "FAIL"
-    },
     "STREAM-SUB-002": {
       "jsonrpc": "FAIL",
       "http_json": "FAIL"

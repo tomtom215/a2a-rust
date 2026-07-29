@@ -54,6 +54,7 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `tck/sut`, before fixes | 87 | 15 | 157 |
 | Against `tck/sut`, after the §2 fixes | 158 | 12 | 94 |
 | Against `tck/sut`, after the §3.3 alias fix | 166 | 10 | 89 |
+| Against `tck/sut`, after the §8 inline-push fix | 172 | 4 | 89 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -64,14 +65,15 @@ real before/after.
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
 
-**All 10 remaining failures are at `MUST` level**, as were the 12 before them.
+**All 4 remaining failures are at `MUST` level**, as were the 12 before them.
 An earlier revision of this document listed them without saying so, which
 understated them — every failure is a hard conformance requirement, not a
-`SHOULD` or `MAY`. Reported MUST compatibility is **93.9%** (was 85.4% before
-the §3.3 fix), computed over tested requirements only; 21 further MUST
-requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and `BIND-EQUIV-*`
-families) report `NOT TESTED` because the SUT does not exercise them, and are
-a coverage gap rather than a pass.
+`SHOULD` or `MAY`. Reported MUST compatibility is **97.6%** (85.4% → 93.9%
+after §3.3, → 97.6% after §8), computed over tested requirements only; 21
+further MUST requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and
+`BIND-EQUIV-*` families) report `NOT TESTED` because the SUT does not
+exercise them, and are a coverage gap rather than a pass — **not** progress
+toward 100%.
 
 ### The gate
 
@@ -90,19 +92,35 @@ for the same bad reason `continue-on-error: true` was.
 
 Transport granularity matters: `PUSH-CREATE-001` used to fail on `jsonrpc`
 while passing on `http_json`, and a requirement-level baseline would not have
-noticed it starting to fail on `http_json` too. The baseline now holds **9
-(requirement, transport) pairs across 5 requirements**, down from 16 across 12
-when the §3.3 fix landed.
+noticed it starting to fail on `http_json` too. The baseline now holds **3
+(requirement, transport) pairs across 2 requirements**, down from 16 across 12.
 
-The stale-baseline direction is not theoretical — it fired on exactly that
-commit, which is how the shrink was forced:
+The stale-baseline direction is not theoretical — it fired on both fix
+commits, which is how each shrink was forced:
 
 ```
-STALE BASELINE — 7 baselined check(s) now pass:
+STALE BASELINE — 7 baselined check(s) now pass:      # after §3.3
   CORE-HIST-002 [jsonrpc]   PUSH-CREATE-001 [jsonrpc]  PUSH-CREATE-002 [jsonrpc]
   PUSH-DEL-001 [jsonrpc]    PUSH-DEL-002 [jsonrpc]     PUSH-GET-001 [jsonrpc]
   PUSH-LIST-001 [jsonrpc]
+
+STALE BASELINE — 6 baselined check(s) now pass:      # after §8
+  PUSH-DELIVER-001 [jsonrpc]  PUSH-DELIVER-001 [http_json]
+  PUSH-DELIVER-002 [jsonrpc]  PUSH-DELIVER-002 [http_json]
+  PUSH-DELIVER-003 [jsonrpc]  PUSH-DELIVER-003 [http_json]
 ```
+
+Both directions of the gate, and its behaviour on malformed input, are
+exercised deliberately rather than assumed:
+
+| Injected into the report | Gate |
+|---|---|
+| unmodified (control) | exit 0 |
+| a MUST failure not in the baseline | exit 1 — regression |
+| a baselined requirement failing on a **new** transport | exit 1 — regression |
+| a baselined entry now passing | exit 1 — stale |
+| a `SHOULD`-level failure | exit 0 — correctly not gated |
+| report missing / not JSON / `null` / `[]` / a number | exit 1 with a readable message |
 
 > **An earlier revision of this workflow reported `Success` while these 12
 > checks failed**, because both suite steps carried `continue-on-error: true`.
@@ -328,20 +346,30 @@ One root cause, two reported symptoms.
 
 ## 5. Still open — genuinely unclassified
 
-All `MUST` level, all baselined in `tck/conformance-baseline.json` (9 pairs
-across 5 requirements). Listed rather than diagnosed: **no claim is made about
-cause.** Confidence label for every row below: *observed symptom only, not
-reproduced by hand, no root cause established.*
+All `MUST` level, all baselined in `tck/conformance-baseline.json` (3 pairs
+across 2 requirements).
 
 | Requirement | Symptom | Status |
 |---|---|---|
-| `DM-MSG-001` (`*`) | `tck-message-response` yields a Task, not a bare `Message` | Unknown. Likely a SUT gap — writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. Note the report marks it `FAIL` overall while both transports read `PASS`, so the baseline keys it `*`; that aggregation quirk is itself unexplained. |
-| `PUSH-DELIVER-001/002/003` (×6) | No webhook delivery observed | Unknown. The `jsonrpc` legs were previously assumed to follow from `PUSH-CREATE-001` — **that assumption is now disproven**: `PUSH-CREATE-001` passes after §3.3(a) and all six `PUSH-DELIVER-*` legs still fail. Both bindings need the same separate investigation. |
-| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | Unknown. Needs a hand-built reproduction against §3.1.6 before it is called a defect. |
+| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | **Diagnosed — genuine defect, not yet fixed. See §9.** Confidence: verified by hand reproduction plus the spec text. |
+| `DM-MSG-001` (`*`) | `tck-message-response` yields a Task, not a bare `Message` | **Undiagnosed.** Confidence: *observed symptom only — not reproduced by hand, no root cause established.* Likely a SUT gap: writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. The report marks it `FAIL` overall while both transports read `PASS`, so the baseline keys it `*`; that aggregation quirk is itself unexplained. |
 
-Closed since the previous revision, all by §3.3(a): `CORE-HIST-002`,
-`PUSH-CREATE-001`, `PUSH-CREATE-002`, `PUSH-DEL-001`, `PUSH-DEL-002`,
-`PUSH-GET-001`, `PUSH-LIST-001` — 7 pairs, all on `jsonrpc`.
+Closed since the previous revision:
+
+- by §3.3(a) — `CORE-HIST-002`, `PUSH-CREATE-001`, `PUSH-CREATE-002`,
+  `PUSH-DEL-001`, `PUSH-DEL-002`, `PUSH-GET-001`, `PUSH-LIST-001` (7 pairs,
+  all `jsonrpc`);
+- by §8 — `PUSH-DELIVER-001`, `PUSH-DELIVER-002`, `PUSH-DELIVER-003` on both
+  bindings (6 pairs).
+
+**A retracted assumption:** the previous revision said the `jsonrpc` legs of
+`PUSH-DELIVER-*` "follow from `PUSH-CREATE-001`" while the `http_json` legs
+needed separate investigation. That was wrong in both halves. `PUSH-CREATE-001`
+passing did not fix any `PUSH-DELIVER-*` leg, and the two bindings shared one
+cause (§8) rather than needing separate ones. The lesson is the same one this
+document keeps recording: a plausible causal story about an undiagnosed
+failure is not a diagnosis, and labelling it as one costs more than saying
+"unknown".
 
 ## 6. Reproducing every measurement
 
@@ -451,3 +479,117 @@ Two questions to settle before doing it: whether to emit the v1.0 shape while
 *accepting* both (the low-risk path, mirroring what the reference client
 does), and whether `ApiKeyLocation` should serialize as `header`/`query`/
 `cookie` or as the proto's plain `string location`.
+
+## 8. Inline push notification configs were parsed and dropped
+
+*Fixed. Confirmed by re-run.*
+
+*Found by `PUSH-DELIVER-001/002/003`, all six legs. Confidence: verified by
+hand reproduction against a local webhook receiver, by the schema text, and
+against the reference implementation's source.*
+
+The schema is explicit that `SendMessage` is a way to register a push config:
+
+```protobuf
+// Configuration for the agent to send push notifications for task updates.
+// Task id should be empty when sending this configuration in a `SendMessage` request.
+TaskPushNotificationConfig task_push_notification_config = 2;
+```
+
+This SDK deserialised the field and never looked at it again. The TCK
+registers its webhook exactly this way, so all six delivery checks failed with
+"No webhook request received within timeout".
+
+Hand reproduction against `tck/sut` with a local receiver on `:9877`:
+
+| Flow | `ListTaskPushNotificationConfigs` | Webhooks delivered |
+|---|---|---|
+| inline via `configuration.taskPushNotificationConfig` (what the TCK does) | `{"configs": []}` | **0** |
+| explicit `CreateTaskPushNotificationConfig` | 1 config | 2 |
+
+The second row is what made the diagnosis conclusive: delivery, retry, auth
+headers and payload shape were all working. Only registration was missing.
+
+The reference implementation registers the inline config against the task id
+before the executor starts (`default_request_handler_v2.py`, `_setup_task`),
+and this SDK now does the same, at the point where the task is saved and
+before the executor is spawned — so the first status transition is already
+covered.
+
+**A wrong turn worth recording.** The first pass at this reported *two*
+defects: the missing registration, and a missing `Authorization` header on
+delivery. The second was an artefact of the probe, not of the SDK — the
+reproduction read `headers.get("Authorization")` from a `dict()` built out of
+Python's `http.server` header object, where the key arrives lower-cased. The
+header was being sent correctly all along. Dumping *all* headers instead of
+probing one key by name is what caught it. A single-key lookup that returns
+`None` looks exactly like a missing feature.
+
+**Behaviour change:** a `SendMessage` carrying an inline push config against a
+server with no push support now fails with `PushNotSupported` instead of
+succeeding and silently ignoring the config. The reference skips silently
+here; this SDK does not, on the same reasoning as §3.3 — a client that asked
+for notifications and will never get any should be told. Registration reuses
+the standalone create's validation (capability check, task existence, SSRF
+screening, per-task and global quotas) rather than writing to the store
+directly, so the inline path cannot become an unguarded back door; four
+counter-tests in `inline_push_config_tests.rs` drive those guards to failure
+through the inline path specifically.
+
+## 9. `STREAM-SUB-002`: the subscribe stream ends with the executor, not with the task
+
+*Open. Diagnosed, not yet fixed.*
+
+*Confidence: verified by hand reproduction plus the spec text; root cause
+located in the code but no fix attempted.*
+
+Spec §3.1.6 is unambiguous:
+
+> The stream MUST terminate when the task reaches a terminal state
+> (`completed`, `failed`, `canceled`, or `rejected`).
+
+and §3.5.2 adds:
+
+> The task lifecycle is independent of any individual stream's lifecycle.
+
+Hand reproduction — create a task the executor leaves in `input_required`,
+`SubscribeToTask`, then complete it from another thread:
+
+```
+task cd5e005b… state=TASK_STATE_INPUT_REQUIRED
+subscribe HTTP 200 content-type=text/event-stream
+  [stream closed by server]
+1 SSE data frame(s):
+  [0] task  state=TASK_STATE_INPUT_REQUIRED
+VERDICT: last frame terminal? False
+```
+
+The stream closes **while the task is still non-terminal**, before the
+transition it exists to report. That is a violation of §3.1.6 on its face.
+
+**Root cause.** The event queue's lifetime is tied to an *executor
+invocation*, not to the task. In `handler/messaging.rs` the spawned executor
+ends with `drop(writer)` and `event_queue_manager.destroy(&task_id)`,
+unconditionally — including when the executor deliberately leaves the task in
+a non-terminal interrupted state such as `input_required` (spec §4.1.3). So:
+
+1. `SubscribeToTask` on such a task finds no queue and falls back to
+   `InMemoryQueueReader::snapshot_then_end` — snapshot, then EOF.
+2. A subscriber attached *before* the executor finished would fare no better:
+   the channel closes at executor exit regardless.
+3. The later `SendMessage` that completes the task creates a *new* queue,
+   which the earlier subscriber is not attached to.
+
+Fixing this means decoupling queue lifetime from executor-invocation lifetime:
+keep the queue alive while the task is non-terminal and close it at the
+terminal transition. That has real resource consequences — a task parked in
+`input_required` forever would hold a queue — so it needs an eviction story,
+interaction with `max_concurrent_queues`, and a shutdown path. It is a larger
+change than either fix above and is deliberately left for its own commit
+rather than bolted onto this one.
+
+`resubscribe_nonterminal_no_queue_returns_snapshot_then_eof` in
+`handler/lifecycle/subscribe.rs` currently *asserts* the non-conformant
+behaviour, citing §3.5.2 reconnection. That test encodes the bug and will need
+to change with the fix — the same trap §2.1 records, where three in-repo tests
+asserted the wrong JSON-RPC error code and passed confidently.

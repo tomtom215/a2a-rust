@@ -12,6 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`SendMessageConfiguration.taskPushNotificationConfig` was parsed and
+  dropped, so no webhook was ever registered or delivered.** The schema is
+  explicit that this is how a client subscribes at send time — *"Task id should
+  be empty when sending this configuration in a `SendMessage` request"* — and
+  the reference implementation registers it before the executor starts. This
+  SDK deserialised the field and never looked at it again:
+  `ListTaskPushNotificationConfigs` came back empty and no notification fired.
+
+  The config is now registered against the created task, with `taskId` filled
+  in server-side, at the point the task is saved and before the executor is
+  spawned, so the first status transition is already covered. Registration
+  reuses the standalone `CreateTaskPushNotificationConfig` validation —
+  capability check, task existence, SSRF screening, per-task and global quotas
+  — rather than writing to the store directly, so the inline path cannot become
+  an unguarded back door. Four counter-tests drive each of those guards to a
+  failure through the inline path specifically.
+
+  Against the official TCK this closes all six `PUSH-DELIVER-001/002/003` legs
+  across both bindings, taking the run from 166/10 to **172/4** and MUST
+  compatibility from 93.9% to **97.6%**. The baseline shrinks from 9 pairs
+  across 5 requirements to 3 across 2.
+
+  **Behaviour change:** a `SendMessage` carrying an inline push config against
+  a server with no push support now fails with `PushNotSupported` instead of
+  succeeding and ignoring the config. The reference skips silently here; this
+  SDK does not, on the same reasoning as the alias fix below — a client that
+  asked for notifications and will never receive any should be told.
+
 - **Request parameters spelled with the protobuf field name were silently
   ignored, turning a filter into wrong data.** The A2A JSON model is generated
   from `a2a.proto`, and protobuf's canonical JSON mapping requires parsers to
