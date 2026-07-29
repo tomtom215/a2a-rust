@@ -90,29 +90,34 @@ jobs:
           echo "SUT failed to start"
           exit 1
 
-      # `--level must` is the gate: MUST-level requirements are hard
-      # conformance. SHOULD/MAY run in the reporting step below so regressions
-      # there are visible without blocking a merge.
-      - name: Conformance — MUST level (gating)
-        working-directory: /tmp/a2a-tck
-        run: |
-          set -o pipefail
-          ./.venv/bin/python run_tck.py \
-            --sut-host http://127.0.0.1:9999 \
-            --level must 2>&1 | tee /tmp/tck-must.log
-        # Known-failing MUST checks are tracked in
-        # docs/official-tck-findings.md. Until they are closed (or confirmed
-        # upstream bugs), this job reports without blocking. Flip to a hard
-        # gate by deleting this line once the open findings are resolved.
-        continue-on-error: true
-
-      - name: Full suite (all levels, reporting)
+      # One full-suite run covers every level and emits the machine-readable
+      # reports/compatibility.json the gate reads. A separate `--level must`
+      # run was verified to produce an identical set of gated failures, so it
+      # would only cost time.
+      #
+      # This step is EXPECTED to exit non-zero while open findings remain, so
+      # its status is deliberately not the job's verdict — the gate step below
+      # is. `|| true` is written here explicitly rather than via
+      # `continue-on-error` so it is obvious at a glance that the next step is
+      # what decides.
+      - name: Run the official suite
         working-directory: /tmp/a2a-tck
         run: |
           set -o pipefail
           ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9999 \
-            2>&1 | tee /tmp/tck-full.log
-        continue-on-error: true
+            2>&1 | tee /tmp/tck-full.log || true
+
+      # THE GATE. Fails the job on any MUST-level failure not in the baseline,
+      # and equally on any baseline entry that now passes — a baseline that is
+      # allowed to rot is just `continue-on-error` with extra steps.
+      #
+      # A missing or malformed report is also a failure: a green check that
+      # means "the suite never ran" is the exact bug this replaces.
+      - name: Gate against the conformance baseline
+        run: |
+          python3 tck/scripts/check_conformance.py \
+            --report /tmp/a2a-tck/reports/compatibility.json \
+            --baseline tck/conformance-baseline.json 2>&1 | tee /tmp/tck-gate.log
 
       - name: Summarize
         if: always()
@@ -120,16 +125,18 @@ jobs:
           {
             echo '## Official a2a-tck conformance'
             echo
-            echo '### MUST level (gating)'
+            echo '### Gate'
             echo '```'
-            tail -n 3 /tmp/tck-must.log 2>/dev/null || echo 'no output'
+            cat /tmp/tck-gate.log 2>/dev/null || echo 'gate did not run'
             echo '```'
-            echo '### Full suite'
+            echo '### Suite output'
             echo '```'
             tail -n 3 /tmp/tck-full.log 2>/dev/null || echo 'no output'
             echo '```'
             echo
-            echo 'Open findings: `docs/official-tck-findings.md`'
+            echo 'Known failures are baselined in `tck/conformance-baseline.json`'
+            echo 'and tracked in `docs/official-tck-findings.md`. The job is green'
+            echo 'only when the failures match that baseline exactly.'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload TCK reports
@@ -139,6 +146,6 @@ jobs:
           name: official-tck-reports
           path: |
             /tmp/a2a-tck/reports/
-            /tmp/tck-must.log
             /tmp/tck-full.log
+            /tmp/tck-gate.log
           if-no-files-found: ignore

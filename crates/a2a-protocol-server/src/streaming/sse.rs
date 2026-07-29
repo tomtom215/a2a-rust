@@ -17,7 +17,9 @@ use bytes::Bytes;
 use http_body_util::BodyExt;
 use hyper::body::Frame;
 
-use a2a_protocol_types::jsonrpc::{JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion};
+use a2a_protocol_types::jsonrpc::{
+    JsonRpcError, JsonRpcErrorResponse, JsonRpcId, JsonRpcSuccessResponse, JsonRpcVersion,
+};
 
 use crate::streaming::event_queue::{EventQueueReader, InMemoryQueueReader};
 
@@ -151,6 +153,31 @@ impl hyper::body::Body for ChannelBody {
     }
 }
 
+/// Serializes a stream error into the payload shape its binding requires.
+///
+/// JSON-RPC (§9.4.2): a full `JsonRpcErrorResponse` echoing the request id.
+/// REST (§11.7): the bare `A2aError`.
+///
+/// Both error sites in the stream loop go through here. Emitting an ad-hoc or
+/// bare shape on the JSON-RPC binding produces a frame carrying neither
+/// `result` nor `error`, which no conformant client can parse — it reports a
+/// deserialization failure instead of the error the server meant to send.
+fn stream_error_payload(
+    err: &a2a_protocol_types::error::A2aError,
+    jsonrpc_envelope_id: Option<&JsonRpcId>,
+) -> Result<String, serde_json::Error> {
+    jsonrpc_envelope_id.map_or_else(
+        || serde_json::to_string(err),
+        |id| {
+            let mut jsonrpc_error = JsonRpcError::new(err.code.as_i32(), err.message.clone());
+            // Preserve `data`: it carries the `streamLagged` marker a client
+            // uses to tell truncation from an executor failure.
+            jsonrpc_error.data.clone_from(&err.data);
+            serde_json::to_string(&JsonRpcErrorResponse::new(id.clone(), jsonrpc_error))
+        },
+    )
+}
+
 // ── build_sse_response ───────────────────────────────────────────────────────
 
 /// Builds an SSE streaming response from an event queue reader.
@@ -230,8 +257,18 @@ pub fn build_sse_response(
                             let frame_bytes = match frame_bytes {
                                 Ok(b) => b,
                                 Err(e) => {
-                                    let err_msg = format!("{{\"error\":\"serialization failed: {e}\"}}");
-                                    let _ = body_writer.send_event("error", &err_msg).await;
+                                    // Same enveloping rule as the reader-error
+                                    // branch below: an ad-hoc `{"error":"..."}`
+                                    // string is not a JSON-RPC error response
+                                    // and not an A2aError either.
+                                    let err = a2a_protocol_types::error::A2aError::internal(
+                                        format!("event serialization failed: {e}"),
+                                    );
+                                    if let Ok(data) =
+                                        stream_error_payload(&err, jsonrpc_envelope_id.as_ref())
+                                    {
+                                        let _ = body_writer.send_event("error", &data).await;
+                                    }
                                     break;
                                 }
                             };
@@ -244,7 +281,19 @@ pub fn build_sse_response(
                             );
                         }
                         Some(Err(e)) => {
-                            let Ok(data) = serde_json::to_string(&e) else {
+                            // A mid-stream error must stay inside the same
+                            // envelope as the success frames that preceded it.
+                            // Emitting a bare `A2aError` on the JSON-RPC
+                            // binding produced a payload carrying neither
+                            // `result` nor `error`, which no conformant client
+                            // can parse — including this SDK's own, which
+                            // reported a deserialization failure instead of
+                            // the error the server was trying to convey. That
+                            // made the 0.7.0 `streamLagged` truncation signal
+                            // unreadable over JSON-RPC (§9.4.2).
+                            let Ok(data) =
+                                stream_error_payload(&e, jsonrpc_envelope_id.as_ref())
+                            else {
                                 break;
                             };
                             let _ = body_writer.send_event("error", &data).await;
