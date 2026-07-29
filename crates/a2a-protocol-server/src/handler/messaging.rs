@@ -696,9 +696,23 @@ impl RequestHandler {
             // Blocking mode: poll reader until the final event. Pass the
             // executor handle so collect_events can detect executor
             // completion/panic (CB-3).
-            let mut final_task = self
+            let collected = self
                 .collect_events(reader, task_id.clone(), executor_handle)
                 .await?;
+
+            // SPEC §3.1.1: SendMessage returns "a `Task` object representing
+            // the processing of the message, OR a `Message` — a direct
+            // response message (for simple interactions that don't require
+            // task tracking)". An agent that emitted a message and nothing
+            // else is doing exactly that, so answer with the message. The task
+            // row still exists and is still fetchable by `GetTask`.
+            if let Some(message) = collected.direct_message {
+                return Ok(SendMessageResult::Response(SendMessageResponse::Message(
+                    message,
+                )));
+            }
+
+            let mut final_task = collected.task;
             shape_response_history(&mut final_task, response_history_length);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(
                 final_task,

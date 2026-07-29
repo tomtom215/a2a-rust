@@ -55,6 +55,7 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `tck/sut`, after the §2 fixes | 158 | 12 | 94 |
 | Against `tck/sut`, after the §3.3 alias fix | 166 | 10 | 89 |
 | Against `tck/sut`, after the §8 inline-push fix | 172 | 4 | 89 |
+| Against `tck/sut`, after the §10 direct-message fix | 174 | 2 | 89 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -65,11 +66,12 @@ real before/after.
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
 
-**All 4 remaining failures are at `MUST` level**, as were the 12 before them.
+**Both remaining failures are at `MUST` level**, as were the 12 before them.
 An earlier revision of this document listed them without saying so, which
 understated them — every failure is a hard conformance requirement, not a
-`SHOULD` or `MAY`. Reported MUST compatibility is **97.6%** (85.4% → 93.9%
-after §3.3, → 97.6% after §8), computed over tested requirements only; 21
+`SHOULD` or `MAY`. Reported MUST compatibility is **98.8%** (85.4% → 93.9%
+after §3.3 → 97.6% after §8 → 98.8% after §10), computed over tested
+requirements only; 21
 further MUST requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and
 `BIND-EQUIV-*` families) report `NOT TESTED` because the SUT does not
 exercise them, and are a coverage gap rather than a pass — **not** progress
@@ -92,8 +94,8 @@ for the same bad reason `continue-on-error: true` was.
 
 Transport granularity matters: `PUSH-CREATE-001` used to fail on `jsonrpc`
 while passing on `http_json`, and a requirement-level baseline would not have
-noticed it starting to fail on `http_json` too. The baseline now holds **3
-(requirement, transport) pairs across 2 requirements**, down from 16 across 12.
+noticed it starting to fail on `http_json` too. The baseline now holds **2
+(requirement, transport) pairs across 1 requirement**, down from 16 across 12.
 
 The stale-baseline direction is not theoretical — it fired on both fix
 commits, which is how each shrink was forced:
@@ -108,6 +110,9 @@ STALE BASELINE — 6 baselined check(s) now pass:      # after §8
   PUSH-DELIVER-001 [jsonrpc]  PUSH-DELIVER-001 [http_json]
   PUSH-DELIVER-002 [jsonrpc]  PUSH-DELIVER-002 [http_json]
   PUSH-DELIVER-003 [jsonrpc]  PUSH-DELIVER-003 [http_json]
+
+STALE BASELINE — 1 baselined check(s) now pass:      # after §10
+  DM-MSG-001 [*]
 ```
 
 Both directions of the gate, and its behaviour on malformed input, are
@@ -403,13 +408,13 @@ One root cause, two reported symptoms.
 
 ## 5. Still open — genuinely unclassified
 
-All `MUST` level, all baselined in `tck/conformance-baseline.json` (3 pairs
-across 2 requirements).
+All `MUST` level, all baselined in `tck/conformance-baseline.json` (2 pairs
+across 1 requirement).
 
 | Requirement | Symptom | Status |
 |---|---|---|
-| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | **Diagnosed — genuine defect, not yet fixed. See §9.** Confidence: verified by hand reproduction plus the spec text. |
-| `DM-MSG-001` (`*`) | `tck-message-response` yields a Task, not a bare `Message` | **Undiagnosed.** Confidence: *observed symptom only — not reproduced by hand, no root cause established.* Likely a SUT gap: writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. The report marks it `FAIL` overall while both transports read `PASS`, so the baseline keys it `*`; that aggregation quirk is itself unexplained. |
+| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | **Diagnosed — genuine defect. See §9.** Confidence: verified by hand reproduction plus the spec text. |
+
 
 Closed since the previous revision:
 
@@ -417,7 +422,9 @@ Closed since the previous revision:
   `PUSH-DEL-001`, `PUSH-DEL-002`, `PUSH-GET-001`, `PUSH-LIST-001` (7 pairs,
   all `jsonrpc`);
 - by §8 — `PUSH-DELIVER-001`, `PUSH-DELIVER-002`, `PUSH-DELIVER-003` on both
-  bindings (6 pairs).
+  bindings (6 pairs);
+- by §10 — `DM-MSG-001` (1 pair). Its earlier "likely a SUT gap" guess was
+  wrong: the SUT was correct and the server was not.
 
 **A retracted assumption:** the previous revision said the `jsonrpc` legs of
 `PUSH-DELIVER-*` "follow from `PUSH-CREATE-001`" while the `http_json` legs
@@ -700,3 +707,67 @@ a serde change.
 behaviour, citing §3.5.2 reconnection. That test encodes the bug and will need
 to change with the fix — the same trap §2.1 records, where three in-repo tests
 asserted the wrong JSON-RPC error code and passed confidently.
+
+## 10. `DM-MSG-001`: a blocking `SendMessage` could never return a `Message`
+
+*Fixed. Confirmed by re-run. Confidence: verified by hand reproduction, the
+spec text, and the reference implementation's source.*
+
+Spec §3.1.1 gives `SendMessage` two possible outputs:
+
+> - [`Task`]: A task object representing the processing of the message, **OR**
+> - [`Message`]: A direct response message (for simple interactions that don't
+>   require task tracking)
+
+This SDK only ever produced the first. `SendMessageResponse::Message` existed
+as a type and was never constructed anywhere in the server — `grep` for it
+returned only `::Task` call sites. `collect_events` appended any
+`StreamResponse::Message` the executor wrote to `Task.history` and returned
+the task regardless.
+
+Reproduced on the wire against the SUT's `tck-message-response` scenario,
+whose executor writes exactly one `StreamResponse::Message` and nothing else:
+
+```json
+{"result": {"task": {"id": "ec6bb9d0…", "status": {"state": "TASK_STATE_SUBMITTED"}}}}
+```
+
+The response was not merely the wrong shape — it was a task stuck in
+`Submitted`, because nothing ever moved it. A client got a task handle for
+work that had already finished and would never progress.
+
+**The earlier guess in §5 was wrong.** That entry read "likely a SUT gap —
+writing `StreamResponse::Message` to the event queue may not be how this SDK
+returns a message-instead-of-task". The SUT was doing the right thing; there
+was simply no code path from that event to a `Message` response. It was
+labelled *observed symptom only, no root cause established*, which is why it
+was a guess rather than a claim — but it still pointed at the wrong component.
+
+**The rule, and why it is narrower than the reference's.** The reference
+treats *any* `Message` event as the response, and its `ActiveTask` consumer
+raises `InvalidAgentResponseError` if further events follow one:
+
+```python
+if isinstance(event, Message):
+    result = event
+    # Do NOT break here as Message is supposed to be the only
+    # event in "Message-only" interaction.
+```
+
+Adopting that verbatim would break every agent here that narrates progress —
+emit a message, then keep working — since those streams would become errors.
+So the response is a `Message` only when the executor produced a message
+**and nothing task-shaped**: no status transition off `Submitted`, no
+artifacts, no `Task` snapshot. For a well-behaved message-only agent that is
+the same answer the reference gives; for a mixed stream the message stays in
+`Task.history` and the task is still returned, exactly as before.
+
+A task row is still created and persisted for a message-only interaction, so
+`GetTask` continues to work for a client that wants one.
+
+Four tests pin this in `send_sync_tests.rs`: the message-only case, and three
+counter-tests — message-then-work still returns the Task, an executor that
+emits no message still returns the Task, and the message-only interaction
+still records a fetchable task. Without the second of those, "return the
+message whenever there is one" would pass the first and break progress
+narration.

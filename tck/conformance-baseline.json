@@ -1,9 +1,6 @@
 {
   "_comment": "Known-failing MUST requirements for the official a2aproject/a2a-tck suite. Regenerate with tck/scripts/check_conformance.py --update. Every entry here is an open defect tracked in docs/official-tck-findings.md \u2014 shrinking this file is the point.",
   "known_failures": {
-    "DM-MSG-001": {
-      "*": "FAIL"
-    },
     "STREAM-SUB-002": {
       "jsonrpc": "FAIL",
       "http_json": "FAIL"
