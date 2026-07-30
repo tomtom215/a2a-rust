@@ -4,7 +4,8 @@
 # Mutation testing — verifies that tests actually detect code changes.
 #
 # Runs cargo-mutants on all library crates and fails if any mutant survives.
-# Scheduled nightly + on-demand; also runs on PRs to main (incremental).
+# Full sweep is scheduled weekly + on-demand; PRs to main run the
+# incremental (diff-only) job instead — see the `on.schedule` cron below.
 #
 # Architecture:
 #   - Full sweep splits into 4 parallel jobs (one per library crate) to avoid
@@ -270,7 +271,15 @@ jobs:
           path: |
             mutants.out/
             /tmp/mutants-run.log
-          retention-days: 30
+          # 90 is the GitHub Actions maximum. This is the weekly full-sweep
+          # report — the only record of the actual surviving-mutant count —
+          # so it should outlive as many weekly runs as possible rather than
+          # rolling off after ~4 sweeps at the previous 30-day setting. This
+          # is a partial fix for the missing persisted ledger (see
+          # book/src/reference/mutation-history.md): it buys more time
+          # before data is lost, it does not replace an actual durable
+          # record.
+          retention-days: 90
 
   # ── Aggregation job ──────────────────────────────────────────────────────────
   #
