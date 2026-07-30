@@ -13,6 +13,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # On demand as well, so a change to the upload step can be proven without
+  # waiting for a merge to main. This job's whole purpose is to publish a
+  # signal; a signal that cannot be tested until it is already live is the
+  # same problem the Codecov comment below describes.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
