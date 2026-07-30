@@ -26,22 +26,24 @@ The **Mutation Testing** workflow (`.github/workflows/mutants.yml`) runs separat
 
 | Mode | Trigger | Scope |
 |------|---------|-------|
-| **Full sweep** | On-demand (`workflow_dispatch`) | All library crates |
+| **Full sweep** | Weekly (Mondays 03:00 UTC) + on-demand (`workflow_dispatch`) | All library crates, sharded across parallel runners (8-way for `a2a-server`) |
 
 Every pull request additionally runs an **incremental** mutation gate:
 `cargo-mutants --in-diff` mutates only the source lines changed in the PR
-and fails on any missed mutant. The nightly full-sweep schedule is
-currently commented out to save CI
-time — a full sweep can take 100+ minutes per crate, and a2a-server alone
-generates 200–400 mutants. The workflow is run manually against `main` when
-test effectiveness is being audited.
+and fails on any missed mutant — this one *is* a blocking PR check, enforced
+on every commit. The full sweep is the one that doesn't run on every
+commit: a full sweep can take 100+ minutes per crate and a2a-server alone
+generates hundreds of mutants, so it runs on its own weekly schedule (plus
+`workflow_dispatch` for an on-demand run against `main`) rather than
+blocking PRs.
 
 The full sweep produces a mutation report artifact with caught/missed/unviable
 counts and a mutation score. The workflow is configured to fail on surviving
-mutants, so when it is invoked a clean run confirms that every caught mutant
-is covered by at least one test. Because it is not wired as a blocking PR
-gate today, the zero-surviving-mutants property is audited on-demand rather
-than enforced on every commit.
+mutants, so a clean weekly run confirms that every caught mutant across the
+whole codebase — not just the surface area of recent PRs — is covered by at
+least one test. The report artifact itself only survives 90 days; see
+[Mutation Testing History](../reference/mutation-history.md) for the
+dated, durable record each sweep should be copied into.
 
 The **Benchmarks** workflow (`.github/workflows/benchmarks.yml`) runs on-demand (`workflow_dispatch`) and on pushes to `main` that affect benchmark or SDK code. It:
 

@@ -371,6 +371,47 @@ not patches for the six spellings the TCK happens to send.
 - `CONTRIBUTING.md`, `GOVERNANCE.md`, `README.md`, and
   `.github/workflows/README.md` updated for the DCO requirement.
 
+### Added (governance, legal, and release policy)
+
+- **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1, with the four-tier
+  enforcement ladder (Correction / Warning / Temporary Ban / Permanent Ban)
+  and a conduct-specific reporting address. Replaces the four-line clause in
+  `GOVERNANCE.md`, which routed conduct reports to the *security* mailbox;
+  that section is now a pointer. The document also states its own limitation:
+  with a single maintainer there is no independent party inside the project to
+  escalate a report *about* that maintainer to.
+- **`NOTICE`** — canonical Apache-2.0-form notice carrying the project
+  copyright and the third-party attributions previously only enumerated in
+  `PROVENANCE.md` (the spec's `a2a.proto`, vendored googleapis stubs, the ITK
+  `instruction.proto`, the a2a-inspector card ruleset).
+- **`.github/ISSUE_TEMPLATE/`** — structured bug-report and feature-request
+  forms, plus a `config.yml` that disables blank issues and routes security
+  reports to GitHub Security Advisories rather than the public tracker.
+- **`RELEASING.md` — "Path to 1.0.0"**: explicit criteria for what would
+  justify a 1.0.0 release (no unresolved MUST-level TCK failures, no coverage
+  regression below the measured floor, a clean full mutation sweep, no open
+  P0/P1s, and a deliberate `pub` API surface review), plus a **post-1.0
+  deprecation policy** — `#[deprecated]` for at least one minor version
+  before removal, removal only in a major bump, with security fixes exempt.
+- **`docs/upstream/`** — a prepared, *unfiled* bug report against
+  `a2aproject/a2a-tck` with a standalone reproduction script, covering a
+  harness defect this SDK triggers by behaving correctly.
+
+### Changed (public API documentation)
+
+- **`otel::init_otlp_pipeline` now documents that it panics outside a Tokio
+  runtime.** Behaviour is unchanged; the precondition was previously
+  undocumented. Calling it outside a runtime raises `there is no reactor
+  running, must be called from the context of a Tokio 1.x runtime` from
+  inside `tonic`'s channel constructor rather than returning `Err` — and
+  because `[profile.release]` sets `panic = "abort"`, that aborts the process
+  in release builds. Also newly documented: the installed `MeterProvider` is
+  process-global and last-write-wins, and `shutdown()` returns an error when
+  metrics have been recorded and no collector is reachable (it attempts a
+  final flush), which graceful-termination code should treat as "metrics may
+  have been lost" rather than as fatal. Found by adding the first test to ever
+  call the function.
+
 ## [0.7.0] - 2026-07-24
 
 Interop, hardening, and edge-case fixes from an independent protocol audit,

@@ -53,6 +53,35 @@ jobs:
         with:
           workspaces: fuzz
 
+      # Restore the corpus this target accumulated on the most
+      # recent previous nightly run (via the restore-keys prefix fallback,
+      # since the exact `key` — unique per run — never hits), then let the
+      # post-job save step write it back under a new unique key. The
+      # run-unique key is deliberate: it's what makes the exact-key lookup
+      # miss and the save fire on every run, per actions/cache's own
+      # documented pattern for a mutating cache. A fixed key would restore
+      # fine but then skip the save silently (exact hit => no save) — this
+      # workflow previously had no cache step at all, so the corpus never
+      # persisted; that failure mode is noted here so nobody "fixes" this
+      # back into it. PR/push smoke runs don't restore or save — they're a
+      # 60s sanity check, not where corpus growth matters — so this can't
+      # make a PR's result depend on unrelated fuzzing history.
+      #
+      # workflow_dispatch is included alongside schedule for two reasons: a
+      # manual long run benefits from the accumulated corpus exactly as the
+      # nightly does, and — more to the point — a schedule-only condition
+      # would leave this step unverifiable until the next nightly fired.
+      # Being able to prove the mechanism on demand is worth the one extra
+      # cache entry a manual run creates.
+      - name: Restore fuzz corpus (nightly / manual runs)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+
       # PRs/pushes: 60s smoke per target. Nightly: 10 min per target.
       - name: Run fuzz target
         run: |

@@ -103,6 +103,75 @@ together. The example crates (`echo-agent`, `agent-team`, `multi-lang-team`,
 `rig-a2a-agent`, `genai-a2a-agent`) and the `a2a-tck` binary are `publish = false`
 and are never published.
 
+## Path to 1.0.0
+
+All four crates are pre-1.0 despite a multi-release history (`a2a-protocol-server`
+is at 0.8.0; the rest at 0.7.0 as of this writing). Nothing below is a promise
+about timing — it exists so "are we ready for 1.0" has a checklist instead of
+a feeling, and so this is answered before, not during, any external review
+(donation, security audit, or otherwise) that asks for it.
+
+### What 1.0.0 commits to
+
+Per [Semantic Versioning](https://semver.org/spec/v2.0.0.html), reaching
+1.0.0 is a promise: **no breaking change to public API, wire format, or
+documented behavior without a major version bump.** Pre-1.0, this project
+already tries to avoid gratuitous breaks (see the deliberate 0.8.0 bump on
+`a2a-protocol-server` for a real semver break, rather than folding it into a
+patch release) — 1.0.0 is where that stops being best-effort and starts being
+the contract.
+
+### Criteria to reach 1.0.0
+
+All of the following, not some:
+
+- **Official TCK: no unresolved MUST-level failures**, and the SKIPPED/NOT
+  TESTED gap is understood and documented (not necessarily zero — see
+  `docs/official-tck-findings.md` §16 — some of it is a suite limitation,
+  not this project's to close). This bar is already met as of this writing;
+  keeping it met through 1.0.0 is the requirement, not reaching it.
+- **Coverage does not regress** below its current measured floor on
+  `crates/*/src` (94% lines / 94% regions / 92% functions at the time of
+  writing — see `codecov.yml`'s `project` status, which already gates on
+  this at PR time).
+- **Mutation score**: the weekly full sweep (`mutants.yml`) is clean —
+  zero surviving mutants workspace-wide — for at least one full sweep
+  immediately before tagging, not just the incremental per-PR gate.
+- **No known `P0`/`P1` open issues** against any of the four published
+  crates.
+- **API surface review**: a deliberate pass over every `pub` item in all
+  four crates asking "do we want to support this shape forever" — not just
+  "does it compile and have a doc comment." This is the one criterion that
+  is inherently a judgment call, not a metric; it should be its own PR,
+  reviewable on its own.
+- **This section itself has been re-read and still describes the actual
+  bar** — a 1.0 criteria list nobody revisits is exactly the kind of stale
+  claim this project treats as a bug elsewhere (see the correction notices
+  in `docs/official-tck-findings.md`).
+
+### Deprecation policy (post-1.0)
+
+Once 1.0.0 ships, removing or changing public API follows this sequence —
+this section takes effect at that point, not before (pre-1.0, breaking
+changes ship in a minor bump with a CHANGELOG entry, as today):
+
+1. **Mark it.** `#[deprecated(since = "X.Y.0", note = "...")]` on the item,
+   pointing at its replacement if one exists. Ship in a minor release.
+2. **Document it.** A CHANGELOG entry under `Deprecated`, and a note in the
+   relevant book page if the item is covered there.
+3. **Keep it working.** A deprecated item must not change behavior or be
+   removed for at least **one minor version** after the release that
+   deprecated it — long enough that `cargo update` alone does not surface a
+   compile error, only a warning.
+4. **Remove it in a major bump.** Deletion is a breaking change by
+   definition and only ships in the next `X.0.0`.
+
+Security fixes are the one exception: a vulnerability in a deprecated (or
+any) API can require immediate removal or behavior change outside this
+sequence, per `SECURITY.md`. Being deprecated does not make something
+exempt from a security fix, and a security fix is not required to preserve
+a deprecated API's old behavior.
+
 ## Troubleshooting
 
 ### Publish fails mid-way

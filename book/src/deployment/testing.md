@@ -239,10 +239,13 @@ survived because no test *verified* the specific behavior being mutated.
 This is why mutation testing is an important quality signal: it is the only
 technique that measures test *effectiveness* rather than test *existence*. Every
 other technique answers "does the code work?" — mutation testing answers "would
-the tests catch it if the code broke?" In this repo the full sweep is run
-on-demand via the `workflow_dispatch` trigger on `.github/workflows/mutants.yml`
-rather than as a blocking PR gate, because a full sweep can take 100+ minutes
-per crate. See [CI/CD](./cicd.md#mutation-testing-workflow) for the full policy.
+the tests catch it if the code broke?" In this repo the full sweep runs weekly
+(Mondays 03:00 UTC) plus on-demand via the `workflow_dispatch` trigger on
+`.github/workflows/mutants.yml`, rather than as a blocking PR gate, because a
+full sweep can take 100+ minutes per crate; a separate incremental sweep
+(`cargo-mutants --in-diff`) *is* a blocking PR gate, scoped to just the lines
+a PR changes. See [CI/CD](./cicd.md#mutation-testing-workflow) for the full
+policy.
 
 ## Mutation Testing
 
@@ -341,11 +344,14 @@ exclude_re = ["^tracing::", "^log::"]
 
 ### CI Integration
 
-- **On-demand**: A full mutation sweep can be triggered via `workflow_dispatch` in
-  `.github/workflows/mutants.yml`. Any surviving mutant fails the build.
+- **Weekly**: a full mutation sweep runs every Monday at 03:00 UTC, sharded
+  across parallel runners (`.github/workflows/mutants.yml`). Any surviving
+  mutant fails the build.
+- **On-demand**: the same full sweep can also be triggered via
+  `workflow_dispatch`, e.g. to re-run it against `main` outside the weekly
+  schedule.
 - **Every pull request** runs the incremental gate (`--in-diff`): only changed
   source lines are mutated, and any missed mutant fails the PR.
-- The nightly full-sweep schedule is currently disabled to save CI time.
 
 ### Interpreting Results
 
