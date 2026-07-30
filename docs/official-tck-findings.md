@@ -83,7 +83,7 @@ only. Of the **114 MUST requirements** the suite knows about:
 |---|---|---|
 | Passing | 88 | measured and conformant on the `full` profile |
 | Failing | **0** | — |
-| `SKIPPED` | 5 | need a differently-configured SUT; 2 of them pass on the `minimal` profile (§12) |
+| `SKIPPED` | 5 | need a differently-configured SUT; 3 of them pass on the `minimal` profile (§12, §15) |
 | `NOT TESTED` | 21 | **the TCK has no test for them at all** |
 
 The last row is not something this SDK can close: those requirements
@@ -472,14 +472,27 @@ failure is not a diagnosis, and labelling it as one costs more than saying
 ## 6. Reproducing every measurement
 
 ```sh
-# SUT
+# SUT — full profile (default), both JSON transports plus gRPC (§11)
 cargo build --release -p a2a-tck-sut
-SUT_HOST=127.0.0.1:9999 ./target/release/a2a-tck-sut &
+SUT_HOST=127.0.0.1:9999 SUT_GRPC_HOST=127.0.0.1:9998 \
+  ./target/release/a2a-tck-sut &
+
+# SUT — minimal profile (§12), makes the capability-rejection paths
+# (CORE-CAP-001/002/003) observable; run against its own ports so both
+# profiles can be up at once
+SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \
+  ./target/release/a2a-tck-sut &
 
 # Official suite
 git clone --depth 1 https://github.com/a2aproject/a2a-tck /tmp/a2a-tck
 cd /tmp/a2a-tck && uv venv && uv pip install -e .
-./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9999
+./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9999   # full
+./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997   # minimal
+
+# reports/compatibility.json is OVERWRITTEN by each run — copy it out
+# immediately after each invocation if you need to compare both profiles,
+# rather than re-reading it later and assuming it still holds the first
+# run's data (§15 was a live lesson in exactly this mistake).
 
 # Reference-SDK acceptance (§3.1)
 uv venv && uv pip install 'a2a-sdk[http-server,grpc,sqlite]'
@@ -898,6 +911,7 @@ Result on the `minimal` profile:
 |---|---|---|
 | `CORE-CAP-001` (push rejected when unsupported) | SKIPPED | **PASS** (both bindings) |
 | `CORE-CAP-002` (streaming rejected when unsupported) | SKIPPED | **PASS** (`jsonrpc`) |
+| `CORE-CAP-003` (extended card rejected when unsupported) | SKIPPED | **PASS** (`jsonrpc`) — see §15 |
 | `CORE-CAP-004` | SKIPPED | SKIPPED |
 
 ### One test errors under this profile, and no fault is assigned yet
@@ -929,19 +943,24 @@ requirement result, and the gate returns 0 on the minimal-profile report.
 
 ### Still open
 
-- `CORE-CAP-004`: skipped under both profiles; the precondition has not been
-  identified.
+- `CORE-CAP-004`: skipped under both profiles. Root cause identified in
+  §15 — the SUT's card never declares the sentinel extension the test
+  requires, on either profile. This is a SUT-config gap, not an undiagnosed
+  one; product-side enforcement (`ensure_required_extensions`) already exists
+  and is unit-tested. Not yet closed.
 - `CARD-EXT-002`: needs a server that *declares* `extendedAgentCard` while
   having no extended card configured. This SDK cannot enter that state — the
-  handler derives the extended card from the configured agent card, so
-  declaring the capability and having no card are mutually exclusive. The
-  requirement is structurally inapplicable here rather than unmeasured.
-- `CARD-EXT-001`: the `full` profile now declares `extendedAgentCard` and opts
-  into serving it unauthenticated (§13.3 otherwise refuses without an
-  authenticating interceptor, and the suite has no credentials to present).
-  It still reports `SKIPPED`; why has not been diagnosed.
+  handler derives the extended card from the configured agent card (verified
+  directly in `handler/lifecycle/extended_card.rs`), so declaring the
+  capability and having no card are mutually exclusive. The requirement is
+  structurally inapplicable here rather than unmeasured.
 - The 21 `NOT TESTED` MUSTs remain untouchable from here — `a2a-tck` has no
   tests for them.
+
+`CARD-EXT-001` is **not** on this list — §13 fixed it and it passes on all
+three bindings. An earlier revision of this section still listed it here as
+undiagnosed after §13 shipped; that was stale documentation, not a live
+finding. See §15.
 
 ## 13. `AgentCard.url` is a v0.3 field the v1.0 schema does not have
 
@@ -1039,3 +1058,243 @@ otherwise off the table for this project.
 **Not done here:** no issue has been filed against `a2aproject/a2a-inspector`
 by this session — that's a human call on a repo this project doesn't own.
 The actual fix is upstream, whenever it lands.
+
+## 15. The fifth `SKIPPED` MUST was never named: it is `CORE-CAP-003`, not `CARD-EXT-001`
+
+*Resolved by live re-run, not by re-reading this document. Confidence:
+verified.*
+
+§1 has said "5 `SKIPPED`" MUST requirements since §11, but between §12 and
+§13 this document drifted into naming only four of them
+(`CORE-CAP-001`, `CORE-CAP-002`, `CORE-CAP-004`, `CARD-EXT-002`) while §12's
+"Still open" list carried `CARD-EXT-001` as a fifth, undiagnosed entry —
+even though §13, immediately below it, fixed `CARD-EXT-001` and reported it
+passing on all three bindings. That is two sections disagreeing about the
+same requirement, and neither pointed at the actual fifth skip.
+
+This was re-run rather than re-derived from the existing text, per this
+project's own rule that the doc is not a source of truth for its own
+disputed claims. Environment: `a2a-tck` at `5996b79`
+(`main`, 2026-06-29), official suite run against `tck/sut` built from this
+commit, both profiles, exactly as `official-tck.yml` runs them.
+
+**`full` profile** (`SUT_HOST=127.0.0.1:9999 SUT_GRPC_HOST=127.0.0.1:9998`):
+
+```
+246 passed, 19 skipped in 125.57s (0:02:05)
+MUST: 88 passed / 0 failed / 5 skipped / 21 not tested   (of 114)
+```
+
+Reading `reports/compatibility.json` directly (not the summary table) for
+every MUST-level `SKIPPED` entry gives the exact five:
+
+```
+CARD-EXT-002   {jsonrpc: SKIPPED, http_json: SKIPPED, grpc: SKIPPED}
+CORE-CAP-001   {jsonrpc: SKIPPED, http_json: SKIPPED}
+CORE-CAP-002   {jsonrpc: SKIPPED}
+CORE-CAP-003   {jsonrpc: SKIPPED}
+CORE-CAP-004   {jsonrpc: SKIPPED, http_json: SKIPPED}
+```
+
+`CARD-EXT-001` is not in this list — its status in the same report is
+`PASS` on all three transports (`grpc`, `jsonrpc`, `http_json`). §13's claim
+is correct and current; §12's "still open" bullet about it was simply never
+updated after §13 landed. The genuine, previously-unnamed fifth skip is
+**`CORE-CAP-003`** — "`GetExtendedAgentCard` MUST return
+`UnsupportedOperationError` when `capabilities.extendedAgentCard` is false or
+absent" (`tck/requirements/core_operations.py`). It skips on the `full`
+profile for the same structural reason `CORE-CAP-001`/`002` do: that profile
+*does* advertise `extendedAgentCard`, so the test's own precondition
+(`if caps.get("extendedAgentCard"): pytest.skip(...)`) takes the skip branch
+before asserting anything.
+
+**`minimal` profile** (`SUT_PROFILE=minimal`, no capabilities advertised)
+makes it observable, exactly as it already does for `CORE-CAP-001`/`002` —
+this is not a new SUT change, the existing minimal-profile CI job already
+exercises it:
+
+```
+181 passed, 83 skipped (+ 1 pytest-level error, HTTP_JSON-SSE-001 — §12, unrelated)
+CORE-CAP-001   {jsonrpc: PASS, http_json: PASS}
+CORE-CAP-002   {jsonrpc: PASS}
+CORE-CAP-003   {jsonrpc: PASS}
+CORE-CAP-004   {jsonrpc: SKIPPED, http_json: SKIPPED}
+```
+
+`CORE-CAP-003` passes cleanly. It was already being closed by the
+`minimal`-profile job that exists for `CORE-CAP-001`/`002` — it just had no
+row in §12's table and no name anywhere in this document, so nobody had
+verified it, and the "5 skipped" count had drifted into being explained by
+the wrong four-plus-one.
+
+**While tracing `CORE-CAP-004`'s "precondition not identified" claim**, the
+precondition turned out to be identifiable, not mysterious: the test requires
+the agent card to declare an extension with URI
+`urn:a2a:tck:required-extension` and `required: true`
+(`test_error_handling.py::TestCapabilityExtensionRequired`). Neither SUT
+profile's card declares any `capabilities.extensions` at all — confirmed by
+fetching both live cards and grepping `tck/sut/src/main.rs` for the sentinel
+URI (zero hits). The server-side enforcement this would exercise already
+exists and is unit-tested (`handler/capability.rs::ensure_required_extensions`,
+covered by `missing_required_extension_is_rejected` and
+`get_task_enforces_required_extension`).
+
+**This is not a drop-in SUT-config change, though — it carries real
+regression risk, traced (not assumed) through `builder.rs` and
+`handler/messaging.rs`.** `ensure_required_extensions` is derived once from
+*every* extension the card marks `required: true`
+(`builder.rs`, precomputing `required_extensions` from
+`agent_card.capabilities.extensions`) and is enforced on **every**
+`SendMessage`/`SendStreamingMessage` call (`handler/messaging.rs:211`), not
+scoped to the one TCK test that's supposed to trigger it. Declaring the
+sentinel extension as required on either existing profile's card would make
+*every other* message-send in the full suite subject to the same check —
+and nothing else in the suite declares
+`A2A-Extensions: urn:a2a:tck:required-extension`, so it would very likely
+reject every other currently-passing test that sends a message against that
+profile (176–181 of them, by the counts above), not just the one test meant
+to exercise it. Both existing profiles run the *entire* suite, not a
+filtered subset, so this is not a theoretical concern.
+
+Closing this safely needs a third SUT profile carrying only the sentinel
+extension, plus an empirical full-suite run against it to confirm nothing
+else regresses — not a one-line card edit. That is a bounded, well-specified
+piece of work, but it is a task in its own right with its own verification
+burden, and it was not undertaken in this pass in order to avoid touching the
+gate on a guess. Recorded here, with the exact mechanism, so the next pass
+does not have to re-derive it or discover the regression risk the hard way.
+
+**Net correction to §1 and §12:** the "5" was always right; the four-named
+explanation was wrong, and `CARD-EXT-001` was wrongly on the open list. §1's
+`SKIPPED` row and §12's table and "Still open" list have been updated to
+match this section.
+
+## 16. What the 21 `NOT TESTED` MUSTs actually are, one family at a time
+
+*Investigated live. Confidence: verified — every claim below is either a
+direct grep of `a2a-tck`'s `tests/` tree, a read of its `requirements/*.py`
+registry, or a read of its own `backlog/tasks/*.md`, not an inference from
+this document's prior wording.*
+
+§1 already says the `NOT TESTED` row can't be closed from this repo,
+because the suite has no test for those IDs. That claim is correct but was
+not, until now, checked against the suite's actual test tree — it was
+inherited from earlier sessions. It has now been checked directly.
+
+**Method.** `_add_untested_requirements` in `a2a-tck`'s
+`tck/reporting/aggregator.py` marks a requirement `NOT TESTED` if and only if
+zero pytest results reference its ID — mechanically, not based on SUT
+behaviour. So the operative question per family is not "why doesn't the SUT
+trigger it" (there is nothing to trigger) but "does any test function
+exist for this ID at all", which is answered by grepping
+`tests/compatibility/` for the literal requirement ID string. Run for all 21:
+
+```
+$ for id in <all 21 IDs>; do grep -rln "\"$id\"" tests/; done
+# zero matches for every single one
+```
+
+**All 21 have zero test implementations.** None of them are a SUT
+configuration gap or a product-code gap in the sense the earlier framing
+assumed ("the SUT doesn't currently exercise the code path") — there is no
+code path in the suite to exercise. No change to `tck/sut`, and no change to
+`crates/a2a-protocol-server`, can move any of these 21 out of `NOT TESTED`
+via the official TCK as it exists today. They fall into three groups, each
+confirmed from a different part of the suite's own source:
+
+**Group 1 — tagged `not-automatable` by the suite's own authors (6
+requirements: `CARD-SIGN-001..004`, `AUTH-TLS-001`, and `GRPC-SVC-003` by
+explicit code comment).** `tck/requirements/agent_card.py` tags all four
+`CARD-SIGN-*` specs `NOT_AUTOMATABLE` — they describe internal properties of
+the *signing process* (JCS canonicalization before signing, excluding the
+`signatures` field from the signed payload, protected-header shape, stale-key
+rejection over time), not externally observable request/response behaviour a
+black-box HTTP client can assert on. `AUTH-TLS-001` ("production deployments
+MUST use encrypted communication") carries the same tag for a different
+reason — the suite talks to whatever host it's given and has no way to know
+whether that endpoint is "production". `GRPC-SVC-003` ("gRPC over HTTP/2
+with TLS") isn't tagged, but carries the source comment
+`# Not tested: TLS is a production deployment concern.` directly above it —
+same reasoning, undeclared as a formal tag. **This SDK's `signing` feature
+already covers three of the four `CARD-SIGN-*` concerns in its own test
+suite**, independently of the TCK's inability to grade any of them —
+checked directly in `crates/a2a-protocol-types/tests/signing_tests.rs` and
+`src/signing.rs`: JCS canonicalization is covered extensively (key sorting,
+whitespace, escaping, nesting, numeric formatting — `CARD-SIGN-001`), the
+`signatures` field is excluded from the canonical payload with a test and a
+comment saying so (`CARD-SIGN-002`), and `alg`/`kid` protected-header
+presence is asserted directly (`CARD-SIGN-003`). **`CARD-SIGN-004`
+("expired or revoked keys MUST NOT be used for verification") has no
+equivalent coverage, and on inspection that's because the concept doesn't
+exist in this module at all** — `signing.rs`'s public surface is
+`canonicalize` / `canonicalize_card` / `sign_agent_card` /
+`verify_agent_card`; there is no key-expiry or revocation notion anywhere in
+it. That may be a reasonable layering choice (key lifecycle is arguably a
+caller/JWKS-resolution concern, not the raw sign/verify primitive's job),
+but it means `CARD-SIGN-004` isn't "tested elsewhere" the way the other
+three are — it's simply not a capability this module has today. This
+corrects this document's earlier framing that CARD-SIGN was the
+highest-value, most tractable gap to close: it is not tractable via the
+official TCK at all, and only 3 of its 4 sub-requirements are actually
+covered by this SDK's own tests.
+
+**Group 2 — ruled out of scope by the suite's own backlog (2 requirements:
+`VER-CLIENT-001`, `VER-CLIENT-002`).** `backlog/archive/tasks/task-30` (this
+project's own `a2a-tck` checkout, `main` at `5996b79`) carries the
+implementation note: *"Won't Do: Testing the A2A client (i.e. the TCK
+itself) is out of scope for TCK conformance tests."* Both requirements
+describe **client**-side obligations (send an `A2A-Version` header; ignore
+patch versions when negotiating) — and the TCK is architecturally a client
+that only ever tests servers. Testing these would mean testing the TCK's own
+HTTP client code, which its maintainers have explicitly declined to do. This
+is a permanent, structural exclusion, not a backlog item awaiting
+implementation.
+
+**Group 3 — genuine, roadmapped, upstream coverage gaps (13 requirements:
+`AUTH-SERVER-002`, `AUTH-INTASK-001..004`, `AUTH-SCOPE-001..003`,
+`BIND-EQUIV-001..004`, `VER-SERVER-001`).** These are real backlog items,
+each with an open ticket, `status: To Do`, in `a2a-tck`'s own
+`backlog/tasks/`:
+
+- `task-27` (priority medium) covers the 9 `AUTH-*` MUSTs in this group
+  (plus 4 more `SHOULD`-level ones not in our 21). Its own text: *"TLS
+  requirements may need a separate SUT configuration with TLS enabled.
+  In-task auth and scope requirements need SUT scenarios that exercise the
+  auth flow."* — i.e. even upstream's plan requires new SUT behavioural
+  contracts (an agent that actually enters `TASK_STATE_AUTH_REQUIRED`, and a
+  multi-identity/multi-tenant scenario for scope isolation), not just a new
+  assertion against the existing SUT.
+- `task-28` (priority medium) covers all 4 `BIND-EQUIV-*`. Its own text:
+  *"These require cross-transport comparison tests — send the same request
+  via gRPC, JSON-RPC, and HTTP+JSON and verify the responses are
+  semantically equivalent. This is a different testing pattern than
+  single-transport tests."* — the suite's current tests all assert against
+  one transport at a time; equivalence tests are a structurally different
+  shape it doesn't have yet.
+- `VER-SERVER-001` was bundled into the same (archived) `task-30` as the two
+  `VER-CLIENT-*` "Won't Do" items, but the "won't do" reasoning is specific
+  to testing the TCK's own client and does not obviously apply to
+  `VER-SERVER-001`, which is a **server**-side requirement (the agent must
+  process a request using the semantics of the version it declared). Its
+  ticket is archived alongside its "won't do" siblings without its own
+  separate disposition recorded. This project cannot resolve that ambiguity
+  unilaterally — it is upstream's ticket.
+
+One correction of scope, found while reading `versioning.py` in full for
+this section: `VER-SERVER-002` and `VER-SERVER-003` are **not** in the 21 —
+both already have tests and both **pass** (`test_unsupported_version_returns_error_*`,
+`test_empty_version_treated_as_default_jsonrpc`). Only 3 of the 5 `VER-*`
+MUSTs are untested, not the whole family.
+
+**Net effect on the suggested next step.** Closing any of these 21
+requires writing new test code in `a2aproject/a2a-tck`, not this repository
+— for Group 1, that would mean overturning an explicit upstream design
+decision (unlikely to be accepted); for Group 2, the same; for Group 3, it
+means picking up an existing, already-scoped upstream backlog item, which is
+real, valuable work but is a contribution to someone else's project.
+Per this project's own rule that outward-facing action needs a human
+decision first, **no upstream issue or PR has been filed or drafted by this
+session** — this section is a report of what was found, not an action taken.
+The one item that *can* be closed inside this repository —
+`CORE-CAP-004`, which is `SKIPPED` rather than `NOT TESTED` — is covered in
+§15, including why it wasn't done in this pass either.
