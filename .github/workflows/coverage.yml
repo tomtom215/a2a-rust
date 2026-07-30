@@ -68,13 +68,16 @@ jobs:
         # so fail_ci_if_error below has teeth again — if this regresses, it
         # should be loud, not silently green.
         #
-        # One caveat this fix does not fully explain: Codecov's own API
-        # (api.codecov.io/api/v2/github/tomtom215/repos/a2a-rust/commits/)
-        # shows no successful upload since 2026-05-25, two weeks before this
-        # workaround was even added — so whatever first broke uploads may
-        # predate the keybase migration. If the dashboard is still not
-        # updating after this lands on `main`, look for a second cause
-        # (e.g. `CODECOV_TOKEN` validity) rather than assuming this was it.
+        # Proven end-to-end, not just reasoned about: this job was dispatched
+        # on the branch carrying the bump, completed green with
+        # `fail_ci_if_error: true` and no `continue-on-error` (so a failed
+        # upload would have failed the job), and Codecov's own API then
+        # reported the commit as `state: complete` with coverage attached.
+        # An earlier revision of this comment carried a caveat that Codecov
+        # showed no upload since 2026-05-25, predating the outage, and warned
+        # of a possible second cause; that dispatch disproved it — there was
+        # no second cause, and the caveat has been removed rather than left
+        # standing as a stale warning.
         uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           files: lcov.info
