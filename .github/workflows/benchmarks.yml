@@ -271,16 +271,30 @@ jobs:
           # block — accidental O(n²) loops, allocator thrash, lost
           # inlining in hot paths — while staying honest about CI
           # noise. Change when moving to self-hosted runners.
-          # Per-benchmark override: `from_str/16384` has repeatedly shown
-          # tight-CI swings past even the 50% gate on identical code — a
-          # 16 KiB parse is small enough (~tens of µs) that allocator and
-          # cache-layout luck dominate at exactly this size (its 4 KiB and
-          # 100 KiB neighbours are stable). Give that one benchmark a 75%
-          # tolerance instead of loosening the gate for everything else.
+          # Per-benchmark exclusion, not just an override: `from_str/16384`
+          # doesn't just need a wider tolerance than the default 50% gate —
+          # its percentage swing isn't a reliable signal at all. Confirmed
+          # 2026-07-29 on PR #99: two CI runs on the *same* commit measured
+          # +169% and +175% (tight CIs, ~1pp wide). A local reproduction
+          # using this job's exact build (LTO off, codegen-units=16,
+          # sequential same-target-dir checkout, matching sample flags)
+          # first matched CI at +175%, then measuring the *same* commit pair
+          # again immediately after flipped to -15%. A bisection of every
+          # commit on that PR against main showed every one an improvement
+          # (-5% to -21%), never a regression. `from_slice/16384` — same
+          # Message/Part Deserialize impl, same size, different reader —
+          # never wobbles. This is per-process-launch layout/allocator
+          # noise (ASLR-class), not an algorithmic effect: the *within-run*
+          # confidence interval is tight because all 30 samples in one
+          # process share that launch's layout, but the *between-launch*
+          # variance is large enough to blow past any fixed percentage
+          # tolerance we'd pick. A 75% override already tried and wasn't
+          # enough. See book/src/reference/regression-gate.md's
+          # "Per-benchmark exclusions" section for the full writeup.
           python3 benches/scripts/check_regression.py \
             --target-dir target/criterion \
             --threshold 0.50 \
-            --override '*/from_str/16384=0.75' \
+            --exclude '*/from_str/16384' \
             | tee /tmp/regression.txt
           echo "::endgroup::"
 
@@ -291,7 +305,7 @@ jobs:
             echo "# Benchmark Regression Gate"
             echo ""
             echo "Compared this PR against \`${{ github.base_ref }}\` on \`transport_throughput\` and \`protocol_overhead\`."
-            echo "Threshold: **50 %** (95 % CI lower bound of the median); per-benchmark overrides are listed inline as \`[override N%]\`."
+            echo "Threshold: **50 %** (95 % CI lower bound of the median); per-benchmark overrides are listed inline as \`[override N%]\`, exclusions as \`[EXCLUDED]\`."
             echo ""
             echo "See [book/src/reference/regression-gate.md](../book/src/reference/regression-gate.md) for why the threshold is this forgiving on GitHub-hosted runners."
             echo ""
