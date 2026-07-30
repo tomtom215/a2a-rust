@@ -10,7 +10,207 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Note on crate versions in this section
+
+`a2a-protocol-server`'s `Cargo.toml` is at **0.8.0** while
+`a2a-protocol-types`/`a2a-protocol-client`/`a2a-protocol-sdk` remain at 0.7.0,
+ahead of the lockstep bump `RELEASING.md` otherwise calls for. This is
+deliberate, not a mismatch to fix: `cargo-semver-checks` (which compares
+against the last crates.io release) correctly flagged two breaking changes in
+this section — `InMemoryQueueReader`/`SendMessageResult` losing
+`UnwindSafe`/`RefUnwindSafe` (the streaming reattach hook below adds a
+`dyn Fn` field) and `HandlerLimits` gaining two `pub` fields (the same fix's
+reattach/idle bounds) — and per Rust's 0.x convention a breaking change bumps
+the minor position. Bumping only the crate that actually broke, rather than
+all four in lockstep, keeps that check meaningful without pre-deciding the
+next release's version for crates it found no issue with. The next real
+release should reconcile all four to whatever version it cuts, per the
+existing `RELEASING.md` checklist.
+
+### Added
+
+- **Unrecognised request parameters are now logged instead of vanishing.** The
+  specification requires implementations to *ignore* unknown fields for
+  forward compatibility (§11; the official TCK grades this as
+  `DM-SERIAL-005`), so `ListTasks` with `{"contxtId": …}` must keep returning
+  every task rather than erroring. It no longer does so invisibly: the
+  JSON-RPC binding diffs each request's top-level keys against the ones the
+  method understands and warns about the difference, naming them. Honouring
+  §11 on the wire and telling the operator what was discarded are not in
+  conflict.
+
+  The accepted-key lists live on a new `AcceptedFields` trait and are verified
+  against `a2a.proto` by `proto_field_alias.rs`, so a list that drifts short
+  (spurious warnings) or long (silenced real ones) fails the build.
+
+- **The TCK SUT takes a `SUT_PROFILE`.** `CORE-CAP-001/002/004` check that a
+  server rejects push and streaming operations it never advertised, and the
+  suite skips them against an agent that does advertise them — so those paths
+  were unreachable from a single SUT, and the gate could never have caught a
+  regression in `ensure_streaming_supported` / `ensure_push_supported`.
+  `SUT_PROFILE=minimal` advertises nothing; CI runs the suite once per profile
+  and gates both. `CORE-CAP-001` and `CORE-CAP-002` now pass rather than skip.
+
+- **The TCK SUT serves gRPC.** Its agent card advertised only `JSONRPC` and
+  `HTTP+JSON`, and the TCK builds one client per advertised interface — so the
+  whole `GRPC-*` family and every core requirement's gRPC leg reported
+  `SKIPPED` while this SDK shipped a gRPC binding. The suite went from
+  `176 passed / 89 skipped` to **`244 passed / 21 skipped`, still 0 failed**,
+  and MUST-level `SKIPPED` from 11 to 5. The binding passed everything on
+  first exposure, so this closed no defects — it closed a hole in what the
+  score was measuring. `SUT_GRPC_HOST` overrides the port.
+
+### Changed
+
+- **`AgentCard.url` is no longer emitted.** It is the v0.3 top-level URL; the
+  v1.0 `AgentCard` has no `url` field, `supportedInterfaces` replaced it, and
+  emitting it made this SDK's card fail the specification's own JSON schema
+  (`'url' does not match any of the regexes: …`) — reported by `CARD-EXT-001`
+  on both JSON bindings while gRPC passed, since protobuf cannot carry a field
+  the schema does not define.
+
+  The field is still **parsed**, so a card published by a v0.3 peer still
+  loads; the reference implementation does the same, folding `url` into
+  `supportedInterfaces`. To publish an agent's address, use
+  `supported_interfaces`. Same policy as the `securitySchemes` change below:
+  accept both vintages, emit only v1.0.
+
 ### Fixed
+
+- **A `SubscribeToTask` stream ended when the executor exited, not when the
+  task finished.** Spec §3.1.6: "The stream MUST terminate when the task
+  reaches a terminal state." A task's event queue lives exactly as long as one
+  executor invocation, so an agent that parked a task in `input_required`
+  destroyed the queue at every turn boundary — closing the stream while the
+  task was still running, having reported no terminal state at all.
+
+  `InMemoryQueueReader` gained an optional reattach hook, consulted when its
+  channel closes: terminal task → emit a `TaskStatusUpdateEvent` carrying that
+  status and end; task gone → end; still running → wait for the next turn's
+  queue and continue. The send path, executor lifecycle and queue manager are
+  untouched.
+
+  Two new `HandlerLimits` bound the wait: `subscribe_reattach_interval`
+  (250 ms) and `subscribe_max_idle` (5 min), after which the stream ends and
+  the client may resubscribe per §3.5.2.
+
+  One in-repo test asserted the defect as a requirement and was rewritten.
+
+  This closes the last baselined failure: the official TCK now reports
+  **176 passed, 0 failed**, MUST compatibility **100%**, and
+  `tck/conformance-baseline.json` is empty. That figure covers *tested*
+  requirements only — 21 MUST requirements still report `NOT TESTED` because
+  the SUT does not exercise them, and are a coverage gap rather than a pass.
+
+- **A blocking `SendMessage` could never return a direct `Message`.** Spec
+  §3.1.1 allows either a `Task` or a `Message`; `SendMessageResponse::Message`
+  was never constructed anywhere in the server, so an agent that replied with
+  a message got back a task stuck in `Submitted`. The response is now a
+  `Message` when the executor produced a message and nothing task-shaped —
+  narrower than the reference, which errors on mixed streams and would break
+  agents that narrate progress. Closes `DM-MSG-001`.
+
+### Changed
+
+- **`AgentCard.securitySchemes` is now emitted in the v1.0 wire shape.**
+  `SecurityScheme` is a protobuf `oneof` in `a2a.proto`, so its ProtoJSON
+  encoding is a single-key object naming the arm
+  (`{"apiKeySecurityScheme": {"location": "header", …}}`). This SDK emitted the
+  v0.3 OpenAPI-style form instead (`{"type": "apiKey", "in": "header", …}`).
+
+  A reference `a2a-sdk` client parsed that via its own legacy-compatibility
+  shim, so this was not an interop break with the reference. But a peer feeding
+  the card straight to `ParseDict(…, ignore_unknown_fields=True)` — the same
+  option the reference resolver itself passes — got schemes with **empty
+  contents**, and would conclude the agent supports no usable authentication.
+  That is the silent-wrong-data failure mode again, pointed the other way
+  across the wire. Verified by feeding this SDK's own card bytes to three
+  reference parsers.
+
+  **Both encodings are accepted** (the v1.0 form under either the `json_name`
+  or the proto field-name spelling of the arm, and the v0.3 form), and a v0.3
+  scheme normalises to the v1.0 form on re-emission. `ApiKeySecurityScheme`
+  emits `location` — the proto field name — with `in` kept as an alias.
+
+  This is a breaking change to a published wire format: the bytes on
+  `/.well-known/agent-card.json` change. It only affects a consumer reading the
+  card's raw JSON keys rather than parsing it with an A2A implementation, and
+  deserialization is strictly more permissive than before. Five in-repo tests
+  asserted the old encoding and passed confidently; they now assert the v1.0
+  encoding plus v0.3 acceptance. See `docs/official-tck-findings.md` §7.
+
+### Fixed
+
+- **`SendMessageConfiguration.taskPushNotificationConfig` was parsed and
+  dropped, so no webhook was ever registered or delivered.** The schema is
+  explicit that this is how a client subscribes at send time — *"Task id should
+  be empty when sending this configuration in a `SendMessage` request"* — and
+  the reference implementation registers it before the executor starts. This
+  SDK deserialised the field and never looked at it again:
+  `ListTaskPushNotificationConfigs` came back empty and no notification fired.
+
+  The config is now registered against the created task, with `taskId` filled
+  in server-side, at the point the task is saved and before the executor is
+  spawned, so the first status transition is already covered. Registration
+  reuses the standalone `CreateTaskPushNotificationConfig` validation —
+  capability check, task existence, SSRF screening, per-task and global quotas
+  — rather than writing to the store directly, so the inline path cannot become
+  an unguarded back door. Four counter-tests drive each of those guards to a
+  failure through the inline path specifically.
+
+  Against the official TCK this closes all six `PUSH-DELIVER-001/002/003` legs
+  across both bindings, taking the run from 166/10 to **172/4** and MUST
+  compatibility from 93.9% to **97.6%**. The baseline shrinks from 9 pairs
+  across 5 requirements to 3 across 2.
+
+  **Behaviour change:** a `SendMessage` carrying an inline push config against
+  a server with no push support now fails with `PushNotSupported` instead of
+  succeeding and ignoring the config. The reference skips silently here; this
+  SDK does not, on the same reasoning as the alias fix below — a client that
+  asked for notifications and will never receive any should be told.
+
+- **Request parameters spelled with the protobuf field name were silently
+  ignored, turning a filter into wrong data.** The A2A JSON model is generated
+  from `a2a.proto`, and protobuf's canonical JSON mapping requires parsers to
+  accept **both** the proto field name (`context_id`) and its `json_name`
+  (`contextId`). This SDK accepted only the latter and ignored the former, so
+  `ListTasks` with `{"context_id": "ctx-A"}` returned **every** task instead of
+  the 3 in that context — no error, just the wrong answer. The official TCK
+  sends the snake_case spelling for six fields; the reference implementation
+  (`a2a-sdk` 1.1.2, whose types *are* protobuf messages) accepts both.
+
+  All 73 multi-word fields across the 44 schema messages now accept both
+  spellings and still emit only the `json_name`, per spec §5.5.
+
+  The alias list is derived from `a2a.proto` rather than from the Rust field
+  names — deriving it from the Rust names would prove only that the aliases
+  match the Rust identifiers, and would go stale silently as the schema grows.
+  `proto_field_alias.rs` parses the schema, computes camelCase with protobuf's
+  own `ToJsonName` rather than serde's `rename_all`, and asserts per field that
+  both spellings parse to the same value, that the sample used is
+  distinguishable from the field being absent, that only the `json_name` is
+  emitted, and that every schema field is covered or explicitly exempt. Five
+  counter-tests drive each direction to a deliberate failure.
+
+  Against the official TCK this closes 7 MUST-level (requirement, transport)
+  pairs — `CORE-HIST-002`, `PUSH-CREATE-001/002`, `PUSH-DEL-001/002`,
+  `PUSH-GET-001`, `PUSH-LIST-001` — taking the run from 158/12 to 166/10 and
+  MUST compatibility from 85.4% to 93.9%. `tck/conformance-baseline.json`
+  shrinks from 16 pairs across 12 requirements to 9 across 5.
+
+  **Not fixed, and deliberately not fixable this way:** a parameter misspelled
+  any *other* way (`contextID`, `contxtId`, `pagesize`) is still ignored.
+  Rejecting unknown fields would close it, and was implemented and then
+  reverted — the specification says implementations **SHOULD** ignore
+  unrecognized fields for forward compatibility (§11), and the official TCK
+  grades that as `DM-SERIAL-005`, which the change failed on both bindings.
+  Pinned by `unrecognised_fields_are_ignored_not_rejected` so it is not
+  re-attempted; see `docs/official-tck-findings.md` §3.3(b).
+
+  Two deliberate divergences are recorded rather than papered over: a request
+  carrying *both* spellings of one field is rejected here (`-32602 duplicate
+  field`) where the reference takes the last key, and `AgentCard.securitySchemes`
+  is still emitted in the v0.3 shape (§7 of the same document).
 
 - **Mid-stream SSE errors escaped their JSON-RPC envelope, so no conformant
   client could read them.** Success frames on the JSON-RPC binding are wrapped

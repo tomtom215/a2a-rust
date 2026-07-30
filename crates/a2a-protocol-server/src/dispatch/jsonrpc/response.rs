@@ -65,15 +65,70 @@ pub(super) fn error_response_bytes(id: JsonRpcId, err: &ServerError) -> Vec<u8> 
     serde_json::to_vec(&resp).unwrap_or_default()
 }
 
-pub(super) fn parse_params<T: serde::de::DeserializeOwned>(
-    rpc_req: &JsonRpcRequest,
-) -> Result<T, ServerError> {
+pub(super) fn parse_params<T>(rpc_req: &JsonRpcRequest) -> Result<T, ServerError>
+where
+    T: serde::de::DeserializeOwned + a2a_protocol_types::params::AcceptedFields,
+{
     let params = rpc_req
         .params
         .as_ref()
         .ok_or_else(|| ServerError::InvalidParams("missing params".into()))?;
-    serde_json::from_value(params.clone())
-        .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))
+    let parsed = serde_json::from_value(params.clone())
+        .map_err(|e| ServerError::InvalidParams(format!("invalid params: {e}")))?;
+    warn_unrecognized_params::<T>(&rpc_req.method, params);
+    Ok(parsed)
+}
+
+/// Logs any top-level parameter key the method does not understand.
+///
+/// The specification requires unrecognized fields to be **ignored**, not
+/// rejected (§11; the official TCK grades this as `DM-SERIAL-005`), and this
+/// function deliberately does not change that — the request has already
+/// succeeded by the time it runs.
+///
+/// What it changes is whether the operator can *see* it. Ignoring a filter
+/// parameter silently is how `{"contxtId": "…"}` returns every task instead of
+/// one context's: correct per §11, indistinguishable from a working request
+/// per the response. A warning turns that from invisible into diagnosable
+/// without touching the wire contract.
+///
+/// Only top-level keys are checked. Nested objects would need the same
+/// treatment to be thorough, and the parameters that silently change a
+/// result set — the filters and pagination controls — are all top-level.
+fn warn_unrecognized_params<T: a2a_protocol_types::params::AcceptedFields>(
+    method: &str,
+    params: &serde_json::Value,
+) {
+    let unknown = unrecognized_params(T::accepted_fields(), params);
+    if !unknown.is_empty() {
+        trace_warn!(
+            method = %method,
+            unknown_params = ?unknown,
+            "request carried parameters this method does not recognize; \
+             ignoring them per spec §11 (forward compatibility). If a filter \
+             or pagination value looks wrong, check these for a typo."
+        );
+    }
+    let _ = (method, unknown);
+}
+
+/// Returns the top-level keys of `params` that are not in `accepted`.
+///
+/// Split out from the logging so the detection is testable on its own: the
+/// warning goes through `trace_warn!`, which compiles to nothing unless the
+/// `tracing` feature is on, so asserting on log output would prove nothing in
+/// a default build.
+fn unrecognized_params<'a>(accepted: &[&str], params: &'a serde_json::Value) -> Vec<&'a str> {
+    let Some(object) = params.as_object() else {
+        return Vec::new();
+    };
+    // `accepted_fields` is sorted and deduplicated — asserted against the
+    // schema in `proto_field_alias.rs` — so a binary search is sound.
+    object
+        .keys()
+        .filter(|k| accepted.binary_search(&k.as_str()).is_err())
+        .map(String::as_str)
+        .collect()
 }
 
 pub(super) fn success_response<T: serde::Serialize>(
@@ -408,5 +463,56 @@ mod tests {
             .headers()
             .get(a2a_protocol_types::A2A_VERSION_HEADER)
             .is_some());
+    }
+}
+
+#[cfg(test)]
+mod unrecognized_param_tests {
+    use super::unrecognized_params;
+    use a2a_protocol_types::params::{AcceptedFields, ListTasksParams};
+    use serde_json::json;
+
+    /// A typo'd filter is reported, while the request itself still succeeds.
+    ///
+    /// The spec requires unrecognized fields to be ignored (§11,
+    /// `DM-SERIAL-005`), so `{"contxtId": …}` must keep returning every task.
+    /// This is what makes that visible rather than silent — see
+    /// `docs/official-tck-findings.md` §3.3(b).
+    #[test]
+    fn typos_and_garbage_are_reported() {
+        let accepted = ListTasksParams::accepted_fields();
+        let params = json!({"contxtId": "c", "pagesize": 1, "totallyBogus": true});
+        let found = unrecognized_params(accepted, &params);
+        assert_eq!(found, vec!["contxtId", "pagesize", "totallyBogus"]);
+    }
+
+    /// Counter-test: every legitimate spelling is silent.
+    ///
+    /// Without this, an `accepted_fields` list that had gone empty would make
+    /// the test above pass while warning about every request.
+    #[test]
+    fn both_legitimate_spellings_are_silent() {
+        let accepted = ListTasksParams::accepted_fields();
+        for params in [
+            json!({"contextId": "c", "pageSize": 1, "pageToken": "t"}),
+            json!({"context_id": "c", "page_size": 1, "page_token": "t"}),
+            json!({"contextId": "c", "page_size": 1}),
+            json!({}),
+        ] {
+            assert!(
+                unrecognized_params(accepted, &params).is_empty(),
+                "reported a known field as unrecognized: {params}"
+            );
+        }
+    }
+
+    /// Non-object params (the spec allows positional `params` in JSON-RPC)
+    /// are not misreported as a bag of unknown keys.
+    #[test]
+    fn non_object_params_report_nothing() {
+        let accepted = ListTasksParams::accepted_fields();
+        for params in [json!([1, 2, 3]), json!("string"), json!(null)] {
+            assert!(unrecognized_params(accepted, &params).is_empty());
+        }
     }
 }

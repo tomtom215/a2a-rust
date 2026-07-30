@@ -17,6 +17,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::events::StreamResponse;
@@ -183,18 +184,88 @@ impl EventQueueWriter for InMemoryQueueWriter {
 /// Optionally holds a "pending first event" that is yielded before any
 /// broadcast events. This is used by `SubscribeToTask` to emit a `Task`
 /// snapshot as the first event without broadcasting it to all subscribers.
-#[derive(Debug)]
 pub struct InMemoryQueueReader {
     rx: broadcast::Receiver<A2aResult<StreamResponse>>,
     pending_first: Option<A2aResult<StreamResponse>>,
+    /// Consulted when the channel closes; see [`Self::with_reattach`].
+    reattach: Option<ReattachFn>,
+    /// Set once a frame reporting a terminal state has been handed to the
+    /// consumer. Suppresses the synthesized final frame, so a client that
+    /// already saw the real one does not get it twice.
+    saw_terminal: bool,
+}
+
+// Hand-written because `ReattachFn` is a boxed closure, which cannot derive
+// `Debug`. The broadcast receiver has no useful representation either, so the
+// fields that carry decisions are reported and the channel is elided.
+#[allow(clippy::missing_fields_in_debug)]
+impl std::fmt::Debug for InMemoryQueueReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InMemoryQueueReader")
+            .field("pending_first", &self.pending_first.is_some())
+            .field("reattach", &self.reattach.is_some())
+            .field("saw_terminal", &self.saw_terminal)
+            .finish()
+    }
+}
+
+/// What a reader should do when its broadcast channel closes.
+// Returned once per stream at most, so the size gap between a broadcast
+// receiver and a unit variant costs nothing worth an extra allocation.
+#[allow(clippy::large_enum_variant)]
+pub enum Reattached {
+    /// Continue on a fresh queue — the task has more turns to run.
+    Channel(broadcast::Receiver<A2aResult<StreamResponse>>),
+    /// The task finished while no queue was attached. Emit this frame, then
+    /// end: without it the client would see the stream close having never
+    /// observed a terminal state, which is the `STREAM-SUB-002` symptom even
+    /// though the stream stayed open for the right length of time.
+    Final(StreamResponse),
+    /// End the stream now.
+    End,
+}
+
+/// Called when a reader's broadcast channel closes, to decide whether the
+/// stream is really over. See [`InMemoryQueueReader::with_reattach`].
+pub type ReattachFn =
+    Arc<dyn Fn() -> Pin<Box<dyn Future<Output = Reattached> + Send>> + Send + Sync>;
+
+/// Whether a stream frame reports a terminal task state.
+const fn carries_terminal_state(event: &StreamResponse) -> bool {
+    match event {
+        StreamResponse::Task(t) => t.status.state.is_terminal(),
+        StreamResponse::StatusUpdate(u) => u.status.state.is_terminal(),
+        _ => false,
+    }
 }
 
 impl InMemoryQueueReader {
+    /// Attaches a hook that runs when the broadcast channel closes.
+    ///
+    /// A task's event queue lives only as long as the executor invocation that
+    /// created it. That is fine for a stream that ends with the task, but
+    /// `SubscribeToTask` must run until the task reaches a **terminal** state
+    /// (spec §3.1.6) — and an agent may park a task in `input_required` across
+    /// several turns, each with its own executor and its own queue. Without
+    /// this hook the stream ends at the first turn boundary, reporting no
+    /// terminal state at all; that is `STREAM-SUB-002`.
+    ///
+    /// The hook decides, at each close, whether the task has actually
+    /// finished. Keeping it here rather than wrapping the reader in a new type
+    /// means every binding that already accepts an `InMemoryQueueReader`
+    /// inherits the behaviour with no signature change.
+    pub(crate) fn with_reattach(mut self, reattach: ReattachFn) -> Self {
+        self.reattach = Some(reattach);
+        self
+    }
+
     /// Creates a new `InMemoryQueueReader`.
     pub(crate) const fn new(rx: broadcast::Receiver<A2aResult<StreamResponse>>) -> Self {
         Self {
             rx,
             pending_first: None,
+            reattach: None,
+            saw_terminal: false,
         }
     }
 
@@ -211,6 +282,8 @@ impl InMemoryQueueReader {
         Self {
             rx,
             pending_first: Some(Ok(first)),
+            reattach: None,
+            saw_terminal: false,
         }
     }
 
@@ -228,6 +301,8 @@ impl InMemoryQueueReader {
         Self {
             rx,
             pending_first: Some(Ok(first)),
+            reattach: None,
+            saw_terminal: false,
         }
     }
 }
@@ -268,23 +343,45 @@ impl EventQueueReader for InMemoryQueueReader {
             // Yield the pending first event (e.g., Task snapshot for SubscribeToTask)
             // before reading from the broadcast channel.
             if let Some(first) = self.pending_first.take() {
+                if let Ok(ref ev) = first {
+                    self.saw_terminal |= carries_terminal_state(ev);
+                }
                 return Some(first);
             }
-            match self.rx.recv().await {
-                Ok(event) => Some(event),
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    // This consumer fell behind and the broadcast ring dropped
-                    // events it never saw. Surfacing an explicit, marked error
-                    // (instead of skipping ahead silently) lets streaming
-                    // clients know their view is truncated and resubscribe
-                    // for a fresh snapshot (§3.5.2 reconnection).
-                    trace_warn!(
-                        dropped_events = n,
-                        "event queue reader lagged, {n} events dropped"
-                    );
-                    Some(Err(lag_error(n)))
+            loop {
+                match self.rx.recv().await {
+                    Ok(event) => {
+                        if let Ok(ref ev) = event {
+                            self.saw_terminal |= carries_terminal_state(ev);
+                        }
+                        return Some(event);
+                    }
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        trace_warn!(
+                            dropped_events = n,
+                            "event queue reader lagged, {n} events dropped"
+                        );
+                        return Some(Err(lag_error(n)));
+                    }
+                    Err(broadcast::error::RecvError::Closed) => {
+                        // The queue for this turn is gone. If a terminal state
+                        // has already been delivered the stream is genuinely
+                        // over; otherwise ask the hook whether the task is
+                        // finished or merely between turns.
+                        if self.saw_terminal {
+                            return None;
+                        }
+                        let reattach = self.reattach.as_ref()?;
+                        match reattach().await {
+                            Reattached::Channel(rx) => self.rx = rx,
+                            Reattached::Final(event) => {
+                                self.saw_terminal = true;
+                                return Some(Ok(event));
+                            }
+                            Reattached::End => return None,
+                        }
+                    }
                 }
-                Err(broadcast::error::RecvError::Closed) => None,
             }
         })
     }

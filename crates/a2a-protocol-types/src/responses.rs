@@ -56,14 +56,17 @@ pub struct TaskListResponse {
 
     /// Pagination token for the next page; empty string on the last page.
     #[serde(default)]
+    #[serde(alias = "next_page_token")]
     pub next_page_token: String,
 
     /// The actual page size used by the server.
     #[serde(default)]
+    #[serde(alias = "page_size")]
     pub page_size: u32,
 
     /// Total number of tasks matching the query (across all pages).
     #[serde(default)]
+    #[serde(alias = "total_size")]
     pub total_size: u32,
 }
 
@@ -99,6 +102,7 @@ pub struct ListPushConfigsResponse {
 
     /// Pagination token for the next page; absent on the last page.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "next_page_token")]
     pub next_page_token: Option<String>,
 }
 

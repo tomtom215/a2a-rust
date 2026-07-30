@@ -5,10 +5,22 @@
     "description": "Exercises the whole card graph",
     "version": "2.0.0",
     "supportedInterfaces": [
-      { "url": "https://grpc.example.com/a2a", "protocolBinding": "GRPC", "protocolVersion": "1.0", "tenant": "acme" },
-      { "url": "https://api.example.com/a2a/v1", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+      {
+        "url": "https://grpc.example.com/a2a",
+        "protocolBinding": "GRPC",
+        "protocolVersion": "1.0",
+        "tenant": "acme"
+      },
+      {
+        "url": "https://api.example.com/a2a/v1",
+        "protocolBinding": "JSONRPC",
+        "protocolVersion": "1.0"
+      }
     ],
-    "provider": { "url": "https://example.com", "organization": "Example Corp" },
+    "provider": {
+      "url": "https://example.com",
+      "organization": "Example Corp"
+    },
     "documentationUrl": "https://docs.example.com",
     "iconUrl": "https://example.com/icon.png",
     "capabilities": {
@@ -16,12 +28,30 @@
       "pushNotifications": false,
       "extendedAgentCard": true,
       "extensions": [
-        { "uri": "https://ext.example.com/v1", "description": "An ext", "required": true, "params": { "k": "v" } }
+        {
+          "uri": "https://ext.example.com/v1",
+          "description": "An ext",
+          "required": true,
+          "params": {
+            "k": "v"
+          }
+        }
       ]
     },
     "securitySchemes": {
-      "api_key": { "apiKeySecurityScheme": { "description": "key", "location": "header", "name": "X-Api-Key" } },
-      "bearer": { "httpAuthSecurityScheme": { "scheme": "bearer", "bearerFormat": "JWT" } },
+      "api_key": {
+        "apiKeySecurityScheme": {
+          "description": "key",
+          "location": "header",
+          "name": "X-Api-Key"
+        }
+      },
+      "bearer": {
+        "httpAuthSecurityScheme": {
+          "scheme": "bearer",
+          "bearerFormat": "JWT"
+        }
+      },
       "oauth_ac": {
         "oauth2SecurityScheme": {
           "description": "oauth",
@@ -31,7 +61,9 @@
               "authorizationUrl": "https://auth.example.com/authorize",
               "tokenUrl": "https://auth.example.com/token",
               "refreshUrl": "https://auth.example.com/refresh",
-              "scopes": { "read": "Read" },
+              "scopes": {
+                "read": "Read"
+              },
               "pkceRequired": true
             }
           }
@@ -39,7 +71,14 @@
       },
       "oauth_cc": {
         "oauth2SecurityScheme": {
-          "flows": { "clientCredentials": { "tokenUrl": "https://auth.example.com/token", "scopes": { "svc": "Service" } } }
+          "flows": {
+            "clientCredentials": {
+              "tokenUrl": "https://auth.example.com/token",
+              "scopes": {
+                "svc": "Service"
+              }
+            }
+          }
         }
       },
       "oauth_dc": {
@@ -55,50 +94,118 @@
       },
       "oauth_implicit": {
         "oauth2SecurityScheme": {
-          "flows": { "implicit": { "authorizationUrl": "https://auth.example.com/authorize", "scopes": {} } }
+          "flows": {
+            "implicit": {
+              "authorizationUrl": "https://auth.example.com/authorize",
+              "scopes": {}
+            }
+          }
         }
       },
       "oauth_pwd": {
         "oauth2SecurityScheme": {
-          "flows": { "password": { "tokenUrl": "https://auth.example.com/token", "scopes": {} } }
+          "flows": {
+            "password": {
+              "tokenUrl": "https://auth.example.com/token",
+              "scopes": {}
+            }
+          }
         }
       },
       "oidc": {
-        "openIdConnectSecurityScheme": { "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration" }
+        "openIdConnectSecurityScheme": {
+          "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"
+        }
       },
-      "mtls": { "mtlsSecurityScheme": { "description": "mutual TLS" } }
+      "mtls": {
+        "mtlsSecurityScheme": {
+          "description": "mutual TLS"
+        }
+      }
     },
     "securityRequirements": [
-      { "schemes": { "bearer": { "list": ["read", "write"] }, "api_key": { "list": [] } } }
+      {
+        "schemes": {
+          "bearer": {
+            "list": [
+              "read",
+              "write"
+            ]
+          },
+          "api_key": {
+            "list": []
+          }
+        }
+      }
     ],
-    "defaultInputModes": ["text/plain"],
-    "defaultOutputModes": ["text/plain", "application/json"],
+    "defaultInputModes": [
+      "text/plain"
+    ],
+    "defaultOutputModes": [
+      "text/plain",
+      "application/json"
+    ],
     "skills": [
       {
         "id": "s1",
         "name": "Skill",
         "description": "Does things",
-        "tags": ["t"],
-        "examples": ["ex"],
-        "inputModes": ["text/plain"],
-        "outputModes": ["text/plain"],
-        "securityRequirements": [{ "schemes": { "bearer": { "list": ["read"] } } }]
+        "tags": [
+          "t"
+        ],
+        "examples": [
+          "ex"
+        ],
+        "inputModes": [
+          "text/plain"
+        ],
+        "outputModes": [
+          "text/plain"
+        ],
+        "securityRequirements": [
+          {
+            "schemes": {
+              "bearer": {
+                "list": [
+                  "read"
+                ]
+              }
+            }
+          }
+        ]
       }
     ],
     "signatures": [
-      { "protected": "eyJhbGciOiJFUzI1NiJ9", "signature": "c2ln", "header": { "kid": "key-1" } }
+      {
+        "protected": "eyJhbGciOiJFUzI1NiJ9",
+        "signature": "c2ln",
+        "header": {
+          "kid": "key-1"
+        }
+      }
     ]
   },
   "domain_json": {
     "name": "Full Agent",
-    "url": "https://grpc.example.com/a2a",
     "description": "Exercises the whole card graph",
     "version": "2.0.0",
     "supportedInterfaces": [
-      { "url": "https://grpc.example.com/a2a", "protocolBinding": "GRPC", "protocolVersion": "1.0", "tenant": "acme" },
-      { "url": "https://api.example.com/a2a/v1", "protocolBinding": "JSONRPC", "protocolVersion": "1.0" }
+      {
+        "url": "https://grpc.example.com/a2a",
+        "protocolBinding": "GRPC",
+        "protocolVersion": "1.0",
+        "tenant": "acme"
+      },
+      {
+        "url": "https://api.example.com/a2a/v1",
+        "protocolBinding": "JSONRPC",
+        "protocolVersion": "1.0"
+      }
     ],
-    "provider": { "organization": "Example Corp", "url": "https://example.com" },
+    "provider": {
+      "organization": "Example Corp",
+      "url": "https://example.com"
+    },
     "documentationUrl": "https://docs.example.com",
     "iconUrl": "https://example.com/icon.png",
     "capabilities": {
@@ -106,70 +213,161 @@
       "pushNotifications": false,
       "extendedAgentCard": true,
       "extensions": [
-        { "uri": "https://ext.example.com/v1", "description": "An ext", "required": true, "params": { "k": "v" } }
+        {
+          "uri": "https://ext.example.com/v1",
+          "description": "An ext",
+          "required": true,
+          "params": {
+            "k": "v"
+          }
+        }
       ]
     },
     "securitySchemes": {
-      "api_key": { "type": "apiKey", "in": "header", "name": "X-Api-Key", "description": "key" },
-      "bearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" },
+      "api_key": {
+        "apiKeySecurityScheme": {
+          "description": "key",
+          "location": "header",
+          "name": "X-Api-Key"
+        }
+      },
+      "bearer": {
+        "httpAuthSecurityScheme": {
+          "scheme": "bearer",
+          "bearerFormat": "JWT"
+        }
+      },
       "oauth_ac": {
-        "type": "oauth2",
-        "flows": {
-          "authorizationCode": {
-            "authorizationUrl": "https://auth.example.com/authorize",
-            "tokenUrl": "https://auth.example.com/token",
-            "refreshUrl": "https://auth.example.com/refresh",
-            "scopes": { "read": "Read" },
-            "pkceRequired": true
+        "oauth2SecurityScheme": {
+          "description": "oauth",
+          "oauth2MetadataUrl": "https://auth.example.com/.well-known/oauth-authorization-server",
+          "flows": {
+            "authorizationCode": {
+              "authorizationUrl": "https://auth.example.com/authorize",
+              "tokenUrl": "https://auth.example.com/token",
+              "refreshUrl": "https://auth.example.com/refresh",
+              "scopes": {
+                "read": "Read"
+              },
+              "pkceRequired": true
+            }
           }
-        },
-        "oauth2MetadataUrl": "https://auth.example.com/.well-known/oauth-authorization-server",
-        "description": "oauth"
+        }
       },
       "oauth_cc": {
-        "type": "oauth2",
-        "flows": { "clientCredentials": { "tokenUrl": "https://auth.example.com/token", "scopes": { "svc": "Service" } } }
+        "oauth2SecurityScheme": {
+          "flows": {
+            "clientCredentials": {
+              "tokenUrl": "https://auth.example.com/token",
+              "scopes": {
+                "svc": "Service"
+              }
+            }
+          }
+        }
       },
       "oauth_dc": {
-        "type": "oauth2",
-        "flows": {
-          "deviceCode": {
-            "deviceAuthorizationUrl": "https://auth.example.com/device",
-            "tokenUrl": "https://auth.example.com/token",
-            "scopes": {}
+        "oauth2SecurityScheme": {
+          "flows": {
+            "deviceCode": {
+              "deviceAuthorizationUrl": "https://auth.example.com/device",
+              "tokenUrl": "https://auth.example.com/token",
+              "scopes": {}
+            }
           }
         }
       },
       "oauth_implicit": {
-        "type": "oauth2",
-        "flows": { "implicit": { "authorizationUrl": "https://auth.example.com/authorize", "scopes": {} } }
+        "oauth2SecurityScheme": {
+          "flows": {
+            "implicit": {
+              "authorizationUrl": "https://auth.example.com/authorize",
+              "scopes": {}
+            }
+          }
+        }
       },
       "oauth_pwd": {
-        "type": "oauth2",
-        "flows": { "password": { "tokenUrl": "https://auth.example.com/token", "scopes": {} } }
+        "oauth2SecurityScheme": {
+          "flows": {
+            "password": {
+              "tokenUrl": "https://auth.example.com/token",
+              "scopes": {}
+            }
+          }
+        }
       },
-      "oidc": { "type": "openIdConnect", "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration" },
-      "mtls": { "type": "mutualTLS", "description": "mutual TLS" }
+      "oidc": {
+        "openIdConnectSecurityScheme": {
+          "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"
+        }
+      },
+      "mtls": {
+        "mtlsSecurityScheme": {
+          "description": "mutual TLS"
+        }
+      }
     },
     "securityRequirements": [
-      { "schemes": { "bearer": { "list": ["read", "write"] }, "api_key": { "list": [] } } }
+      {
+        "schemes": {
+          "bearer": {
+            "list": [
+              "read",
+              "write"
+            ]
+          },
+          "api_key": {
+            "list": []
+          }
+        }
+      }
     ],
-    "defaultInputModes": ["text/plain"],
-    "defaultOutputModes": ["text/plain", "application/json"],
+    "defaultInputModes": [
+      "text/plain"
+    ],
+    "defaultOutputModes": [
+      "text/plain",
+      "application/json"
+    ],
     "skills": [
       {
         "id": "s1",
         "name": "Skill",
         "description": "Does things",
-        "tags": ["t"],
-        "examples": ["ex"],
-        "inputModes": ["text/plain"],
-        "outputModes": ["text/plain"],
-        "securityRequirements": [{ "schemes": { "bearer": { "list": ["read"] } } }]
+        "tags": [
+          "t"
+        ],
+        "examples": [
+          "ex"
+        ],
+        "inputModes": [
+          "text/plain"
+        ],
+        "outputModes": [
+          "text/plain"
+        ],
+        "securityRequirements": [
+          {
+            "schemes": {
+              "bearer": {
+                "list": [
+                  "read"
+                ]
+              }
+            }
+          }
+        ]
       }
     ],
     "signatures": [
-      { "protected": "eyJhbGciOiJFUzI1NiJ9", "signature": "c2ln", "header": { "kid": "key-1" } }
+      {
+        "protected": "eyJhbGciOiJFUzI1NiJ9",
+        "signature": "c2ln",
+        "header": {
+          "kid": "key-1"
+        }
+      }
     ]
   }
 }

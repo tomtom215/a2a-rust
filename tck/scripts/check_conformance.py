@@ -8,7 +8,7 @@
 # practices are non-negotiable. — Tom F.
 """Gate the official a2a-tck run against a checked-in baseline.
 
-The TCK currently reports 12 failing MUST-level requirements against this SDK
+The TCK currently reports 5 failing MUST-level requirements against this SDK
 (see docs/official-tck-findings.md). Until those are closed, the CI job cannot
 simply require a clean run — but it must not report success either, which is
 what `continue-on-error: true` did: a green check with `exit code 1` buried in
@@ -72,6 +72,15 @@ def observed_failures(report: dict) -> dict[str, dict[str, str]]:
     failing is recorded under the sentinel transport "*", so that a failure the
     report cannot attribute to a transport is still gated rather than dropped.
     """
+    # A report that is valid JSON but not an object (`null`, `[]`, a bare
+    # string) reaches here too — check the container before indexing it, so
+    # the failure is a readable message rather than an AttributeError
+    # traceback. It fails closed either way; this only makes CI legible.
+    if not isinstance(report, dict):
+        sys.exit(
+            f"error: report is {type(report).__name__}, not a JSON object — wrong file?"
+        )
+
     per_req = report.get("per_requirement")
     if not isinstance(per_req, dict):
         sys.exit("error: report has no 'per_requirement' object — wrong file?")

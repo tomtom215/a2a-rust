@@ -93,9 +93,9 @@ pub use jsonrpc::{
 };
 pub use message::{FileContent, Message, MessageId, MessageRole, Part, PartContent};
 pub use params::{
-    CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams, GetPushConfigParams,
-    ListPushConfigsParams, ListTasksParams, MessageSendParams, SendMessageConfiguration,
-    TaskIdParams, TaskQueryParams,
+    AcceptedFields, CancelTaskParams, DeletePushConfigParams, GetExtendedAgentCardParams,
+    GetPushConfigParams, ListPushConfigsParams, ListTasksParams, MessageSendParams,
+    SendMessageConfiguration, TaskIdParams, TaskQueryParams,
 };
 pub use push::{AuthenticationInfo, TaskPushNotificationConfig};
 pub use responses::{

@@ -79,15 +79,35 @@ jobs:
 
       - name: Start the SUT
         run: |
-          SUT_HOST=127.0.0.1:9999 ./target/release/a2a-tck-sut &
+          # The SUT serves JSON-RPC and HTTP+JSON on :9999 and gRPC on :9998,
+          # and advertises all three in its agent card. The TCK builds one
+          # client per advertised interface, so this is what makes it grade
+          # the gRPC binding at all — without it, 30 checks report SKIPPED.
+          SUT_HOST=127.0.0.1:9999 SUT_GRPC_HOST=127.0.0.1:9998 \
+            ./target/release/a2a-tck-sut &
+          ready_http=0
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:9999/.well-known/agent-card.json > /dev/null 2>&1; then
-              echo "SUT ready"
+              ready_http=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready_http" -ne 1 ]; then
+            echo "SUT HTTP listener failed to start"
+            exit 1
+          fi
+          # Fail loudly if gRPC is not listening. A silent miss here shows up
+          # as SKIPPED requirements, which read as a coverage gap in the TCK
+          # rather than a broken harness — the gate would stay green.
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/9998) 2>/dev/null; then
+              echo "SUT ready (http :9999, grpc :9998)"
               exit 0
             fi
             sleep 1
           done
-          echo "SUT failed to start"
+          echo "SUT gRPC listener failed to start on :9998"
           exit 1
 
       # One full-suite run covers every level and emits the machine-readable
@@ -138,6 +158,36 @@ jobs:
             echo 'and tracked in `docs/official-tck-findings.md`. The job is green'
             echo 'only when the failures match that baseline exactly.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # A second run against a deliberately less-capable card. CORE-CAP-001,
+      # CORE-CAP-002 and CORE-CAP-004 check that a server *rejects* push and
+      # streaming operations it never advertised, and the suite skips them
+      # against an agent that does advertise them — so one SUT cannot reach
+      # both sides. This run is what makes those requirements observable.
+      #
+      # Not part of the gate: the suite currently errors out on one
+      # HTTP+JSON streaming check under this profile from inside its own
+      # client, while building a skip message (see
+      # docs/official-tck-findings.md §12). The requirement-level gate is
+      # still applied, and still has to come back clean.
+      - name: Run the suite against the minimal-capability profile
+        continue-on-error: true
+        run: |
+          SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \
+            ./target/release/a2a-tck-sut &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9997/.well-known/agent-card.json > /dev/null 2>&1 && break
+            sleep 1
+          done
+          cd /tmp/a2a-tck
+          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 || true
+          cp reports/compatibility.json /tmp/minimal-compatibility.json
+
+      - name: Gate the minimal-profile run
+        run: |
+          python3 tck/scripts/check_conformance.py \
+            --report /tmp/minimal-compatibility.json \
+            --baseline tck/conformance-baseline.json
 
       - name: Upload TCK reports
         if: always()

@@ -35,9 +35,11 @@ use crate::task::{ContextId, Task, TaskId, TaskStatus};
 #[serde(rename_all = "camelCase")]
 pub struct TaskStatusUpdateEvent {
     /// The task whose status changed.
+    #[serde(alias = "task_id")]
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
+    #[serde(alias = "context_id")]
     pub context_id: ContextId,
 
     /// The new task status (state + optional message + timestamp).
@@ -58,9 +60,11 @@ pub struct TaskStatusUpdateEvent {
 #[serde(rename_all = "camelCase")]
 pub struct TaskArtifactUpdateEvent {
     /// The task that produced the artifact.
+    #[serde(alias = "task_id")]
     pub task_id: TaskId,
 
     /// Conversation context the task belongs to.
+    #[serde(alias = "context_id")]
     pub context_id: ContextId,
 
     /// The artifact being delivered.
@@ -73,6 +77,7 @@ pub struct TaskArtifactUpdateEvent {
 
     /// If `true`, this is the final chunk for the artifact.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "last_chunk")]
     pub last_chunk: Option<bool>,
 
     /// Arbitrary metadata.
@@ -100,9 +105,11 @@ pub enum StreamResponse {
     Message(Message),
 
     /// A task state change event.
+    #[serde(alias = "status_update")]
     StatusUpdate(TaskStatusUpdateEvent),
 
     /// An artifact delivery event.
+    #[serde(alias = "artifact_update")]
     ArtifactUpdate(TaskArtifactUpdateEvent),
 }
 

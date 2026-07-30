@@ -28,6 +28,17 @@ Per-benchmark overrides:
   PATTERN only. The first matching override wins; everything else keeps
   the global threshold.
 
+Per-benchmark exclusions:
+  A step further than an override: `--exclude PATTERN` (repeatable, glob
+  over the benchmark name) reports the benchmark's numbers every run but
+  never fails the gate on it, at any magnitude. Use this only when a
+  benchmark has been shown to swing past even a generous override on
+  provably identical code — i.e. the percentage itself isn't a reliable
+  signal for this benchmark, not just that the default threshold is too
+  tight. An excluded benchmark still prints as `[EXCLUDED]` so a real,
+  sustained regression stays visible to a human reading the job summary;
+  it just cannot fail CI on its own.
+
 Exit codes:
   0 — no benchmark regressed beyond the threshold.
   1 — one or more benchmarks regressed; details printed to stderr.
@@ -37,7 +48,8 @@ Usage:
   ./benches/scripts/check_regression.py \\
       --target-dir target/criterion \\
       --threshold 0.25 \\
-      --override '*/from_str/16384=0.75'
+      --override '*/from_str/16384=0.75' \\
+      --exclude '*/flaky_bench/*'
 """
 from __future__ import annotations
 
@@ -141,6 +153,11 @@ def threshold_for(
     return default, False
 
 
+def is_excluded(name: str, excludes: list[str]) -> bool:
+    """Whether `name` matches any `--exclude` glob pattern."""
+    return any(fnmatch.fnmatch(name, pattern) for pattern in excludes)
+
+
 def format_row(change: Change, threshold: float, overridden: bool) -> tuple[str, bool]:
     """Format one row of the summary table and report whether it regressed.
 
@@ -159,6 +176,17 @@ def format_row(change: Change, threshold: float, overridden: bool) -> tuple[str,
         f"{note}"
     )
     return row, is_regression
+
+
+def format_excluded_row(change: Change) -> str:
+    """Format one row for a benchmark excluded from gating (never a regression)."""
+    return (
+        f"[{'EXCLUDED':>9}] {change.name:<55} "
+        f"median {change.median_point * 100:+7.2f}% "
+        f"(95% CI [{change.median_ci_lower * 100:+.2f}%, "
+        f"{change.median_ci_upper * 100:+.2f}%])"
+        f" [does not gate]"
+    )
 
 
 def main() -> int:
@@ -184,6 +212,20 @@ def main() -> int:
             "Per-benchmark threshold override as a glob pattern over the "
             "benchmark name (repeatable; first match wins). Example: "
             "--override '*/from_str/16384=0.75'"
+        ),
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help=(
+            "Glob pattern over the benchmark name (repeatable) for a "
+            "benchmark that is reported but never fails the gate, at any "
+            "magnitude. For benchmarks where the percentage itself isn't a "
+            "reliable signal, not just where the default threshold is too "
+            "tight — use --override for the latter. Example: "
+            "--exclude '*/from_str/16384'"
         ),
     )
     args = parser.parse_args()
@@ -220,6 +262,7 @@ def main() -> int:
     )
 
     regressions: list[Change] = []
+    excluded_count = 0
     for change_file in change_files:
         try:
             name = benchmark_name(change_file, args.target_dir)
@@ -227,6 +270,10 @@ def main() -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
+        if is_excluded(name, args.exclude):
+            print(format_excluded_row(change))
+            excluded_count += 1
+            continue
         threshold, overridden = threshold_for(name, args.threshold, overrides)
         row, is_reg = format_row(change, threshold, overridden)
         print(row)
@@ -251,10 +298,11 @@ def main() -> int:
             )
         return 1
 
+    excluded_note = f" ({excluded_count} excluded from gating)" if excluded_count else ""
     print(
-        f"\nAll {len(change_files)} benchmarks within "
+        f"\nAll {len(change_files) - excluded_count} gated benchmarks within "
         f"{args.threshold * 100:.0f}% of baseline "
-        "(or within the runner's noise envelope)."
+        f"(or within the runner's noise envelope){excluded_note}."
     )
     return 0
 

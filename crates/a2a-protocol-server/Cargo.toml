@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-server"
-version     = "0.7.0"
+version     = "0.8.0"
 description = "Agent2Agent (A2A) protocol v1.0 — server framework (hyper-backed)"
 readme      = "README.md"
 

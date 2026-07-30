@@ -10,7 +10,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
-use a2a_protocol_types::params::MessageSendParams;
+use a2a_protocol_types::params::{MessageSendParams, SendMessageConfiguration};
+use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
@@ -156,6 +157,41 @@ impl RequestHandler {
             }
         }
         result
+    }
+
+    /// Registers a push notification config carried inline on a `SendMessage`.
+    ///
+    /// The schema is explicit that this is how a client subscribes at send
+    /// time: *"Task id should be empty when sending this configuration in a
+    /// `SendMessage` request"* (`a2a.proto`, `SendMessageConfiguration`), so
+    /// the id is filled in from the task just created rather than required
+    /// from the caller. The reference implementation registers it at the same
+    /// point — before the executor starts — so the very first status
+    /// transition is already covered.
+    ///
+    /// Must run *after* the task is saved, because the config store rejects a
+    /// config for a task that does not exist, and *before* the executor is
+    /// spawned, so no event can be produced while the webhook is unroutable.
+    ///
+    /// A no-op when the request carried no config.
+    async fn register_inline_push_config(
+        &self,
+        configuration: Option<&SendMessageConfiguration>,
+        task_id: &TaskId,
+    ) -> ServerResult<()> {
+        let Some(inline) = configuration.and_then(|c| c.task_push_notification_config.clone())
+        else {
+            return Ok(());
+        };
+        // Shares the standalone create's validation — capability check, task
+        // existence, SSRF screening, quotas — so this cannot become an
+        // unguarded back door into the push config store.
+        self.validate_and_store_push_config(TaskPushNotificationConfig {
+            task_id: Some(task_id.0.clone()),
+            ..inline
+        })
+        .await?;
+        Ok(())
     }
 
     /// Inner implementation of `on_send_message`, extracted so that the outer
@@ -512,6 +548,25 @@ impl RequestHandler {
         // requests for this context_id will find the task via find_task_by_context.
         drop(context_guard);
 
+        // Register an inline push notification config, if the request carried
+        // one — see `register_inline_push_config`. A failure rolls back the
+        // queue and token exactly as a store failure does: a client that asked
+        // for push and did not get it must not receive a task that silently
+        // never notifies.
+        //
+        // Boxed, and with every local confined to the helper, so this cold
+        // branch does not enlarge `send_message_inner`'s future for every
+        // send — inline it pushed all three dispatch futures past clippy's
+        // `large_futures` threshold.
+        if let Err(e) =
+            Box::pin(self.register_inline_push_config(params.configuration.as_ref(), &task_id))
+                .await
+        {
+            self.event_queue_manager.destroy(&task_id).await;
+            self.cancellation_tokens.write().await.remove(&task_id);
+            return Err(e);
+        }
+
         // Spawn executor task. The spawned task owns the only writer clone
         // needed; drop the local reference and the manager's reference so the
         // channel closes when the executor finishes.
@@ -641,9 +696,23 @@ impl RequestHandler {
             // Blocking mode: poll reader until the final event. Pass the
             // executor handle so collect_events can detect executor
             // completion/panic (CB-3).
-            let mut final_task = self
+            let collected = self
                 .collect_events(reader, task_id.clone(), executor_handle)
                 .await?;
+
+            // SPEC §3.1.1: SendMessage returns "a `Task` object representing
+            // the processing of the message, OR a `Message` — a direct
+            // response message (for simple interactions that don't require
+            // task tracking)". An agent that emitted a message and nothing
+            // else is doing exactly that, so answer with the message. The task
+            // row still exists and is still fetchable by `GetTask`.
+            if let Some(message) = collected.direct_message {
+                return Ok(SendMessageResult::Response(SendMessageResponse::Message(
+                    message,
+                )));
+            }
+
+            let mut final_task = collected.task;
             shape_response_history(&mut final_task, response_history_length);
             Ok(SendMessageResult::Response(SendMessageResponse::Task(
                 final_task,

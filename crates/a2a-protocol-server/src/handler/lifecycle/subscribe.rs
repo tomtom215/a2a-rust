@@ -11,13 +11,99 @@ use std::time::Instant;
 use a2a_protocol_types::params::TaskIdParams;
 use a2a_protocol_types::task::TaskId;
 
+use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
+
 use crate::error::{ServerError, ServerResult};
-use crate::streaming::InMemoryQueueReader;
+use crate::streaming::{InMemoryQueueReader, Reattached};
 
 use super::super::helpers::build_call_context;
 use super::super::RequestHandler;
 
 impl RequestHandler {
+    /// Builds the hook that keeps a `SubscribeToTask` stream alive across turns.
+    ///
+    /// A task's event queue lives only as long as one executor invocation. An
+    /// agent that parks a task in `input_required` therefore destroys the
+    /// queue at the end of every turn, and before this hook existed the
+    /// subscribe stream ended there — closing while the task was still
+    /// non-terminal, which is exactly what spec §3.1.6 forbids
+    /// (`STREAM-SUB-002`):
+    ///
+    /// > The stream MUST terminate when the task reaches a terminal state
+    /// > (`completed`, `failed`, `canceled`, or `rejected`).
+    ///
+    /// So on every channel close the hook re-reads the task. Terminal (or
+    /// gone) ends the stream; otherwise it waits for the next turn's queue and
+    /// hands back a receiver for it.
+    ///
+    /// Polling rather than a notification: the alternative is to keep queues
+    /// alive past their executor, which deadlocks the background processor —
+    /// its persistence channel only closes when the manager drops the writer,
+    /// so a retained queue means a drain loop that never ends. Waiting here
+    /// costs one store read per interval on an idle stream and leaves the send
+    /// path untouched.
+    fn subscribe_reattach_hook(&self, task_id: TaskId) -> crate::streaming::ReattachFn {
+        let queues = self.event_queue_manager.clone();
+        let store = std::sync::Arc::clone(&self.task_store);
+        let interval = self.limits.subscribe_reattach_interval;
+        let max_idle = self.limits.subscribe_max_idle;
+
+        std::sync::Arc::new(move || {
+            let (queues, store, task_id) = (queues.clone(), store.clone(), task_id.clone());
+            Box::pin(async move {
+                let deadline = tokio::time::Instant::now() + max_idle;
+                loop {
+                    match store.get(&task_id).await {
+                        // The task finished between queues, so the client
+                        // never saw the terminal frame on the wire. Synthesize
+                        // it from the authoritative stored status: the stream
+                        // must not close having reported no terminal state.
+                        Ok(Some(t)) if t.status.state.is_terminal() => {
+                            return Reattached::Final(StreamResponse::StatusUpdate(
+                                TaskStatusUpdateEvent {
+                                    task_id: t.id.clone(),
+                                    context_id: t.context_id.clone(),
+                                    status: t.status,
+                                    metadata: None,
+                                },
+                            ));
+                        }
+                        // Deleted out from under us: nothing left to stream.
+                        Ok(None) => return Reattached::End,
+                        Ok(Some(_)) => {}
+                        // A store read failure is not evidence the task
+                        // finished, but retrying forever on a broken store is
+                        // worse than closing; fall through to the idle bound.
+                        Err(_e) => {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "subscribe reattach: task store read failed"
+                            );
+                        }
+                    }
+
+                    if let Some(rx) = queues.raw_subscribe(&task_id).await {
+                        return Reattached::Channel(rx);
+                    }
+
+                    // Bound the wait so a task parked forever does not pin a
+                    // connection and a queue slot indefinitely. The client can
+                    // resubscribe; §3.5.2 is explicit that reconnection is a
+                    // supported flow.
+                    if tokio::time::Instant::now() >= deadline {
+                        trace_warn!(
+                            task_id = %task_id,
+                            "subscribe reattach: task still non-terminal after the idle bound; \
+                             ending the stream (client may resubscribe)"
+                        );
+                        return Reattached::End;
+                    }
+                    tokio::time::sleep(interval).await;
+                }
+            }) as std::pin::Pin<Box<dyn std::future::Future<Output = _> + Send>>
+        })
+    }
+
     /// Handles `SubscribeToTask`.
     ///
     /// # Errors
@@ -35,53 +121,61 @@ impl RequestHandler {
         let tenant = self
             .resolve_tenant("SubscribeToTask", headers, params.tenant.as_deref())
             .await?;
-        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(tenant, async {
-            let call_ctx = build_call_context("SubscribeToTask", headers);
-            self.interceptors.run_before(&call_ctx).await?;
-            // SPEC §3.3.4: reject clients that do not declare support for
-            // extensions the agent card marks required.
-            self.ensure_required_extensions(&call_ctx)?;
+        // Boxed: `SubscribeToTask` is a cold, once-per-stream path, and
+        // inlining this body pushed the JSON-RPC and REST dispatch futures
+        // past clippy's `large_futures` threshold.
+        let result: ServerResult<_> = crate::store::tenant::TenantContext::scope(
+            tenant,
+            Box::pin(async {
+                let call_ctx = build_call_context("SubscribeToTask", headers);
+                self.interceptors.run_before(&call_ctx).await?;
+                // SPEC §3.3.4: reject clients that do not declare support for
+                // extensions the agent card marks required.
+                self.ensure_required_extensions(&call_ctx)?;
 
-            // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
-            // permitted when the configured agent card advertises
-            // `capabilities.streaming == true`. (No-op when no card is configured.)
-            self.ensure_streaming_supported()?;
+                // SPEC §3.3.4: SubscribeToTask is a streaming operation and is only
+                // permitted when the configured agent card advertises
+                // `capabilities.streaming == true`. (No-op when no card is configured.)
+                self.ensure_streaming_supported()?;
 
-            let task_id = TaskId::new(&params.id);
+                let task_id = TaskId::new(&params.id);
 
-            // Verify the task exists.
-            let task = self
-                .task_store
-                .get(&task_id)
-                .await?
-                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+                // Verify the task exists.
+                let task = self
+                    .task_store
+                    .get(&task_id)
+                    .await?
+                    .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
 
-            // SPEC §3.1.6: Subscribing to a task in a terminal state is an
-            // unsupported operation — the task will never produce new events.
-            if task.status.state.is_terminal() {
-                return Err(ServerError::UnsupportedOperation(format!(
-                    "task {} is in terminal state '{}' and cannot be subscribed to",
-                    task_id, task.status.state
-                )));
-            }
+                // SPEC §3.1.6: Subscribing to a task in a terminal state is an
+                // unsupported operation — the task will never produce new events.
+                if task.status.state.is_terminal() {
+                    return Err(ServerError::UnsupportedOperation(format!(
+                        "task {} is in terminal state '{}' and cannot be subscribed to",
+                        task_id, task.status.state
+                    )));
+                }
 
-            // SPEC: The first event in a SubscribeToTask stream MUST be a Task
-            // snapshot representing the current state (Go #231, JS #323).
-            let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
-            let reader = self
-                .event_queue_manager
-                .subscribe_with_snapshot(&task_id, snapshot.clone())
-                .await
-                // No live event queue for a non-terminal task — e.g. the
-                // process restarted since the task was created, so no
-                // executor is attached. §3.5.2 lets a reconnecting client
-                // open a new stream: serve the current snapshot, then end
-                // the stream cleanly (no further events can be produced).
-                .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot));
+                // SPEC: The first event in a SubscribeToTask stream MUST be a Task
+                // snapshot representing the current state (Go #231, JS #323).
+                let snapshot = a2a_protocol_types::events::StreamResponse::Task(task);
+                let reader = self
+                    .event_queue_manager
+                    .subscribe_with_snapshot(&task_id, snapshot.clone())
+                    .await
+                    // No live event queue for a non-terminal task — the executor
+                    // for the previous turn has exited (its queue dies with it),
+                    // or the process restarted. Either way the task itself is not
+                    // finished, so §3.1.6 says the stream must stay open; start
+                    // from the snapshot and let the reattach hook below wait for
+                    // the next turn's queue.
+                    .unwrap_or_else(|| InMemoryQueueReader::snapshot_then_end(snapshot))
+                    .with_reattach(self.subscribe_reattach_hook(task_id.clone()));
 
-            self.interceptors.run_after(&call_ctx).await?;
-            Ok(reader)
-        })
+                self.interceptors.run_after(&call_ctx).await?;
+                Ok(reader)
+            }),
+        )
         .await;
 
         let elapsed = start.elapsed();
@@ -151,16 +245,33 @@ mod tests {
         );
     }
 
+    /// A queueless non-terminal task serves its snapshot and then **stays
+    /// open** until the task finishes.
+    ///
+    /// This test previously asserted the opposite — snapshot, then immediate
+    /// EOF — citing §3.5.2 reconnection. That was the `STREAM-SUB-002` defect
+    /// written down as an expectation: §3.1.6 says the stream "MUST terminate
+    /// when the task reaches a terminal state", and this one terminated while
+    /// the task was still `Working`. It is the same trap as the three tests
+    /// that pinned the wrong JSON-RPC error code; see
+    /// `docs/official-tck-findings.md` §9.
     #[tokio::test]
-    async fn resubscribe_nonterminal_no_queue_returns_snapshot_then_eof() {
-        // Non-terminal task exists but has no active event queue (e.g. the
-        // process restarted since the task was created). §3.5.2 reconnection:
-        // the stream serves the current Task snapshot, then ends cleanly.
+    #[allow(clippy::too_many_lines)] // one assertion per stream stage, by design
+    async fn resubscribe_nonterminal_no_queue_waits_for_the_terminal_state() {
         use crate::streaming::event_queue::EventQueueReader as _;
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
-        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
-        let task = Task {
+        let handler = std::sync::Arc::new(
+            RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(
+                    crate::handler::HandlerLimits::default()
+                        .with_subscribe_reattach_interval(std::time::Duration::from_millis(10))
+                        .with_subscribe_max_idle(std::time::Duration::from_secs(10)),
+                )
+                .build()
+                .unwrap(),
+        );
+        let mut task = Task {
             id: TaskId::new("t-resub-nonterminal"),
             context_id: ContextId::new("ctx-1"),
             status: TaskStatus::new(TaskState::Working),
@@ -193,11 +304,85 @@ mod tests {
             other => panic!("expected Task snapshot first, got: {other:?}"),
         }
 
-        // Then clean EOF — no executor is attached to produce more events.
+        // The stream must NOT end while the task is still running.
+        let still_open =
+            tokio::time::timeout(std::time::Duration::from_millis(150), reader.read()).await;
         assert!(
-            reader.read().await.is_none(),
-            "stream must end cleanly after the snapshot"
+            still_open.is_err(),
+            "stream ended while the task was still Working — §3.1.6 requires it \
+             to run until a terminal state, got: {still_open:?}"
         );
+
+        // Once the task finishes, the stream reports the terminal state and
+        // only then ends. Reporting it is the point: a stream that closes
+        // having never carried a terminal state is what `STREAM-SUB-002`
+        // fails on, however long it stayed open.
+        task.status = TaskStatus::new(TaskState::Completed);
+        handler.task_store.save(&task).await.unwrap();
+
+        let final_frame = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+            .await
+            .expect("stream must report the terminal state promptly")
+            .expect("expected a final frame, got EOF")
+            .expect("final frame must not be an error");
+        match final_frame {
+            a2a_protocol_types::events::StreamResponse::StatusUpdate(u) => {
+                assert_eq!(u.status.state, TaskState::Completed);
+                assert_eq!(u.task_id.0.as_str(), "t-resub-nonterminal");
+            }
+            other => panic!("expected a terminal StatusUpdate, got: {other:?}"),
+        }
+
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+            .await
+            .expect("stream must end after the terminal frame");
+        assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
+    }
+
+    /// The idle bound ends a stream whose task never progresses.
+    ///
+    /// Counter-test for the one above: without a bound, "stay open until
+    /// terminal" would pin a connection forever on a task parked in
+    /// `input_required`.
+    #[tokio::test]
+    async fn resubscribe_gives_up_after_the_idle_bound() {
+        use crate::streaming::event_queue::EventQueueReader as _;
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::HandlerLimits::default()
+                    .with_subscribe_reattach_interval(std::time::Duration::from_millis(5))
+                    .with_subscribe_max_idle(std::time::Duration::from_millis(50)),
+            )
+            .build()
+            .unwrap();
+        let task = Task {
+            id: TaskId::new("t-parked"),
+            context_id: ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::InputRequired),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        handler.task_store.save(&task).await.unwrap();
+
+        let mut reader = handler
+            .on_resubscribe(
+                TaskIdParams {
+                    tenant: None,
+                    id: "t-parked".to_owned(),
+                },
+                None,
+            )
+            .await
+            .expect("resubscribe must succeed");
+        let _snapshot = reader.read().await.expect("snapshot");
+
+        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+            .await
+            .expect("the idle bound must end the stream rather than hang");
+        assert!(ended.is_none(), "expected clean EOF, got: {ended:?}");
     }
 
     #[tokio::test]

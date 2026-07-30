@@ -573,95 +573,105 @@ fn tck_agent_card_no_legacy_fields() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// §8 — SecurityScheme discriminated union
+// §8 — SecurityScheme `oneof`
+//
+// These tests asserted the v0.3 internally tagged encoding
+// (`{"type": "apiKey", "in": "header"}`) and passed confidently while this SDK
+// emitted a shape the v1.0 schema does not define — the same trap recorded in
+// docs/official-tck-findings.md §2.1, where three in-repo tests pinned the
+// wrong JSON-RPC error code. They now assert the ProtoJSON `oneof` encoding
+// the schema defines, *and* that the v0.3 encoding still parses.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-#[test]
-fn tck_security_scheme_api_key_wire_format() {
-    let golden = json!({
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Key"
-    });
-    let scheme: SecurityScheme = serde_json::from_value(golden.clone()).unwrap();
-    assert!(matches!(scheme, SecurityScheme::ApiKey(ref s) if s.name == "X-API-Key"));
-
-    let ser = serde_json::to_value(&scheme).unwrap();
-    assert_eq!(ser["type"], "apiKey");
-    assert_eq!(ser["in"], "header");
-    assert_eq!(ser["name"], "X-API-Key");
+/// One `SecurityScheme` arm: its v1.0 encoding, its v0.3 encoding, and a
+/// predicate identifying the variant both must parse to.
+struct SchemeCase {
+    v1: serde_json::Value,
+    v03: serde_json::Value,
+    is_expected: fn(&SecurityScheme) -> bool,
 }
 
+/// Every arm: the v1.0 encoding round-trips, and the v0.3 encoding still parses
+/// to the same value.
 #[test]
-fn tck_security_scheme_http_bearer_wire_format() {
-    let golden = json!({
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT"
-    });
-    let scheme: SecurityScheme = serde_json::from_value(golden).unwrap();
-    match scheme {
-        SecurityScheme::Http(ref h) => {
-            assert_eq!(h.scheme, "bearer");
-            assert_eq!(h.bearer_format.as_deref(), Some("JWT"));
-        }
-        _ => panic!("expected Http variant"),
+fn tck_security_scheme_wire_format() {
+    let cases: Vec<SchemeCase> = vec![
+        SchemeCase {
+            v1: json!({"apiKeySecurityScheme": {"location": "header", "name": "X-API-Key"}}),
+            v03: json!({"type": "apiKey", "in": "header", "name": "X-API-Key"}),
+            is_expected: |s| matches!(s, SecurityScheme::ApiKey(k) if k.name == "X-API-Key"),
+        },
+        SchemeCase {
+            v1: json!({"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}),
+            v03: json!({"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}),
+            is_expected: |s| matches!(s, SecurityScheme::Http(h) if h.bearer_format.as_deref() == Some("JWT")),
+        },
+        SchemeCase {
+            v1: json!({"oauth2SecurityScheme": {"flows": {"clientCredentials": {
+                "tokenUrl": "https://auth.example.com/oauth/token", "scopes": {}}}}}),
+            v03: json!({"type": "oauth2", "flows": {"clientCredentials": {
+                "tokenUrl": "https://auth.example.com/oauth/token", "scopes": {}}}}),
+            is_expected: |s| matches!(s, SecurityScheme::OAuth2(_)),
+        },
+        SchemeCase {
+            v1: json!({"openIdConnectSecurityScheme": {
+                "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"}}),
+            v03: json!({"type": "openIdConnect",
+                "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            is_expected: |s| matches!(s, SecurityScheme::OpenIdConnect(_)),
+        },
+        SchemeCase {
+            v1: json!({"mtlsSecurityScheme": {}}),
+            v03: json!({"type": "mutualTLS"}),
+            is_expected: |s| matches!(s, SecurityScheme::MutualTls(_)),
+        },
+    ];
+
+    for SchemeCase {
+        v1,
+        v03,
+        is_expected,
+    } in cases
+    {
+        let from_v1: SecurityScheme = serde_json::from_value(v1.clone())
+            .unwrap_or_else(|e| panic!("v1.0 encoding must parse: {v1} -> {e}"));
+        assert!(is_expected(&from_v1), "wrong variant from {v1}");
+
+        // Emission is the v1.0 encoding, byte for byte.
+        let emitted = serde_json::to_value(&from_v1).unwrap();
+        assert_eq!(emitted, v1, "must emit the v1.0 oneof encoding");
+
+        // The v0.3 encoding is still accepted, and normalises to the same value.
+        let from_v03: SecurityScheme = serde_json::from_value(v03.clone())
+            .unwrap_or_else(|e| panic!("v0.3 encoding must still parse: {v03} -> {e}"));
+        assert!(is_expected(&from_v03), "wrong variant from {v03}");
+        assert_eq!(
+            serde_json::to_value(&from_v03).unwrap(),
+            v1,
+            "a v0.3 scheme must normalise to the v1.0 encoding on re-emission"
+        );
     }
-
-    let ser = serde_json::to_value(&scheme).unwrap();
-    assert_eq!(ser["type"], "http");
-    assert_eq!(ser["bearerFormat"], "JWT");
 }
 
+/// The proto field name spelling of each `oneof` arm is accepted too.
 #[test]
-fn tck_security_scheme_oauth2_wire_format() {
-    let golden = json!({
-        "type": "oauth2",
-        "flows": {
-            "clientCredentials": {
-                "tokenUrl": "https://auth.example.com/oauth/token",
-                "scopes": {
-                    "read:data": "Read data",
-                    "write:data": "Write data"
-                }
-            }
-        }
-    });
-    let scheme: SecurityScheme = serde_json::from_value(golden).unwrap();
-    assert!(matches!(scheme, SecurityScheme::OAuth2(_)));
+fn tck_security_scheme_accepts_proto_field_names() {
+    let scheme: SecurityScheme = serde_json::from_value(
+        json!({"api_key_security_scheme": {"location": "header", "name": "X-API-Key"}}),
+    )
+    .expect("the proto field name spelling must parse");
+    assert!(matches!(scheme, SecurityScheme::ApiKey(_)));
+}
 
-    let ser = serde_json::to_value(&scheme).unwrap();
-    assert_eq!(ser["type"], "oauth2");
-    assert!(ser["flows"]["clientCredentials"].is_object());
-    assert_eq!(
-        ser["flows"]["clientCredentials"]["tokenUrl"],
-        "https://auth.example.com/oauth/token"
+/// A scheme that is neither encoding is rejected, not silently defaulted.
+#[test]
+fn tck_security_scheme_rejects_unknown_shape() {
+    let err = serde_json::from_value::<SecurityScheme>(json!({"somethingElse": {"a": 1}}))
+        .expect_err("an object matching neither encoding must be rejected");
+    assert!(
+        err.to_string().contains("type"),
+        "the error should name the missing discriminator: {err}"
     );
-}
-
-#[test]
-fn tck_security_scheme_openid_connect_wire_format() {
-    let golden = json!({
-        "type": "openIdConnect",
-        "openIdConnectUrl": "https://auth.example.com/.well-known/openid-configuration"
-    });
-    let scheme: SecurityScheme = serde_json::from_value(golden).unwrap();
-    assert!(matches!(scheme, SecurityScheme::OpenIdConnect(_)));
-
-    let ser = serde_json::to_value(&scheme).unwrap();
-    assert_eq!(ser["type"], "openIdConnect");
-}
-
-#[test]
-fn tck_security_scheme_mutual_tls_wire_format() {
-    let golden = json!({
-        "type": "mutualTLS"
-    });
-    let scheme: SecurityScheme = serde_json::from_value(golden).unwrap();
-    assert!(matches!(scheme, SecurityScheme::MutualTls(_)));
-
-    let ser = serde_json::to_value(&scheme).unwrap();
-    assert_eq!(ser["type"], "mutualTLS");
 }
 
 #[test]

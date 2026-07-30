@@ -147,6 +147,13 @@ Before investigating as a real regression, check:
    same command again on the PR branch, then
    `--compare`. If the regression does not reproduce locally, it's
    CI-specific.
+4. **If it does reproduce locally, does it reproduce *again*, on the
+   same commit pair, immediately afterward?** A single local match is
+   not sufficient evidence for a tiny (low-microsecond) benchmark — see
+   the `from_str/16384` case in "Per-benchmark exclusions" below, where
+   the exact same commit pair, same build, same flags, measured +175 %
+   and then -15 % back to back. Re-run the comparison at least once more
+   before trusting a local reproduction on a small enough benchmark.
 
 If after those checks the regression still looks real, a follow-up
 PR should either (a) fix the regression, or (b) if it's a deliberate
@@ -158,15 +165,12 @@ explaining the trade-off and justifying the threshold hit.
 A benchmark whose absolute runtime is tiny can be noisier than the 50 %
 gate accommodates even when every neighbouring benchmark is stable —
 allocator and cache-layout luck dominate at specific payload sizes.
-`protocol/payload_scaling/from_str/16384` is the known case: it has
-produced tight-CI swings past the global gate on provably identical
-code, while its 4 KiB and 100 KiB neighbours sit still.
 
-Rather than loosening the gate for every benchmark, the workflow passes
-a targeted override to `check_regression.py`:
+Rather than loosening the gate for every benchmark, the workflow can
+pass a targeted override to `check_regression.py`:
 
 ```
---override '*/from_str/16384=0.75'
+--override 'GLOB=THRESHOLD'
 ```
 
 The pattern is a glob over the benchmark name (first match wins;
@@ -176,7 +180,74 @@ regression past the raised threshold still fails the gate.
 
 Add an override only with evidence (multiple false-positive runs on
 unchanged code, stable neighbours) — an override on a benchmark that
-regresses for real silently raises the bar for catching it.
+regresses for real silently raises the bar for catching it. And check
+the next section before reaching for one: if a benchmark keeps
+defeating a generous override, the percentage itself may not be a
+meaningful signal for it, which calls for exclusion instead.
+
+## Per-benchmark exclusions
+
+Some benchmarks aren't just noisier than the 50 % gate — no fixed
+percentage tolerance is a reliable signal for them at all. For those,
+`check_regression.py` also accepts:
+
+```
+--exclude 'GLOB'
+```
+
+An excluded benchmark's numbers are still measured and printed every
+run, labelled `[EXCLUDED]` — this is not `continue-on-error`, and it does
+not hide the benchmark from the job summary. It just cannot fail the
+gate on its own, at any magnitude. Everything else keeps gating
+normally; excluding one benchmark does not widen tolerance for its
+neighbours (verified: `check_regression.py`'s own test run confirms an
+excluded regression is dropped from the failing set while an
+unexcluded one in the same run still fails the job).
+
+**`protocol/payload_scaling/from_str/16384` is the case that motivated
+this.** It started as a `--override */from_str/16384=0.75` entry (see
+the previous section's history) after repeatedly producing tight-CI
+swings past the 50 % default on provably unchanged code. PR #99 showed
+that 75 % isn't a ceiling either — the investigation, dated 2026-07-29:
+
+1. Two separate CI runs on the **same commit** measured `from_str/16384`
+   at +169 % and +175 %, both with confidence intervals about 1
+   percentage point wide — internally tight, and reproducible across
+   runs, which initially looked like a real, deterministic effect
+   rather than noise.
+2. A local reproduction using this job's *exact* build configuration
+   (`CARGO_PROFILE_BENCH_LTO=false`, `CARGO_PROFILE_BENCH_CODEGEN_UNITS=16`,
+   sequential `git checkout` in one target directory, the same
+   `--warm-up-time 1 --measurement-time 3 --sample-size 30` flags)
+   matched CI almost exactly on the first attempt: +175 %.
+3. Measuring that **same commit pair again immediately afterward**, with
+   nothing else changed, flipped the result to **-15 %** — on identical
+   source, identical baseline, identical build flags, back to back.
+4. A full bisection of every commit on that PR against `main`, using the
+   same exact-CI-build method, showed every single commit as an
+   *improvement* (-5 % to -21 %) on this benchmark — never a regression,
+   at any point in the PR's history.
+5. `protocol/payload_scaling/from_slice/16384` — same payload size, same
+   `Message`/`Part` `Deserialize` implementation, entered via a
+   different reader constructor — never moved. If the regression were
+   in shared deserialization logic, both would show it.
+
+Taken together: this benchmark's *within one process launch* variance
+is small (hence the tight CIs — all 30 samples in a run share that
+launch's memory layout), but its *launch-to-launch* variance is large
+enough to exceed even a 75 % tolerance, in either direction, on
+byte-identical code. That is a description of ASLR/cache-layout luck at
+an unusually small scale (~2 µs per call, small enough that layout
+effects are a large fraction of the total), not of a percentage that
+was merely set too low. No single fixed override could have caught
+real regressions here without also flagging this noise, so gating on
+it at all was the wrong tool — hence exclusion rather than a larger
+override.
+
+If a future change to this benchmark's payload size or implementation
+changes this calculus (e.g. batching multiple parses per sample to
+dilute the per-launch layout cost), the exclusion should be
+reconsidered rather than assumed permanent.
 
 ## Why we run the base and PR benches sequentially
 

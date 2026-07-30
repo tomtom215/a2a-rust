@@ -85,6 +85,24 @@ pub struct HandlerLimits {
     /// reports a count (see [`PushConfigStore::count`](crate::push::PushConfigStore::count));
     /// stores that do not report one are unaffected.
     pub max_total_push_configs: usize,
+    /// How often a `SubscribeToTask` stream re-checks whether its task has
+    /// finished, once the current turn's event queue has closed. Default: 250ms.
+    ///
+    /// A task's queue lives only as long as one executor invocation, so an
+    /// agent that parks a task in `input_required` closes the queue at every
+    /// turn boundary. Spec §3.1.6 requires the stream to run until a
+    /// **terminal** state, so it waits here for the next turn rather than
+    /// ending. Only an idle stream pays this cost — a live queue delivers
+    /// events immediately.
+    pub subscribe_reattach_interval: Duration,
+    /// How long a `SubscribeToTask` stream waits for a parked task to make
+    /// progress before ending. Default: 5 minutes.
+    ///
+    /// Without a bound, a task left in `input_required` forever would pin a
+    /// connection forever. Ending the stream is safe: §3.5.2 makes
+    /// reconnection an expected flow, and the client gets a fresh snapshot
+    /// when it resubscribes.
+    pub subscribe_max_idle: Duration,
 }
 
 impl Default for HandlerLimits {
@@ -100,11 +118,27 @@ impl Default for HandlerLimits {
             max_push_configs_per_task: 100,
             max_parts_per_artifact: 10_000,
             max_total_push_configs: 100_000,
+            subscribe_reattach_interval: Duration::from_millis(250),
+            subscribe_max_idle: Duration::from_secs(300),
         }
     }
 }
 
 impl HandlerLimits {
+    /// Sets how often an idle `SubscribeToTask` stream re-checks its task.
+    #[must_use]
+    pub const fn with_subscribe_reattach_interval(mut self, interval: Duration) -> Self {
+        self.subscribe_reattach_interval = interval;
+        self
+    }
+
+    /// Sets how long a `SubscribeToTask` stream waits on a parked task.
+    #[must_use]
+    pub const fn with_subscribe_max_idle(mut self, max_idle: Duration) -> Self {
+        self.subscribe_max_idle = max_idle;
+        self
+    }
+
     /// Sets the maximum allowed length for task/context IDs.
     #[must_use]
     pub const fn with_max_id_length(mut self, length: usize) -> Self {

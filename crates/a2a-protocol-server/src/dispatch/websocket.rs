@@ -304,7 +304,8 @@ impl WebSocketDispatcher {
                     let handler = Arc::clone(&self.handler);
                     let headers = Arc::clone(headers);
                     tokio::spawn(async move {
-                        process_ws_message(&handler, &text, writer, &headers).await;
+                        // Boxed: see the note in dispatch/jsonrpc/mod.rs.
+                        Box::pin(process_ws_message(&handler, &text, writer, &headers)).await;
                         drop(permit); // Release when done
                     });
                 }

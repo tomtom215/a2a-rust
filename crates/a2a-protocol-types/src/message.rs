@@ -102,6 +102,7 @@ impl std::fmt::Display for MessageRole {
 pub struct Message {
     /// Unique message identifier.
     #[serde(rename = "messageId")]
+    #[serde(alias = "message_id")]
     pub id: MessageId,
 
     /// Role of the message originator.
@@ -121,14 +122,17 @@ pub struct Message {
 
     /// Task this message belongs to, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "task_id")]
     pub task_id: Option<TaskId>,
 
     /// Conversation context this message belongs to, if any.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "context_id")]
     pub context_id: Option<ContextId>,
 
     /// IDs of tasks referenced by this message.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(alias = "reference_task_ids")]
     pub reference_task_ids: Option<Vec<TaskId>>,
 
     /// URIs of extensions used in this message.

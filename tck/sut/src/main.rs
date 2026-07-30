@@ -261,7 +261,32 @@ impl AgentExecutor for TckSutExecutor {
 
 // ── Agent card ───────────────────────────────────────────────────────────────
 
-fn make_agent_card(base_url: &str) -> AgentCard {
+/// Which capability set the SUT advertises.
+///
+/// Several MUST requirements are only *reachable* when the agent advertises
+/// **less**: `CORE-CAP-001/002/004` check that a server rejects push and
+/// streaming operations it never claimed to support, and the TCK skips them
+/// against an agent that does claim them. One SUT cannot exercise both sides,
+/// so the profile is selectable and CI runs the suite once per profile.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Profile {
+    /// Everything on — the profile the conformance gate runs against.
+    Full,
+    /// Streaming, push and extended card all absent, so the capability
+    /// *rejection* paths become observable.
+    Minimal,
+}
+
+impl Profile {
+    fn from_env() -> Self {
+        match std::env::var("SUT_PROFILE").as_deref() {
+            Ok("minimal") => Self::Minimal,
+            _ => Self::Full,
+        }
+    }
+}
+
+fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCard {
     AgentCard {
         url: Some(base_url.into()),
         name: "a2a-rust System Under Test (SUT)".into(),
@@ -280,6 +305,16 @@ fn make_agent_card(base_url: &str) -> AgentCard {
                 protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
+            // The TCK builds one client per advertised interface, so declaring
+            // GRPC is what makes it run the whole core suite a third time over
+            // the gRPC binding — and what turns the six `GRPC-*` MUST
+            // requirements from SKIPPED into a real pass/fail result.
+            AgentInterface {
+                url: grpc_url.into(),
+                protocol_binding: "GRPC".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            },
         ],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
@@ -293,9 +328,15 @@ fn make_agent_card(base_url: &str) -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true),
+        capabilities: match profile {
+            Profile::Full => AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
+            // Advertising nothing is the point: it is what lets the suite ask
+            // whether unsupported operations are rejected.
+            Profile::Minimal => AgentCapabilities::none(),
+        },
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -365,17 +406,53 @@ async fn main() {
     let advertised =
         std::env::var("SUT_ADVERTISE_URL").unwrap_or_else(|_| format!("http://{addr}"));
 
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(TckSutExecutor)
-            .with_agent_card(make_agent_card(&advertised))
+    // gRPC needs its own listener: the binding speaks HTTP/2 with its own
+    // framing and cannot share the JSON-RPC/REST router.
+    let grpc_host = std::env::var("SUT_GRPC_HOST")
+        .unwrap_or_else(|_| format!("{}:{}", addr.ip(), addr.port().saturating_sub(1)));
+    let grpc_addr: SocketAddr = grpc_host.parse().expect("SUT_GRPC_HOST must be host:port");
+    // Advertised WITHOUT a scheme: a gRPC target is a name-resolver string
+    // (`host:port`), not a URL. `grpc.insecure_channel("http://127.0.0.1:9998")`
+    // fails with "Misformatted domain name", which the TCK reports as 25
+    // failing MUST requirements that look like binding defects and are not.
+    let grpc_advertised =
+        std::env::var("SUT_GRPC_ADVERTISE_URL").unwrap_or_else(|_| grpc_addr.to_string());
+
+    let profile = Profile::from_env();
+    let mut builder = RequestHandlerBuilder::new(TckSutExecutor).with_agent_card(make_agent_card(
+        &advertised,
+        &grpc_advertised,
+        profile,
+    ));
+    if profile == Profile::Full {
+        builder = builder
             .with_push_config_store(InMemoryPushConfigStore::new())
             // The TCK runs its webhook receiver on loopback, which the
             // sender's SSRF guard blocks by default — correct in production,
             // wrong for a conformance harness pointing at its own listener.
             .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .build()
-            .expect("build SUT request handler"),
+            // §13.3 requires the extended-card endpoint to be authenticated,
+            // and the builder refuses to serve it without an authenticating
+            // interceptor. The TCK has no credentials to present, so the SUT
+            // opts in explicitly rather than shipping an auth scheme the suite
+            // cannot satisfy.
+            .allow_unauthenticated_extended_card();
+    }
+    let handler = Arc::new(builder.build().expect("build SUT request handler"));
+
+    let grpc = a2a_protocol_server::dispatch::GrpcDispatcher::new(
+        Arc::clone(&handler),
+        a2a_protocol_server::dispatch::GrpcConfig::default(),
     );
+    match grpc.serve_with_addr(grpc_addr).await {
+        Ok(bound) => println!("a2a-rust TCK SUT gRPC listening on {bound}"),
+        Err(e) => {
+            // Not fatal: the JSON bindings are still worth grading. But say so
+            // loudly — a silent gRPC failure would show up as six SKIPPED
+            // requirements that look like a coverage gap rather than a fault.
+            eprintln!("WARNING: gRPC listener failed to bind {grpc_addr}: {e}");
+        }
+    }
 
     serve(addr, handler).await;
 }

@@ -6,6 +6,7 @@
 //! Synchronous event collection for non-streaming mode.
 
 use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::message::Message;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use crate::error::{ServerError, ServerResult};
@@ -15,9 +16,45 @@ use super::super::RequestHandler;
 
 // ── &self methods (sync mode) ───────────────────────────────────────────────
 
+/// What a blocking `SendMessage` collected from the executor.
+///
+/// Spec §3.1.1 lets an agent answer with **either** a `Task` or a bare
+/// `Message` — "a direct response message (for simple interactions that don't
+/// require task tracking)". The task is always tracked here; `direct_message`
+/// says whether the interaction turned out to be one of those simple ones.
+#[derive(Debug)]
+pub struct Collected {
+    /// The task in its final state. Always present — a task row exists even
+    /// for a message-only interaction, so `GetTask` still works.
+    pub task: Task,
+    /// Set when the executor produced a `Message` and **nothing else**: no
+    /// status transition off `Submitted`, no artifacts. That is precisely the
+    /// "doesn't require task tracking" case, and the caller answers with the
+    /// message rather than the task.
+    ///
+    /// Deliberately narrower than the reference implementation, which treats
+    /// *any* `Message` event as the response and raises
+    /// `InvalidAgentResponseError` if further events follow it. An agent here
+    /// may legitimately emit a message and then carry on working — that
+    /// message lands in `Task.history` as before — so only the unambiguous
+    /// message-only case changes shape. See `docs/official-tck-findings.md`
+    /// §10.
+    pub direct_message: Option<Message>,
+}
+
+/// Mutable state threaded through `process_event` for one collection run.
+struct CollectState {
+    task: Task,
+    first_message: Option<Message>,
+    /// Set by any event that implies the agent is tracking a task: a status
+    /// update or an artifact. A `Task` snapshot counts too — an agent that
+    /// hands back a whole task is plainly not doing a message-only exchange.
+    saw_task_shaped_event: bool,
+}
+
 impl RequestHandler {
     /// Collects events until stream closes, updating the task store and
-    /// delivering push notifications. Returns the final task.
+    /// delivering push notifications.
     ///
     /// Takes the executor's `JoinHandle` so that if the executor panics or
     /// terminates without closing the queue properly, we detect it and avoid
@@ -27,12 +64,16 @@ impl RequestHandler {
         mut reader: InMemoryQueueReader,
         task_id: TaskId,
         executor_handle: tokio::task::JoinHandle<()>,
-    ) -> ServerResult<Task> {
-        let mut last_task = self
-            .task_store
-            .get(&task_id)
-            .await?
-            .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?;
+    ) -> ServerResult<Collected> {
+        let mut state = CollectState {
+            task: self
+                .task_store
+                .get(&task_id)
+                .await?
+                .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?,
+            first_message: None,
+            saw_task_shaped_event: false,
+        };
 
         // Pin the executor handle so we can poll it alongside the reader.
         // When the executor finishes (or panics), we'll drain remaining events
@@ -44,9 +85,7 @@ impl RequestHandler {
             if executor_done {
                 // Executor finished — drain any remaining buffered events.
                 match reader.read().await {
-                    Some(event) => {
-                        self.process_event(event, &task_id, &mut last_task).await?;
-                    }
+                    Some(event) => self.process_event(event, &task_id, &mut state).await?,
                     None => break,
                 }
             } else {
@@ -55,38 +94,58 @@ impl RequestHandler {
                     event = reader.read() => {
                         match event {
                             Some(event) => {
-                                self.process_event(event, &task_id, &mut last_task).await?;
+                                self.process_event(event, &task_id, &mut state).await?;
                             }
                             None => break,
                         }
                     }
                     result = &mut handle_fuse => {
                         executor_done = true;
-                        if result.is_err() {
-                            // Executor panicked (CB-2). Mark task as failed
-                            // and drain remaining events.
-                            trace_error!(
-                                task_id = %task_id,
-                                "executor task panicked"
-                            );
-                            if !last_task.status.state.is_terminal() {
-                                last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                                self.task_store.save(&last_task).await?;
-                            }
-                        }
-                        // Continue to drain remaining events from the queue.
+                        self.on_executor_finished(&result, &task_id, &mut state).await?;
                     }
                 }
             }
 
             // Per Section 3.2.2: blocking SendMessage MUST return when the task
             // reaches a terminal OR interrupted state (INPUT_REQUIRED, AUTH_REQUIRED).
-            if last_task.status.state.is_terminal() || last_task.status.state.is_interrupted() {
+            if state.task.status.state.is_terminal() || state.task.status.state.is_interrupted() {
                 break;
             }
         }
 
-        Ok(last_task)
+        // A message-only interaction is one where the agent said something and
+        // did nothing else. Anything task-shaped means the task *is* the
+        // answer, and the message stays in its history.
+        let direct_message = if state.saw_task_shaped_event {
+            None
+        } else {
+            state.first_message
+        };
+        Ok(Collected {
+            task: state.task,
+            direct_message,
+        })
+    }
+
+    /// Handles the executor's `JoinHandle` resolving mid-collection.
+    ///
+    /// A panic (CB-2) marks the task failed; either way the caller keeps
+    /// draining whatever the queue still holds.
+    async fn on_executor_finished(
+        &self,
+        result: &Result<(), tokio::task::JoinError>,
+        _task_id: &TaskId,
+        state: &mut CollectState,
+    ) -> ServerResult<()> {
+        if result.is_err() {
+            trace_error!(task_id = %_task_id, "executor task panicked");
+            if !state.task.status.state.is_terminal() {
+                state.task.status = TaskStatus::with_timestamp(TaskState::Failed);
+                state.saw_task_shaped_event = true;
+                self.task_store.save(&state.task).await?;
+            }
+        }
+        Ok(())
     }
 
     /// Processes a single event from the queue reader, updating the task and
@@ -96,8 +155,9 @@ impl RequestHandler {
         &self,
         event: a2a_protocol_types::error::A2aResult<StreamResponse>,
         task_id: &TaskId,
-        last_task: &mut Task,
+        state: &mut CollectState,
     ) -> ServerResult<()> {
+        let last_task = &mut state.task;
         match event {
             Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
                 let current = last_task.status.state;
@@ -121,6 +181,7 @@ impl RequestHandler {
                     timestamp: update.status.timestamp.clone(),
                 };
                 self.task_store.save(last_task).await?;
+                state.saw_task_shaped_event = true;
                 self.deliver_push(task_id, stream_resp).await;
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
@@ -183,6 +244,7 @@ impl RequestHandler {
                             }
                             return Err(ServerError::from(e));
                         }
+                        state.saw_task_shaped_event = true;
                         self.deliver_push(task_id, stream_resp).await;
                         return Ok(());
                     }
@@ -198,16 +260,23 @@ impl RequestHandler {
                 } else {
                     artifacts.push(update.artifact.clone());
                     self.task_store.save(last_task).await?;
+                    state.saw_task_shaped_event = true;
                     self.deliver_push(task_id, stream_resp).await;
                 }
             }
             Ok(StreamResponse::Task(task)) => {
                 *last_task = task;
                 self.task_store.save(last_task).await?;
+                state.saw_task_shaped_event = true;
             }
             Ok(StreamResponse::Message(msg)) => {
                 // Agent messages are part of the conversation record: append
                 // to Task.history (same cap as the send path) and persist.
+                // The first one is also a candidate direct response — see
+                // `Collected::direct_message`.
+                if state.first_message.is_none() {
+                    state.first_message = Some(msg.clone());
+                }
                 let history = last_task.history.get_or_insert_with(Vec::new);
                 history.push(msg);
                 if history.len() > crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES {
@@ -234,6 +303,7 @@ impl RequestHandler {
             Err(e) => {
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
                 self.task_store.save(last_task).await?;
+                state.saw_task_shaped_event = true;
                 return Err(ServerError::Protocol(e));
             }
         }
@@ -412,7 +482,7 @@ mod tests {
 
         assert!(result.is_ok(), "collect_events should succeed");
         let final_task = result.unwrap();
-        assert_eq!(final_task.status.state, TaskState::Working);
+        assert_eq!(final_task.task.status.state, TaskState::Working);
 
         let stored = task_store.get(&task_id).await.unwrap().unwrap();
         assert_eq!(stored.status.state, TaskState::Working);
@@ -500,7 +570,7 @@ mod tests {
 
         assert!(result.is_ok(), "collect_events should succeed");
         let final_task = result.unwrap();
-        let artifacts = final_task.artifacts.expect("artifacts should be Some");
+        let artifacts = final_task.task.artifacts.expect("artifacts should be Some");
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
     }
@@ -537,7 +607,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().status.state, TaskState::Completed);
+        assert_eq!(result.unwrap().task.status.state, TaskState::Completed);
     }
 
     // ── process_event: message event ────────────────────────────────────
@@ -581,7 +651,7 @@ mod tests {
 
         assert!(result.is_ok());
         // Task state should remain Working (message events don't change state).
-        assert_eq!(result.unwrap().status.state, TaskState::Working);
+        assert_eq!(result.unwrap().task.status.state, TaskState::Working);
     }
 
     // ── process_event: error event ──────────────────────────────────────
@@ -758,7 +828,7 @@ mod tests {
         assert!(result.is_ok());
         let final_task = result.unwrap();
         assert_eq!(
-            final_task.status.state,
+            final_task.task.status.state,
             TaskState::Completed,
             "task should drain remaining events after executor completes"
         );
@@ -807,7 +877,7 @@ mod tests {
         assert!(result.is_ok(), "collect_events should still return Ok");
         let final_task = result.unwrap();
         assert_eq!(
-            final_task.status.state,
+            final_task.task.status.state,
             TaskState::Failed,
             "task should be marked Failed after executor panic"
         );
@@ -863,7 +933,7 @@ mod tests {
 
         assert!(result.is_ok());
         let final_task = result.unwrap();
-        let artifacts = final_task.artifacts.expect("artifacts should be Some");
+        let artifacts = final_task.task.artifacts.expect("artifacts should be Some");
         assert_eq!(artifacts.len(), 1, "artifact count should not exceed limit");
     }
 
@@ -989,7 +1059,7 @@ mod tests {
             .expect("collect_events should not fail");
 
         assert_eq!(
-            final_task.status.state,
+            final_task.task.status.state,
             TaskState::Completed,
             "collect_events should return the task in its final state"
         );

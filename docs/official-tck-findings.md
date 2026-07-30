@@ -53,6 +53,13 @@ one client tells you the two disagree. It does not tell you which is wrong.
 | Against `examples/echo-agent`, before fixes | 128 | 12 | 125 |
 | Against `tck/sut`, before fixes | 87 | 15 | 157 |
 | Against `tck/sut`, after the §2 fixes | 158 | 12 | 94 |
+| Against `tck/sut`, after the §3.3 alias fix | 166 | 10 | 89 |
+| Against `tck/sut`, after the §8 inline-push fix | 172 | 4 | 89 |
+| Against `tck/sut`, after the §10 direct-message fix | 174 | 2 | 89 |
+| Against `tck/sut`, after the §9 subscribe fix | 176 | 0 | 89 |
+| …with the gRPC binding advertised too (§11) | 244 | 0 | 21 |
+| …after §13, `full` profile | **246** | **0** | 19 |
+| `minimal` profile (§12), which reaches `CORE-CAP-*` | 181 | 0 | 83 |
 
 These numbers are **not** directly comparable to one another. The echo agent
 advertises fewer capabilities, so the suite asks it less and *skips* where it
@@ -63,14 +70,40 @@ real before/after.
 Identical results were obtained with the SUT behind a recording proxy
 (§3.2), confirming the proxy did not perturb the run.
 
-**All 12 remaining failures are at `MUST` level.** An earlier revision of this
-document listed them without saying so, which understated them — the
-MUST-only run is `12 failed, 139 passed`, i.e. every failure is a hard
-conformance requirement, not a `SHOULD` or `MAY`. Reported MUST compatibility
-is **85.4%**, computed over tested requirements only; 21 further MUST
-requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and `BIND-EQUIV-*`
-families) report `NOT TESTED` because the SUT does not exercise them, and are
-a coverage gap rather than a pass.
+**There are no remaining failures.** Reported MUST compatibility is
+**100.0%** (85.4% → 93.9% after §3.3 → 97.6% after §8 → 98.8% after §10 →
+100% after §9). Every failure closed along the way was at `MUST` level; an
+earlier revision listed them without saying so, which understated them.
+
+**100% here does not mean fully conformant, and the number should not be
+quoted without this sentence.** It is computed over *tested* requirements
+only. Of the **114 MUST requirements** the suite knows about:
+
+| | Count | Meaning |
+|---|---|---|
+| Passing | 88 | measured and conformant on the `full` profile |
+| Failing | **0** | — |
+| `SKIPPED` | 5 | need a differently-configured SUT; 2 of them pass on the `minimal` profile (§12) |
+| `NOT TESTED` | 21 | **the TCK has no test for them at all** |
+
+The last row is not something this SDK can close: those requirements
+(`CARD-SIGN-*`, `AUTH-*`, `VER-*`, `BIND-EQUIV-*`, `GRPC-SVC-003`) have no
+implementation in `a2a-tck`. Closing them means contributing tests upstream,
+and until someone does, **no implementation's score says anything about
+them** — including the reference's.
+
+An earlier revision of this document said "21 further MUST requirements …
+report `NOT TESTED` because the SUT does not exercise them". Two things were
+wrong with that. `NOT TESTED` means the *suite* has no test, not that the SUT
+declined one — that is what `SKIPPED` means — and the two were being counted
+as one number, hiding 11 requirements that *were* the SUT's to fix. Six of
+those are now closed (§11); the remaining 5 are the `SKIPPED` row above.
+
+Historically the denominator was smaller; 21
+further MUST requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and
+`BIND-EQUIV-*` families) report `NOT TESTED` because the SUT does not
+exercise them, and are a coverage gap rather than a pass — **not** progress
+toward 100%.
 
 ### The gate
 
@@ -87,10 +120,46 @@ The second direction is what keeps the first honest. A baseline that is
 allowed to rot becomes a blanket exemption, at which point the check is green
 for the same bad reason `continue-on-error: true` was.
 
-Transport granularity matters because `PUSH-CREATE-001` fails on `jsonrpc` and
-passes on `http_json` today; a requirement-level baseline would not notice it
-starting to fail on `http_json` too. The baseline currently holds **16
-(requirement, transport) pairs across 12 requirements**.
+Transport granularity matters: `PUSH-CREATE-001` used to fail on `jsonrpc`
+while passing on `http_json`, and a requirement-level baseline would not have
+noticed it starting to fail on `http_json` too. The baseline is now **empty**,
+down from 16 pairs across 12 requirements — so the gate has become a plain
+"no MUST-level failure" check, and any regression fails CI immediately. That
+it still fires with nothing baselined was verified rather than assumed (table
+below).
+
+The stale-baseline direction is not theoretical — it fired on both fix
+commits, which is how each shrink was forced:
+
+```
+STALE BASELINE — 7 baselined check(s) now pass:      # after §3.3
+  CORE-HIST-002 [jsonrpc]   PUSH-CREATE-001 [jsonrpc]  PUSH-CREATE-002 [jsonrpc]
+  PUSH-DEL-001 [jsonrpc]    PUSH-DEL-002 [jsonrpc]     PUSH-GET-001 [jsonrpc]
+  PUSH-LIST-001 [jsonrpc]
+
+STALE BASELINE — 6 baselined check(s) now pass:      # after §8
+  PUSH-DELIVER-001 [jsonrpc]  PUSH-DELIVER-001 [http_json]
+  PUSH-DELIVER-002 [jsonrpc]  PUSH-DELIVER-002 [http_json]
+  PUSH-DELIVER-003 [jsonrpc]  PUSH-DELIVER-003 [http_json]
+
+STALE BASELINE — 1 baselined check(s) now pass:      # after §10
+  DM-MSG-001 [*]
+
+STALE BASELINE — 2 baselined check(s) now pass:      # after §9
+  STREAM-SUB-002 [jsonrpc]   STREAM-SUB-002 [http_json]
+```
+
+Both directions of the gate, and its behaviour on malformed input, are
+exercised deliberately rather than assumed:
+
+| Injected into the report | Gate |
+|---|---|
+| unmodified (control) | exit 0 |
+| a MUST failure not in the baseline | exit 1 — regression |
+| a baselined requirement failing on a **new** transport | exit 1 — regression |
+| a baselined entry now passing | exit 1 — stale |
+| a `SHOULD`-level failure | exit 0 — correctly not gated |
+| report missing / not JSON / `null` / `[]` / a number | exit 1 with a readable message |
 
 > **An earlier revision of this workflow reported `Success` while these 12
 > checks failed**, because both suite steps carried `continue-on-error: true`.
@@ -202,55 +271,161 @@ that determines who is at fault.
 
 ### 3.3 The real defect: this SDK silently ignores unrecognised parameters
 
-*Open. Not yet fixed.*
+*Part (a) fixed. Part (b) still open — see below.*
 
 The reference rejects unknown fields (§3.1). This SDK ignores them, and for
 filter parameters that converts a client-side mistake into **silently wrong
-data** rather than an error:
+data** rather than an error. Measured on the wire against `tck/sut`, seeded
+with 5 tasks of which 3 are in `ctx-A`:
 
-| `ListTasks` params | Result |
-|---|---|
-| *(none)* | 50 tasks |
-| `{"contextId": "<nonexistent>"}` | **0 tasks** — correct |
-| `{"context_id": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"contextID": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"contxtId": "<nonexistent>"}` | **50 tasks** — filter ignored |
-| `{"totallyBogusField": 1}` | 50 tasks — ignored |
-| `{"pageSize": 1}` | 1 task — correct |
-| `{"pagesize": 1}` | 50 tasks — ignored |
+| `ListTasks` params | Before | After |
+|---|---|---|
+| *(none)* | 5 tasks | 5 tasks |
+| `{"contextId": "ctx-A"}` | **3** — correct | **3** — correct |
+| `{"context_id": "ctx-A"}` | **5** — filter ignored | **3** — correct |
+| `{"contextID": "ctx-A"}` | **5** — filter ignored | **5** — still ignored |
+| `{"contxtId": "ctx-A"}` | **5** — filter ignored | **5** — still ignored |
+| `{"totallyBogusField": 1}` | 5 — ignored | 5 — still ignored |
+| `{"pageSize": 1}` | 1 task — correct | 1 task — correct |
+| `{"page_size": 1}` | **5** — filter ignored | **1** — correct |
+| `{"pagesize": 1}` | **5** — filter ignored | **5** — still ignored |
 
 A caller who asks for one context's tasks and misspells the key by any means
 receives **every** task instead of an error. The snake_case spelling the TCK
-sends is one instance of this; a typo is another, and neither is reported.
+sends is one instance of this; a typo is another. Only the first is fixed.
 
 The same class of bug is loud rather than silent where the field is required:
-`CreateTaskPushNotificationConfig` with `task_id` fails with
-`-32602 taskId is required`, which is at least visible.
+`CreateTaskPushNotificationConfig` with `task_id` used to fail with
+`-32602 taskId is required`, which was at least visible. It now succeeds.
 
-**Scope:** 41 multi-word public fields across the request-facing types
-(`params.rs` 16, `agent_card.rs` 14, `events.rs` 5, `message.rs` 4,
-`push.rs` 1, `task.rs` 1) currently accept only the camelCase spelling.
+**Scope:** 73 multi-word fields across the 44 messages in
+`proto/a2a_v1/a2a.proto`. An earlier revision of this document said 41, which
+counted only the request-facing types — a client parsing another
+implementation's *responses* and agent cards hits the same wall, so the fix
+covers the whole schema.
 
-**Fix direction, not yet applied** — two changes, and they are separable:
+#### (a) Accept the proto field name as an alias — **done**
 
-1. *Accept the proto field name as an alias* on every request-facing field,
-   matching the reference's ProtoJSON acceptance. Mechanical, but the alias
-   list must be generated from `proto/a2a_v1/a2a.proto` rather than from the
-   Rust field names, and pinned by a test asserting both spellings
-   deserialize identically for every field in the schema.
-2. *Reject unknown fields* rather than ignoring them, matching the
-   reference's `ParseError`. This is the change that actually prevents the
-   silent-wrong-data case, and it is a deliberate semantic decision with a
-   forward-compatibility cost — the types are `#[non_exhaustive]` precisely
-   so the spec can grow. Worth doing, worth discussing first.
+`#[serde(alias = "<proto_name>")]` on all 67 fields that lacked it (`Part`
+already accepted `media_type` by hand, and 5 are exempt — see below).
 
-Neither is applied here, because doing them properly means generating the
-field list from the schema and testing every field — not fixing the six
-spellings the TCK happens to exercise.
+The list is derived from `a2a.proto`, not from the Rust field names, by
+`crates/a2a-protocol-types/tests/proto_field_alias.rs`. Deriving it from the
+Rust names would have been circular: it would prove the aliases match the Rust
+identifiers rather than the wire contract, and would go stale silently when
+the schema grows a field. The test parses the schema, computes the camelCase
+spelling with protobuf's own `ToJsonName` rather than serde's `rename_all`,
+and for every multi-word field asserts that:
+
+- both spellings deserialize, and to **the same value**;
+- the sample value is **distinguishable from the field being absent** — a case
+  that would pass with no alias at all is reported as a bad case, not a pass;
+- only the `json_name` is **emitted** (spec §5.5 governs emission), so a
+  `rename`/`alias` swap cannot quietly put snake_case on the wire;
+- every multi-word field in the schema is either covered or explicitly
+  exempt, and no case references a field the schema no longer has.
+
+Five counter-tests drive each of those directions to a failure on purpose, so
+none of them is a gate that has never been observed firing. Two of them earned
+their keep immediately: the first draft of the schema parser matched
+`starts_with("option")`, which silently swallowed every `optional` field
+(`page_size`, `history_length`, `include_artifacts`), and scanned for
+`"message "` anywhere in the text, which the field `Message message = 2;`
+derailed into skipping `Part`, `GetTaskRequest`, `StreamResponse` and
+`ListTaskPushNotificationConfigsResponse`. Both produced a *smaller* case list
+that passed everything asked of it.
+
+**Deliberate divergence, recorded:** a request carrying *both* spellings of one
+field is rejected here (`-32602 duplicate field`) where the reference accepts
+it and takes the last key.
+
+```text
+ParseDict({"context_id": "A", "contextId": "B"}, ListTasksRequest())
+  -> {"contextId": "B"}     # reference: accepted, last wins
+  -> -32602 duplicate field `contextId`      # here
+```
+
+No conformant ProtoJSON printer emits both spellings, so only a hand-built or
+buggy request reaches this path; refusing to guess which one the caller meant
+is safer than silently picking one. Pinned by
+`both_spellings_at_once_is_an_error` so it stays a decision.
+
+**Exempt, and why:** the 5 arms of the `SecurityScheme` oneof. This SDK
+encodes that type as an internally tagged union (`{"type": "apiKey", …}`)
+rather than as a ProtoJSON oneof (`{"apiKeySecurityScheme": {…}}`). That is a
+wire divergence an alias cannot fix — see §7.
+
+#### (b) Reject unknown fields — **tried, measured, reverted. Must not be done.**
+
+*An earlier revision of this section called this "worth doing, worth agreeing
+on first", on the grounds that it matches the reference's `ParseError`. That
+recommendation was wrong and is retracted.*
+
+The specification says the opposite, in as many words:
+
+> **Unrecognized Fields:**
+>
+> Implementations **SHOULD** ignore unrecognized fields in messages, allowing
+> for forward compatibility as the protocol evolves.
+>
+> — `specification.md` §11
+
+The official TCK grades exactly this as **`DM-SERIAL-005`**, sending
+
+```json
+{"params": {"message": {…, "tckUnknownField": "should-be-ignored"},
+            "tckExtraParam": 42}}
+```
+
+and failing the implementation if the server returns an error.
+
+This was not reasoned about — it was **measured**.
+`#[serde(deny_unknown_fields)]` was added to all ten request-parameter types,
+the whole workspace stayed green (2,099 tests), and the official suite then
+reported:
+
+```
+DM-SERIAL-005 SHOULD {"jsonrpc": "FAIL", "http_json": "FAIL"}
+  Server rejected request with unrecognized fields: invalid params:
+  unknown field `tckExtraParam`, expected one of `tenant`, `message`, …
+```
+
+The run went from `172 passed` to `170 passed, 2 xfailed`. The change was
+reverted.
+
+**Two things are worth recording about how this was nearly shipped.**
+
+First, the recommendation came from reading what the reference implementation
+does — its JSON-RPC dispatcher calls `ParseDict` strictly — rather than from
+the normative text. That is the §Correction-notice mistake in a new costume:
+*an implementation's behaviour was treated as the authority when the
+specification was sitting right there.* The spec is the authority. (What that
+implies about the reference's own `DM-SERIAL-005` result is not claimed here:
+this SDK's TCK run says nothing about another implementation's, and no run
+against the reference server was made.)
+
+Second, **the conformance gate would not have caught it.** The gate is
+MUST-only by design, and this is a `SHOULD`. It went green on the exact commit
+that introduced the regression; only reading the full suite output caught the
+`170 passed, 2 xfailed` line. A MUST-only gate is still the right choice — a
+`SHOULD` regression should not block a merge — but "the gate is green" and
+"nothing regressed" are not the same statement, and this is the second time in
+this document that a green signal proved narrower than it looked.
+
+So the residual wart stands: `ListTasks` with `{"contxtId": …}` returns every
+task. That is a cost the specification has explicitly chosen in exchange for
+forward compatibility, and it is not this SDK's to unilaterally reprice. It is
+pinned by `unrecognised_fields_are_ignored_not_rejected`, which exists to stop
+someone re-applying the fix that was just measured to be wrong.
+
+A mitigation that would satisfy both — counting or logging unrecognised fields
+so an operator can *see* the silent case without the request failing — is not
+implemented here, and is the shape any future attempt at this should take.
 
 ## 4. `CORE-HIST-002` is the §3.3 bug, not a `historyLength` defect
 
-*Earlier called a probable genuine defect. Retracted.*
+*Earlier called a probable genuine defect. Retracted. Closed by the §3.3(a)
+alias fix — it no longer appears in the baseline.*
 
 The TCK reported "`GetTask` with `historyLength=1` returned 2 messages".
 `historyLength` is in fact honoured correctly; the TCK sends
@@ -265,17 +440,34 @@ history entries:
 
 One root cause, two reported symptoms.
 
-## 5. Still open — genuinely unclassified
+## 5. Still open
 
-All `MUST` level, all baselined in `tck/conformance-baseline.json`. Listed
-rather than diagnosed: no claim is made about cause.
+**Nothing.** `tck/conformance-baseline.json` is empty and the suite reports
+`176 passed, 0 failed, 89 skipped`.
 
-| Requirement | Symptom | Status |
-|---|---|---|
-| `DM-MSG-001` (×2) | `tck-message-response` yields a Task, not a bare `Message` | Unknown. Likely a SUT gap — writing `StreamResponse::Message` to the event queue may not be how this SDK returns a message-instead-of-task. Needs an API review before any claim. |
-| `PUSH-CREATE-001` (jsonrpc) | `task_id` rejected | Explained by §3.3. Fixed when §3.3 is. |
-| `PUSH-DELIVER-001/002/003` (×6) | No webhook delivery observed | Unknown. The `jsonrpc` legs follow from `PUSH-CREATE-001`; the `http_json` legs do not and need separate investigation. |
-| `STREAM-SUB-002` (×2) | Subscribe stream closes without a terminal-state final frame | Unknown. Needs a hand-built reproduction against §3.1.6 before it is called a defect. |
+That is not the same as "fully conformant" — see the warning in §1 about the
+21 `NOT TESTED` MUST requirements, which is now the single largest gap in what
+this measurement can tell you.
+
+
+Closed since the previous revision:
+
+- by §3.3(a) — `CORE-HIST-002`, `PUSH-CREATE-001`, `PUSH-CREATE-002`,
+  `PUSH-DEL-001`, `PUSH-DEL-002`, `PUSH-GET-001`, `PUSH-LIST-001` (7 pairs,
+  all `jsonrpc`);
+- by §8 — `PUSH-DELIVER-001`, `PUSH-DELIVER-002`, `PUSH-DELIVER-003` on both
+  bindings (6 pairs);
+- by §10 — `DM-MSG-001` (1 pair). Its earlier "likely a SUT gap" guess was
+  wrong: the SUT was correct and the server was not.
+
+**A retracted assumption:** the previous revision said the `jsonrpc` legs of
+`PUSH-DELIVER-*` "follow from `PUSH-CREATE-001`" while the `http_json` legs
+needed separate investigation. That was wrong in both halves. `PUSH-CREATE-001`
+passing did not fix any `PUSH-DELIVER-*` leg, and the two bindings shared one
+cause (§8) rather than needing separate ones. The lesson is the same one this
+document keeps recording: a plausible causal story about an undiagnosed
+failure is not a diagnosis, and labelling it as one costs more than saying
+"unknown".
 
 ## 6. Reproducing every measurement
 
@@ -318,3 +510,532 @@ python3 tck/scripts/check_conformance.py --report … --baseline … --update
 verified to yield an identical set of gated failures to the full run, so CI
 runs the full suite once. Reports land in `reports/` as HTML, JSON, and JUnit
 XML; the gate reads `compatibility.json`.
+
+## 7. `securitySchemes` was emitted in the v0.3 shape, not the v1.0 shape
+
+*Fixed. Found while doing §3.3, not by the TCK — no `CARD-*` check covers it.
+Confidence: verified by cross-implementation test against `a2a-sdk` 1.1.2 and
+against the checked-in schema.*
+
+`proto/a2a_v1/a2a.proto` is byte-identical to the specification copy vendored
+by the TCK (`a2aproject/A2A` at `v1.0.0`, commit `1736957`; verified by
+`diff`, 0 lines). It defines `SecurityScheme` as a **oneof of five arms** and
+`APIKeySecurityScheme` with a field named **`location`**. The specification
+text generates its data-model tables directly from that proto
+(`{{ proto_to_table("SecurityScheme") }}`), so the proto is normative for the
+JSON shape. This SDK instead encodes the type as an internally tagged union
+with `"type"` and `"in"` — the OpenAPI-style v0.3 shape.
+
+What this SDK emits today:
+
+```json
+"securitySchemes": {
+  "apiKeyAuth": {"type": "apiKey", "in": "header", "name": "X-API-Key"},
+  "bearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+}
+```
+
+What the v1.0 schema defines:
+
+```json
+"securitySchemes": {
+  "apiKeyAuth": {"apiKeySecurityScheme": {"location": "header", "name": "X-API-Key"}},
+  "bearerAuth":  {"httpAuthSecurityScheme": {"scheme": "bearer", "bearerFormat": "JWT"}}
+}
+```
+
+**Severity, measured rather than assumed.** That card JSON — emitted by this
+SDK's own serializer — was fed to three parsers in the reference SDK:
+
+| Parser | Before | After |
+|---|---|---|
+| `a2a.client.card_resolver.parse_agent_card` (what a reference client calls) | **accepted**, both schemes recovered in full | accepted, in full |
+| `json_format.ParseDict(..., AgentCard())`, strict | **rejected** — `has no field named "type"` | **accepted**, in full |
+| `json_format.ParseDict(..., AgentCard(), ignore_unknown_fields=True)` | **accepted, schemes silently empty** — `{"apiKeyAuth": {}, "bearerAuth": {}}` | **accepted**, in full |
+
+Both columns were measured the same way: this SDK's own serializer produced the
+card bytes, which were then fed to each parser.
+
+So this is **not** an interop break with the reference SDK: its resolver
+carries an explicit backward-compatibility shim that maps `type` → the oneof
+arm and `in` → `location`, and its docstring calls the input "legacy". Row 1
+is the path a real reference client takes.
+
+It is nonetheless worth fixing, and row 3 is why: a peer that parses the card
+with ProtoJSON and `ignore_unknown_fields=True` — the same option the
+reference resolver itself passes — gets an agent card declaring **two security
+schemes with no contents**, and would conclude the agent supports no usable
+authentication. That is the §3.3 failure mode again (silently wrong data
+rather than an error), pointed the other way across the wire.
+
+**Fixed by emitting the v1.0 shape while accepting both.** `SecurityScheme`
+now has a hand-written `Serialize`/`Deserialize` pair: it emits the ProtoJSON
+`oneof` encoding unconditionally, and accepts the v1.0 encoding under either
+spelling of the arm name (`apiKeySecurityScheme` or
+`api_key_security_scheme`) *and* the v0.3 encoding, which normalises to the
+v1.0 form on re-emission. `ApiKeySecurityScheme.location` is emitted as
+`location`, the proto field name, with `in` retained as an alias.
+`ApiKeyLocation` keeps its `header`/`query`/`cookie` string values, which are
+exactly what the proto comment enumerates for `string location`.
+
+This is a breaking change to a published wire format — the bytes on
+`/.well-known/agent-card.json` change for every consumer of this SDK — so it
+is deliberate rather than incidental, and it only breaks a consumer that reads
+the card's raw JSON keys rather than parsing it with an A2A implementation.
+Deserialization is strictly more permissive than before.
+
+Deserialization is buffered through `serde_json::Map` rather than streamed,
+because telling the two encodings apart needs the whole object: the v0.3
+discriminator `type` may arrive after other keys. Agent cards are parsed at
+discovery time, not per request, so this is not on a hot path — unlike `Part`,
+which is, and therefore keeps its hand-rolled single-pass visitor.
+
+With the arms no longer exempt, `proto_field_alias.rs` now covers **all 73**
+multi-word schema fields with an empty `EXEMPT` list.
+
+**Five in-repo tests asserted the old encoding and passed confidently** —
+`tck_security_scheme_*_wire_format` in `tck_wire_format.rs` checked
+`ser["type"] == "apiKey"`. That is the §2.1 trap a third time: a suite that
+encodes a defect validates it forever. They now assert the v1.0 encoding
+round-trips, that a v0.3 scheme still parses *and* normalises to the v1.0
+form, and that an object matching neither encoding is rejected rather than
+silently defaulted.
+
+## 8. Inline push notification configs were parsed and dropped
+
+*Fixed. Confirmed by re-run.*
+
+*Found by `PUSH-DELIVER-001/002/003`, all six legs. Confidence: verified by
+hand reproduction against a local webhook receiver, by the schema text, and
+against the reference implementation's source.*
+
+The schema is explicit that `SendMessage` is a way to register a push config:
+
+```protobuf
+// Configuration for the agent to send push notifications for task updates.
+// Task id should be empty when sending this configuration in a `SendMessage` request.
+TaskPushNotificationConfig task_push_notification_config = 2;
+```
+
+This SDK deserialised the field and never looked at it again. The TCK
+registers its webhook exactly this way, so all six delivery checks failed with
+"No webhook request received within timeout".
+
+Hand reproduction against `tck/sut` with a local receiver on `:9877`:
+
+| Flow | `ListTaskPushNotificationConfigs` | Webhooks delivered |
+|---|---|---|
+| inline via `configuration.taskPushNotificationConfig` (what the TCK does) | `{"configs": []}` | **0** |
+| explicit `CreateTaskPushNotificationConfig` | 1 config | 2 |
+
+The second row is what made the diagnosis conclusive: delivery, retry, auth
+headers and payload shape were all working. Only registration was missing.
+
+The reference implementation registers the inline config against the task id
+before the executor starts (`default_request_handler_v2.py`, `_setup_task`),
+and this SDK now does the same, at the point where the task is saved and
+before the executor is spawned — so the first status transition is already
+covered.
+
+**A wrong turn worth recording.** The first pass at this reported *two*
+defects: the missing registration, and a missing `Authorization` header on
+delivery. The second was an artefact of the probe, not of the SDK — the
+reproduction read `headers.get("Authorization")` from a `dict()` built out of
+Python's `http.server` header object, where the key arrives lower-cased. The
+header was being sent correctly all along. Dumping *all* headers instead of
+probing one key by name is what caught it. A single-key lookup that returns
+`None` looks exactly like a missing feature.
+
+**Behaviour change:** a `SendMessage` carrying an inline push config against a
+server with no push support now fails with `PushNotSupported` instead of
+succeeding and silently ignoring the config. The reference skips silently
+here; this SDK does not, on the same reasoning as §3.3 — a client that asked
+for notifications and will never get any should be told. Registration reuses
+the standalone create's validation (capability check, task existence, SSRF
+screening, per-task and global quotas) rather than writing to the store
+directly, so the inline path cannot become an unguarded back door; four
+counter-tests in `inline_push_config_tests.rs` drive those guards to failure
+through the inline path specifically.
+
+## 9. `STREAM-SUB-002`: the subscribe stream ended with the executor, not with the task
+
+*Fixed. Confirmed by re-run. Confidence: verified by hand reproduction, the
+spec text, and a wire capture of the fixed stream.*
+
+Spec §3.1.6:
+
+> The stream MUST terminate when the task reaches a terminal state
+> (`completed`, `failed`, `canceled`, or `rejected`).
+
+Hand reproduction — create a task the executor leaves in `input_required`,
+`SubscribeToTask`, then complete it from another thread:
+
+```
+task cd5e005b… state=TASK_STATE_INPUT_REQUIRED
+subscribe HTTP 200 content-type=text/event-stream
+  [stream closed by server]
+1 SSE data frame(s):
+  [0] task  state=TASK_STATE_INPUT_REQUIRED
+VERDICT: last frame terminal? False
+```
+
+The stream closed **while the task was still non-terminal**, before the
+transition it existed to report.
+
+**Root cause.** A task's event queue lives exactly as long as one *executor
+invocation*: the spawned executor ends with `drop(writer)` and
+`event_queue_manager.destroy(&task_id)`, unconditionally — including when it
+deliberately parks the task in a non-terminal interrupted state such as
+`input_required` (§4.1.3). So the queue, and every stream reading it, died at
+the turn boundary. The follow-up `SendMessage` that completed the task created
+a *new* queue the earlier subscriber was not attached to.
+
+### The design that was tried first, and why it was abandoned
+
+The obvious fix is to keep the queue alive while the task is non-terminal and
+destroy it at the terminal transition. That was implemented — queue retention,
+a `rebind` that hands a continuation a fresh persistence channel over the
+existing broadcast channel, and TTL eviction of retained queues under capacity
+pressure — and then reverted, because it **deadlocks the background event
+processor**:
+
+> the persistence channel closes only when *all* senders drop, and the manager
+> holds one of them. Retaining a queue therefore means `persistence_reader.recv()`
+> never returns `None`, and the background processor's drain loop never exits —
+> one leaked task per parked task.
+
+Fixing *that* means reworking both drain loops (the background processor's and
+the sync collector's) to stop on executor-exit rather than channel-close, on
+top of the `QueueLease::Existing` rework that continuations already needed.
+That is a redesign of the streaming core with real concurrency risk, and it is
+not what this defect requires.
+
+### What was actually done
+
+The fix lives entirely in the subscribe path. `InMemoryQueueReader` gained an
+optional **reattach hook**, consulted when its broadcast channel closes:
+
+- the task is **terminal** → emit a `TaskStatusUpdateEvent` carrying that
+  terminal status, then end;
+- the task is **gone** → end;
+- the task is still running → wait for the next turn's queue and continue on
+  it.
+
+Nothing else changes. The send path, the executor lifecycle, the persistence
+channel and the queue manager's destroy semantics are all untouched, so none of
+the deadlock hazards above arise. Every binding that already accepts an
+`InMemoryQueueReader` inherits the behaviour with no signature change.
+
+**The synthesized final frame is not cosmetic.** With only "wait for the next
+queue", the reproduction still failed: the task completed in the window
+between one queue closing and the next opening, so the hook saw a terminal
+task and ended the stream — correct in *duration*, but the client never
+observed a terminal state, which is exactly what `STREAM-SUB-002` asserts. The
+frame is built from the authoritative stored status, and is suppressed when a
+terminal frame has already been delivered, so a client never sees it twice.
+
+Wire capture after the fix:
+
+```
+2 SSE data frame(s):
+  [0] task          state=TASK_STATE_INPUT_REQUIRED
+  [1] statusUpdate  state=TASK_STATE_COMPLETED  <-- TERMINAL
+VERDICT: last frame terminal? True
+```
+
+**Two bounds, because "wait until terminal" is otherwise unbounded.**
+`subscribe_reattach_interval` (250 ms) is how often an idle stream re-checks,
+and `subscribe_max_idle` (5 min) is how long it waits on a task that never
+progresses before ending — §3.5.2 makes reconnection an expected flow, and a
+task parked forever must not pin a connection forever. Both are on
+`HandlerLimits`.
+
+**A test that asserted the defect.**
+`resubscribe_nonterminal_no_queue_returns_snapshot_then_eof` explicitly
+required the non-conformant behaviour — snapshot, then immediate EOF — citing
+§3.5.2 reconnection. It is now
+`resubscribe_nonterminal_no_queue_waits_for_the_terminal_state`, and asserts
+the stream stays open while the task is `Working`, then reports `Completed`,
+then ends. A second test pins the idle bound, since "stay open until terminal"
+without one is a connection leak. That makes **four** in-repo tests found
+encoding a defect over this work (§2.1's three error codes, §7's five security
+schemes, and this one) — the pattern is worth more attention than any
+individual instance.
+
+## 10. `DM-MSG-001`: a blocking `SendMessage` could never return a `Message`
+
+*Fixed. Confirmed by re-run. Confidence: verified by hand reproduction, the
+spec text, and the reference implementation's source.*
+
+Spec §3.1.1 gives `SendMessage` two possible outputs:
+
+> - [`Task`]: A task object representing the processing of the message, **OR**
+> - [`Message`]: A direct response message (for simple interactions that don't
+>   require task tracking)
+
+This SDK only ever produced the first. `SendMessageResponse::Message` existed
+as a type and was never constructed anywhere in the server — `grep` for it
+returned only `::Task` call sites. `collect_events` appended any
+`StreamResponse::Message` the executor wrote to `Task.history` and returned
+the task regardless.
+
+Reproduced on the wire against the SUT's `tck-message-response` scenario,
+whose executor writes exactly one `StreamResponse::Message` and nothing else:
+
+```json
+{"result": {"task": {"id": "ec6bb9d0…", "status": {"state": "TASK_STATE_SUBMITTED"}}}}
+```
+
+The response was not merely the wrong shape — it was a task stuck in
+`Submitted`, because nothing ever moved it. A client got a task handle for
+work that had already finished and would never progress.
+
+**The earlier guess in §5 was wrong.** That entry read "likely a SUT gap —
+writing `StreamResponse::Message` to the event queue may not be how this SDK
+returns a message-instead-of-task". The SUT was doing the right thing; there
+was simply no code path from that event to a `Message` response. It was
+labelled *observed symptom only, no root cause established*, which is why it
+was a guess rather than a claim — but it still pointed at the wrong component.
+
+**The rule, and why it is narrower than the reference's.** The reference
+treats *any* `Message` event as the response, and its `ActiveTask` consumer
+raises `InvalidAgentResponseError` if further events follow one:
+
+```python
+if isinstance(event, Message):
+    result = event
+    # Do NOT break here as Message is supposed to be the only
+    # event in "Message-only" interaction.
+```
+
+Adopting that verbatim would break every agent here that narrates progress —
+emit a message, then keep working — since those streams would become errors.
+So the response is a `Message` only when the executor produced a message
+**and nothing task-shaped**: no status transition off `Submitted`, no
+artifacts, no `Task` snapshot. For a well-behaved message-only agent that is
+the same answer the reference gives; for a mixed stream the message stays in
+`Task.history` and the task is still returned, exactly as before.
+
+A task row is still created and persisted for a message-only interaction, so
+`GetTask` continues to work for a client that wants one.
+
+Four tests pin this in `send_sync_tests.rs`: the message-only case, and three
+counter-tests — message-then-work still returns the Task, an executor that
+emits no message still returns the Task, and the message-only interaction
+still records a fetchable task. Without the second of those, "return the
+message whenever there is one" would pass the first and break progress
+narration.
+
+## 11. Six MUST requirements were never being graded, because the SUT hid them
+
+*Fixed. Confirmed by re-run. Confidence: verified by a full suite run with the
+gRPC binding enabled.*
+
+The score in §1 was computed over the requirements the suite actually ran, and
+the SUT was quietly shrinking that set. Its agent card advertised only
+`JSONRPC` and `HTTP+JSON`. The TCK builds one client per advertised interface,
+so the entire `GRPC-*` family — and every core requirement's gRPC leg —
+reported `SKIPPED`.
+
+`SKIPPED` looks benign next to `FAIL`. It is not: this SDK **ships a gRPC
+binding**, so those checks were not inapplicable, they were unmeasured. A
+green run said nothing about a third of the product.
+
+The SUT now serves gRPC on its own listener (`SUT_GRPC_HOST`, default one port
+below the HTTP one) and advertises it. The result:
+
+| | Before | After |
+|---|---|---|
+| Passed | 176 | **244** |
+| Skipped | 89 | **21** |
+| Failed | 0 | **0** |
+| MUST `SKIPPED` | 11 | **5** |
+
+The gRPC binding passed everything on first exposure — 68/72, the other 4
+skipped — so this closed no defects. That is the finding: the binding was
+already right, and had simply never been asked.
+
+**Two measurement artifacts nearly got recorded as 25 gRPC defects**, and both
+are worth writing down because both looked exactly like real failures:
+
+1. `failed to connect to all addresses … HTTP proxy returned response code`.
+   `grpcio` honours `http_proxy` even for loopback, and this sandbox sets one.
+   The suite reported 25 failing MUST requirements. Running with the proxy
+   variables unset fixed it — and cut the run from 8 minutes to 64 seconds,
+   because the "failures" were proxy timeouts.
+2. `errors resolving http://127.0.0.1:9998 … Misformatted domain name`. A gRPC
+   target is a name-resolver string (`host:port`), **not** a URL, and the card
+   was advertising a scheme. Same 25 failures, different cause, still nothing
+   to do with the binding.
+
+Both produced a plausible-looking list of binding defects. The tell in each
+case was that the *errors* were transport-establishment failures, not
+assertion failures — a distinction the summary line does not make. Reading the
+grouped error text before believing the count is what separated them.
+
+**What was left, and what happened to it** — see §12.
+
+## 12. The capability-*rejection* paths were unreachable from one SUT
+
+*Partly closed. Confidence: verified by a second full suite run.*
+
+After §11, five MUST requirements still reported `SKIPPED`, and three of them
+were unreachable **by construction**: `CORE-CAP-001/002/004` check that a
+server rejects push and streaming operations it never advertised, and the
+suite skips them against an agent that *does* advertise them. No single SUT
+can be on both sides of that. The gate could never have caught a regression in
+`ensure_streaming_supported` / `ensure_push_supported`, because nothing
+official ever called them.
+
+The SUT now takes a `SUT_PROFILE`. `full` (default) is the profile the gate
+runs against; `minimal` advertises no streaming, no push and no extended card,
+which is what makes the rejection paths observable. CI runs the suite once per
+profile and applies the same requirement-level gate to both.
+
+Result on the `minimal` profile:
+
+| Requirement | Before | After |
+|---|---|---|
+| `CORE-CAP-001` (push rejected when unsupported) | SKIPPED | **PASS** (both bindings) |
+| `CORE-CAP-002` (streaming rejected when unsupported) | SKIPPED | **PASS** (`jsonrpc`) |
+| `CORE-CAP-004` | SKIPPED | SKIPPED |
+
+### One test errors under this profile, and no fault is assigned yet
+
+`TestRestStreaming::test_streaming_content_type` (`HTTP_JSON-SSE-001`) errors
+rather than skipping. What is established:
+
+- **This SDK's response is correct**, captured on the wire. With streaming
+  unadvertised, `POST /v1/message:stream` returns
+  `400` + `{"error": {..., "reason": "UNSUPPORTED_OPERATION"}}`, and the
+  JSON-RPC binding returns `-32004` with the same reason. That is exactly what
+  `CORE-CAP-002` requires, and `CORE-CAP-002` passes.
+- **The error is raised inside the suite's own client**, in
+  `http_json_client.py::_extract_error` → `response.json()`, while the test is
+  building the message for a `pytest.skip` it had already decided to take.
+  The response was opened as a stream and never read.
+
+**No claim is made about whose defect that is.** It would be reached by any
+server that returns a non-2xx to `send_streaming_message`, which a conformant
+server with streaming disabled must — but "must" is a reading of the spec, not
+a measurement, and the decisive test (does the reference implementation, run
+with streaming disabled, produce the same error?) **has not been run.** That
+is the precise mistake recorded in this document's correction notice, and it
+is not being repeated. Until that test exists, this is an observation about a
+suite/SUT interaction, not a bug report.
+
+The requirement-level gate is unaffected — the erroring test records no
+requirement result, and the gate returns 0 on the minimal-profile report.
+
+### Still open
+
+- `CORE-CAP-004`: skipped under both profiles; the precondition has not been
+  identified.
+- `CARD-EXT-002`: needs a server that *declares* `extendedAgentCard` while
+  having no extended card configured. This SDK cannot enter that state — the
+  handler derives the extended card from the configured agent card, so
+  declaring the capability and having no card are mutually exclusive. The
+  requirement is structurally inapplicable here rather than unmeasured.
+- `CARD-EXT-001`: the `full` profile now declares `extendedAgentCard` and opts
+  into serving it unauthenticated (§13.3 otherwise refuses without an
+  authenticating interceptor, and the suite has no credentials to present).
+  It still reports `SKIPPED`; why has not been diagnosed.
+- The 21 `NOT TESTED` MUSTs remain untouchable from here — `a2a-tck` has no
+  tests for them.
+
+## 13. `AgentCard.url` is a v0.3 field the v1.0 schema does not have
+
+*Fixed. Confirmed by re-run. Found only because §11 and §12 made
+`CARD-EXT-001` runnable at all.*
+
+Declaring `extendedAgentCard` on the SUT (§12) let `CARD-EXT-001` execute for
+the first time, and it failed on both JSON bindings while **passing on gRPC**:
+
+```
+$: 'url' does not match any of the regexes: '^(default_input_modes)$',
+   '^(default_output_modes)$', '^(documentation_url)$', '^(icon_url)$',
+   '^(security_requirements)$', '^(security_schemes)$',
+   '^(supported_interfaces)$'
+```
+
+The split by binding is the whole diagnosis. The suite validates JSON payloads
+against a schema generated from `a2a.proto`, and the v1.0 `AgentCard` has **no
+`url` field** — `supported_interfaces` replaced it. gRPC passed because
+protobuf physically cannot carry a field the schema does not define; the JSON
+bindings emitted it and were rejected.
+
+`url` is still **accepted**, because a card published by a v0.3 peer carries
+it and refusing those cards outright would be worse than ignoring an extra
+key. That is what the reference implementation does too — its resolver pops
+`url` and folds it into `supportedInterfaces`. So the field is now
+`#[serde(skip_serializing)]`: parsed, never emitted. Same policy as §7 —
+accept both vintages, emit only v1.0.
+
+Result: `246 passed, 0 failed, 19 skipped`, `CARD-EXT-001` PASS on all three
+bindings.
+
+**Worth noting how this was found.** It was not found by looking for it. It
+surfaced because closing a *coverage* gap (§11, §12) made a requirement
+runnable that had been quietly skipped since the beginning — and the skip was
+caused by the SUT's own configuration, not by the suite. Two of the three
+things fixed in §11–§13 were harness gaps rather than SDK defects, and the
+third was only reachable through them. A conformance score is only as
+trustworthy as the set of checks it was allowed to run.
+
+## 14. §13's fix broke `a2a-inspector`'s card check — a real, external tool lag, not an a2a-rust bug
+
+*Waived, narrowly, in CI. Not "fixed" — this is upstream's gap to close, and
+this repo does not control that timeline.*
+
+`tck.yml`'s `TCK self-test (echo-agent)` job runs an additional check beyond
+the TCK conformance suite: `itk/interop/inspector_card_check.py`, a headless
+reproduction of the official [a2a-inspector](https://github.com/a2aproject/a2a-inspector)'s
+agent-card validation (vendored from its `backend/validators.py`, since the
+inspector itself ships web-UI-only with no CLI to script directly). PR #99
+turned this red:
+
+```
+a2a-inspector card validation FAILED for http://127.0.0.1:9090:
+  - Required field is missing: 'url'.
+```
+
+§13 is what caused it — `AgentCard.url` stopped being emitted there, for a
+verified reason (the v1.0 schema, generated from `a2a.proto`, has no `url`
+field). Before changing anything, that reasoning was re-checked against two
+independent, live sources rather than trusted from memory:
+
+1. `proto/a2a_v1/a2a.proto`'s `message AgentCard` (re-read directly): still no
+   `url` field. `supported_interfaces` is still what carries it.
+2. `a2aproject/a2a-inspector`'s `backend/validators.py`, fetched byte-for-byte
+   from its upstream `main` branch on 2026-07-29 (not from memory, not from
+   the vendored copy — the live file, to rule out our copy having drifted).
+   It is **identical** to what's vendored in `itk/interop/inspector_card_check.py`,
+   and it unconditionally requires a top-level `url`:
+   ```python
+   required_fields = frozenset([
+       "name", "description", "url", "version", "capabilities",
+       "defaultInputModes", "defaultOutputModes", "skills",
+   ])
+   ```
+   No fallback to `supportedInterfaces` anywhere in the file.
+
+So this is a genuine, confirmed conflict between two authoritative-ish
+sources, not a stale vendored copy and not an a2a-rust defect: **any**
+strictly v1.0-schema-compliant `AgentCard` — from any SDK, not just this one
+— will fail the inspector's check today, because the inspector predates the
+v1.0 schema's `url` → `supported_interfaces` change and hasn't been updated
+for it.
+
+**Resolution.** `a2a-inspector card validation` in `tck.yml` is now
+`continue-on-error: true`, scoped to that one step only — the TCK conformance
+steps above it in the same job (22/22 on both JSON-RPC and REST) are
+untouched hard gates. §13's fix is not reverted: emitting `url` again to
+satisfy a lagging external tool would reopen the real JSON-schema violation
+`CARD-EXT-001` and `golden_fixtures_from_official_sdk_roundtrip` both exist to
+catch. This is a documented, narrowly-scoped waiver for a known, cited,
+external cause — not the "make it green and move on" pattern that's
+otherwise off the table for this project.
+
+**Not done here:** no issue has been filed against `a2aproject/a2a-inspector`
+by this session — that's a human call on a repo this project doesn't own.
+The actual fix is upstream, whenever it lands.
