@@ -156,6 +156,38 @@ workspace depends on `agntcy-slim-rpc` **2.0.0-alpha.7** — an alpha-versioned
 vendor-adjacent dependency in an official Linux Foundation SDK. That is worth
 a conversation independent of anything in this document.
 
+#### 4.1.1 No preparatory refactor is needed to support SLIMRPC here
+
+*Added 2026-07-30. Confidence: verified by reading the current public API,
+not inferred from the architecture.*
+
+A recurring question is whether this SDK should be restructured now so a
+SLIMRPC binding could slot in later. It does not need to be — the extension
+points already exist and are already exercised by a shipping non-spec binding
+(WebSocket):
+
+| Extension point | Status |
+|---|---|
+| `a2a_protocol_client::transport::Transport` | `pub`, object-safe (`Box<dyn Transport>`) |
+| `A2aClientBuilder::with_custom_transport(impl Transport)` | `pub` — a third party can inject a transport with no fork |
+| `AgentInterface::protocol_binding` | plain `String`, so any custom binding URI is advertisable with no type change |
+| `RequestHandler` | `pub`, with `pub` `on_*` methods per operation, so an out-of-tree dispatcher can drive it |
+
+The consequence is that a SLIMRPC binding can live in a **separate crate**
+depending on these three, rather than in this workspace as `a2a-rs` does it
+in-tree. That is strictly better for the concern raised just above: it keeps
+`agntcy-slim-*` alpha versions out of this workspace's `Cargo.lock` and out
+of the `deny.toml` allow-list, while still producing a usable binding. It also
+means the decision to build one carries no architectural deadline — the cost
+of waiting is zero.
+
+Combined with the evidence that SLIM is pre-1.0 across the stack, that the
+binding specification is self-described as *"Experimental — community-contributed"*
+(`a2aproject/experimental-cpb-slimrpc`), and that the ratified A2A
+specification contains zero occurrences of "slim" or "agntcy", the
+recommendation is to **not build it now** and to revisit if and when the
+binding stabilises or a user asks for it.
+
 ### 4.2 Persistence, tenancy, and operations
 
 | | `a2a-rs` | `a2a-rust` |
@@ -524,6 +556,50 @@ and continues independently as an opinionated server distribution (stores,
 tenancy, hardening, WebSocket). Legitimate, and it preserves the work — but it
 leaves the official SDK thin, which is the actual problem to solve. Reasonable
 as a fallback if Option B stalls on provenance.
+
+### The mechanism, verified — "donate to the LF" is not one of the options
+
+*Added 2026-07-30. Confidence: verified against `a2aproject/A2A`'s own
+`GOVERNANCE.md` and README, read live.*
+
+Every option above assumes a decision-making body. It is worth naming which
+one, because "prepare for a Linux Foundation donation" implies an LF intake
+process that does not apply here:
+
+- **A2A is already an LF project.** Its README states: *"The A2A Protocol is
+  an open source project under the Linux Foundation, contributed by Google."*
+  The repository also carries a `linux-foundation` topic tag. So the earlier
+  phrase "official Linux Foundation SDK" elsewhere in this document is
+  accurate, not loose — checked rather than assumed in either direction.
+- **Governance is a corporate TSC, not individual meritocracy.**
+  `A2A/GOVERNANCE.md` defines a Technical Steering Committee with **eight
+  voting members, one each from Google, Microsoft, Cisco, AWS, Salesforce,
+  ServiceNow, SAP and IBM**, which is "responsible for all technical
+  oversight of the open source Project."
+- **Maintainership is a TSC vote.** Verbatim: *"A Contributor may become a
+  Maintainer by a vote of the TSC. A Maintainer may be removed by a vote of
+  the TSC."* There is no contribution threshold that confers it
+  automatically.
+- Notably, `GOVERNANCE.md` itself does **not** restate LF hosting; its only
+  LF reference is that *"TSC Meetings are held on the Linux Foundation's
+  meeting platform."* The LF status comes from the README.
+
+**What this changes.** There is no generic "donate a project to the LF"
+pathway to target, because the umbrella already exists and already contains a
+Rust SDK. The realistic asks are therefore (a) contribute into `a2a-rs`
+(Option B), or (b) persuade an eight-corporation TSC to adopt or absorb an
+outside codebase — a materially higher bar than an IP transfer, and one where
+repository hygiene is necessary but nowhere near sufficient.
+
+It also relocates the remaining blockers. As of this document's measurements
+they are **not** primarily repo-quality items: licensing, DCO enforcement,
+SPDX coverage, SBOM/SLSA provenance, conformance gating, `NOTICE`,
+`CODE_OF_CONDUCT.md` and a written 1.0 policy are all in place. What remains
+is (i) an official Rust SDK already occupying the slot, (ii) a corporate TSC
+vote as the decision mechanism, (iii) the provenance disclosure in
+`PROVENANCE.md` being assessed by that body rather than by this project, and
+(iv) a maintainer group of one. Only (iv) is fully within this repository's
+control, and it is not a documentation task.
 
 ### Recommendation
 
