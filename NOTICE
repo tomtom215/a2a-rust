@@ -1,0 +1,44 @@
+a2a-rust
+Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+This product is licensed under the Apache License, Version 2.0. See the
+LICENSE file for the full license text.
+
+This is the canonical, Apache-form NOTICE file. It exists to satisfy
+Apache-2.0 §4(d) and to give the project's own copyright and third-party
+attributions one fixed, top-level location; the full account of authorship
+and provenance — including the project's AI-assisted development history
+and DCO certification — is in PROVENANCE.md, and the license posture of
+every dependency is enforced by `deny.toml` (`cargo deny check`).
+
+------------------------------------------------------------------------------
+Third-party material incorporated into this repository
+------------------------------------------------------------------------------
+
+The files below originate outside this project. Each remains under its
+original Apache-2.0 license; none is covered by the copyright notice above.
+See PROVENANCE.md for the fuller account of each.
+
+* proto/a2a_v1/a2a.proto, docs/implementation/a2a.proto, and the per-crate
+  copies under crates/*/proto/
+  - The A2A v1.0 specification's protobuf schema.
+  - Source: https://github.com/a2aproject/A2A
+  - Kept byte-identical to upstream; enforced by a repository test.
+
+* proto/a2a_v1/google/api/*.proto
+  - Minimal vendored stubs from the Google APIs protobuf definitions.
+  - Source: https://github.com/googleapis/googleapis
+
+* itk/protos/instruction.proto
+  - Vendored verbatim from the A2A Integration Testing Kit.
+  - Source: https://github.com/a2aproject/a2a-itk
+
+* The validate_agent_card ruleset reimplemented in
+  itk/interop/inspector_card_check.py
+  - Derived from a2a-inspector's backend/validators.py.
+  - Source: https://github.com/a2aproject/a2a-inspector
+
+This repository's compiled dependency graph (crates.io packages pulled in by
+Cargo.toml/Cargo.lock) is not reproduced here — each carries its own license
+metadata, resolvable via `cargo license` or `cargo deny check licenses`, and
+is restricted at build time to the SPDX allowlist in `deny.toml`.

@@ -1,0 +1,58 @@
+name: Bug report
+description: Something in a2a-rust doesn't behave the way the A2A spec or the docs say it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a **security** vulnerability instead? Don't file it here — see [SECURITY.md](../../SECURITY.md) for how to report it privately.
+
+  - type: input
+    id: crate-version
+    attributes:
+      label: Crate(s) and version(s)
+      description: e.g. `a2a-protocol-server 0.8.0`. Run `cargo tree -p a2a-protocol-server` if unsure which version resolved.
+      placeholder: a2a-protocol-server 0.8.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what did you get instead? Include error messages verbatim.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A minimal code snippet, request/response pair, or failing test that reproduces it. Issues without a reproduction take much longer to act on.
+      render: rust
+    validations:
+      required: false
+
+  - type: input
+    id: rust-version
+    attributes:
+      label: rustc --version
+      placeholder: rustc 1.94.1 (...)
+    validations:
+      required: true
+
+  - type: textarea
+    id: features
+    attributes:
+      label: Feature flags enabled
+      placeholder: default, or e.g. signing, grpc, sqlite
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: spec-check
+    attributes:
+      label: Spec conformance
+      options:
+        - label: I checked this against the [A2A v1.0 specification](https://a2a-protocol.org/v1.0.0/specification) and believe this is a genuine deviation, not intended behavior.
+          required: false

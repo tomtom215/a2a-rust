@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose new functionality, a new transport binding, or an API change.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the use case. Prefer "I need X because Y" over "add X".
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Sketch the API, config surface, or behavior change if you have one in mind. Not required — a well-described problem is enough to start a discussion.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: spec-scope
+    attributes:
+      label: Scope
+      description: This affects what this project can/should do unilaterally.
+      options:
+        - label: This is purely internal to a2a-rust (a new SDK convenience, an internal refactor) — no A2A spec question involved.
+        - label: This depends on or extends the A2A specification itself (a new capability, a new binding, a protocol-level change) — see [docs/adr/](../../docs/adr/) for how spec-adjacent decisions get recorded here.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you're already using, or why existing SDK features don't cover this.
+    validations:
+      required: false
