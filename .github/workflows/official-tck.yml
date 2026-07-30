@@ -165,13 +165,29 @@ jobs:
       # against an agent that does advertise them — so one SUT cannot reach
       # both sides. This run is what makes those requirements observable.
       #
-      # Not part of the gate: the suite currently errors out on one
-      # HTTP+JSON streaming check under this profile from inside its own
-      # client, while building a skip message (see
-      # docs/official-tck-findings.md §12). The requirement-level gate is
-      # still applied, and still has to come back clean.
+      # This step used to carry BOTH `continue-on-error: true` and `|| true`,
+      # because one HTTP+JSON check errors under this profile from inside the
+      # suite's own client. Both blanket waivers are now gone: the single
+      # offending test is deselected by name, and everything else in the
+      # minimal profile is a hard gate again.
+      #
+      # Why deselecting it is not a coverage loss, and not a papered-over
+      # failure (full evidence in docs/official-tck-findings.md §17):
+      #   * The requirement it belongs to, HTTP_JSON-SSE-001, is graded PASS
+      #     by the full-profile run above — the one the gate runs against. It
+      #     is measured; it is just measured there rather than here.
+      #   * The error is a proven defect in the harness, not in this SDK.
+      #     `_extract_error` in the suite's http_json client calls
+      #     `response.json()` on a streamed response it closed without
+      #     reading, and catches only (JSONDecodeError, ValueError) —
+      #     `httpx.ResponseNotRead` is a RuntimeError, so it escapes, and the
+      #     `response.text` fallback fails the same way. Reproduced against a
+      #     bare `http.server` returning 400, with no A2A SDK on either side.
+      #   * Any conformant server reaches it: returning non-2xx to
+      #     `message:stream` with streaming unadvertised is exactly what
+      #     CORE-CAP-002 requires, and CORE-CAP-002 passes here.
+      # Remove the --deselect once upstream fixes the client.
       - name: Run the suite against the minimal-capability profile
-        continue-on-error: true
         run: |
           SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \
             ./target/release/a2a-tck-sut &
@@ -180,10 +196,19 @@ jobs:
             sleep 1
           done
           cd /tmp/a2a-tck
-          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 || true
+          suite_status=0
+          ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 -- \
+            --deselect "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type" \
+            2>&1 | tee /tmp/tck-minimal.log || suite_status=$?
+          # Copy the report before propagating the suite's status, so the
+          # requirement-level gate below can still say precisely what broke.
           cp reports/compatibility.json /tmp/minimal-compatibility.json
+          exit "$suite_status"
 
+      # `always()` so a suite-level failure above still gets a
+      # requirement-level diagnosis rather than just a red X.
       - name: Gate the minimal-profile run
+        if: always()
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/minimal-compatibility.json \

@@ -105,6 +105,51 @@ further MUST requirements (the `CARD-SIGN-*`, `AUTH-*`, `VER-*`, and
 exercise them, and are a coverage gap rather than a pass — **not** progress
 toward 100%.
 
+### The actual ceiling, and why "0 skipped, 0 not-tested" is not reachable
+
+Because the question "what is left to be *truly* 100% conformant" has a
+finite, checkable answer, here it is in one place. Every line was verified
+against a live run and against `a2a-tck`'s own source and issue tracker; the
+per-item evidence is in §15–§17.
+
+| MUST requirements | Count | Reachable from this repository? |
+|---|---:|---|
+| `PASS`, `full` profile | 88 | — already passing |
+| `PASS`, `minimal` profile only (`CORE-CAP-001/002/003`) | 3 | — already passing (§15) |
+| **Measured passing, both profiles** | **91** | |
+| `CORE-CAP-004` | 1 | **No** — blocked on upstream `a2a-tck` [#193](https://github.com/a2aproject/a2a-tck/issues/193) (§12) |
+| `CARD-EXT-002` | 1 | **No** — structurally inapplicable; this SDK cannot declare `extendedAgentCard` and simultaneously have none (§12) |
+| `NOT TESTED` | 21 | **No** — zero test functions exist upstream; 6 are tagged `not-automatable` by the suite's authors, 2 are an explicit upstream "Won't Do", 13 are open upstream backlog items (§16) |
+| **Total** | **114** | |
+
+So: **91 of 114 MUST requirements are measurably passing, 0 are failing, and
+all 23 of the remainder are upstream-blocked or structurally inapplicable —
+none is a defect in this SDK.** The reported "100.0% MUST compatibility" is
+100% *of the requirements the suite is able to grade*, and that is the
+strongest true statement available. A number like "114/114" is not
+achievable by any implementation against `a2a-tck` as it exists today,
+including the reference implementations — and any project claiming it should
+be asked which of the 23 it closed and how.
+
+The same holds per level: `SHOULD` is 7 `PASS` / 0 `FAIL` / 4 `NOT TESTED`
+(all four in the same upstream `AUTH-*` backlog item, `task-27`), and `MAY`
+is 4/4 `PASS`.
+
+Per transport, from the same verified `full`-profile run — all three core
+bindings the ratified spec defines are graded, and none is failing:
+
+| Transport | Result |
+|---|---|
+| `agent_card` | 10/10 |
+| `jsonrpc` | 95/102 (7 skipped) |
+| `http_json` | 91/96 (5 skipped) |
+| `grpc` | 69/72 (3 skipped) |
+
+WebSocket is deliberately absent: it is an a2a-rust custom binding under
+spec §12, and the official suite has no mechanism to grade a binding the
+specification does not define. It is covered by this repository's own
+feature-gated tests instead.
+
 ### The gate
 
 `.github/workflows/official-tck.yml` does **not** simply require a clean run,
@@ -914,7 +959,7 @@ Result on the `minimal` profile:
 | `CORE-CAP-003` (extended card rejected when unsupported) | SKIPPED | **PASS** (`jsonrpc`) — see §15 |
 | `CORE-CAP-004` | SKIPPED | SKIPPED |
 
-### One test errors under this profile, and no fault is assigned yet
+### One test errors under this profile (fault since assigned — see §17)
 
 `TestRestStreaming::test_streaming_content_type` (`HTTP_JSON-SSE-001`) errors
 rather than skipping. What is established:
@@ -929,14 +974,12 @@ rather than skipping. What is established:
   building the message for a `pytest.skip` it had already decided to take.
   The response was opened as a stream and never read.
 
-**No claim is made about whose defect that is.** It would be reached by any
-server that returns a non-2xx to `send_streaming_message`, which a conformant
-server with streaming disabled must — but "must" is a reading of the spec, not
-a measurement, and the decisive test (does the reference implementation, run
-with streaming disabled, produce the same error?) **has not been run.** That
-is the precise mistake recorded in this document's correction notice, and it
-is not being repeated. Until that test exists, this is an observation about a
-suite/SUT interaction, not a bug report.
+**No claim was made about whose defect that is** when this section was
+written, because the decisive test had not been run. **It has now been run —
+see §17.** The answer is that this is a defect in `a2a-tck`'s own HTTP+JSON
+client, reproducible with no A2A SDK on either side of the connection, and
+the paragraph that used to sit here (declining to assign fault) has been
+replaced by that section rather than left standing as an open question.
 
 The requirement-level gate is unaffected — the erroring test records no
 requirement result, and the gate returns 0 on the minimal-profile report.
@@ -945,9 +988,18 @@ requirement result, and the gate returns 0 on the minimal-profile report.
 
 - `CORE-CAP-004`: skipped under both profiles. Root cause identified in
   §15 — the SUT's card never declares the sentinel extension the test
-  requires, on either profile. This is a SUT-config gap, not an undiagnosed
-  one; product-side enforcement (`ensure_required_extensions`) already exists
-  and is unit-tested. Not yet closed.
+  requires, on either profile — and **now known to be blocked upstream, not
+  merely undone here**: `a2aproject/a2a-tck` issue
+  [#193](https://github.com/a2aproject/a2a-tck/issues/193) (open) reports
+  that the suite does not send `A2A-Extensions` activation on ordinary
+  positive requests, so "servers that correctly advertise and enforce
+  required extensions cannot pass the TCK." Declaring the sentinel extension
+  would therefore fail unrelated `CORE-SEND-*`/`CORE-STREAM-*` checks — the
+  exact regression §15 predicted from reading `builder.rs`, independently
+  confirmed by upstream's own bug report. That issue also notes other SDKs
+  have used "CI-side monkey patches or `sitecustomize.py` shims" to pass this
+  requirement; that is precisely the class of workaround this project does
+  not ship. Blocked pending #193.
 - `CARD-EXT-002`: needs a server that *declares* `extendedAgentCard` while
   having no extended card configured. This SDK cannot enter that state — the
   handler derives the extended card from the configured agent card (verified
@@ -1295,6 +1347,85 @@ real, valuable work but is a contribution to someone else's project.
 Per this project's own rule that outward-facing action needs a human
 decision first, **no upstream issue or PR has been filed or drafted by this
 session** — this section is a report of what was found, not an action taken.
-The one item that *can* be closed inside this repository —
-`CORE-CAP-004`, which is `SKIPPED` rather than `NOT TESTED` — is covered in
-§15, including why it wasn't done in this pass either.
+`CORE-CAP-004`, which is `SKIPPED` rather than `NOT TESTED`, looked like the
+one item closeable inside this repository; §12's entry for it now records
+that it is blocked on upstream `a2a-tck` #193 instead.
+
+## 17. `HTTP_JSON-SSE-001`: fault assigned, with evidence — it is the harness
+
+*Resolved. Confidence: verified by direct experiment, reproduced with no A2A
+SDK on either side of the connection.*
+
+§12 recorded an erroring test and explicitly declined to assign fault,
+because the decisive experiment had not been run. This section runs it.
+
+**What the experiment had to establish.** §12's untested hypothesis was that
+the error "would be reached by any server that returns a non-2xx to
+`send_streaming_message`". If true, the defect is in the harness and nothing
+about this SDK is implicated. The obvious comparator — run the reference
+Python implementation with streaming disabled — turned out to be unavailable:
+`a2a-tck`'s own reference SUT (`sut/a2a-python/sut_agent.py`) imports
+`a2a.server.apps.A2AStarletteApplication`, which does not exist in the
+published `a2a-sdk` 1.1.2 *or* in `a2aproject/a2a-python` at `main`
+(cloned 2026-07-30, `b74ee55`) — the TCK's reference SUT is itself stale
+against the SDK it is generated from. That is worth knowing, but it is not
+the decisive test either.
+
+**A stricter experiment was available.** The hypothesis is about the
+harness's client, so the clean test removes *both* SDKs: point the suite's
+own client code at a bare `http.server` that returns `400` with a JSON error
+body to a streamed POST, and call the same function the failing test calls.
+
+```
+ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', ...]
+caught tuple in _extract_error: (json.JSONDecodeError, ValueError)
+is ResponseNotRead a ValueError?       False
+is ResponseNotRead a JSONDecodeError?  False
+
+status: 400 >= 400 -> True
+RESULT: _extract_error RAISED httpx.ResponseNotRead:
+        Attempted to access streaming response content, without having called `read()`.
+```
+
+**The mechanism, read off `tck/transport/http_json_client.py`.**
+`_request_streaming` sends with `stream=True`, and on any status ≥ 400 calls
+`response.close()` *without* reading the body. `_extract_error` then calls
+`response.json()`, which raises `httpx.ResponseNotRead` — a `RuntimeError`,
+so it is not caught by that function's `except (json.JSONDecodeError,
+ValueError)` — and the `return f"...{response.text}"` fallback fails
+identically, for the same unread-body reason. There is no path through
+`_extract_error` that survives a closed, unread, non-2xx streamed response.
+
+**Verdict.** The defect is in `a2a-tck`, not in `a2a-rust`, and not in any
+SDK: the reproduction has no A2A code in it at all. Any conformant server is
+exposed to it, because returning non-2xx to `message:stream` while streaming
+is unadvertised is exactly what `CORE-CAP-002` *requires* — and
+`CORE-CAP-002` passes here on the same profile, in the same run, which is
+what makes the pairing unambiguous. This satisfies the standard the
+correction notice at the top of this document sets: the claim rests on an
+experiment that isolates the variable, not on one implementation disagreeing
+with one client.
+
+**What changed in CI as a result.** The minimal-profile step in
+`official-tck.yml` previously carried *both* `continue-on-error: true` and
+`|| true` — a blanket waiver over the whole step, which is the pattern this
+document criticises elsewhere. Both are now removed. The single upstream-broken
+test is excluded by name with pytest's `--deselect`, and every other check in
+that profile is a hard gate again. Measured before and after: the deselected
+run is `181 passed, 83 skipped, 1 deselected`, exit code 0, and the
+requirement-level gate returns `MUST compatibility 100.0%`, 0 observed
+failing. `CORE-CAP-001`, `CORE-CAP-002` and `CORE-CAP-003` all still report
+`PASS`, so nothing the profile exists to measure was lost.
+
+**Deselecting it costs no coverage, and that was checked rather than
+asserted.** `HTTP_JSON-SSE-001` is graded **`PASS` on the `full` profile** —
+by the same test id, in the gate-bearing run. The requirement is measured;
+the minimal-profile invocation of that test was only ever an unhandled
+harness crash, and it recorded no requirement result even before it was
+deselected.
+
+**Not done here:** no issue has been filed against `a2aproject/a2a-tck`.
+A search of that repo's issues found nothing covering this defect
+(the nearest, #99, is a different REST streaming failure — "Event loop is
+closed"), so it appears unreported — but filing on a repository this project
+does not own is a human decision, and this session did not make it.
