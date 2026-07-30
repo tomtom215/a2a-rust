@@ -362,7 +362,9 @@ Rust **1.93** or later (stable).
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for coding
 standards, testing requirements, and quality gates, and
-[GOVERNANCE.md](GOVERNANCE.md) for how decisions get made.
+[GOVERNANCE.md](GOVERNANCE.md) for how decisions get made. Participation is
+governed by the [Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant
+2.1).
 
 Every commit must be signed off under the
 [Developer Certificate of Origin](DCO) (`git commit -s`) by a human git author;
@@ -371,6 +373,10 @@ of AI coding assistants, the provenance of third-party material in the tree,
 and the blanket DCO certification covering commits made before the DCO was
 adopted.
 
+To report a security vulnerability, follow [SECURITY.md](SECURITY.md) — not the
+public issue tracker.
+
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0 — see [LICENSE](LICENSE), and [NOTICE](NOTICE) for the project's
+copyright notice and third-party attributions.
