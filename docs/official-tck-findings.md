@@ -119,7 +119,7 @@ per-item evidence is in §15–§17.
 | **Measured passing, both profiles** | **91** | |
 | `CORE-CAP-004` | 1 | **No** — blocked on upstream `a2a-tck` [#193](https://github.com/a2aproject/a2a-tck/issues/193) (§12) |
 | `CARD-EXT-002` | 1 | **No** — structurally inapplicable; this SDK cannot declare `extendedAgentCard` and simultaneously have none (§12) |
-| `NOT TESTED` | 21 | **No** — zero test functions exist upstream; 6 are tagged `not-automatable` by the suite's authors, 2 are an explicit upstream "Won't Do", 13 are open upstream backlog items (§16) |
+| `NOT TESTED` | 21 | **No** — zero test functions exist upstream; 5 carry the suite's own `not-automatable` tag and a 6th (`GRPC-SVC-003`) the same verdict as an inline comment, 2 are an explicit upstream "Won't Do", 13 are open upstream backlog items (§16) |
 | **Total** | **114** | |
 
 So: **91 of 114 MUST requirements are measurably passing, 0 are failing, and
@@ -1254,9 +1254,13 @@ code path in the suite to exercise. No change to `tck/sut`, and no change to
 via the official TCK as it exists today. They fall into three groups, each
 confirmed from a different part of the suite's own source:
 
-**Group 1 — tagged `not-automatable` by the suite's own authors (6
-requirements: `CARD-SIGN-001..004`, `AUTH-TLS-001`, and `GRPC-SVC-003` by
-explicit code comment).** `tck/requirements/agent_card.py` tags all four
+**Group 1 — the suite's own authors consider them unautomatable (6
+requirements).** Five carry the literal `NOT_AUTOMATABLE` tag —
+`CARD-SIGN-001..004` and `AUTH-TLS-001`, verified by parsing every
+`RequirementSpec` block in `tck/requirements/*.py` rather than by eye. The
+sixth, `GRPC-SVC-003`, carries **no tag**; it records the same verdict as an
+inline source comment instead, so it is grouped here on the strength of that
+comment, not of a tag. `tck/requirements/agent_card.py` tags all four
 `CARD-SIGN-*` specs `NOT_AUTOMATABLE` — they describe internal properties of
 the *signing process* (JCS canonicalization before signing, excluding the
 `signatures` field from the signed payload, protected-header shape, stale-key
