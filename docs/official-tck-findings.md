@@ -1433,3 +1433,11 @@ A search of that repo's issues found nothing covering this defect
 (the nearest, #99, is a different REST streaming failure — "Event loop is
 closed"), so it appears unreported — but filing on a repository this project
 does not own is a human decision, and this session did not make it.
+
+A complete, ready-to-file report is prepared at
+[`docs/upstream/a2a-tck-sse-001-report.md`](upstream/a2a-tck-sse-001-report.md),
+with the standalone reproduction at
+[`docs/upstream/repro_tck_sse_bug.py`](upstream/repro_tck_sse_bug.py). It
+includes a fix that was applied to a local upstream checkout and verified:
+with it, the previously-erroring test skips cleanly and the server's real
+error text reaches the skip message. Submitting it remains a human decision.

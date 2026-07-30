@@ -601,6 +601,19 @@ vote as the decision mechanism, (iii) the provenance disclosure in
 (iv) a maintainer group of one. Only (iv) is fully within this repository's
 control, and it is not a documentation task.
 
+**On (iv), per the maintainer (2026-07-30):** the single-maintainer structure
+"is not a blocker in initial discussions that have occurred." That is
+recorded here as the maintainer's report of conversations this document's
+author has no independent visibility into — it is not an independently
+verified finding, and the substance of those discussions is not reproduced
+here. It does not change the structural observation that a bus factor of 1
+is a risk worth reducing on its own merits, and it does not change the
+separate, narrower point in [`CODE_OF_CONDUCT.md`](../CODE_OF_CONDUCT.md)
+that a conduct report *about* the sole maintainer has no independent
+escalation path inside this project. It does mean this item should not be
+presented as gating a conversation that is, by that account, already
+underway.
+
 ### Recommendation
 
 **Option B**, with three gates before any code moves:
