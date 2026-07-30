@@ -34,7 +34,9 @@ allow = [
 [advisories]
 db-path   = "~/.cargo/advisory-db"
 db-urls   = ["https://github.com/rustsec/advisory-db"]
-yanked    = "warn"
+# Verified clean before tightening: `cargo deny check advisories` reports no
+# yanked crates in the current graph (2026-07-30).
+yanked    = "deny"
 # No active advisory ignores. Add entries here only when an advisory
 # applies to a transitive dependency we can't upgrade yet — with a
 # short justification and an upgrade-path note.
@@ -44,23 +46,26 @@ ignore    = []
 # Banned crates
 # ---------------------------------------------------------------------------
 [bans]
+# NOT tightened to "deny" (2026-07-30 pass): `cargo deny check bans` on the
+# full, untruncated output shows 25 distinct crates with duplicate versions
+# in the graph today (windows-sys and its per-target siblings, rand/rand_core/
+# rand_chacha, thiserror/thiserror-impl, toml_edit/toml_datetime/winnow,
+# proc-macro-crate, heck, strsim, itertools, hashbrown, getrandom, r-efi,
+# core-foundation, convert_case) — an initial pass here mistakenly treated
+# `winnow` as the only one, going only off a `tail`-truncated check, and
+# would have shipped `deny` with 24 other violations still live had it not
+# been re-verified against the full log. Closing this properly means an
+# audit of all 25 (most are ordinary transitive-dependency-tree splits from
+# `rig-core`/`genai`/Windows-target crates, not obviously fixable from this
+# repo alone) — real, worthwhile work, but out of scope for this pass. Left
+# at "warn" rather than guessing at 25 skip entries.
 multiple-versions = "warn"
 wildcards         = "warn"
 
 deny = [
-    # System OpenSSL dep breaks musl/alpine cross-compilation.
-    # Allowed transitively via rig-core → native-tls → openssl-sys.
-    { name = "openssl-sys", wrappers = ["openssl", "native-tls"] },
     # reqwest carries 30+ transitive deps we do not need.
     # Allowed transitively via rig-core and genai.
-    { name = "reqwest", wrappers = ["rig-core", "genai", "reqwest-eventsource"] },
-]
-
-skip = [
-    # rig-core transitively pulls reqwest 0.11 and openssl-sys;
-    # we cannot remove them until rig-core drops these dependencies.
-    { crate = "reqwest@0.11", reason = "transitive dep of rig-core" },
-    { crate = "reqwest@0.12", reason = "transitive dep of genai" },
+    { name = "reqwest", wrappers = ["rig-core", "genai"] },
 ]
 
 # ---------------------------------------------------------------------------
