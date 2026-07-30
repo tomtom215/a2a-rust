@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Bug report
 description: Something in a2a-rust doesn't behave the way the A2A spec or the docs say it should.
 labels: ["bug"]
