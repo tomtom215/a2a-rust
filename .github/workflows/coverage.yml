@@ -49,17 +49,28 @@ jobs:
         run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5.5.4
-        # TEMPORARY (2026-06-10): Codecov's public-key distribution is down
-        # (keybase.io/codecovsecurity returns "SELF-SIGNED PUBLIC KEY NOT
-        # FOUND"; cli.codecov.io/pgp_keys.asc 404s; the key is absent from
-        # public keyservers), so the action cannot verify its own CLI and
-        # exits 1 for every repo with validation enabled. continue-on-error
-        # keeps the outage from blocking merges while signature validation
-        # stays intact — uploads resume automatically once Codecov restores
-        # the key. REMOVE this line (and this comment) at that point so
-        # fail_ci_if_error below regains teeth.
-        continue-on-error: true
+        # RESOLVED (2026-07-30): the 2026-06-10 outage that motivated the
+        # `continue-on-error` this replaces was Codecov permanently losing
+        # write access to the `codecovsecurity` keybase
+        # account, not a transient blip — keybase.io/codecovsecurity still
+        # 404s today and always will (upstream: codecov/codecov-action#1956).
+        # They migrated to `codecovsecops` and shipped the fix in v5.5.5,
+        # which changes only the hardcoded key-fetch URL in dist/codecov.sh
+        # (diffed directly against v5.5.4: one line). Verified live before
+        # this bump: keybase.io/codecovsecops/pgp_keys.asc returns a real
+        # `BEGIN PGP PUBLIC KEY BLOCK`, the old codecovsecurity URL still
+        # 404s, and no newer v5.5.x exists. `continue-on-error` is removed
+        # so fail_ci_if_error below has teeth again — if this regresses, it
+        # should be loud, not silently green.
+        #
+        # One caveat this fix does not fully explain: Codecov's own API
+        # (api.codecov.io/api/v2/github/tomtom215/repos/a2a-rust/commits/)
+        # shows no successful upload since 2026-05-25, two weeks before this
+        # workaround was even added — so whatever first broke uploads may
+        # predate the keybase migration. If the dashboard is still not
+        # updating after this lands on `main`, look for a second cause
+        # (e.g. `CODECOV_TOKEN` validity) rather than assuming this was it.
+        uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5.5.5
         with:
           files: lcov.info
           # A failed upload must be visible, not silently green — otherwise
