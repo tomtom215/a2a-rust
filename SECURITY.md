@@ -27,14 +27,44 @@ responsibly. **Do not open a public GitHub issue.**
 
 ### Preferred Channels
 
-1. **Email:** Send a detailed report to **security@a2a-rust.dev**.
-2. **GitHub Security Advisories:** Open a draft advisory at
-   <https://github.com/tomtom215/a2a-rust/security/advisories/new>.
+1. **GitHub Security Advisories (preferred):** Open a draft advisory at
+   <https://github.com/tomtom215/a2a-rust/security/advisories/new>. The report
+   stays private to you and the maintainers, and the channel is encrypted in
+   transit by GitHub.
+2. **Email:** Send a detailed report to **tomf@tomtomtech.net** — the address
+   in this project's copyright headers.
+
+> **`security@a2a-rust.dev` does not work.** Earlier revisions of this file
+> listed it as the primary channel, but `a2a-rust.dev` is not registered
+> (NXDOMAIN), so mail to it is undeliverable and a report sent there would
+> have been silently lost. Use one of the two channels above. The dedicated
+> address will be restored here once the domain is live.
 
 ### PGP Key
 
-PGP encryption for security reports is not yet available. For now, please
-send reports in plain text to the email address above.
+**Not available.** There is no published PGP key for this project, so reports
+sent by email cannot be encrypted end-to-end. This is a real gap for anyone
+who needs to disclose an unpatched vulnerability over untrusted mail.
+
+Until a key is published, prefer **GitHub Security Advisories** (channel 1),
+which keeps the report private without needing one. If you must use email and
+the contents are sensitive, send a short notice without details and ask for an
+encrypted channel first.
+
+### Release Artifact Verification
+
+Know what you can and cannot verify about a release:
+
+| Artifact | Signed? | How to verify |
+|---|---|---|
+| Git tags (`v0.2.0` … `v0.7.0`) | **No** | Nothing to verify. All ten release tags to date are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. A tag alone does not establish who cut the release. |
+| Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
+| Published crates | Yes (by crates.io) | Standard crates.io registry checksums. |
+
+If you need a cryptographic link between a published version and this
+repository, use the build provenance attestations described in
+`PROVENANCE.md`, not the git tag. Signed, annotated tags are a known gap and
+have not yet been adopted.
 
 ### What to Include
 

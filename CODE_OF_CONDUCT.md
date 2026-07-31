@@ -62,7 +62,14 @@ representative at an online or offline event.
 ## Reporting
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers at **conduct@a2a-rust.dev**.
+reported to the maintainer at **tomf@tomtomtech.net** — the address in this
+project's copyright headers.
+
+> A dedicated `conduct@a2a-rust.dev` address is intended, but `a2a-rust.dev`
+> is not yet registered (it returns NXDOMAIN), so mail to it bounces. This
+> file previously named that address as the sole reporting channel, which
+> left the Code of Conduct with no working way to report anything. The
+> maintainer address above is used until the domain is live.
 
 All complaints will be reviewed and investigated promptly and fairly. All
 project maintainers are obligated to respect the privacy and security of the

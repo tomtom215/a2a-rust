@@ -79,6 +79,27 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
+> **Known gap — the existing tags do not match this step.** All ten release
+> tags to date (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
+> with no tagger, no date, and no signature. `git cat-file -t v0.7.0` prints
+> `commit`, not `tag`. The `-a` above was documented but not applied in
+> practice — creating a release through the GitHub UI produces a lightweight
+> tag, which is the likely cause.
+>
+> Consequences, so nobody assumes more than is true:
+> * A tag alone does not attest who cut the release, or when.
+> * Nothing here is GPG/SSH-signed, so `git tag -v` cannot verify any release.
+> * Adopters needing a verifiable link from a version to this repository must
+>   use the build provenance attestations in [`PROVENANCE.md`](PROVENANCE.md),
+>   which *are* signed, rather than the tag.
+>
+> Using `-a` as written fixes this for future releases; it does not
+> retroactively fix the ten existing tags, and re-tagging published releases
+> would move refs that downstreams may already pin. Adopting signed tags
+> (`git tag -s`) is a separate, unmade decision — it needs a maintainer key
+> and a documented way for adopters to obtain it. Tracked in
+> [`ROADMAP.md`](ROADMAP.md).
+
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
 1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry exists
