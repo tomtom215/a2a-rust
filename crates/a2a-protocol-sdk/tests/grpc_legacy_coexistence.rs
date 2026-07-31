@@ -233,3 +233,159 @@ async fn canonical_and_legacy_clients_share_one_listener() {
         Some(canonical_task.id.0.as_str())
     );
 }
+
+// ── The rest of the tunnel's unary surface ──────────────────────────────────
+//
+// The test above drives SendMessage and GetTask. That left the other seven
+// unary RPCs on `a2a.v1.A2aService` — ListTasks, CancelTask, the four
+// push-notification-config methods and GetExtendedAgentCard — with no
+// coverage at all, which is why `dispatch/grpc/service.rs` measured 4/22
+// lines. They are shipping code behind the `grpc-legacy-json` feature: 0.6
+// clients still call them during a rolling upgrade, and the tunnel is not
+// removed until 0.8.
+
+/// Same fixture as above, but with push notifications and the extended card
+/// advertised so those RPCs reach their real handlers rather than a
+/// capability rejection.
+fn full_agent_card() -> AgentCard {
+    let mut card = agent_card();
+    card.capabilities = AgentCapabilities::none()
+        .with_streaming(true)
+        .with_push_notifications(true)
+        .with_extended_agent_card(true);
+    card
+}
+
+#[tokio::test]
+async fn legacy_tunnel_serves_every_unary_rpc() {
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(CompletingExecutor)
+            .with_agent_card(full_agent_card())
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .allow_unauthenticated_extended_card()
+            .build()
+            .expect("build handler"),
+    );
+    let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = dispatcher.serve_with_listener(listener).expect("serve");
+    let channel = tonic::transport::Channel::from_shared(format!("http://{addr}"))
+        .expect("endpoint")
+        .connect()
+        .await
+        .expect("legacy connect");
+
+    // Seed a task through the tunnel itself.
+    let created = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/SendMessage",
+        &serde_json::to_value(send_params("seed")).expect("params"),
+    )
+    .await
+    .expect("SendMessage");
+    let task_id = created["task"]["id"].as_str().expect("task id").to_owned();
+
+    // ── ListTasks ──
+    let listed = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/ListTasks",
+        &serde_json::json!({}),
+    )
+    .await
+    .expect("ListTasks");
+    let tasks = listed["tasks"].as_array().expect("tasks array");
+    assert!(
+        tasks
+            .iter()
+            .any(|t| t["id"].as_str() == Some(task_id.as_str())),
+        "ListTasks omitted the task just created: {listed}"
+    );
+
+    // ── CreateTaskPushNotificationConfig ──
+    let created_cfg = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/CreateTaskPushNotificationConfig",
+        &serde_json::json!({ "taskId": task_id, "url": "https://example.com/hook" }),
+    )
+    .await
+    .expect("CreateTaskPushNotificationConfig");
+    let config_id = created_cfg["id"]
+        .as_str()
+        .expect("server-assigned config id")
+        .to_owned();
+
+    // ── GetTaskPushNotificationConfig ──
+    let got_cfg = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/GetTaskPushNotificationConfig",
+        &serde_json::json!({ "taskId": task_id, "id": config_id }),
+    )
+    .await
+    .expect("GetTaskPushNotificationConfig");
+    assert_eq!(
+        got_cfg["url"].as_str(),
+        Some("https://example.com/hook"),
+        "GetTaskPushNotificationConfig returned the wrong config: {got_cfg}"
+    );
+
+    // ── ListTaskPushNotificationConfigs ──
+    let listed_cfgs = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/ListTaskPushNotificationConfigs",
+        &serde_json::json!({ "taskId": task_id }),
+    )
+    .await
+    .expect("ListTaskPushNotificationConfigs");
+    assert_eq!(
+        listed_cfgs["configs"].as_array().map(Vec::len),
+        Some(1),
+        "expected exactly one config: {listed_cfgs}"
+    );
+
+    // ── DeleteTaskPushNotificationConfig ── then prove it is gone.
+    legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/DeleteTaskPushNotificationConfig",
+        &serde_json::json!({ "taskId": task_id, "id": config_id }),
+    )
+    .await
+    .expect("DeleteTaskPushNotificationConfig");
+    let after_delete = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/ListTaskPushNotificationConfigs",
+        &serde_json::json!({ "taskId": task_id }),
+    )
+    .await
+    .expect("ListTaskPushNotificationConfigs after delete");
+    assert!(
+        after_delete["configs"].as_array().is_none_or(Vec::is_empty),
+        "config survived deletion over the tunnel: {after_delete}"
+    );
+
+    // ── GetExtendedAgentCard ──
+    let card = legacy_unary(
+        channel.clone(),
+        "/a2a.v1.A2aService/GetExtendedAgentCard",
+        &serde_json::json!({}),
+    )
+    .await
+    .expect("GetExtendedAgentCard");
+    assert_eq!(card["name"].as_str(), Some("Coexistence Agent"));
+
+    // ── CancelTask ── last, because it is terminal. The seeded task runs to
+    // Completed, so cancelling it must be refused rather than silently
+    // accepted: a terminal task is not cancelable.
+    let cancel = legacy_unary(
+        channel,
+        "/a2a.v1.A2aService/CancelTask",
+        &serde_json::json!({ "id": task_id }),
+    )
+    .await;
+    assert!(
+        cancel.is_err(),
+        "cancelling a completed task must fail, got: {cancel:?}"
+    );
+}
