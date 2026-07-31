@@ -48,6 +48,31 @@
 //!     .layer(tower_http::cors::CorsLayer::permissive())
 //!     .route("/custom", get(custom_handler));
 //! ```
+//!
+//! # Multi-tenancy: use a resolver, not the URL prefix
+//!
+//! This router registers no `/tenants/{tenant}/…` routes, unlike the built-in
+//! REST dispatcher ([`crate::dispatch::rest`]), which strips that prefix and
+//! threads the tenant through. Requests to a tenant-prefixed path therefore
+//! **404 here** — fail-safe, but surprising if you are porting from
+//! `serve()`, where the same URL works.
+//!
+//! Tenancy itself is not lost. This router forwards request headers to the
+//! handler, so a configured
+//! [`TenantResolver`](crate::tenant_resolver::TenantResolver) — for example
+//! [`HeaderTenantResolver`](crate::tenant_resolver::HeaderTenantResolver) —
+//! resolves tenants normally, and the resolver is authoritative over any
+//! client-supplied value. Pair it with
+//! [`require_resolved_tenant`](crate::RequestHandlerBuilder::require_resolved_tenant)
+//! so a request that carries no tenant is rejected rather than served from
+//! the shared default partition.
+//!
+//! With **no** resolver configured, every request through this router is
+//! served from the default (`""`) tenant, because the per-request `tenant`
+//! field is not populated from the URL. That is correct for single-tenant
+//! deployments and is the reason the prefix is absent rather than silently
+//! mis-parsed; it is called out here so it is a choice rather than a
+//! discovery.
 
 use std::collections::HashMap;
 use std::convert::Infallible;

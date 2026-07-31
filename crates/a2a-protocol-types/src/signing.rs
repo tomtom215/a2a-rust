@@ -290,20 +290,121 @@ pub fn sign_agent_card(
     })
 }
 
+// ── JWS protected header ────────────────────────────────────────────────────
+
+/// The decoded JWS protected header of an [`AgentCardSignature`].
+///
+/// Spec §8.4.3 step 2 requires a verifying client to "retrieve the public key
+/// using the `kid` and `jku` (or from a trusted key store)". That step is the
+/// caller's — see [`verify_agent_card`] for why — but the caller cannot
+/// perform it without reading those two fields, and they live base64url-encoded
+/// inside [`AgentCardSignature::protected`]. [`signature_header`] decodes them
+/// so callers do not have to hand-roll base64 and JSON parsing to obey a MUST.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SignatureHeader {
+    /// The JWS algorithm (`alg`). Only `ES256` is verifiable by this module.
+    pub alg: String,
+    /// The key identifier (`kid`), when the signer supplied one.
+    pub kid: Option<String>,
+    /// The JWK Set URL (`jku`) to retrieve the signing key from, when present.
+    ///
+    /// Spec §8.4.3 says public keys **SHOULD** be retrieved over secure
+    /// channels; treat a non-HTTPS `jku`, or one pointing outside the agent's
+    /// own origin, as untrusted.
+    pub jku: Option<String>,
+}
+
+/// Decodes the JWS protected header of an [`AgentCardSignature`].
+///
+/// This performs **no** cryptographic verification — the header is attacker-
+/// controlled until [`verify_agent_card`] succeeds against a key the caller
+/// trusts. Use it to decide *which* key to retrieve, never to decide whether
+/// to trust the card.
+///
+/// # Errors
+///
+/// Returns an error if `protected` is not valid base64url, is not valid JSON,
+/// or carries no `alg`.
+pub fn signature_header(sig: &AgentCardSignature) -> A2aResult<SignatureHeader> {
+    let header_bytes = URL_SAFE_NO_PAD
+        .decode(&sig.protected)
+        .map_err(|e| A2aError::internal(format!("invalid header encoding: {e}")))?;
+    let header: serde_json::Value = serde_json::from_slice(&header_bytes)
+        .map_err(|e| A2aError::internal(format!("invalid header JSON: {e}")))?;
+    let str_field = |k: &str| {
+        header
+            .get(k)
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+    };
+    Ok(SignatureHeader {
+        alg: str_field("alg").ok_or_else(|| A2aError::internal("missing alg in header"))?,
+        kid: str_field("kid"),
+        jku: str_field("jku"),
+    })
+}
+
 // ── JWS Verification ────────────────────────────────────────────────────────
 
 /// Verifies an [`AgentCardSignature`] against an [`AgentCard`] using the
 /// given public key.
 ///
+/// # Scope: this performs spec §8.4.3 steps 3–6, not 1–2
+///
+/// Spec §8.4.3 lists six steps a verifying client **MUST** perform. This
+/// function performs the last four — exclude `signatures`, drop defaults,
+/// canonicalize per RFC 8785, verify — against **a key the caller has already
+/// chosen**. Steps 1 and 2, extracting the signature and *retrieving the
+/// public key* "using the `kid` and `jku` (or from a trusted key store)",
+/// are the caller's, because this crate takes the key as a parameter.
+///
+/// ## Key expiry and revocation is therefore the caller's obligation
+///
+/// The same section states that **"expired or revoked keys MUST NOT be used
+/// for verification"** (the TCK tracks this as `CARD-SIGN-004`, which it tags
+/// `not-automatable`). That obligation attaches to key *retrieval* — step 2 —
+/// and this function is reached only after a key has been retrieved. Passing a
+/// revoked key here will verify successfully, because the mathematics is
+/// sound; the key was simply one the caller was not entitled to trust.
+///
+/// This split is deliberate, not an omission, and the reason is that expiry
+/// and revocation are not properties this crate can observe:
+///
+/// * A JWKS key is revoked by *removal from the `jku` endpoint*. Detecting
+///   that means re-fetching over HTTPS. `a2a-protocol-types` has no network
+///   dependency and should not acquire one — it is the shared wire-type crate
+///   that every other crate, including `no-network` consumers, depends on.
+/// * An X.509 key expires per `notAfter` and is revoked per CRL/OCSP. Checking
+///   that means an `x5c` chain, a trust store, and a revocation fetcher —
+///   duplicating `webpki`/`rustls` inside a serialization crate.
+///
+/// Both belong to the layer that already owns transport and trust policy.
+///
+/// ## What a caller must do
+///
+/// 1. Read [`signature_header`] to obtain `kid` and `jku`.
+/// 2. Retrieve the key from a trusted key store, or over HTTPS from a `jku`
+///    the caller independently trusts — never one taken on the card's word
+///    alone, since the header is unauthenticated until this call returns `Ok`.
+/// 3. Apply lifecycle policy: reject keys absent from the current JWKS, past
+///    `notAfter`, or listed as revoked.
+/// 4. Only then call this function.
+///
+/// Multiple signatures **MAY** be present to support key rotation, so a caller
+/// should try each until one verifies under a currently-valid key.
+///
 /// # Arguments
 ///
 /// * `card` — The agent card that was signed.
 /// * `sig` — The signature to verify.
-/// * `public_key_der` — DER-encoded public key (`SubjectPublicKeyInfo`).
+/// * `public_key_der` — DER-encoded public key (`SubjectPublicKeyInfo`),
+///   already established by the caller to be currently valid.
 ///
 /// # Errors
 ///
-/// Returns an error if canonicalization fails or the signature is invalid.
+/// Returns an error if canonicalization fails, the protected header is
+/// malformed, the algorithm is not `ES256`, or the signature is invalid.
 pub fn verify_agent_card(
     card: &AgentCard,
     sig: &AgentCardSignature,
@@ -321,16 +422,7 @@ pub fn verify_agent_card(
         .map_err(|e| A2aError::internal(format!("invalid signature encoding: {e}")))?;
 
     // Determine algorithm from the protected header.
-    let header_bytes = URL_SAFE_NO_PAD
-        .decode(&sig.protected)
-        .map_err(|e| A2aError::internal(format!("invalid header encoding: {e}")))?;
-    let header: serde_json::Value = serde_json::from_slice(&header_bytes)
-        .map_err(|e| A2aError::internal(format!("invalid header JSON: {e}")))?;
-    let alg = header
-        .get("alg")
-        .and_then(serde_json::Value::as_str)
-        .ok_or_else(|| A2aError::internal("missing alg in header"))?;
-
+    let alg = signature_header(sig)?.alg;
     if alg != "ES256" {
         return Err(A2aError::internal(format!("unsupported algorithm: {alg}")));
     }
@@ -574,6 +666,106 @@ mod tests {
         let header: serde_json::Value = serde_json::from_slice(&header_bytes).unwrap();
         assert_eq!(header["alg"], "ES256");
         assert_eq!(header["kid"], "my-key-id");
+    }
+
+    // ── signature_header: spec §8.4.3 step 2 support ─────────────────────
+
+    #[test]
+    fn signature_header_exposes_alg_and_kid() {
+        let card = minimal_card();
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+        let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("my-key-id")).unwrap();
+
+        let header = signature_header(&sig).unwrap();
+        assert_eq!(header.alg, "ES256");
+        assert_eq!(header.kid.as_deref(), Some("my-key-id"));
+        // This SDK's signer does not emit `jku`; a card verified via `jku`
+        // must have been signed by something that does.
+        assert_eq!(header.jku, None);
+    }
+
+    #[test]
+    fn signature_header_kid_is_none_when_unsigned_with_one() {
+        let card = minimal_card();
+        let rng = SystemRandom::new();
+        let pkcs8 = EcdsaKeyPair::generate_pkcs8(&signature::ECDSA_P256_SHA256_FIXED_SIGNING, &rng)
+            .unwrap();
+        let sig = sign_agent_card(&card, pkcs8.as_ref(), None).unwrap();
+
+        let header = signature_header(&sig).unwrap();
+        assert_eq!(header.alg, "ES256");
+        assert_eq!(header.kid, None);
+    }
+
+    #[test]
+    fn signature_header_reads_jku_from_a_foreign_signer() {
+        // The spec's own §8.4.2 example header. Constructed by hand rather
+        // than via sign_agent_card, because this SDK does not emit `jku` —
+        // the point is that a *verifier* can read one written by anything.
+        let header = serde_json::json!({
+            "alg": "ES256",
+            "typ": "JOSE",
+            "kid": "key-1",
+            "jku": "https://example.com/agent/jwks.json",
+        });
+        let sig = AgentCardSignature {
+            protected: URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap()),
+            signature: String::new(),
+            header: None,
+        };
+
+        let parsed = signature_header(&sig).unwrap();
+        assert_eq!(parsed.alg, "ES256");
+        assert_eq!(parsed.kid.as_deref(), Some("key-1"));
+        assert_eq!(
+            parsed.jku.as_deref(),
+            Some("https://example.com/agent/jwks.json")
+        );
+    }
+
+    #[test]
+    fn signature_header_rejects_malformed_input() {
+        let bad_b64 = AgentCardSignature {
+            protected: "!!!not base64!!!".into(),
+            signature: String::new(),
+            header: None,
+        };
+        assert!(signature_header(&bad_b64).is_err());
+
+        let not_json = AgentCardSignature {
+            protected: URL_SAFE_NO_PAD.encode(b"this is not json"),
+            signature: String::new(),
+            header: None,
+        };
+        assert!(signature_header(&not_json).is_err());
+
+        // Valid JSON, but no `alg` — nothing can be verified without it.
+        let no_alg = AgentCardSignature {
+            protected: URL_SAFE_NO_PAD.encode(br#"{"kid":"k"}"#),
+            signature: String::new(),
+            header: None,
+        };
+        assert!(signature_header(&no_alg).is_err());
+    }
+
+    #[test]
+    fn verify_rejects_non_es256_algorithm() {
+        // Guards the alg check that now reads through signature_header:
+        // a header claiming RS256 must be refused, not silently verified
+        // with the ES256 verifier.
+        let card = minimal_card();
+        let sig = AgentCardSignature {
+            protected: URL_SAFE_NO_PAD.encode(br#"{"alg":"RS256"}"#),
+            signature: URL_SAFE_NO_PAD.encode([0_u8; 64]),
+            header: None,
+        };
+        let err = verify_agent_card(&card, &sig, &[0_u8; 65]).unwrap_err();
+        assert!(
+            format!("{err}").contains("unsupported algorithm"),
+            "expected an unsupported-algorithm error, got: {err}"
+        );
     }
 
     // ── Canonicalization boundary tests ──────────────────────────────────

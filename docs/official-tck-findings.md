@@ -116,20 +116,20 @@ per-item evidence is in §15–§17.
 |---|---:|---|
 | `PASS`, `full` profile | 88 | — already passing |
 | `PASS`, `minimal` profile only (`CORE-CAP-001/002/003`) | 3 | — already passing (§15) |
-| **Measured passing, both profiles** | **91** | |
-| `CORE-CAP-004` | 1 | **No** — blocked on upstream `a2a-tck` [#193](https://github.com/a2aproject/a2a-tck/issues/193) (§12) |
+| `PASS`, `extension` profile only (`CORE-CAP-004`) | 1 | — already passing (§18) |
+| **Measured passing, all three profiles** | **92** | |
 | `CARD-EXT-002` | 1 | **No** — structurally inapplicable; this SDK cannot declare `extendedAgentCard` and simultaneously have none (§12) |
 | `NOT TESTED` | 21 | **No** — zero test functions exist upstream; 5 carry the suite's own `not-automatable` tag and a 6th (`GRPC-SVC-003`) the same verdict as an inline comment, 2 are an explicit upstream "Won't Do", 13 are open upstream backlog items (§16) |
 | **Total** | **114** | |
 
-So: **91 of 114 MUST requirements are measurably passing, 0 are failing, and
-all 23 of the remainder are upstream-blocked or structurally inapplicable —
+So: **92 of 114 MUST requirements are measurably passing, 0 are failing, and
+all 22 of the remainder are upstream-untested or structurally inapplicable —
 none is a defect in this SDK.** The reported "100.0% MUST compatibility" is
 100% *of the requirements the suite is able to grade*, and that is the
 strongest true statement available. A number like "114/114" is not
 achievable by any implementation against `a2a-tck` as it exists today,
 including the reference implementations — and any project claiming it should
-be asked which of the 23 it closed and how.
+be asked which of the 22 it closed and how.
 
 The same holds per level: `SHOULD` is 7 `PASS` / 0 `FAIL` / 4 `NOT TESTED`
 (all four in the same upstream `AUTH-*` backlog item, `task-27`), and `MAY`
@@ -986,20 +986,11 @@ requirement result, and the gate returns 0 on the minimal-profile report.
 
 ### Still open
 
-- `CORE-CAP-004`: skipped under both profiles. Root cause identified in
-  §15 — the SUT's card never declares the sentinel extension the test
-  requires, on either profile — and **now known to be blocked upstream, not
-  merely undone here**: `a2aproject/a2a-tck` issue
-  [#193](https://github.com/a2aproject/a2a-tck/issues/193) (open) reports
-  that the suite does not send `A2A-Extensions` activation on ordinary
-  positive requests, so "servers that correctly advertise and enforce
-  required extensions cannot pass the TCK." Declaring the sentinel extension
-  would therefore fail unrelated `CORE-SEND-*`/`CORE-STREAM-*` checks — the
-  exact regression §15 predicted from reading `builder.rs`, independently
-  confirmed by upstream's own bug report. That issue also notes other SDKs
-  have used "CI-side monkey patches or `sitecustomize.py` shims" to pass this
-  requirement; that is precisely the class of workaround this project does
-  not ship. Blocked pending #193.
+- ~~`CORE-CAP-004`~~ — **closed, see §18.** It is now graded `PASS` on both
+  `jsonrpc` and `http_json` by a third SUT profile. The upstream constraint
+  (#193) is real and still open, but it bounds *how* the requirement can be
+  measured, not *whether* it can be: a scoped run measures it without any
+  change to the harness.
 - `CARD-EXT-002`: needs a server that *declares* `extendedAgentCard` while
   having no extended card configured. This SDK cannot enter that state — the
   handler derives the extended card from the configured agent card (verified
@@ -1294,6 +1285,9 @@ highest-value, most tractable gap to close: it is not tractable via the
 official TCK at all, and only 3 of its 4 sub-requirements are actually
 covered by this SDK's own tests.
 
+**That "may be a reasonable layering choice" is now a decision rather than an
+open question — see §19.**
+
 **Group 2 — ruled out of scope by the suite's own backlog (2 requirements:
 `VER-CLIENT-001`, `VER-CLIENT-002`).** `backlog/archive/tasks/task-30` (this
 project's own `a2a-tck` checkout, `main` at `5996b79`) carries the
@@ -1441,3 +1435,188 @@ with the standalone reproduction at
 includes a fix that was applied to a local upstream checkout and verified:
 with it, the previously-erroring test skips cleanly and the server's real
 error text reaches the skip message. Submitting it remains a human decision.
+
+## 18. `CORE-CAP-004` is closed: a scoped third profile, not a harness patch
+
+*Fixed. Verified by run.*
+
+This requirement sat as the last `SKIPPED` MUST that was neither structurally
+inapplicable nor untested upstream. §12 recorded it as "blocked pending
+[#193](https://github.com/a2aproject/a2a-tck/issues/193)". That framing was
+too strong, and this section corrects it: **#193 constrains how the
+requirement can be measured, not whether it can be.**
+
+### What the test actually needs
+
+`TestCapabilityExtensionRequired` (in
+`tests/compatibility/core_operations/test_error_handling.py`) skips unless the
+agent card declares `urn:a2a:tck:required-extension` with `required: true`. Given
+that card, it sends an ordinary `SendMessage` carrying no `A2A-Extensions`
+header and requires `ExtensionSupportRequiredError` back, on `jsonrpc` and
+`http_json`. There is no gRPC variant upstream.
+
+Neither existing profile declares any extension, so under both the `full` and
+`minimal` cards the requirement records `SKIPPED` and is never graded.
+
+### Why an unscoped run cannot work, measured rather than assumed
+
+Required-extension enforcement is per-request (spec §3.3.4), and this SDK
+implements it that way — `ensure_required_extensions` is called from
+`messaging.rs`, `get_task.rs`, `list_tasks.rs`, `cancel_task.rs`,
+`subscribe.rs` and `push_config.rs`. The suite does not send `A2A-Extensions`
+activation on its ordinary positive requests, which is exactly what #193
+reports.
+
+That prediction was tested, not taken on faith. Running the **whole** suite
+against a card declaring the required extension produces:
+
+```
+72 failed, 56 passed, 129 skipped, 8 xfailed
+```
+
+— every `CORE-SEND-*`, `CORE-MULTI-*`, error-code and status-code check
+answered with `ExtensionSupportRequiredError`. Notably `CORE-CAP-004` itself
+reports `PASS` even in that run, which is what made clear the SDK behaviour
+was never the problem.
+
+### The fix: a third profile, scoped
+
+`SUT_PROFILE=extension` serves the `full` capability set plus the sentinel
+extension marked `required: true`, and the suite is run with
+`-k TestCapabilityExtensionRequired`. Result:
+
+```
+2 passed, 263 deselected
+CORE-CAP-004  {jsonrpc: PASS, http_json: PASS}
+```
+
+Verified end to end before wiring into CI, at the SDK's own edge:
+
+| Request | Response |
+|---|---|
+| `SendMessage`, no `A2A-Extensions` | `-32008` `EXTENSION_SUPPORT_REQUIRED`, naming the missing URI |
+| `SendMessage`, `A2A-Extensions: urn:a2a:tck:required-extension` | normal task result |
+
+**This is scoping, not a waiver.** Every requirement excluded from this run is
+graded by the full-profile run, which is the one the baseline gate reads.
+Nothing is exempted from measurement; it is measured elsewhere. The
+distinction matters because upstream notes other SDKs pass this requirement
+with a `sitecustomize.py` shim that monkey-patches the harness into sending
+the header — that changes the suite rather than the SUT, and is not used here.
+
+### The silent-green hole this opened, and how it is closed
+
+A scoped run that selects **zero** tests reports zero failures, and the
+differential gate accepts zero failures as success. So if upstream renamed the
+test class, the `-k` filter would match nothing and the job would go green
+having measured nothing — the precise failure mode
+`tck/scripts/check_conformance.py` exists to prevent.
+
+`--require-pass REQ_ID` closes it: the gate now fails unless the named
+requirement is graded `PASS`, treating absent, `SKIPPED` and `NOT TESTED`
+alike as unmet. Verified in both directions — exit 0 against the scoped
+extension report, exit 1 against the full-profile report where `CORE-CAP-004`
+is `SKIPPED`.
+
+### Also fixed here: the report-overwrite trap, in CI
+
+Every profile run writes the same `reports/compatibility.json`. The workflow
+ran full → minimal → extension, so the uploaded artifact's
+`compatibility.json` was whichever profile ran last, presented as if it were
+the gate-bearing full-profile report. The full run now copies its report to
+`/tmp/full-compatibility.json` immediately, the gate reads that copy, and all
+three per-profile reports are uploaded under distinct names.
+
+### Corrected while doing this
+
+`tck/sut/src/main.rs`'s `Profile` doc comment claimed the minimal profile
+makes `CORE-CAP-001/002/004` observable. Two errors in one line: `CORE-CAP-004`
+is `SKIPPED` under the minimal profile (that is this whole section), and
+`CORE-CAP-003` — which the minimal profile genuinely does make observable — was
+omitted. Checked against both runs' `compatibility.json`: the requirements the
+minimal profile adds are exactly `CORE-CAP-001`, `CORE-CAP-002` and
+`CORE-CAP-003`.
+
+## 19. `CARD-SIGN-004` decided: key lifecycle is the caller's, and the API now says so
+
+*Decided and implemented. §16 left this as "may be a reasonable layering
+choice"; leaving it unstated was the actual defect.*
+
+### What the spec requires, quoted rather than paraphrased
+
+Spec §8.4.3 opens by naming who is bound: **"Clients verifying Agent Card
+signatures MUST:"**, then lists six steps. Step 2 is *"Retrieve the public key
+using the `kid` and `jku` (or from a trusted key store)"*. Among the security
+considerations that follow is the `CARD-SIGN-004` sentence: *"Expired or
+revoked keys **MUST NOT** be used for verification."*
+
+Read in place, the obligation attaches to **step 2 — key retrieval** — not to
+the signature check. There is no third state: a key is either one the verifier
+was entitled to use or it is not, and that is settled before any curve
+arithmetic happens.
+
+### The decision
+
+`verify_agent_card` implements **steps 3–6** and takes the public key as a
+parameter. Steps 1–2, including lifecycle policy, belong to the caller.
+Recorded here rather than merely believed, because the alternative was
+considered and rejected on concrete grounds:
+
+* A JWKS key is revoked by *removal from the `jku` endpoint*. Detecting that
+  requires re-fetching over HTTPS. `a2a-protocol-types` has **no network
+  dependency** — verified this session, its entire dependency list is `serde`,
+  `serde_json`, `base64`, `ring`, `prost`, `prost-types`, `time` — and it is
+  the shared wire-type crate everything else depends on. An HTTP client does
+  not belong in it.
+* An X.509 key expires per `notAfter` and is revoked per CRL/OCSP. Supporting
+  that means an `x5c` chain, a trust store and a revocation fetcher, i.e.
+  reimplementing `webpki`/`rustls` inside a serialization crate.
+
+Both belong to the layer that already owns transport and trust policy. Note
+that this SDK *does* already do JWKS-with-`kid` resolution — in
+`a2a-protocol-server`'s `auth/jwt.rs`, for inbound request authentication.
+That is the correct layer for it; agent-card key retrieval would sit there
+too, not in the types crate.
+
+### Why documenting alone would have been a dodge, and what was done instead
+
+A caller told "retrieve the key using `kid` and `jku`" **could not do it**:
+those fields live base64url-encoded inside `AgentCardSignature.protected`, and
+nothing in the public API decoded them. `sign_agent_card` could *write* a
+`kid`; nothing could *read* one back. So the obligation was assigned to a
+caller who had no supported means of discharging it — the documentation would
+have been true and useless.
+
+Added: `signing::signature_header(&AgentCardSignature) -> A2aResult<SignatureHeader>`,
+exposing `alg`, `kid` and `jku`. Additive, no new dependencies, and it makes
+step 2 performable. `verify_agent_card` now reads its own `alg` through it,
+so there is one header-parsing path rather than two.
+
+The doc comment on `verify_agent_card` states the split, quotes the MUST NOT,
+gives the four-step caller recipe, and warns that the header is attacker-
+controlled until verification succeeds — so `jku` must never be trusted on the
+card's own word.
+
+### Known limitation, stated rather than left to be discovered
+
+`sign_agent_card` does **not** emit `jku`; it writes only `alg` and an optional
+`kid`. Cards signed by this SDK are therefore verifiable via a trusted key
+store — which §8.4.3 explicitly permits ("or from a trusted key store") — but
+they do not advertise where their JWKS lives. This is a spec-permitted subset,
+not a violation, and it is not fixed here because changing `sign_agent_card`'s
+signature is a breaking API change that belongs in a deliberate release.
+`signature_header` reads `jku` from cards signed by anything else, so
+verification interop is unaffected.
+
+### Coverage
+
+Five tests added to `signing.rs`: `alg`/`kid` round-trip, absent `kid`, `jku`
+read back from the spec's own §8.4.2 example header, malformed input rejected
+in three shapes (bad base64, non-JSON, missing `alg`), and a non-ES256 `alg`
+refused rather than silently verified. `cargo test -p a2a-protocol-types
+--features signing --lib signing`: 22 passed, 0 failed.
+
+This does **not** make `CARD-SIGN-004` gradeable by the TCK — it carries the
+suite's `not-automatable` tag and has no test function upstream, so it remains
+in the 21 `NOT TESTED`. It removes the gap in *this SDK*, which is the part
+that was ours to close.

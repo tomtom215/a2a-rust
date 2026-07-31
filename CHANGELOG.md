@@ -29,6 +29,16 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **`SignatureHeader` and `signature_header()` in `a2a-protocol-types`** —
+  decodes an `AgentCardSignature`'s JWS protected header, exposing `alg`,
+  `kid` and `jku` so a caller can determine *which* key to retrieve before
+  verifying. It performs no cryptographic verification, and the header is
+  attacker-controlled until `verify_agent_card` succeeds against a trusted
+  key — the docs say so at the call site. Key expiry and revocation
+  (`CARD-SIGN-004`) remain the caller's responsibility, since neither is
+  carried in the header; this provides the `jku`/`kid` needed to go and
+  check them.
+
 - **Unrecognised request parameters are now logged instead of vanishing.** The
   specification requires implementations to *ignore* unknown fields for
   forward compatibility (§11; the official TCK grades this as
@@ -373,6 +383,25 @@ not patches for the six spellings the TCK happens to send.
 
 ### Added (governance, legal, and release policy)
 
+- **Security and conduct reports now go to a reachable address.**
+  `a2a-rust.dev` is not registered — DNS returns NXDOMAIN — so both
+  `security@a2a-rust.dev` (`SECURITY.md`'s primary vulnerability channel) and
+  `conduct@a2a-rust.dev` (`CODE_OF_CONDUCT.md`'s only reporting channel) were
+  undeliverable, and anything sent to either would have bounced or been lost.
+  Both now point at the maintainer address already published in this project's
+  copyright headers, and `SECURITY.md` promotes GitHub Security Advisories to
+  the preferred channel since it stays private without a PGP key. Each file
+  states plainly that the `a2a-rust.dev` address does not work, so it is not
+  reinstated on the assumption that it does.
+- **`ROADMAP.md`** — what the repository has already committed to for 0.8
+  (three deprecation removals), the gaps in the project's own verification,
+  the supply-chain items still open (unsigned tags, no PGP key, the
+  unregistered domain), and the measured 92/114 TCK position. Derived only
+  from what is already in the tree; it asserts no dates.
+- **`SECURITY.md` release-artifact verification table** — states what is and
+  is not signed. All ten release tags are lightweight, so `git tag -v`
+  verifies nothing; adopters needing a cryptographic link to this repository
+  must use the SLSA build provenance attestations instead.
 - **`CODE_OF_CONDUCT.md`** — Contributor Covenant 2.1, with the four-tier
   enforcement ladder (Correction / Warning / Temporary Ban / Permanent Ban)
   and a conduct-specific reporting address. Replaces the four-line clause in

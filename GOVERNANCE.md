@@ -68,11 +68,15 @@ This project adopts the Contributor Covenant 2.1. The full text, including the
 four-tier enforcement ladder and the reporting channel, is in
 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
-Conduct reports go to **conduct@a2a-rust.dev**, not to the security address —
-those are separate processes. This section previously routed conduct reports to
-`security@a2a-rust.dev`, which conflated vulnerability disclosure with conduct
-enforcement; `CODE_OF_CONDUCT.md` is now the authoritative statement and this
-paragraph is only a pointer to it.
+Conduct reports go to the maintainer at **tomf@tomtomtech.net**, not to the
+security channel — those are separate processes. This section previously
+routed conduct reports to `security@a2a-rust.dev`, which conflated
+vulnerability disclosure with conduct enforcement; `CODE_OF_CONDUCT.md` is now
+the authoritative statement and this paragraph is only a pointer to it.
+
+The eventual `conduct@a2a-rust.dev` address is not yet usable — `a2a-rust.dev`
+is unregistered (NXDOMAIN) — so the maintainer address stands in for it. See
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 
 ## Release Process
 

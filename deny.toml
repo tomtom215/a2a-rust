@@ -46,21 +46,94 @@ ignore    = []
 # Banned crates
 # ---------------------------------------------------------------------------
 [bans]
-# NOT tightened to "deny" (2026-07-30 pass): `cargo deny check bans` on the
-# full, untruncated output shows 25 distinct crates with duplicate versions
-# in the graph today (windows-sys and its per-target siblings, rand/rand_core/
-# rand_chacha, thiserror/thiserror-impl, toml_edit/toml_datetime/winnow,
-# proc-macro-crate, heck, strsim, itertools, hashbrown, getrandom, r-efi,
-# core-foundation, convert_case) — an initial pass here mistakenly treated
-# `winnow` as the only one, going only off a `tail`-truncated check, and
-# would have shipped `deny` with 24 other violations still live had it not
-# been re-verified against the full log. Closing this properly means an
-# audit of all 25 (most are ordinary transitive-dependency-tree splits from
-# `rig-core`/`genai`/Windows-target crates, not obviously fixable from this
-# repo alone) — real, worthwhile work, but out of scope for this pass. Left
-# at "warn" rather than guessing at 25 skip entries.
-multiple-versions = "warn"
+# Tightened to "deny" after a per-crate audit (2026-07-31). Read the skip
+# list below before adding to it.
+#
+# History worth keeping: an early pass here treated `winnow` as the only
+# duplicate, going off a `tail`-truncated check, and would have shipped
+# "deny" with 24 live violations. The full, untruncated output is the only
+# valid input to this decision. Re-measured 2026-07-31 on the complete
+# 2,129-line log: **26** distinct crates, not the 25 recorded in the previous
+# pass — that count was one low.
+#
+# What the audit found, and why "deny" is now safe:
+#
+#   * Scoped to the four *published* crates at default features — i.e. what a
+#     consumer of this SDK actually resolves — there are only **2** duplicated
+#     crates, `getrandom` and `windows-sys`. Both trace to `ring 0.17.14`'s own
+#     pinned dependencies (via `rustls`), which this repo cannot influence.
+#   * The remaining 24 enter through workspace-only members: the `examples/*`
+#     agents (`rig-core`, `genai` and their trees), `benches`, `tck/sut`, and
+#     optional `sqlx` backends. They are not in any published dependency graph.
+#
+# So the duplicates are ecosystem version-skew in other people's trees, not
+# something this repo can resolve by upgrading. "warn" was the honest setting
+# while that was unverified; it is also a setting nobody reads. "deny" plus a
+# reviewed skip list is strictly stronger: every crate below has been looked
+# at, and any *new* duplicate — including one introduced by our own change —
+# is now an error rather than a line in a log.
+#
+# Skips are bare crate names, deliberately, not pinned versions. A pinned skip
+# turns a routine `cargo update` into a red CI run for a non-issue; a bare name
+# says "duplicates of this crate are known and accepted", while still catching
+# any crate not on the list. cargo-deny flags unused skip entries, so an entry
+# that stops being needed surfaces rather than rotting.
+multiple-versions = "deny"
 wildcards         = "warn"
+
+skip = [
+    # --- Reachable from the published crates (2) ---
+    # Both pinned by `ring 0.17.14` (via rustls/hyper-rustls/tokio-rustls)
+    # against newer versions elsewhere in the graph. Not fixable here; it
+    # resolves when `ring` bumps its own floor.
+    { crate = "getrandom", reason = "ring 0.17 pins 0.2.x; rand 0.9 lineage uses 0.3/0.4" },
+    { crate = "windows-sys", reason = "ring 0.17 pins 0.52; newer crates use 0.61" },
+
+    # --- Windows per-target crates (8) ---
+    # One `windows-targets` split fans out into eight identical
+    # per-architecture duplicates. They are a single upstream fact reported
+    # eight times, and none is compiled on this project's CI targets.
+    { crate = "windows-targets", reason = "0.42/0.48 vs 0.52 split from transitive Windows deps" },
+    { crate = "windows_aarch64_gnullvm", reason = "fanout of the windows-targets split" },
+    { crate = "windows_aarch64_msvc", reason = "fanout of the windows-targets split" },
+    { crate = "windows_i686_gnu", reason = "fanout of the windows-targets split" },
+    { crate = "windows_i686_msvc", reason = "fanout of the windows-targets split" },
+    { crate = "windows_x86_64_gnu", reason = "fanout of the windows-targets split" },
+    { crate = "windows_x86_64_gnullvm", reason = "fanout of the windows-targets split" },
+    { crate = "windows_x86_64_msvc", reason = "fanout of the windows-targets split" },
+
+    # --- The rand 0.8 -> 0.9 ecosystem migration (4) ---
+    # `sqlx-postgres` and `nanoid` (via rig-core) still sit on the 0.8
+    # lineage while newer crates are on 0.9. Closes when they migrate.
+    { crate = "rand", reason = "sqlx-postgres/nanoid on 0.8; newer deps on 0.9" },
+    { crate = "rand_chacha", reason = "fanout of the rand 0.8 -> 0.9 migration" },
+    { crate = "rand_core", reason = "fanout of the rand 0.8 -> 0.9 migration" },
+    { crate = "r-efi", reason = "pulled by the split getrandom versions" },
+
+    # --- thiserror 1 -> 2 migration (2) ---
+    { crate = "thiserror", reason = "transitive deps still on 1.x; workspace is on 2.x" },
+    { crate = "thiserror-impl", reason = "fanout of the thiserror 1 -> 2 migration" },
+
+    # --- TOML parsing stack, via proc-macro tooling (3) ---
+    { crate = "toml_edit", reason = "proc-macro-crate 1.x vs 3.x pull different toml_edit" },
+    { crate = "toml_datetime", reason = "fanout of the toml_edit split" },
+    { crate = "winnow", reason = "fanout of the toml_edit split" },
+    { crate = "proc-macro-crate", reason = "1.x from older derive macros, 3.x from newer" },
+
+    # --- Ordinary build-tooling version skew in transitive trees (7) ---
+    { crate = "convert_case", reason = "derive-macro helper skew in transitive deps" },
+    { crate = "core-foundation", reason = "macOS-only; 0.9 vs 0.10 skew in TLS stacks" },
+    { crate = "hashbrown", reason = "indexmap generations pull 0.15 and 0.17" },
+    { crate = "heck", reason = "0.4 from older derive macros, 0.5 from newer" },
+    { crate = "itertools", reason = "0.13 vs 0.14 skew across transitive crates" },
+    { crate = "strsim", reason = "clap/derive tooling skew" },
+]
+# Deliberately NOT skipped: `redox_syscall` duplicates only in the
+# `--all-features` graph, and `[graph] all-features = false` above means this
+# check does not resolve that graph. cargo-deny reported the entry as
+# `unmatched-skip`, so it was removed rather than left as decoration — an
+# exemption for something that is not happening is how a skip list starts
+# rotting into a blanket waiver.
 
 deny = [
     # reqwest carries 30+ transitive deps we do not need.

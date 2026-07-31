@@ -366,3 +366,275 @@ async fn axum_honors_configured_body_limit() {
         "body under the configured cap should succeed (200), got {status}"
     );
 }
+
+// ── Routes that had no coverage at all ───────────────────────────────────────
+//
+// The suite above drove send/get/list/cancel and the two static endpoints,
+// which left `dispatch/axum_adapter.rs` at 61% line coverage. Everything below
+// exercises a route that was previously never reached through this adapter:
+// the four push-notification-config handlers, the extended card, streaming,
+// subscribe, and the catch-all's rejection paths.
+
+/// A server with push notifications and the extended card enabled — the
+/// default `start_test_server` advertises neither, so those routes could only
+/// ever return "unsupported" through it.
+async fn start_test_server_full() -> String {
+    let mut card = test_card();
+    card.capabilities = AgentCapabilities::none()
+        .with_streaming(true)
+        .with_push_notifications(true)
+        .with_extended_agent_card(true);
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(card)
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            // A sender is required as well as a store: `validate_and_store_push_config`
+            // rejects with PushNotSupported when either is absent. Nothing is
+            // actually delivered in these tests — the task completes before a
+            // webhook would fire, and example.com is never contacted.
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new())
+            .allow_unauthenticated_extended_card()
+            .build()
+            .expect("build handler"),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local addr");
+    let base_url = format!("http://{addr}");
+    let app = A2aRouter::new(handler).into_router();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    base_url
+}
+
+/// Helper: HTTP request with an arbitrary method and no body.
+async fn http_request(method: &str, url: &str) -> (u16, Bytes) {
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let req = hyper::Request::builder()
+        .method(method)
+        .uri(url)
+        .header("a2a-version", "1.0")
+        .body(Empty::<Bytes>::new())
+        .unwrap();
+    let resp = client.request(req).await.unwrap();
+    let status = resp.status().as_u16();
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    (status, body)
+}
+
+/// Sends a message and returns the resulting task id.
+async fn create_task(base: &str) -> String {
+    let (status, body) =
+        http_post_json(&format!("{base}/message:send"), &make_send_body("hi")).await;
+    assert_eq!(
+        status,
+        200,
+        "send failed: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let v: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    v["task"]["id"]
+        .as_str()
+        .expect("task id in response")
+        .to_owned()
+}
+
+// ── Push notification config: the full CRUD cycle ────────────────────────────
+
+#[tokio::test]
+async fn axum_push_config_create_get_list_delete_round_trip() {
+    let base = start_test_server_full().await;
+    let task_id = create_task(&base).await;
+    let configs_url = format!("{base}/tasks/{task_id}/pushNotificationConfigs");
+
+    // Create. `TaskPushNotificationConfig` is flat on the wire, and `taskId`
+    // is filled in from the path by the handler when the body omits it —
+    // which this body deliberately does, so that behaviour is covered too.
+    let body = serde_json::json!({ "url": "https://example.com/webhook" }).to_string();
+    let (status, created) = http_post_json(&configs_url, &body).await;
+    assert_eq!(
+        status,
+        200,
+        "create failed: {}",
+        String::from_utf8_lossy(&created)
+    );
+    let created: serde_json::Value = serde_json::from_slice(&created).unwrap();
+    assert_eq!(
+        created["taskId"], task_id,
+        "handler must fill taskId from the path: {created}"
+    );
+    let config_id = created["id"]
+        .as_str()
+        .expect("server-assigned config id")
+        .to_owned();
+
+    // List — the config just created must be in it.
+    let (status, listed) = http_get(&configs_url).await;
+    assert_eq!(status, 200);
+    let listed: serde_json::Value = serde_json::from_slice(&listed).unwrap();
+    let arr = listed["configs"].as_array().expect("configs array");
+    assert_eq!(arr.len(), 1, "expected exactly one config, got {listed}");
+
+    // Get by id.
+    let one_url = format!("{configs_url}/{config_id}");
+    let (status, got) = http_get(&one_url).await;
+    assert_eq!(status, 200, "get failed: {}", String::from_utf8_lossy(&got));
+    let got: serde_json::Value = serde_json::from_slice(&got).unwrap();
+    assert_eq!(
+        got["url"], "https://example.com/webhook",
+        "get returned a different config: {got}"
+    );
+
+    // Delete, then confirm the list is empty — a delete that returns 200
+    // without removing anything would otherwise pass unnoticed.
+    let (status, _) = http_request("DELETE", &one_url).await;
+    assert_eq!(status, 200);
+    let (status, listed) = http_get(&configs_url).await;
+    assert_eq!(status, 200);
+    let listed: serde_json::Value = serde_json::from_slice(&listed).unwrap();
+    assert!(
+        listed["configs"].as_array().is_none_or(Vec::is_empty),
+        "config survived deletion: {listed}"
+    );
+}
+
+#[tokio::test]
+async fn axum_push_config_create_rejects_invalid_json() {
+    let base = start_test_server_full().await;
+    let task_id = create_task(&base).await;
+    let (status, _) = http_post_json(
+        &format!("{base}/tasks/{task_id}/pushNotificationConfigs"),
+        "{ not json",
+    )
+    .await;
+    assert_eq!(status, 400);
+}
+
+#[tokio::test]
+async fn axum_push_config_get_unknown_id_is_not_found() {
+    let base = start_test_server_full().await;
+    let task_id = create_task(&base).await;
+    let (status, _) = http_get(&format!(
+        "{base}/tasks/{task_id}/pushNotificationConfigs/no-such-config"
+    ))
+    .await;
+    assert_eq!(status, 404);
+}
+
+// ── Extended agent card ──────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn axum_extended_agent_card_is_served_when_advertised() {
+    let base = start_test_server_full().await;
+    let (status, body) = http_get(&format!("{base}/extendedAgentCard")).await;
+    assert_eq!(
+        status,
+        200,
+        "extended card failed: {}",
+        String::from_utf8_lossy(&body)
+    );
+    let card: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(card["name"], "Test Echo Agent");
+}
+
+#[tokio::test]
+async fn axum_extended_agent_card_rejected_when_not_advertised() {
+    // The default test card does not set `extendedAgentCard`, so the handler
+    // must refuse rather than serve the ordinary card from that path.
+    let base = start_test_server().await;
+    let (status, _) = http_get(&format!("{base}/extendedAgentCard")).await;
+    assert_ne!(status, 200, "unadvertised extended card must not be served");
+}
+
+// ── Streaming and subscribe ──────────────────────────────────────────────────
+
+#[tokio::test]
+async fn axum_message_stream_returns_an_sse_stream() {
+    let base = start_test_server_full().await;
+    let client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+    let req = hyper::Request::builder()
+        .method("POST")
+        .uri(format!("{base}/message:stream"))
+        .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
+        .body(Full::new(Bytes::from(make_send_body("stream me"))))
+        .unwrap();
+    let resp = client.request(req).await.unwrap();
+    assert_eq!(resp.status().as_u16(), 200);
+    let ctype = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        ctype.starts_with("text/event-stream"),
+        "expected an SSE stream, got content-type {ctype:?}"
+    );
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        text.contains("data:"),
+        "SSE body carried no events: {text:?}"
+    );
+}
+
+#[tokio::test]
+async fn axum_subscribe_to_unknown_task_is_not_found() {
+    let base = start_test_server_full().await;
+    let (status, _) = http_request("GET", &format!("{base}/tasks/no-such-task:subscribe")).await;
+    assert_eq!(status, 404);
+}
+
+// ── Catch-all dispatch: the paths that must NOT resolve ──────────────────────
+
+#[tokio::test]
+async fn axum_catchall_rejects_unknown_action_and_method() {
+    let base = start_test_server_full().await;
+    let task_id = create_task(&base).await;
+
+    // An unrecognized `:action` suffix is not a task id.
+    let (status, _) = http_request("POST", &format!("{base}/tasks/{task_id}:frobnicate")).await;
+    assert_eq!(status, 404);
+
+    // GET with a colon action is explicitly excluded from the plain-GET arm.
+    let (status, _) = http_request("GET", &format!("{base}/tasks/{task_id}:cancel")).await;
+    assert_eq!(status, 404);
+
+    // A sub-resource this adapter does not serve.
+    let (status, _) = http_request("GET", &format!("{base}/tasks/{task_id}/artifacts")).await;
+    assert_eq!(status, 404);
+
+    // Wrong method on a real route.
+    let (status, _) = http_request(
+        "DELETE",
+        &format!("{base}/tasks/{task_id}/pushNotificationConfigs"),
+    )
+    .await;
+    assert_eq!(status, 404);
+}
+
+/// Documents the tenancy contract stated in the module docs: this router
+/// registers no `/tenants/{tenant}/…` routes, unlike the built-in REST
+/// dispatcher. Such a request must 404 — failing closed — rather than being
+/// silently served from the default tenant partition.
+#[tokio::test]
+async fn axum_tenant_prefixed_paths_are_not_routed() {
+    let base = start_test_server_full().await;
+    let task_id = create_task(&base).await;
+
+    let (status, _) = http_request("GET", &format!("{base}/tenants/acme/tasks/{task_id}")).await;
+    assert_eq!(
+        status, 404,
+        "a tenant-prefixed path must not resolve on this router"
+    );
+
+    // And the un-prefixed form still works, so the assertion above is about
+    // the prefix rather than a broken server.
+    let (status, _) = http_request("GET", &format!("{base}/tasks/{task_id}")).await;
+    assert_eq!(status, 200);
+}

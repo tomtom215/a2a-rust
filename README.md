@@ -366,6 +366,10 @@ standards, testing requirements, and quality gates, and
 governed by the [Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant
 2.1).
 
+[ROADMAP.md](ROADMAP.md) lists what is already committed for the next release
+(0.8 is a breaking one — it removes several deprecated APIs), the known gaps
+in this project's own verification, and the questions still open.
+
 Every commit must be signed off under the
 [Developer Certificate of Origin](DCO) (`git commit -s`) by a human git author;
 CI enforces this. [PROVENANCE.md](PROVENANCE.md) documents this project's use

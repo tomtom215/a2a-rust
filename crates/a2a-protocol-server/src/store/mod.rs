@@ -75,3 +75,81 @@ pub use pg_migration::{PgMigration, PgMigrationRunner};
 pub use postgres_store::PostgresTaskStore;
 #[cfg(feature = "postgres")]
 pub use tenant_postgres_store::TenantAwarePostgresTaskStore;
+
+#[cfg(test)]
+mod status_timestamp_tests {
+    // These two helpers had no direct tests: they were only ever exercised
+    // through the SQLite and Postgres stores, and the Postgres suite is
+    // `#[ignore]`d without a live server. `status_timestamp_sqlite` slices
+    // its formatted timestamp by byte index (`[..10]`, `[11..23]`), which is
+    // the kind of thing that is fine until an input nobody tried.
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_shape_is_the_column_format() {
+        assert_eq!(
+            super::status_timestamp_sqlite(Some("2026-03-15T12:00:00.123Z")).as_deref(),
+            Some("2026-03-15 12:00:00.123"),
+        );
+        // Sub-second precision is normalized to exactly three digits, because
+        // the column is compared lexicographically.
+        assert_eq!(
+            super::status_timestamp_sqlite(Some("2026-03-15T12:00:00Z")).as_deref(),
+            Some("2026-03-15 12:00:00.000"),
+        );
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_returns_none_for_missing_or_unparseable() {
+        assert_eq!(super::status_timestamp_sqlite(None), None);
+        assert_eq!(super::status_timestamp_sqlite(Some("")), None);
+        assert_eq!(
+            super::status_timestamp_sqlite(Some("not a timestamp")),
+            None
+        );
+        assert_eq!(super::status_timestamp_sqlite(Some("2026-03-15")), None);
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[test]
+    fn sqlite_slicing_survives_out_of_range_years() {
+        // The byte slices assume a 4-digit year. A 5+-digit year makes the
+        // formatted string longer, and a pre-epoch value clamps to 1970 —
+        // neither may panic. Asserted rather than reasoned about, because a
+        // panic here aborts the process under `panic = "abort"`.
+        for input in [
+            "99999-01-01T00:00:00Z",
+            "999999-12-31T23:59:59.999Z",
+            "1969-12-31T23:59:59Z",
+            "0001-01-01T00:00:00Z",
+            "+010000-01-01T00:00:00Z",
+        ] {
+            let out = super::status_timestamp_sqlite(Some(input));
+            if let Some(s) = out {
+                assert!(
+                    s.is_char_boundary(0) && s.len() >= 23,
+                    "{input} produced a malformed value: {s:?}"
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "postgres")]
+    #[test]
+    fn rfc3339_normalizes_to_canonical_utc() {
+        assert_eq!(
+            super::status_timestamp_rfc3339(Some("2026-03-15T12:00:00.123Z")).as_deref(),
+            Some("2026-03-15T12:00:00.123Z"),
+        );
+        // Explicit offsets are normalized to UTC — stored tasks may carry
+        // timestamps written by other software (spec §5.6.1 forbids them on
+        // the wire, but the store is defensive).
+        assert_eq!(
+            super::status_timestamp_rfc3339(Some("2026-03-15T14:00:00+02:00")).as_deref(),
+            Some("2026-03-15T12:00:00.000Z"),
+        );
+        assert_eq!(super::status_timestamp_rfc3339(None), None);
+        assert_eq!(super::status_timestamp_rfc3339(Some("nope")), None);
+    }
+}

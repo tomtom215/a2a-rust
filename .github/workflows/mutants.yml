@@ -8,9 +8,10 @@
 # incremental (diff-only) job instead — see the `on.schedule` cron below.
 #
 # Architecture:
-#   - Full sweep splits into 4 parallel jobs (one per library crate) to avoid
-#     the 120-minute GitHub Actions timeout.  a2a-server alone can take 100+
-#     minutes when run sequentially.
+#   - Full sweep splits into 15 parallel jobs: one each for a2a-types,
+#     a2a-client and a2a-sdk, plus 12 shards of a2a-server. Sharding exists
+#     to stay inside the 120-minute GitHub Actions job timeout; at 8 shards
+#     two of them hit it (run 30236603180, 2026-07-27) and were cancelled.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
 #   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
@@ -59,9 +60,9 @@ env:
 jobs:
   # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
   #
-  # Splits the workspace into 4 parallel runners — one per library crate.
-  # This avoids the 120-minute timeout that the monolithic --workspace run hit,
-  # since a2a-server alone can generate 200-400 mutants at ~90s each.
+  # Splits the workspace across parallel runners. This avoids the 120-minute
+  # timeout that the monolithic --workspace run hit, since a2a-server alone
+  # generates > 1,800 mutants.
   #
   # When a specific package is provided via workflow_dispatch, only that
   # package's job runs (the others are skipped via the `if` condition).
@@ -79,11 +80,18 @@ jobs:
       matrix:
         # a2a-server has > 1,800 mutants and cannot finish inside a single
         # 2-hour job even at 4-way intra-crate parallelism — so we shard it
-        # across 8 separate runners (wall-clock ≈ the slowest shard; runs
-        # use nextest + a debuginfo-free profile, see mutants.toml). The `shard` value is passed verbatim to
-        # cargo-mutants' `--shard K/N` flag (cargo-mutants will split mutants
-        # deterministically across shards). Other crates run as a single
-        # shard (K=0/N=1 ≡ no sharding).
+        # across 12 separate runners. Wall-clock ≈ the slowest shard; runs
+        # use nextest + a debuginfo-free profile (see mutants.toml).
+        #
+        # It was 8, and 8 was not enough: in run 30236603180 (2026-07-27) the
+        # shards that finished took 86-113 minutes, and shards 3/8 and 4/8
+        # were cancelled at the 120-minute job timeout. 12 shards cut the
+        # per-shard load by a third, putting the slowest inside the limit
+        # with real headroom rather than four minutes of it.
+        #
+        # The `shard` value is passed verbatim to cargo-mutants' `--shard K/N`
+        # flag, which splits mutants deterministically across shards. Other
+        # crates run as a single shard (K=0/N=1 ≡ no sharding).
         include:
           - crate: a2a-protocol-types
             short: a2a-types
@@ -95,36 +103,52 @@ jobs:
             shard: "0/1"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 1/8
-            shard: "0/8"
+            name: a2a-server shard 1/12
+            shard: "0/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 2/8
-            shard: "1/8"
+            name: a2a-server shard 2/12
+            shard: "1/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 3/8
-            shard: "2/8"
+            name: a2a-server shard 3/12
+            shard: "2/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 4/8
-            shard: "3/8"
+            name: a2a-server shard 4/12
+            shard: "3/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 5/8
-            shard: "4/8"
+            name: a2a-server shard 5/12
+            shard: "4/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 6/8
-            shard: "5/8"
+            name: a2a-server shard 6/12
+            shard: "5/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 7/8
-            shard: "6/8"
+            name: a2a-server shard 7/12
+            shard: "6/12"
           - crate: a2a-protocol-server
             short: a2a-server
-            name: a2a-server shard 8/8
-            shard: "7/8"
+            name: a2a-server shard 8/12
+            shard: "7/12"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 9/12
+            shard: "8/12"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 10/12
+            shard: "9/12"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 11/12
+            shard: "10/12"
+          - crate: a2a-protocol-server
+            short: a2a-server
+            name: a2a-server shard 12/12
+            shard: "11/12"
           - crate: a2a-protocol-sdk
             short: a2a-sdk
             name: a2a-sdk
@@ -297,6 +321,72 @@ jobs:
         with:
           pattern: mutation-report-*
           path: reports/
+
+      # THE SHARD-COMPLETENESS GATE.
+      #
+      # This job aggregates whatever artifacts happen to be present and then
+      # fails only on `TOTAL_MISSED > 0`. That is unsound on its own: a shard
+      # that times out still runs its upload step, so it contributes an empty
+      # or partial `mutants.out`, `count()` reads 0 missed from it, and the
+      # aggregate reports a clean sweep over a shrunken denominator.
+      #
+      # This is not hypothetical. Run 30236603180 (2026-07-27, the first and
+      # so far only scheduled full sweep) hit exactly this: `a2a-server`
+      # shards 3/8 and 4/8 were cancelled at the 120-minute job timeout, and
+      # "Mutants Summary" still concluded **success**. Two elevenths of the
+      # workspace went unmutated and the gate said everything was caught.
+      #
+      # The incremental job below already documents this same hazard in its
+      # own header — "it gets cancelled, so the gate silently stops
+      # enforcing" — and was sharded to avoid it. The full sweep had the
+      # identical hole and no equivalent guard. This is that guard.
+      #
+      # Two independent checks, because they fail differently: a shard can
+      # end non-success (timeout/failure/cancel), or its artifact can go
+      # missing while the job still reports success.
+      - name: Require every shard to have completed
+        env:
+          # Matrix result: 'success' only when every matrix job succeeded.
+          SHARD_RESULT: ${{ needs.mutants-crate.result }}
+          # Must equal the number of `include:` entries in mutants-crate
+          # (12 a2a-server shards + types + client + sdk). Deliberately a
+          # literal: if the matrix grows and this does not, the sweep fails
+          # loudly here rather than quietly measuring less.
+          EXPECTED_SHARDS: 15
+          # A workflow_dispatch scoped to one package skips the other matrix
+          # entries by design, so they legitimately upload nothing. Only the
+          # unscoped sweep — the one whose score means "the whole workspace" —
+          # is held to the full count.
+          PACKAGE_FILTER: ${{ inputs.package }}
+        run: |
+          fail=0
+
+          if [ "$SHARD_RESULT" != "success" ]; then
+            echo "::error::mutation shards did not all succeed (matrix result: ${SHARD_RESULT})."
+            echo "A cancelled or timed-out shard produces an empty report, which this"
+            echo "job would otherwise aggregate as 'zero surviving mutants'."
+            fail=1
+          fi
+
+          found=$(find reports -maxdepth 1 -type d -name 'mutation-report-*' | wc -l)
+          if [ -n "$PACKAGE_FILTER" ]; then
+            echo "Scoped run (package='${PACKAGE_FILTER}'): ${found} report(s); count not enforced."
+          elif [ "$found" -ne "$EXPECTED_SHARDS" ]; then
+            echo "::error::expected ${EXPECTED_SHARDS} per-shard reports, found ${found}."
+            echo "Reports present:"
+            find reports -maxdepth 1 -type d -name 'mutation-report-*' -printf '  %f\n' | sort
+            fail=1
+          fi
+
+          if [ "$fail" -ne 0 ]; then
+            echo ""
+            echo "The sweep is incomplete, so its score is not a measurement of the"
+            echo "whole workspace. Re-run it, or raise the per-shard timeout /"
+            echo "shard count, before trusting or recording any number from it."
+            exit 1
+          fi
+
+          echo "All ${EXPECTED_SHARDS} shards completed and reported."
 
       - name: Aggregate results
         run: |

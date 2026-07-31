@@ -28,10 +28,18 @@ Transport granularity matters too: PUSH-CREATE-001 fails on jsonrpc and passes
 on http_json today. A requirement-level baseline would not notice it starting
 to fail on http_json as well.
 
+A differential gate alone is not enough for a *scoped* run — one restricted to
+a subset of the suite with `-k`. There, "no failures" is also what an empty
+test selection produces, so an upstream rename that makes the filter match
+nothing would read as success. `--require-pass` closes that: it asserts a named
+requirement was actually measured and graded PASS, so a run that measured
+nothing fails loudly instead of passing quietly.
+
 Usage:
     check_conformance.py --report reports/compatibility.json \\
                          --baseline tck/conformance-baseline.json
     check_conformance.py --report … --baseline … --update   # rewrite baseline
+    check_conformance.py --report … --baseline … --require-pass CORE-CAP-004
 """
 
 from __future__ import annotations
@@ -103,6 +111,34 @@ def flatten(failures: dict[str, dict[str, str]]) -> set[tuple[str, str]]:
     return {(req, tr) for req, trs in failures.items() for tr in trs}
 
 
+def unmet_requirements(report: dict, required: list[str]) -> list[str]:
+    """Return a message per requirement in `required` that is not graded PASS.
+
+    Absent, SKIPPED and NOT TESTED all count as unmet. That is the point: on a
+    scoped run those are exactly what "the filter selected nothing" looks like,
+    and they are indistinguishable from success to the differential gate.
+    """
+    per_req = report.get("per_requirement")
+    if not isinstance(per_req, dict):
+        sys.exit("error: report has no 'per_requirement' object — wrong file?")
+
+    problems: list[str] = []
+    for req_id in required:
+        entry = per_req.get(req_id)
+        if not isinstance(entry, dict):
+            problems.append(f"  {req_id} -> absent from the report entirely")
+            continue
+        status = entry.get("status")
+        if status != "PASS":
+            transports = entry.get("transports") or {}
+            detail = (
+                ", ".join(f"{t}={s}" for t, s in sorted(transports.items()))
+                or "no transport results"
+            )
+            problems.append(f"  {req_id} -> {status} ({detail})")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--report", required=True, type=Path)
@@ -111,6 +147,17 @@ def main() -> int:
         "--update",
         action="store_true",
         help="Rewrite the baseline from this report instead of checking it.",
+    )
+    ap.add_argument(
+        "--require-pass",
+        action="append",
+        default=[],
+        metavar="REQ_ID",
+        help=(
+            "Fail unless this requirement is graded PASS in the report. "
+            "Repeatable. Use on scoped runs, where an empty test selection "
+            "would otherwise look identical to a clean one."
+        ),
     )
     args = ap.parse_args()
 
@@ -147,11 +194,15 @@ def main() -> int:
     regressions = sorted(obs - base)
     fixed = sorted(base - obs)
 
+    unmet = unmet_requirements(report, args.require_pass)
+
     summary = report.get("summary", {})
     print("Official a2a-tck — differential conformance gate")
     print(f"  MUST compatibility : {summary.get('must_compatibility', '?')}")
     print(f"  known failing pairs: {len(base)}")
     print(f"  observed failing   : {len(obs)}")
+    if args.require_pass:
+        print(f"  required to PASS   : {', '.join(args.require_pass)}")
 
     if regressions:
         print(f"\nREGRESSION — {len(regressions)} failing check(s) not in the baseline:")
@@ -169,7 +220,15 @@ def main() -> int:
         print("gating. Run:")
         print("  tck/scripts/check_conformance.py --report … --baseline … --update")
 
-    if regressions or fixed:
+    if unmet:
+        print(f"\nNOT MEASURED — {len(unmet)} requirement(s) required to PASS did not:")
+        for line in unmet:
+            print(line)
+        print("\nOn a scoped run this usually means the test selection matched")
+        print("nothing — e.g. upstream renamed the test the -k filter names.")
+        print("The suite reporting no failures is not evidence it ran.")
+
+    if regressions or fixed or unmet:
         return 1
 
     print("\nOK — failures exactly match the baseline; no regressions.")
