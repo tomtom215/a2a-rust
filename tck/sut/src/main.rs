@@ -264,10 +264,22 @@ impl AgentExecutor for TckSutExecutor {
 /// Which capability set the SUT advertises.
 ///
 /// Several MUST requirements are only *reachable* when the agent advertises
-/// **less**: `CORE-CAP-001/002/004` check that a server rejects push and
-/// streaming operations it never claimed to support, and the TCK skips them
-/// against an agent that does claim them. One SUT cannot exercise both sides,
-/// so the profile is selectable and CI runs the suite once per profile.
+/// something other than the full capability set, and one SUT cannot exercise
+/// every side at once — so the profile is selectable and CI runs the suite
+/// once per profile:
+///
+/// * [`Profile::Minimal`] advertises **less**. `CORE-CAP-001/002/003` check
+///   that a server rejects streaming, push and extended-card operations it
+///   never claimed to support, and the TCK skips them against an agent that
+///   does claim them.
+/// * [`Profile::Extension`] advertises a **required extension**, which is the
+///   only way `CORE-CAP-004` becomes observable at all.
+///
+/// Verified against `reports/compatibility.json` from both runs: the three
+/// requirements the minimal profile adds are exactly `CORE-CAP-001`,
+/// `CORE-CAP-002` and `CORE-CAP-003`. `CORE-CAP-004` is `SKIPPED` under both
+/// Full and Minimal, because neither card declares the sentinel extension its
+/// test requires.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Profile {
     /// Everything on — the profile the conformance gate runs against.
@@ -275,16 +287,49 @@ enum Profile {
     /// Streaming, push and extended card all absent, so the capability
     /// *rejection* paths become observable.
     Minimal,
+    /// Full capabilities plus [`REQUIRED_EXTENSION_URI`] declared
+    /// `required: true`, so `CORE-CAP-004`'s precondition is met.
+    ///
+    /// This profile is only usable for a **scoped** run — see that constant's
+    /// documentation for why.
+    Extension,
 }
 
 impl Profile {
     fn from_env() -> Self {
         match std::env::var("SUT_PROFILE").as_deref() {
             Ok("minimal") => Self::Minimal,
+            Ok("extension") => Self::Extension,
             _ => Self::Full,
         }
     }
 }
+
+/// The sentinel extension URI `CORE-CAP-004` looks for on the agent card.
+///
+/// The test only runs when the card declares this URI with `required: true`;
+/// otherwise it records `SKIPPED`. It then sends an ordinary `SendMessage`
+/// *without* an `A2A-Extensions` declaration and requires
+/// `ExtensionSupportRequiredError` back.
+///
+/// # Why this profile must be run scoped to `CORE-CAP-004`
+///
+/// Spec §3.3.4 says required-extension enforcement applies to every request,
+/// and this SDK implements it that way (`ensure_required_extensions` is called
+/// from `messaging.rs`, `get_task.rs`, `list_tasks.rs`, `cancel_task.rs`,
+/// `subscribe.rs` and `push_config.rs`). The TCK does not send `A2A-Extensions`
+/// activation on its ordinary positive requests — upstream
+/// [`a2aproject/a2a-tck` #193](https://github.com/a2aproject/a2a-tck/issues/193),
+/// still open — so under this profile every other `CORE-*` check would be
+/// answered with `ExtensionSupportRequiredError` and fail.
+///
+/// Those requirements are graded by the full-profile run instead. Restricting
+/// this profile to `CORE-CAP-004`'s own tests is therefore a scoping decision,
+/// not a waiver: nothing is exempted from grading, it is graded elsewhere. The
+/// alternative upstream records other SDKs taking — a `sitecustomize.py` shim
+/// that monkey-patches the harness into sending the header — is deliberately
+/// not used here, because it would change the suite rather than the SUT.
+const REQUIRED_EXTENSION_URI: &str = "urn:a2a:tck:required-extension";
 
 fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCard {
     AgentCard {
@@ -336,6 +381,26 @@ fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCar
             // Advertising nothing is the point: it is what lets the suite ask
             // whether unsupported operations are rejected.
             Profile::Minimal => AgentCapabilities::none(),
+            // Same capabilities as Full, plus the sentinel required extension.
+            // Keeping the rest identical to Full means the only variable this
+            // profile introduces is the extension itself.
+            Profile::Extension => {
+                let mut caps = AgentCapabilities::none()
+                    .with_streaming(true)
+                    .with_push_notifications(true)
+                    .with_extended_agent_card(true);
+                caps.extensions = Some(vec![a2a_protocol_types::extensions::AgentExtension {
+                    uri: REQUIRED_EXTENSION_URI.into(),
+                    description: Some(
+                        "TCK sentinel extension for CORE-CAP-004 (required-extension \
+                         negotiation). Carries no behaviour."
+                            .into(),
+                    ),
+                    required: Some(true),
+                    params: None,
+                }]);
+                caps
+            }
         },
         provider: None,
         icon_url: None,
@@ -424,7 +489,9 @@ async fn main() {
         &grpc_advertised,
         profile,
     ));
-    if profile == Profile::Full {
+    // Extension advertises the same capabilities as Full, so it needs the same
+    // supporting stores; only Minimal advertises nothing and needs none.
+    if profile != Profile::Minimal {
         builder = builder
             .with_push_config_store(InMemoryPushConfigStore::new())
             // The TCK runs its webhook receiver on loopback, which the
