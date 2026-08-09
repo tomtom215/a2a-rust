@@ -3,8 +3,10 @@
 
 # Draft issue for `a2aproject/a2a-tck` — HTTP+JSON client crashes on any non-2xx streamed response
 
-**Status: NOT FILED.** This is a prepared report awaiting a human decision to
-submit it. Nothing in this file has been sent to `a2aproject/a2a-tck`.
+**Status: FILED 2026-08-07** as
+[a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
+by the maintainer. This file is retained as the record of what was submitted
+and the evidence behind it; the issue is now the live thread.
 
 Everything below was reproduced against pristine upstream at
 `5996b79f9cefa6fc390980e383e358a66fb9e49e` (`main`, 2026-06-29,
@@ -15,7 +17,8 @@ nearest, #99 *"REST transport streaming fails with 'Event loop is closed'"*,
 is a different failure. See the duplicate-check note at the foot of this file
 for what that search did and did not cover.
 
-Everything from `## Title` down is the proposed issue body, ready to paste.
+Everything from `## Title` down is the issue body as submitted. The upstream
+form splits it across fields — see the filing notes at the foot of this file.
 
 ---
 

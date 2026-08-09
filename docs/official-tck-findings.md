@@ -1425,8 +1425,8 @@ deselected.
 **Not done here:** no issue has been filed against `a2aproject/a2a-tck`.
 A search of that repo's issues found nothing covering this defect
 (the nearest, #99, is a different REST streaming failure — "Event loop is
-closed"), so it appears unreported — but filing on a repository this project
-does not own is a human decision, and this session did not make it.
+closed"). It was reported upstream on 2026-08-07 by the maintainer as
+[a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225).
 
 A complete, ready-to-file report is prepared at
 [`docs/upstream/a2a-tck-sse-001-report.md`](upstream/a2a-tck-sse-001-report.md),
@@ -1434,7 +1434,12 @@ with the standalone reproduction at
 [`docs/upstream/repro_tck_sse_bug.py`](upstream/repro_tck_sse_bug.py). It
 includes a fix that was applied to a local upstream checkout and verified:
 with it, the previously-erroring test skips cleanly and the server's real
-error text reaches the skip message. Submitting it remains a human decision.
+error text reaches the skip message.
+
+Every claim in that report — the line citations, the isolated reproduction,
+the full-suite reproduction and the fix — was re-verified first-hand against
+upstream `5996b79` on 2026-08-07, which was still `main` tip that day, before
+it was filed.
 
 ## 18. `CORE-CAP-004` is closed: a scoped third profile, not a harness patch
 

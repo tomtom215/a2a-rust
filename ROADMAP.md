@@ -105,8 +105,10 @@ no test function upstream, and `CARD-EXT-002` is structurally inapplicable.
 Full analysis and reproduction steps in
 [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
-* **Report `SSE-001` upstream.** A reproduction and analysis are prepared but
-  unfiled, pending a maintainer decision on whether to open the issue.
+* **`SSE-001` is reported upstream** as
+  [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225)
+  (filed 2026-08-07). Nothing more to do here until upstream responds; if the
+  fix lands, drop the `--deselect` in `.github/workflows/official-tck.yml`.
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.
