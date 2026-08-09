@@ -44,10 +44,21 @@ pub(super) async fn deliver_push_bg(
     // a burst of events could spawn hundreds of concurrent HTTP requests.
     let semaphore = tokio::sync::Semaphore::new(16);
 
-    for (delivered, config) in configs.iter().enumerate() {
+    // `_delivered` is read only by `trace_warn!`, which expands to nothing
+    // without the `tracing` feature. The underscore is this crate's convention
+    // for a binding that exists only to be traced — `trace.rs` carries
+    // `#[allow(clippy::used_underscore_binding)]` so these still read naturally
+    // at the call site (cf. `error = %_e` in state_machine.rs).
+    //
+    // In a default-feature build the index is then genuinely unused, which is
+    // what the allow below covers. Taking clippy's suggestion and dropping
+    // `.enumerate()` would delete the very count the warning reports, turning
+    // the message back into the overstatement this was fixing.
+    #[allow(clippy::unused_enumerate_index)]
+    for (_delivered, config) in configs.iter().enumerate() {
         // Check if we've exceeded the total push delivery budget.
         if tokio::time::Instant::now() >= deadline {
-            // `configs.len() - delivered`, not `configs.len()`: this fires
+            // `configs.len() - _delivered`, not `configs.len()`: this fires
             // partway through the list, so the total is never the remainder.
             // Reporting the total made the one telemetry signal for push
             // amplification overstate the shortfall — at the extreme, a
@@ -55,7 +66,7 @@ pub(super) async fn deliver_push_bg(
             // been skipped.
             trace_warn!(
                 task_id = %task_id,
-                remaining_configs = configs.len() - delivered,
+                remaining_configs = configs.len() - _delivered,
                 "push delivery deadline exceeded; skipping remaining configs"
             );
             break;
