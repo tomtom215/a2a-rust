@@ -524,6 +524,58 @@ mod tests {
         );
     }
 
+    /// Kills `replace > with >=` on the `serialized_size > self.max_event_size`
+    /// check. That mutation differs only at exactly the cap, so the existing
+    /// pair of tests — one far under it, one far over — cannot see it. An
+    /// event whose serialized size *equals* the limit is within the limit and
+    /// must be accepted.
+    #[tokio::test]
+    async fn event_of_exactly_max_size_is_accepted() {
+        let event = make_status_event("t-exact", TaskState::Working);
+        let exact = serde_json::to_vec(&event).expect("serializes").len();
+
+        let (writer, _reader) = new_in_memory_queue_with_options(16, exact, DEFAULT_WRITE_TIMEOUT);
+        assert!(
+            writer.write(event).await.is_ok(),
+            "an event of exactly max_event_size ({exact} bytes) is within the \
+             limit and must be accepted"
+        );
+
+        // And one byte under the size is still rejected, which pins the
+        // boundary from the other side.
+        let event = make_status_event("t-exact", TaskState::Working);
+        let (writer, _reader) =
+            new_in_memory_queue_with_options(16, exact - 1, DEFAULT_WRITE_TIMEOUT);
+        assert!(
+            writer.write(event).await.is_err(),
+            "one byte over the limit must still be rejected"
+        );
+    }
+
+    /// Kills the whole-method replacement of the reader's `Debug` impl. It
+    /// deliberately elides the channel and reports only the fields that carry
+    /// decisions, so a `Default` implementation would silently drop the
+    /// diagnostics this exists to provide.
+    #[tokio::test]
+    async fn reader_debug_reports_the_decision_carrying_fields() {
+        let (_writer, mut reader) = new_in_memory_queue();
+        reader.set_first_event(make_status_event("t-dbg", TaskState::Working));
+
+        let rendered = format!("{reader:?}");
+        assert!(
+            rendered.contains("InMemoryQueueReader"),
+            "the type name must appear: {rendered}"
+        );
+        assert!(
+            rendered.contains("pending_first: true"),
+            "a pending snapshot must be visible: {rendered}"
+        );
+        assert!(
+            rendered.contains("saw_terminal: false"),
+            "terminal tracking must be visible: {rendered}"
+        );
+    }
+
     // ── write / read lifecycle ───────────────────────────────────────────
 
     /// A streaming-mode write with zero live subscribers must succeed: the
