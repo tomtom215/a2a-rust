@@ -455,6 +455,22 @@ async fn migrations_apply_in_order_and_are_idempotent() {
     assert_eq!(applied, vec![1, 2, 3], "migrations apply in version order");
     assert_eq!(runner.current_version().await.expect("current_version"), 3);
 
+    // Pins the boundary in `pending_migrations`, which filters `version >
+    // current`. Nothing else here observes it: `run_pending` walks
+    // `self.migrations` with its own `<= current` check rather than calling
+    // this method, so relaxing `>` to `>=` changed no assertion and survived
+    // mutation. `pending_migrations` is public API — under `>=` an adopter
+    // polling "is a migration outstanding?" would see the already-applied
+    // head migration as pending forever.
+    assert!(
+        runner
+            .pending_migrations()
+            .await
+            .expect("pending_migrations after migrating")
+            .is_empty(),
+        "a fully migrated database has nothing pending"
+    );
+
     let reapplied = runner.run_pending().await.expect("run_pending again");
     assert!(reapplied.is_empty(), "second run applies nothing");
 

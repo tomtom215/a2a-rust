@@ -75,6 +75,34 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    # A live database, for the same reason `test-postgres` in ci.yml has one.
+    #
+    # Without it the Postgres sources are mutated but their tests cannot run
+    # (the whole suite is `#[ignore]`d behind A2A_TEST_POSTGRES_URL), so every
+    # mutant in them survives — and the gate reports environmental blindness
+    # as test inadequacy. Measured, not assumed: `pg_migration.rs` had 12
+    # survivors in the 2026-07-27 sweep; re-run locally against a real
+    # PostgreSQL 16 with `--run-ignored all`, 13 of its 14 mutants were caught
+    # immediately and the 14th was a genuine boundary gap, now covered. The
+    # file is at 14/14.
+    #
+    # The alternative was excluding these files in mutants.toml. That would
+    # have recorded 18 real, checkable mutants as permanently out of scope on
+    # the strength of a CI limitation — the same trade that put a blanket
+    # `**/mod.rs` exclusion in this project's config and silently exempted
+    # ~2,800 lines. Measuring them costs one service container.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     strategy:
       fail-fast: false   # Don't cancel other crates if one fails
       matrix:
@@ -153,6 +181,8 @@ jobs:
             short: a2a-sdk
             name: a2a-sdk
             shard: "0/1"
+    env:
+      A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       # Skip this matrix entry if a specific package was requested and it
       # doesn't match this crate.
@@ -212,13 +242,17 @@ jobs:
           # baseline test suite alone takes ~60s on GitHub-hosted runners;
           # at 3x the auto-computed timeout already exceeds 120, so the
           # previous cap was masking real CAUGHT results as TIMEOUT).
+          # `--run-ignored all` so the Postgres suite actually runs against
+          # the service container above; without it those tests stay
+          # `#[ignore]`d and every Postgres mutant survives for want of a
+          # database rather than for want of a test.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features 2>&1 | tee /tmp/mutants-run.log
+            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
@@ -609,8 +643,10 @@ jobs:
               echo "## How to Fix"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants"
-              echo "cargo mutants -p <crate-name> -- --all-features"
+              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
+              echo "cargo mutants -p <crate-name> --test-tool=nextest -- --all-features --run-ignored all"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -648,6 +684,20 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Same reasoning as the full sweep above: a PR touching Postgres code must
+    # be judged against a real database, not against absent tests.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     strategy:
       fail-fast: false # a survivor in one shard must not cancel the others
       matrix:
@@ -658,6 +708,7 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       INCREMENTAL_SHARDS: 8
+      A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -717,7 +768,7 @@ jobs:
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features 2>&1 | tee /tmp/mutants-run.log
+            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
@@ -826,8 +877,10 @@ jobs:
               echo "## How to Reproduce Locally"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants"
-              echo "cargo mutants --file <path-to-file> -- --all-features"
+              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
+              echo "cargo mutants --file <path-to-file> --test-tool=nextest -- --all-features --run-ignored all"
               echo '```'
               echo ""
             fi
