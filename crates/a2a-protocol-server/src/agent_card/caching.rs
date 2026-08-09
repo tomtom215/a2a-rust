@@ -449,10 +449,10 @@ pub(crate) mod tests {
     /// happen to be.
     ///
     /// Expected values are anchored on a fact independent of this code:
-    /// 0000-03-01 is exactly 719_468 days before 1970-01-01 (719_162 days from
+    /// 0000-03-01 is exactly `719_468` days before 1970-01-01 (`719_162` days from
     /// 0001-01-01, plus the 306 days from 0000-03-01 to 0001-01-01, year 0
     /// being a leap year since 0 is divisible by 400). That is the constant the
-    /// algorithm shifts by, so day -719_468 must be 0000-03-01 and the day
+    /// algorithm shifts by, so day `-719_468` must be 0000-03-01 and the day
     /// before it must be 0000-02-29.
     ///
     /// A first draft of this test asserted the wrong values for the last two
@@ -463,7 +463,7 @@ pub(crate) mod tests {
     /// wrong — which is the useful direction for a test to fail in, and worth
     /// recording so the next reader does not repeat it. Verified here that
     /// `(z - 146_096) / 146_097` equals `floor(z / 146_097)` at z = -1, -62
-    /// and -280_532.
+    /// and `-280_532`.
     #[test]
     fn civil_from_days_handles_pre_gregorian_epoch_days() {
         // z == 0 exactly: the last input that takes the `if` arm.
