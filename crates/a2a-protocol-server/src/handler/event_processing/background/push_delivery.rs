@@ -44,12 +44,18 @@ pub(super) async fn deliver_push_bg(
     // a burst of events could spawn hundreds of concurrent HTTP requests.
     let semaphore = tokio::sync::Semaphore::new(16);
 
-    for config in &configs {
+    for (delivered, config) in configs.iter().enumerate() {
         // Check if we've exceeded the total push delivery budget.
         if tokio::time::Instant::now() >= deadline {
+            // `configs.len() - delivered`, not `configs.len()`: this fires
+            // partway through the list, so the total is never the remainder.
+            // Reporting the total made the one telemetry signal for push
+            // amplification overstate the shortfall — at the extreme, a
+            // deadline hit on the very last config claimed every config had
+            // been skipped.
             trace_warn!(
                 task_id = %task_id,
-                remaining_configs = configs.len(),
+                remaining_configs = configs.len() - delivered,
                 "push delivery deadline exceeded; skipping remaining configs"
             );
             break;
