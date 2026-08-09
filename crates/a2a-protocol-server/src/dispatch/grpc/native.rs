@@ -354,4 +354,450 @@ mod tests {
             Some(apb::stream_response::Payload::Message(_))
         ));
     }
+
+    // ── A2aService trait impl ────────────────────────────────────────────
+    //
+    // Nothing drove these methods before. `grpc_dispatch_tests.rs` covers
+    // `GrpcConfig` and dispatcher wiring but never issues an RPC, so every
+    // method in the impl survived being replaced wholesale with
+    // `Ok(Response::new(Default::default()))`.
+    //
+    // Each test below therefore asserts on the *content* of the response, or
+    // on a side effect. An empty-but-`Ok` response is precisely what that
+    // mutation produces, so a test that only checks `is_ok()` would pass
+    // against a method whose body had been deleted.
+
+    use crate::agent_executor;
+    use crate::builder::RequestHandlerBuilder;
+    use a2a_protocol_types::agent_card::{
+        AgentCapabilities, AgentCard, AgentInterface, AgentSkill,
+    };
+
+    struct NoopExecutor;
+    agent_executor!(NoopExecutor, |_ctx, _queue| async { Ok(()) });
+
+    /// A push sender that accepts everything. The push-config methods answer
+    /// UNIMPLEMENTED unless the card advertises the capability *and* a sender
+    /// is wired, so the fixture needs both to reach their own logic.
+    struct NoopSender;
+
+    impl crate::push::PushSender for NoopSender {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a a2a_protocol_types::events::StreamResponse,
+            _config: &'a a2a_protocol_types::push::TaskPushNotificationConfig,
+        ) -> Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn allows_private_urls(&self) -> bool {
+            true
+        }
+    }
+
+    fn test_card() -> AgentCard {
+        AgentCard {
+            url: None,
+            name: "native-grpc-test-agent".into(),
+            description: "Fixture for the canonical gRPC binding".into(),
+            version: "1.0.0".into(),
+            supported_interfaces: vec![AgentInterface {
+                url: "grpc://localhost:50051".into(),
+                protocol_binding: "gRPC".into(),
+                protocol_version: "1.0.0".into(),
+                tenant: None,
+            }],
+            default_input_modes: vec!["text/plain".into()],
+            default_output_modes: vec!["text/plain".into()],
+            skills: vec![AgentSkill {
+                id: "noop".into(),
+                name: "Noop".into(),
+                description: "Does nothing".into(),
+                tags: vec!["test".into()],
+                examples: None,
+                input_modes: None,
+                output_modes: None,
+                security_requirements: None,
+            }],
+            capabilities: AgentCapabilities::none()
+                .with_extended_agent_card(true)
+                // Without this the push-config methods answer
+                // UNIMPLEMENTED before reaching any of their own logic.
+                .with_push_notifications(true),
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            security_schemes: None,
+            security_requirements: None,
+            signatures: None,
+        }
+    }
+
+    fn service() -> A2aServiceImpl {
+        A2aServiceImpl {
+            handler: Arc::new(
+                RequestHandlerBuilder::new(NoopExecutor)
+                    .with_agent_card(test_card())
+                    .with_push_sender(NoopSender)
+                    // The extended-card operation refuses to serve an
+                    // unauthenticated deployment unless the operator opts in.
+                    .allow_unauthenticated_extended_card()
+                    .build()
+                    .expect("default build should succeed"),
+            ),
+            config: GrpcConfig::default(),
+        }
+    }
+
+    fn send_request(text: &str) -> apb::SendMessageRequest {
+        apb::SendMessageRequest {
+            tenant: String::new(),
+            message: Some(apb::Message {
+                message_id: format!("msg-{text}"),
+                context_id: String::new(),
+                task_id: String::new(),
+                role: apb::Role::User as i32,
+                parts: vec![apb::Part {
+                    metadata: None,
+                    filename: String::new(),
+                    media_type: String::new(),
+                    content: Some(apb::part::Content::Text(text.into())),
+                }],
+                metadata: None,
+                extensions: Vec::new(),
+                reference_task_ids: Vec::new(),
+            }),
+            configuration: None,
+            metadata: None,
+        }
+    }
+
+    /// Drives `send_message` once and returns the id of the task it created.
+    async fn seed_task(svc: &A2aServiceImpl) -> String {
+        let resp = svc
+            .send_message(Request::new(send_request("seed")))
+            .await
+            .expect("send_message should succeed")
+            .into_inner();
+        match resp.payload {
+            Some(apb::send_message_response::Payload::Task(t)) => t.id,
+            other => panic!("expected a Task payload, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_message_returns_a_populated_payload() {
+        let svc = service();
+        let resp = svc
+            .send_message(Request::new(send_request("hello")))
+            .await
+            .expect("send_message should succeed")
+            .into_inner();
+
+        let payload = resp.payload.expect("a default response carries no payload");
+        match payload {
+            apb::send_message_response::Payload::Task(t) => {
+                assert!(!t.id.is_empty(), "the created task must carry an id");
+            }
+            apb::send_message_response::Payload::Message(m) => {
+                assert!(!m.message_id.is_empty(), "the reply must carry an id");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn get_task_returns_the_task_that_was_created() {
+        let svc = service();
+        let id = seed_task(&svc).await;
+
+        let task = svc
+            .get_task(Request::new(apb::GetTaskRequest {
+                tenant: String::new(),
+                id: id.clone(),
+                history_length: None,
+            }))
+            .await
+            .expect("get_task should find the seeded task")
+            .into_inner();
+
+        assert_eq!(task.id, id, "the id round-trips through the binding");
+    }
+
+    #[tokio::test]
+    async fn get_task_maps_a_missing_task_to_not_found() {
+        let svc = service();
+        let status = svc
+            .get_task(Request::new(apb::GetTaskRequest {
+                tenant: String::new(),
+                id: "no-such-task".into(),
+                history_length: None,
+            }))
+            .await
+            .expect_err("an unknown id must not resolve");
+
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn list_tasks_returns_the_seeded_task() {
+        let svc = service();
+        let id = seed_task(&svc).await;
+
+        let resp = svc
+            .list_tasks(Request::new(apb::ListTasksRequest::default()))
+            .await
+            .expect("list_tasks should succeed")
+            .into_inner();
+
+        assert!(
+            resp.tasks.iter().any(|t| t.id == id),
+            "the seeded task must appear in the listing, got {:?}",
+            resp.tasks.iter().map(|t| &t.id).collect::<Vec<_>>()
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_task_moves_the_task_out_of_a_running_state() {
+        let svc = service();
+        let id = seed_task(&svc).await;
+
+        let task = svc
+            .cancel_task(Request::new(apb::CancelTaskRequest {
+                tenant: String::new(),
+                id: id.clone(),
+                metadata: None,
+            }))
+            .await
+            .expect("cancel_task should succeed")
+            .into_inner();
+
+        assert_eq!(task.id, id);
+        let status = task.status.expect("a cancelled task carries a status");
+        assert_eq!(
+            status.state,
+            apb::TaskState::Canceled as i32,
+            "cancel must actually transition the task"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_task_maps_a_missing_task_to_not_found() {
+        let svc = service();
+        let status = svc
+            .cancel_task(Request::new(apb::CancelTaskRequest {
+                tenant: String::new(),
+                id: "no-such-task".into(),
+                metadata: None,
+            }))
+            .await
+            .expect_err("an unknown id must not resolve");
+
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    // ── Push notification config ─────────────────────────────────────────
+
+    /// Registers one config against `task_id` and returns what the binding
+    /// echoed back.
+    async fn create_push(
+        svc: &A2aServiceImpl,
+        task_id: &str,
+        url: &str,
+    ) -> apb::TaskPushNotificationConfig {
+        svc.create_task_push_notification_config(Request::new(apb::TaskPushNotificationConfig {
+            tenant: String::new(),
+            id: String::new(),
+            task_id: task_id.to_owned(),
+            url: url.to_owned(),
+            token: String::new(),
+            authentication: None,
+        }))
+        .await
+        .expect("create_task_push_notification_config should succeed")
+        .into_inner()
+    }
+
+    async fn list_push(
+        svc: &A2aServiceImpl,
+        task_id: &str,
+    ) -> Vec<apb::TaskPushNotificationConfig> {
+        svc.list_task_push_notification_configs(Request::new(
+            apb::ListTaskPushNotificationConfigsRequest {
+                tenant: String::new(),
+                task_id: task_id.to_owned(),
+                page_size: 0,
+                page_token: String::new(),
+            },
+        ))
+        .await
+        .expect("list_task_push_notification_configs should succeed")
+        .into_inner()
+        .configs
+    }
+
+    #[tokio::test]
+    async fn create_push_config_echoes_the_registered_url() {
+        let svc = service();
+        let task_id = seed_task(&svc).await;
+
+        let created = create_push(&svc, &task_id, "https://example.test/hook").await;
+
+        assert_eq!(created.url, "https://example.test/hook");
+        assert_eq!(created.task_id, task_id);
+    }
+
+    #[tokio::test]
+    async fn get_push_config_returns_what_create_stored() {
+        let svc = service();
+        let task_id = seed_task(&svc).await;
+        let created = create_push(&svc, &task_id, "https://example.test/get").await;
+
+        let fetched = svc
+            .get_task_push_notification_config(Request::new(
+                apb::GetTaskPushNotificationConfigRequest {
+                    tenant: String::new(),
+                    task_id: task_id.clone(),
+                    id: created.id.clone(),
+                },
+            ))
+            .await
+            .expect("the config was just created")
+            .into_inner();
+
+        assert_eq!(fetched.id, created.id);
+        assert_eq!(fetched.url, "https://example.test/get");
+    }
+
+    #[tokio::test]
+    async fn list_push_configs_includes_the_created_one() {
+        let svc = service();
+        let task_id = seed_task(&svc).await;
+        let created = create_push(&svc, &task_id, "https://example.test/list").await;
+
+        let configs = list_push(&svc, &task_id).await;
+
+        assert!(
+            configs.iter().any(|c| c.id == created.id),
+            "the created config must appear in the listing"
+        );
+    }
+
+    /// Deletion is asserted through the listing rather than the response.
+    ///
+    /// Both mutations of this method — `Ok(Response::new(()))` and
+    /// `Ok(Response::from(()))` — produce exactly the value the real method
+    /// returns on success, so the response cannot distinguish them. Only the
+    /// side effect can.
+    #[tokio::test]
+    async fn delete_push_config_removes_it_from_the_listing() {
+        let svc = service();
+        let task_id = seed_task(&svc).await;
+        let created = create_push(&svc, &task_id, "https://example.test/delete").await;
+        assert_eq!(list_push(&svc, &task_id).await.len(), 1, "precondition");
+
+        svc.delete_task_push_notification_config(Request::new(
+            apb::DeleteTaskPushNotificationConfigRequest {
+                tenant: String::new(),
+                task_id: task_id.clone(),
+                id: created.id.clone(),
+            },
+        ))
+        .await
+        .expect("delete_task_push_notification_config should succeed");
+
+        assert!(
+            list_push(&svc, &task_id).await.is_empty(),
+            "delete must actually remove the config"
+        );
+    }
+
+    // ── reader_to_native_stream ──────────────────────────────────────────
+
+    /// An event that cannot be represented in protobuf ends the stream: the
+    /// error is delivered and nothing after it is.
+    ///
+    /// `||` becoming `&&` in that break condition would keep the loop running
+    /// after a conversion failure — the send succeeded, so only `is_err` is
+    /// true — and the events queued behind the bad one would still be
+    /// delivered, turning a terminal error into a hiccup mid-stream.
+    #[tokio::test]
+    async fn reader_to_native_stream_stops_after_a_conversion_error() {
+        use a2a_protocol_types::events::StreamResponse;
+        use tokio_stream::StreamExt;
+
+        use crate::streaming::event_queue::new_in_memory_queue;
+        use crate::streaming::EventQueueWriter;
+
+        fn message(metadata: serde_json::Value) -> Message {
+            Message {
+                id: MessageId("m".into()),
+                role: MessageRole::Agent,
+                parts: vec![Part {
+                    content: PartContent::Text("hi".into()),
+                    metadata: None,
+                    filename: None,
+                    media_type: None,
+                }],
+                task_id: Some(TaskId("t".into())),
+                context_id: Some(ContextId("c".into())),
+                reference_task_ids: None,
+                extensions: None,
+                metadata: Some(metadata),
+            }
+        }
+
+        let (writer, reader) = new_in_memory_queue();
+        // `json_to_struct` rejects any metadata that is not a JSON object, so
+        // this first event cannot cross into protobuf.
+        writer
+            .write(StreamResponse::Message(message(serde_json::json!(
+                "not-an-object"
+            ))))
+            .await
+            .expect("write of the unconvertible event");
+        // A perfectly convertible event queued behind it. Reaching this one is
+        // the observable difference the mutation would make.
+        writer
+            .write(StreamResponse::Message(message(
+                serde_json::json!({"ok": true}),
+            )))
+            .await
+            .expect("write of the convertible event");
+        drop(writer);
+
+        let mut stream = reader_to_native_stream(reader, 8);
+
+        let first = stream.next().await.expect("the error item is delivered");
+        let status = first.expect_err("an unconvertible event surfaces as an error");
+        assert_eq!(status.code(), tonic::Code::Internal);
+
+        assert!(
+            stream.next().await.is_none(),
+            "the stream must end at the conversion error, not carry on"
+        );
+    }
+
+    #[tokio::test]
+    async fn get_extended_agent_card_returns_the_configured_card() {
+        let svc = service();
+        let card = svc
+            .get_extended_agent_card(Request::new(apb::GetExtendedAgentCardRequest {
+                tenant: String::new(),
+            }))
+            .await
+            .expect("the card is configured and unauthenticated access is opted in")
+            .into_inner();
+
+        assert_eq!(
+            card.name, "native-grpc-test-agent",
+            "a default card would carry an empty name"
+        );
+    }
 }

@@ -157,10 +157,38 @@ survivor total.
 All four are the same shape: **a branch whose only purpose is to skip work,
 whose two arms coincide at the boundary the comparison tests.** That pattern is
 worth recognising, because it will recur wherever a hot path avoids work, and
-because it is genuinely different from an untested branch. It is not a reason
-to relax the target — `messaging.rs` went from 17 survivors to 2 and
-`eviction.rs` from 13 to 2, so 87% of those files' survivors were ordinary test
-gaps.
+because it is genuinely different from an untested branch.
+
+It is not a reason to relax the target, and the equivalence rate is nowhere
+near uniform. `messaging.rs` went from 17 survivors to 2, `eviction.rs` from 13
+to 2, and `dispatch/grpc/native.rs` from 11 to **0** — 90% of those files'
+survivors were ordinary test gaps. `native.rs` produced no equivalents at all
+because its survivors were not boundary conditions: ten of its eleven were
+whole-method replacements, and a method survives being replaced by
+`Ok(Response::new(Default::default()))` only when nothing calls it.
+
+### Whole-method survivors name an untested layer, not a missing edge case
+
+`dispatch/grpc/native.rs` is worth separating from the other two files. Its
+survivors were not `>` versus `>=`; they were ten of the eleven methods of the
+`A2aService` trait impl, each replaceable in its entirety by an empty `Ok`.
+
+`grpc_dispatch_tests.rs` did exist and did pass. It covers `GrpcConfig`'s
+builder, `into_service`, and binding a listener — it never issues an RPC. The
+gRPC binding had test files, test names, and no test that called it, which is
+exactly the state a line-coverage number is worst at revealing and a mutation
+score is best at.
+
+Two things made the difference when killing them:
+
+* **Assert on content, not on `is_ok()`.** The mutation returns a *successful*
+  empty response, so `assert!(result.is_ok())` passes against a method whose
+  body has been deleted. Every test asserts a field that a default cannot
+  carry — a task id, the configured card's name, the registered URL.
+* **Some methods can only be caught by their side effect.** Both mutations of
+  `delete_task_push_notification_config` return exactly the `Ok(Response::new(()))`
+  the real method returns on success; the response cannot distinguish them at
+  all. Only deleting a config and then listing it can.
 
 ### Redundant code can be what makes a mutant killable
 
