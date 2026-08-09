@@ -581,6 +581,254 @@ mod tests {
         assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
     }
 
+    // ── process_event: artifact validation and append merging ───────────
+    //
+    // The four tests below pin branches that mutation testing found nothing
+    // could distinguish. Each names the mutant it kills, so a later reader can
+    // tell a load-bearing assertion from a decorative one.
+
+    /// Kills `replace != with ==` on the `append != Some(true)` validation
+    /// gate. Under that mutant only *appending* updates are validated, so a
+    /// non-appending artifact with no parts — a spec violation — is stored
+    /// instead of dropped.
+    #[tokio::test]
+    async fn artifact_with_empty_parts_is_dropped_when_not_appending() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-empty");
+        task_store
+            .save(&make_task("t-empty", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                task_id: TaskId::new("t-empty"),
+                context_id: ContextId::new("ctx-1"),
+                // Built as a struct literal on purpose: `Artifact::new`
+                // debug_asserts on empty parts, so an empty artifact can only
+                // reach this code by deserialization — which is exactly the
+                // path the validation guards, and exactly what a buggy or
+                // hostile peer sends.
+                artifact: Artifact {
+                    id: ArtifactId::new("art-empty"),
+                    name: None,
+                    description: None,
+                    parts: vec![],
+                    extensions: None,
+                    metadata: None,
+                },
+                append: None,
+                last_chunk: Some(true),
+                metadata: None,
+            }))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await
+            .expect("collect_events should succeed");
+
+        let artifacts = collected.task.artifacts.unwrap_or_default();
+        assert!(
+            artifacts.is_empty(),
+            "an artifact with no parts must be dropped when not appending, got {artifacts:?}"
+        );
+    }
+
+    /// Kills `replace == with !=` on the `append == Some(true)` merge gate and
+    /// on the `a.id == update.artifact.id` lookup. Under either, the append
+    /// stops merging and is pushed as a second artifact instead.
+    #[tokio::test]
+    async fn artifact_append_merges_into_the_existing_artifact() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-merge");
+        task_store
+            .save(&make_task("t-merge", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        for (parts, append) in [
+            (vec![Part::text("first")], None),
+            (vec![Part::text("second")], Some(true)),
+        ] {
+            writer
+                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                    task_id: TaskId::new("t-merge"),
+                    context_id: ContextId::new("ctx-1"),
+                    artifact: Artifact::new(ArtifactId::new("art-1"), parts),
+                    append,
+                    last_chunk: Some(true),
+                    metadata: None,
+                }))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await
+            .expect("collect_events should succeed");
+
+        let artifacts = collected.task.artifacts.expect("artifacts present");
+        assert_eq!(
+            artifacts.len(),
+            1,
+            "append must merge, not create a second artifact: {artifacts:?}"
+        );
+        assert_eq!(artifacts[0].parts.len(), 2, "both parts must be retained");
+        assert_eq!(artifacts[0].parts[0].text_content(), Some("first"));
+        assert_eq!(artifacts[0].parts[1].text_content(), Some("second"));
+    }
+
+    /// Kills `replace == with !=` on the `a.id == update.artifact.id` lookup
+    /// specifically. With two artifacts present, `!=` selects the *first
+    /// non-matching* one, so the parts land on the wrong artifact — a bug the
+    /// single-artifact test above cannot see, because there `!=` merely fails
+    /// to find anything.
+    #[tokio::test]
+    async fn artifact_append_targets_the_matching_id_not_another() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::events::TaskArtifactUpdateEvent;
+        use a2a_protocol_types::message::Part;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-target");
+        task_store
+            .save(&make_task("t-target", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        let events = [
+            ("art-1", "one", None),
+            ("art-2", "two", None),
+            ("art-2", "two-appended", Some(true)),
+        ];
+        for (id, text, append) in events {
+            writer
+                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                    task_id: TaskId::new("t-target"),
+                    context_id: ContextId::new("ctx-1"),
+                    artifact: Artifact::new(ArtifactId::new(id), vec![Part::text(text)]),
+                    append,
+                    last_chunk: Some(true),
+                    metadata: None,
+                }))
+                .await
+                .unwrap();
+        }
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await
+            .expect("collect_events should succeed");
+
+        let artifacts = collected.task.artifacts.expect("artifacts present");
+        assert_eq!(artifacts.len(), 2, "two distinct artifacts expected");
+
+        let art1 = artifacts
+            .iter()
+            .find(|a| a.id == ArtifactId::new("art-1"))
+            .expect("art-1 present");
+        let art2 = artifacts
+            .iter()
+            .find(|a| a.id == ArtifactId::new("art-2"))
+            .expect("art-2 present");
+        assert_eq!(
+            art1.parts.len(),
+            1,
+            "the append targeted art-2 and must not touch art-1"
+        );
+        assert_eq!(art2.parts.len(), 2, "art-2 must have received the append");
+        assert_eq!(art2.parts[1].text_content(), Some("two-appended"));
+    }
+
+    /// Kills `replace match guard is_lag_error(e) with false`. A lagged
+    /// consumer is a delivery gap, not a task failure: later events still
+    /// arrive and supersede. Under the mutant the lag error falls through to
+    /// the generic error arm and the task is marked Failed.
+    ///
+    /// The lag is real, not simulated — `collect_events` takes a concrete
+    /// `InMemoryQueueReader`, so there is no seam to inject an error through.
+    /// A capacity-1 broadcast channel written past its capacity before the
+    /// collector reads produces the genuine article.
+    #[tokio::test]
+    async fn lagged_consumer_does_not_fail_the_task() {
+        use crate::streaming::event_queue::new_in_memory_queue_with_capacity;
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        let task_id = TaskId::new("t-lag");
+        task_store
+            .save(&make_task("t-lag", TaskState::Working))
+            .await
+            .unwrap();
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .build()
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue_with_capacity(1);
+        // Overflow the ring while nothing is reading, so the first read lags.
+        for state in [TaskState::Working, TaskState::Working] {
+            writer
+                .write(make_status_event("t-lag", state))
+                .await
+                .unwrap();
+        }
+        // Then a terminal event, which must still be honoured.
+        writer
+            .write(make_status_event("t-lag", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let collected = handler
+            .collect_events(reader, task_id.clone(), tokio::spawn(async {}))
+            .await
+            .expect("a lagged stream must not abort collection");
+
+        assert_eq!(
+            collected.task.status.state,
+            TaskState::Completed,
+            "lag is a delivery gap; the terminal event still decides the state"
+        );
+        let stored = task_store.get(&task_id).await.unwrap().unwrap();
+        assert_ne!(
+            stored.status.state,
+            TaskState::Failed,
+            "a lagged consumer must never mark the task Failed"
+        );
+    }
+
     // ── process_event: task snapshot ────────────────────────────────────
 
     #[tokio::test]
