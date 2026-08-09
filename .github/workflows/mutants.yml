@@ -10,8 +10,11 @@
 # Architecture:
 #   - Full sweep splits into 15 parallel jobs: one each for a2a-types,
 #     a2a-client and a2a-sdk, plus 12 shards of a2a-server. Sharding exists
-#     to stay inside the 120-minute GitHub Actions job timeout; at 8 shards
-#     two of them hit it (run 30236603180, 2026-07-27) and were cancelled.
+#     to stay inside the per-job timeout, which was 120 minutes until
+#     2026-08-07 and is now 240; at 8 shards two of them hit the old limit
+#     (run 30236603180, 2026-07-27) and were cancelled. a2a-types and
+#     a2a-client are still unsharded and are now the slowest jobs in the
+#     sweep — see the timeout note on `mutants-crate`.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
 #   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
@@ -60,9 +63,9 @@ env:
 jobs:
   # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
   #
-  # Splits the workspace across parallel runners. This avoids the 120-minute
-  # timeout that the monolithic --workspace run hit, since a2a-server alone
-  # generates > 1,800 mutants.
+  # Splits the workspace across parallel runners. This avoids the per-job
+  # timeout that the monolithic --workspace run hit when it was 120 minutes,
+  # since a2a-server alone generates > 1,800 mutants.
   #
   # When a specific package is provided via workflow_dispatch, only that
   # package's job runs (the others are skipped via the `if` condition).
@@ -74,7 +77,39 @@ jobs:
     # files.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 240, raised from 120 on 2026-08-07. Measured from run 31193107921, the
+    # first sweep in which every shard completed:
+    #
+    #   a2a-types    113m   674 mutants, unsharded
+    #   a2a-server 2/12  111m   180 mutants (135 of them unviable)
+    #   a2a-client   101m   804 mutants, unsharded
+    #   …
+    #   a2a-server 3/12   41m   180 mutants (0 unviable)
+    #
+    # The slowest job finished with **seven minutes** to spare against the old
+    # 120. That is the same margin that lost two shards in run 30236603180, and
+    # the workload only grows. 240 gives better than 2x headroom over the
+    # measured worst case and stays well inside the 360-minute ceiling for
+    # GitHub-hosted runners.
+    #
+    # Raising a timeout is not free — a genuinely stuck job now burns four
+    # hours instead of two. That is bounded in practice: `cap_timeout = 300` in
+    # mutants.toml kills any single mutant after five minutes, so a shard can
+    # be slow but not hung.
+    #
+    # Note what the table shows: runtime tracks *unviable* mutants more than
+    # total ones. Shard 2/12 and shard 3/12 both had 180 mutants and differed
+    # by 70 minutes — 135 unviable versus 0. An unviable mutant still costs a
+    # full compile before it fails, whereas a caught one exits early under
+    # nextest's fail-fast. So per-shard cost is dominated by builds, not tests.
+    #
+    # This is a ceiling, not a fix. The two slowest jobs are the two crates
+    # that were never sharded: a2a-server was split 12 ways when it hit this
+    # wall, and a2a-types and a2a-client were left whole. Sharding them is the
+    # structural answer and would cut wall-clock as well as risk; it also
+    # changes EXPECTED_SHARDS in the summary job, so it is a deliberate
+    # decision rather than a drive-by edit here.
+    timeout-minutes: 240
     # A live database, for the same reason `test-postgres` in ci.yml has one.
     #
     # Without it the Postgres sources are mutated but their tests cannot run
@@ -719,7 +754,18 @@ jobs:
     name: "Mutants incremental (shard ${{ matrix.shard }})"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 75, raised from 45 on 2026-08-07. Unlike the full sweep's 240, this one
+    # is **not** measured — no recent PR has produced enough in-diff mutants to
+    # test the ceiling, so there is no worst case to size against.
+    #
+    # It is raised anyway because the work per mutant grew underneath it: this
+    # job now runs the Postgres suite too (see the service block below), which
+    # the 45 predates. Leaving a budget unchanged after adding work to it is
+    # how the full sweep ended up with seven minutes of headroom.
+    #
+    # If a PR ever does overrun this, it now fails loudly at "Require a
+    # readable mutation report" rather than silently reporting no survivors.
+    timeout-minutes: 75
     # Same reasoning as the full sweep above: a PR touching Postgres code must
     # be judged against a real database, not against absent tests.
     services:
