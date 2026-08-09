@@ -433,6 +433,55 @@ pub(crate) mod tests {
         }
     }
 
+    /// Exercises the negative-`z` branch of `civil_from_days`, which cannot be
+    /// reached through `format_http_date` at all.
+    ///
+    /// `format_http_date` clamps pre-epoch inputs with `unwrap_or_default()`,
+    /// so `days` is always ≥ 0 and `z = days + 719_468` is always positive.
+    /// The `else { z - 146_096 }` arm is therefore dead code from the public
+    /// entry point, and two mutants inside it survived the 2026-08-07 sweep for
+    /// that reason — no test driving the formatter could ever distinguish them.
+    /// Calling the function directly is what kills them.
+    ///
+    /// The arm is kept rather than deleted because it is what makes this a
+    /// correct general implementation of Hinnant's algorithm rather than one
+    /// that silently produces garbage for a caller the current one does not
+    /// happen to be.
+    ///
+    /// Expected values are anchored on a fact independent of this code:
+    /// 0000-03-01 is exactly 719_468 days before 1970-01-01 (719_162 days from
+    /// 0001-01-01, plus the 306 days from 0000-03-01 to 0001-01-01, year 0
+    /// being a leap year since 0 is divisible by 400). That is the constant the
+    /// algorithm shifts by, so day -719_468 must be 0000-03-01 and the day
+    /// before it must be 0000-02-29.
+    ///
+    /// A first draft of this test asserted the wrong values for the last two
+    /// cases, because the reference used to derive them applied *floor*
+    /// division where Rust truncates toward zero. The `- 146_096` bias exists
+    /// precisely so that a truncating `/` yields the floor, so applying both
+    /// corrects twice. The implementation was right and the expectation was
+    /// wrong — which is the useful direction for a test to fail in, and worth
+    /// recording so the next reader does not repeat it. Verified here that
+    /// `(z - 146_096) / 146_097` equals `floor(z / 146_097)` at z = -1, -62
+    /// and -280_532.
+    #[test]
+    fn civil_from_days_handles_pre_gregorian_epoch_days() {
+        // z == 0 exactly: the last input that takes the `if` arm.
+        assert_eq!(civil_from_days(-719_468), (0, 3, 1));
+
+        // z == -1: first input into the `else` arm. 0000-02-29 exists because
+        // year 0 is a leap year in the proleptic Gregorian calendar.
+        assert_eq!(civil_from_days(-719_469), (0, 2, 29));
+
+        // Further into the branch: across a year boundary, and far enough back
+        // that `era` reaches -2.
+        //
+        // 0000-03-01 minus 62 days, counted by hand: Feb 29 (-1), Feb 1 (-29),
+        // Jan 31 (-30), Jan 1 (-60), Dec 31 (-61), Dec 30 (-62).
+        assert_eq!(civil_from_days(-719_530), (-1, 12, 30));
+        assert_eq!(civil_from_days(-1_000_000), (-768, 2, 4));
+    }
+
     #[test]
     fn format_http_date_known_timestamp() {
         // 2025-06-15 14:30:45 UTC = 1750000245 seconds since epoch.
