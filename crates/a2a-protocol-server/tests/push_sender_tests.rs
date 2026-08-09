@@ -166,6 +166,71 @@ async fn retries_on_server_error_and_eventually_fails() {
     handle.abort();
 }
 
+/// The backoff is paid *between* attempts and not after the last one.
+///
+/// `retries_on_server_error_and_eventually_fails` already pins the attempt
+/// count at 3, but that count comes from the `for attempt in 0..max_attempts`
+/// loop. The separate `if attempt < max_attempts - 1` guard decides only
+/// whether to sleep, so every mutation of it — `<` to `<=`, `==`, `>`, and
+/// `-` to `+` or `/` — leaves the request count untouched and changes only
+/// elapsed time. All five survived mutation testing for exactly that reason:
+/// nothing measured the clock.
+///
+/// This measures it. A paused clock (`start_paused`) would be the tidier
+/// instrument but does not survive real socket I/O: whenever the runtime
+/// idles waiting on the response, tokio advances virtual time to the next
+/// timer, which is the 30s per-request timeout — the run then reports 91s
+/// (3 × 30s + the backoff) instead of 1s. So this uses the real clock, with a
+/// backoff large enough that the arithmetic separates cleanly from scheduling
+/// noise on loopback, where the three requests themselves cost single-digit
+/// milliseconds.
+///
+/// With backoff `[500ms, 1500ms]` and 3 attempts the correct total is 2000ms:
+/// two sleeps, after attempts 0 and 1, none after the final one. Each mutant
+/// lands well outside the accepted window —
+///   * skipping the sleeps entirely (`<` → `>`): ~0ms
+///   * sleeping only after the last attempt (`<` → `==`): 1500ms
+///   * sleeping after every attempt (`<` → `<=`, `-` → `+`, `-` → `/`): 3500ms
+#[tokio::test]
+async fn backoff_is_paid_between_attempts_but_not_after_the_last() {
+    let counter = Arc::new(AtomicUsize::new(0));
+    let (addr, handle) = mock_server(500, Arc::clone(&counter)).await;
+
+    let policy = a2a_protocol_server::push::PushRetryPolicy::default()
+        .with_max_attempts(3)
+        .with_backoff(vec![
+            Duration::from_millis(500),
+            Duration::from_millis(1500),
+        ]);
+    let sender = HttpPushSender::new()
+        .allow_private_urls()
+        .with_retry_policy(policy);
+
+    let url = format!("http://{addr}/webhook");
+    let config = base_config(&url);
+
+    let started = tokio::time::Instant::now();
+    let result = sender.send(&url, &status_event(), &config).await;
+    let elapsed = started.elapsed();
+
+    assert!(result.is_err(), "all three attempts return HTTP 500");
+    assert_eq!(
+        counter.load(Ordering::SeqCst),
+        3,
+        "the attempt count is set by the loop, not by the backoff guard"
+    );
+    // Window, not equality: the real clock also carries the (tiny) cost of
+    // three loopback round trips. 1800..2800ms admits the correct 2000ms with
+    // 300ms of slack below and 800ms above, while excluding every mutant —
+    // the nearest is 1500ms, then 3500ms.
+    assert!(
+        elapsed >= Duration::from_millis(1800) && elapsed < Duration::from_millis(2800),
+        "exactly two backoffs (500ms + 1500ms) must elapse — one after each \
+         non-final attempt, none after the last — got {elapsed:?}"
+    );
+    handle.abort();
+}
+
 /// A 403 (or any non-transient 4xx) will fail identically on every attempt,
 /// so the sender must fail fast after a single delivery instead of retrying.
 #[tokio::test]
