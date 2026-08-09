@@ -276,6 +276,39 @@ Checking `path.contains("..")` is insufficient. Attackers can use `%2E%2E` (or m
 
 **Solution:** The REST dispatcher percent-decodes the path *before* checking for `..` sequences.
 
+### A cargo-mutants baseline failure looks exactly like a clean file
+
+`cargo mutants` writes `caught.txt`, `missed.txt` and friends whether or not it
+tested anything. When the *baseline* build or test run fails — the unmutated
+tree — it tests no mutants at all and every one of those files is empty. A
+summary that reports counts alone prints `caught=0 missed=0`, which is
+indistinguishable from a file with nothing left to kill.
+
+Only the exit code separates them: `0` all caught, `2` surviving mutants, `3`
+timeout, `4` baseline failed. Two baseline failures in one afternoon on this
+repository were a full disk and a stopped Postgres — neither had anything to do
+with the code under test, and both would have been recorded as a perfect score
+by a reader who trusted the numbers.
+
+**Solution:** always report the exit code next to the counts, and treat an
+empty denominator as "did not run" rather than "passed". `mutants.yml` does
+this at the aggregation step for the same reason.
+
+### Matching CI's commands is not the same as matching CI
+
+`scripts/preflight.sh` reads its gate list from `.github/workflows/ci.yml` so
+the two cannot drift. Copying the commands alone still is not parity, because
+this repository's CI also sets an `env:` block those commands run under:
+`RUSTFLAGS: "-D warnings"` (a warning CI denies would pass locally without it)
+and `CARGO_PROFILE_DEV_DEBUG: 0` (without which the all-features link can die
+with `ld terminated with signal 7 [Bus error]` on a constrained machine — a
+failure that reads as a broken test but is not one).
+
+**Solution:** `preflight.sh` exports CI's top-level `env:` block, parsed from
+the same file as the gates. Be aware that `RUSTFLAGS` and the profile setting
+are part of cargo's fingerprint, so adopting them rebuilds a workspace that was
+previously built without them.
+
 ## Scale & Durability Pitfalls
 
 ### SSE parser queue can grow unbounded (fixed)

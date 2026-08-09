@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Blocks a push whose tree would fail CI's cheapest gate.
+#
+# Enable once per clone:
+#     git config core.hooksPath .githooks
+#
+# Runs the formatting tier by default — roughly a second, and it is the gate
+# that has actually reached this repository's CI red. Opt into more:
+#
+#     PREFLIGHT_TIER=default git push     # + clippy and the all-features tests
+#     PREFLIGHT_TIER=full    git push     # every gate ci.yml runs
+#
+# Escape hatch for a genuine emergency, used knowingly:
+#     SKIP_PREFLIGHT=1 git push
+
+set -Eeuo pipefail
+
+if [ "${SKIP_PREFLIGHT:-0}" = "1" ]; then
+    printf 'pre-push: SKIP_PREFLIGHT=1 — gates not run.\n' >&2
+    exit 0
+fi
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+PREFLIGHT="$REPO_ROOT/scripts/preflight.sh"
+
+if [ ! -x "$PREFLIGHT" ]; then
+    printf 'pre-push: %s missing or not executable — skipping gates.\n' "$PREFLIGHT" >&2
+    exit 0
+fi
+
+case "${PREFLIGHT_TIER:-fmt}" in
+    fmt)     ARGS=(--fmt) ;;
+    default) ARGS=() ;;
+    full)    ARGS=(--full) ;;
+    *)
+        printf 'pre-push: unknown PREFLIGHT_TIER=%s (fmt|default|full)\n' \
+            "${PREFLIGHT_TIER}" >&2
+        exit 2
+        ;;
+esac
+
+if ! "$PREFLIGHT" "${ARGS[@]}"; then
+    cat >&2 <<'EOF'
+
+pre-push: a CI gate fails on this tree. Push blocked.
+
+  Fix it (`cargo fmt --all` handles the formatting one), or push anyway with
+  SKIP_PREFLIGHT=1 if you have a reason to.
+EOF
+    exit 1
+fi

@@ -339,38 +339,58 @@ Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-clien
 
 ## Quality Gates
 
-All gates must pass before merging:
+Run them with one command rather than by hand:
 
 ```bash
-# 1. Format check
-cargo fmt --all -- --check
-
-# 2. Lint (zero warnings required)
-cargo clippy --workspace --all-targets -- -D warnings
-
-# 3. All tests pass
-cargo test --workspace
-
-# 4. Documentation builds without warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-
-# 5. With signing feature (if changes touch signing code)
-cargo clippy --workspace --all-targets --features a2a-protocol-sdk/signing -- -D warnings
-cargo test --workspace --features a2a-protocol-sdk/signing
-
-# 6. With tracing feature (if changes touch tracing code)
-cargo test --workspace --features a2a-protocol-sdk/tracing
-
-# 7. With TLS feature (if changes touch TLS code)
-cargo test -p a2a-protocol-client --features tls-rustls
-
-# 8. With axum feature (if changes touch dispatch/axum code)
-cargo clippy -p a2a-protocol-server --features axum -- -D warnings
-cargo test -p a2a-protocol-server --features axum
-
-# 9. Mutation testing (zero surviving mutants in changed files)
-cargo mutants --workspace
+scripts/preflight.sh          # fmt + clippy (default and all-features) + all-features tests
+scripts/preflight.sh --full   # every gate ci.yml runs
+scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 ```
+
+Every gate runs even after one fails, so a single run tells you everything that
+is broken rather than only the first thing.
+
+This used to be a numbered list of commands in this document. It was wrong in
+two ways at once — it named nine gates where CI runs twenty-seven, and its
+feature flags (`--features a2a-protocol-sdk/signing`) were not the ones CI
+passes (`--features signing`) — and in August 2026 two commits landed with
+unformatted test modules because the list was read and only partly run, leaving
+CI's Format job red across two pushes. `preflight.sh` therefore **reads its gate
+list from `.github/workflows/ci.yml`** rather than restating it, and refuses to
+run if a gate it names has changed there. This section cannot silently drift out
+of step with what CI enforces.
+
+It exports CI's top-level `env:` block from that same file, because matching the
+commands without the environment is not parity: `RUSTFLAGS: "-D warnings"` is
+what makes a warning fatal, and `CARGO_PROFILE_DEV_DEBUG: 0` is what stops the
+all-features link running the machine out of memory. Both are part of cargo's
+fingerprint, so the first `preflight.sh` on a workspace built without them
+rebuilds it.
+
+Have git run it for you, once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`pre-push` then blocks a push whose tree fails the formatting gate — about a
+second, and it is the gate that has actually reached this repository's CI red.
+`PREFLIGHT_TIER=default` or `=full` widens it; `SKIP_PREFLIGHT=1 git push` is
+the escape hatch when you need one.
+
+### Mutation testing
+
+Deliberately not part of `preflight.sh`: a workspace sweep takes hours. For the
+files a change touches:
+
+```bash
+cargo mutants -p <crate> --file <path> -- --all-features --run-ignored all
+```
+
+Read the **exit code**, not only the counts — `0` all caught, `2` surviving
+mutants, `3` timeout, `4` the baseline build failed so nothing was tested. A
+baseline failure prints `caught=0 missed=0`, which is indistinguishable from a
+clean file if you go by the numbers alone.
 
 ---
 
