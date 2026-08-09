@@ -300,6 +300,64 @@ SKIPPED [1] tests/compatibility/core_operations/test_transport_behavior.py:419:
 
 ## Notes for the filer (not part of the issue body)
 
+### Filling in the upstream issue form
+
+`a2aproject/a2a-tck` uses an issue form (`.github/ISSUE_TEMPLATE/bug-report.yml`),
+not a free-text body. It has three fields:
+
+| field | required? | notes |
+|---|---|---|
+| **What happened?** | **yes** | the whole body above, lines `## Title` … end of Environment |
+| **Relevant log output** | no | optional, but see below — we have good content for it |
+| **Code of Conduct** | **yes** | a checkbox; must be ticked or the form will not submit |
+
+Two traps:
+
+* The **title field is pre-filled with `[Bug]: `**, and the proposed title
+  already starts with `[Bug]:`. Clear the field first, or paste only the text
+  after the prefix — otherwise the issue ships as `[Bug]: [Bug]: …`.
+* **Relevant log output** is declared `render: shell`, so GitHub wraps it in a
+  code fence automatically. Paste it **without** backticks or you get a fence
+  inside a fence.
+
+Paste this verbatim into **Relevant log output** (no backticks):
+
+    $ ./.venv/bin/python -m pytest \
+        "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type" \
+        --sut-host=http://127.0.0.1:9997 -q
+
+    tck/transport/http_json_client.py:45: in _extract_error
+        body = response.json()
+    .venv/lib/python3.11/site-packages/httpx/_models.py:832: in json
+        return jsonlib.loads(self.content, **kwargs)
+
+    self = <Response [400 Bad Request]>
+
+        @property
+        def content(self) -> bytes:
+            if not hasattr(self, "_content"):
+    >           raise ResponseNotRead()
+    E           httpx.ResponseNotRead: Attempted to access streaming response content, without having called `read()`.
+
+    .venv/lib/python3.11/site-packages/httpx/_models.py:638: ResponseNotRead
+    =========================== short test summary info ============================
+    FAILED tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type
+    1 failed in 0.42s
+
+    --- why the except clause does not catch it -----------------------------------
+    ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', 'Exception', 'BaseException', 'object']
+    _extract_error catches: (json.JSONDecodeError, ValueError)
+      issubclass(ResponseNotRead, ValueError)           = False
+      issubclass(ResponseNotRead, json.JSONDecodeError) = False
+
+    --- same command, with the suggested diff applied ------------------------------
+    SKIPPED [1] tests/compatibility/core_operations/test_transport_behavior.py:419: Streaming not supported: [400] agent does not support streaming (AgentCard.capabilities.streaming is not true)
+    1 skipped in 0.28s
+
+The leading four-space indent above is this file's way of holding the block
+literally; strip it when pasting. Every line is real output captured on
+2026-08-07 against `5996b79`.
+
 - **Duplicate check.** A GitHub issue search over `a2aproject/a2a-tck` for
   `ResponseNotRead`, `SSE-001` and `streaming_content_type` returned no
   matching issues on 2026-08-06. That was a keyword search of the public
