@@ -19,7 +19,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
 
-use super::helpers::{build_call_context, validate_id, validate_metadata_object};
+use super::helpers::{build_call_context, truncate_history, validate_id, validate_metadata_object};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
 /// Hard cap on the number of messages retained in `Task.history`.
@@ -39,17 +39,11 @@ pub const MAX_TASK_HISTORY_MESSAGES: usize = 1024;
 /// the regression gate at +95% median). `Some(0)` also omits; `Some(n)`
 /// keeps the `n` most recent messages, mirroring `GetTask` semantics.
 fn shape_response_history(task: &mut Task, history_length: Option<u32>) {
-    task.history = match (task.history.take(), history_length) {
-        (Some(msgs), Some(n)) if n > 0 => {
-            let n = n as usize;
-            if msgs.len() > n {
-                Some(msgs[msgs.len() - n..].to_vec())
-            } else {
-                Some(msgs)
-            }
-        }
-        _ => None,
-    };
+    let history = task.history.take();
+    // `None` omits history entirely, which is why this is `and_then` over the
+    // requested length rather than a call with a default: absent and `Some(0)`
+    // both yield `None` here, but only the latter reaches `truncate_history`.
+    task.history = history_length.and_then(|n| truncate_history(history, n));
 }
 
 /// Returns the JSON-serialized byte length of a value without allocating a `String`.
@@ -395,10 +389,14 @@ impl RequestHandler {
             .and_then(|s| s.history.clone())
             .unwrap_or_default();
         history.push(params.message.clone());
-        if history.len() > MAX_TASK_HISTORY_MESSAGES {
-            let excess = history.len() - MAX_TASK_HISTORY_MESSAGES;
-            history.drain(..excess);
-        }
+        // Unguarded: at or under the cap `excess` is 0 and `drain(..0)` costs
+        // nothing — `Drain::drop` skips its memmove when the tail does not
+        // move, so this is O(1), not an O(n) shift of the whole history. The
+        // `if` it replaces guarded only that no-op, which is precisely what
+        // made weakening it to `>=` an equivalent mutant: both arms did
+        // nothing at `len == MAX`.
+        let excess = history.len().saturating_sub(MAX_TASK_HISTORY_MESSAGES);
+        history.drain(..excess);
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
@@ -758,6 +756,444 @@ mod tests {
         }
     }
 
+    // ── CleanupGuard ─────────────────────────────────────────────────────────
+
+    /// Pins `CleanupGuard::drop`, which is the *only* thing that releases a
+    /// task's event queue and cancellation token when the executor unwinds.
+    ///
+    /// Nothing tested it, and the reason is structural rather than an
+    /// oversight. On the normal path the executor task cleans up explicitly and
+    /// then defuses the guard (`cleanup_guard.task_id = None`), so `drop`
+    /// becomes a no-op — every ordinary send, success or handled error, leaves
+    /// the mutation invisible. The guard earns its place only when the executor
+    /// panics and the task unwinds before reaching that cleanup, which is
+    /// exactly what this test arranges. Despite the comment above the executor
+    /// call, there is no `catch_unwind` here; the guard *is* the panic
+    /// handling.
+    ///
+    /// The wait is a bounded poll rather than a sleep because `drop` spawns the
+    /// cleanup onto the runtime: the work is ordered after the unwind but not
+    /// synchronous with it, so a fixed sleep would either flake or be
+    /// needlessly slow.
+    #[tokio::test]
+    async fn cleanup_guard_releases_the_token_when_the_executor_panics() {
+        struct PanicExec;
+        impl crate::executor::AgentExecutor for PanicExec {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { panic!("executor panics before it can clean up") })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(PanicExec)
+            .build()
+            .expect("build should succeed");
+
+        let _ = handler.on_send_message(make_params(None), true, None).await;
+
+        // The executor task must unwind and its guard must run.
+        let mut cleaned = false;
+        for _ in 0..200 {
+            if handler.cancellation_tokens.read().await.is_empty() {
+                cleaned = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            cleaned,
+            "a panicking executor must still release its cancellation token; \
+             CleanupGuard::drop is the only path that does so"
+        );
+        handler.shutdown().await;
+    }
+
+    // ── task history cap ─────────────────────────────────────────────────────
+
+    /// Pins the arithmetic that trims an over-long task history.
+    ///
+    /// The obvious test does not work here. A single send onto a full history
+    /// gives `len == MAX + 1`, where `len - MAX` and `len / MAX` are both 1 —
+    /// the mutation is invisible at the boundary it looks like it should be
+    /// caught at. The two only diverge once the history is at least twice the
+    /// cap: at 2048, subtraction trims 1024 and leaves exactly the cap, while
+    /// division trims 2 and leaves 2046.
+    ///
+    /// An over-long history is reachable in practice — the cap is applied on
+    /// write, so a task stored by an older build, a different cap, or a direct
+    /// store write arrives here oversized — which is why the trim is written to
+    /// bring any length back to the cap rather than to peel off one message.
+    #[tokio::test]
+    async fn oversized_stored_history_is_trimmed_back_to_the_cap() {
+        let handler = make_handler();
+        let task_id = TaskId::new("t-overlong");
+
+        // One short of twice the cap; the incoming message makes it 2048.
+        let seeded = MAX_TASK_HISTORY_MESSAGES * 2 - 1;
+        let mut task = task_with_history(seeded);
+        task.id = task_id.clone();
+        handler
+            .task_store
+            .save(&task)
+            .await
+            .expect("seed the oversized task");
+
+        let mut params = make_params(None);
+        params.message.task_id = Some(task_id.clone());
+        let _ = handler.on_send_message(params, false, None).await;
+
+        let stored = handler
+            .task_store
+            .get(&task_id)
+            .await
+            .expect("load")
+            .expect("task should still exist");
+        assert_eq!(
+            stored.history.map(|h| h.len()),
+            Some(MAX_TASK_HISTORY_MESSAGES),
+            "an oversized history must be trimmed back to exactly the cap"
+        );
+        handler.shutdown().await;
+    }
+
+    // ── cancellation-token sweep and context-lock pruning ────────────────────
+
+    /// Seeds the token map with `n` already-cancelled entries, which the sweep
+    /// treats as unconditionally evictable, and returns their ids.
+    async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId> {
+        let mut ids = Vec::new();
+        // Dropped explicitly below rather than at end of scope: holding the
+        // write guard across the return is what `significant_drop_tightening`
+        // flags, and that lint is deny-by-default here via `-D warnings`.
+        let mut tokens = handler.cancellation_tokens.write().await;
+        for i in 0..n {
+            let id = TaskId::new(format!("stale-{i}"));
+            let token = tokio_util::sync::CancellationToken::new();
+            token.cancel();
+            tokens.insert(
+                id.clone(),
+                CancellationEntry {
+                    token,
+                    created_at: Instant::now(),
+                },
+            );
+            ids.push(id);
+        }
+        drop(tokens);
+        ids
+    }
+
+    /// Pins the two decisions that drive cancellation-token eviction: whether
+    /// the sweep runs at all, and whether phase 2 actually removes anything.
+    ///
+    /// Both mutants survived the 2026-08-07 sweep despite
+    /// `stale_cancellation_tokens_cleaned_up` exercising this code, because
+    /// that test asserted nothing — it ran the sweep and then called
+    /// `shutdown()`. Driving code is not testing it.
+    ///
+    /// Cancelled tokens are seeded directly rather than produced by a slow
+    /// executor: an *aged* token is only evicted once its event queue is gone,
+    /// so a still-running executor keeps its token alive and the map never
+    /// shrinks. Cancelled entries are unconditionally evictable, which makes
+    /// the outcome deterministic instead of a race with a sleep.
+    #[tokio::test]
+    async fn sweep_evicts_cancelled_tokens_once_the_map_is_at_capacity() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_cancellation_tokens(2),
+            )
+            .build()
+            .expect("build should succeed");
+
+        let stale = seed_cancelled_tokens(&handler, 2).await;
+        assert_eq!(handler.cancellation_tokens.read().await.len(), 2);
+
+        // len == max, so `len >= max` fires. `<` would skip the sweep, and
+        // deleting the `!` on `stale_ids.is_empty()` would skip the removal.
+        let _ = handler
+            .on_send_message(make_params(None), false, None)
+            .await;
+
+        let tokens = handler.cancellation_tokens.read().await;
+        for id in &stale {
+            assert!(
+                !tokens.contains_key(id),
+                "cancelled token {id:?} should have been evicted by the sweep"
+            );
+        }
+        drop(tokens);
+        handler.shutdown().await;
+    }
+
+    /// Pins the context-lock pruning *threshold*.
+    ///
+    /// A first version of this test used a limit of 2 and three sends, and the
+    /// `>=`-to-`<` mutant survived it: with the limit that low, both the
+    /// original and the mutant end holding exactly one entry, so the assertion
+    /// could not tell them apart. The threshold only becomes observable when
+    /// the map stays *below* it — the original never prunes, while `<` prunes
+    /// on every send and reclaims each previous context.
+    #[tokio::test]
+    async fn context_locks_are_not_pruned_below_the_limit() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_context_locks(5),
+            )
+            .build()
+            .expect("build should succeed");
+
+        for ctx in ["ctx-a", "ctx-b", "ctx-c"] {
+            let _ = handler
+                .on_send_message(make_params(Some(ctx)), false, None)
+                .await;
+        }
+
+        assert_eq!(
+            handler.context_locks.read().await.len(),
+            3,
+            "with a limit of 5, three contexts must all be retained"
+        );
+        handler.shutdown().await;
+    }
+
+    /// Pins the staleness predicate itself: pruning must reclaim unused locks
+    /// and spare one another task still holds.
+    ///
+    /// `Arc::strong_count(v) > 1` means "someone besides the map owns this".
+    /// The entries are seeded directly so both populations exist at prune time
+    /// with certainty — a live lock (a clone held here, count 2) and stale ones
+    /// (count 1). Driving this through concurrent sends would depend on a
+    /// scheduler race for whether the live lock is still held when pruning runs.
+    ///
+    /// This is what separates the three mutations of that predicate:
+    /// `< 1` is never true and would clear the map including the live lock,
+    /// `== 1` inverts it and would reclaim exactly the wrong entries, and
+    /// `>= 1` is always true and would reclaim nothing.
+    #[tokio::test]
+    async fn context_lock_pruning_spares_locks_still_in_use() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_context_locks(2),
+            )
+            .build()
+            .expect("build should succeed");
+
+        // Held for the duration of the test, so the map is not its only owner.
+        let live = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        {
+            let mut locks = handler.context_locks.write().await;
+            locks.insert("live-ctx".to_string(), std::sync::Arc::clone(&live));
+            locks.insert(
+                "stale-1".to_string(),
+                std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            );
+            locks.insert(
+                "stale-2".to_string(),
+                std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            );
+        }
+
+        // 3 entries against a limit of 2, so the next send prunes.
+        let _ = handler
+            .on_send_message(make_params(Some("ctx-new")), false, None)
+            .await;
+
+        let locks = handler.context_locks.read().await;
+        assert!(
+            locks.contains_key("live-ctx"),
+            "a lock another owner still holds must survive pruning"
+        );
+        assert!(
+            !locks.contains_key("stale-1") && !locks.contains_key("stale-2"),
+            "locks owned only by the map must be reclaimed"
+        );
+        drop(locks);
+        drop(live);
+        handler.shutdown().await;
+    }
+
+    // ── metadata size limit ──────────────────────────────────────────────────
+
+    /// Builds a handler whose metadata budget is `max` bytes.
+    fn handler_with_metadata_limit(max: usize) -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_metadata_size(max),
+            )
+            .build()
+            .expect("build with custom limits should succeed")
+    }
+
+    /// Metadata serialising to exactly `n` bytes.
+    ///
+    /// It must be a JSON *object*: `validate_metadata_object` runs before the
+    /// size check and rejects scalars outright, so a bare string never reaches
+    /// the code under test here. `{"k":"<pad>"}` serialises to `pad.len() + 8`
+    /// bytes, and the assertion below keeps that arithmetic honest rather than
+    /// trusting the comment.
+    fn metadata_of_exactly(n: usize) -> serde_json::Value {
+        let value = serde_json::json!({ "k": "x".repeat(n - 8) });
+        assert_eq!(
+            serde_json::to_vec(&value).expect("serialise").len(),
+            n,
+            "fixture must serialise to exactly {n} bytes"
+        );
+        value
+    }
+
+    /// Pins the `>` in both metadata size checks, which is a limit boundary and
+    /// therefore worth being exact about: `>=` would reject a payload of
+    /// precisely the configured maximum.
+    ///
+    /// Two mutants survived here in the 2026-08-07 sweep, one per check. The
+    /// existing tests only prove that something far *over* the limit is
+    /// rejected, which `>=` also does — nothing exercised the boundary itself.
+    ///
+    /// A small custom limit keeps this exact and cheap; the default is 1 MiB.
+    #[tokio::test]
+    async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
+        const MAX: usize = 64;
+
+        // ── message metadata ──
+        let mut params = make_params(None);
+        params.message.metadata = Some(metadata_of_exactly(MAX));
+        assert!(
+            !matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "message metadata of exactly {MAX} bytes is within the limit"
+        );
+
+        let mut params = make_params(None);
+        params.message.metadata = Some(metadata_of_exactly(MAX + 1));
+        assert!(
+            matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "message metadata one byte over the limit must be rejected"
+        );
+
+        // ── request metadata (the second, separate check) ──
+        let mut params = make_params(None);
+        params.metadata = Some(metadata_of_exactly(MAX));
+        assert!(
+            !matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "request metadata of exactly {MAX} bytes is within the limit"
+        );
+
+        let mut params = make_params(None);
+        params.metadata = Some(metadata_of_exactly(MAX + 1));
+        assert!(
+            matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "request metadata one byte over the limit must be rejected"
+        );
+    }
+
+    // ── shape_response_history ───────────────────────────────────────────────
+
+    /// Builds a task carrying `len` history messages, oldest first, each
+    /// individually identifiable as `h0`, `h1`, …
+    fn task_with_history(len: usize) -> Task {
+        Task {
+            id: TaskId::new("t-hist"),
+            context_id: ContextId::new("ctx-hist"),
+            status: TaskStatus::new(TaskState::Submitted),
+            artifacts: None,
+            history: Some(
+                (0..len)
+                    .map(|i| Message {
+                        id: MessageId::new(format!("h{i}")),
+                        role: MessageRole::User,
+                        parts: vec![Part::text("x")],
+                        context_id: None,
+                        task_id: None,
+                        reference_task_ids: None,
+                        extensions: None,
+                        metadata: None,
+                    })
+                    .collect(),
+            ),
+            metadata: None,
+        }
+    }
+
+    /// Shapes a `len`-message history and returns the surviving message ids.
+    fn shaped_ids(len: usize, history_length: Option<u32>) -> Option<Vec<String>> {
+        let mut task = task_with_history(len);
+        shape_response_history(&mut task, history_length);
+        task.history
+            .map(|msgs| msgs.into_iter().map(|m| m.id.0).collect())
+    }
+
+    /// Pins every branch and boundary of `shape_response_history`.
+    ///
+    /// Six mutants survived here in the 2026-08-07 sweep, because the tests
+    /// reached this function only through `on_send_message`, which never
+    /// varies `historyLength` — nothing observed the truncation at all.
+    ///
+    /// The truncation arithmetic those cases were written against has since
+    /// moved to [`helpers::truncate_history`](super::super::helpers), where it
+    /// is unit-tested directly. What this test now guards is the part that
+    /// stayed behind, and that no mutation operator can reach: that
+    /// `shape_response_history` still *calls* it, and still maps the two
+    /// send-response-specific inputs correctly. `None` and `Some(0)` both
+    /// yield no history here, but they are not the same instruction — only
+    /// `Some(0)` is a client asking for zero messages, and a refactor that
+    /// collapsed them would be invisible to every other case below.
+    #[test]
+    fn shape_response_history_covers_every_branch() {
+        // Default: history is omitted entirely, not echoed back.
+        assert_eq!(shaped_ids(3, None), None);
+
+        // Some(0) omits too — distinct from keeping an empty list.
+        assert_eq!(shaped_ids(3, Some(0)), None);
+
+        // Truncation keeps the n most recent, oldest dropped.
+        assert_eq!(
+            shaped_ids(6, Some(2)),
+            Some(vec!["h4".to_string(), "h5".to_string()])
+        );
+        assert_eq!(shaped_ids(4, Some(1)), Some(vec!["h3".to_string()]));
+
+        // Exactly at the boundary, and asking for more than exists: keep all.
+        assert_eq!(
+            shaped_ids(3, Some(3)),
+            Some(vec!["h0".to_string(), "h1".to_string(), "h2".to_string()])
+        );
+        assert_eq!(
+            shaped_ids(2, Some(5)),
+            Some(vec!["h0".to_string(), "h1".to_string()])
+        );
+
+        // An empty history stays empty rather than becoming None.
+        assert_eq!(shaped_ids(0, Some(3)), Some(vec![]));
+    }
+
     #[tokio::test]
     async fn empty_message_parts_returns_invalid_params() {
         let handler = make_handler();
@@ -776,9 +1212,12 @@ mod tests {
     async fn oversized_message_metadata_returns_invalid_params() {
         let handler = make_handler();
         let mut params = make_params(None);
-        // Build a JSON string that exceeds the default 1 MiB limit.
-        let big_value = "x".repeat(1_100_000);
-        params.message.metadata = Some(serde_json::json!(big_value));
+        // An *object* exceeding the default 1 MiB limit. This was a bare JSON
+        // string until 2026-08-08, which `validate_metadata_object` rejects as
+        // a non-object before the size check ever runs — so the test passed
+        // without exercising the limit it names. Both size-check mutants
+        // survived the 2026-08-07 sweep for exactly that reason.
+        params.message.metadata = Some(serde_json::json!({ "k": "x".repeat(1_100_000) }));
 
         let result = handler.on_send_message(params, false, None).await;
 

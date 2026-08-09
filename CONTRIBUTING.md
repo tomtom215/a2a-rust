@@ -232,16 +232,39 @@ cargo mutants --list --workspace
 files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
 and timeout settings.
 
-**Zero surviving mutants is required.** The mutation CI job
-(`cargo mutants --workspace`) can be triggered manually via `workflow_dispatch`;
-every pull request also runs an incremental `--in-diff` mutation gate that
-fails on any missed mutant in the changed lines.
-The nightly schedule is currently disabled to save CI time; the incremental
-PR gate runs on every pull request.
+**Zero surviving mutants is the standard**, enforced at two different
+scopes. Know which one applies to you:
+
+| Gate | Scope | When | Blocking? |
+|---|---|---|---|
+| `Mutation Testing (incremental)` | mutants in the lines your PR changed (`--in-diff`) | every pull request | **yes** |
+| `Mutants Summary` | the whole workspace | weekly, and on `workflow_dispatch` | no — it reports |
+
+**What a contributor is accountable for is the first row.** Your PR must add no
+surviving mutants to the code it touches. That check is required and it works.
+
+The workspace sweep is a different matter, and honesty about it belongs here
+rather than in a footnote. **It is currently red: 183 surviving mutants,
+92% caught**, measured 2026-08-07. That is pre-existing debt in code no recent
+PR has touched, not a bar newcomers are being held to, and it is being burned
+down rather than suppressed — there is deliberately no baseline file, because
+the incremental gate above already prevents the count from growing.
+
+The score and its history are in
+[`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md),
+which also records why the ledger was empty until 2026-08-07: both gates were
+structurally incapable of failing, and reported `100%` over reports they were
+never reading. Treat a green mutation check as meaningful only from that date
+on.
 
 When a mutant survives, the output shows the exact mutation and the file/line.
 Add or strengthen tests to cover the gap, then re-run to confirm the mutant is
-caught.
+caught. If you believe a mutant is genuinely *equivalent* — semantically
+identical to the original, so no test can distinguish it — see
+[ADR 0006](docs/adr/0006-mutation-testing.md#equivalent-mutants) before
+reaching for an exemption. The bar is "no test can distinguish it", not "I
+could not think of one", and the mechanism has a dependency prerequisite the
+workspace does not yet carry — so raise it rather than adding it in passing.
 
 ### Test Naming Convention
 
@@ -309,45 +332,65 @@ Run with `cargo bench -p a2a-protocol-types`, `cargo bench -p a2a-protocol-clien
 | Async unit | `#[tokio::test]` | Every async function |
 | Integration | `tests/` directory | Each crate |
 | Property | `proptest` | Serde round-trips for all types |
-| Mutation | `cargo-mutants` | Zero surviving mutants across all library crates |
+| Mutation | `cargo-mutants` | Zero surviving mutants in the lines a PR changes (enforced); zero across the workspace is the standing target — see [Mutation Testing](#mutation-testing) |
 | E2E | real HTTP | Client ↔ server interaction |
 
 ---
 
 ## Quality Gates
 
-All gates must pass before merging:
+Run them with one command rather than by hand:
 
 ```bash
-# 1. Format check
-cargo fmt --all -- --check
-
-# 2. Lint (zero warnings required)
-cargo clippy --workspace --all-targets -- -D warnings
-
-# 3. All tests pass
-cargo test --workspace
-
-# 4. Documentation builds without warnings
-RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
-
-# 5. With signing feature (if changes touch signing code)
-cargo clippy --workspace --all-targets --features a2a-protocol-sdk/signing -- -D warnings
-cargo test --workspace --features a2a-protocol-sdk/signing
-
-# 6. With tracing feature (if changes touch tracing code)
-cargo test --workspace --features a2a-protocol-sdk/tracing
-
-# 7. With TLS feature (if changes touch TLS code)
-cargo test -p a2a-protocol-client --features tls-rustls
-
-# 8. With axum feature (if changes touch dispatch/axum code)
-cargo clippy -p a2a-protocol-server --features axum -- -D warnings
-cargo test -p a2a-protocol-server --features axum
-
-# 9. Mutation testing (zero surviving mutants in changed files)
-cargo mutants --workspace
+scripts/preflight.sh          # fmt + clippy (default and all-features) + all-features tests
+scripts/preflight.sh --full   # every gate ci.yml runs
+scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 ```
+
+Every gate runs even after one fails, so a single run tells you everything that
+is broken rather than only the first thing.
+
+This used to be a numbered list of commands in this document. It was wrong in
+two ways at once — it named nine gates where CI runs twenty-seven, and its
+feature flags (`--features a2a-protocol-sdk/signing`) were not the ones CI
+passes (`--features signing`) — and in August 2026 two commits landed with
+unformatted test modules because the list was read and only partly run, leaving
+CI's Format job red across two pushes. `preflight.sh` therefore **reads its gate
+list from `.github/workflows/ci.yml`** rather than restating it, and refuses to
+run if a gate it names has changed there. This section cannot silently drift out
+of step with what CI enforces.
+
+It exports CI's top-level `env:` block from that same file, because matching the
+commands without the environment is not parity: `RUSTFLAGS: "-D warnings"` is
+what makes a warning fatal, and `CARGO_PROFILE_DEV_DEBUG: 0` is what stops the
+all-features link running the machine out of memory. Both are part of cargo's
+fingerprint, so the first `preflight.sh` on a workspace built without them
+rebuilds it.
+
+Have git run it for you, once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`pre-push` then blocks a push whose tree fails the formatting gate — about a
+second, and it is the gate that has actually reached this repository's CI red.
+`PREFLIGHT_TIER=default` or `=full` widens it; `SKIP_PREFLIGHT=1 git push` is
+the escape hatch when you need one.
+
+### Mutation testing
+
+Deliberately not part of `preflight.sh`: a workspace sweep takes hours. For the
+files a change touches:
+
+```bash
+cargo mutants -p <crate> --file <path> -- --all-features --run-ignored all
+```
+
+Read the **exit code**, not only the counts — `0` all caught, `2` surviving
+mutants, `3` timeout, `4` the baseline build failed so nothing was tested. A
+baseline failure prints `caught=0 missed=0`, which is indistinguishable from a
+clean file if you go by the numbers alone.
 
 ---
 
@@ -355,14 +398,20 @@ cargo mutants --workspace
 
 - [ ] Every commit signed off (`git commit -s`) by a human author — see [DCO](#developer-certificate-of-origin-dco)
 - [ ] SPDX header on every new file
-- [ ] No file exceeds 500 lines
+- [ ] No **new** file exceeds 500 lines, and no file you touched crosses it —
+      or the PR says why splitting would harm cohesion (see
+      [500-line maximum](#500-line-maximum-per-file); 46 of 139 existing
+      sources already exceed it, so this is a rule for new work, not a
+      claim about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
-- [ ] `cargo mutants` shows zero surviving mutants for changed files
+- [ ] `cargo mutants --in-diff` shows zero surviving mutants for the lines
+      this PR changes (this is the blocking gate; the workspace sweep is
+      pre-existing debt and not yours to clear)
 - [ ] `book/src/reference/pitfalls.md` updated if a non-obvious pitfall was encountered
 - [ ] ADR created or updated if an architectural decision was made or revised
 

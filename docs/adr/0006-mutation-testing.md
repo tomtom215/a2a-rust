@@ -38,7 +38,16 @@ orchestration flows.
 
 2. **Target**: Zero surviving mutants across all four library crates
    (`a2a-protocol-types`, `a2a-protocol-client`, `a2a-protocol-server`,
-   `a2a-protocol-sdk`).
+   `a2a-protocol-sdk`), with the single documented exception in
+   [Equivalent mutants](#equivalent-mutants) below.
+
+   The target is unconditional; the *enforcement* is scoped. A PR must add no
+   survivors to the lines it changes, and that is blocking. The workspace
+   figure is a tracked standing target — 92%, 183 surviving, as of
+   2026-08-07 — burned down over time rather than waived. There is
+   deliberately no baseline or allowlist file: the incremental gate already
+   prevents the count from growing, so a mechanism whose only purpose is to
+   turn a red result green would buy nothing and cost the signal.
 
 3. **Scope**: All source files in `crates/*/src/**/*.rs`, excluding:
    - ~~Thin `mod.rs` re-export files (false positives)~~ — *amended
@@ -51,13 +60,84 @@ orchestration flows.
    - Tracing/logging instrumentation
    - Note: `Display`/`Debug` impls are NOT excluded — we have tests for them
 
-4. **CI integration**:
-   - **On-demand full sweep**: Triggered via `workflow_dispatch` in
-     `.github/workflows/mutants.yml`. Any surviving mutant fails the build.
-   - Nightly schedule and PR-gate triggers are currently disabled to save CI time.
-     Re-enable when iteration stabilises.
+4. **CI integration** (`.github/workflows/mutants.yml`):
+   - **Incremental, per PR** — mutates only the lines the PR changed
+     (`--in-diff`). Blocking. This is the gate that holds the line.
+   - **Full workspace sweep** — weekly on a schedule, and on demand via
+     `workflow_dispatch`. Reports; does not block a merge.
+
+   *Amended 2026-08-07.* Both gates were, until that date, structurally
+   incapable of failing: cargo-mutants wrote its report to
+   `mutants.out/mutants.out/` while every reader looked in `mutants.out/`, so
+   a missing file counted as zero survivors and an empty denominator was
+   scored as 100%. The 2026-07-27 sweep reported `100%, Missed: 0` over
+   artifacts containing 200 surviving mutants. An ADR that declares a
+   mandatory gate should record when that gate was not, in fact, mandatory —
+   see [`book/src/reference/mutation-history.md`](../../book/src/reference/mutation-history.md)
+   for the full diagnosis and the score history since.
 
 5. **Configuration**: Centralized in `mutants.toml` at the workspace root.
+
+### Equivalent mutants
+
+Some mutants cannot be killed by any test, because the mutation is
+*semantically equivalent* to the original — the program's observable behaviour
+is unchanged. `x * 1` versus `x`, an unreachable defensive branch, a match arm
+the wildcard already covers. These are a known, unavoidable property of
+mutation testing, not a defect in the suite, and no amount of test-writing
+removes them.
+
+They are therefore the one accepted exception to the target above, subject to
+three conditions:
+
+1. **Prove it, don't assume it.** "I could not think of a test" is not
+   equivalence. The claim is that *no* test can distinguish the mutant, which
+   means being able to say why the mutated expression is observationally
+   identical. A surviving mutant is a test gap until demonstrated otherwise;
+   in this project's own experience that default has been correct far more
+   often than not — of the 18 Postgres-file survivors in the 2026-07-27 sweep,
+   17 were killable and 15 died to a CI fix rather than any test at all.
+
+2. **Mark it in the source, next to the code.** The mechanism is
+   `#[mutants::skip]`, with a comment giving the reason, so the exemption is
+   visible to anyone reading the function and shows up in the diff when the
+   surrounding code changes:
+
+   ```rust
+   // The wildcard arm already covers this case; splitting it out is for
+   // readability, so deleting it changes no behaviour.
+   #[mutants::skip]
+   fn example() { /* … */ }
+   ```
+
+   **This carries a prerequisite, and it is not free.** The attribute resolves
+   through the [`mutants`](https://crates.io/crates/mutants) crate; without it
+   the build fails outright with `error[E0433]: failed to resolve: use of
+   unresolved module or unlinked crate 'mutants'` (verified against
+   cargo-mutants 27.1.0). It also cannot be a dev-dependency: cargo-mutants
+   builds the library normally, so the attribute must resolve in a non-test
+   build.
+
+   This workspace does **not** currently depend on `mutants`, and adding it to
+   a crate published on crates.io puts it in every downstream user's
+   dependency tree — a supply-chain decision for a project that maintains a
+   `deny.toml`, an SBOM and SLSA provenance. So the first genuinely equivalent
+   mutant is also the trigger for that decision, and should be raised as one
+   rather than settled inside an unrelated PR.
+
+   Until then the target has been met the ordinary way, by writing tests. No
+   exemption has yet been needed.
+
+3. **Do not use `mutants.toml` for this.** Config-level `exclude_globs` and
+   `exclude_re` are for whole categories that are never worth mutating —
+   generated protobuf code, tracing macros. They are invisible at the call
+   site and they rot silently: a blanket `**/mod.rs` exclusion once exempted
+   ~2,800 lines of real logic in this repository for months, and nothing in
+   the source said so. Per-case, in-source, reviewable in the diff, or not at
+   all.
+
+An exemption is a claim about the code, and like any other claim in this
+project it is reviewed on the evidence given for it.
 
 ### Alternatives Considered
 

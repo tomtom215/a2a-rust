@@ -117,7 +117,7 @@ surface, not in scope.
 | Rust edition / MSRV | 2024 / **1.85** | 2021 / **1.93** |
 | Hand-written source LOC (approx.) | ~17k (+5k generated protobuf) | ~61k src (incl. inline tests) + 28k in `tests/` |
 | Tests passing locally | 454 | 2,086 (default) / 2,519 (all features) |
-| Codecov, last upload | 96.56%, 2026-07-27 | 92.23%, **2026-05-25** (stale — see 4.4) |
+| Codecov, last upload | 96.56%, 2026-07-27 | **93.62%, 2026-07-31** (current; see 4.4 for why local reads 95.75%) |
 | Security contact | `security@agntcy.org` | Individual maintainer |
 
 Two figures deserve caveats. **crates.io download counts** include CI, mirror,
@@ -261,10 +261,10 @@ the field."
 | | `a2a-rs` | `a2a-rust` |
 |---|---|---|
 | Tests passing (measured locally, Section 6) | 454 | 2,519 (all features) |
-| Codecov coverage | 96.56%, uploaded 2026-07-27 | 92.23%, **last upload 2026-05-25** |
+| Codecov coverage | 96.56%, uploaded 2026-07-27 | **93.62%, uploaded 2026-07-31** |
 | Property tests (`proptest`) | ❌ | ✅ |
 | Fuzzing | ❌ | ✅ (6 libFuzzer targets; 60s per PR, 10-min nightly) |
-| Mutation testing, CI-gated | ❌ | ✅ (`cargo-mutants`, sharded, PR `--in-diff` gate + weekly full sweep) |
+| Mutation testing, CI-gated | ❌ | ⚠️ (`cargo-mutants`, sharded, PR `--in-diff` gate + weekly full sweep — but **both gates were vacuous until 2026-08-06** — neither could fail on a surviving mutant; see [`mutation-history.md`](../book/src/reference/mutation-history.md)) |
 | Regression-gated benchmarks | ❌ | ✅ (statistical gate on PRs) |
 | `cargo-semver-checks` on release | ❌ | ✅ |
 | Hostile-peer / adversarial client tests | ❌ | ✅ |
@@ -272,22 +272,34 @@ the field."
 | MSRV leg in CI | ❌ | ✅ (1.93) |
 | Feature-combination linting | ✅ (`cargo hack --each-feature`) | ✅ (explicit per-feature legs) |
 
-**On the Codecov discrepancy.** The Codecov API shows no commit ingested for
-`a2a-rust` since `739d2e0e` on 2026-05-25, so the 92.23% badge describes
-pre-v0.6 code and the `codecov.yml` patch-coverage gate (75% on changed lines)
-is not currently enforcing anything.
+**On the Codecov discrepancy — resolved, and re-measured 2026-08-06.** The
+staleness described in the 27 July revision of this section is fixed. Codecov's
+API now reports `615d01f8` (2026-07-31) as `state: complete` at **93.62%**, so
+uploads are current and the patch gate is live again. The cause was the
+upstream key-distribution outage recorded in `coverage.yml`, closed by
+`codecov-action` v5.5.5.
 
-In fairness to the project, most of this is a documented upstream outage, not
-neglect: `coverage.yml` carries a dated comment recording that Codecov's
-public-key distribution broke on 2026-06-10, leaving the action unable to
-verify its own CLI, and `continue-on-error: true` was added deliberately with
-`fail_ci_if_error: true` left intact underneath and a note to remove the
-override when the key returns. That is the right way to handle it.
+A second, unrelated discrepancy replaced it, and it is worth stating precisely
+because it is the kind of number that gets quoted: the badge reads 93.62% while
+local `cargo llvm-cov` reads **95.75%** on the same tree. Both are correct
+measurements of *different file sets*. Verified against Codecov's own per-file
+report rather than inferred — all five Postgres source files appear in it
+(0.00%–8.06%, 793 lines) despite being listed under `ignore` in `codecov.yml`,
+while every `tck/` file is correctly absent. Recomputing local lcov with only
+the three directory globs applied reproduces Codecov exactly (31519/33668 =
+93.62% against its reported 31520/33668).
 
-What the outage does not explain is the two weeks between the last ingested
-commit (05-25) and the outage starting (06-10). Whatever the cause there, the
-practical position stands: the published coverage figure is stale and the
-patch gate is dark. `a2a-rs`, on the same service, is current at 96.56%.
+So Codecov honours the three `**` patterns and silently drops the five bare
+file paths. Those files cannot be covered by the coverage job by construction —
+they require a live PostgreSQL server, which only the separate `test-postgres`
+job has — so they were inflating the denominator with permanently-uncoverable
+lines. The entries now carry a glob token; that fix awaits one upload to
+confirm.
+
+Note also that `cargo llvm-cov` reports three different workspace totals —
+regions 90.87%, functions 89.32%, lines 91.49% (whole workspace, before any
+ignore list). Any single "coverage percentage" for this project needs to say
+which of those it means.
 
 ### 4.5 Cross-SDK interop evidence — the decisive difference
 

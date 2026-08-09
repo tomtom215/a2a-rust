@@ -74,12 +74,19 @@ pub trait Dispatcher: Send + Sync + 'static {
 /// using a hyper auto-connection builder. This eliminates the ~25 lines of
 /// boilerplate that every A2A agent otherwise needs.
 ///
-/// The server runs until the listener encounters an I/O error. Each connection
-/// is served in a separate Tokio task.
+/// Each connection is served in a separate Tokio task.
+///
+/// Once the listener is bound this function does not return. `accept()`
+/// failures are transient by nature (a per-connection abort, or a momentarily
+/// full descriptor table), so the loop logs them and retries — backing off
+/// briefly on descriptor exhaustion — rather than tearing the server down.
+/// Callers wanting shutdown should race this future against their own signal
+/// (`tokio::select!`) instead of waiting for it to resolve.
 ///
 /// # Errors
 ///
-/// Returns [`std::io::Error`] if the TCP listener fails to bind.
+/// Returns [`std::io::Error`] if the TCP listener fails to bind. This is the
+/// only way the returned future completes.
 ///
 /// # Example
 ///

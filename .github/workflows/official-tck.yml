@@ -192,7 +192,9 @@ jobs:
       #   * Any conformant server reaches it: returning non-2xx to
       #     `message:stream` with streaming unadvertised is exactly what
       #     CORE-CAP-002 requires, and CORE-CAP-002 passes here.
-      # Remove the --deselect once upstream fixes the client.
+      # Reported upstream 2026-08-07 as a2aproject/a2a-tck#225:
+      #   https://github.com/a2aproject/a2a-tck/issues/225
+      # Remove the --deselect once that lands.
       - name: Run the suite against the minimal-capability profile
         run: |
           SUT_PROFILE=minimal SUT_HOST=127.0.0.1:9997 SUT_GRPC_HOST=127.0.0.1:9996 \

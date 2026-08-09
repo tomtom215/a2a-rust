@@ -34,11 +34,19 @@ ignore:
   # dedicated CI postgres job, which is not part of the coverage run — so
   # these files would always report 0% here and are excluded from the
   # dashboard rather than from testing.
-  - "crates/a2a-protocol-server/src/store/postgres_store.rs"
-  - "crates/a2a-protocol-server/src/store/tenant_postgres_store.rs"
-  - "crates/a2a-protocol-server/src/store/pg_migration.rs"
-  - "crates/a2a-protocol-server/src/push/postgres_config_store.rs"
-  - "crates/a2a-protocol-server/src/push/tenant_postgres_config_store.rs"
+  #
+  # These five were previously listed as bare paths, and Codecov did not
+  # apply them. Verified 2026-08-06 against Codecov's own API for `615d01f8`:
+  # all five appear in the report (0.00%-8.06%), while every `tck/` file is
+  # correctly absent. Their 793 lines sat in the public denominator, which is
+  # the whole 93.62%-vs-95.75% gap between the badge and local measurement.
+  # The three patterns that *do* work here all contain a glob token, so these
+  # now carry one too; each basename is unique in the tree.
+  - "**/store/postgres_store.rs"
+  - "**/store/tenant_postgres_store.rs"
+  - "**/store/pg_migration.rs"
+  - "**/push/postgres_config_store.rs"
+  - "**/push/tenant_postgres_config_store.rs"
   # Examples are not library code.
   - "examples/**"
   # ITK (interop test kit) agents are not library code.

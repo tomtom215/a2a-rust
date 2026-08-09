@@ -422,9 +422,11 @@ not patches for the six spellings the TCK happens to send.
   P0/P1s, and a deliberate `pub` API surface review), plus a **post-1.0
   deprecation policy** — `#[deprecated]` for at least one minor version
   before removal, removal only in a major bump, with security fixes exempt.
-- **`docs/upstream/`** — a prepared, *unfiled* bug report against
-  `a2aproject/a2a-tck` with a standalone reproduction script, covering a
-  harness defect this SDK triggers by behaving correctly.
+- **`docs/upstream/`** — a bug report against `a2aproject/a2a-tck` with a
+  standalone reproduction script, covering a harness defect this SDK triggers
+  by behaving correctly. Filed 2026-08-07 as
+  [a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225); the file is
+  retained as the record of what was submitted and the evidence behind it.
 
 ### Changed (public API documentation)
 

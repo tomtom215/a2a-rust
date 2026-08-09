@@ -38,19 +38,87 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
-* **Land one complete mutation sweep.** No full sweep has ever finished. The
-  only scheduled run (2026-07-27) lost two `a2a-server` shards to the
-  120-minute job timeout while the summary job still reported success. A
-  completeness gate and 12-way sharding landed 2026-07-31; the next run is
-  the first that can produce a trustworthy number.
+* **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31209868659,
+  all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
+  Reproduced across two different shardings, which is why the number is
+  trustworthy rather than merely produced.
+  Getting there took three rounds of gate fixes, because each one exposed the
+  next. The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
+  re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
+  nine shards that *completed* also reported `Missed: 0`, while holding **200
+  surviving mutants** between them. Both gates, the weekly sweep and the
+  PR-blocking `--in-diff` check, were structurally incapable of failing:
+  cargo-mutants wrote to `mutants.out/mutants.out/` and every reader looked in
+  `mutants.out/`. Fixed 2026-08-06, along with a no-data gate so an empty
+  denominator can never again be scored as 100%.
+  A third defect surfaced only once the gates worked: the completeness check
+  read the matrix `result`, so a sweep whose shards correctly failed on
+  survivors refused to aggregate. Completeness is now a per-shard `COMPLETED`
+  marker written inline when cargo-mutants returns.
   See [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md).
-* **Record the first real mutation score**, then keep the ledger current.
-  Until a row exists, the project has no mutation-adequacy history at all.
+* **~~Record the first real mutation score.~~ Done** — the ledger's first row
+  is 2026-08-07. Keep it current: a row per completed sweep, including clean
+  ones.
+* **Burn down the surviving mutants.** The four largest clusters from the
+  2026-08-07 sweep are done, plus `agent_card/caching.rs` at 0:
+
+  | File | Then | Now |
+  |---|---:|---:|
+  | `handler/messaging.rs` | 17 | **0** |
+  | `store/task_store/in_memory/eviction.rs` | 13 | 2 (equivalent, deliberate) |
+  | `dispatch/grpc/native.rs` | 11 | **0** |
+  | `handler/lifecycle/list_tasks.rs` | 10 | **0** |
+
+  **51 survivors, 49 killed or designed out.** An earlier revision of this
+  bullet put the unkillable share at "roughly 12%", extrapolated from
+  `messaging.rs` alone, and used it to estimate a floor of ~160 killable. That
+  estimate was wrong and the error is worth keeping: the rate is not a property
+  of the codebase, it is a property of the *shape* of each survivor.
+  Whole-method survivors (`native.rs`: ten of eleven) and never-entered blocks
+  (`list_tasks.rs`: all ten) yield no equivalents at all. Only boundary
+  comparisons do, and half of even those turned out to be removable by deleting
+  a branch that guarded a no-op rather than by testing harder — see the ledger's
+  "retired by deleting the branch" section. Do not extrapolate a floor from one
+  file; measure the next one.
+
+  **~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
+  10, a2a-types 8). The next clusters are not yet identified — the sweep that
+  named the top four is now three files out of date, so start by re-running it
+  (or reading the latest `mutants-summary` artifact) rather than trusting this
+  list. The weekly sweep fails until survivors are killed or explicitly
+  justified, which is the intended state, not a problem to suppress. No
+  baseline file: the `--in-diff` PR gate already prevents new code from adding
+  survivors, so the count can only fall.
+
+  Method that worked, in order: reproduce the file's survivor count on an
+  unmodified tree first, read *why* each survives before writing anything, then
+  re-measure. Report the exit code next to the counts — a cargo-mutants
+  baseline failure writes empty result files and prints `caught=0 missed=0`,
+  which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
+  CI gates locally; a live Postgres and `--run-ignored all` are required or
+  every Postgres mutant survives for want of a database.
+* **Decide the wording of the zero-survivor rule.** Partly done.
+  `CONTRIBUTING.md` no longer claims a blanket "zero surviving mutants": it now
+  separates the blocking per-PR `--in-diff` gate (which a contributor is
+  accountable for) from the advisory workspace sweep (pre-existing debt), and
+  states the sweep's real number. **Still open:** ADR 0006 carries the old
+  absolute wording, and the exceptions live in a markdown table rather than an
+  in-source `#[mutants::skip]` + reason. That attribute needs the `mutants`
+  crate as a real dependency of a published crate, which is the decision still
+  to make — and it is now a smaller one than it looked, since the exception list
+  is down to two rows, both in `eviction.rs`.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
   was on the previous shortlist and is still untouched; `serve.rs` was not
   on any list and should have been.
+* **`handler/helpers.rs` is over the 500-line guideline** — 612 lines, up from
+  463, crossed by the `truncate_history` extraction and its tests (2026-08-08).
+  Flagged rather than silently accepted: it is a grab-bag module, so the split
+  is real work (validation, call-context, history shaping, and the
+  `find_task_by_context` impl are four unrelated concerns) and was not worth
+  doing at the tail of that change. 59 of 232 `.rs` files already exceed the
+  guideline, so this is not novel, but it is one more.
 * **Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.** The
   built-in REST dispatcher strips that prefix and threads the tenant
   through; the axum adapter registers no such routes. Verified to fail
@@ -73,6 +141,19 @@ This is the category most worth clearing before any external review.
   documents now point at the maintainer address instead; the dedicated
   addresses can be restored once the domain is live.
 
+## Reporting accuracy
+
+* **Codecov's total excludes less than `codecov.yml` says.** Verified
+  2026-08-06 against Codecov's per-file report for `615d01f8`: the three `**`
+  directory globs are applied, the five bare Postgres file paths are not, so
+  793 permanently-uncoverable lines sit in the public denominator. That is the
+  whole 93.62%-badge versus 95.75%-local gap. The entries now carry a glob
+  token; **one upload is still needed to confirm the fix took**, by repeating
+  the arithmetic in `docs/rust-sdk-assessment.md` §4.4.
+* **Say which coverage number is meant.** `cargo llvm-cov` reports regions
+  90.87%, functions 89.32% and lines 91.49% for the same workspace. A bare
+  "coverage: N%" in this project is ambiguous between at least four figures.
+
 ## Conformance
 
 Measured against the official `a2a-tck` suite: **92 of 114 MUST requirements
@@ -81,8 +162,10 @@ no test function upstream, and `CARD-EXT-002` is structurally inapplicable.
 Full analysis and reproduction steps in
 [`docs/official-tck-findings.md`](docs/official-tck-findings.md).
 
-* **Report `SSE-001` upstream.** A reproduction and analysis are prepared but
-  unfiled, pending a maintainer decision on whether to open the issue.
+* **`SSE-001` is reported upstream** as
+  [a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225)
+  (filed 2026-08-07). Nothing more to do here until upstream responds; if the
+  fix lands, drop the `--deselect` in `.github/workflows/official-tck.yml`.
 * **Track the 13 open upstream backlog items** that would move requirements
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.

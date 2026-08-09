@@ -13,7 +13,7 @@ use a2a_protocol_types::task::{Task, TaskId};
 
 use crate::error::{ServerError, ServerResult};
 
-use super::super::helpers::build_call_context;
+use super::super::helpers::{build_call_context, truncate_history};
 use super::super::RequestHandler;
 
 impl RequestHandler {
@@ -51,17 +51,7 @@ impl RequestHandler {
             // Apply historyLength: truncate history to the requested number
             // of most recent messages. A value of 0 means "no history".
             if let Some(history_length) = params.history_length {
-                task.history = match (task.history, history_length) {
-                    (Some(msgs), n) if n > 0 => {
-                        let n = n as usize;
-                        if msgs.len() > n {
-                            Some(msgs[msgs.len() - n..].to_vec())
-                        } else {
-                            Some(msgs)
-                        }
-                    }
-                    _ => None,
-                };
+                task.history = truncate_history(task.history, history_length);
             }
 
             self.interceptors.run_after(&call_ctx).await?;

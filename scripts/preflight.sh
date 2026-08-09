@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Runs this repository's CI quality gates locally, before you push.
+#
+# Why this exists as a script rather than a list in CONTRIBUTING.md: a list of
+# commands in prose gets partially run. In August 2026 two commits landed with
+# unformatted test modules because `cargo clippy` and `cargo test` were run by
+# hand and `cargo fmt --all -- --check` was not, leaving CI's Format job red
+# across two pushes. One command that runs every gate and reports each one
+# removes the chance to skip a step by accident.
+#
+# The gate list is READ FROM .github/workflows/ci.yml rather than restated
+# here, so a gate added to CI cannot silently go unrun locally. The tiers below
+# name specific commands, and the script refuses to run if a named command is
+# no longer present in the workflow — drift is a hard error, not a surprise in
+# CI three pushes later.
+#
+# Usage:
+#   scripts/preflight.sh              # default tier: fmt + clippy + tests
+#   scripts/preflight.sh --fmt        # formatting only (seconds; used by the hook)
+#   scripts/preflight.sh --full       # every gate in the fmt/clippy/test/doc jobs
+#   scripts/preflight.sh --list       # show the CI gate inventory and exit
+#   scripts/preflight.sh --fail-fast  # stop at the first failing gate
+#
+# Every gate runs even after one fails, so a single run tells you everything
+# that is broken rather than only the first thing.
+#
+# Note on the first run: this exports CI's environment (see apply_ci_env), and
+# RUSTFLAGS/CARGO_PROFILE_DEV_DEBUG are part of cargo's fingerprint. If you have
+# been building without them, the first preflight rebuilds the workspace and
+# keeps a second set of artifacts in target/. That is the cost of testing what
+# CI tests; `cargo clean` if disk is tight.
+
+set -Eeuo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-preflight.XXXXXX")
+
+TIER=default
+FAIL_FAST=0
+
+# ── CI workflow parsing ──────────────────────────────────────────────────────
+
+# Prints every single-line `run: cargo ...` step belonging to a job whose name
+# matches the given extended regex.
+gates_for_jobs() {
+    awk -v want="$1" '
+        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+        /^[[:space:]]+run:[[:space:]]*cargo /    {
+            if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
+        }
+    ' "$CI_YML"
+}
+
+# Block-scalar steps (`run: |`) are invisible to the parser above. If one shows
+# up in a gate job, say so rather than quietly under-covering.
+warn_on_block_scalars() {
+    local found
+    found=$(awk -v want="$1" '
+        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+        /^[[:space:]]+run:[[:space:]]*\|/ { if (job ~ want) print job }
+    ' "$CI_YML" | sort -u)
+    if [ -n "$found" ]; then
+        printf 'preflight: note — multi-line run: blocks exist in job(s): %s\n' \
+            "$(echo "$found" | tr '\n' ' ')" >&2
+        printf '           this script does not replicate them; CI still will.\n' >&2
+    fi
+}
+
+GATE_JOBS='^(fmt|clippy|test|doc)$'
+ALL_GATES=$(gates_for_jobs "$GATE_JOBS")
+
+# Same reasoning as the gate list: copy CI's environment rather than restate it.
+# Matching the commands but not the environment is not parity — CI sets
+# RUSTFLAGS=-D warnings (so a warning CI denies would pass locally) and
+# CARGO_PROFILE_DEV_DEBUG=0 (without which the all-features link can die with
+# SIGBUS on a constrained machine, which reads as a test failure but is not).
+# Reads the top-level `env:` block; per-job `env:` blocks are indented deeper
+# and deliberately not picked up.
+apply_ci_env() {
+    local line key value
+    while IFS= read -r line; do
+        key=${line%%=*}
+        value=${line#*=}
+        # Never clobber something the caller set deliberately.
+        if [ -z "${!key-}" ]; then
+            export "$key=$value"
+        fi
+    done < <(awk '
+        /^env:[[:space:]]*$/ { in_env = 1; next }
+        /^[^[:space:]#]/     { in_env = 0 }
+        in_env && /^  [A-Za-z_][A-Za-z0-9_]*:/ {
+            line = $0
+            sub(/^  /, "", line)
+            key = line; sub(/:.*$/, "", key)
+            val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+            gsub(/^"|"$/, "", val)
+            print key "=" val
+        }
+    ' "$CI_YML")
+}
+
+# Fails if a tier names a command CI no longer runs.
+require_ci_gate() {
+    if ! printf '%s\n' "$ALL_GATES" | grep -Fxq -- "$1"; then
+        cat >&2 <<EOF
+preflight: gate drift detected.
+
+  This script's tier definitions name a command that ci.yml no longer runs:
+      $1
+
+  Either CI changed and the tiers in $0 need updating, or the parser above
+  stopped matching. Refusing to run rather than report a green that means less
+  than it used to.
+EOF
+        exit 2
+    fi
+    printf '%s\n' "$1"
+}
+
+# ── Gate execution ───────────────────────────────────────────────────────────
+
+RESULTS=()
+FAILED=0
+
+run_gate() {
+    local cmd="$1"
+    local log="$LOG_DIR/gate-${#RESULTS[@]}.log"
+    local start=$SECONDS status
+
+    printf '\n\033[1m▶ %s\033[0m\n' "$cmd"
+    # Exit status is captured directly. Never pipe a gate through tee/head —
+    # the pipeline's status is the last command's, which is how a failing gate
+    # reports success.
+    if (cd "$REPO_ROOT" && eval "$cmd") >"$log" 2>&1; then
+        status=0
+    else
+        status=$?
+    fi
+    local elapsed=$((SECONDS - start))
+
+    if [ "$status" -eq 0 ]; then
+        printf '  \033[32mPASS\033[0m  (%ss)\n' "$elapsed"
+        RESULTS+=("PASS|${elapsed}s|$cmd")
+    else
+        printf '  \033[31mFAIL\033[0m  (%ss, exit %s)\n' "$elapsed" "$status"
+        printf '  ── output ──\n'
+        sed 's/^/  /' "$log" | tail -40
+        printf '  ── full log: %s ──\n' "$log"
+        RESULTS+=("FAIL|${elapsed}s|$cmd")
+        FAILED=$((FAILED + 1))
+        if [ "$FAIL_FAST" -eq 1 ]; then
+            summarise
+            exit 1
+        fi
+    fi
+}
+
+summarise() {
+    printf '\n\033[1m── preflight summary (%s tier) ──\033[0m\n' "$TIER"
+    local row verdict timing cmd
+    for row in "${RESULTS[@]-}"; do
+        [ -n "$row" ] || continue
+        verdict=${row%%|*}
+        timing=${row#*|}; timing=${timing%%|*}
+        cmd=${row#*|*|}
+        if [ "$verdict" = PASS ]; then
+            printf '  \033[32m%-4s\033[0m %6s  %s\n' "$verdict" "$timing" "$cmd"
+        else
+            printf '  \033[31m%-4s\033[0m %6s  %s\n' "$verdict" "$timing" "$cmd"
+        fi
+    done
+
+    local total covered uncovered
+    total=$(printf '%s\n' "$ALL_GATES" | grep -c . || true)
+    covered=${#RESULTS[@]}
+    uncovered=$((total - covered))
+    printf '\n  %s of %s CI gate commands run locally' "$covered" "$total"
+    if [ "$uncovered" -gt 0 ]; then
+        printf ' — %s still only checked in CI (see --full / --list)' "$uncovered"
+    fi
+    printf '\n'
+
+    # A run that executed nothing has not passed, it has not run. Reporting
+    # green over an empty denominator is how a gate ends up unable to fail.
+    if [ "$covered" -eq 0 ]; then
+        printf '\n\033[31mNo gates ran — refusing to report a pass.\033[0m\n'
+        return 1
+    fi
+    if [ "$FAILED" -gt 0 ]; then
+        printf '\n\033[31m%s gate(s) failed. Do not push.\033[0m\n' "$FAILED"
+        return 1
+    fi
+    printf '\n\033[32mAll gates passed.\033[0m\n'
+    return 0
+}
+
+# ── Tiers ────────────────────────────────────────────────────────────────────
+
+# Named explicitly, and each verified to still exist in ci.yml. The default
+# tier is the subset worth paying for on every push: it is what catches the
+# mistakes that have actually reached this repository's CI.
+tier_fmt() {
+    require_ci_gate 'cargo fmt --all -- --check'
+}
+
+tier_default() {
+    tier_fmt
+    require_ci_gate 'cargo clippy --workspace --all-targets -- -D warnings'
+    require_ci_gate 'cargo clippy --workspace --all-targets --all-features -- -D warnings'
+    require_ci_gate 'cargo test --workspace --all-features'
+}
+
+tier_full() {
+    printf '%s\n' "$ALL_GATES"
+}
+
+# ── Entry point ──────────────────────────────────────────────────────────────
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --fmt)       TIER=fmt ;;
+        --full)      TIER=full ;;
+        --fail-fast) FAIL_FAST=1 ;;
+        --list)
+            warn_on_block_scalars "$GATE_JOBS"
+            printf 'CI gate commands in %s (jobs: fmt, clippy, test, doc):\n\n' \
+                "${CI_YML#"$REPO_ROOT"/}"
+            printf '%s\n' "$ALL_GATES" | sed 's/^/  /'
+            printf '\nTiers:\n'
+            printf '  --fmt      %s command(s)\n'  "$(tier_fmt | grep -c . || true)"
+            printf '  (default)  %s command(s)\n'  "$(tier_default | grep -c . || true)"
+            printf '  --full     %s command(s)\n'  "$(tier_full | grep -c . || true)"
+            exit 0
+            ;;
+        -h|--help)
+            sed -n '4,30p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *)
+            printf 'preflight: unknown option %s (try --help)\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
+
+if [ ! -f "$CI_YML" ]; then
+    printf 'preflight: cannot find %s\n' "$CI_YML" >&2
+    exit 2
+fi
+
+warn_on_block_scalars "$GATE_JOBS"
+apply_ci_env
+
+printf '\033[1mpreflight: %s tier\033[0m  (logs in %s)\n' "$TIER" "$LOG_DIR"
+
+# Resolve the gate list in THIS shell, not in a process substitution. A drift
+# failure inside `tier_*` calls `exit`, and from a subshell that only kills the
+# subshell — leaving the loop with nothing to read and the summary scoring an
+# empty run as a pass. Assigning first makes that exit status observable here.
+if ! GATES=$("tier_$TIER"); then
+    exit 2
+fi
+
+while IFS= read -r gate; do
+    [ -n "$gate" ] && run_gate "$gate"
+done <<<"$GATES"
+
+summarise

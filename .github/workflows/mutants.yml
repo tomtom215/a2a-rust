@@ -8,10 +8,13 @@
 # incremental (diff-only) job instead — see the `on.schedule` cron below.
 #
 # Architecture:
-#   - Full sweep splits into 15 parallel jobs: one each for a2a-types,
-#     a2a-client and a2a-sdk, plus 12 shards of a2a-server. Sharding exists
-#     to stay inside the 120-minute GitHub Actions job timeout; at 8 shards
-#     two of them hit it (run 30236603180, 2026-07-27) and were cancelled.
+#   - Full sweep splits into 21 parallel jobs: 12 shards of a2a-server,
+#     4 each of a2a-types and a2a-client, and a2a-sdk whole (it is a pure
+#     re-export facade and generates no mutants at all). Sharding exists to
+#     stay inside the per-job timeout, which was 120 minutes until 2026-08-07
+#     and is now 240; at 8 shards two of them hit the old limit (run
+#     30236603180, 2026-07-27) and were cancelled. Every sharded job now
+#     carries a comparable load of roughly 170-200 mutants.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
 #   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
@@ -57,12 +60,26 @@ env:
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+  # Proven equivalent mutants, excluded from both the sweep and the blocking
+  # incremental gate. Defined once so the two cannot drift: an exclusion that
+  # applied to only one of them would make a PR pass a check the weekly sweep
+  # then fails on, or the reverse.
+  #
+  # Matches exactly two mutants — the capacity guard in `evict` and its
+  # non-terminal fallback — and nothing else. Scope measured, and the argument
+  # for their equivalence recorded, in mutants.toml and
+  # book/src/reference/mutation-history.md.
+  #
+  # Anything added here must clear ADR 0006's burden: "no test can distinguish
+  # it", not "no test occurred to me".
+  MUTANTS_EQUIVALENT_RE: 'replace > with >= in InMemoryTaskStore::evict'
+
 jobs:
   # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
   #
-  # Splits the workspace across parallel runners. This avoids the 120-minute
-  # timeout that the monolithic --workspace run hit, since a2a-server alone
-  # generates > 1,800 mutants.
+  # Splits the workspace across parallel runners. This avoids the per-job
+  # timeout that the monolithic --workspace run hit when it was 120 minutes,
+  # since a2a-server alone generates > 1,800 mutants.
   #
   # When a specific package is provided via workflow_dispatch, only that
   # package's job runs (the others are skipped via the `if` condition).
@@ -74,7 +91,70 @@ jobs:
     # files.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    # 240, raised from 120 on 2026-08-07. Measured from run 31193107921, the
+    # first sweep in which every shard completed:
+    #
+    #   a2a-types    113m   674 mutants, unsharded
+    #   a2a-server 2/12  111m   180 mutants (135 of them unviable)
+    #   a2a-client   101m   804 mutants, unsharded
+    #   …
+    #   a2a-server 3/12   41m   180 mutants (0 unviable)
+    #
+    # The slowest job finished with **seven minutes** to spare against the old
+    # 120. That is the same margin that lost two shards in run 30236603180, and
+    # the workload only grows. 240 gives better than 2x headroom over the
+    # measured worst case and stays well inside the 360-minute ceiling for
+    # GitHub-hosted runners.
+    #
+    # Raising a timeout is not free — a genuinely stuck job now burns four
+    # hours instead of two. That is bounded in practice: `cap_timeout = 300` in
+    # mutants.toml kills any single mutant after five minutes, so a shard can
+    # be slow but not hung.
+    #
+    # Note what the table shows: runtime tracks *unviable* mutants more than
+    # total ones. Shard 2/12 and shard 3/12 both had 180 mutants and differed
+    # by 70 minutes — 135 unviable versus 0. An unviable mutant still costs a
+    # full compile before it fails, whereas a caught one exits early under
+    # nextest's fail-fast. So per-shard cost is dominated by builds, not tests.
+    #
+    # The two slowest jobs in that run were the two crates that had never been
+    # sharded — a2a-server was split 12 ways when it hit this wall, while
+    # a2a-types and a2a-client were left whole and quietly grew to 4x the load
+    # of any a2a-server shard. Both are now split 4 ways as well, which is the
+    # structural fix; this timeout is the safety net behind it.
+    #
+    # Note that the sweep's wall-clock is unchanged by that split: it is set by
+    # the slowest job overall, still a2a-server 2/12 at 111m. What changed is
+    # that no job now sits near its own ceiling.
+    timeout-minutes: 240
+    # A live database, for the same reason `test-postgres` in ci.yml has one.
+    #
+    # Without it the Postgres sources are mutated but their tests cannot run
+    # (the whole suite is `#[ignore]`d behind A2A_TEST_POSTGRES_URL), so every
+    # mutant in them survives — and the gate reports environmental blindness
+    # as test inadequacy. Measured, not assumed: `pg_migration.rs` had 12
+    # survivors in the 2026-07-27 sweep; re-run locally against a real
+    # PostgreSQL 16 with `--run-ignored all`, 13 of its 14 mutants were caught
+    # immediately and the 14th was a genuine boundary gap, now covered. The
+    # file is at 14/14.
+    #
+    # The alternative was excluding these files in mutants.toml. That would
+    # have recorded 18 real, checkable mutants as permanently out of scope on
+    # the strength of a CI limitation — the same trade that put a blanket
+    # `**/mod.rs` exclusion in this project's config and silently exempted
+    # ~2,800 lines. Measuring them costs one service container.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     strategy:
       fail-fast: false   # Don't cancel other crates if one fails
       matrix:
@@ -89,18 +169,50 @@ jobs:
         # per-shard load by a third, putting the slowest inside the limit
         # with real headroom rather than four minutes of it.
         #
+        # a2a-types (674 mutants, 113m) and a2a-client (804 mutants, 101m) were
+        # single jobs until 2026-08-07 and had become the slowest in the sweep,
+        # a2a-types finishing seven minutes inside the old 120-minute limit.
+        # Split 4 ways they land at ~168 and ~201 mutants — the same size class
+        # as an a2a-server shard — for a projected ~33m and ~30m each, derived
+        # from run 31193107921 by holding the ~7m fixed cost (toolchain install,
+        # cache, baseline build and test) constant and dividing the remainder.
+        #
         # The `shard` value is passed verbatim to cargo-mutants' `--shard K/N`
-        # flag, which splits mutants deterministically across shards. Other
-        # crates run as a single shard (K=0/N=1 ≡ no sharding).
+        # flag, which splits mutants deterministically across shards. a2a-sdk
+        # stays whole at K=0/N=1 (≡ no sharding): it has no mutants to split.
         include:
           - crate: a2a-protocol-types
             short: a2a-types
-            name: a2a-types
-            shard: "0/1"
+            name: a2a-types shard 1/4
+            shard: "0/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 2/4
+            shard: "1/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 3/4
+            shard: "2/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 4/4
+            shard: "3/4"
           - crate: a2a-protocol-client
             short: a2a-client
-            name: a2a-client
-            shard: "0/1"
+            name: a2a-client shard 1/4
+            shard: "0/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 2/4
+            shard: "1/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 3/4
+            shard: "2/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 4/4
+            shard: "3/4"
           - crate: a2a-protocol-server
             short: a2a-server
             name: a2a-server shard 1/12
@@ -153,6 +265,8 @@ jobs:
             short: a2a-sdk
             name: a2a-sdk
             shard: "0/1"
+    env:
+      A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       # Skip this matrix entry if a specific package was requested and it
       # doesn't match this crate.
@@ -194,29 +308,121 @@ jobs:
           echo "::group::cargo-mutants execution log (${{ matrix.name }})"
 
           set +e
+          # `pipefail` so `tee` cannot mask cargo-mutants' exit status —
+          # without it `$?` is always tee's 0 and the code recorded below is
+          # meaningless.
+          set -o pipefail
+          # `--output .` writes the report to ./mutants.out.
+          #
+          # cargo-mutants always creates a directory *named* `mutants.out`
+          # inside whatever `--output` names, so the previous
+          # `--output mutants.out` wrote to `mutants.out/mutants.out/` while
+          # every reader below looked in `mutants.out/`. That mismatch is
+          # what made this gate vacuous; the next step asserts the layout
+          # rather than trusting this comment.
+          #
           # Per-mutant timeout is controlled via `cap_timeout` in
           # mutants.toml (raised from 120 → 300 because the a2a-server
           # baseline test suite alone takes ~60s on GitHub-hosted runners;
           # at 3x the auto-computed timeout already exceeds 120, so the
           # previous cap was masking real CAUGHT results as TIMEOUT).
+          # `--run-ignored all` so the Postgres suite actually runs against
+          # the service container above; without it those tests stay
+          # `#[ignore]`d and every Postgres mutant survives for want of a
+          # database rather than for want of a test.
+          # `--exclude-re` on the command line, not `exclude_re` in mutants.toml:
+          # cargo-mutants 27.1.0 silently ignores that config key, exactly as it
+          # ignores `test_tool` and `profile`. See mutants.toml for the pattern's
+          # scope (it matches two mutants and nothing else) and the argument for
+          # their equivalence.
           cargo mutants -p ${{ matrix.crate }} \
-            --output mutants.out \
+            --output . \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features 2>&1 | tee /tmp/mutants-run.log
+            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
+            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
           echo "::endgroup::"
           echo "exit_code=${MUTANTS_EXIT}" >> "$GITHUB_OUTPUT"
 
+          # THE COMPLETION MARKER.
+          #
+          # Written inline, as the last thing this step does, so it exists if
+          # and only if cargo-mutants actually returned. A shard killed at the
+          # job timeout never reaches this line.
+          #
+          # This is the signal the summary job needs, and it is *not* the
+          # shard's job conclusion. A shard that finds surviving mutants fails
+          # by design, yet its report is complete and its numbers are exactly
+          # what the sweep exists to produce. Keying completeness off the
+          # matrix `result` conflated "did not finish" with "finished and did
+          # its job", so the first sweep that worked end to end (run
+          # 31193107921) refused to score itself.
+          #
+          # The marker cannot live in a separate `always()` step: those still
+          # run on cancellation — proven by run 30236603180, where cancelled
+          # shards uploaded artifacts.
+          mkdir -p mutants.out
+          echo "${MUTANTS_EXIT}" > mutants.out/COMPLETED
+
+      # ── THE ZERO-DATA GUARD ──────────────────────────────────────────────
+      #
+      # Every gate in this workflow is a line count over the files below, and
+      # a *missing* file counts as zero — which reads identically to "nothing
+      # survived". That is not hypothetical: in run 30236603180 (2026-07-27)
+      # all 11 sweep jobs reported "Score: 100%, Missed: 0" and concluded
+      # success while their uploaded artifacts contained **200 surviving
+      # mutants**, because the report was written to `mutants.out/mutants.out/`
+      # and read from `mutants.out/`.
+      #
+      # So: a report that is absent, or that cargo-mutants never produced, is
+      # now a hard error. This also fails within minutes if the `--output`
+      # layout above ever changes again, instead of after a two-hour sweep
+      # that silently measured nothing.
+      - name: Require a readable mutation report
+        if: always() && steps.check.outputs.skip == 'false'
+        run: |
+          missing=0
+          for f in caught.txt missed.txt timeout.txt unviable.txt mutants.json; do
+            if [ ! -f "mutants.out/$f" ]; then
+              echo "::error::mutants.out/${f} is missing — cargo-mutants produced no usable report."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+            echo "Report files actually found (if any):"
+            find . -maxdepth 4 -name 'caught.txt' -printf '  %p\n' 2>/dev/null || true
+            echo ""
+            echo "A missing report is not 'zero surviving mutants' — it is no"
+            echo "measurement at all. Failing rather than reporting a clean sweep."
+            exit 1
+          fi
+
+          echo "Report present under mutants.out/."
+
       # ── Per-crate report ─────────────────────────────────────────────────
       - name: Generate per-crate report
         if: always() && steps.check.outputs.skip == 'false'
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # Emits exactly one integer. The previous form
+          #   grep -c . "$1" 2>/dev/null || echo 0
+          # printed *two* lines for an empty-but-present file, because
+          # `grep -c` prints "0" and still exits 1, so the `|| echo 0` fired
+          # as well — and "0\n0" then breaks every `$(( ))` below. That was
+          # latent only because the files were missing entirely rather than
+          # empty; it would fire the moment the paths were corrected.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           CAUGHT=$(count mutants.out/caught.txt)
           MISSED=$(count mutants.out/missed.txt)
@@ -285,6 +491,18 @@ jobs:
             exit 1
           fi
 
+      # Fold the run log into the report directory so the upload below has a
+      # *single* path. With two paths — one relative, one under /tmp —
+      # upload-artifact takes the least common ancestor of both, which is `/`,
+      # and stores every entry under its absolute path
+      # (`home/runner/work/a2a-rust/a2a-rust/mutants.out/...`). The summary job
+      # then finds nothing where it looks and aggregates zeros. Verified in the
+      # 2026-07-27 artifacts and in that run's own log:
+      # "The least common ancestor is /. This will be the root directory of the artifact".
+      - name: Fold the run log into the report
+        if: always() && steps.check.outputs.skip == 'false'
+        run: cp /tmp/mutants-run.log mutants.out/mutants-run.log || true
+
       - name: Upload per-crate report
         if: always() && steps.check.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -292,9 +510,10 @@ jobs:
           # Include the shard tag so sharded jobs (a2a-server) don't collide
           # on the same artifact name.
           name: mutation-report-${{ matrix.short }}-${{ steps.check.outputs.shard_tag }}
-          path: |
-            mutants.out/
-            /tmp/mutants-run.log
+          # Single path ⇒ the artifact root is mutants.out/ itself, so entries
+          # are `caught.txt`, `missed.txt`, … at the top level. The summary job
+          # reads them at exactly that depth.
+          path: mutants.out/
           # 90 is the GitHub Actions maximum. This is the weekly full-sweep
           # report — the only record of the actual surviving-mutant count —
           # so it should outlive as many weekly runs as possible rather than
@@ -346,13 +565,18 @@ jobs:
       # missing while the job still reports success.
       - name: Require every shard to have completed
         env:
-          # Matrix result: 'success' only when every matrix job succeeded.
+          # Matrix result. Reported for diagnostics only — it is deliberately
+          # NOT the completeness signal. 'failure' here is the *expected*
+          # outcome of a healthy sweep that found surviving mutants, so gating
+          # on it blocks the aggregation of exactly the runs worth scoring.
+          # Completeness is decided by the per-shard COMPLETED markers below.
           SHARD_RESULT: ${{ needs.mutants-crate.result }}
-          # Must equal the number of `include:` entries in mutants-crate
-          # (12 a2a-server shards + types + client + sdk). Deliberately a
-          # literal: if the matrix grows and this does not, the sweep fails
-          # loudly here rather than quietly measuring less.
-          EXPECTED_SHARDS: 15
+          # Must equal the number of `include:` entries in mutants-crate:
+          # 12 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
+          # a literal: if the matrix grows and this does not, the sweep fails
+          # loudly here rather than quietly measuring less. It went 15 -> 21 on
+          # 2026-08-07 when a2a-types and a2a-client were sharded 4 ways.
+          EXPECTED_SHARDS: 21
           # A workflow_dispatch scoped to one package skips the other matrix
           # entries by design, so they legitimately upload nothing. Only the
           # unscoped sweep — the one whose score means "the whole workspace" —
@@ -360,11 +584,23 @@ jobs:
           PACKAGE_FILTER: ${{ inputs.package }}
         run: |
           fail=0
+          echo "Matrix result (diagnostic only): ${SHARD_RESULT}"
 
-          if [ "$SHARD_RESULT" != "success" ]; then
-            echo "::error::mutation shards did not all succeed (matrix result: ${SHARD_RESULT})."
-            echo "A cancelled or timed-out shard produces an empty report, which this"
-            echo "job would otherwise aggregate as 'zero surviving mutants'."
+          # Every shard must carry the COMPLETED marker its run step writes
+          # inline once cargo-mutants returns. A shard cancelled at the job
+          # timeout still runs its `always()` upload step and so still produces
+          # a directory here — but it cannot have produced this file.
+          incomplete=0
+          for d in reports/mutation-report-*/; do
+            [ -d "$d" ] || continue
+            if [ ! -f "${d}COMPLETED" ]; then
+              echo "::error::$(basename "$d") has no COMPLETED marker — its cargo-mutants run did not return."
+              incomplete=$((incomplete + 1))
+            fi
+          done
+          if [ "$incomplete" -ne 0 ]; then
+            echo "${incomplete} shard(s) were killed mid-run. Their reports are partial, so"
+            echo "aggregating them would understate the surviving-mutant count."
             fail=1
           fi
 
@@ -389,8 +625,19 @@ jobs:
           echo "All ${EXPECTED_SHARDS} shards completed and reported."
 
       - name: Aggregate results
+        env:
+          # Same exemption rule as the completeness gate above.
+          PACKAGE_FILTER: ${{ inputs.package }}
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # See the note on the identical helper in the per-crate job: the
+          # previous form emitted "0\n0" for an empty-but-present file and
+          # broke the arithmetic below.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           TOTAL_CAUGHT=0
           TOTAL_MISSED=0
@@ -410,6 +657,7 @@ jobs:
           declare -A CRATE_MISSED
           declare -A CRATE_TIMEOUT
           declare -A CRATE_UNVIABLE
+          MALFORMED=0
 
           for CRATE_DIR in reports/mutation-report-*/; do
             if [ ! -d "$CRATE_DIR" ]; then continue; fi
@@ -418,10 +666,21 @@ jobs:
             # base crate name.
             CRATE_NAME=$(echo "$REPORT_NAME" | sed -E 's/-[0-9]+-[0-9]+$//')
 
-            C=$(count "${CRATE_DIR}mutants.out/caught.txt")
-            M=$(count "${CRATE_DIR}mutants.out/missed.txt")
-            T=$(count "${CRATE_DIR}mutants.out/timeout.txt")
-            U=$(count "${CRATE_DIR}mutants.out/unviable.txt")
+            # Flat, because each artifact's root *is* the shard's mutants.out
+            # directory (single upload path — see the upload step). This read
+            # previously went through an extra `mutants.out/` level that did
+            # not exist in the artifact, so every count came back zero.
+            if [ ! -f "${CRATE_DIR}caught.txt" ]; then
+              echo "::error::${CRATE_DIR} contains no caught.txt — shard report is unusable."
+              echo "Contents:"; find "$CRATE_DIR" -maxdepth 2 -printf '  %P\n' | head -20
+              MALFORMED=$((MALFORMED + 1))
+              continue
+            fi
+
+            C=$(count "${CRATE_DIR}caught.txt")
+            M=$(count "${CRATE_DIR}missed.txt")
+            T=$(count "${CRATE_DIR}timeout.txt")
+            U=$(count "${CRATE_DIR}unviable.txt")
 
             CRATE_CAUGHT[$CRATE_NAME]=$((${CRATE_CAUGHT[$CRATE_NAME]:-0} + C))
             CRATE_MISSED[$CRATE_NAME]=$((${CRATE_MISSED[$CRATE_NAME]:-0} + M))
@@ -451,10 +710,36 @@ jobs:
           done
 
           GRAND_TOTAL=$((TOTAL_CAUGHT + TOTAL_MISSED))
-          if [ "$GRAND_TOTAL" -gt 0 ]; then
-            SCORE=$(( (TOTAL_CAUGHT * 100) / GRAND_TOTAL ))
+
+          # THE NO-DATA GATE.
+          #
+          # `SCORE=100` on an empty denominator is the single line that turned
+          # every previous failure into a green check: zero mutants examined
+          # became "100%, all mutants caught". A whole-workspace sweep that
+          # examined no mutants has not passed — it has not run. Refuse to
+          # publish a score rather than invent one.
+          #
+          # A `workflow_dispatch` scoped to one package is exempt only from the
+          # *shard count*, not from this: even a single crate must yield some
+          # mutants, except a2a-sdk, which is a pure re-export facade and
+          # genuinely has none (mutants.json == []).
+          if [ "$MALFORMED" -gt 0 ]; then
+            echo "::error::${MALFORMED} shard report(s) were malformed; the aggregate would understate the true count."
+            exit 1
+          fi
+
+          if [ "$GRAND_TOTAL" -eq 0 ]; then
+            if [ -n "${PACKAGE_FILTER}" ]; then
+              echo "::warning::Scoped run examined 0 mutants — expected only for a2a-sdk (pure re-exports)."
+              SCORE=100
+            else
+              echo "::error::the full sweep examined 0 mutants across all shards."
+              echo "That is not a 100% score; it means no mutation testing happened."
+              echo "Check the per-shard 'Require a readable mutation report' steps."
+              exit 1
+            fi
           else
-            SCORE=100
+            SCORE=$(( (TOTAL_CAUGHT * 100) / GRAND_TOTAL ))
           fi
 
           # Prepend overall score
@@ -479,14 +764,16 @@ jobs:
               echo "## Surviving Mutants (all crates)"
               echo ""
               echo '```'
-              cat reports/mutation-report-*/mutants.out/missed.txt 2>/dev/null || true
+              cat reports/mutation-report-*/missed.txt 2>/dev/null || true
               echo '```'
               echo ""
               echo "## How to Fix"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants"
-              echo "cargo mutants -p <crate-name> -- --all-features"
+              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
+              echo "cargo mutants -p <crate-name> --test-tool=nextest -- --all-features --run-ignored all"
               echo '```'
             } >> /tmp/final-summary.md
           fi
@@ -523,7 +810,32 @@ jobs:
     name: "Mutants incremental (shard ${{ matrix.shard }})"
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 75, raised from 45 on 2026-08-07. Unlike the full sweep's 240, this one
+    # is **not** measured — no recent PR has produced enough in-diff mutants to
+    # test the ceiling, so there is no worst case to size against.
+    #
+    # It is raised anyway because the work per mutant grew underneath it: this
+    # job now runs the Postgres suite too (see the service block below), which
+    # the 45 predates. Leaving a budget unchanged after adding work to it is
+    # how the full sweep ended up with seven minutes of headroom.
+    #
+    # If a PR ever does overrun this, it now fails loudly at "Require a
+    # readable mutation report" rather than silently reporting no survivors.
+    timeout-minutes: 75
+    # Same reasoning as the full sweep above: a PR touching Postgres code must
+    # be judged against a real database, not against absent tests.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     strategy:
       fail-fast: false # a survivor in one shard must not cancel the others
       matrix:
@@ -534,6 +846,7 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       INCREMENTAL_SHARDS: 8
+      A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -577,20 +890,26 @@ jobs:
           echo "::group::cargo-mutants execution log"
 
           set +e
+          set -o pipefail
           # `--in-diff` restricts mutants to functions whose lines were added or
           # changed in this PR's diff, so renames contribute nothing and only
           # genuinely edited code is mutated. --timeout matches `cap_timeout`
           # in mutants.toml (see the lint there for context).
           # `--shard K/N` partitions the in-diff mutant set across the matrix
           # so each runner tests roughly 1/N of the mutants and fits the timeout.
+          # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
+          # why `--output mutants.out` silently disabled this gate.
+          # See the full-sweep job for why this is a CLI flag and not a
+          # mutants.toml `exclude_re` entry.
           cargo mutants --in-diff pr-src.diff \
-            --output mutants.out \
+            --output . \
             --timeout 300 \
             --jobs 4 \
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features 2>&1 | tee /tmp/mutants-run.log
+            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
+            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
@@ -604,10 +923,46 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "No Rust source files changed in \`crates/*/src/\` — nothing to mutate." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Generate mutation report
+      # Same guard as the full sweep, with one legitimate exception: when the
+      # PR diff selects no mutable code, cargo-mutants logs "No mutants to
+      # filter", exits 0 and writes no report at all. That is a real "nothing
+      # to do", not a broken run — but it must be recognised explicitly rather
+      # than inferred from files that happen to be absent.
+      - name: Require a readable mutation report
         if: always() && steps.diff.outputs.skip == 'false'
+        id: report_check
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          if [ -f mutants.out/caught.txt ] && [ -f mutants.out/missed.txt ]; then
+            echo "empty_selection=false" >> "$GITHUB_OUTPUT"
+            echo "Report present under mutants.out/."
+            exit 0
+          fi
+
+          if grep -q "No mutants to filter" /tmp/mutants-run.log 2>/dev/null; then
+            echo "empty_selection=true" >> "$GITHUB_OUTPUT"
+            echo "cargo-mutants selected no mutants from this PR's diff — nothing to gate."
+            exit 0
+          fi
+
+          echo "::error::no mutation report was produced, and cargo-mutants did not report an empty selection."
+          echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+          echo "Captured output:"; tail -30 /tmp/mutants-run.log 2>/dev/null || true
+          echo ""
+          echo "Treating this as 'zero surviving mutants' is what made this gate"
+          echo "vacuous before; failing instead."
+          exit 1
+
+      - name: Generate mutation report
+        if: always() && steps.diff.outputs.skip == 'false' && steps.report_check.outputs.empty_selection == 'false'
+        run: |
+          # See the full-sweep job: the previous helper emitted "0\n0" for an
+          # empty-but-present file, which breaks the arithmetic below.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           CAUGHT=$(count mutants.out/caught.txt)
           MISSED=$(count mutants.out/missed.txt)
@@ -663,8 +1018,10 @@ jobs:
               echo "## How to Reproduce Locally"
               echo ""
               echo '```bash'
-              echo "cargo install cargo-mutants"
-              echo "cargo mutants --file <path-to-file> -- --all-features"
+              echo "cargo install cargo-mutants cargo-nextest --locked"
+              echo "# a live database, or every Postgres mutant survives for want of one:"
+              echo "export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres"
+              echo "cargo mutants --file <path-to-file> --test-tool=nextest -- --all-features --run-ignored all"
               echo '```'
               echo ""
             fi
@@ -714,14 +1071,22 @@ jobs:
             exit 1
           fi
 
+      # Single upload path, so the artifact root is mutants.out/ itself and the
+      # aggregator's `shards/*/missed.txt` glob resolves. Two paths (one of them
+      # under /tmp) made the artifact root `/`, burying every file under
+      # `home/runner/work/...` where nothing looked for it.
+      - name: Fold the run log into the report
+        if: always() && steps.diff.outputs.skip == 'false'
+        run: |
+          mkdir -p mutants.out
+          cp /tmp/mutants-run.log mutants.out/mutants-run.log || true
+
       - name: Upload mutation report
         if: always() && steps.diff.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mutation-report-incremental-shard-${{ matrix.shard }}
-          path: |
-            mutants.out/
-            /tmp/mutants-run.log
+          path: mutants.out/
           retention-days: 14
 
   # ── Incremental aggregator (stable required-check name) ───────────────────
@@ -745,7 +1110,13 @@ jobs:
 
       - name: Aggregate shard results and gate
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # See the full-sweep job for why the previous one-liner was unsafe.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           # Sum surviving mutants across every shard's report (if any ran).
           TOTAL_MISSED=0

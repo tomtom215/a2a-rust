@@ -3,17 +3,22 @@
 
 # Draft issue for `a2aproject/a2a-tck` — HTTP+JSON client crashes on any non-2xx streamed response
 
-**Status: NOT FILED.** This is a prepared report awaiting a human decision to
-submit it. Nothing in this file has been sent to `a2aproject/a2a-tck`.
+**Status: FILED 2026-08-07** as
+[a2aproject/a2a-tck#225](https://github.com/a2aproject/a2a-tck/issues/225),
+by the maintainer. This file is retained as the record of what was submitted
+and the evidence behind it; the issue is now the live thread.
 
 Everything below was reproduced against pristine upstream at
 `5996b79f9cefa6fc390980e383e358a66fb9e49e` (`main`, 2026-06-29,
 *"fix: skip CARD-EXT-002 when extended card is configured (#186)"*) with
-`httpx 0.28.1`. A search of that repo's issues found nothing covering it; the
+`httpx 0.28.1`, and re-verified against that same commit — still `main` tip —
+on 2026-08-07. A search of that repo's issues found nothing covering it; the
 nearest, #99 *"REST transport streaming fails with 'Event loop is closed'"*,
-is a different failure.
+is a different failure. See the duplicate-check note at the foot of this file
+for what that search did and did not cover.
 
-Everything from `## Title` down is the proposed issue body, ready to paste.
+Everything from `## Title` down is the issue body as submitted. The upstream
+form splits it across fields — see the filing notes at the foot of this file.
 
 ---
 
@@ -159,6 +164,37 @@ FAILED .../TestRestStreaming::test_streaming_content_type
 The test should skip with its intended message, and `_extract_error` should
 return a string for any response it is handed.
 
+### The sibling transport already does this correctly
+
+This is not a design question — the JSON-RPC client, handling the same
+situation on the same `httpx` streaming API, reads the body first:
+
+```python
+# tck/transport/jsonrpc_client.py:147-155
+response = self._client.send(request, stream=True)
+content_type = response.headers.get("content-type", "")
+if "text/event-stream" not in content_type:
+    # Server returned a plain JSON-RPC response (e.g. an immediate error)
+    response.read()          # <-- reads before touching .json()/.text
+    try:
+        body = response.json()
+    except Exception:
+        body = response.text
+```
+
+```python
+# tck/transport/http_json_client.py:184-187
+response = self._client.send(request, stream=True)
+resp_headers = dict(response.headers)
+if response.status_code >= _HTTP_ERROR_MIN:
+    response.close()         # <-- closes without reading; body is now gone
+```
+
+`jsonrpc_client` also catches bare `Exception` rather than
+`(json.JSONDecodeError, ValueError)`, so it would survive this even without
+the `read()`. The HTTP+JSON client is the odd one out on both counts; the fix
+below simply brings it in line with its sibling.
+
 ### Suggested fix
 
 Read the body before closing it, so `.json()` and `.text` both stay valid and
@@ -222,9 +258,121 @@ belt-and-braces, since it is reachable from other paths:
 | Python | 3.11.15 |
 | SUT | any server returning ≥400 to `POST /v1/message:stream`; reproduced with stdlib `http.server` and with `tomtom215/a2a-rust`'s SUT |
 
+**Re-verified 2026-08-07** against a fresh clone of `a2aproject/a2a-tck`
+(`5996b79`, still `main` tip that day), Python 3.11.15, httpx 0.28.1,
+`pip install -e .`. Both reproductions above were re-run; the isolated one
+gives:
+
+```
+ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', 'Exception', 'BaseException', 'object']
+  issubclass(ResponseNotRead, ValueError)           = False
+  issubclass(ResponseNotRead, json.JSONDecodeError) = False
+status 400 >= 400 -> True
+RESULT: raised httpx.ResponseNotRead: Attempted to access streaming response content, without having called `read()`.
+```
+
+and with `response.read()` inserted before `response.close()`:
+
+```
+RESULT: returned '[400] streaming is not supported'
+```
+
+The suite reproduction was re-run too, against a live minimal-capability
+server (agent card advertises `capabilities: {}`, so `CORE-CAP-002` applies).
+Unpatched, it dies in `_extract_error`:
+
+```
+tck/transport/http_json_client.py:45: in _extract_error
+    body = response.json()
+.venv/lib/python3.11/site-packages/httpx/_models.py:638: ResponseNotRead
+FAILED tests/.../TestRestStreaming::test_streaming_content_type
+1 failed in 0.42s
+```
+
+With the suggested diff applied to an otherwise untouched checkout, the same
+command skips cleanly and carries the server's own message:
+
+```
+SKIPPED [1] tests/compatibility/core_operations/test_transport_behavior.py:419:
+  Streaming not supported: [400] agent does not support streaming
+  (AgentCard.capabilities.streaming is not true)
+1 skipped in 0.28s
+```
+
 ---
 
 ## Notes for the filer (not part of the issue body)
+
+### Filling in the upstream issue form
+
+`a2aproject/a2a-tck` uses an issue form (`.github/ISSUE_TEMPLATE/bug-report.yml`),
+not a free-text body. It has three fields:
+
+| field | required? | notes |
+|---|---|---|
+| **What happened?** | **yes** | the whole body above, lines `## Title` … end of Environment |
+| **Relevant log output** | no | optional, but see below — we have good content for it |
+| **Code of Conduct** | **yes** | a checkbox; must be ticked or the form will not submit |
+
+Two traps:
+
+* The **title field is pre-filled with `[Bug]: `**, and the proposed title
+  already starts with `[Bug]:`. Clear the field first, or paste only the text
+  after the prefix — otherwise the issue ships as `[Bug]: [Bug]: …`.
+* **Relevant log output** is declared `render: shell`, so GitHub wraps it in a
+  code fence automatically. Paste it **without** backticks or you get a fence
+  inside a fence.
+
+Paste this verbatim into **Relevant log output** (no backticks):
+
+    $ ./.venv/bin/python -m pytest \
+        "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type" \
+        --sut-host=http://127.0.0.1:9997 -q
+
+    tck/transport/http_json_client.py:45: in _extract_error
+        body = response.json()
+    .venv/lib/python3.11/site-packages/httpx/_models.py:832: in json
+        return jsonlib.loads(self.content, **kwargs)
+
+    self = <Response [400 Bad Request]>
+
+        @property
+        def content(self) -> bytes:
+            if not hasattr(self, "_content"):
+    >           raise ResponseNotRead()
+    E           httpx.ResponseNotRead: Attempted to access streaming response content, without having called `read()`.
+
+    .venv/lib/python3.11/site-packages/httpx/_models.py:638: ResponseNotRead
+    =========================== short test summary info ============================
+    FAILED tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type
+    1 failed in 0.42s
+
+    --- why the except clause does not catch it -----------------------------------
+    ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', 'Exception', 'BaseException', 'object']
+    _extract_error catches: (json.JSONDecodeError, ValueError)
+      issubclass(ResponseNotRead, ValueError)           = False
+      issubclass(ResponseNotRead, json.JSONDecodeError) = False
+
+    --- same command, with the suggested diff applied ------------------------------
+    SKIPPED [1] tests/compatibility/core_operations/test_transport_behavior.py:419: Streaming not supported: [400] agent does not support streaming (AgentCard.capabilities.streaming is not true)
+    1 skipped in 0.28s
+
+The leading four-space indent above is this file's way of holding the block
+literally; strip it when pasting. Every line is real output captured on
+2026-08-07 against `5996b79`.
+
+- **Duplicate check.** A GitHub issue search over `a2aproject/a2a-tck` for
+  `ResponseNotRead`, `SSE-001` and `streaming_content_type` returned no
+  matching issues on 2026-08-06. That was a keyword search of the public
+  issue list, not an exhaustive review — worth a second look before filing.
+  The claim above about issue #99 being the nearest match is inherited from
+  an earlier pass and was **not** re-verified (cross-repository API access is
+  blocked from the environment that prepared this); treat it as unconfirmed.
+- **`main` was still `5996b79` on 2026-08-07**, so the line numbers cited
+  throughout were re-checked against the current tip, not a stale snapshot:
+  `http_json_client.py` 184–195 and 187, `_extract_error` 44–52,
+  `test_transport_behavior.py` 419, `jsonrpc_client.py` 147 and 151 all
+  resolve exactly as quoted.
 
 - The runnable script is `docs/upstream/repro_tck_sse_bug.py` in this
   repository.

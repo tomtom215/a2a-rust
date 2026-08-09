@@ -13,7 +13,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 
 use crate::error::ServerResult;
 
-use super::super::helpers::build_call_context;
+use super::super::helpers::{build_call_context, truncate_history};
 use super::super::RequestHandler;
 
 impl RequestHandler {
@@ -67,17 +67,7 @@ impl RequestHandler {
             // requested number of most recent messages. 0 means "no history".
             if let Some(hl) = history_length {
                 for task in &mut result.tasks {
-                    task.history = match (task.history.take(), hl) {
-                        (Some(msgs), n) if n > 0 => {
-                            let n = n as usize;
-                            if msgs.len() > n {
-                                Some(msgs[msgs.len() - n..].to_vec())
-                            } else {
-                                Some(msgs)
-                            }
-                        }
-                        _ => None,
-                    };
+                    task.history = truncate_history(task.history.take(), hl);
                 }
             }
 
@@ -112,6 +102,7 @@ impl RequestHandler {
 #[cfg(test)]
 mod tests {
     use a2a_protocol_types::params::ListTasksParams;
+    use a2a_protocol_types::responses::TaskListResponse;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     use crate::agent_executor;
@@ -129,6 +120,52 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    /// A task carrying `len` history messages, oldest first, each identifiable
+    /// by its text as `message 0`, `message 1`, …
+    fn make_task_with_history(id: &str, len: usize) -> Task {
+        use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+        let mut task = make_completed_task(id);
+        task.history = Some(
+            (0..len)
+                .map(|i| Message {
+                    id: MessageId::new(format!("{id}-m{i}")),
+                    role: MessageRole::User,
+                    parts: vec![Part::text(format!("message {i}"))],
+                    context_id: None,
+                    task_id: None,
+                    reference_task_ids: None,
+                    extensions: None,
+                    metadata: None,
+                })
+                .collect(),
+        );
+        task
+    }
+
+    /// The history texts of the listed task with `id`, or `None` if the task
+    /// came back with its history omitted.
+    ///
+    /// Looks the task up by id rather than trusting the page order, so these
+    /// assertions cannot pass by accident when the store's ordering changes.
+    fn history_texts(resp: &TaskListResponse, id: &str) -> Option<Vec<String>> {
+        let task = resp
+            .tasks
+            .iter()
+            .find(|t| t.id.0 == id)
+            .unwrap_or_else(|| panic!("task {id} missing from the listing"));
+        task.history.as_ref().map(|msgs: &Vec<_>| {
+            msgs.iter()
+                .map(|m| {
+                    m.parts
+                        .iter()
+                        .find_map(a2a_protocol_types::message::Part::text_content)
+                        .unwrap_or_default()
+                        .to_owned()
+                })
+                .collect()
+        })
     }
 
     #[tokio::test]
@@ -225,6 +262,132 @@ mod tests {
             .await
             .expect("list_tasks with headers should succeed");
         assert!(result.tasks.is_empty());
+    }
+
+    // ── historyLength ────────────────────────────────────────────────────────
+    //
+    // Ten mutants survived in this file in the 2026-08-07 sweep, all of them
+    // inside the truncation block. Nothing here set `historyLength` and every
+    // fixture task had `history: None`, so the block was never entered — the
+    // arithmetic went entirely unobserved. The truncation itself now lives in
+    // `helpers::truncate_history` and is unit-tested there; these tests exist
+    // for the half mutation testing cannot see. No mutation operator deletes a
+    // call, so a handler that simply stopped truncating would score a clean
+    // sweep. Each test below asserts through `on_list_tasks`.
+    //
+    // Every case saves two tasks. `ListTasks` applies the truncation in a loop,
+    // and a handler that shaped only the first task of a page would satisfy
+    // any single-task assertion.
+
+    #[tokio::test]
+    async fn list_tasks_history_length_zero_omits_history_from_every_task() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hl0-a", 5))
+            .await
+            .unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hl0-b", 5))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            history_length: Some(0),
+            ..Default::default()
+        };
+        let resp = handler.on_list_tasks(params, None).await.unwrap();
+
+        // Omitted, not emptied: `Some([])` would be a different wire payload.
+        assert_eq!(history_texts(&resp, "t-hl0-a"), None);
+        assert_eq!(history_texts(&resp, "t-hl0-b"), None);
+    }
+
+    #[tokio::test]
+    async fn list_tasks_history_length_keeps_the_most_recent_for_every_task() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hl2-a", 5))
+            .await
+            .unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hl2-b", 5))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            history_length: Some(2),
+            ..Default::default()
+        };
+        let resp = handler.on_list_tasks(params, None).await.unwrap();
+
+        // The two *newest* of five. Asserting the texts rather than the count
+        // is what separates this from keeping `message 0` and `message 1`.
+        let expected = Some(vec!["message 3".to_owned(), "message 4".to_owned()]);
+        assert_eq!(history_texts(&resp, "t-hl2-a"), expected);
+        assert_eq!(history_texts(&resp, "t-hl2-b"), expected);
+    }
+
+    #[tokio::test]
+    async fn list_tasks_history_length_above_the_length_returns_all() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hlbig-a", 3))
+            .await
+            .unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hlbig-b", 3))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams {
+            history_length: Some(100),
+            ..Default::default()
+        };
+        let resp = handler.on_list_tasks(params, None).await.unwrap();
+
+        let all = Some(vec![
+            "message 0".to_owned(),
+            "message 1".to_owned(),
+            "message 2".to_owned(),
+        ]);
+        assert_eq!(history_texts(&resp, "t-hlbig-a"), all);
+        assert_eq!(history_texts(&resp, "t-hlbig-b"), all);
+    }
+
+    /// No `historyLength` at all leaves history untouched — which is *not*
+    /// what `historyLength: 0` does.
+    ///
+    /// This is the only test that pins the outer `if let`. Without it a
+    /// handler that truncated unconditionally, treating absent as zero, would
+    /// pass every other case here while silently dropping history from every
+    /// unfiltered `ListTasks` response.
+    #[tokio::test]
+    async fn list_tasks_without_history_length_leaves_history_intact() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor).build().unwrap();
+        handler
+            .task_store
+            .save(&make_task_with_history("t-hlnone", 3))
+            .await
+            .unwrap();
+
+        let params = ListTasksParams::default();
+        let resp = handler.on_list_tasks(params, None).await.unwrap();
+
+        assert_eq!(
+            history_texts(&resp, "t-hlnone"),
+            Some(vec![
+                "message 0".to_owned(),
+                "message 1".to_owned(),
+                "message 2".to_owned(),
+            ]),
+            "absent historyLength must not be treated as 0"
+        );
     }
 
     #[tokio::test]
