@@ -758,6 +758,177 @@ mod tests {
         }
     }
 
+    // ── metadata size limit ──────────────────────────────────────────────────
+
+    /// Builds a handler whose metadata budget is `max` bytes.
+    fn handler_with_metadata_limit(max: usize) -> RequestHandler {
+        RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(crate::handler::limits::HandlerLimits::default().with_max_metadata_size(max))
+            .build()
+            .expect("build with custom limits should succeed")
+    }
+
+    /// Metadata serialising to exactly `n` bytes.
+    ///
+    /// It must be a JSON *object*: `validate_metadata_object` runs before the
+    /// size check and rejects scalars outright, so a bare string never reaches
+    /// the code under test here. `{"k":"<pad>"}` serialises to `pad.len() + 8`
+    /// bytes, and the assertion below keeps that arithmetic honest rather than
+    /// trusting the comment.
+    fn metadata_of_exactly(n: usize) -> serde_json::Value {
+        let value = serde_json::json!({ "k": "x".repeat(n - 8) });
+        assert_eq!(
+            serde_json::to_vec(&value).expect("serialise").len(),
+            n,
+            "fixture must serialise to exactly {n} bytes"
+        );
+        value
+    }
+
+    /// Pins the `>` in both metadata size checks, which is a limit boundary and
+    /// therefore worth being exact about: `>=` would reject a payload of
+    /// precisely the configured maximum.
+    ///
+    /// Two mutants survived here in the 2026-08-07 sweep, one per check. The
+    /// existing tests only prove that something far *over* the limit is
+    /// rejected, which `>=` also does — nothing exercised the boundary itself.
+    ///
+    /// A small custom limit keeps this exact and cheap; the default is 1 MiB.
+    #[tokio::test]
+    async fn metadata_exactly_at_limit_is_accepted_but_one_byte_over_is_not() {
+        const MAX: usize = 64;
+
+        // ── message metadata ──
+        let mut params = make_params(None);
+        params.message.metadata = Some(metadata_of_exactly(MAX));
+        assert!(
+            !matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "message metadata of exactly {MAX} bytes is within the limit"
+        );
+
+        let mut params = make_params(None);
+        params.message.metadata = Some(metadata_of_exactly(MAX + 1));
+        assert!(
+            matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "message metadata one byte over the limit must be rejected"
+        );
+
+        // ── request metadata (the second, separate check) ──
+        let mut params = make_params(None);
+        params.metadata = Some(metadata_of_exactly(MAX));
+        assert!(
+            !matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "request metadata of exactly {MAX} bytes is within the limit"
+        );
+
+        let mut params = make_params(None);
+        params.metadata = Some(metadata_of_exactly(MAX + 1));
+        assert!(
+            matches!(
+                handler_with_metadata_limit(MAX)
+                    .on_send_message(params, false, None)
+                    .await,
+                Err(ServerError::InvalidParams(_))
+            ),
+            "request metadata one byte over the limit must be rejected"
+        );
+    }
+
+    // ── shape_response_history ───────────────────────────────────────────────
+
+    /// Builds a task carrying `len` history messages, oldest first, each
+    /// individually identifiable as `h0`, `h1`, …
+    fn task_with_history(len: usize) -> Task {
+        Task {
+            id: TaskId::new("t-hist"),
+            context_id: ContextId::new("ctx-hist"),
+            status: TaskStatus::new(TaskState::Submitted),
+            artifacts: None,
+            history: Some(
+                (0..len)
+                    .map(|i| Message {
+                        id: MessageId::new(format!("h{i}")),
+                        role: MessageRole::User,
+                        parts: vec![Part::text("x")],
+                        context_id: None,
+                        task_id: None,
+                        reference_task_ids: None,
+                        extensions: None,
+                        metadata: None,
+                    })
+                    .collect(),
+            ),
+            metadata: None,
+        }
+    }
+
+    /// Shapes a `len`-message history and returns the surviving message ids.
+    fn shaped_ids(len: usize, history_length: Option<u32>) -> Option<Vec<String>> {
+        let mut task = task_with_history(len);
+        shape_response_history(&mut task, history_length);
+        task.history
+            .map(|msgs| msgs.into_iter().map(|m| m.id.0).collect())
+    }
+
+    /// Pins every branch and boundary of `shape_response_history`.
+    ///
+    /// Six mutants survived here in the 2026-08-07 sweep. The existing tests
+    /// exercise the function only through `on_send_message`, which never
+    /// varies `historyLength`, so nothing observed the truncation arithmetic
+    /// at all. Each case below is chosen to make a specific mutation visible:
+    ///
+    /// * `Some(0)` with a non-empty history separates "omit" from "keep an
+    ///   empty list" — it is what distinguishes the `n > 0` guard from a guard
+    ///   that is always true, and from `n >= 0`, which is vacuous for a `u32`.
+    /// * `len = 6, n = 2` makes `len > n` differ from `len == n`, and makes
+    ///   `len - n` differ from both `len + n` (which indexes out of bounds)
+    ///   and `len / n` (which would keep three messages instead of two).
+    /// * `len = 4, n = 1` is a second witness against `len / n`, where it
+    ///   would slice to the end and keep nothing.
+    #[test]
+    fn shape_response_history_covers_every_branch() {
+        // Default: history is omitted entirely, not echoed back.
+        assert_eq!(shaped_ids(3, None), None);
+
+        // Some(0) omits too — distinct from keeping an empty list.
+        assert_eq!(shaped_ids(3, Some(0)), None);
+
+        // Truncation keeps the n most recent, oldest dropped.
+        assert_eq!(
+            shaped_ids(6, Some(2)),
+            Some(vec!["h4".to_string(), "h5".to_string()])
+        );
+        assert_eq!(shaped_ids(4, Some(1)), Some(vec!["h3".to_string()]));
+
+        // Exactly at the boundary, and asking for more than exists: keep all.
+        assert_eq!(
+            shaped_ids(3, Some(3)),
+            Some(vec!["h0".to_string(), "h1".to_string(), "h2".to_string()])
+        );
+        assert_eq!(
+            shaped_ids(2, Some(5)),
+            Some(vec!["h0".to_string(), "h1".to_string()])
+        );
+
+        // An empty history stays empty rather than becoming None.
+        assert_eq!(shaped_ids(0, Some(3)), Some(vec![]));
+    }
+
     #[tokio::test]
     async fn empty_message_parts_returns_invalid_params() {
         let handler = make_handler();
@@ -776,9 +947,12 @@ mod tests {
     async fn oversized_message_metadata_returns_invalid_params() {
         let handler = make_handler();
         let mut params = make_params(None);
-        // Build a JSON string that exceeds the default 1 MiB limit.
-        let big_value = "x".repeat(1_100_000);
-        params.message.metadata = Some(serde_json::json!(big_value));
+        // An *object* exceeding the default 1 MiB limit. This was a bare JSON
+        // string until 2026-08-08, which `validate_metadata_object` rejects as
+        // a non-object before the size check ever runs — so the test passed
+        // without exercising the limit it names. Both size-check mutants
+        // survived the 2026-08-07 sweep for exactly that reason.
+        params.message.metadata = Some(serde_json::json!({ "k": "x".repeat(1_100_000) }));
 
         let result = handler.on_send_message(params, false, None).await;
 
