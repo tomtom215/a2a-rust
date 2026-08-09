@@ -376,14 +376,29 @@ All rows below were run on 2026-08-09 against this branch, with a live Postgres
 and `--run-ignored all`. Exit codes are quoted because they are the only
 reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 
-| File | Mutants | Caught | Missed | Unviable | Exit |
-|---|---:|---:|---:|---:|---:|
-| `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 |
-| `agent_card/caching.rs` | 112 | 110 | 0 | 2 | 0 |
-| `store/task_store/in_memory/eviction.rs` | 17 | 17 | 0 | 0 | 0 |
-| `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 |
-| `push/sender.rs` | 97 | 56 | 6 | 35 | 2 |
-| `dispatch/grpc/service.rs` | 44 | 35 | 9 | 0 | 2 |
+| File | Mutants | Caught | Missed | Unviable | Exit | Was |
+|---|---:|---:|---:|---:|---:|---:|
+| `dispatch/axum_adapter.rs` | 49 | 49 | **0** | 0 | **0** | 7 |
+| `dispatch/grpc/service.rs` | 44 | 44 | **0** | 0 | **0** | 9 |
+| `streaming/event_queue/in_memory.rs` | 50 | 19 | **0** | 31 | **0** | 7 |
+| `agent_card/caching.rs` | 112 | 110 | **0** | 2 | **0** | — |
+| `store/task_store/in_memory/eviction.rs` | 17 | 17 | **0** | 0 | **0** | 2 (excluded) |
+| `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 | 9 |
+| `dispatch/websocket.rs` | 33 | 32 | 1 | 0 | 2 | 7 |
+| `push/sender.rs` | 97 | 61 | 1 | 35 | 2 | 7 |
+| `rate_limit.rs` | 48 | 31 | 1 | 16 | 2 | 5 |
+| `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
+
+Across these `a2a-server` files: **53 survivors addressed, 4 remaining.** Each of
+the four is recorded below with the reason it stands, and none is excluded —
+the sweep still reports every one.
+
+| Survivor | Why it stands |
+|---|---|
+| `sync_collector.rs:240` — `==` in the append revert path | Provably equivalent. Both call sites propagate with `?`, so the `CollectState` the revert repairs is dropped unread. The revert is dead under current control flow; deleting it is a maintainer's call because it goes live again if a caller ever handles the error. |
+| `websocket.rs:303` — sign of the server-busy `-32000` | Reachable, but only by exhausting a hardcoded `Semaphore::new(64)` with 65 concurrent in-flight requests on one connection. A saturation test's determinism would rest on scheduling. |
+| `rate_limit.rs:335` — `==` in the write-lock double-check | Needs a genuine race: the bucket must be absent under the read lock and present under the write lock. Not forceable deterministically. |
+| `push/sender.rs:433` — `==` in `validate_webhook_url_with_dns` | Not yet attacked. |
 
 Two of these settle open questions:
 
@@ -395,30 +410,37 @@ Two of these settle open questions:
   commits that fixed it. This is the trap the survivor list sets: a cluster
   list is only meaningful against the commit it was measured on.
 
-`sync_collector.rs` went 9 → 1 in this session (four designed out, four killed
-by new tests, one proven equivalent). `push/sender.rs` went 7 → 6: the killed
-one was `allows_private_urls -> true`, the SSRF default that every test double
-in the crate overrode and nothing exercised. `state_machine.rs` was verified by
-`--list` only — 12 mutants → 7 — without a full sweep.
+Five of the ten files above now report **exit 0** — every mutant caught, and
+no exclusions anywhere. `state_machine.rs` was verified by `--list` only
+(12 mutants → 7) without a full sweep.
 
-Two clusters are left standing on purpose:
+Three things this burndown is worth remembering for:
 
-* **`dispatch/grpc/service.rs`, 9 survivors, every one a whole-method
-  replacement.** No test in this crate exercises the legacy JSON-tunnel
-  service at all — its nine methods can each return
-  `Ok(Response::new(Default::default()))` unnoticed. They are all killable,
-  since whole-method survivors admit no equivalents. They are not being killed
-  because that file is deleted by the `grpc-legacy-json` removal already
-  committed to for 0.8 (see `ROADMAP.md`, which anticipates exactly this:
-  "worth sequencing so that effort is not spent twice"). The canonical
-  `lf.a2a.v1` path in `dispatch/grpc/native.rs` is separate and already at
-  zero.
-* **`push/sender.rs`, 5 of its 6 remaining survivors at line 730** — the
-  `attempt < max_attempts - 1` retry boundary. Worth noting what this is *not*:
-  `max_attempts` is a public, unvalidated `usize`, so `max_attempts - 1` reads
-  like an underflow waiting to happen. It is not one. The enclosing loop is
-  `for attempt in 0..max_attempts`, so the line is unreachable unless
-  `max_attempts >= 1`. Checked rather than reported as a bug.
+* **The same bug wore four hats.** `if len > CAP { len - CAP }` appeared in
+  `messaging.rs`, `sync_collector.rs`, `background/state_machine.rs` and
+  `eviction.rs`. Found by grepping for the *shape* rather than by waiting for
+  a sweep to rediscover it, and fixed with `saturating_sub` — which deletes
+  the operators rather than excluding their mutants. `rate_limit.rs` was the
+  same defect in a different dress: one predicate written twice, where only
+  the copy on the reachable path was ever tested.
+
+* **A passing test is not a killing test.** The first `axum_adapter` routing
+  tests asserted 404 for an unknown id — green, and worthless, because every
+  mutant routes the request somewhere that also 404s. Seven survivors became
+  five, not zero. The fix was to seed the task so a correct parse answers 200
+  and each wrong parse answers 404. 404 is the most common answer that router
+  gives, which made it the worst possible thing to assert against a routing
+  bug.
+
+* **A survivor can mean the code is wrong to exist.** Three `websocket.rs`
+  survivors lived in an oversized-message guard that cannot execute:
+  tungstenite is configured with the same constant and rejects during the
+  read, which `ws_oversized_message_rejected` already proves. It was deleted,
+  not tested. Conversely `push/sender.rs:730` *looked* like a latent
+  underflow — `max_attempts - 1` on a public unvalidated `usize` — and is not
+  one, because the enclosing loop is `for attempt in 0..max_attempts`. Checked
+  rather than reported as a bug; its five survivors were a missing
+  retry-boundary test, which now measures the backoff on the clock.
 
 ## History
 
