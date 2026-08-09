@@ -255,9 +255,10 @@ belt-and-braces, since it is reachable from other paths:
 | Python | 3.11.15 |
 | SUT | any server returning ≥400 to `POST /v1/message:stream`; reproduced with stdlib `http.server` and with `tomtom215/a2a-rust`'s SUT |
 
-**Re-verified 2026-08-06** against a fresh clone of `a2aproject/a2a-tck`
-(`5996b79`, still `main` HEAD at that date), Python 3.11.15, httpx 0.28.1,
-`pip install -e .`:
+**Re-verified 2026-08-07** against a fresh clone of `a2aproject/a2a-tck`
+(`5996b79`, still `main` tip that day), Python 3.11.15, httpx 0.28.1,
+`pip install -e .`. Both reproductions above were re-run; the isolated one
+gives:
 
 ```
 ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', 'Exception', 'BaseException', 'object']
@@ -271,6 +272,28 @@ and with `response.read()` inserted before `response.close()`:
 
 ```
 RESULT: returned '[400] streaming is not supported'
+```
+
+The suite reproduction was re-run too, against a live minimal-capability
+server (agent card advertises `capabilities: {}`, so `CORE-CAP-002` applies).
+Unpatched, it dies in `_extract_error`:
+
+```
+tck/transport/http_json_client.py:45: in _extract_error
+    body = response.json()
+.venv/lib/python3.11/site-packages/httpx/_models.py:638: ResponseNotRead
+FAILED tests/.../TestRestStreaming::test_streaming_content_type
+1 failed in 0.42s
+```
+
+With the suggested diff applied to an otherwise untouched checkout, the same
+command skips cleanly and carries the server's own message:
+
+```
+SKIPPED [1] tests/compatibility/core_operations/test_transport_behavior.py:419:
+  Streaming not supported: [400] agent does not support streaming
+  (AgentCard.capabilities.streaming is not true)
+1 skipped in 0.28s
 ```
 
 ---
