@@ -437,20 +437,61 @@ mod tests {
         struct DummyExecutor;
         agent_executor!(DummyExecutor, |_ctx, _queue| async { Ok(()) });
 
+        /// An over-long `context_id` is rejected before the store is queried.
+        ///
+        /// The task below is what makes this assertion mean anything. An
+        /// earlier version of this test looked the id up in an *empty* store,
+        /// where `None` is the answer either way — it passed whether the
+        /// length check fired or not, and two mutants of that check survived
+        /// the 2026-08-07 sweep behind it. With a matching task saved, `None`
+        /// can only be produced by the early return.
         #[tokio::test]
-        async fn context_id_too_long_returns_none() {
-            // Covers line 49: early return None when context_id exceeds max_id_length.
+        async fn context_id_too_long_returns_none_without_querying_the_store() {
             let handler = RequestHandlerBuilder::new(DummyExecutor)
                 .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
                 .build()
                 .unwrap();
 
             let long_id = "a".repeat(11);
+            handler
+                .task_store
+                .save(&make_task("t-long", &long_id, TaskState::Working))
+                .await
+                .unwrap();
+
             let result = handler.find_task_by_context(&long_id).await.unwrap();
             assert!(
                 result.is_none(),
-                "find_task_by_context should return None for context_id exceeding max length"
+                "context_id longer than max_id_length must be rejected, but the \
+                 store's matching task came back: {result:?}"
             );
+        }
+
+        /// A `context_id` of exactly `max_id_length` is *within* the limit.
+        ///
+        /// The pair to the test above: it pins the other side of `>`, which a
+        /// mutation to `>=` would move by one and reject a legal id. Only a
+        /// task that is actually found distinguishes the two.
+        #[tokio::test]
+        async fn context_id_at_exactly_max_length_is_still_looked_up() {
+            let handler = RequestHandlerBuilder::new(DummyExecutor)
+                .with_handler_limits(HandlerLimits::default().with_max_id_length(10))
+                .build()
+                .unwrap();
+
+            let exact_id = "a".repeat(10);
+            handler
+                .task_store
+                .save(&make_task("t-exact", &exact_id, TaskState::Working))
+                .await
+                .unwrap();
+
+            let found = handler
+                .find_task_by_context(&exact_id)
+                .await
+                .unwrap()
+                .expect("a context_id of exactly max_id_length is within the limit");
+            assert_eq!(found.id.0, "t-exact");
         }
 
         #[tokio::test]
