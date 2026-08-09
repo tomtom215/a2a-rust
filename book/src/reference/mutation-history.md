@@ -382,6 +382,8 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `agent_card/caching.rs` | 112 | 110 | 0 | 2 | 0 |
 | `store/task_store/in_memory/eviction.rs` | 17 | 17 | 0 | 0 | 0 |
 | `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 |
+| `push/sender.rs` | 97 | 56 | 6 | 35 | 2 |
+| `dispatch/grpc/service.rs` | 44 | 35 | 9 | 0 | 2 |
 
 Two of these settle open questions:
 
@@ -394,8 +396,29 @@ Two of these settle open questions:
   list is only meaningful against the commit it was measured on.
 
 `sync_collector.rs` went 9 → 1 in this session (four designed out, four killed
-by new tests, one proven equivalent). `state_machine.rs` was verified by
+by new tests, one proven equivalent). `push/sender.rs` went 7 → 6: the killed
+one was `allows_private_urls -> true`, the SSRF default that every test double
+in the crate overrode and nothing exercised. `state_machine.rs` was verified by
 `--list` only — 12 mutants → 7 — without a full sweep.
+
+Two clusters are left standing on purpose:
+
+* **`dispatch/grpc/service.rs`, 9 survivors, every one a whole-method
+  replacement.** No test in this crate exercises the legacy JSON-tunnel
+  service at all — its nine methods can each return
+  `Ok(Response::new(Default::default()))` unnoticed. They are all killable,
+  since whole-method survivors admit no equivalents. They are not being killed
+  because that file is deleted by the `grpc-legacy-json` removal already
+  committed to for 0.8 (see `ROADMAP.md`, which anticipates exactly this:
+  "worth sequencing so that effort is not spent twice"). The canonical
+  `lf.a2a.v1` path in `dispatch/grpc/native.rs` is separate and already at
+  zero.
+* **`push/sender.rs`, 5 of its 6 remaining survivors at line 730** — the
+  `attempt < max_attempts - 1` retry boundary. Worth noting what this is *not*:
+  `max_attempts` is a public, unvalidated `usize`, so `max_attempts - 1` reads
+  like an underflow waiting to happen. It is not one. The enclosing loop is
+  `for attempt in 0..max_attempts`, so the line is unreachable unless
+  `max_attempts >= 1`. Checked rather than reported as a bug.
 
 ## History
 
