@@ -618,10 +618,59 @@ mod tests {
     #[tokio::test]
     async fn catchall_routes_subscribe_and_strips_the_suffix() {
         let state = catchall_state();
+        seed_task(&state, "task-abc").await;
+
+        // A *seeded* id is essential. The first version of this test used an
+        // unknown id and asserted 404 — which passes, but proves nothing: the
+        // mutants route the request elsewhere and that elsewhere also 404s on
+        // an id that does not exist. Mutation testing caught it, five
+        // survivors still standing after a green test.
+        //
+        // With a task that exists, a correct parse subscribes and answers 200
+        // (an SSE stream), while every wrong parse 404s:
+        //   * `!id.contains(':')` forced true  -> the GET arm above captures
+        //     this first and calls GetTask for the literal id
+        //     "task-abc:subscribe", which does not exist
+        //   * `ends_with(":subscribe")` forced false -> falls through to the
+        //     catch-all 404
+        //   * `len() - ":subscribe".len()` becoming `/` -> 18/10 = 1, so it
+        //     subscribes to task "t"
+        assert_eq!(
+            dispatch_tail(&state, "GET", "task-abc:subscribe").await,
+            axum::http::StatusCode::OK,
+            "GET /tasks/task-abc:subscribe must subscribe to task-abc"
+        );
         assert_eq!(
             dispatch_tail(&state, "GET", "missing-xyz:subscribe").await,
             axum::http::StatusCode::NOT_FOUND,
-            "subscribe on an unknown id must 404, proving the id was parsed exactly"
+            "subscribe on an unknown id must still 404"
+        );
+    }
+
+    /// A single-segment POST that names no colon action must fall through to
+    /// the catch-all, not be treated as an action on a truncated id.
+    ///
+    /// Kills `ends_with(":cancel")` and `ends_with(":subscribe")` forced to
+    /// `true`. Both make *every* single-segment POST an action, on the id
+    /// `path[..len - suffix.len()]`. The path lengths here are chosen so that
+    /// truncation lands exactly on the seeded task: under either mutant the
+    /// request would succeed with 200, where the real router answers 404.
+    #[tokio::test]
+    async fn catchall_post_without_a_colon_action_falls_through() {
+        let state = catchall_state();
+        seed_task(&state, "tid").await;
+
+        // len("tidZZZZZZZ") - len(":cancel") == 3  ->  "tid"
+        assert_eq!(
+            dispatch_tail(&state, "POST", "tidZZZZZZZ").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "a POST with no colon action must not be routed to CancelTask"
+        );
+        // len("tidZZZZZZZZZZ") - len(":subscribe") == 3  ->  "tid"
+        assert_eq!(
+            dispatch_tail(&state, "POST", "tidZZZZZZZZZZ").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "a POST with no colon action must not be routed to SubscribeToTask"
         );
     }
 
