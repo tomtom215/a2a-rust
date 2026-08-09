@@ -39,8 +39,12 @@ original finding, so it is recorded here rather than quietly edited away.
 ### What the 2026-07-27 run actually did
 
 [Run 30236603180](https://github.com/tomtom215/a2a-rust/actions/runs/30236603180)
-(2026-07-27, against `b416c1a`) is the only scheduled run in `mutants.yml`'s
-history. Its `Mutants Summary` job concluded `success` and printed:
+(2026-07-27, against `b416c1a`) is the *first* scheduled run in `mutants.yml`'s
+history. An earlier revision of this page called it "the only scheduled run",
+which was wrong when it was written — a second scheduled run on 2026-08-03 had
+already happened and had already reported the same false green. It is analysed
+below under "A second scheduled run told the same lie". Its `Mutants Summary`
+job concluded `success` and printed:
 
 ```text
 COMBINED MUTATION SCORE: 100%
@@ -108,6 +112,54 @@ mutant could not fail either.
 as forensics, not as a measurement of the workspace: two of its shards were
 cancelled, so its denominator is short by roughly two-elevenths of
 `a2a-server`.
+
+### A second scheduled run told the same lie
+
+*Added 2026-08-09.* The section above missed one, and the omission mattered:
+it made a recurring defect look like a single incident.
+
+[Run 30783745696](https://github.com/tomtom215/a2a-rust/actions/runs/30783745696)
+(2026-08-03, scheduled, against `a3c8c0f0` on `main`) concluded **`success`** —
+workflow and `Mutants Summary` job alike — and printed the identical signature:
+
+```text
+COMBINED MUTATION SCORE: 100%
+Caught: 0  Missed: 0  Timeout: 0  Unviable: 0
+```
+
+All fifteen crate shards concluded `success` too, after doing real work: the
+`a2a-types` job alone ran for 1h49m. So this was not a run that failed to
+start. It was a run that measured 3,430 mutants and reported none of them.
+
+Its artifacts had not expired, and were re-counted directly on 2026-08-09:
+
+| Crate | Caught | Missed |
+|---|---:|---:|
+| `a2a-server` (12 shards) | 1194 | 178 |
+| `a2a-client` | 357 | 10 |
+| `a2a-types` | 605 | 8 |
+| `a2a-sdk` | 0 | 0 |
+| **Total** | **2156** | **196** |
+
+Plus 2 timeouts and 1276 unviable. A real score of **91%**, reported as 100%.
+
+The mechanism was the same pair of path defects, still visibly present in the
+downloaded archives: every report sits at
+`home/runner/work/a2a-rust/a2a-rust/mutants.out/mutants.out/…` — the
+`--output` double-nesting *and* the least-common-ancestor absolutisation, both
+in one path. The fixes listed under "What is fixed" landed between 2026-08-03
+and 2026-08-07, which is why the 2026-08-07 sweeps could score themselves.
+
+Two things are worth keeping from this:
+
+* **The 2026-07-27 postmortem was correct but under-scoped.** It diagnosed the
+  mechanism precisely and then asserted a fact about frequency — "the only
+  scheduled run" — that nobody checked. A correct diagnosis attached to an
+  unchecked count is still a claim, and this one was false at the time.
+* **Unlike 2026-07-27, this run's denominator is sound.** No shard was
+  cancelled and all fifteen reports are complete, so unlike the 91% above,
+  this 91% *is* a measurement of the workspace at `a3c8c0f0` and is recorded
+  in the History table as such.
 
 ### One more gate defect, found by the first working sweep
 
@@ -284,3 +336,4 @@ the sweep after a refactor rather than assuming the score can only improve.
 |------|--------|---------------|-------:|-------:|--------:|-------|
 | 2026-08-07 | [`f54f33e`](https://github.com/tomtom215/a2a-rust/commit/f54f33e) | **92%** | 2168 | 183 | 3 | Run [31209868659](https://github.com/tomtom215/a2a-rust/actions/runs/31209868659) — first sweep aggregated by CI itself rather than by hand, and the first on the 21-shard matrix (a2a-types and a2a-client split 4 ways each). All 21 shards completed; `Require every shard to have completed` passed on the COMPLETED markers while the matrix result was `failure`, which is the case the previous run could not handle. **Identical 183 survivors to the 15-shard run below**, from a completely different partitioning of the mutant set — the one-mutant difference in caught/timeout is timing flake. 1276 unviable. Wall-clock 117m, still set by `a2a-server` shard 2/12 at 116m. |
 | 2026-08-07 | [`803a139`](https://github.com/tomtom215/a2a-rust/commit/803a139664f7b9326dc8b90bd91d382ea187f481) | **92%** | 2169 | 183 | 2 | First complete sweep. Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921), all 15 shards finished. Per crate: `a2a-server` 1207/165 (87%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0 (a pure re-export facade — it generates no mutants). 1276 unviable. Largest survivor clusters: `handler/messaging.rs` 17, `store/task_store/in_memory/eviction.rs` 13, `dispatch/grpc/native.rs` 11. Postgres-file survivors fell 18 → 3 once the sweep got a live database. |
+| 2026-08-03 | [`a3c8c0f`](https://github.com/tomtom215/a2a-rust/commit/a3c8c0f08f1ba636e4992ea3489bdbae82be271a) | **91%** | 2156 | 196 | 2 | Run [30783745696](https://github.com/tomtom215/a2a-rust/actions/runs/30783745696), scheduled, on `main`. **Recorded retroactively on 2026-08-09** by re-counting the run's own artifacts: CI reported `100%` over `Caught 0 / Missed 0` and concluded `success`, while all 15 shards had in fact completed and their reports were intact. See "A second scheduled run told the same lie" above. Per crate: `a2a-server` 1194/178, `a2a-client` 357/10, `a2a-types` 605/8, `a2a-sdk` 0/0. 1276 unviable — the same count as both 2026-08-07 sweeps. Denominator is sound (no cancelled shards), so unlike run 30236603180 this figure is a measurement, not just forensics. |
