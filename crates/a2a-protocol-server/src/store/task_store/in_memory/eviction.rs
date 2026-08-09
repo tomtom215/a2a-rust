@@ -132,3 +132,134 @@ impl InMemoryTaskStore {
         }
     }
 }
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use a2a_protocol_types::task::{ContextId, Task, TaskState, TaskStatus};
+    use std::time::Duration;
+
+    fn task(id: &str, state: TaskState) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(state),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    /// Builds a store whose entries are aged `age_secs` apart, oldest first.
+    fn store_of(states: &[TaskState]) -> StoreData {
+        let mut data = StoreData::with_capacity(states.len());
+        let base = Instant::now();
+        for (i, state) in states.iter().enumerate() {
+            let id = TaskId::new(format!("t{i}"));
+            // Oldest first: entry 0 is the furthest in the past.
+            let age = Duration::from_secs((states.len() - i) as u64);
+            let when = base.checked_sub(age).unwrap_or(base);
+            data.insert(id.clone(), task(&format!("t{i}"), *state), when);
+        }
+        data
+    }
+
+    fn config(max_capacity: Option<usize>, ttl: Option<Duration>, interval: u64) -> TaskStoreConfig {
+        TaskStoreConfig {
+            max_capacity,
+            task_ttl: ttl,
+            eviction_interval: interval,
+            ..TaskStoreConfig::default()
+        }
+    }
+
+    fn ids(data: &StoreData) -> Vec<String> {
+        let mut v: Vec<String> = data.entries.keys().map(|k| k.0.clone()).collect();
+        v.sort();
+        v
+    }
+
+    // ── should_evict ─────────────────────────────────────────────────────────
+
+    /// With the interval disabled and no capacity limit there is nothing to
+    /// trigger a sweep, so this must be false.
+    ///
+    /// This one case separates four mutations at once, because each of them
+    /// makes the interval arm fire when it should not: returning `true`
+    /// outright, `interval > 0` becoming `>= 0` or `== 0`, and the `&&`
+    /// becoming `||`. All three of the latter reach
+    /// `count.is_multiple_of(0)`, which is `true` for a count of 0.
+    #[test]
+    fn should_evict_is_false_when_nothing_triggers_a_sweep() {
+        let store = InMemoryTaskStore::with_config(config(None, None, 0));
+        assert!(!store.should_evict(0));
+    }
+
+    /// The interval arm fires on a write count that is a multiple of it.
+    #[test]
+    fn should_evict_fires_on_the_interval() {
+        let store = InMemoryTaskStore::with_config(config(None, None, 2));
+        assert!(store.should_evict(0), "write 0 is a multiple of 2");
+    }
+
+    /// Capacity is a strict overflow check: being exactly at `max_capacity` is
+    /// not over it. `>=` would sweep a store that is merely full.
+    #[test]
+    fn should_evict_treats_capacity_as_a_strict_overflow() {
+        // A large interval so the interval arm stays quiet after the first call.
+        let store = InMemoryTaskStore::with_config(config(Some(3), None, 100));
+        assert!(store.should_evict(0), "write 0 is a multiple of any interval");
+
+        assert!(!store.should_evict(3), "exactly at capacity is not over it");
+        assert!(store.should_evict(4), "one past capacity triggers a sweep");
+    }
+
+    // ── evict ────────────────────────────────────────────────────────────────
+
+    /// Capacity eviction removes exactly the overflow, oldest terminal first.
+    ///
+    /// Five entries against a cap of two is deliberate: the overflow is 3 by
+    /// subtraction but 2 by division, so `len - max` and `len / max` disagree.
+    /// At the more obvious `len == max + 1` they agree, and the mutation would
+    /// have survived the test.
+    #[test]
+    fn evict_removes_exactly_the_overflow_of_terminal_tasks() {
+        let mut data = store_of(&[TaskState::Completed; 5]);
+        InMemoryTaskStore::evict(&mut data, &config(Some(2), None, 0));
+
+        assert_eq!(data.len(), 2, "store must be brought down to the cap");
+        assert_eq!(
+            ids(&data),
+            vec!["t3".to_string(), "t4".to_string()],
+            "the three oldest terminal tasks are the ones evicted"
+        );
+    }
+
+    /// When there are not enough terminal tasks, in-flight ones are evicted as
+    /// a last resort so the cap is still enforced. Same 5-against-2 shape, for
+    /// the same reason: it separates `len - max` from `len / max`.
+    #[test]
+    fn evict_falls_back_to_non_terminal_tasks_to_enforce_the_cap() {
+        let mut data = store_of(&[TaskState::Working; 5]);
+        InMemoryTaskStore::evict(&mut data, &config(Some(2), None, 0));
+
+        assert_eq!(data.len(), 2, "the cap is enforced even with no terminal tasks");
+        assert_eq!(ids(&data), vec!["t3".to_string(), "t4".to_string()]);
+    }
+
+    /// TTL eviction removes terminal tasks past the TTL and spares in-flight
+    /// ones of the same age.
+    #[test]
+    fn evict_expires_terminal_tasks_only() {
+        let mut data = store_of(&[TaskState::Completed, TaskState::Working]);
+        InMemoryTaskStore::evict(&mut data, &config(None, Some(Duration::from_millis(1)), 0));
+
+        assert_eq!(
+            ids(&data),
+            vec!["t1".to_string()],
+            "the terminal task expires; the working one is kept regardless of age"
+        );
+    }
+}

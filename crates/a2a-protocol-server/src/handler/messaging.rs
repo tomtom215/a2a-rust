@@ -875,6 +875,8 @@ mod tests {
     /// treats as unconditionally evictable, and returns their ids.
     async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId> {
         let mut ids = Vec::new();
+        // Scoped so the write guard is released before this returns; holding a
+        // lock across the return is what `significant_drop_tightening` flags.
         let mut tokens = handler.cancellation_tokens.write().await;
         for i in 0..n {
             let id = TaskId::new(format!("stale-{i}"));
@@ -889,6 +891,7 @@ mod tests {
             );
             ids.push(id);
         }
+        drop(tokens);
         ids
     }
 
