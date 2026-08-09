@@ -149,23 +149,54 @@ survivor total.
 
 | Location | Mutation | Why no test can kill it |
 |---|---|---|
-| `handler/messaging.rs:45` in `shape_response_history` | `msgs.len() > n` → `>=` | The arms differ only at `len == n`. There the original returns `Some(msgs)` and the mutant returns `Some(msgs[0..].to_vec())` — the same elements, cloned. `Task.history` is compared and serialised by contents, so the extra allocation is not observable through any API. |
-| `handler/messaging.rs:398` in `send_message_inner` | `history.len() > MAX_TASK_HISTORY_MESSAGES` → `>=` | They differ only at `len == MAX`, where the mutant computes `excess = 0` and calls `drain(..0)` — a no-op leaving exactly what the original leaves by skipping the branch. |
 | `store/task_store/in_memory/eviction.rs:100` in `evict` | `store.len() > max` → `>=` | They differ only at `len == max`, where the mutant enters the capacity branch with `overflow == 0`. It collects and sorts the terminal tasks, then `take(0)` removes none, and the fallback's own `len > max` is false. It burns a sort and changes nothing observable. |
 | `store/task_store/in_memory/eviction.rs:123` in `evict` | `store.len() > max` → `>=` | The same at the fallback guard: `len == max` gives `remaining == 0` and `take(0)`. |
 
-All four are the same shape: **a branch whose only purpose is to skip work,
-whose two arms coincide at the boundary the comparison tests.** That pattern is
-worth recognising, because it will recur wherever a hot path avoids work, and
-because it is genuinely different from an untested branch.
+Both are the same shape: **a branch whose only purpose is to skip work, whose
+two arms coincide at the boundary the comparison tests.** That pattern is worth
+recognising, because it will recur wherever a hot path avoids work, and because
+it is genuinely different from an untested branch.
+
+### Two of these were retired by deleting the branch, not by testing harder
+
+This table held four rows until 2026-08-08. The two that left were both in
+`handler/messaging.rs`, and neither was killed — the code that generated them
+was rewritten so the mutation no longer exists:
+
+| Was | Now |
+|---|---|
+| `shape_response_history` — `msgs.len() > n` → `>=` | `helpers::truncate_history`, branchless via `saturating_sub` |
+| `send_message_inner` — `history.len() > MAX` → `>=` | the guard deleted; `drain(..excess)` runs unconditionally |
+
+The reasoning is the same in both cases and generalises. A guard of the form
+`if len > n { trim_by(len - n) }` is unkillable at `len == n` *because the body
+does nothing there*. Write the amount first — `let excess =
+len.saturating_sub(n)` — and the branch has nothing left to decide. `drain(..0)`
+is genuinely free: `Drain::drop` skips its memmove when the tail does not move,
+so this is O(1) rather than an O(n) shift.
+
+**This does not generalise to every guard, and the two survivors above are
+where it stops.** `evict`'s guard skips an O(n log n) collect-and-sort, not a
+no-op. Deleting it to retire a mutation-testing artefact would put a sort on
+every write that is exactly at capacity — paying real cycles to improve a
+score, which is the wrong trade and the reason those two rows remain.
+
+The rule worth carrying forward: **when the guarded work is a no-op at the
+boundary, delete the guard; when it is expensive, keep it and record the
+equivalence.** The mutant is a symptom either way — sometimes of redundant
+code, sometimes of a deliberate optimisation.
 
 It is not a reason to relax the target, and the equivalence rate is nowhere
-near uniform. `messaging.rs` went from 17 survivors to 2, `eviction.rs` from 13
-to 2, and `dispatch/grpc/native.rs` from 11 to **0** — 90% of those files'
-survivors were ordinary test gaps. `native.rs` produced no equivalents at all
-because its survivors were not boundary conditions: ten of its eleven were
-whole-method replacements, and a method survives being replaced by
-`Ok(Response::new(Default::default()))` only when nothing calls it.
+near uniform. `messaging.rs` went from 17 survivors to **0**, `eviction.rs`
+from 13 to 2, `dispatch/grpc/native.rs` from 11 to **0**, and
+`handler/lifecycle/list_tasks.rs` from 10 to **0**. `native.rs` produced no
+equivalents at all because its survivors were not boundary conditions: ten of
+its eleven were whole-method replacements, and a method survives being replaced
+by `Ok(Response::new(Default::default()))` only when nothing calls it.
+
+Of the 51 survivors across those four files, 49 were ordinary test gaps or
+removable branches. Two remain, both in `eviction.rs`, both for the deliberate
+reason given below.
 
 ### Whole-method survivors name an untested layer, not a missing edge case
 
