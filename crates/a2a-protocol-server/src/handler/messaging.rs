@@ -821,15 +821,52 @@ mod tests {
         handler.shutdown().await;
     }
 
-    /// Pins the context-lock pruning threshold and its staleness predicate.
+    /// Pins the context-lock pruning *threshold*.
     ///
-    /// Four mutants survived here. Nothing observed `context_locks` at all, so
-    /// neither the `len >= max` trigger nor the `strong_count > 1` retain
-    /// predicate had any witness. The predicate matters in both directions: an
-    /// inverted or vacuous version either drops locks another task still holds
-    /// or never reclaims anything.
+    /// A first version of this test used a limit of 2 and three sends, and the
+    /// `>=`-to-`<` mutant survived it: with the limit that low, both the
+    /// original and the mutant end holding exactly one entry, so the assertion
+    /// could not tell them apart. The threshold only becomes observable when
+    /// the map stays *below* it — the original never prunes, while `<` prunes
+    /// on every send and reclaims each previous context.
     #[tokio::test]
-    async fn context_locks_are_pruned_once_the_map_is_at_capacity() {
+    async fn context_locks_are_not_pruned_below_the_limit() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_context_locks(5),
+            )
+            .build()
+            .expect("build should succeed");
+
+        for ctx in ["ctx-a", "ctx-b", "ctx-c"] {
+            let _ = handler
+                .on_send_message(make_params(Some(ctx)), false, None)
+                .await;
+        }
+
+        assert_eq!(
+            handler.context_locks.read().await.len(),
+            3,
+            "with a limit of 5, three contexts must all be retained"
+        );
+        handler.shutdown().await;
+    }
+
+    /// Pins the staleness predicate itself: pruning must reclaim unused locks
+    /// and spare one another task still holds.
+    ///
+    /// `Arc::strong_count(v) > 1` means "someone besides the map owns this".
+    /// The entries are seeded directly so both populations exist at prune time
+    /// with certainty — a live lock (a clone held here, count 2) and stale ones
+    /// (count 1). Driving this through concurrent sends would depend on a
+    /// scheduler race for whether the live lock is still held when pruning runs.
+    ///
+    /// This is what separates the three mutations of that predicate:
+    /// `< 1` is never true and would clear the map including the live lock,
+    /// `== 1` inverts it and would reclaim exactly the wrong entries, and
+    /// `>= 1` is always true and would reclaim nothing.
+    #[tokio::test]
+    async fn context_lock_pruning_spares_locks_still_in_use() {
         let handler = RequestHandlerBuilder::new(DummyExecutor)
             .with_handler_limits(
                 crate::handler::limits::HandlerLimits::default().with_max_context_locks(2),
@@ -837,26 +874,31 @@ mod tests {
             .build()
             .expect("build should succeed");
 
-        // Three distinct contexts, sent sequentially so no lock is still held
-        // when the next send runs: every entry left behind has strong_count 1
-        // and is therefore reclaimable.
-        for ctx in ["ctx-a", "ctx-b", "ctx-c"] {
-            let _ = handler
-                .on_send_message(make_params(Some(ctx)), false, None)
-                .await;
+        // Held for the duration of the test, so the map is not its only owner.
+        let live = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        {
+            let mut locks = handler.context_locks.write().await;
+            locks.insert("live-ctx".to_string(), std::sync::Arc::clone(&live));
+            locks.insert("stale-1".to_string(), std::sync::Arc::new(tokio::sync::Mutex::new(())));
+            locks.insert("stale-2".to_string(), std::sync::Arc::new(tokio::sync::Mutex::new(())));
         }
+
+        // 3 entries against a limit of 2, so the next send prunes.
+        let _ = handler
+            .on_send_message(make_params(Some("ctx-new")), false, None)
+            .await;
 
         let locks = handler.context_locks.read().await;
         assert!(
-            locks.len() <= 2,
-            "map should have been pruned at the limit, holding {} entries",
-            locks.len()
+            locks.contains_key("live-ctx"),
+            "a lock another owner still holds must survive pruning"
         );
         assert!(
-            !locks.is_empty(),
-            "pruning must not clear the map wholesale — the just-used lock stays"
+            !locks.contains_key("stale-1") && !locks.contains_key("stale-2"),
+            "locks owned only by the map must be reclaimed"
         );
         drop(locks);
+        drop(live);
         handler.shutdown().await;
     }
 
