@@ -758,6 +758,108 @@ mod tests {
         }
     }
 
+    // ── cancellation-token sweep and context-lock pruning ────────────────────
+
+    /// Seeds the token map with `n` already-cancelled entries, which the sweep
+    /// treats as unconditionally evictable, and returns their ids.
+    async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId> {
+        let mut ids = Vec::new();
+        let mut tokens = handler.cancellation_tokens.write().await;
+        for i in 0..n {
+            let id = TaskId::new(format!("stale-{i}"));
+            let token = tokio_util::sync::CancellationToken::new();
+            token.cancel();
+            tokens.insert(
+                id.clone(),
+                CancellationEntry {
+                    token,
+                    created_at: Instant::now(),
+                },
+            );
+            ids.push(id);
+        }
+        ids
+    }
+
+    /// Pins the two decisions that drive cancellation-token eviction: whether
+    /// the sweep runs at all, and whether phase 2 actually removes anything.
+    ///
+    /// Both mutants survived the 2026-08-07 sweep despite
+    /// `stale_cancellation_tokens_cleaned_up` exercising this code, because
+    /// that test asserted nothing — it ran the sweep and then called
+    /// `shutdown()`. Driving code is not testing it.
+    ///
+    /// Cancelled tokens are seeded directly rather than produced by a slow
+    /// executor: an *aged* token is only evicted once its event queue is gone,
+    /// so a still-running executor keeps its token alive and the map never
+    /// shrinks. Cancelled entries are unconditionally evictable, which makes
+    /// the outcome deterministic instead of a race with a sleep.
+    #[tokio::test]
+    async fn sweep_evicts_cancelled_tokens_once_the_map_is_at_capacity() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_cancellation_tokens(2),
+            )
+            .build()
+            .expect("build should succeed");
+
+        let stale = seed_cancelled_tokens(&handler, 2).await;
+        assert_eq!(handler.cancellation_tokens.read().await.len(), 2);
+
+        // len == max, so `len >= max` fires. `<` would skip the sweep, and
+        // deleting the `!` on `stale_ids.is_empty()` would skip the removal.
+        let _ = handler.on_send_message(make_params(None), false, None).await;
+
+        let tokens = handler.cancellation_tokens.read().await;
+        for id in &stale {
+            assert!(
+                !tokens.contains_key(id),
+                "cancelled token {id:?} should have been evicted by the sweep"
+            );
+        }
+        drop(tokens);
+        handler.shutdown().await;
+    }
+
+    /// Pins the context-lock pruning threshold and its staleness predicate.
+    ///
+    /// Four mutants survived here. Nothing observed `context_locks` at all, so
+    /// neither the `len >= max` trigger nor the `strong_count > 1` retain
+    /// predicate had any witness. The predicate matters in both directions: an
+    /// inverted or vacuous version either drops locks another task still holds
+    /// or never reclaims anything.
+    #[tokio::test]
+    async fn context_locks_are_pruned_once_the_map_is_at_capacity() {
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_context_locks(2),
+            )
+            .build()
+            .expect("build should succeed");
+
+        // Three distinct contexts, sent sequentially so no lock is still held
+        // when the next send runs: every entry left behind has strong_count 1
+        // and is therefore reclaimable.
+        for ctx in ["ctx-a", "ctx-b", "ctx-c"] {
+            let _ = handler
+                .on_send_message(make_params(Some(ctx)), false, None)
+                .await;
+        }
+
+        let locks = handler.context_locks.read().await;
+        assert!(
+            locks.len() <= 2,
+            "map should have been pruned at the limit, holding {} entries",
+            locks.len()
+        );
+        assert!(
+            !locks.is_empty(),
+            "pruning must not clear the map wholesale — the just-used lock stays"
+        );
+        drop(locks);
+        handler.shutdown().await;
+    }
+
     // ── metadata size limit ──────────────────────────────────────────────────
 
     /// Builds a handler whose metadata budget is `max` bytes.
