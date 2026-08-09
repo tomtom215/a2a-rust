@@ -305,65 +305,17 @@ impl RateLimitInterceptor {
         Ok(())
     }
 
-    /// The read-lock fast path: counts the request against an existing bucket.
+    /// The write-lock path: joins a bucket another caller just inserted, or
+    /// creates one, rejecting if the bucket map is full.
     ///
-    /// Returns `None` when `key` has no bucket yet, so the caller falls
-    /// through to the write-lock path that creates one.
-    // The read guard must outlive the loop: `bucket` borrows from the map,
-    // and the CAS retry re-reads through that borrow. Dropping it earlier is
-    // not possible without cloning the bucket out, which would defeat the
-    // point of the atomics.
-    #[allow(clippy::significant_drop_tightening)]
-    async fn check_existing_bucket(&self, key: &str, current_window: u64) -> Option<A2aResult<()>> {
-        let buckets = self.buckets.read().await;
-        let bucket = buckets.get(key)?;
-        // CAS loop to atomically reset window or increment counter. Avoids the
-        // TOCTOU race where two threads both see an old window and both reset
-        // count to 1.
-        loop {
-            let bucket_window = bucket.window_start.load(Ordering::Acquire);
-            if bucket_window == current_window {
-                return Some(self.admit_within_window(bucket));
-            }
-            // Window has advanced — atomically swap to the new window. Only one
-            // thread succeeds the CAS; others loop and see the updated window
-            // on the next iteration.
-            if bucket
-                .window_start
-                .compare_exchange(
-                    bucket_window,
-                    current_window,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                )
-                .is_ok()
-            {
-                bucket.count.store(1, Ordering::Release);
-                return Some(Ok(()));
-            }
-            // CAS failed — another thread updated the window. Retry.
-        }
-    }
-
-    async fn check(&self, key: &str) -> A2aResult<()> {
-        let now_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let current_window = self.window_number(now_secs);
-
-        // Amortized stale-bucket cleanup to prevent unbounded memory growth.
-        let count = self.check_count.fetch_add(1, Ordering::Relaxed);
-        if count > 0 && count.is_multiple_of(CLEANUP_INTERVAL) {
-            self.cleanup_stale_buckets().await;
-        }
-
-        // Fast path: try read lock first.
-        if let Some(outcome) = self.check_existing_bucket(key, current_window).await {
-            return outcome;
-        }
-
-        // Slow path: create new bucket under write lock.
+    /// The *slow* half is the one extracted, deliberately. Pulling out the
+    /// read-lock fast path instead (which this replaced) created an equivalent
+    /// mutant: that path is a pure optimization, so replacing the whole
+    /// function with `None` still produced correct decisions via this path and
+    /// nothing could observe the difference. This half is not optional —
+    /// stubbing it out means no bucket is ever created and every caller is
+    /// admitted forever, which the enforcement tests catch immediately.
+    async fn create_or_join_bucket(&self, key: &str, current_window: u64) -> A2aResult<()> {
         let mut buckets = self.buckets.write().await;
         // Double-check: another task may have inserted while we waited.
         if let Some(bucket) = buckets.get(key) {
@@ -388,6 +340,57 @@ impl RateLimitInterceptor {
         );
         drop(buckets);
         Ok(())
+    }
+
+    async fn check(&self, key: &str) -> A2aResult<()> {
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let current_window = self.window_number(now_secs);
+
+        // Amortized stale-bucket cleanup to prevent unbounded memory growth.
+        let count = self.check_count.fetch_add(1, Ordering::Relaxed);
+        if count > 0 && count.is_multiple_of(CLEANUP_INTERVAL) {
+            self.cleanup_stale_buckets().await;
+        }
+
+        // Fast path: try read lock first. Inline rather than extracted — as a
+        // function it is a pure optimization and replacing it wholesale is an
+        // equivalent mutant (see `create_or_join_bucket`).
+        {
+            let buckets = self.buckets.read().await;
+            if let Some(bucket) = buckets.get(key) {
+                // CAS loop to atomically reset window or increment counter.
+                // Avoids the TOCTOU race where two threads both see an old
+                // window and both reset count to 1.
+                loop {
+                    let bucket_window = bucket.window_start.load(Ordering::Acquire);
+                    if bucket_window == current_window {
+                        return self.admit_within_window(bucket);
+                    }
+                    // Window has advanced — atomically swap to the new window.
+                    // Only one thread succeeds the CAS; others loop and see the
+                    // updated window on the next iteration.
+                    if bucket
+                        .window_start
+                        .compare_exchange(
+                            bucket_window,
+                            current_window,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        bucket.count.store(1, Ordering::Release);
+                        return Ok(());
+                    }
+                    // CAS failed — another thread updated the window. Retry.
+                }
+            }
+        }
+
+        self.create_or_join_bucket(key, current_window).await
     }
 }
 
