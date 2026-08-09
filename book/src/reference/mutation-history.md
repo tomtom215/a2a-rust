@@ -121,13 +121,17 @@ had *correctly* failed on surviving mutants.
 The check conflated "a shard did not finish" (score is not a measurement) with
 "a shard finished and did its job" (score is exactly what we want). Each shard
 now writes a `COMPLETED` marker inline at the end of its run step, so it exists
-if and only if cargo-mutants returned; the summary requires 15 of them and
-ignores the matrix conclusion. The marker cannot live in an `always()` step —
+if and only if cargo-mutants returned; the summary requires one per matrix
+entry (21 since a2a-types and a2a-client were sharded) and ignores the matrix
+conclusion. The marker cannot live in an `always()` step —
 those still run on cancellation, as run 30236603180 proved by uploading
 artifacts from cancelled shards.
 
-The score in the first row below was produced by running that fixed
-aggregation over run 31193107921's 15 complete reports.
+The score in the older of the two rows below was produced by running that
+fixed aggregation by hand over run 31193107921's 15 complete reports. The
+newer row is CI's own output on the 21-shard matrix — same 183 survivors from
+a different partitioning, which is what makes the figure trustworthy rather
+than merely produced.
 
 ## History
 
