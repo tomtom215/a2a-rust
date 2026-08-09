@@ -133,6 +133,32 @@ newer row is CI's own output on the 21-shard matrix — same 183 survivors from
 a different partitioning, which is what makes the figure trustworthy rather
 than merely produced.
 
+## Known equivalent mutants
+
+Mutants that no test can kill, because the mutation does not change observable
+behaviour. Each is listed with the argument for its equivalence, so the claim
+can be checked rather than taken on trust. Per
+[ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
+burden is "no test can distinguish it", not "no test occurred to me".
+
+Neither is marked with `#[mutants::skip]` yet: that attribute resolves through
+the `mutants` crate, which this workspace does not depend on, and adding a
+regular dependency to a published crate is a decision to take deliberately
+rather than in passing. Until then they are recorded here and counted in the
+survivor total.
+
+| Location | Mutation | Why no test can kill it |
+|---|---|---|
+| `handler/messaging.rs:45` in `shape_response_history` | `msgs.len() > n` → `>=` | The arms differ only at `len == n`. There the original returns `Some(msgs)` and the mutant returns `Some(msgs[0..].to_vec())` — the same elements, cloned. `Task.history` is compared and serialised by contents, so the extra allocation is not observable through any API. |
+| `handler/messaging.rs:398` in `send_message_inner` | `history.len() > MAX_TASK_HISTORY_MESSAGES` → `>=` | They differ only at `len == MAX`, where the mutant computes `excess = 0` and calls `drain(..0)` — a no-op leaving exactly what the original leaves by skipping the branch. |
+
+Both are the same shape: **a branch whose only purpose is to skip work, whose
+two arms coincide at the boundary the comparison tests.** That pattern is worth
+recognising, because it will recur wherever a hot path avoids a clone, and
+because it is genuinely different from an untested branch. It is not a reason
+to relax the target — `messaging.rs` went from 17 survivors to these 2, so
+88% of that file's survivors were ordinary test gaps.
+
 ## History
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |

@@ -59,7 +59,13 @@ This is the category most worth clearing before any external review.
 * **~~Record the first real mutation score.~~ Done** — the ledger's first row
   is 2026-08-07. Keep it current: a row per completed sweep, including clean
   ones.
-* **Burn down the 183 surviving mutants.** The weekly sweep now fails until
+* **Burn down the surviving mutants.** `messaging.rs`, the largest cluster,
+  is done: 17 survivors → 2, both proven equivalent and recorded in the
+  ledger. `agent_card/caching.rs` is at 0. On that sample roughly 12% of
+  survivors are genuinely unkillable, so the reachable floor across the
+  workspace is nearer 160 killable than 183 — which is what the
+  `#[mutants::skip]` dependency decision should be weighed against, since a
+  literal zero is unreachable without it. The weekly sweep now fails until
   they are killed or explicitly justified, which is the intended state, not a
   problem to suppress. No baseline file: the `--in-diff` PR gate already
   prevents new code from adding survivors, so the count can only fall. Largest
