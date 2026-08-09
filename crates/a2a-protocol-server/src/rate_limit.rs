@@ -260,6 +260,27 @@ impl RateLimitInterceptor {
 
     /// Checks rate limit for the caller. Returns `Ok(())` if allowed, `Err` if exceeded.
     #[allow(clippy::too_many_lines)]
+    /// Counts one request against a bucket already known to be in the current
+    /// window, and rejects it if that puts the caller over the limit.
+    ///
+    /// Extracted because `check` had this five-line body twice — once on the
+    /// read-lock fast path and once in the write-lock double-check — and only
+    /// the fast path was reachable from a single-threaded test. The duplicate
+    /// therefore held its own copies of the `+ 1` and the `>` comparison that
+    /// no test could reach, which is what mutation testing kept reporting.
+    /// One code path means one set of operators, covered by the fast-path
+    /// tests that already exist.
+    fn admit_within_window(&self, bucket: &CallerBucket) -> A2aResult<()> {
+        let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
+        if count > self.config.requests_per_window {
+            return Err(A2aError::internal(format!(
+                "rate limit exceeded: {} requests per {} seconds",
+                self.config.requests_per_window, self.config.window_secs
+            )));
+        }
+        Ok(())
+    }
+
     async fn check(&self, key: &str) -> A2aResult<()> {
         let now_secs = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -283,14 +304,7 @@ impl RateLimitInterceptor {
                 loop {
                     let bucket_window = bucket.window_start.load(Ordering::Acquire);
                     if bucket_window == current_window {
-                        let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
-                        if count > self.config.requests_per_window {
-                            return Err(A2aError::internal(format!(
-                                "rate limit exceeded: {} requests per {} seconds",
-                                self.config.requests_per_window, self.config.window_secs
-                            )));
-                        }
-                        return Ok(());
+                        return self.admit_within_window(bucket);
                     }
                     // Window has advanced — atomically swap to the new window.
                     // Only one thread succeeds the CAS; others loop and see the
@@ -319,17 +333,10 @@ impl RateLimitInterceptor {
         if let Some(bucket) = buckets.get(key) {
             let bucket_window = bucket.window_start.load(Ordering::Acquire);
             if bucket_window == current_window {
-                let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
-                if count > self.config.requests_per_window {
-                    return Err(A2aError::internal(format!(
-                        "rate limit exceeded: {} requests per {} seconds",
-                        self.config.requests_per_window, self.config.window_secs
-                    )));
-                }
-            } else {
-                bucket.window_start.store(current_window, Ordering::Release);
-                bucket.count.store(1, Ordering::Release);
+                return self.admit_within_window(bucket);
             }
+            bucket.window_start.store(current_window, Ordering::Release);
+            bucket.count.store(1, Ordering::Release);
             return Ok(());
         }
         if buckets.len() >= self.config.max_buckets {
