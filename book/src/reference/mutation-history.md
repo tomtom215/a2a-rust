@@ -26,10 +26,11 @@ row below, dated to the run, with the commit it ran against. A clean sweep
 (zero missed) is still worth recording — "still zero" is signal too, not a
 no-op.
 
-## Why there is still no row (re-verified 2026-08-06)
+## How the ledger came to be empty for so long
 
-The ledger below is empty, and that is not an oversight — **no full sweep has
-ever produced a number.** Not "an incomplete number": no number at all.
+The first row below was recorded on 2026-08-07. Every sweep before it produced
+no number at all — not "an incomplete number", none — and the reasons are worth
+keeping, because each was a gate reporting success over work it had not done.
 
 An earlier revision of this page blamed two cancelled shards for the false
 green. That diagnosis was wrong, and the correction matters more than the
@@ -106,11 +107,30 @@ mutant could not fail either.
 **Do not backfill a number from run 30236603180.** The 91% above is recorded
 as forensics, not as a measurement of the workspace: two of its shards were
 cancelled, so its denominator is short by roughly two-elevenths of
-`a2a-server`. The first ledger row must come from a complete sweep on the
-fixed workflow.
+`a2a-server`.
+
+### One more gate defect, found by the first working sweep
+
+Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921)
+was the first sweep in which all 15 shards ran to completion and the gates
+functioned. It still could not score itself: `Mutants Summary` failed at
+`Require every shard to have completed` and skipped aggregation entirely,
+because that check read the matrix `result`, which was `failure` — 13 shards
+had *correctly* failed on surviving mutants.
+
+The check conflated "a shard did not finish" (score is not a measurement) with
+"a shard finished and did its job" (score is exactly what we want). Each shard
+now writes a `COMPLETED` marker inline at the end of its run step, so it exists
+if and only if cargo-mutants returned; the summary requires 15 of them and
+ignores the matrix conclusion. The marker cannot live in an `always()` step —
+those still run on cancellation, as run 30236603180 proved by uploading
+artifacts from cancelled shards.
+
+The score in the first row below was produced by running that fixed
+aggregation over run 31193107921's 15 complete reports.
 
 ## History
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |
 |------|--------|---------------|-------:|-------:|--------:|-------|
-| _(none recorded yet)_ | | | | | | No sweep has yet produced a number. The only scheduled run (2026-07-27, `b416c1a`) reported `100%, Caught 0, Missed 0` over artifacts containing 200 survivors, because the gate read a path the reports were never written to — see the section above. The path fix, the no-data gate and the malformed-report gate landed 2026-08-06; the first complete sweep on that workflow is the first eligible row. |
+| 2026-08-07 | [`803a139`](https://github.com/tomtom215/a2a-rust/commit/803a139664f7b9326dc8b90bd91d382ea187f481) | **92%** | 2169 | 183 | 2 | First complete sweep. Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921), all 15 shards finished. Per crate: `a2a-server` 1207/165 (87%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0 (a pure re-export facade — it generates no mutants). 1276 unviable. Largest survivor clusters: `handler/messaging.rs` 17, `store/task_store/in_memory/eviction.rs` 13, `dispatch/grpc/native.rs` 11. Postgres-file survivors fell 18 → 3 once the sweep got a live database. |

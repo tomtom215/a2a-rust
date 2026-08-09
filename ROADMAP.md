@@ -48,8 +48,20 @@ This is the category most worth clearing before any external review.
   `mutants.out/`. Fixed 2026-08-06, along with a no-data gate so an empty
   denominator can never again be scored as 100%.
   See [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md).
-* **Record the first real mutation score**, then keep the ledger current.
-  Until a row exists, the project has no mutation-adequacy history at all.
+* **~~Record the first real mutation score.~~ Done** — the ledger's first row
+  is 2026-08-07. Keep it current: a row per completed sweep, including clean
+  ones.
+* **Burn down the 183 surviving mutants.** The weekly sweep now fails until
+  they are killed or explicitly justified, which is the intended state, not a
+  problem to suppress. No baseline file: the `--in-diff` PR gate already
+  prevents new code from adding survivors, so the count can only fall. Largest
+  clusters are `handler/messaging.rs` (17), `store/task_store/in_memory/eviction.rs`
+  (13) and `dispatch/grpc/native.rs` (11).
+* **Decide the wording of the zero-survivor rule.** `CONTRIBUTING.md` and ADR
+  0006 both require "zero surviving mutants", which the tree has never met and
+  which is not literally reachable — equivalent mutants cannot be killed. The
+  honest form is *zero unexplained survivors*, each exception carrying an
+  in-source `#[mutants::skip]` and a reason.
 * **Decide what to do with the ~200 survivors.** The forensic count from
   2026-07-27 is 2086 caught / 200 missed ≈ 91%, over a denominator still short
   by two cancelled shards. Now that the gate can fail, the weekly sweep will

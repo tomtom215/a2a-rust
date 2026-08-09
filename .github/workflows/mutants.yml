@@ -259,6 +259,26 @@ jobs:
           echo "::endgroup::"
           echo "exit_code=${MUTANTS_EXIT}" >> "$GITHUB_OUTPUT"
 
+          # THE COMPLETION MARKER.
+          #
+          # Written inline, as the last thing this step does, so it exists if
+          # and only if cargo-mutants actually returned. A shard killed at the
+          # job timeout never reaches this line.
+          #
+          # This is the signal the summary job needs, and it is *not* the
+          # shard's job conclusion. A shard that finds surviving mutants fails
+          # by design, yet its report is complete and its numbers are exactly
+          # what the sweep exists to produce. Keying completeness off the
+          # matrix `result` conflated "did not finish" with "finished and did
+          # its job", so the first sweep that worked end to end (run
+          # 31193107921) refused to score itself.
+          #
+          # The marker cannot live in a separate `always()` step: those still
+          # run on cancellation — proven by run 30236603180, where cancelled
+          # shards uploaded artifacts.
+          mkdir -p mutants.out
+          echo "${MUTANTS_EXIT}" > mutants.out/COMPLETED
+
       # ── THE ZERO-DATA GUARD ──────────────────────────────────────────────
       #
       # Every gate in this workflow is a line count over the files below, and
@@ -455,7 +475,11 @@ jobs:
       # missing while the job still reports success.
       - name: Require every shard to have completed
         env:
-          # Matrix result: 'success' only when every matrix job succeeded.
+          # Matrix result. Reported for diagnostics only — it is deliberately
+          # NOT the completeness signal. 'failure' here is the *expected*
+          # outcome of a healthy sweep that found surviving mutants, so gating
+          # on it blocks the aggregation of exactly the runs worth scoring.
+          # Completeness is decided by the per-shard COMPLETED markers below.
           SHARD_RESULT: ${{ needs.mutants-crate.result }}
           # Must equal the number of `include:` entries in mutants-crate
           # (12 a2a-server shards + types + client + sdk). Deliberately a
@@ -469,11 +493,23 @@ jobs:
           PACKAGE_FILTER: ${{ inputs.package }}
         run: |
           fail=0
+          echo "Matrix result (diagnostic only): ${SHARD_RESULT}"
 
-          if [ "$SHARD_RESULT" != "success" ]; then
-            echo "::error::mutation shards did not all succeed (matrix result: ${SHARD_RESULT})."
-            echo "A cancelled or timed-out shard produces an empty report, which this"
-            echo "job would otherwise aggregate as 'zero surviving mutants'."
+          # Every shard must carry the COMPLETED marker its run step writes
+          # inline once cargo-mutants returns. A shard cancelled at the job
+          # timeout still runs its `always()` upload step and so still produces
+          # a directory here — but it cannot have produced this file.
+          incomplete=0
+          for d in reports/mutation-report-*/; do
+            [ -d "$d" ] || continue
+            if [ ! -f "${d}COMPLETED" ]; then
+              echo "::error::$(basename "$d") has no COMPLETED marker — its cargo-mutants run did not return."
+              incomplete=$((incomplete + 1))
+            fi
+          done
+          if [ "$incomplete" -ne 0 ]; then
+            echo "${incomplete} shard(s) were killed mid-run. Their reports are partial, so"
+            echo "aggregating them would understate the surviving-mutant count."
             fail=1
           fi
 
