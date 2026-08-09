@@ -194,13 +194,26 @@ jobs:
           echo "::group::cargo-mutants execution log (${{ matrix.name }})"
 
           set +e
+          # `pipefail` so `tee` cannot mask cargo-mutants' exit status —
+          # without it `$?` is always tee's 0 and the code recorded below is
+          # meaningless.
+          set -o pipefail
+          # `--output .` writes the report to ./mutants.out.
+          #
+          # cargo-mutants always creates a directory *named* `mutants.out`
+          # inside whatever `--output` names, so the previous
+          # `--output mutants.out` wrote to `mutants.out/mutants.out/` while
+          # every reader below looked in `mutants.out/`. That mismatch is
+          # what made this gate vacuous; the next step asserts the layout
+          # rather than trusting this comment.
+          #
           # Per-mutant timeout is controlled via `cap_timeout` in
           # mutants.toml (raised from 120 → 300 because the a2a-server
           # baseline test suite alone takes ~60s on GitHub-hosted runners;
           # at 3x the auto-computed timeout already exceeds 120, so the
           # previous cap was masking real CAUGHT results as TIMEOUT).
           cargo mutants -p ${{ matrix.crate }} \
-            --output mutants.out \
+            --output . \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
             --test-tool=nextest \
@@ -212,11 +225,60 @@ jobs:
           echo "::endgroup::"
           echo "exit_code=${MUTANTS_EXIT}" >> "$GITHUB_OUTPUT"
 
+      # ── THE ZERO-DATA GUARD ──────────────────────────────────────────────
+      #
+      # Every gate in this workflow is a line count over the files below, and
+      # a *missing* file counts as zero — which reads identically to "nothing
+      # survived". That is not hypothetical: in run 30236603180 (2026-07-27)
+      # all 11 sweep jobs reported "Score: 100%, Missed: 0" and concluded
+      # success while their uploaded artifacts contained **200 surviving
+      # mutants**, because the report was written to `mutants.out/mutants.out/`
+      # and read from `mutants.out/`.
+      #
+      # So: a report that is absent, or that cargo-mutants never produced, is
+      # now a hard error. This also fails within minutes if the `--output`
+      # layout above ever changes again, instead of after a two-hour sweep
+      # that silently measured nothing.
+      - name: Require a readable mutation report
+        if: always() && steps.check.outputs.skip == 'false'
+        run: |
+          missing=0
+          for f in caught.txt missed.txt timeout.txt unviable.txt mutants.json; do
+            if [ ! -f "mutants.out/$f" ]; then
+              echo "::error::mutants.out/${f} is missing — cargo-mutants produced no usable report."
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+            echo "Report files actually found (if any):"
+            find . -maxdepth 4 -name 'caught.txt' -printf '  %p\n' 2>/dev/null || true
+            echo ""
+            echo "A missing report is not 'zero surviving mutants' — it is no"
+            echo "measurement at all. Failing rather than reporting a clean sweep."
+            exit 1
+          fi
+
+          echo "Report present under mutants.out/."
+
       # ── Per-crate report ─────────────────────────────────────────────────
       - name: Generate per-crate report
         if: always() && steps.check.outputs.skip == 'false'
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # Emits exactly one integer. The previous form
+          #   grep -c . "$1" 2>/dev/null || echo 0
+          # printed *two* lines for an empty-but-present file, because
+          # `grep -c` prints "0" and still exits 1, so the `|| echo 0` fired
+          # as well — and "0\n0" then breaks every `$(( ))` below. That was
+          # latent only because the files were missing entirely rather than
+          # empty; it would fire the moment the paths were corrected.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           CAUGHT=$(count mutants.out/caught.txt)
           MISSED=$(count mutants.out/missed.txt)
@@ -285,6 +347,18 @@ jobs:
             exit 1
           fi
 
+      # Fold the run log into the report directory so the upload below has a
+      # *single* path. With two paths — one relative, one under /tmp —
+      # upload-artifact takes the least common ancestor of both, which is `/`,
+      # and stores every entry under its absolute path
+      # (`home/runner/work/a2a-rust/a2a-rust/mutants.out/...`). The summary job
+      # then finds nothing where it looks and aggregates zeros. Verified in the
+      # 2026-07-27 artifacts and in that run's own log:
+      # "The least common ancestor is /. This will be the root directory of the artifact".
+      - name: Fold the run log into the report
+        if: always() && steps.check.outputs.skip == 'false'
+        run: cp /tmp/mutants-run.log mutants.out/mutants-run.log || true
+
       - name: Upload per-crate report
         if: always() && steps.check.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -292,9 +366,10 @@ jobs:
           # Include the shard tag so sharded jobs (a2a-server) don't collide
           # on the same artifact name.
           name: mutation-report-${{ matrix.short }}-${{ steps.check.outputs.shard_tag }}
-          path: |
-            mutants.out/
-            /tmp/mutants-run.log
+          # Single path ⇒ the artifact root is mutants.out/ itself, so entries
+          # are `caught.txt`, `missed.txt`, … at the top level. The summary job
+          # reads them at exactly that depth.
+          path: mutants.out/
           # 90 is the GitHub Actions maximum. This is the weekly full-sweep
           # report — the only record of the actual surviving-mutant count —
           # so it should outlive as many weekly runs as possible rather than
@@ -389,8 +464,19 @@ jobs:
           echo "All ${EXPECTED_SHARDS} shards completed and reported."
 
       - name: Aggregate results
+        env:
+          # Same exemption rule as the completeness gate above.
+          PACKAGE_FILTER: ${{ inputs.package }}
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # See the note on the identical helper in the per-crate job: the
+          # previous form emitted "0\n0" for an empty-but-present file and
+          # broke the arithmetic below.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           TOTAL_CAUGHT=0
           TOTAL_MISSED=0
@@ -410,6 +496,7 @@ jobs:
           declare -A CRATE_MISSED
           declare -A CRATE_TIMEOUT
           declare -A CRATE_UNVIABLE
+          MALFORMED=0
 
           for CRATE_DIR in reports/mutation-report-*/; do
             if [ ! -d "$CRATE_DIR" ]; then continue; fi
@@ -418,10 +505,21 @@ jobs:
             # base crate name.
             CRATE_NAME=$(echo "$REPORT_NAME" | sed -E 's/-[0-9]+-[0-9]+$//')
 
-            C=$(count "${CRATE_DIR}mutants.out/caught.txt")
-            M=$(count "${CRATE_DIR}mutants.out/missed.txt")
-            T=$(count "${CRATE_DIR}mutants.out/timeout.txt")
-            U=$(count "${CRATE_DIR}mutants.out/unviable.txt")
+            # Flat, because each artifact's root *is* the shard's mutants.out
+            # directory (single upload path — see the upload step). This read
+            # previously went through an extra `mutants.out/` level that did
+            # not exist in the artifact, so every count came back zero.
+            if [ ! -f "${CRATE_DIR}caught.txt" ]; then
+              echo "::error::${CRATE_DIR} contains no caught.txt — shard report is unusable."
+              echo "Contents:"; find "$CRATE_DIR" -maxdepth 2 -printf '  %P\n' | head -20
+              MALFORMED=$((MALFORMED + 1))
+              continue
+            fi
+
+            C=$(count "${CRATE_DIR}caught.txt")
+            M=$(count "${CRATE_DIR}missed.txt")
+            T=$(count "${CRATE_DIR}timeout.txt")
+            U=$(count "${CRATE_DIR}unviable.txt")
 
             CRATE_CAUGHT[$CRATE_NAME]=$((${CRATE_CAUGHT[$CRATE_NAME]:-0} + C))
             CRATE_MISSED[$CRATE_NAME]=$((${CRATE_MISSED[$CRATE_NAME]:-0} + M))
@@ -451,10 +549,36 @@ jobs:
           done
 
           GRAND_TOTAL=$((TOTAL_CAUGHT + TOTAL_MISSED))
-          if [ "$GRAND_TOTAL" -gt 0 ]; then
-            SCORE=$(( (TOTAL_CAUGHT * 100) / GRAND_TOTAL ))
+
+          # THE NO-DATA GATE.
+          #
+          # `SCORE=100` on an empty denominator is the single line that turned
+          # every previous failure into a green check: zero mutants examined
+          # became "100%, all mutants caught". A whole-workspace sweep that
+          # examined no mutants has not passed — it has not run. Refuse to
+          # publish a score rather than invent one.
+          #
+          # A `workflow_dispatch` scoped to one package is exempt only from the
+          # *shard count*, not from this: even a single crate must yield some
+          # mutants, except a2a-sdk, which is a pure re-export facade and
+          # genuinely has none (mutants.json == []).
+          if [ "$MALFORMED" -gt 0 ]; then
+            echo "::error::${MALFORMED} shard report(s) were malformed; the aggregate would understate the true count."
+            exit 1
+          fi
+
+          if [ "$GRAND_TOTAL" -eq 0 ]; then
+            if [ -n "${PACKAGE_FILTER}" ]; then
+              echo "::warning::Scoped run examined 0 mutants — expected only for a2a-sdk (pure re-exports)."
+              SCORE=100
+            else
+              echo "::error::the full sweep examined 0 mutants across all shards."
+              echo "That is not a 100% score; it means no mutation testing happened."
+              echo "Check the per-shard 'Require a readable mutation report' steps."
+              exit 1
+            fi
           else
-            SCORE=100
+            SCORE=$(( (TOTAL_CAUGHT * 100) / GRAND_TOTAL ))
           fi
 
           # Prepend overall score
@@ -479,7 +603,7 @@ jobs:
               echo "## Surviving Mutants (all crates)"
               echo ""
               echo '```'
-              cat reports/mutation-report-*/mutants.out/missed.txt 2>/dev/null || true
+              cat reports/mutation-report-*/missed.txt 2>/dev/null || true
               echo '```'
               echo ""
               echo "## How to Fix"
@@ -577,14 +701,17 @@ jobs:
           echo "::group::cargo-mutants execution log"
 
           set +e
+          set -o pipefail
           # `--in-diff` restricts mutants to functions whose lines were added or
           # changed in this PR's diff, so renames contribute nothing and only
           # genuinely edited code is mutated. --timeout matches `cap_timeout`
           # in mutants.toml (see the lint there for context).
           # `--shard K/N` partitions the in-diff mutant set across the matrix
           # so each runner tests roughly 1/N of the mutants and fits the timeout.
+          # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
+          # why `--output mutants.out` silently disabled this gate.
           cargo mutants --in-diff pr-src.diff \
-            --output mutants.out \
+            --output . \
             --timeout 300 \
             --jobs 4 \
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
@@ -604,10 +731,46 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "No Rust source files changed in \`crates/*/src/\` — nothing to mutate." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Generate mutation report
+      # Same guard as the full sweep, with one legitimate exception: when the
+      # PR diff selects no mutable code, cargo-mutants logs "No mutants to
+      # filter", exits 0 and writes no report at all. That is a real "nothing
+      # to do", not a broken run — but it must be recognised explicitly rather
+      # than inferred from files that happen to be absent.
+      - name: Require a readable mutation report
         if: always() && steps.diff.outputs.skip == 'false'
+        id: report_check
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          if [ -f mutants.out/caught.txt ] && [ -f mutants.out/missed.txt ]; then
+            echo "empty_selection=false" >> "$GITHUB_OUTPUT"
+            echo "Report present under mutants.out/."
+            exit 0
+          fi
+
+          if grep -q "No mutants to filter" /tmp/mutants-run.log 2>/dev/null; then
+            echo "empty_selection=true" >> "$GITHUB_OUTPUT"
+            echo "cargo-mutants selected no mutants from this PR's diff — nothing to gate."
+            exit 0
+          fi
+
+          echo "::error::no mutation report was produced, and cargo-mutants did not report an empty selection."
+          echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+          echo "Captured output:"; tail -30 /tmp/mutants-run.log 2>/dev/null || true
+          echo ""
+          echo "Treating this as 'zero surviving mutants' is what made this gate"
+          echo "vacuous before; failing instead."
+          exit 1
+
+      - name: Generate mutation report
+        if: always() && steps.diff.outputs.skip == 'false' && steps.report_check.outputs.empty_selection == 'false'
+        run: |
+          # See the full-sweep job: the previous helper emitted "0\n0" for an
+          # empty-but-present file, which breaks the arithmetic below.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           CAUGHT=$(count mutants.out/caught.txt)
           MISSED=$(count mutants.out/missed.txt)
@@ -714,14 +877,22 @@ jobs:
             exit 1
           fi
 
+      # Single upload path, so the artifact root is mutants.out/ itself and the
+      # aggregator's `shards/*/missed.txt` glob resolves. Two paths (one of them
+      # under /tmp) made the artifact root `/`, burying every file under
+      # `home/runner/work/...` where nothing looked for it.
+      - name: Fold the run log into the report
+        if: always() && steps.diff.outputs.skip == 'false'
+        run: |
+          mkdir -p mutants.out
+          cp /tmp/mutants-run.log mutants.out/mutants-run.log || true
+
       - name: Upload mutation report
         if: always() && steps.diff.outputs.skip == 'false'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: mutation-report-incremental-shard-${{ matrix.shard }}
-          path: |
-            mutants.out/
-            /tmp/mutants-run.log
+          path: mutants.out/
           retention-days: 14
 
   # ── Incremental aggregator (stable required-check name) ───────────────────
@@ -745,7 +916,13 @@ jobs:
 
       - name: Aggregate shard results and gate
         run: |
-          count() { if [ -f "$1" ]; then grep -c . "$1" 2>/dev/null || echo 0; else echo 0; fi; }
+          # See the full-sweep job for why the previous one-liner was unsafe.
+          count() {
+            if [ ! -f "$1" ]; then echo 0; return; fi
+            local n
+            n=$(grep -c . "$1" 2>/dev/null || true)
+            echo "${n:-0}"
+          }
 
           # Sum surviving mutants across every shard's report (if any ran).
           TOTAL_MISSED=0
