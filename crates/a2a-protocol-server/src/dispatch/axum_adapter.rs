@@ -565,7 +565,6 @@ mod tests {
     }
 
     async fn seed_task(state: &A2aState, id: &str) {
-        use crate::store::TaskStore as _;
         use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
         let task = Task {
             id: TaskId::new(id),
@@ -578,8 +577,8 @@ mod tests {
         state.handler.task_store.save(&task).await.unwrap();
     }
 
-    async fn catchall(state: &A2aState, method: &str, rest: &str) -> axum::http::StatusCode {
-        let resp = handle_tasks_catchall(
+    async fn dispatch_tail(state: &A2aState, method: &str, rest: &str) -> axum::http::StatusCode {
+        let response = handle_tasks_catchall(
             State(state.clone()),
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
             Path(rest.to_owned()),
@@ -587,10 +586,10 @@ mod tests {
             Bytes::new(),
         )
         .await;
-        resp.status()
+        response.status()
     }
 
-    /// `POST /tasks/{id}:cancel` must reach CancelTask with the id shorn of
+    /// `POST /tasks/{id}:cancel` must reach `CancelTask` with the id shorn of
     /// the suffix. Kills both `ends_with(":cancel")` guard constants and the
     /// `- with /` slice mutant.
     #[tokio::test]
@@ -600,42 +599,42 @@ mod tests {
 
         // The task exists, so a correctly-parsed id cancels it.
         assert_eq!(
-            catchall(&state, "POST", "task-abc:cancel").await,
+            dispatch_tail(&state, "POST", "task-abc:cancel").await,
             axum::http::StatusCode::OK,
             "POST /tasks/task-abc:cancel must cancel task-abc"
         );
         // A cancel for an id that does not exist must 404 — this is what the
         // slice mutants produce, and what proves the id is parsed exactly.
         assert_eq!(
-            catchall(&state, "POST", "missing-xyz:cancel").await,
+            dispatch_tail(&state, "POST", "missing-xyz:cancel").await,
             axum::http::StatusCode::NOT_FOUND,
             "an unknown task id must 404 rather than resolve to a truncated one"
         );
     }
 
-    /// `GET|POST /tasks/{id}:subscribe` routes to SubscribeToTask with the id
+    /// `GET|POST /tasks/{id}:subscribe` routes to `SubscribeToTask` with the id
     /// shorn of the suffix. Kills the `ends_with(":subscribe")` guard
     /// constants and its `- with /` slice mutant.
     #[tokio::test]
     async fn catchall_routes_subscribe_and_strips_the_suffix() {
         let state = catchall_state();
         assert_eq!(
-            catchall(&state, "GET", "missing-xyz:subscribe").await,
+            dispatch_tail(&state, "GET", "missing-xyz:subscribe").await,
             axum::http::StatusCode::NOT_FOUND,
             "subscribe on an unknown id must 404, proving the id was parsed exactly"
         );
     }
 
-    /// A plain `GET /tasks/{id}` routes to GetTask, and a colon-bearing id
+    /// A plain `GET /tasks/{id}` routes to `GetTask`, and a colon-bearing id
     /// does not. Kills `replace match guard !id.contains(':') with true`,
-    /// which would send `{id}:cancel` down the GetTask arm instead.
+    /// which would send `{id}:cancel` down the `GetTask` arm instead.
     #[tokio::test]
     async fn catchall_plain_get_does_not_swallow_colon_actions() {
         let state = catchall_state();
         seed_task(&state, "task-abc").await;
 
         assert_eq!(
-            catchall(&state, "GET", "task-abc").await,
+            dispatch_tail(&state, "GET", "task-abc").await,
             axum::http::StatusCode::OK,
             "GET /tasks/task-abc must fetch the task"
         );
@@ -643,9 +642,9 @@ mod tests {
         // literal id "task-abc:cancel" and 404; it must instead fall through
         // to the cancel arm and succeed.
         assert_eq!(
-            catchall(&state, "POST", "task-abc:cancel").await,
+            dispatch_tail(&state, "POST", "task-abc:cancel").await,
             axum::http::StatusCode::OK,
-            "a colon action must not be captured by the plain GetTask arm"
+            "a colon action must not be captured by the plain `GetTask` arm"
         );
     }
 
