@@ -364,6 +364,39 @@ stage's arithmetic. Neither is an argument against the simplification — the
 file ended simpler *and* better tested — but both are arguments for re-running
 the sweep after a refactor rather than assuming the score can only improve.
 
+## Per-file measurements
+
+A full workspace sweep needs 21 CI runners; a single 4-core machine projects to
+well over a day for `a2a-server` alone (measured: 37 of 2113 mutants in ~40
+minutes). Per-file sweeps are the practical unit for burning down a cluster,
+and they answer the question a stale survivor list cannot: *is this still true
+of `HEAD`?*
+
+All rows below were run on 2026-08-09 against this branch, with a live Postgres
+and `--run-ignored all`. Exit codes are quoted because they are the only
+reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
+
+| File | Mutants | Caught | Missed | Unviable | Exit |
+|---|---:|---:|---:|---:|---:|
+| `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 |
+| `agent_card/caching.rs` | 112 | 110 | 0 | 2 | 0 |
+| `store/task_store/in_memory/eviction.rs` | 17 | 17 | 0 | 0 | 0 |
+| `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 |
+
+Two of these settle open questions:
+
+* **`a2a-protocol-types` 605/8** matches the 2026-08-03 artifact recount and
+  the 2026-08-07 CI figure exactly. Three independent measurements agree, so
+  that crate's contribution to the survivor total is confirmed at 8.
+* **`agent_card/caching.rs` is at zero**, which the 2026-08-03 artifacts
+  (7 survivors) contradict. The artifacts are simply older than the three
+  commits that fixed it. This is the trap the survivor list sets: a cluster
+  list is only meaningful against the commit it was measured on.
+
+`sync_collector.rs` went 9 → 1 in this session (four designed out, four killed
+by new tests, one proven equivalent). `state_machine.rs` was verified by
+`--list` only — 12 mutants → 7 — without a full sweep.
+
 ## History
 
 **Every sweep in this table ran without a database.** Established 2026-08-09:
