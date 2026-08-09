@@ -193,24 +193,58 @@ can be checked rather than taken on trust. Per
 [ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
 burden is "no test can distinguish it", not "no test occurred to me".
 
-Neither is marked with `#[mutants::skip]`: that attribute resolves through the
+> **Superseded 2026-08-09 — this list is now empty, and nothing is excluded.**
+> The two `evict` mutants below were real equivalents, and they were briefly
+> excluded by an `--exclude-re` pattern. Both the exclusion and the mutants are
+> gone: the equivalence turned out to be a property of the *operator*, not of
+> the logic, and rewriting the guard removed it at the source. See
+> "How the last equivalents were retired" below. The analysis is kept because
+> the reasoning is what makes the retirement checkable.
+
+Neither was marked with `#[mutants::skip]`: that attribute resolves through the
 `mutants` crate, which this workspace does not depend on, and adding a regular
 dependency to a published crate is a decision to take deliberately rather than
-in passing. That decision is still open — see `ROADMAP.md`.
+in passing. With nothing left to skip, nothing now rides on that decision.
 
-Since 2026-08-09 they are **excluded from both sweeps** rather than counted as
-survivors, because the blocking per-PR gate began failing on one of them: the
-`evict` refactor brought its line into a PR diff, and a required check cannot
-sit permanently red on a mutant that is unkillable by construction.
+### How the last equivalents were retired
 
-The exclusion is a single `--exclude-re` pattern, defined once in
-`.github/workflows/mutants.yml` and passed to both the sweep and the
-incremental gate. It matches these two mutants and nothing else — measured on
-`eviction.rs`, 25 mutants without it and 23 with, so the `==` and `<` mutations
-of the very same comparisons stay under test.
+`evict` computed `store.len() - max` under an `if store.len() > max` guard, at
+two sites. Weakening `>` to `>=` differed only at `len == max`, where the mutant
+entered with `overflow` of 0, collected, sorted, and then `take(0)` removed
+nothing — unkillable by construction.
 
-It is passed on the command line, not as a `mutants.toml` `exclude_re` entry,
-because **cargo-mutants 27.1.0 silently ignores that config key** — verified
+The earlier note here argued this guard could not simply be deleted the way
+`messaging.rs`'s was, because it skips an O(n log n) collect-and-sort and
+deleting it would pay that sort on every write sitting exactly at capacity.
+That argument was correct, and the fix respects it: the guard is **kept**, and
+only its spelling changes.
+
+```rust
+let overflow = store.len().saturating_sub(max);
+if overflow != 0 { /* collect, sort, evict */ }
+```
+
+`saturating_sub` is zero exactly when `len <= max`, so this is the same
+predicate and the same short-circuit — the sort is still skipped at or below
+capacity. But `!=` mutates only to `==`, which inverts the guard and is caught,
+where `>` mutated to an equivalent `>=`.
+
+Measured rather than asserted:
+
+| Check | Before | After |
+|---|---:|---:|
+| Mutants in `eviction.rs` (`--list`) | 25 | 17 |
+| Matches for the old exclusion pattern, crate-wide (2097 mutants) | 2 | 0 |
+| Full sweep of `eviction.rs` | — | 17 tested, **17 caught, exit 0** |
+
+The generalisable part: an equivalent mutant is usually a branch guarding a
+no-op, or an operator whose weakened form reaches the same state. Both are
+often fixable in the source, and deleting the mutant beats teaching the gate to
+ignore it.
+
+While it existed it was passed on the command line, not as a `mutants.toml`
+`exclude_re` entry. That detail outlives the exclusion and still governs any
+future one, because **cargo-mutants 27.1.0 silently ignores that config key** — verified
 with `--list` on 2026-08-09, after a precise pattern added there still produced
 the mutant it named. The same version ignores `test_tool` and `profile`
 identically. The pre-existing `^tracing::` and `^log::` entries in that file

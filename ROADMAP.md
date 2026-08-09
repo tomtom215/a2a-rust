@@ -102,11 +102,18 @@ This is the category most worth clearing before any external review.
   separates the blocking per-PR `--in-diff` gate (which a contributor is
   accountable for) from the advisory workspace sweep (pre-existing debt), and
   states the sweep's real number. **Still open:** ADR 0006 carries the old
-  absolute wording, and the exceptions live in a markdown table rather than an
-  in-source `#[mutants::skip]` + reason. That attribute needs the `mutants`
-  crate as a real dependency of a published crate, which is the decision still
-  to make — and it is now a smaller one than it looked, since the exception list
-  is down to two rows, both in `eviction.rs`.
+  absolute wording.
+
+  **The `#[mutants::skip]` question is closed, and closed by removal rather
+  than by decision** (2026-08-09). The exception list is empty: the two
+  `eviction.rs` equivalents were retired by rewriting the guard as
+  `saturating_sub(...)` + `!= 0`, which keeps the O(n log n) short-circuit the
+  old `>` guard existed for while removing the operator whose weakened form was
+  equivalent. `--exclude-re` is gone from both the sweep and the incremental
+  gate, so there are now no mutation exclusions anywhere. Measured: `eviction.rs`
+  25 mutants → 17, all 17 caught (exit 0); the old pattern matches 0 of the
+  crate's 2097 mutants. With nothing left to skip, taking the `mutants` crate as
+  a dependency of a published crate is no longer a decision anyone is waiting on.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
