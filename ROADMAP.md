@@ -38,14 +38,25 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
-* **Land one complete mutation sweep.** No full sweep has ever finished. The
-  only scheduled run (2026-07-27) lost two `a2a-server` shards to the
-  120-minute job timeout while the summary job still reported success. A
-  completeness gate and 12-way sharding landed 2026-07-31; the next run is
-  the first that can produce a trustworthy number.
+* **Land one complete mutation sweep.** No sweep has ever produced a number.
+  The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
+  re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
+  nine shards that *completed* also reported `Missed: 0`, while holding **200
+  surviving mutants** between them. Both gates, the weekly sweep and the
+  PR-blocking `--in-diff` check, were structurally incapable of failing:
+  cargo-mutants wrote to `mutants.out/mutants.out/` and every reader looked in
+  `mutants.out/`. Fixed 2026-08-06, along with a no-data gate so an empty
+  denominator can never again be scored as 100%.
   See [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md).
 * **Record the first real mutation score**, then keep the ledger current.
   Until a row exists, the project has no mutation-adequacy history at all.
+* **Decide what to do with the ~200 survivors.** The forensic count from
+  2026-07-27 is 2086 caught / 200 missed ≈ 91%, over a denominator still short
+  by two cancelled shards. Now that the gate can fail, the weekly sweep will
+  go red until these are either killed or explicitly baselined. Fix-them-all
+  versus record-a-baseline-and-ratchet is a maintainer decision; `CONTRIBUTING`
+  and `docs/adr/0006-mutation-testing.md` both currently state zero survivors
+  as a hard requirement, which the tree does not meet and never has.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
@@ -72,6 +83,19 @@ This is the category most worth clearing before any external review.
   `conduct@a2a-rust.dev` and `security@a2a-rust.dev` are undeliverable. Both
   documents now point at the maintainer address instead; the dedicated
   addresses can be restored once the domain is live.
+
+## Reporting accuracy
+
+* **Codecov's total excludes less than `codecov.yml` says.** Verified
+  2026-08-06 against Codecov's per-file report for `615d01f8`: the three `**`
+  directory globs are applied, the five bare Postgres file paths are not, so
+  793 permanently-uncoverable lines sit in the public denominator. That is the
+  whole 93.62%-badge versus 95.75%-local gap. The entries now carry a glob
+  token; **one upload is still needed to confirm the fix took**, by repeating
+  the arithmetic in `docs/rust-sdk-assessment.md` §4.4.
+* **Say which coverage number is meant.** `cargo llvm-cov` reports regions
+  90.87%, functions 89.32% and lines 91.49% for the same workspace. A bare
+  "coverage: N%" in this project is ambiguous between at least four figures.
 
 ## Conformance
 
