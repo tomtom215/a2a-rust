@@ -17,8 +17,9 @@
 //! # Exit codes
 //!
 //! - 0: All tests passed
-//! - 1: One or more tests failed
-//! - 2: Configuration error
+//! - 1: One or more tests failed, or a `--skip`ped test now passes (a stale
+//!   waiver — see the `STALE SKIP` block in `main`)
+//! - 2: Configuration error, including a `--skip` name matching no test
 
 #![forbid(unsafe_code)]
 
@@ -66,6 +67,16 @@ async fn main() -> ExitCode {
 
     let results = runner::run_all(&url, &binding).await;
 
+    // A `--skip` name that matches no test is dead configuration — a typo, or
+    // a test renamed since the waiver was written. Left silent it is worse
+    // than useless: it reads as an active waiver while gating nothing, so the
+    // reader cannot tell live skips from fossils. Fail as a config error.
+    let unmatched: Vec<&str> = skips
+        .iter()
+        .filter(|s| !results.iter().any(|r| &r.name == *s))
+        .map(String::as_str)
+        .collect();
+
     let skipped: Vec<_> = results
         .iter()
         .filter(|r| skips.iter().any(|s| s == &r.name))
@@ -104,11 +115,54 @@ async fn main() -> ExitCode {
                 println!("  FAIL  {} — {}", result.name, result.message);
             }
         }
-        ExitCode::from(1)
-    } else {
-        println!("All conformance tests passed.");
-        ExitCode::from(0)
     }
+
+    if !unmatched.is_empty() {
+        println!();
+        println!(
+            "Config error — {} --skip name(s) match no test:",
+            unmatched.len()
+        );
+        for name in &unmatched {
+            println!("  {name}");
+        }
+        println!();
+        println!("A waiver that names nothing gates nothing. Fix the name, or");
+        println!("drop it if the test it named is gone.");
+        return ExitCode::from(2);
+    }
+
+    // A skipped test that PASSES is a waiver that has outlived its reason —
+    // the upstream defect it documents is fixed. Tolerating it silently is the
+    // same rot `tck/scripts/check_conformance.py` refuses for the official
+    // suite ("a baseline that is allowed to rot is just continue-on-error with
+    // extra steps"). Hold this runner to the same standard: the waiver must
+    // shrink to match reality, so going green here turns the job red until the
+    // skip is removed.
+    let stale: Vec<&str> = skipped
+        .iter()
+        .filter(|r| r.passed)
+        .map(|r| r.name.as_str())
+        .collect();
+    if !stale.is_empty() {
+        println!();
+        println!("STALE SKIP — {} skipped test(s) now pass:", stale.len());
+        for name in &stale {
+            println!("  {name}");
+        }
+        println!();
+        println!("Good news, but the skip list must shrink to match, or it stops");
+        println!("meaning anything. Remove these from --skip in the workflow");
+        println!("matrix and drop the note that documented the upstream bug.");
+        return ExitCode::from(1);
+    }
+
+    if failed > 0 {
+        return ExitCode::from(1);
+    }
+
+    println!("All conformance tests passed.");
+    ExitCode::from(0)
 }
 
 #[allow(clippy::type_complexity)]

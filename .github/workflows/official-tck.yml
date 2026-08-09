@@ -40,9 +40,18 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # Pin the harness so an upstream change cannot turn a green PR red without a
-  # deliberate bump here. The nightly run below floats to `main` instead, so
-  # drift is still surfaced — just not on contributors' PRs.
+  # The harness revision every run clones. This is deliberately a *floating*
+  # `main`, and the trade-off is real: upstream drift is surfaced the moment it
+  # lands, but it can also turn a contributor's green PR red for a reason that
+  # has nothing to do with their change.
+  #
+  # An earlier version of this comment claimed the opposite — that the value
+  # was pinned and only the nightly run floated. It never was: there is one
+  # value here and every trigger uses it. Corrected 2026-08-09 rather than
+  # quietly making the config match the story, because which behaviour is
+  # wanted is a maintainer's call, not a cleanup. To actually pin, set a commit
+  # SHA here and give the `schedule` trigger an override — note `git clone
+  # --branch` below does not accept a SHA, so that also needs a clone + checkout.
   A2A_TCK_REVISION: main
 
 jobs:
@@ -139,11 +148,25 @@ jobs:
       #
       # A missing or malformed report is also a failure: a green check that
       # means "the suite never ran" is the exact bug this replaces.
+      #
+      # `--min-graded` closes the remaining hole in that argument. The
+      # differential check above compares *failures*, and a run that graded
+      # nothing has none — so an all-SKIPPED report scored exactly the same as
+      # a perfectly conformant one, and this step printed "OK". Verified by
+      # running the gate against a synthetic all-SKIPPED report and against an
+      # empty one: both exited 0 before this flag existed.
+      #
+      # 88 is measured, not chosen: the full profile grades 88 of the suite's
+      # 114 MUST requirements (the other 26 are 5 SKIPPED + 21 NOT TESTED —
+      # see docs/official-tck-findings.md §1). It is a floor, not an equality,
+      # so upstream adding MUST tests does not turn this red. A *drop* is the
+      # signal — diagnose it, do not lower the floor to go green.
       - name: Gate against the conformance baseline
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/full-compatibility.json \
-            --baseline tck/conformance-baseline.json 2>&1 | tee /tmp/tck-gate.log
+            --baseline tck/conformance-baseline.json \
+            --min-graded 88 2>&1 | tee /tmp/tck-gate.log
 
       - name: Summarize
         if: always()
@@ -215,12 +238,16 @@ jobs:
 
       # `always()` so a suite-level failure above still gets a
       # requirement-level diagnosis rather than just a red X.
+      # Floor of 66 measured the same way as the full profile's 88: the
+      # less-capable card means the suite legitimately skips more, so this
+      # profile grades 66 of 114 MUSTs.
       - name: Gate the minimal-profile run
         if: always()
         run: |
           python3 tck/scripts/check_conformance.py \
             --report /tmp/minimal-compatibility.json \
-            --baseline tck/conformance-baseline.json
+            --baseline tck/conformance-baseline.json \
+            --min-graded 66
 
       # A third profile, for exactly one requirement. CORE-CAP-004 asserts that
       # a server advertising an extension with `required: true` rejects a

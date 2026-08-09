@@ -35,11 +35,19 @@ nothing would read as success. `--require-pass` closes that: it asserts a named
 requirement was actually measured and graded PASS, so a run that measured
 nothing fails loudly instead of passing quietly.
 
+The same blind spot exists on an *unscoped* run, and `--require-pass` does not
+reach it: the differential check compares failures, and a run that graded
+nothing has none. An all-SKIPPED report and a perfectly conformant one both
+produce zero observed failures, so both printed "OK". `--min-graded` asserts a
+floor on how many gated requirements actually reached a verdict, which is the
+one number that tells those two apart.
+
 Usage:
     check_conformance.py --report reports/compatibility.json \\
                          --baseline tck/conformance-baseline.json
     check_conformance.py --report … --baseline … --update   # rewrite baseline
     check_conformance.py --report … --baseline … --require-pass CORE-CAP-004
+    check_conformance.py --report … --baseline … --min-graded 88
 """
 
 from __future__ import annotations
@@ -61,6 +69,10 @@ FAILING = {"FAIL", "ERROR"}
 
 # Only these levels gate. SHOULD/MAY regressions are reported, never blocking.
 GATED_LEVELS = {"MUST"}
+
+# Statuses that mean the suite reached a verdict. Anything else — SKIPPED,
+# NOT TESTED — means the requirement was not measured at all.
+GRADED = {"PASS", "FAIL", "ERROR"}
 
 
 def load_json(path: Path, what: str) -> Any:
@@ -139,6 +151,27 @@ def unmet_requirements(report: dict, required: list[str]) -> list[str]:
     return problems
 
 
+def graded_count(report: dict) -> int:
+    """Count gated-level requirements the suite actually graded.
+
+    SKIPPED and NOT TESTED are excluded: they are what "measured nothing"
+    looks like. A report of all-SKIPPED requirements is indistinguishable
+    from a perfectly conformant one to the differential gate above — both
+    produce zero observed failures — so this is the number that separates
+    them.
+    """
+    per_req = report.get("per_requirement")
+    if not isinstance(per_req, dict):
+        sys.exit("error: report has no 'per_requirement' object — wrong file?")
+    return sum(
+        1
+        for entry in per_req.values()
+        if isinstance(entry, dict)
+        and entry.get("level") in GATED_LEVELS
+        and entry.get("status") in GRADED
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--report", required=True, type=Path)
@@ -157,6 +190,17 @@ def main() -> int:
             "Fail unless this requirement is graded PASS in the report. "
             "Repeatable. Use on scoped runs, where an empty test selection "
             "would otherwise look identical to a clean one."
+        ),
+    )
+    ap.add_argument(
+        "--min-graded",
+        type=int,
+        default=0,
+        metavar="N",
+        help=(
+            "Fail unless at least N MUST requirements were actually graded "
+            "(PASS/FAIL/ERROR). Closes the hole where a run that measured "
+            "nothing reports no failures and so looks identical to a clean one."
         ),
     )
     args = ap.parse_args()
@@ -195,10 +239,13 @@ def main() -> int:
     fixed = sorted(base - obs)
 
     unmet = unmet_requirements(report, args.require_pass)
+    graded = graded_count(report)
+    undermeasured = graded < args.min_graded
 
     summary = report.get("summary", {})
     print("Official a2a-tck — differential conformance gate")
     print(f"  MUST compatibility : {summary.get('must_compatibility', '?')}")
+    print(f"  MUST graded        : {graded}" + (f" (floor {args.min_graded})" if args.min_graded else ""))
     print(f"  known failing pairs: {len(base)}")
     print(f"  observed failing   : {len(obs)}")
     if args.require_pass:
@@ -228,7 +275,19 @@ def main() -> int:
         print("nothing — e.g. upstream renamed the test the -k filter names.")
         print("The suite reporting no failures is not evidence it ran.")
 
-    if regressions or fixed or unmet:
+    if undermeasured:
+        print(
+            f"\nUNDER-MEASURED — {graded} MUST requirement(s) graded, "
+            f"floor is {args.min_graded}:"
+        )
+        print("  The suite reported no failures, but it also barely ran. Those")
+        print("  look identical to a differential gate, which is why this floor")
+        print("  exists. Likely causes: the SUT advertised fewer interfaces than")
+        print("  expected, or an upstream restructure moved requirement IDs.")
+        print("  Diagnose before touching the floor — lowering it to go green is")
+        print("  how a gate stops gating.")
+
+    if regressions or fixed or unmet or undermeasured:
         return 1
 
     print("\nOK — failures exactly match the baseline; no regressions.")
