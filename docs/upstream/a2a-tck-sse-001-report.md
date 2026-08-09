@@ -9,9 +9,11 @@ submit it. Nothing in this file has been sent to `a2aproject/a2a-tck`.
 Everything below was reproduced against pristine upstream at
 `5996b79f9cefa6fc390980e383e358a66fb9e49e` (`main`, 2026-06-29,
 *"fix: skip CARD-EXT-002 when extended card is configured (#186)"*) with
-`httpx 0.28.1`. A search of that repo's issues found nothing covering it; the
+`httpx 0.28.1`, and re-verified against that same commit — still `main` tip —
+on 2026-08-07. A search of that repo's issues found nothing covering it; the
 nearest, #99 *"REST transport streaming fails with 'Event loop is closed'"*,
-is a different failure.
+is a different failure. See the duplicate-check note at the foot of this file
+for what that search did and did not cover.
 
 Everything from `## Title` down is the proposed issue body, ready to paste.
 
@@ -271,14 +273,22 @@ and with `response.read()` inserted before `response.close()`:
 RESULT: returned '[400] streaming is not supported'
 ```
 
-A GitHub issue search over `a2aproject/a2a-tck` for `ResponseNotRead`,
-`SSE-001` and `streaming_content_type` returned no matching issues on
-2026-08-06, so this appears not to be a duplicate — worth a second check at
-filing time.
-
 ---
 
 ## Notes for the filer (not part of the issue body)
+
+- **Duplicate check.** A GitHub issue search over `a2aproject/a2a-tck` for
+  `ResponseNotRead`, `SSE-001` and `streaming_content_type` returned no
+  matching issues on 2026-08-06. That was a keyword search of the public
+  issue list, not an exhaustive review — worth a second look before filing.
+  The claim above about issue #99 being the nearest match is inherited from
+  an earlier pass and was **not** re-verified (cross-repository API access is
+  blocked from the environment that prepared this); treat it as unconfirmed.
+- **`main` was still `5996b79` on 2026-08-07**, so the line numbers cited
+  throughout were re-checked against the current tip, not a stale snapshot:
+  `http_json_client.py` 184–195 and 187, `_extract_error` 44–52,
+  `test_transport_behavior.py` 419, `jsonrpc_client.py` 147 and 151 all
+  resolve exactly as quoted.
 
 - The runnable script is `docs/upstream/repro_tck_sse_bug.py` in this
   repository.
