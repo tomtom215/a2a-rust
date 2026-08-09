@@ -59,28 +59,66 @@ This is the category most worth clearing before any external review.
 * **~~Record the first real mutation score.~~ Done** — the ledger's first row
   is 2026-08-07. Keep it current: a row per completed sweep, including clean
   ones.
-* **Burn down the surviving mutants.** `messaging.rs`, the largest cluster,
-  is done: 17 survivors → 2, both proven equivalent and recorded in the
-  ledger. `agent_card/caching.rs` is at 0. On that sample roughly 12% of
-  survivors are genuinely unkillable, so the reachable floor across the
-  workspace is nearer 160 killable than 183 — which is what the
-  `#[mutants::skip]` dependency decision should be weighed against, since a
-  literal zero is unreachable without it. The weekly sweep now fails until
-  they are killed or explicitly justified, which is the intended state, not a
-  problem to suppress. No baseline file: the `--in-diff` PR gate already
-  prevents new code from adding survivors, so the count can only fall. Largest
-  clusters are `handler/messaging.rs` (17), `store/task_store/in_memory/eviction.rs`
-  (13) and `dispatch/grpc/native.rs` (11).
-* **Decide the wording of the zero-survivor rule.** `CONTRIBUTING.md` and ADR
-  0006 both require "zero surviving mutants", which the tree has never met and
-  which is not literally reachable — equivalent mutants cannot be killed. The
-  honest form is *zero unexplained survivors*, each exception carrying an
-  in-source `#[mutants::skip]` and a reason.
+* **Burn down the surviving mutants.** The four largest clusters from the
+  2026-08-07 sweep are done, plus `agent_card/caching.rs` at 0:
+
+  | File | Then | Now |
+  |---|---:|---:|
+  | `handler/messaging.rs` | 17 | **0** |
+  | `store/task_store/in_memory/eviction.rs` | 13 | 2 (equivalent, deliberate) |
+  | `dispatch/grpc/native.rs` | 11 | **0** |
+  | `handler/lifecycle/list_tasks.rs` | 10 | **0** |
+
+  **51 survivors, 49 killed or designed out.** An earlier revision of this
+  bullet put the unkillable share at "roughly 12%", extrapolated from
+  `messaging.rs` alone, and used it to estimate a floor of ~160 killable. That
+  estimate was wrong and the error is worth keeping: the rate is not a property
+  of the codebase, it is a property of the *shape* of each survivor.
+  Whole-method survivors (`native.rs`: ten of eleven) and never-entered blocks
+  (`list_tasks.rs`: all ten) yield no equivalents at all. Only boundary
+  comparisons do, and half of even those turned out to be removable by deleting
+  a branch that guarded a no-op rather than by testing harder — see the ledger's
+  "retired by deleting the branch" section. Do not extrapolate a floor from one
+  file; measure the next one.
+
+  **~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
+  10, a2a-types 8). The next clusters are not yet identified — the sweep that
+  named the top four is now three files out of date, so start by re-running it
+  (or reading the latest `mutants-summary` artifact) rather than trusting this
+  list. The weekly sweep fails until survivors are killed or explicitly
+  justified, which is the intended state, not a problem to suppress. No
+  baseline file: the `--in-diff` PR gate already prevents new code from adding
+  survivors, so the count can only fall.
+
+  Method that worked, in order: reproduce the file's survivor count on an
+  unmodified tree first, read *why* each survives before writing anything, then
+  re-measure. Report the exit code next to the counts — a cargo-mutants
+  baseline failure writes empty result files and prints `caught=0 missed=0`,
+  which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
+  CI gates locally; a live Postgres and `--run-ignored all` are required or
+  every Postgres mutant survives for want of a database.
+* **Decide the wording of the zero-survivor rule.** Partly done.
+  `CONTRIBUTING.md` no longer claims a blanket "zero surviving mutants": it now
+  separates the blocking per-PR `--in-diff` gate (which a contributor is
+  accountable for) from the advisory workspace sweep (pre-existing debt), and
+  states the sweep's real number. **Still open:** ADR 0006 carries the old
+  absolute wording, and the exceptions live in a markdown table rather than an
+  in-source `#[mutants::skip]` + reason. That attribute needs the `mutants`
+  crate as a real dependency of a published crate, which is the decision still
+  to make — and it is now a smaller one than it looked, since the exception list
+  is down to two rows, both in `eviction.rs`.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
   was on the previous shortlist and is still untouched; `serve.rs` was not
   on any list and should have been.
+* **`handler/helpers.rs` is over the 500-line guideline** — 612 lines, up from
+  463, crossed by the `truncate_history` extraction and its tests (2026-08-08).
+  Flagged rather than silently accepted: it is a grab-bag module, so the split
+  is real work (validation, call-context, history shaping, and the
+  `find_task_by_context` impl are four unrelated concerns) and was not worth
+  doing at the tail of that change. 59 of 232 `.rs` files already exceed the
+  guideline, so this is not novel, but it is one more.
 * **Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.** The
   built-in REST dispatcher strips that prefix and threads the tenant
   through; the axum adapter registers no such routes. Verified to fail
