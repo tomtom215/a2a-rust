@@ -67,10 +67,48 @@ exclude_globs = [
 # Skip functions whose mutations are unproductive (logging, tracing)
 # or semantically unkillable.
 # Note: Display/Debug impls are NOT excluded — we have tests for them.
+# !! This key is SILENTLY IGNORED by cargo-mutants 27.1.0. Verified 2026-08-09
+# with `--list`: the entries below change nothing, and a precise pattern added
+# here still produced the mutant it named. The same version ignores `test_tool`
+# and `profile` the same way (see above), which is why those are CLI flags too.
+#
+# The entries are kept because they express intent and will start working if a
+# future version honours the key — but **do not add an exclusion here and assume
+# it took effect**. Confirm with:
+#
+#     cargo mutants --file <path> --list | wc -l
+#
+# before and after. Real exclusions are passed as `--exclude-re` on the command
+# line in .github/workflows/mutants.yml, where they demonstrably work.
 exclude_re = [
     "^tracing::",                          # tracing instrumentation
     "^log::",                              # log macros
 ]
+
+# ── Equivalent mutants excluded on the command line ─────────────────────────
+# `.github/workflows/mutants.yml` passes:
+#
+#     --exclude-re 'replace > with >= in InMemoryTaskStore::evict'
+#
+# That pattern matches exactly two mutants — the capacity guard in `evict` and
+# its non-terminal fallback, both spelled `store.len() > max` — and nothing
+# else. Measured on eviction.rs: 25 mutants without it, 23 with, so `> == ` and
+# `> < ` in the same function stay under test along with every other mutant in
+# the file.
+#
+# Both are proven equivalent. Weakening either to `>=` differs only at
+# `len == max`, where the mutant enters the branch with `overflow`/`remaining`
+# of 0, sorts, and removes nothing observable. Unlike the two equivalents
+# retired from `messaging.rs` by deleting the branch, this guard is not
+# redundant: it skips an O(n log n) collect-and-sort, so removing it would pay
+# that sort on every write sitting exactly at capacity.
+#
+# Argument for the equivalence, in full:
+#   book/src/reference/mutation-history.md#known-equivalent-mutants
+#
+# This is a stopgap for the in-source `#[mutants::skip]` + reason that ADR 0006
+# prefers, which needs the `mutants` crate as a dependency of a published crate
+# — the decision recorded as open in ROADMAP.md.
 
 # Previously this list held workarounds for equivalent mutations in
 # grpc_code_to_error_code (DeadlineExceeded|Cancelled arms) and

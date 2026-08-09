@@ -60,6 +60,20 @@ env:
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+  # Proven equivalent mutants, excluded from both the sweep and the blocking
+  # incremental gate. Defined once so the two cannot drift: an exclusion that
+  # applied to only one of them would make a PR pass a check the weekly sweep
+  # then fails on, or the reverse.
+  #
+  # Matches exactly two mutants — the capacity guard in `evict` and its
+  # non-terminal fallback — and nothing else. Scope measured, and the argument
+  # for their equivalence recorded, in mutants.toml and
+  # book/src/reference/mutation-history.md.
+  #
+  # Anything added here must clear ADR 0006's burden: "no test can distinguish
+  # it", not "no test occurred to me".
+  MUTANTS_EQUIVALENT_RE: 'replace > with >= in InMemoryTaskStore::evict'
+
 jobs:
   # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
   #
@@ -316,12 +330,18 @@ jobs:
           # the service container above; without it those tests stay
           # `#[ignore]`d and every Postgres mutant survives for want of a
           # database rather than for want of a test.
+          # `--exclude-re` on the command line, not `exclude_re` in mutants.toml:
+          # cargo-mutants 27.1.0 silently ignores that config key, exactly as it
+          # ignores `test_tool` and `profile`. See mutants.toml for the pattern's
+          # scope (it matches two mutants and nothing else) and the argument for
+          # their equivalence.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
+            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
             -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -879,6 +899,8 @@ jobs:
           # so each runner tests roughly 1/N of the mutants and fits the timeout.
           # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
           # why `--output mutants.out` silently disabled this gate.
+          # See the full-sweep job for why this is a CLI flag and not a
+          # mutants.toml `exclude_re` entry.
           cargo mutants --in-diff pr-src.diff \
             --output . \
             --timeout 300 \
@@ -886,6 +908,7 @@ jobs:
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
+            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
             -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e

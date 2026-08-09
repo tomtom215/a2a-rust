@@ -141,11 +141,32 @@ can be checked rather than taken on trust. Per
 [ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
 burden is "no test can distinguish it", not "no test occurred to me".
 
-None is marked with `#[mutants::skip]` yet: that attribute resolves through
-the `mutants` crate, which this workspace does not depend on, and adding a
-regular dependency to a published crate is a decision to take deliberately
-rather than in passing. Until then they are recorded here and counted in the
-survivor total.
+Neither is marked with `#[mutants::skip]`: that attribute resolves through the
+`mutants` crate, which this workspace does not depend on, and adding a regular
+dependency to a published crate is a decision to take deliberately rather than
+in passing. That decision is still open — see `ROADMAP.md`.
+
+Since 2026-08-09 they are **excluded from both sweeps** rather than counted as
+survivors, because the blocking per-PR gate began failing on one of them: the
+`evict` refactor brought its line into a PR diff, and a required check cannot
+sit permanently red on a mutant that is unkillable by construction.
+
+The exclusion is a single `--exclude-re` pattern, defined once in
+`.github/workflows/mutants.yml` and passed to both the sweep and the
+incremental gate. It matches these two mutants and nothing else — measured on
+`eviction.rs`, 25 mutants without it and 23 with, so the `==` and `<` mutations
+of the very same comparisons stay under test.
+
+It is passed on the command line, not as a `mutants.toml` `exclude_re` entry,
+because **cargo-mutants 27.1.0 silently ignores that config key** — verified
+with `--list` on 2026-08-09, after a precise pattern added there still produced
+the mutant it named. The same version ignores `test_tool` and `profile`
+identically. The pre-existing `^tracing::` and `^log::` entries in that file
+are therefore inert, which nothing had noticed because neither ever matched a
+real mutant. If you add an exclusion, confirm it took effect with
+`cargo mutants --file <path> --list | wc -l` before and after; an exclusion you
+believe in but that does nothing is the same class of defect as a gate that
+cannot fail.
 
 | Location | Mutation | Why no test can kill it |
 |---|---|---|
