@@ -38,8 +38,10 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
-* **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31193107921,
-  all 15 shards complete: **92%**, 2169 caught / 183 missed / 2 timeout.
+* **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31209868659,
+  all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
+  Reproduced across two different shardings, which is why the number is
+  trustworthy rather than merely produced.
   Getting there took three rounds of gate fixes, because each one exposed the
   next. The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
   re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
