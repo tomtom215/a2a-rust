@@ -38,8 +38,10 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
-* **Land one complete mutation sweep.** No sweep has ever produced a number.
-  The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
+* **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31193107921,
+  all 15 shards complete: **92%**, 2169 caught / 183 missed / 2 timeout.
+  Getting there took three rounds of gate fixes, because each one exposed the
+  next. The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
   re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
   nine shards that *completed* also reported `Missed: 0`, while holding **200
   surviving mutants** between them. Both gates, the weekly sweep and the
@@ -47,6 +49,10 @@ This is the category most worth clearing before any external review.
   cargo-mutants wrote to `mutants.out/mutants.out/` and every reader looked in
   `mutants.out/`. Fixed 2026-08-06, along with a no-data gate so an empty
   denominator can never again be scored as 100%.
+  A third defect surfaced only once the gates worked: the completeness check
+  read the matrix `result`, so a sweep whose shards correctly failed on
+  survivors refused to aggregate. Completeness is now a per-shard `COMPLETED`
+  marker written inline when cargo-mutants returns.
   See [`book/src/reference/mutation-history.md`](book/src/reference/mutation-history.md).
 * **~~Record the first real mutation score.~~ Done** — the ledger's first row
   is 2026-08-07. Keep it current: a row per completed sweep, including clean
@@ -62,13 +68,6 @@ This is the category most worth clearing before any external review.
   which is not literally reachable — equivalent mutants cannot be killed. The
   honest form is *zero unexplained survivors*, each exception carrying an
   in-source `#[mutants::skip]` and a reason.
-* **Decide what to do with the ~200 survivors.** The forensic count from
-  2026-07-27 is 2086 caught / 200 missed ≈ 91%, over a denominator still short
-  by two cancelled shards. Now that the gate can fail, the weekly sweep will
-  go red until these are either killed or explicitly baselined. Fix-them-all
-  versus record-a-baseline-and-ratchet is a maintainer decision; `CONTRIBUTING`
-  and `docs/adr/0006-mutation-testing.md` both currently state zero survivors
-  as a hard requirement, which the tree does not meet and never has.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
