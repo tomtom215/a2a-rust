@@ -397,6 +397,42 @@ pub(crate) mod tests {
 
     // ── format_http_date arithmetic ─────────────────────────────────────────
 
+    /// Pins the calendar arithmetic in `civil_from_days` at the boundaries
+    /// where its correction terms actually matter.
+    ///
+    /// Every other date test here sits in 1970 or 2025, and the Gregorian
+    /// correction terms — `doe / 36524` for the skipped century leap day,
+    /// `doe / 146_096` and `era * 146_097` for the 400-year cycle — are inert
+    /// that close to the epoch. Six arithmetic mutants survived the 2026-08-07
+    /// sweep here for exactly that reason: swapping `-` for `+` or `/` in those
+    /// terms changed nothing any assertion could see.
+    ///
+    /// 2100 is the load-bearing case. It is divisible by 100 but not 400, so it
+    /// is *not* a leap year, and only the century correction produces that.
+    #[test]
+    fn format_http_date_calendar_boundaries() {
+        // (epoch seconds, expected IMF-fixdate)
+        let cases: &[(u64, &str)] = &[
+            (951_825_600, "Tue, 29 Feb 2000 12:00:00 GMT"), // leap: divisible by 400
+            (4_107_542_399, "Sun, 28 Feb 2100 23:59:59 GMT"), // last second before…
+            (4_107_542_400, "Mon, 01 Mar 2100 00:00:00 GMT"), // …2100, which is NOT a leap year
+            (13_574_563_200, "Tue, 29 Feb 2400 00:00:00 GMT"), // 400-year era boundary
+            (68_193_000, "Tue, 29 Feb 1972 06:30:00 GMT"),  // first leap day after the epoch
+            (2_147_483_647, "Tue, 19 Jan 2038 03:14:07 GMT"), // 32-bit time_t boundary
+            (1_735_689_599, "Tue, 31 Dec 2024 23:59:59 GMT"), // year-end rollover
+            (946_684_799, "Fri, 31 Dec 1999 23:59:59 GMT"), // century rollover
+        ];
+
+        for (secs, expected) in cases {
+            let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(*secs);
+            assert_eq!(
+                format_http_date(time),
+                *expected,
+                "wrong civil date for {secs} seconds since the epoch"
+            );
+        }
+    }
+
     #[test]
     fn format_http_date_known_timestamp() {
         // 2025-06-15 14:30:45 UTC = 1750000245 seconds since epoch.
