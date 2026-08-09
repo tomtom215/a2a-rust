@@ -108,15 +108,19 @@ impl InMemoryTaskStore {
                     .collect();
                 terminal.sort_by_key(|(_, t)| *t);
 
-                let mut removed = 0;
                 for (id, _) in terminal.into_iter().take(overflow) {
                     store.remove(&id);
-                    removed += 1;
                 }
 
                 // If there weren't enough terminal tasks, evict oldest
                 // non-terminal tasks as a last resort to enforce the hard cap.
-                if removed < overflow && store.len() > max {
+                //
+                // There is deliberately no "how many did we remove?" counter
+                // here: every id above came from `store.entries`, so every
+                // removal lands, and `len` is `max + overflow` on entry. That
+                // makes `removed < overflow` and `store.len() > max` the same
+                // predicate, and the counter dead weight.
+                if store.len() > max {
                     let remaining = store.len() - max;
                     let mut non_terminal: Vec<(TaskId, Instant)> = store
                         .entries
@@ -166,7 +170,11 @@ mod tests {
         data
     }
 
-    fn config(max_capacity: Option<usize>, ttl: Option<Duration>, interval: u64) -> TaskStoreConfig {
+    fn config(
+        max_capacity: Option<usize>,
+        ttl: Option<Duration>,
+        interval: u64,
+    ) -> TaskStoreConfig {
         TaskStoreConfig {
             max_capacity,
             task_ttl: ttl,
@@ -210,7 +218,10 @@ mod tests {
     fn should_evict_treats_capacity_as_a_strict_overflow() {
         // A large interval so the interval arm stays quiet after the first call.
         let store = InMemoryTaskStore::with_config(config(Some(3), None, 100));
-        assert!(store.should_evict(0), "write 0 is a multiple of any interval");
+        assert!(
+            store.should_evict(0),
+            "write 0 is a multiple of any interval"
+        );
 
         assert!(!store.should_evict(3), "exactly at capacity is not over it");
         assert!(store.should_evict(4), "one past capacity triggers a sweep");
@@ -220,10 +231,11 @@ mod tests {
 
     /// Capacity eviction removes exactly the overflow, oldest terminal first.
     ///
-    /// Five entries against a cap of two is deliberate: the overflow is 3 by
-    /// subtraction but 2 by division, so `len - max` and `len / max` disagree.
-    /// At the more obvious `len == max + 1` they agree, and the mutation would
-    /// have survived the test.
+    /// Note that a *size* assertion cannot pin how the overflow is computed:
+    /// the non-terminal fallback re-checks `store.len() > max` and mops up
+    /// whatever a too-small overflow left behind, so the store ends at the cap
+    /// either way. Only the *identity* of the survivors distinguishes them —
+    /// see `evict_prefers_terminal_tasks_over_an_older_in_flight_one`.
     #[test]
     fn evict_removes_exactly_the_overflow_of_terminal_tasks() {
         let mut data = store_of(&[TaskState::Completed; 5]);
@@ -238,15 +250,47 @@ mod tests {
     }
 
     /// When there are not enough terminal tasks, in-flight ones are evicted as
-    /// a last resort so the cap is still enforced. Same 5-against-2 shape, for
-    /// the same reason: it separates `len - max` from `len / max`.
+    /// a last resort so the cap is still enforced. Five against a cap of two
+    /// so `remaining` is 3 by subtraction but 1 by division.
     #[test]
     fn evict_falls_back_to_non_terminal_tasks_to_enforce_the_cap() {
         let mut data = store_of(&[TaskState::Working; 5]);
         InMemoryTaskStore::evict(&mut data, &config(Some(2), None, 0));
 
-        assert_eq!(data.len(), 2, "the cap is enforced even with no terminal tasks");
+        assert_eq!(
+            data.len(),
+            2,
+            "the cap is enforced even with no terminal tasks"
+        );
         assert_eq!(ids(&data), vec!["t3".to_string(), "t4".to_string()]);
+    }
+
+    /// Terminal tasks are evicted ahead of in-flight ones, even when the
+    /// in-flight task is the oldest entry in the store.
+    ///
+    /// This pins the eviction *preference* rather than the cap, and it is the
+    /// only thing that does. With the oldest entry still `Working`, a correct
+    /// overflow of `5 - 2 = 3` drops the three oldest completed tasks and
+    /// spares the working one. An overflow of `5 / 2 = 2` drops one fewer, and
+    /// the fallback — which by then is no longer looking only at non-terminal
+    /// tasks — takes the oldest entry overall, evicting the working task that
+    /// should have been kept.
+    #[test]
+    fn evict_prefers_terminal_tasks_over_an_older_in_flight_one() {
+        let mut data = store_of(&[
+            TaskState::Working,
+            TaskState::Completed,
+            TaskState::Completed,
+            TaskState::Completed,
+            TaskState::Completed,
+        ]);
+        InMemoryTaskStore::evict(&mut data, &config(Some(2), None, 0));
+
+        assert_eq!(
+            ids(&data),
+            vec!["t0".to_string(), "t4".to_string()],
+            "the oldest in-flight task is spared; the three oldest completed go"
+        );
     }
 
     /// TTL eviction removes terminal tasks past the TTL and spares in-flight

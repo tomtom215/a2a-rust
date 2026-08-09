@@ -141,7 +141,7 @@ can be checked rather than taken on trust. Per
 [ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
 burden is "no test can distinguish it", not "no test occurred to me".
 
-Neither is marked with `#[mutants::skip]` yet: that attribute resolves through
+None is marked with `#[mutants::skip]` yet: that attribute resolves through
 the `mutants` crate, which this workspace does not depend on, and adding a
 regular dependency to a published crate is a decision to take deliberately
 rather than in passing. Until then they are recorded here and counted in the
@@ -151,13 +151,52 @@ survivor total.
 |---|---|---|
 | `handler/messaging.rs:45` in `shape_response_history` | `msgs.len() > n` → `>=` | The arms differ only at `len == n`. There the original returns `Some(msgs)` and the mutant returns `Some(msgs[0..].to_vec())` — the same elements, cloned. `Task.history` is compared and serialised by contents, so the extra allocation is not observable through any API. |
 | `handler/messaging.rs:398` in `send_message_inner` | `history.len() > MAX_TASK_HISTORY_MESSAGES` → `>=` | They differ only at `len == MAX`, where the mutant computes `excess = 0` and calls `drain(..0)` — a no-op leaving exactly what the original leaves by skipping the branch. |
+| `store/task_store/in_memory/eviction.rs:100` in `evict` | `store.len() > max` → `>=` | They differ only at `len == max`, where the mutant enters the capacity branch with `overflow == 0`. It collects and sorts the terminal tasks, then `take(0)` removes none, and the fallback's own `len > max` is false. It burns a sort and changes nothing observable. |
+| `store/task_store/in_memory/eviction.rs:123` in `evict` | `store.len() > max` → `>=` | The same at the fallback guard: `len == max` gives `remaining == 0` and `take(0)`. |
 
-Both are the same shape: **a branch whose only purpose is to skip work, whose
-two arms coincide at the boundary the comparison tests.** That pattern is worth
-recognising, because it will recur wherever a hot path avoids a clone, and
+All four are the same shape: **a branch whose only purpose is to skip work,
+whose two arms coincide at the boundary the comparison tests.** That pattern is
+worth recognising, because it will recur wherever a hot path avoids work, and
 because it is genuinely different from an untested branch. It is not a reason
-to relax the target — `messaging.rs` went from 17 survivors to these 2, so
-88% of that file's survivors were ordinary test gaps.
+to relax the target — `messaging.rs` went from 17 survivors to 2 and
+`eviction.rs` from 13 to 2, so 87% of those files' survivors were ordinary test
+gaps.
+
+### Redundant code can be what makes a mutant killable
+
+Worth recording because it is counter-intuitive and it cost a wrong claim.
+
+`eviction.rs` originally guarded its fallback with
+`if removed < overflow && store.len() > max`, where `removed` counted the
+terminal tasks actually evicted. Four of the file's thirteen survivors were on
+that counter, and they survive for a provable reason: every evicted id comes
+from `store.entries`, so every removal lands, and `len` is `max + overflow` on
+entry — which makes `removed < overflow` and `store.len() > max` the *same
+predicate*. The counter was dead weight, so it was deleted.
+
+Deleting it was behaviour-preserving, and it did remove those four mutants. It
+also turned a *caught* mutant into a missed one:
+`overflow = store.len() - max` → `len / max` had been killed by a test that
+only asserted the store's final size. The `&&` short-circuit was what made that
+work — with a too-small overflow, `removed == overflow` switched the fallback
+off and the store was left above the cap. Without the counter the fallback
+re-checks the size and quietly mops up the difference, so the store lands at
+the cap either way and a size assertion cannot see the bug.
+
+The mutant was still killable, just not by that test: a too-small overflow
+evicts one fewer terminal task and then lets the fallback take the oldest entry
+*overall*, which can be an in-flight task that should have been spared. The
+fix was a test that pins which tasks survive rather than how many
+(`evict_prefers_terminal_tasks_over_an_older_in_flight_one`), and it covers a
+policy — terminal-first eviction — that nothing had tested.
+
+Two things generalise. **Redundant logic can carry mutation-detection strength
+that the non-redundant version does not**, so simplifying can lower the score
+without changing behaviour. And **an assertion on a quantity is weaker than an
+assertion on identity** whenever a later stage can compensate for an earlier
+stage's arithmetic. Neither is an argument against the simplification — the
+file ended simpler *and* better tested — but both are arguments for re-running
+the sweep after a refactor rather than assuming the score can only improve.
 
 ## History
 

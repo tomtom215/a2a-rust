@@ -800,9 +800,7 @@ mod tests {
             .build()
             .expect("build should succeed");
 
-        let _ = handler
-            .on_send_message(make_params(None), true, None)
-            .await;
+        let _ = handler.on_send_message(make_params(None), true, None).await;
 
         // The executor task must unwind and its guard must run.
         let mut cleaned = false;
@@ -875,8 +873,9 @@ mod tests {
     /// treats as unconditionally evictable, and returns their ids.
     async fn seed_cancelled_tokens(handler: &RequestHandler, n: usize) -> Vec<TaskId> {
         let mut ids = Vec::new();
-        // Scoped so the write guard is released before this returns; holding a
-        // lock across the return is what `significant_drop_tightening` flags.
+        // Dropped explicitly below rather than at end of scope: holding the
+        // write guard across the return is what `significant_drop_tightening`
+        // flags, and that lint is deny-by-default here via `-D warnings`.
         let mut tokens = handler.cancellation_tokens.write().await;
         for i in 0..n {
             let id = TaskId::new(format!("stale-{i}"));
@@ -922,7 +921,9 @@ mod tests {
 
         // len == max, so `len >= max` fires. `<` would skip the sweep, and
         // deleting the `!` on `stale_ids.is_empty()` would skip the removal.
-        let _ = handler.on_send_message(make_params(None), false, None).await;
+        let _ = handler
+            .on_send_message(make_params(None), false, None)
+            .await;
 
         let tokens = handler.cancellation_tokens.read().await;
         for id in &stale {
@@ -993,8 +994,14 @@ mod tests {
         {
             let mut locks = handler.context_locks.write().await;
             locks.insert("live-ctx".to_string(), std::sync::Arc::clone(&live));
-            locks.insert("stale-1".to_string(), std::sync::Arc::new(tokio::sync::Mutex::new(())));
-            locks.insert("stale-2".to_string(), std::sync::Arc::new(tokio::sync::Mutex::new(())));
+            locks.insert(
+                "stale-1".to_string(),
+                std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            );
+            locks.insert(
+                "stale-2".to_string(),
+                std::sync::Arc::new(tokio::sync::Mutex::new(())),
+            );
         }
 
         // 3 entries against a limit of 2, so the next send prunes.
@@ -1021,7 +1028,9 @@ mod tests {
     /// Builds a handler whose metadata budget is `max` bytes.
     fn handler_with_metadata_limit(max: usize) -> RequestHandler {
         RequestHandlerBuilder::new(DummyExecutor)
-            .with_handler_limits(crate::handler::limits::HandlerLimits::default().with_max_metadata_size(max))
+            .with_handler_limits(
+                crate::handler::limits::HandlerLimits::default().with_max_metadata_size(max),
+            )
             .build()
             .expect("build with custom limits should succeed")
     }
