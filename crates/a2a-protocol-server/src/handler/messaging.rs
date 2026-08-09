@@ -758,6 +758,54 @@ mod tests {
         }
     }
 
+    // ── task history cap ─────────────────────────────────────────────────────
+
+    /// Pins the arithmetic that trims an over-long task history.
+    ///
+    /// The obvious test does not work here. A single send onto a full history
+    /// gives `len == MAX + 1`, where `len - MAX` and `len / MAX` are both 1 —
+    /// the mutation is invisible at the boundary it looks like it should be
+    /// caught at. The two only diverge once the history is at least twice the
+    /// cap: at 2048, subtraction trims 1024 and leaves exactly the cap, while
+    /// division trims 2 and leaves 2046.
+    ///
+    /// An over-long history is reachable in practice — the cap is applied on
+    /// write, so a task stored by an older build, a different cap, or a direct
+    /// store write arrives here oversized — which is why the trim is written to
+    /// bring any length back to the cap rather than to peel off one message.
+    #[tokio::test]
+    async fn oversized_stored_history_is_trimmed_back_to_the_cap() {
+        let handler = make_handler();
+        let task_id = TaskId::new("t-overlong");
+
+        // One short of twice the cap; the incoming message makes it 2048.
+        let seeded = MAX_TASK_HISTORY_MESSAGES * 2 - 1;
+        let mut task = task_with_history(seeded);
+        task.id = task_id.clone();
+        handler
+            .task_store
+            .save(&task)
+            .await
+            .expect("seed the oversized task");
+
+        let mut params = make_params(None);
+        params.message.task_id = Some(task_id.clone());
+        let _ = handler.on_send_message(params, false, None).await;
+
+        let stored = handler
+            .task_store
+            .get(&task_id)
+            .await
+            .expect("load")
+            .expect("task should still exist");
+        assert_eq!(
+            stored.history.map(|h| h.len()),
+            Some(MAX_TASK_HISTORY_MESSAGES),
+            "an oversized history must be trimmed back to exactly the cap"
+        );
+        handler.shutdown().await;
+    }
+
     // ── cancellation-token sweep and context-lock pruning ────────────────────
 
     /// Seeds the token map with `n` already-cancelled entries, which the sweep
