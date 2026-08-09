@@ -758,6 +758,69 @@ mod tests {
         }
     }
 
+    // ── CleanupGuard ─────────────────────────────────────────────────────────
+
+    /// Pins `CleanupGuard::drop`, which is the *only* thing that releases a
+    /// task's event queue and cancellation token when the executor unwinds.
+    ///
+    /// Nothing tested it, and the reason is structural rather than an
+    /// oversight. On the normal path the executor task cleans up explicitly and
+    /// then defuses the guard (`cleanup_guard.task_id = None`), so `drop`
+    /// becomes a no-op — every ordinary send, success or handled error, leaves
+    /// the mutation invisible. The guard earns its place only when the executor
+    /// panics and the task unwinds before reaching that cleanup, which is
+    /// exactly what this test arranges. Despite the comment above the executor
+    /// call, there is no `catch_unwind` here; the guard *is* the panic
+    /// handling.
+    ///
+    /// The wait is a bounded poll rather than a sleep because `drop` spawns the
+    /// cleanup onto the runtime: the work is ordered after the unwind but not
+    /// synchronous with it, so a fixed sleep would either flake or be
+    /// needlessly slow.
+    #[tokio::test]
+    async fn cleanup_guard_releases_the_token_when_the_executor_panics() {
+        struct PanicExec;
+        impl crate::executor::AgentExecutor for PanicExec {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a crate::request_context::RequestContext,
+                _queue: &'a dyn crate::streaming::EventQueueWriter,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { panic!("executor panics before it can clean up") })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(PanicExec)
+            .build()
+            .expect("build should succeed");
+
+        let _ = handler
+            .on_send_message(make_params(None), true, None)
+            .await;
+
+        // The executor task must unwind and its guard must run.
+        let mut cleaned = false;
+        for _ in 0..200 {
+            if handler.cancellation_tokens.read().await.is_empty() {
+                cleaned = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(
+            cleaned,
+            "a panicking executor must still release its cancellation token; \
+             CleanupGuard::drop is the only path that does so"
+        );
+        handler.shutdown().await;
+    }
+
     // ── task history cap ─────────────────────────────────────────────────────
 
     /// Pins the arithmetic that trims an over-long task history.
