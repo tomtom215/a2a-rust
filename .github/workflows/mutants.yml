@@ -8,13 +8,13 @@
 # incremental (diff-only) job instead — see the `on.schedule` cron below.
 #
 # Architecture:
-#   - Full sweep splits into 15 parallel jobs: one each for a2a-types,
-#     a2a-client and a2a-sdk, plus 12 shards of a2a-server. Sharding exists
-#     to stay inside the per-job timeout, which was 120 minutes until
-#     2026-08-07 and is now 240; at 8 shards two of them hit the old limit
-#     (run 30236603180, 2026-07-27) and were cancelled. a2a-types and
-#     a2a-client are still unsharded and are now the slowest jobs in the
-#     sweep — see the timeout note on `mutants-crate`.
+#   - Full sweep splits into 21 parallel jobs: 12 shards of a2a-server,
+#     4 each of a2a-types and a2a-client, and a2a-sdk whole (it is a pure
+#     re-export facade and generates no mutants at all). Sharding exists to
+#     stay inside the per-job timeout, which was 120 minutes until 2026-08-07
+#     and is now 240; at 8 shards two of them hit the old limit (run
+#     30236603180, 2026-07-27) and were cancelled. Every sharded job now
+#     carries a comparable load of roughly 170-200 mutants.
 #   - A lightweight aggregation job merges per-crate reports and produces the
 #     combined score.
 #   - Incremental mode (PRs) mutates only PR-diff changes (--in-diff) in one job.
@@ -103,12 +103,15 @@ jobs:
     # full compile before it fails, whereas a caught one exits early under
     # nextest's fail-fast. So per-shard cost is dominated by builds, not tests.
     #
-    # This is a ceiling, not a fix. The two slowest jobs are the two crates
-    # that were never sharded: a2a-server was split 12 ways when it hit this
-    # wall, and a2a-types and a2a-client were left whole. Sharding them is the
-    # structural answer and would cut wall-clock as well as risk; it also
-    # changes EXPECTED_SHARDS in the summary job, so it is a deliberate
-    # decision rather than a drive-by edit here.
+    # The two slowest jobs in that run were the two crates that had never been
+    # sharded — a2a-server was split 12 ways when it hit this wall, while
+    # a2a-types and a2a-client were left whole and quietly grew to 4x the load
+    # of any a2a-server shard. Both are now split 4 ways as well, which is the
+    # structural fix; this timeout is the safety net behind it.
+    #
+    # Note that the sweep's wall-clock is unchanged by that split: it is set by
+    # the slowest job overall, still a2a-server 2/12 at 111m. What changed is
+    # that no job now sits near its own ceiling.
     timeout-minutes: 240
     # A live database, for the same reason `test-postgres` in ci.yml has one.
     #
@@ -152,18 +155,50 @@ jobs:
         # per-shard load by a third, putting the slowest inside the limit
         # with real headroom rather than four minutes of it.
         #
+        # a2a-types (674 mutants, 113m) and a2a-client (804 mutants, 101m) were
+        # single jobs until 2026-08-07 and had become the slowest in the sweep,
+        # a2a-types finishing seven minutes inside the old 120-minute limit.
+        # Split 4 ways they land at ~168 and ~201 mutants — the same size class
+        # as an a2a-server shard — for a projected ~33m and ~30m each, derived
+        # from run 31193107921 by holding the ~7m fixed cost (toolchain install,
+        # cache, baseline build and test) constant and dividing the remainder.
+        #
         # The `shard` value is passed verbatim to cargo-mutants' `--shard K/N`
-        # flag, which splits mutants deterministically across shards. Other
-        # crates run as a single shard (K=0/N=1 ≡ no sharding).
+        # flag, which splits mutants deterministically across shards. a2a-sdk
+        # stays whole at K=0/N=1 (≡ no sharding): it has no mutants to split.
         include:
           - crate: a2a-protocol-types
             short: a2a-types
-            name: a2a-types
-            shard: "0/1"
+            name: a2a-types shard 1/4
+            shard: "0/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 2/4
+            shard: "1/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 3/4
+            shard: "2/4"
+          - crate: a2a-protocol-types
+            short: a2a-types
+            name: a2a-types shard 4/4
+            shard: "3/4"
           - crate: a2a-protocol-client
             short: a2a-client
-            name: a2a-client
-            shard: "0/1"
+            name: a2a-client shard 1/4
+            shard: "0/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 2/4
+            shard: "1/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 3/4
+            shard: "2/4"
+          - crate: a2a-protocol-client
+            short: a2a-client
+            name: a2a-client shard 4/4
+            shard: "3/4"
           - crate: a2a-protocol-server
             short: a2a-server
             name: a2a-server shard 1/12
@@ -516,11 +551,12 @@ jobs:
           # on it blocks the aggregation of exactly the runs worth scoring.
           # Completeness is decided by the per-shard COMPLETED markers below.
           SHARD_RESULT: ${{ needs.mutants-crate.result }}
-          # Must equal the number of `include:` entries in mutants-crate
-          # (12 a2a-server shards + types + client + sdk). Deliberately a
-          # literal: if the matrix grows and this does not, the sweep fails
-          # loudly here rather than quietly measuring less.
-          EXPECTED_SHARDS: 15
+          # Must equal the number of `include:` entries in mutants-crate:
+          # 12 a2a-server + 4 a2a-types + 4 a2a-client + 1 a2a-sdk. Deliberately
+          # a literal: if the matrix grows and this does not, the sweep fails
+          # loudly here rather than quietly measuring less. It went 15 -> 21 on
+          # 2026-08-07 when a2a-types and a2a-client were sharded 4 ways.
+          EXPECTED_SHARDS: 21
           # A workflow_dispatch scoped to one package skips the other matrix
           # entries by design, so they legitimately upload nothing. Only the
           # unscoped sweep — the one whose score means "the whole workspace" —
