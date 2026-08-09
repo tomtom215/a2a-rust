@@ -1742,6 +1742,80 @@ mod tests {
         );
     }
 
+    // 20e. Back-pressure: the 65th concurrent request on one connection is
+    // rejected rather than queued, with the server-error code.
+    //
+    // Kills `delete -` on the `-32000` in the busy branch, the last survivor in
+    // this file. The branch needs the request semaphore — hardcoded
+    // `Semaphore::new(64)` — to be exhausted, which sounds like a timing test
+    // and is not: the permit is acquired before the handler task is spawned and
+    // released only when that task finishes, so an executor that never returns
+    // holds its permit for the life of the connection. Sixty-five requests then
+    // exhaust it by construction, with no sleeping and nothing racing.
+    #[tokio::test]
+    async fn ws_over_concurrency_limit_is_rejected_with_server_error_code() {
+        struct BlockingExec;
+        agent_executor!(BlockingExec, |_ctx, _queue| async {
+            // Never completes: the spawned handler task keeps its permit.
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+
+        let handler = Arc::new(RequestHandlerBuilder::new(BlockingExec).build().unwrap());
+        let addr = Arc::new(WebSocketDispatcher::new(handler))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+
+        // 64 permits exist; send one more than that.
+        for i in 0..65 {
+            let req = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "SendMessage",
+                "id": format!("busy-{i}"),
+                "params": {
+                    "message": {
+                        "messageId": format!("msg-busy-{i}"),
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "block"}]
+                    }
+                }
+            })
+            .to_string();
+            ws.send(WsMessage::Text(req.into())).await.unwrap();
+        }
+
+        // Only the rejected request answers; the other 64 are still executing.
+        let code = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while let Some(Ok(msg)) = ws.next().await {
+                let Ok(text) = msg.into_text() else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if let Some(c) = v["error"]["code"].as_i64() {
+                    assert!(
+                        v["error"]["message"]
+                            .as_str()
+                            .is_some_and(|m| m.contains("server busy")),
+                        "expected the back-pressure rejection, got: {v}"
+                    );
+                    return Some(c);
+                }
+            }
+            None
+        })
+        .await
+        .expect("the over-limit request must be answered within 10s");
+
+        assert_eq!(
+            code,
+            Some(-32000),
+            "back-pressure must be reported with the JSON-RPC server-error \
+             code -32000, not a positive code"
+        );
+    }
+
     // 21. A peer that never completes the handshake is disconnected after the
     // configured handshake timeout instead of pinning the connection forever.
     #[tokio::test]

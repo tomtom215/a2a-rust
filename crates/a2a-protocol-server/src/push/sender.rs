@@ -406,6 +406,29 @@ pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
 /// `SocketAddr` (not the original URL) to connect, so that the request does
 /// not re-enter DNS resolution in the HTTP client — which is where a
 /// rebinding attacker would otherwise flip the record to a private IP.
+/// The port a webhook URL resolves against: explicit if given, otherwise the
+/// scheme default.
+///
+/// Extracted from [`validate_webhook_url_with_dns`] so it can be tested at
+/// all. Inline, this decision sat behind a DNS lookup whose only successful
+/// outcome needs a hostname resolving to a *public* address — so in a hermetic
+/// test the function always errors before the port is observable, and
+/// inverting the scheme comparison (https to port 80, http to 443) changed
+/// nothing any test could see. As a free function it is a pure mapping with an
+/// obvious assertion, and the wrong port is a real defect: a pinned
+/// `SocketAddr` carrying 80 would deliver an https webhook to the cleartext
+/// port.
+fn webhook_port(uri: &hyper::Uri) -> u16 {
+    if let Some(explicit) = uri.port_u16() {
+        return explicit;
+    }
+    if uri.scheme_str() == Some("https") {
+        443
+    } else {
+        80
+    }
+}
+
 pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<Option<SocketAddr>> {
     // Run synchronous checks first.
     validate_webhook_url(url)?;
@@ -429,13 +452,7 @@ pub(crate) async fn validate_webhook_url_with_dns(url: &str) -> A2aResult<Option
     }
 
     // Resolve the hostname and check all resulting IPs.
-    let port = uri.port_u16().unwrap_or_else(|| {
-        if uri.scheme_str() == Some("https") {
-            443
-        } else {
-            80
-        }
-    });
+    let port = webhook_port(&uri);
 
     let addr = format!("{host_bare}:{port}");
     let resolved = tokio::net::lookup_host(&addr).await.map_err(|e| {
@@ -1197,5 +1214,29 @@ mod tests {
             msg.contains("private/loopback") || msg.contains("loopback"),
             "expected an SSRF rejection (not the HTTP-only error), got: {msg}"
         );
+    }
+}
+
+#[cfg(test)]
+mod port_tests {
+    use super::webhook_port;
+
+    /// Kills `replace == with !=` on the scheme comparison in `webhook_port`.
+    /// Inverted, an https webhook with no explicit port would be pinned to 80
+    /// (cleartext) and an http one to 443.
+    #[test]
+    fn scheme_defaults_are_not_swapped() {
+        let port = |u: &str| webhook_port(&u.parse::<hyper::Uri>().expect("uri"));
+
+        assert_eq!(
+            port("https://example.com/hook"),
+            443,
+            "https defaults to 443"
+        );
+        assert_eq!(port("http://example.com/hook"), 80, "http defaults to 80");
+        // An explicit port always wins, on either scheme, so the default is
+        // consulted only when there is none.
+        assert_eq!(port("https://example.com:8443/hook"), 8443);
+        assert_eq!(port("http://example.com:8080/hook"), 8080);
     }
 }
