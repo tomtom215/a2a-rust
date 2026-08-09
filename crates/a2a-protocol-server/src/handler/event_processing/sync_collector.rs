@@ -279,11 +279,17 @@ impl RequestHandler {
                 }
                 let history = last_task.history.get_or_insert_with(Vec::new);
                 history.push(msg);
-                if history.len() > crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES {
-                    let excess =
-                        history.len() - crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES;
-                    history.drain(..excess);
-                }
+                // Same shape as the send path in `messaging.rs`, and for the
+                // same reason: the `if` this replaces guarded only a no-op, so
+                // weakening `>` to `>=` was an equivalent mutant — both arms
+                // did nothing at `len == MAX`. `saturating_sub` deletes the
+                // branch rather than excluding the mutant, which also removes
+                // the raw subtraction that could underflow if the guard ever
+                // drifted. `drain(..0)` is a no-op, so behaviour is unchanged.
+                let excess = history
+                    .len()
+                    .saturating_sub(crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES);
+                history.drain(..excess);
                 self.task_store.save(last_task).await?;
             }
             Ok(_) => {
