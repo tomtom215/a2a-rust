@@ -159,6 +159,37 @@ FAILED .../TestRestStreaming::test_streaming_content_type
 The test should skip with its intended message, and `_extract_error` should
 return a string for any response it is handed.
 
+### The sibling transport already does this correctly
+
+This is not a design question — the JSON-RPC client, handling the same
+situation on the same `httpx` streaming API, reads the body first:
+
+```python
+# tck/transport/jsonrpc_client.py:147-155
+response = self._client.send(request, stream=True)
+content_type = response.headers.get("content-type", "")
+if "text/event-stream" not in content_type:
+    # Server returned a plain JSON-RPC response (e.g. an immediate error)
+    response.read()          # <-- reads before touching .json()/.text
+    try:
+        body = response.json()
+    except Exception:
+        body = response.text
+```
+
+```python
+# tck/transport/http_json_client.py:184-187
+response = self._client.send(request, stream=True)
+resp_headers = dict(response.headers)
+if response.status_code >= _HTTP_ERROR_MIN:
+    response.close()         # <-- closes without reading; body is now gone
+```
+
+`jsonrpc_client` also catches bare `Exception` rather than
+`(json.JSONDecodeError, ValueError)`, so it would survive this even without
+the `read()`. The HTTP+JSON client is the odd one out on both counts; the fix
+below simply brings it in line with its sibling.
+
 ### Suggested fix
 
 Read the body before closing it, so `.json()` and `.text` both stay valid and
@@ -221,6 +252,29 @@ belt-and-braces, since it is reachable from other paths:
 | `httpx` | 0.28.1 |
 | Python | 3.11.15 |
 | SUT | any server returning ≥400 to `POST /v1/message:stream`; reproduced with stdlib `http.server` and with `tomtom215/a2a-rust`'s SUT |
+
+**Re-verified 2026-08-06** against a fresh clone of `a2aproject/a2a-tck`
+(`5996b79`, still `main` HEAD at that date), Python 3.11.15, httpx 0.28.1,
+`pip install -e .`:
+
+```
+ResponseNotRead MRO: ['ResponseNotRead', 'StreamError', 'RuntimeError', 'Exception', 'BaseException', 'object']
+  issubclass(ResponseNotRead, ValueError)           = False
+  issubclass(ResponseNotRead, json.JSONDecodeError) = False
+status 400 >= 400 -> True
+RESULT: raised httpx.ResponseNotRead: Attempted to access streaming response content, without having called `read()`.
+```
+
+and with `response.read()` inserted before `response.close()`:
+
+```
+RESULT: returned '[400] streaming is not supported'
+```
+
+A GitHub issue search over `a2aproject/a2a-tck` for `ResponseNotRead`,
+`SSE-001` and `streaming_content_type` returned no matching issues on
+2026-08-06, so this appears not to be a duplicate — worth a second check at
+filing time.
 
 ---
 
