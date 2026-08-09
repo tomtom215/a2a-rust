@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use a2a_protocol_types::message::Message;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::task::Task;
 
@@ -107,6 +108,36 @@ pub(super) fn parse_extensions_header(headers: &HashMap<String, String>) -> Vec<
         .unwrap_or_default()
 }
 
+/// Truncates a task's history to the `n` most recent messages, per the
+/// `historyLength` field of `GetTask`, `ListTasks` and `SendMessage`.
+///
+/// `n == 0` omits history entirely (`None`) rather than returning an empty
+/// list; a history already at or below `n` is returned whole. A caller with no
+/// `historyLength` at all must not call this — `GetTask` and `ListTasks` leave
+/// history untouched in that case, while a send response omits it.
+///
+/// Two properties are deliberate, and both were bought by deleting the
+/// `if msgs.len() > n { … } else { … }` this replaces:
+///
+/// * **It moves rather than clones.** `msgs[start..].to_vec()` deep-clones
+///   every retained `Message` — each `String` and `Vec<Part>` inside it. The
+///   old `else` arm avoided that by moving, so the cost landed only on calls
+///   that *did* truncate; `drain` pays it on neither.
+/// * **It has no unkillable mutant.** `saturating_sub` collapses the two arms
+///   into one path, so there is no `>` for a mutation to weaken to `>=`. In the
+///   branching form the two arms coincide at `len == n` — both yield the same
+///   messages — which made that mutant equivalent and unkillable by
+///   construction, in all three copies of this code.
+pub(super) fn truncate_history(history: Option<Vec<Message>>, n: u32) -> Option<Vec<Message>> {
+    if n == 0 {
+        return None;
+    }
+    let mut msgs = history?;
+    let excess = msgs.len().saturating_sub(n as usize);
+    msgs.drain(..excess);
+    Some(msgs)
+}
+
 impl RequestHandler {
     /// Finds a task by context ID, scoped to the current tenant.
     ///
@@ -161,6 +192,83 @@ impl RequestHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── truncate_history ───────────────────────────────────────────────────
+
+    /// Builds `len` history messages, oldest first, each identifiable as
+    /// `h0`, `h1`, … so a truncation can be checked by *which* messages
+    /// survive and not merely how many.
+    fn history(len: usize) -> Vec<Message> {
+        use a2a_protocol_types::message::{MessageId, MessageRole, Part};
+        (0..len)
+            .map(|i| Message {
+                id: MessageId::new(format!("h{i}")),
+                role: MessageRole::User,
+                parts: vec![Part::text("x")],
+                context_id: None,
+                task_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            })
+            .collect()
+    }
+
+    /// Applies `truncate_history` to a present history of `len` messages and
+    /// returns the surviving message ids.
+    fn kept(len: usize, n: u32) -> Option<Vec<String>> {
+        truncate_history(Some(history(len)), n)
+            .map(|msgs| msgs.into_iter().map(|m| m.id.0).collect())
+    }
+
+    /// `n == 0` omits history rather than keeping an empty list.
+    ///
+    /// This is the distinction the whole `Option` return exists for, and the
+    /// one a mutation of the `n == 0` test would erase in either direction: a
+    /// guard that never fires would return `Some([])` here, and one that
+    /// always fires would return `None` for every case below.
+    #[test]
+    fn truncate_history_zero_omits_rather_than_emptying() {
+        assert_eq!(kept(3, 0), None, "n=0 must omit history entirely");
+        assert_eq!(kept(0, 0), None);
+    }
+
+    /// Truncation keeps the *most recent* `n`, dropping oldest first.
+    ///
+    /// Asserting the ids rather than the length is what makes this
+    /// discriminating: keeping the first two messages instead of the last two
+    /// yields an equally long history and would pass a length-only check.
+    #[test]
+    fn truncate_history_keeps_the_most_recent() {
+        assert_eq!(kept(6, 2), Some(vec!["h4".into(), "h5".into()]));
+        assert_eq!(kept(4, 1), Some(vec!["h3".into()]));
+    }
+
+    /// At and above the boundary the history is returned whole.
+    ///
+    /// `len == n` is the case that made the old branching implementation's
+    /// `>` → `>=` mutant equivalent: both arms produced these same three ids.
+    /// It is kept as a behavioural assertion — the mutant is gone, the
+    /// guarantee it failed to threaten is not.
+    #[test]
+    fn truncate_history_at_or_below_the_limit_keeps_everything() {
+        assert_eq!(
+            kept(3, 3),
+            Some(vec!["h0".into(), "h1".into(), "h2".into()])
+        );
+        assert_eq!(kept(2, 5), Some(vec!["h0".into(), "h1".into()]));
+    }
+
+    /// Absent history stays absent; an empty history stays empty.
+    ///
+    /// These two are not interchangeable: `None` means the field is omitted,
+    /// `Some([])` means the task genuinely has no messages, and a client can
+    /// tell them apart on the wire.
+    #[test]
+    fn truncate_history_distinguishes_absent_from_empty() {
+        assert_eq!(truncate_history(None, 3), None);
+        assert_eq!(kept(0, 3), Some(vec![]));
+    }
 
     // ── validate_id ────────────────────────────────────────────────────────
 

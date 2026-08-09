@@ -13,7 +13,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 
 use crate::error::ServerResult;
 
-use super::super::helpers::build_call_context;
+use super::super::helpers::{build_call_context, truncate_history};
 use super::super::RequestHandler;
 
 impl RequestHandler {
@@ -67,17 +67,7 @@ impl RequestHandler {
             // requested number of most recent messages. 0 means "no history".
             if let Some(hl) = history_length {
                 for task in &mut result.tasks {
-                    task.history = match (task.history.take(), hl) {
-                        (Some(msgs), n) if n > 0 => {
-                            let n = n as usize;
-                            if msgs.len() > n {
-                                Some(msgs[msgs.len() - n..].to_vec())
-                            } else {
-                                Some(msgs)
-                            }
-                        }
-                        _ => None,
-                    };
+                    task.history = truncate_history(task.history.take(), hl);
                 }
             }
 

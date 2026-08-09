@@ -19,7 +19,7 @@ use crate::error::{ServerError, ServerResult};
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
 
-use super::helpers::{build_call_context, validate_id, validate_metadata_object};
+use super::helpers::{build_call_context, truncate_history, validate_id, validate_metadata_object};
 use super::{CancellationEntry, RequestHandler, SendMessageResult};
 
 /// Hard cap on the number of messages retained in `Task.history`.
@@ -39,17 +39,11 @@ pub const MAX_TASK_HISTORY_MESSAGES: usize = 1024;
 /// the regression gate at +95% median). `Some(0)` also omits; `Some(n)`
 /// keeps the `n` most recent messages, mirroring `GetTask` semantics.
 fn shape_response_history(task: &mut Task, history_length: Option<u32>) {
-    task.history = match (task.history.take(), history_length) {
-        (Some(msgs), Some(n)) if n > 0 => {
-            let n = n as usize;
-            if msgs.len() > n {
-                Some(msgs[msgs.len() - n..].to_vec())
-            } else {
-                Some(msgs)
-            }
-        }
-        _ => None,
-    };
+    let history = task.history.take();
+    // `None` omits history entirely, which is why this is `and_then` over the
+    // requested length rather than a call with a default: absent and `Some(0)`
+    // both yield `None` here, but only the latter reaches `truncate_history`.
+    task.history = history_length.and_then(|n| truncate_history(history, n));
 }
 
 /// Returns the JSON-serialized byte length of a value without allocating a `String`.
@@ -395,10 +389,14 @@ impl RequestHandler {
             .and_then(|s| s.history.clone())
             .unwrap_or_default();
         history.push(params.message.clone());
-        if history.len() > MAX_TASK_HISTORY_MESSAGES {
-            let excess = history.len() - MAX_TASK_HISTORY_MESSAGES;
-            history.drain(..excess);
-        }
+        // Unguarded: at or under the cap `excess` is 0 and `drain(..0)` costs
+        // nothing — `Drain::drop` skips its memmove when the tail does not
+        // move, so this is O(1), not an O(n) shift of the whole history. The
+        // `if` it replaces guarded only that no-op, which is precisely what
+        // made weakening it to `>=` an equivalent mutant: both arms did
+        // nothing at `len == MAX`.
+        let excess = history.len().saturating_sub(MAX_TASK_HISTORY_MESSAGES);
+        history.drain(..excess);
         let task = Task {
             id: task_id.clone(),
             context_id: ContextId::new(&context_id),
@@ -1154,19 +1152,19 @@ mod tests {
 
     /// Pins every branch and boundary of `shape_response_history`.
     ///
-    /// Six mutants survived here in the 2026-08-07 sweep. The existing tests
-    /// exercise the function only through `on_send_message`, which never
-    /// varies `historyLength`, so nothing observed the truncation arithmetic
-    /// at all. Each case below is chosen to make a specific mutation visible:
+    /// Six mutants survived here in the 2026-08-07 sweep, because the tests
+    /// reached this function only through `on_send_message`, which never
+    /// varies `historyLength` — nothing observed the truncation at all.
     ///
-    /// * `Some(0)` with a non-empty history separates "omit" from "keep an
-    ///   empty list" — it is what distinguishes the `n > 0` guard from a guard
-    ///   that is always true, and from `n >= 0`, which is vacuous for a `u32`.
-    /// * `len = 6, n = 2` makes `len > n` differ from `len == n`, and makes
-    ///   `len - n` differ from both `len + n` (which indexes out of bounds)
-    ///   and `len / n` (which would keep three messages instead of two).
-    /// * `len = 4, n = 1` is a second witness against `len / n`, where it
-    ///   would slice to the end and keep nothing.
+    /// The truncation arithmetic those cases were written against has since
+    /// moved to [`helpers::truncate_history`](super::super::helpers), where it
+    /// is unit-tested directly. What this test now guards is the part that
+    /// stayed behind, and that no mutation operator can reach: that
+    /// `shape_response_history` still *calls* it, and still maps the two
+    /// send-response-specific inputs correctly. `None` and `Some(0)` both
+    /// yield no history here, but they are not the same instruction — only
+    /// `Some(0)` is a client asking for zero messages, and a refactor that
+    /// collapsed them would be invisible to every other case below.
     #[test]
     fn shape_response_history_covers_every_branch() {
         // Default: history is omitted entirely, not echoed back.
