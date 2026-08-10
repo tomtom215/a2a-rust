@@ -383,22 +383,44 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `streaming/event_queue/in_memory.rs` | 50 | 19 | **0** | 31 | **0** | 7 |
 | `agent_card/caching.rs` | 112 | 110 | **0** | 2 | **0** | — |
 | `store/task_store/in_memory/eviction.rs` | 17 | 17 | **0** | 0 | **0** | 2 (excluded) |
+| `dispatch/websocket.rs` | 33 | 33 | **0** | 0 | **0** | 7 |
+| `push/sender.rs` | 99 | 64 | **0** | 35 | **0** | 7 |
+| `rate_limit.rs` | 56 | 32 | **0** | 24 | **0** | 5 |
 | `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 | 9 |
-| `dispatch/websocket.rs` | 33 | 32 | 1 | 0 | 2 | 7 |
-| `push/sender.rs` | 97 | 61 | 1 | 35 | 2 | 7 |
-| `rate_limit.rs` | 48 | 31 | 1 | 16 | 2 | 5 |
 | `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
 
-Across these `a2a-server` files: **53 survivors addressed, 4 remaining.** Each of
-the four is recorded below with the reason it stands, and none is excluded —
-the sweep still reports every one.
+Across these `a2a-server` files: **56 survivors addressed, 1 remaining.** Eight
+of the nine report exit 0, and nothing is excluded anywhere in the project.
+
+The last three fell to the same move rather than to cleverer tests: each was a
+decision buried behind machinery a test cannot drive, so the decision was moved
+somewhere it could be reached.
+
+| Was standing | How it died |
+|---|---|
+| `push/sender.rs` — scheme-to-port default | Sat behind a DNS lookup whose only successful outcome needs a hostname resolving to a *public* address, so a hermetic test always errored before the port was observable. Extracted as `webhook_port`, a pure mapping. The inverted form pins an https webhook to port 80 and delivers it in cleartext, so it was worth reaching. |
+| `rate_limit.rs` — window comparison in the write-lock double-check | Reachable only through a genuine race between callers. Extracted as `admit_or_roll_window`, taking the bucket directly, it is an ordinary state transition; two tests pin both arms. |
+| `websocket.rs` — sign of the back-pressure `-32000` | Not the timing test it looks like: the permit is taken before the handler task spawns and released only when it finishes, so an executor that never returns holds its permit for the life of the connection. 65 requests exhaust `Semaphore::new(64)` by construction. |
+
+One survivor remains, and it is not a coverage gap:
 
 | Survivor | Why it stands |
 |---|---|
-| `sync_collector.rs:240` — `==` in the append revert path | Provably equivalent. Both call sites propagate with `?`, so the `CollectState` the revert repairs is dropped unread. The revert is dead under current control flow; deleting it is a maintainer's call because it goes live again if a caller ever handles the error. |
-| `websocket.rs:303` — sign of the server-busy `-32000` | Reachable, but only by exhausting a hardcoded `Semaphore::new(64)` with 65 concurrent in-flight requests on one connection. A saturation test's determinism would rest on scheduling. |
-| `rate_limit.rs:335` — `==` in the write-lock double-check | Needs a genuine race: the bucket must be absent under the read lock and present under the write lock. Not forceable deterministically. |
-| `push/sender.rs:433` — `==` in `validate_webhook_url_with_dns` | Not yet attacked. |
+| `sync_collector.rs:240` — `==` in the append revert path | Provably equivalent. Both call sites propagate with `?`, so the `CollectState` the revert repairs is dropped unread. The revert is dead under current control flow; deleting it is a maintainer's call, because it becomes live again the moment a caller handles that error instead of propagating it. |
+
+### A refactor can manufacture a survivor
+
+Worth recording, because it cost a round trip. Splitting `check` for clippy's
+`too_many_lines` originally extracted the read-lock **fast path**. That handed
+mutation testing an unkillable target: the fast path is a pure optimization, so
+replacing the whole function with `None` still reaches the same decisions
+through the slow path, and only lock contention differs. The sweep duly
+reported a survivor that had not existed before the refactor.
+
+Extracting the **slow path** instead fixes it — stub that and no bucket is ever
+created, so every caller is admitted forever, which the enforcement tests catch
+at once. The rule generalises: when splitting a function for length, extract
+the half whose absence changes behaviour.
 
 Two of these settle open questions:
 
