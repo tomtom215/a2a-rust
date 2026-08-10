@@ -70,7 +70,57 @@ warn_on_block_scalars() {
     fi
 }
 
-GATE_JOBS='^(fmt|clippy|test|doc)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package)$'
+
+# Jobs deliberately outside the local gate set, each with a reason. This list
+# is not decoration: `require_known_jobs` below fails if ci.yml grows a job
+# that appears in neither this list nor GATE_JOBS.
+#
+#   nightly — needs a nightly toolchain this script does not install.
+NON_GATE_JOBS='^(nightly)$'
+
+# Bidirectional drift guard.
+#
+# `require_ci_gate` catches one direction: a tier naming a command CI no longer
+# runs. It cannot catch the other, and that is how two real gates went
+# uncovered for as long as they did — `test-postgres` and `package` were simply
+# jobs the script had never been told about, so nothing anywhere noticed they
+# were missing. A guard that only fails on staleness is half a guard.
+#
+# This asserts the script knows about every job in ci.yml. A new job is either
+# a gate or an explicit exemption; it cannot be neither, and it cannot be
+# silence.
+require_known_jobs() {
+    local unknown
+    # Only names under the top-level `jobs:` key. Without that anchor this also
+    # collects `push:` and `pull_request:` from the `on:` block, which are
+    # triggers, not jobs.
+    unknown=$(awk '
+        /^jobs:[[:space:]]*$/ { in_jobs = 1; next }
+        /^[^[:space:]#]/      { in_jobs = 0 }
+        in_jobs && /^  [a-z][a-z0-9_-]*:[[:space:]]*$/ {
+            job = $1; sub(/:$/, "", job); print job
+        }
+    # `|| true`: the success case is grep matching nothing, which exits 1 and
+    # would take the script down under `set -e`. An empty result is the good
+    # outcome here, not a failure.
+    ' "$CI_YML" | grep -Ev "$GATE_JOBS" | grep -Ev "$NON_GATE_JOBS" | sort -u || true)
+    if [ -n "$unknown" ]; then
+        cat >&2 <<EOF
+preflight: unknown CI job(s) — gate coverage cannot be trusted.
+
+  ci.yml defines job(s) this script has never been told about:
+$(printf '      %s\n' $unknown)
+
+  Add each to GATE_JOBS (so preflight runs it) or to NON_GATE_JOBS with a
+  reason (so the exemption is visible). Refusing to run rather than report a
+  green that silently skips a gate.
+EOF
+        exit 2
+    fi
+}
+
+require_known_jobs
 ALL_GATES=$(gates_for_jobs "$GATE_JOBS")
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.
