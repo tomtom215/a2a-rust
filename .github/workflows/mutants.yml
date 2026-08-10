@@ -60,19 +60,24 @@ env:
   RUST_BACKTRACE: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-  # Proven equivalent mutants, excluded from both the sweep and the blocking
-  # incremental gate. Defined once so the two cannot drift: an exclusion that
-  # applied to only one of them would make a PR pass a check the weekly sweep
-  # then fails on, or the reverse.
+  # There are deliberately NO mutation exclusions here.
   #
-  # Matches exactly two mutants — the capacity guard in `evict` and its
-  # non-terminal fallback — and nothing else. Scope measured, and the argument
-  # for their equivalence recorded, in mutants.toml and
-  # book/src/reference/mutation-history.md.
+  # There used to be one — `replace > with >= in InMemoryTaskStore::evict`,
+  # matching two proven-equivalent mutants. It is gone because the equivalence
+  # was a property of the code's shape rather than of the logic: `evict`
+  # computed `len - max` under an `if len > max` guard, so at `len == max` the
+  # `>=` arm collected, sorted and then `take(0)`-ed, doing nothing observable.
+  # Rewriting it as `saturating_sub` followed by `!= 0` keeps the behaviour and
+  # deletes the operator, so the mutants no longer exist to be excluded.
+  # Measured 2026-08-09: the pattern matched 2 mutants before and 0 after, and
+  # `eviction.rs` went from 25 mutants to 17 with all 17 caught (exit 0).
   #
-  # Anything added here must clear ADR 0006's burden: "no test can distinguish
-  # it", not "no test occurred to me".
-  MUTANTS_EQUIVALENT_RE: 'replace > with >= in InMemoryTaskStore::evict'
+  # Prefer that route to adding an entry here. An equivalent mutant is usually
+  # a branch guarding a no-op, and a branch guarding a no-op can be deleted —
+  # which is a better outcome than a gate that agrees to ignore it. Anything
+  # added here must clear ADR 0006's burden: "no test can distinguish it", not
+  # "no test occurred to me", and must be measured with `--list` before and
+  # after so its scope is known rather than assumed.
 
 jobs:
   # ── Per-crate mutation sweep (parallel) ──────────────────────────────────────
@@ -330,18 +335,18 @@ jobs:
           # the service container above; without it those tests stay
           # `#[ignore]`d and every Postgres mutant survives for want of a
           # database rather than for want of a test.
-          # `--exclude-re` on the command line, not `exclude_re` in mutants.toml:
+          # No `--exclude-re`: the sweep now has no exclusions at all. See the
+          # note in the `env:` block above for what was here and why deleting
+          # the branch beat excluding the mutant. If one is ever needed again it
+          # belongs on the command line, not as `exclude_re` in mutants.toml —
           # cargo-mutants 27.1.0 silently ignores that config key, exactly as it
-          # ignores `test_tool` and `profile`. See mutants.toml for the pattern's
-          # scope (it matches two mutants and nothing else) and the argument for
-          # their equivalence.
+          # ignores `test_tool` and `profile`.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
-            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
             -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
@@ -899,8 +904,10 @@ jobs:
           # so each runner tests roughly 1/N of the mutants and fits the timeout.
           # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for
           # why `--output mutants.out` silently disabled this gate.
-          # See the full-sweep job for why this is a CLI flag and not a
-          # mutants.toml `exclude_re` entry.
+          # No `--exclude-re` here either; the two invocations stay in step
+          # because neither excludes anything. That symmetry is the point: an
+          # exclusion applied to only one would make a PR pass a check the
+          # weekly sweep then fails on, or the reverse.
           cargo mutants --in-diff pr-src.diff \
             --output . \
             --timeout 300 \
@@ -908,7 +915,6 @@ jobs:
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
-            --exclude-re "$MUTANTS_EQUIVALENT_RE" \
             -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e

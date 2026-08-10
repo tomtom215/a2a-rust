@@ -63,5 +63,6 @@
 - [Benchmark Dashboard](./reference/dashboard.md)
 - [Benchmark Regression Gate](./reference/regression-gate.md)
 - [Mutation Testing History](./reference/mutation-history.md)
+- [Conformance History](./reference/conformance-history.md)
 - [API Quick Reference](./reference/api-reference.md)
 - [Changelog](./reference/changelog.md)

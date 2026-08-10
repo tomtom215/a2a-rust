@@ -39,8 +39,12 @@ original finding, so it is recorded here rather than quietly edited away.
 ### What the 2026-07-27 run actually did
 
 [Run 30236603180](https://github.com/tomtom215/a2a-rust/actions/runs/30236603180)
-(2026-07-27, against `b416c1a`) is the only scheduled run in `mutants.yml`'s
-history. Its `Mutants Summary` job concluded `success` and printed:
+(2026-07-27, against `b416c1a`) is the *first* scheduled run in `mutants.yml`'s
+history. An earlier revision of this page called it "the only scheduled run",
+which was wrong when it was written — a second scheduled run on 2026-08-03 had
+already happened and had already reported the same false green. It is analysed
+below under "A second scheduled run told the same lie". Its `Mutants Summary`
+job concluded `success` and printed:
 
 ```text
 COMBINED MUTATION SCORE: 100%
@@ -109,6 +113,54 @@ as forensics, not as a measurement of the workspace: two of its shards were
 cancelled, so its denominator is short by roughly two-elevenths of
 `a2a-server`.
 
+### A second scheduled run told the same lie
+
+*Added 2026-08-09.* The section above missed one, and the omission mattered:
+it made a recurring defect look like a single incident.
+
+[Run 30783745696](https://github.com/tomtom215/a2a-rust/actions/runs/30783745696)
+(2026-08-03, scheduled, against `a3c8c0f0` on `main`) concluded **`success`** —
+workflow and `Mutants Summary` job alike — and printed the identical signature:
+
+```text
+COMBINED MUTATION SCORE: 100%
+Caught: 0  Missed: 0  Timeout: 0  Unviable: 0
+```
+
+All fifteen crate shards concluded `success` too, after doing real work: the
+`a2a-types` job alone ran for 1h49m. So this was not a run that failed to
+start. It was a run that measured 3,430 mutants and reported none of them.
+
+Its artifacts had not expired, and were re-counted directly on 2026-08-09:
+
+| Crate | Caught | Missed |
+|---|---:|---:|
+| `a2a-server` (12 shards) | 1194 | 178 |
+| `a2a-client` | 357 | 10 |
+| `a2a-types` | 605 | 8 |
+| `a2a-sdk` | 0 | 0 |
+| **Total** | **2156** | **196** |
+
+Plus 2 timeouts and 1276 unviable. A real score of **91%**, reported as 100%.
+
+The mechanism was the same pair of path defects, still visibly present in the
+downloaded archives: every report sits at
+`home/runner/work/a2a-rust/a2a-rust/mutants.out/mutants.out/…` — the
+`--output` double-nesting *and* the least-common-ancestor absolutisation, both
+in one path. The fixes listed under "What is fixed" landed between 2026-08-03
+and 2026-08-07, which is why the 2026-08-07 sweeps could score themselves.
+
+Two things are worth keeping from this:
+
+* **The 2026-07-27 postmortem was correct but under-scoped.** It diagnosed the
+  mechanism precisely and then asserted a fact about frequency — "the only
+  scheduled run" — that nobody checked. A correct diagnosis attached to an
+  unchecked count is still a claim, and this one was false at the time.
+* **Unlike 2026-07-27, this run's denominator is sound.** No shard was
+  cancelled and all fifteen reports are complete, so unlike the 91% above,
+  this 91% *is* a measurement of the workspace at `a3c8c0f0` and is recorded
+  in the History table as such.
+
 ### One more gate defect, found by the first working sweep
 
 Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921)
@@ -141,24 +193,58 @@ can be checked rather than taken on trust. Per
 [ADR 0006](../../../docs/adr/0006-mutation-testing.md#equivalent-mutants) the
 burden is "no test can distinguish it", not "no test occurred to me".
 
-Neither is marked with `#[mutants::skip]`: that attribute resolves through the
+> **Superseded 2026-08-09 — this list is now empty, and nothing is excluded.**
+> The two `evict` mutants below were real equivalents, and they were briefly
+> excluded by an `--exclude-re` pattern. Both the exclusion and the mutants are
+> gone: the equivalence turned out to be a property of the *operator*, not of
+> the logic, and rewriting the guard removed it at the source. See
+> "How the last equivalents were retired" below. The analysis is kept because
+> the reasoning is what makes the retirement checkable.
+
+Neither was marked with `#[mutants::skip]`: that attribute resolves through the
 `mutants` crate, which this workspace does not depend on, and adding a regular
 dependency to a published crate is a decision to take deliberately rather than
-in passing. That decision is still open — see `ROADMAP.md`.
+in passing. With nothing left to skip, nothing now rides on that decision.
 
-Since 2026-08-09 they are **excluded from both sweeps** rather than counted as
-survivors, because the blocking per-PR gate began failing on one of them: the
-`evict` refactor brought its line into a PR diff, and a required check cannot
-sit permanently red on a mutant that is unkillable by construction.
+### How the last equivalents were retired
 
-The exclusion is a single `--exclude-re` pattern, defined once in
-`.github/workflows/mutants.yml` and passed to both the sweep and the
-incremental gate. It matches these two mutants and nothing else — measured on
-`eviction.rs`, 25 mutants without it and 23 with, so the `==` and `<` mutations
-of the very same comparisons stay under test.
+`evict` computed `store.len() - max` under an `if store.len() > max` guard, at
+two sites. Weakening `>` to `>=` differed only at `len == max`, where the mutant
+entered with `overflow` of 0, collected, sorted, and then `take(0)` removed
+nothing — unkillable by construction.
 
-It is passed on the command line, not as a `mutants.toml` `exclude_re` entry,
-because **cargo-mutants 27.1.0 silently ignores that config key** — verified
+The earlier note here argued this guard could not simply be deleted the way
+`messaging.rs`'s was, because it skips an O(n log n) collect-and-sort and
+deleting it would pay that sort on every write sitting exactly at capacity.
+That argument was correct, and the fix respects it: the guard is **kept**, and
+only its spelling changes.
+
+```rust
+let overflow = store.len().saturating_sub(max);
+if overflow != 0 { /* collect, sort, evict */ }
+```
+
+`saturating_sub` is zero exactly when `len <= max`, so this is the same
+predicate and the same short-circuit — the sort is still skipped at or below
+capacity. But `!=` mutates only to `==`, which inverts the guard and is caught,
+where `>` mutated to an equivalent `>=`.
+
+Measured rather than asserted:
+
+| Check | Before | After |
+|---|---:|---:|
+| Mutants in `eviction.rs` (`--list`) | 25 | 17 |
+| Matches for the old exclusion pattern, crate-wide (2097 mutants) | 2 | 0 |
+| Full sweep of `eviction.rs` | — | 17 tested, **17 caught, exit 0** |
+
+The generalisable part: an equivalent mutant is usually a branch guarding a
+no-op, or an operator whose weakened form reaches the same state. Both are
+often fixable in the source, and deleting the mutant beats teaching the gate to
+ignore it.
+
+While it existed it was passed on the command line, not as a `mutants.toml`
+`exclude_re` entry. That detail outlives the exclusion and still governs any
+future one, because **cargo-mutants 27.1.0 silently ignores that config key** — verified
 with `--list` on 2026-08-09, after a precise pattern added there still produced
 the mutant it named. The same version ignores `test_tool` and `profile`
 identically. The pre-existing `^tracing::` and `^log::` entries in that file
@@ -278,9 +364,231 @@ stage's arithmetic. Neither is an argument against the simplification — the
 file ended simpler *and* better tested — but both are arguments for re-running
 the sweep after a refactor rather than assuming the score can only improve.
 
+## Per-file measurements
+
+A full workspace sweep needs 21 CI runners; a single 4-core machine projects to
+well over a day for `a2a-server` alone (measured: 37 of 2113 mutants in ~40
+minutes). Per-file sweeps are the practical unit for burning down a cluster,
+and they answer the question a stale survivor list cannot: *is this still true
+of `HEAD`?*
+
+All rows below were run on 2026-08-09 against this branch, with a live Postgres
+and `--run-ignored all`. Exit codes are quoted because they are the only
+reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
+
+| File | Mutants | Caught | Missed | Unviable | Exit | Was |
+|---|---:|---:|---:|---:|---:|---:|
+| `dispatch/axum_adapter.rs` | 49 | 49 | **0** | 0 | **0** | 7 |
+| `dispatch/grpc/service.rs` | 44 | 44 | **0** | 0 | **0** | 9 |
+| `streaming/event_queue/in_memory.rs` | 50 | 19 | **0** | 31 | **0** | 7 |
+| `agent_card/caching.rs` | 112 | 110 | **0** | 2 | **0** | — |
+| `store/task_store/in_memory/eviction.rs` | 17 | 17 | **0** | 0 | **0** | 2 (excluded) |
+| `dispatch/websocket.rs` | 33 | 33 | **0** | 0 | **0** | 7 |
+| `push/sender.rs` | 99 | 64 | **0** | 35 | **0** | 7 |
+| `rate_limit.rs` | 56 | 32 | **0** | 24 | **0** | 5 |
+| `handler/event_processing/sync_collector.rs` | 27 | 14 | **0** | 13 | **0** | 9 |
+| `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
+| `a2a-protocol-client` (whole crate) | 804 | 357 | 10 | 437 | 2 | 10 |
+
+Across these `a2a-server` files: **57 survivors addressed, none remaining.**
+Every one of the nine reports exit 0, and nothing is excluded anywhere in the
+project — no `--exclude-re`, no `#[mutants::skip]`, no baselined exception.
+
+**What that sentence does not cover.** Nine files is not the crate.
+`a2a-server` has 2113 mutants; these nine account for 487 of them. Treat "zero
+survivors" as a claim about the nine rows, not the crate.
+
+**The weekly sweep ran on 2026-08-10** (scheduled 03:33 UTC, `041c3666` on
+`main`) and is the current whole-repo figure:
+
+| | Caught | Missed | Timeout | Unviable | Score |
+|---|---:|---:|---:|---:|---:|
+| All crates, 2026-08-10 | 2187 | 125 | 2 | 1277 | **94%** |
+
+It exited 1, which is the workflow working: 125 survivors, reported rather
+than rounded away. Ten of the twelve `a2a-server` shards carried survivors;
+shards 3 and 8 came back clean.
+
+Two cautions on reading that row. It is a *combined* figure across all four
+crates — the `a2a-server`-only split is recoverable from that run's per-shard
+artifacts but is not reproduced here, so this ledger still has no whole-crate
+`a2a-server` score stated as such. And it was measured on `main`, not on any
+branch in progress.
+
+An earlier revision of this section said the honest statement was "not
+measured since 2026-08-03". That was true when written and false within
+hours — the Monday sweep it did not account for had already run. A ledger
+whose freshness claims are hand-maintained will keep going stale like this;
+the run date above is the thing to check, not the prose.
+
+The two whole-crate rows are current and were produced on this branch:
+`a2a-protocol-types` on 2026-08-09 (674 mutants, exit 2) and
+`a2a-protocol-client` on 2026-08-10 (804 mutants, 37 minutes, exit 2). Both
+still carry survivors; they are listed below rather than left implicit.
+
+Both reproduce the 2026-08-03 recovered counts exactly — `a2a-client` 357/10
+and `a2a-types` 605/8, matching the table above to the mutant. Two things
+follow. The recovered figures were not an artefact of the archaeology: an
+independent sweep a week later, on a different machine, agrees. And these
+survivors are long-standing rather than newly introduced — neither crate's
+tested behaviour has moved in the interval.
+
+### Standing survivors outside `a2a-server`
+
+Recorded so the count is visible rather than inferred from a missing table.
+Neither crate has been burned down; these are the live lists as of the sweeps
+above.
+
+`a2a-protocol-client` — 10:
+
+| Location | Mutation |
+|---|---|
+| `error.rs:126` | `parse_retry_after` → `None` |
+| `error.rs:126` | `parse_retry_after` → `Some(Default::default())` |
+| `token_provider.rs:86` | `*` → `+` |
+| `token_provider.rs:136` | `Debug for StaticTokenProvider::fmt` → `Ok(())` |
+| `token_provider.rs:174` | `Debug for BearerAuthInterceptor::fmt` → `Ok(())` |
+| `token_provider.rs:403` | `<` → `<=` in `OAuth2ClientCredentials::cached` |
+| `transport/mod.rs:50` | `*` → `+` |
+| `transport/mod.rs:76` | `>` → `==` in `collect_response_limited` |
+| `transport/mod.rs:76` | `>` → `>=` in `collect_response_limited` |
+| `transport/jsonrpc.rs:303` | `delete !` in `JsonRpcTransport::execute_request` |
+
+`a2a-protocol-types` — 8:
+
+| Location | Mutation |
+|---|---|
+| `lib.rs:200` | `+` → `-` in `parse_iso8601_to_unix_millis` |
+| `lib.rs:254` | `-` → `+` in `days_from_civil` |
+| `lib.rs:254` | `-` → `/` in `days_from_civil` |
+| `signing.rs:87` | `>` → `==` in `write_canonical` |
+| `signing.rs:87` | `>` → `>=` in `write_canonical` |
+| `signing.rs:142` | `+` → `*` in `write_canonical` |
+| `proto/convert/mod.rs:67` | `Display for ConvertError::fmt` → `Ok(())` |
+| `proto/convert/mod.rs:165` | `<` → `<=` in `timestamp_to_rfc3339` |
+
+The last three fell to the same move rather than to cleverer tests: each was a
+decision buried behind machinery a test cannot drive, so the decision was moved
+somewhere it could be reached.
+
+| Was standing | How it died |
+|---|---|
+| `push/sender.rs` — scheme-to-port default | Sat behind a DNS lookup whose only successful outcome needs a hostname resolving to a *public* address, so a hermetic test always errored before the port was observable. Extracted as `webhook_port`, a pure mapping. The inverted form pins an https webhook to port 80 and delivers it in cleartext, so it was worth reaching. |
+| `rate_limit.rs` — window comparison in the write-lock double-check | Reachable only through a genuine race between callers. Extracted as `admit_or_roll_window`, taking the bucket directly, it is an ordinary state transition; two tests pin both arms. |
+| `websocket.rs` — sign of the back-pressure `-32000` | Not the timing test it looks like: the permit is taken before the handler task spawns and released only when it finishes, so an executor that never returns holds its permit for the life of the connection. 65 requests exhaust `Semaphore::new(64)` by construction. |
+
+### Equivalent is not the same as unkillable
+
+The last one to fall, `sync_collector.rs:240`, had been recorded here as a
+provably equivalent mutant: the append revert runs only when a store save
+fails, both callers of `process_event` propagate with `?`, and the
+`CollectState` the revert repairs is dropped without being read. Correct code
+and code that reverted *the wrong artifact* were observationally identical.
+
+The proof was sound and the conclusion was too narrow. The revert was
+untestable because it was welded to an error path, not because its logic is
+unobservable. As a free function — `revert_artifact_append(task, id, len,
+meta)` — it is an ordinary transformation with an ordinary assertion, and the
+mutant dies.
+
+Two artifacts are what make that test bite, which is the same lesson as the
+axum routing tests above: with one artifact `!=` finds nothing and the revert
+is a no-op, indistinguishable from correctly reverting an untouched artifact.
+With two it truncates the bystander and leaves the intended artifact holding
+the failed append.
+
+The revert was **not** deleted, and the contrast with the websocket size guard
+is the point. That guard was redundant with a cap enforced by the same constant
+one layer up, so deleting it lost nothing. This one is the only thing that
+would repair in-memory state if a caller ever handled a `process_event` error
+instead of propagating it. Deleting it would have traded a survivor for a
+latent correctness hole. "Delete the dead branch" and "extract the buried
+decision" are both available; which one applies depends on whether the code
+would still be wrong if it ever ran.
+
+### A refactor can manufacture a survivor
+
+Worth recording, because it cost a round trip. Splitting `check` for clippy's
+`too_many_lines` originally extracted the read-lock **fast path**. That handed
+mutation testing an unkillable target: the fast path is a pure optimization, so
+replacing the whole function with `None` still reaches the same decisions
+through the slow path, and only lock contention differs. The sweep duly
+reported a survivor that had not existed before the refactor.
+
+Extracting the **slow path** instead fixes it — stub that and no bucket is ever
+created, so every caller is admitted forever, which the enforcement tests catch
+at once. The rule generalises: when splitting a function for length, extract
+the half whose absence changes behaviour.
+
+Two of these settle open questions:
+
+* **`a2a-protocol-types` 605/8** matches the 2026-08-03 artifact recount and
+  the 2026-08-07 CI figure exactly. Three independent measurements agree, so
+  that crate's contribution to the survivor total is confirmed at 8.
+* **`agent_card/caching.rs` is at zero**, which the 2026-08-03 artifacts
+  (7 survivors) contradict. The artifacts are simply older than the three
+  commits that fixed it. This is the trap the survivor list sets: a cluster
+  list is only meaningful against the commit it was measured on.
+
+Five of the ten files above now report **exit 0** — every mutant caught, and
+no exclusions anywhere. `state_machine.rs` was verified by `--list` only
+(12 mutants → 7) without a full sweep.
+
+Three things this burndown is worth remembering for:
+
+* **The same bug wore four hats.** `if len > CAP { len - CAP }` appeared in
+  `messaging.rs`, `sync_collector.rs`, `background/state_machine.rs` and
+  `eviction.rs`. Found by grepping for the *shape* rather than by waiting for
+  a sweep to rediscover it, and fixed with `saturating_sub` — which deletes
+  the operators rather than excluding their mutants. `rate_limit.rs` was the
+  same defect in a different dress: one predicate written twice, where only
+  the copy on the reachable path was ever tested.
+
+* **A passing test is not a killing test.** The first `axum_adapter` routing
+  tests asserted 404 for an unknown id — green, and worthless, because every
+  mutant routes the request somewhere that also 404s. Seven survivors became
+  five, not zero. The fix was to seed the task so a correct parse answers 200
+  and each wrong parse answers 404. 404 is the most common answer that router
+  gives, which made it the worst possible thing to assert against a routing
+  bug.
+
+* **A survivor can mean the code is wrong to exist.** Three `websocket.rs`
+  survivors lived in an oversized-message guard that cannot execute:
+  tungstenite is configured with the same constant and rejects during the
+  read, which `ws_oversized_message_rejected` already proves. It was deleted,
+  not tested. Conversely `push/sender.rs:730` *looked* like a latent
+  underflow — `max_attempts - 1` on a public unvalidated `usize` — and is not
+  one, because the enclosing loop is `for attempt in 0..max_attempts`. Checked
+  rather than reported as a bug; its five survivors were a missing
+  retry-boundary test, which now measures the backoff on the clock.
+
 ## History
+
+**Every sweep in this table ran without a database.** Established 2026-08-09:
+the `services:` block and `A2A_TEST_POSTGRES_URL` were added to `mutants.yml`
+by [`4b68ac4`](https://github.com/tomtom215/a2a-rust/commit/4b68ac4)
+(2026-08-09), which takes the file from 0 to 19 mentions of `postgres`, and
+that commit is an ancestor of none of `b416c1a`, `a3c8c0f`, or `803a139`. The
+whole Postgres suite is `#[ignore]`d behind that variable, so in each of those
+runs it did not execute and its mutants survived for want of a server rather
+than for want of a test.
+
+Measured on the 2026-08-03 artifacts, that accounts for exactly **18**
+survivors: `pg_migration.rs` 12, `postgres_store.rs` 3,
+`tenant_postgres_store.rs` 3. `pg_migration.rs` in particular is not a test
+gap — `migrations_apply_in_order_and_are_idempotent` has covered it since
+2026-06-10 and pins the `pending_migrations` boundary explicitly.
+
+One consequence for the row below: its note that "Postgres-file survivors fell
+18 → 3 once the sweep got a live database" cannot describe run 31193107921,
+because `803a139` has no database wiring at all, and its 18 is exactly the
+no-database count. The `f54f33e` row could not be checked the same way — that
+commit is not reachable in a fresh clone of `main`, so whether the second
+2026-08-07 run had a server is **unverified here**, and the 3 is left
+unattributed rather than reassigned on a guess.
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |
 |------|--------|---------------|-------:|-------:|--------:|-------|
 | 2026-08-07 | [`f54f33e`](https://github.com/tomtom215/a2a-rust/commit/f54f33e) | **92%** | 2168 | 183 | 3 | Run [31209868659](https://github.com/tomtom215/a2a-rust/actions/runs/31209868659) — first sweep aggregated by CI itself rather than by hand, and the first on the 21-shard matrix (a2a-types and a2a-client split 4 ways each). All 21 shards completed; `Require every shard to have completed` passed on the COMPLETED markers while the matrix result was `failure`, which is the case the previous run could not handle. **Identical 183 survivors to the 15-shard run below**, from a completely different partitioning of the mutant set — the one-mutant difference in caught/timeout is timing flake. 1276 unviable. Wall-clock 117m, still set by `a2a-server` shard 2/12 at 116m. |
 | 2026-08-07 | [`803a139`](https://github.com/tomtom215/a2a-rust/commit/803a139664f7b9326dc8b90bd91d382ea187f481) | **92%** | 2169 | 183 | 2 | First complete sweep. Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921), all 15 shards finished. Per crate: `a2a-server` 1207/165 (87%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0 (a pure re-export facade — it generates no mutants). 1276 unviable. Largest survivor clusters: `handler/messaging.rs` 17, `store/task_store/in_memory/eviction.rs` 13, `dispatch/grpc/native.rs` 11. Postgres-file survivors fell 18 → 3 once the sweep got a live database. |
+| 2026-08-03 | [`a3c8c0f`](https://github.com/tomtom215/a2a-rust/commit/a3c8c0f08f1ba636e4992ea3489bdbae82be271a) | **91%** | 2156 | 196 | 2 | Run [30783745696](https://github.com/tomtom215/a2a-rust/actions/runs/30783745696), scheduled, on `main`. **Recorded retroactively on 2026-08-09** by re-counting the run's own artifacts: CI reported `100%` over `Caught 0 / Missed 0` and concluded `success`, while all 15 shards had in fact completed and their reports were intact. See "A second scheduled run told the same lie" above. Per crate: `a2a-server` 1194/178, `a2a-client` 357/10, `a2a-types` 605/8, `a2a-sdk` 0/0. 1276 unviable — the same count as both 2026-08-07 sweeps. Denominator is sound (no cancelled shards), so unlike run 30236603180 this figure is a measurement rather than forensics. **But it was measured without a database:** `mutants.yml` at `a3c8c0f` contains no `services:` block and no `A2A_TEST_POSTGRES_URL`, so the whole `#[ignore]`d Postgres suite never ran. Exactly 18 of the 196 are Postgres-file survivors that a live database would have killed — `pg_migration.rs` 12, `postgres_store.rs` 3, `tenant_postgres_store.rs` 3. Read the comparable figure as **178 survivors + 18 unmeasured**, not as 196 test gaps. |

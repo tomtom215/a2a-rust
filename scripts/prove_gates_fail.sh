@@ -1,0 +1,588 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Proves every CI gate can fail.
+#
+# A gate that cannot fail reports success. This repository has learned that
+# the expensive way more than once: a mutation workflow that concluded
+# "COMBINED MUTATION SCORE: 100%" from empty result files, a conformance job
+# that exited green on a report with zero graded requirements, a preflight
+# script that had never been told two of its jobs existed. In each case the
+# gate ran, went green, and measured nothing.
+#
+# Running a gate and watching it pass says nothing about whether it *could*
+# have failed. This script asserts the other half: for each gate, break
+# something that gate is responsible for, confirm it goes red, put it back,
+# and confirm it goes green again. A gate that stays green through its own
+# injected defect is reported as UNPROVEN, which is a finding.
+#
+# The feature-gated injections are deliberately placed inside code compiled
+# only under that feature. `cargo test --features sqlite` failing because of a
+# defect in always-compiled code would prove nothing about whether the sqlite
+# code is covered at all.
+#
+# Usage:
+#   scripts/prove_gates_fail.sh              # every gate (slow: full rebuilds)
+#   scripts/prove_gates_fail.sh --only fmt   # gates whose command matches a regex
+#   scripts/prove_gates_fail.sh --list       # show the gate/injection pairing
+#
+# Exit codes: 0 every gate proven, 1 one or more UNPROVEN, 2 configuration
+# drift (a gate with no registered injection, or vice versa).
+
+set -Eeuo pipefail
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-provegates.XXXXXX")
+
+ONLY='.'
+LIST_ONLY=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --only) ONLY="$2"; shift 2 ;;
+        --list) LIST_ONLY=1; shift ;;
+        *) printf 'unknown argument %s\n' "$1" >&2; exit 2 ;;
+    esac
+done
+
+# Same job set and parser as scripts/preflight.sh, deliberately: a gate this
+# script has never heard of is the exact defect preflight's `require_known_jobs`
+# exists to catch, one level further in.
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package)$'
+
+gates_for_jobs() {
+    awk -v want="$1" '
+        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
+        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
+            if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
+        }
+    ' "$CI_YML"
+}
+
+# ── Injections ───────────────────────────────────────────────────────────────
+#
+# Each is a shell function that writes a defect, and a matching one that undoes
+# it. `revert_all` restores every touched file from git, so an interrupted run
+# cannot leave the tree dirty.
+
+TOUCHED=()
+
+# Set by an injection that must run somewhere other than the repository root
+# (only `package`, which cannot be tested in a dirty tree). Reset by
+# `revert_all`, so it cannot leak into the next gate.
+INJECT_WORKDIR=""
+PACKAGE_CLONE=""
+
+note_touched() { TOUCHED+=("$1"); }
+
+revert_all() {
+    if [ "${#TOUCHED[@]}" -gt 0 ]; then
+        # `git checkout HEAD --`, not `git checkout --`. The latter restores
+        # from the *index*, so if anything stages a file while a defect is
+        # injected, every later revert faithfully restores the defect.
+        #
+        # That is not hypothetical. During the first full run of this script a
+        # concurrent `git add -A && git commit` in the same working tree staged
+        # the injected modules, and from that point the revert put them back:
+        # `cargo test --workspace` then failed on a duplicate module rather
+        # than on the injected panic, and the probe code reached three
+        # commits. Restoring from HEAD makes the revert independent of
+        # whatever the index happens to hold.
+        #
+        # No `|| true`: a revert that fails silently leaves a defect in the
+        # tree, and every subsequent verdict is then about the wrong code.
+        if ! git checkout HEAD -- "${TOUCHED[@]}" 2>&1; then
+            printf '\nprove_gates_fail: FAILED TO REVERT %s\n' "${TOUCHED[*]}" >&2
+            printf 'The working tree still contains an injected defect. Restore it by\n' >&2
+            printf 'hand before doing anything else — do not commit.\n' >&2
+        fi
+        TOUCHED=()
+    fi
+    rm -f crates/a2a-protocol-types/src/gate_probe_long.rs
+    git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_long.rs 2>/dev/null || true
+    if [ -n "$PACKAGE_CLONE" ]; then
+        rm -rf "$PACKAGE_CLONE"
+        PACKAGE_CLONE=""
+    fi
+    INJECT_WORKDIR=""
+}
+trap revert_all EXIT
+
+# Refuse to start in a dirty tree.
+#
+# Every injection is "append, run, restore from HEAD", so an uncommitted change
+# to a file this script touches would be destroyed by the first revert. It also
+# makes the run ambiguous: a gate failing on someone else's work in progress
+# proves nothing about the injected defect.
+if [ -n "$(git status --porcelain)" ]; then
+    printf 'prove_gates_fail: the working tree has uncommitted changes.\n\n' >&2
+    git status --short >&2
+    cat >&2 <<'EOF'
+
+This script injects defects and restores files from HEAD, which would discard
+the changes above. Commit or stash them first.
+
+And while it runs, do not commit from this tree: a `git add` that catches an
+injected defect stages it, which is how probe code reached three commits the
+first time this ran.
+EOF
+    exit 2
+fi
+
+# Appends a line to a file, immediately after the anchor line.
+inject_after() {
+    local file="$1" anchor="$2" payload="$3"
+    note_touched "$file"
+    python3 - "$file" "$anchor" "$payload" <<'PY'
+import sys, pathlib
+path, anchor, payload = sys.argv[1], sys.argv[2], sys.argv[3]
+p = pathlib.Path(path)
+lines = p.read_text().splitlines(keepends=True)
+for i, line in enumerate(lines):
+    if anchor in line:
+        lines.insert(i + 1, payload + "\n")
+        p.write_text("".join(lines))
+        sys.exit(0)
+sys.exit(f"anchor {anchor!r} not found in {path}")
+PY
+}
+
+# A failing test guarded by `feature`, so only a gate that compiles that
+# feature can see it.
+inject_failing_test() {
+    local file="$1" feature="$2"
+    note_touched "$file"
+    {
+        printf '\n#[cfg(all(test, feature = "%s"))]\n' "$feature"
+        printf 'mod gate_probe_%s {\n' "$(printf '%s' "$feature" | tr -c 'a-z0-9' '_')"
+        printf '    #[test]\n'
+        printf '    fn gate_probe_must_fail() {\n'
+        printf '        panic!("gate probe: injected failure for feature %s");\n' "$feature"
+        printf '    }\n}\n'
+    } >>"$file"
+}
+
+# A clippy denial guarded by `feature`. `let x = *&y;` trips
+# clippy::deref_addrof, which is warn-by-default and denied by `-D warnings`.
+inject_clippy_lint() {
+    local file="$1" feature="$2" suffix="$3"
+    note_touched "$file"
+    {
+        printf '\n#[cfg(feature = "%s")]\n' "$feature"
+        printf '#[allow(dead_code)]\n'
+        printf 'fn gate_probe_%s() -> u8 {\n' "$suffix"
+        printf '    let y: u8 = 1;\n'
+        printf '    *&y\n'
+        printf '}\n'
+    } >>"$file"
+}
+
+# The same, unconditional — for gates that compile everything anyway.
+inject_clippy_lint_always() {
+    local file="$1" suffix="$2"
+    note_touched "$file"
+    {
+        printf '\n#[allow(dead_code)]\n'
+        printf 'fn gate_probe_%s() -> u8 {\n' "$suffix"
+        printf '    let y: u8 = 1;\n'
+        printf '    *&y\n'
+        printf '}\n'
+    } >>"$file"
+}
+
+inject_failing_test_always() {
+    local file="$1" suffix="$2"
+    note_touched "$file"
+    {
+        printf '\n#[cfg(test)]\n'
+        printf 'mod gate_probe_%s {\n' "$suffix"
+        printf '    #[test]\n'
+        printf '    fn gate_probe_must_fail() {\n'
+        printf '        panic!("gate probe: injected failure");\n'
+        printf '    }\n}\n'
+    } >>"$file"
+}
+
+TYPES_LIB=crates/a2a-protocol-types/src/lib.rs
+CLIENT_LIB=crates/a2a-protocol-client/src/lib.rs
+SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
+
+# Maps a gate command to the injection that must break it. Matched by
+# substring against the full command, longest match wins, so
+# `--features postgres --test postgres_store_tests` cannot be captured by the
+# plain `--features postgres` entry.
+injection_for() {
+    local cmd="$1"
+    case "$cmd" in
+        "cargo fmt --all -- --check")
+            echo "fmt" ;;
+        "./scripts/check_proto_copies.sh")
+            echo "proto" ;;
+        "./scripts/check_file_lengths.sh")
+            echo "file_length" ;;
+        *"--test postgres_store_tests"*)
+            echo "postgres_ignored" ;;
+        "cargo doc"*)
+            echo "doc" ;;
+        "cargo package"*)
+            echo "package" ;;
+        "cargo clippy"*"--all-features"*)
+            echo "clippy_always:$SERVER_LIB" ;;
+        "cargo clippy"*"--features signing"*)
+            echo "clippy:$TYPES_LIB:signing" ;;
+        "cargo clippy"*"--features tracing"*)
+            echo "clippy:$CLIENT_LIB:tracing" ;;
+        "cargo clippy"*"--features tls-rustls"*)
+            echo "clippy:$CLIENT_LIB:tls-rustls" ;;
+        "cargo clippy"*"--features sqlite"*)
+            echo "clippy:$SERVER_LIB:sqlite" ;;
+        "cargo clippy"*"--features postgres"*)
+            echo "clippy:$SERVER_LIB:postgres" ;;
+        "cargo clippy"*"--features axum"*)
+            echo "clippy:$SERVER_LIB:axum" ;;
+        "cargo clippy"*"--features websocket"*)
+            echo "clippy:$CLIENT_LIB:websocket" ;;
+        "cargo clippy"*"--features grpc"*)
+            echo "clippy:$CLIENT_LIB:grpc" ;;
+        "cargo clippy"*"--features auth-jwt"*)
+            echo "clippy:$SERVER_LIB:auth-jwt" ;;
+        "cargo clippy"*)
+            echo "clippy_always:$TYPES_LIB" ;;
+        "cargo test"*"--all-features"*)
+            echo "test_always:$SERVER_LIB" ;;
+        "cargo test"*"--no-default-features"*)
+            echo "test_always:$TYPES_LIB" ;;
+        "cargo test"*"--features signing"*)
+            echo "test:$TYPES_LIB:signing" ;;
+        "cargo test"*"--features tracing"*)
+            echo "test:$CLIENT_LIB:tracing" ;;
+        "cargo test -p a2a-protocol-client --features tls-rustls")
+            echo "test:$CLIENT_LIB:tls-rustls" ;;
+        "cargo test -p a2a-protocol-server --features tls-rustls")
+            echo "test:$SERVER_LIB:tls-rustls" ;;
+        "cargo test"*"--features sqlite"*)
+            echo "test:$SERVER_LIB:sqlite" ;;
+        "cargo test"*"--features postgres"*)
+            echo "test:$SERVER_LIB:postgres" ;;
+        "cargo test"*"--features axum"*)
+            echo "test:$SERVER_LIB:axum" ;;
+        "cargo test"*"--features websocket"*)
+            echo "test:$CLIENT_LIB:websocket" ;;
+        "cargo test"*"--features grpc"*)
+            echo "test:$CLIENT_LIB:grpc" ;;
+        "cargo test"*"--features auth-jwt,tls-rustls"*)
+            echo "test:$SERVER_LIB:auth-jwt" ;;
+        "cargo test"*"--features auth-jwt"*)
+            echo "test:$SERVER_LIB:auth-jwt" ;;
+        "cargo test --workspace")
+            echo "test_always:$TYPES_LIB" ;;
+        *)
+            echo "" ;;
+    esac
+}
+
+# The string the gate's own output must contain for its failure to count as
+# proof. Chosen to be something only *this* defect can produce, so a gate that
+# died of ENOSPC, a lock timeout, or an unrelated compile error is reported
+# INCONCLUSIVE instead of PROVEN.
+expected_marker() {
+    local kind=${1%%:*}
+    case "$kind" in
+        fmt)              echo "gate_probe_fmt" ;;
+        proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
+        file_length)      echo "gate_probe_long.rs" ;;
+        doc)              echo "NoSuchItemAnywhere" ;;
+        package)          echo "NO_SUCH_README.md" ;;
+        postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
+        clippy|clippy_always) echo "deref_addrof" ;;
+        test|test_always) echo "gate probe: injected failure" ;;
+        *)                echo "__no_marker_defined__" ;;
+    esac
+}
+
+apply_injection() {
+    local spec="$1"
+    local kind=${spec%%:*}
+    local rest=${spec#*:}
+    case "$kind" in
+        fmt)
+            note_touched "$TYPES_LIB"
+            printf '\n#[allow(dead_code)]\nfn   gate_probe_fmt(  )->u8{1}\n' >>"$TYPES_LIB" ;;
+        proto)
+            note_touched "tck/proto/a2a_v1/a2a.proto"
+            printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;
+        file_length)
+            python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
+            git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        doc)
+            note_touched "$TYPES_LIB"
+            printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;
+        package)
+            # `cargo package` refuses outright on a dirty working tree:
+            #
+            #   error: 1 files in the working directory contain changes that
+            #   were not yet committed into git
+            #
+            # So no in-place injection can reach it. Any edit produces that
+            # same generic error, which proves nothing about packaging — it
+            # was reported INCONCLUSIVE for exactly this reason before this
+            # comment existed.
+            #
+            # The defect therefore has to be committed, and it must not be
+            # committed here. A `--shared` clone gets an isolated tree with
+            # its own history, running the gate's command verbatim; only the
+            # directory differs. CARGO_TARGET_DIR is inherited so the clone
+            # reuses the main build cache instead of compiling the world.
+            PACKAGE_CLONE=$(mktemp -d "${TMPDIR:-/tmp}/a2a-pkgprobe.XXXXXX")
+            git clone -q --shared "$REPO_ROOT" "$PACKAGE_CLONE/repo"
+            # A `readme` pointing at a file that is not in the package. Only
+            # the packaging gate reads the manifest's file references, so a
+            # compile error here would prove nothing about what
+            # `cargo package` adds over `cargo build`.
+            python3 - "$PACKAGE_CLONE/repo/crates/a2a-protocol-types/Cargo.toml" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+# Repoint the existing key. Two earlier spellings were wrong in instructive
+# ways: appending to the end of the file puts a bare key in whatever table
+# happens to be last, and inserting one under [package] collides with the
+# `readme` already declared there — cargo then reports a TOML duplicate-key
+# error, not a missing file, and the gate fails for the wrong reason.
+s, n = re.subn(r'(?m)^readme(\s*)=.*$', 'readme = "NO_SUCH_README.md"', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one `readme` key in the manifest; found %d" % n)
+p.write_text(s)
+PY
+            git -C "$PACKAGE_CLONE/repo" -c user.name=probe -c user.email=probe@invalid \
+                commit -q -am "probe: dangling readme reference"
+            INJECT_WORKDIR="$PACKAGE_CLONE/repo" ;;
+        postgres_ignored)
+            # This gate runs only `#[ignore]`d tests in one file, so the
+            # defect has to be an ignored test in that file. A failure
+            # anywhere else would never be selected.
+            note_touched "crates/a2a-protocol-server/tests/postgres_store_tests.rs"
+            {
+                printf '\n#[tokio::test]\n#[ignore = "gate probe"]\n'
+                printf 'async fn gate_probe_must_fail() {\n'
+                printf '    panic!("gate probe: injected failure in the ignored postgres suite");\n'
+                printf '}\n'
+            } >>crates/a2a-protocol-server/tests/postgres_store_tests.rs ;;
+        clippy)
+            local file=${rest%%:*}
+            local feature=${rest#*:}
+            inject_clippy_lint "$file" "$feature" "$(printf '%s' "$feature" | tr -c 'a-z0-9' '_')" ;;
+        clippy_always)
+            inject_clippy_lint_always "$rest" "always" ;;
+        test)
+            local file=${rest%%:*}
+            local feature=${rest#*:}
+            inject_failing_test "$file" "$feature" ;;
+        test_always)
+            inject_failing_test_always "$rest" "always" ;;
+        "test")
+            : ;;
+        *)
+            printf 'no injection implemented for spec %s\n' "$spec" >&2
+            return 2 ;;
+    esac
+}
+
+# ── Drift guard ──────────────────────────────────────────────────────────────
+
+mapfile -t ALL_GATES < <(gates_for_jobs "$GATE_JOBS")
+
+if [ "${#ALL_GATES[@]}" -eq 0 ]; then
+    printf 'prove_gates_fail: parsed no gates from %s — the parser is broken.\n' "$CI_YML" >&2
+    exit 2
+fi
+
+unregistered=()
+for cmd in "${ALL_GATES[@]}"; do
+    spec=$(injection_for "$cmd")
+    if [ -z "$spec" ]; then
+        unregistered+=("$cmd")
+    fi
+done
+
+if [ "${#unregistered[@]}" -gt 0 ]; then
+    printf '\nprove_gates_fail: %d CI gate(s) have no registered defect injection:\n\n' \
+        "${#unregistered[@]}" >&2
+    printf '    %s\n' "${unregistered[@]}" >&2
+    cat >&2 <<'EOF'
+
+Every gate must have something that proves it can fail. A gate nobody has
+tried to break is a gate nobody knows works. Add an injection to
+`injection_for` above, or explain in this script why the gate is exempt.
+EOF
+    exit 2
+fi
+
+if [ "$LIST_ONLY" -eq 1 ]; then
+    printf 'Gate / injection pairing (%d gates):\n\n' "${#ALL_GATES[@]}"
+    for cmd in "${ALL_GATES[@]}"; do
+        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "$cmd"
+    done
+    exit 0
+fi
+
+# ── Environment parity with CI ───────────────────────────────────────────────
+#
+# Read from ci.yml's top-level `env:` block rather than restated here, for the
+# reason scripts/preflight.sh gives: matching the commands but not the
+# environment is not parity. This script learned that the hard way — it set
+# RUSTFLAGS and CARGO_PROFILE_DEV_DEBUG by hand and missed
+# `RUSTDOCFLAGS: -D warnings`, so `cargo doc` came back UNPROVEN against a
+# broken intra-doc link that CI does reject. The gate was fine; the harness
+# was not.
+apply_ci_env() {
+    local line key value
+    while IFS= read -r line; do
+        key=${line%%=*}
+        value=${line#*=}
+        if [ -z "${!key-}" ]; then
+            export "$key=$value"
+        fi
+    done < <(awk '
+        /^env:[[:space:]]*$/ { in_env = 1; next }
+        /^[^[:space:]#]/     { in_env = 0 }
+        in_env && /^  [A-Za-z_][A-Za-z0-9_]*:/ {
+            line = $0
+            sub(/^  /, "", line)
+            key = line; sub(/:.*$/, "", key)
+            val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+            gsub(/^"|"$/, "", val)
+            print key "=" val
+        }
+    ' "$CI_YML")
+}
+
+apply_ci_env
+
+# Incremental state off, and not to match CI (which does not set it either
+# way) — for disk. This sweep compiles the workspace under a dozen distinct
+# feature permutations, and each keeps its own incremental artifacts:
+# `target/debug/incremental` reached 13 GB partway through a run and filled
+# the device, after which gates failed on ENOSPC instead of on their injected
+# defect. Those failures are caught as INCONCLUSIVE now, but a sweep that
+# cannot finish is not much better than one that lies.
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+
+# So the `package` gate's isolated clone reuses this tree's build cache
+# instead of compiling every dependency from scratch.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+
+for required in RUSTFLAGS RUSTDOCFLAGS; do
+    if [ -z "${!required-}" ]; then
+        printf 'prove_gates_fail: %s is unset — ci.yml no longer exports it, or the\n' \
+            "$required" >&2
+        printf 'env parser above stopped matching. Gates would run under a laxer\n' >&2
+        printf 'environment than CI, so their verdicts would not transfer.\n' >&2
+        exit 2
+    fi
+done
+
+# ── Run ──────────────────────────────────────────────────────────────────────
+
+PROVEN=0
+UNPROVEN=0
+SKIPPED=0
+RESULTS=()
+
+run_quiet() {
+    local cmd="$1" log="$2" status=0
+    # `|| status=$?`, not `if ...; then return 0; fi; return $?`. After an
+    # `if` whose branch is not taken, bash sets `$?` to 0, so that spelling
+    # reports every failing gate as exit 0 — which is precisely the
+    # status-swallowing defect this script exists to catch, in the script
+    # that catches it. It was written that way first, and every gate came
+    # back UNPROVEN until this line changed.
+    (cd "${INJECT_WORKDIR:-$REPO_ROOT}" && eval "$cmd") >"$log" 2>&1 || status=$?
+    return "$status"
+}
+
+idx=0
+for cmd in "${ALL_GATES[@]}"; do
+    idx=$((idx + 1))
+    if ! printf '%s' "$cmd" | grep -Eq -- "$ONLY"; then
+        SKIPPED=$((SKIPPED + 1))
+        continue
+    fi
+    spec=$(injection_for "$cmd")
+    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$cmd"
+    printf '        injection: %s\n' "$spec"
+
+    revert_all
+    apply_injection "$spec"
+
+    log="$LOG_DIR/gate-$idx-broken.log"
+    start=$SECONDS
+    if run_quiet "$cmd" "$log"; then
+        broken_status=0
+    else
+        broken_status=$?
+    fi
+    elapsed=$((SECONDS - start))
+    revert_all
+
+    if [ "$broken_status" -ne 0 ]; then
+        # A non-zero exit is necessary and not sufficient. A gate that dies
+        # because the disk filled, a lock timed out, or a dependency failed
+        # to resolve also exits non-zero, and counting that as proof is the
+        # same error this script exists to find — one level up. The first
+        # full run of this script did exactly that: the target directory
+        # filled during the sweep, nine `cargo test` gates failed in 0s on
+        # ENOSPC, and every one was reported PROVEN.
+        #
+        # So the log has to show the gate reacting to *this* defect.
+        marker=$(expected_marker "$spec")
+        if grep -qF -- "$marker" "$log"; then
+            printf '  \033[32mPROVEN\033[0m  gate exited %s citing the injected defect (%ss)\n' \
+                "$broken_status" "$elapsed"
+            PROVEN=$((PROVEN + 1))
+            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$cmd")
+        else
+            printf '  \033[31mINCONCLUSIVE\033[0m  gate exited %s but its output never mentions\n' \
+                "$broken_status"
+            printf '                the injected defect (%s) — it failed for some other\n' "$marker"
+            printf '                reason, which proves nothing (%ss)\n' "$elapsed"
+            printf '                log: %s\n' "$log"
+            UNPROVEN=$((UNPROVEN + 1))
+            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$cmd")
+        fi
+    else
+        printf '  \033[31mUNPROVEN\033[0m  gate exited 0 WITH the defect present (%ss)\n' "$elapsed"
+        printf '            log: %s\n' "$log"
+        UNPROVEN=$((UNPROVEN + 1))
+        RESULTS+=("UNPROVEN|0|${elapsed}s|$cmd")
+    fi
+done
+
+printf '\n\033[1m── prove_gates_fail summary ──\033[0m\n'
+for row in "${RESULTS[@]-}"; do
+    [ -n "$row" ] || continue
+    verdict=${row%%|*}
+    code=${row#*|}; code=${code%%|*}
+    timing=${row#*|*|}; timing=${timing%%|*}
+    cmd=${row#*|*|*|}
+    if [ "$verdict" = PROVEN ]; then
+        printf '  \033[32m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+    else
+        printf '  \033[31m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+    fi
+done
+printf '\n  %d proven, %d unproven, %d not selected (of %d gates)\n' \
+    "$PROVEN" "$UNPROVEN" "$SKIPPED" "${#ALL_GATES[@]}"
+
+# The tree must be exactly as it was found. A script that injects defects and
+# leaves one behind is worse than no script: the next commit carries it.
+revert_all
+if [ -n "$(git status --porcelain)" ]; then
+    printf '\nprove_gates_fail: the tree is dirty after the run — an injection was\n' >&2
+    printf 'not reverted. Inspect and restore before committing:\n\n' >&2
+    git status --short >&2
+    exit 2
+fi
+
+[ "$UNPROVEN" -eq 0 ] || exit 1

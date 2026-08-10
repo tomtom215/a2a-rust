@@ -305,10 +305,25 @@ async fn main() {
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
         let url = format!("http://{bind_addr}");
         let mut card = make_agent_card(&url, &url);
-        card.url = Some(url);
+        card.url = Some(url.clone());
         card.capabilities = AgentCapabilities::none()
             .with_streaming(true)
             .with_push_notifications(true);
+        // Advertise the socket *before* the handler is built, so the card the
+        // server serves names every transport it answers on. An agent that
+        // listens on a port it never announces is undiscoverable: §5 makes the
+        // card the only way a client learns where to connect, and "WEBSOCKET"
+        // is the custom binding name §12 registers alongside the canonical
+        // JSONRPC / GRPC / HTTP+JSON.
+        let ws_bind_addr = std::env::var("A2A_WS_BIND_ADDR").ok();
+        if let Some(ws_addr) = &ws_bind_addr {
+            card.supported_interfaces.push(AgentInterface {
+                url: format!("ws://{ws_addr}"),
+                protocol_binding: "WEBSOCKET".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            });
+        }
         let handler = Arc::new(
             RequestHandlerBuilder::new(EchoExecutor)
                 .with_agent_card(card)
@@ -320,8 +335,25 @@ async fn main() {
                 .expect("build handler"),
         );
 
-        let addr = start_combined_server(handler, &bind_addr).await;
+        let addr = start_combined_server(Arc::clone(&handler), &bind_addr).await;
         println!("Echo agent listening on http://{addr} (combined JSON-RPC + REST)");
+
+        // Optional WebSocket listener (§12 custom binding). Separate port
+        // because the dispatcher owns its own listener and speaks the HTTP
+        // upgrade itself, rather than sharing the combined server's router.
+        // The in-repo TCK's `--binding websocket` leg discovers this endpoint
+        // from the card interface pushed above; without it that transport
+        // ships with no conformance coverage at all.
+        if let Some(ws_addr) = ws_bind_addr {
+            let ws = std::sync::Arc::new(
+                a2a_protocol_server::dispatch::websocket::WebSocketDispatcher::new(handler),
+            );
+            let bound = ws
+                .serve_with_addr(ws_addr.as_str())
+                .await
+                .expect("bind websocket listener");
+            println!("Echo agent WebSocket listening on ws://{bound}");
+        }
 
         // Block forever — the server runs in background tasks.
         std::future::pending::<()>().await;

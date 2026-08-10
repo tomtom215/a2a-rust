@@ -89,6 +89,22 @@ is growing beyond this limit, consider splitting it into focused sub-modules wit
 a thin `mod.rs` that only re-exports. Some files exceed this guideline where
 splitting would harm cohesion.
 
+This is enforced as a **ratchet**, not a cliff, by
+`scripts/check_file_lengths.sh` (run in CI's Format job). Files already over the
+limit are listed in `.file-length-baseline` and stay legal; growing one is
+allowed, because the rule is about *crossing* 500, not about standing still. The
+list may only shrink:
+
+- a file over 500 lines that is not in the baseline fails the build — split it,
+  or run `scripts/check_file_lengths.sh --update` and justify the exemption in
+  the PR, which makes it a visible decision rather than a silent one;
+- a baselined file that drops to 500 or fewer also fails, until the entry is
+  removed. An exemption that no longer describes anything reads as a live
+  waiver while waiving nothing.
+
+Until 2026-08-10 this rule had no gate at all, and the count quoted below had
+drifted from `46 of 139` to `77 of 310` with nothing to notice.
+
 ### Thin `mod.rs` files
 
 `mod.rs` files should primarily contain `mod` declarations and `pub use`
@@ -394,21 +410,62 @@ clean file if you go by the numbers alone.
 
 ---
 
+## Proving the gates can fail
+
+Running a gate and watching it pass says nothing about whether it *could*
+have failed. This repository has had three gates that could not: a mutation
+workflow that printed `COMBINED MUTATION SCORE: 100%` from empty result
+files, a conformance job that exited green on a report with zero graded
+requirements, and a preflight script that had never been told two of its
+jobs existed. Each ran, went green, and measured nothing.
+
+`scripts/prove_gates_fail.sh` asserts the other half. For every gate in
+ci.yml it injects a defect that gate is responsible for, confirms the gate
+goes red *citing that defect*, and restores the tree. Feature-gated
+injections go inside code compiled only under that feature, so
+`cargo test --features sqlite` failing on always-compiled code cannot pass
+for the sqlite gate.
+
+```bash
+scripts/prove_gates_fail.sh --list      # the gate/injection pairing
+scripts/prove_gates_fail.sh --only fmt  # one gate
+scripts/prove_gates_fail.sh             # all of them (~15 min)
+```
+
+Adding a gate to ci.yml without adding an injection is a hard error: a gate
+nobody has tried to break is a gate nobody knows works.
+
+Last full run — 2026-08-10, **31 of 31 proven, 0 unproven**.
+
+Two rules while it runs, both learned the expensive way:
+
+- **Do not commit from the same working tree.** A `git add` that catches an
+  injected defect stages it, and probe code reached three commits that way.
+  The script refuses to start in a dirty tree and asserts the tree is clean
+  at exit, but it cannot stop a commit made mid-run.
+- **A non-zero exit is not proof.** The first full run reported 31/31 while
+  the disk filled and nine gates died on ENOSPC. The script now requires the
+  gate's own output to name the injected defect, and reports anything else
+  as `INCONCLUSIVE`.
+
 ## PR Checklist
 
 - [ ] Every commit signed off (`git commit -s`) by a human author — see [DCO](#developer-certificate-of-origin-dco)
 - [ ] SPDX header on every new file
-- [ ] No **new** file exceeds 500 lines, and no file you touched crosses it —
-      or the PR says why splitting would harm cohesion (see
-      [500-line maximum](#500-line-maximum-per-file); 46 of 139 existing
-      sources already exceed it, so this is a rule for new work, not a
-      claim about the tree)
+- [ ] `scripts/check_file_lengths.sh` passes — no **new** file exceeds 500
+      lines and no file you touched crosses it, or the PR says why splitting
+      would harm cohesion (see
+      [500-line maximum](#500-line-maximum-per-file); 77 of 310 tracked
+      sources already exceed it as of 2026-08-10, so this is a rule for new
+      work, not a claim about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
+- [ ] If you added or changed a CI gate, `scripts/prove_gates_fail.sh` still
+      passes — a new gate needs an injection proving it can fail
 - [ ] `cargo mutants --in-diff` shows zero surviving mutants for the lines
       this PR changes (this is the blocking gate; the workspace sweep is
       pre-existing debt and not yours to clear)

@@ -272,16 +272,24 @@ impl WebSocketDispatcher {
         while let Some(msg) = reader.next().await {
             match msg {
                 Ok(WsMessage::Text(text)) => {
-                    // Defense in depth: the protocol-level cap above already
-                    // rejects oversized messages before buffering.
-                    if text.len() > MAX_WS_MESSAGE_SIZE {
-                        let err_resp = JsonRpcErrorResponse::new(
-                            best_effort_request_id(&text),
-                            JsonRpcError::new(-32000, "message too large".to_string()),
-                        );
-                        send_json(writer, &err_resp).await;
-                        continue;
-                    }
+                    // No size check here on purpose. `WebSocketConfig` above is
+                    // built with `max_message_size(Some(MAX_WS_MESSAGE_SIZE))`
+                    // and `max_frame_size(Some(MAX_WS_MESSAGE_SIZE))` — the
+                    // same constant — so tungstenite refuses an oversized
+                    // message during the read and this arm never sees one.
+                    // `ws_oversized_message_rejected` pins that: it asserts the
+                    // connection is terminated with no JSON-RPC frame at all.
+                    //
+                    // This used to carry a redundant `if text.len() >
+                    // MAX_WS_MESSAGE_SIZE` guard labelled defense in depth. It
+                    // was unreachable by construction, and mutation testing
+                    // said so plainly: its comparison and the sign of its error
+                    // code were three permanently unkillable mutants, because
+                    // no input can enter the branch. Removed 2026-08-09 rather
+                    // than carried as noise. If the two caps are ever allowed
+                    // to differ — a deliberate edit to the config above — the
+                    // guard has to come back, and a test that reaches it with
+                    // it.
 
                     // FIX(M9): Acquire permit before spawning; back-pressure if at capacity.
                     let Ok(permit) = semaphore.clone().try_acquire_owned() else {
@@ -1574,6 +1582,237 @@ mod tests {
         assert!(
             tokio_tungstenite::connect_async(req).await.is_ok(),
             "handshake with A2A-Version 1.0 must succeed"
+        );
+    }
+
+    // 20b. The *missing*-header branch of the version gate, in both
+    // directions.
+    //
+    // Kills `delete !` on `if !require { return Ok(()) }` in
+    // `check_a2a_version`. That inversion swaps exactly these two behaviours —
+    // a strict server would accept a headerless upgrade and a tolerant one
+    // would reject it — and no test could see it, because `ws_connect` always
+    // sets `a2a-version: 1.0` and test 20 above only ever varies the *value*.
+    // Spec §3.6.2 reads a missing header as protocol 0.3, which this server
+    // does not implement, so the strict default must reject.
+    #[tokio::test]
+    async fn ws_missing_version_header_rejected_by_default() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+
+        let addr = spawn_ws_server().await;
+        // Deliberately no `a2a-version` header.
+        let req = format!("ws://{addr}").into_client_request().unwrap();
+        assert!(
+            tokio_tungstenite::connect_async(req).await.is_err(),
+            "a handshake with no A2A-Version header must be rejected by default \
+             (§3.6.2 reads it as 0.3)"
+        );
+    }
+
+    #[tokio::test]
+    async fn ws_missing_version_header_accepted_with_optout() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+
+        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let dispatcher =
+            Arc::new(WebSocketDispatcher::new(handler).accept_missing_version_header());
+        let addr = dispatcher
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+
+        let req = format!("ws://{addr}").into_client_request().unwrap();
+        assert!(
+            tokio_tungstenite::connect_async(req).await.is_ok(),
+            "accept_missing_version_header() must restore the tolerant behaviour"
+        );
+    }
+
+    // 20c. The handshake rejection carries the AIP-193 `details` block.
+    //
+    // Kills `delete !` on `if !details.is_null()`. Under that inversion the
+    // machine-readable `google.rpc.ErrorInfo` is dropped from the body — and
+    // *only* from the body, so every existing assertion (which checks that the
+    // handshake fails at all) still passes. Spec parity with the REST binding
+    // is the whole point of emitting it, so it is worth an assertion of its
+    // own.
+    #[tokio::test]
+    async fn ws_version_rejection_body_carries_error_details() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+        use tokio_tungstenite::tungstenite::Error as WsError;
+
+        let addr = spawn_ws_server().await;
+        let mut req = format!("ws://{addr}").into_client_request().unwrap();
+        req.headers_mut()
+            .insert("a2a-version", "2.0".parse().unwrap());
+
+        match tokio_tungstenite::connect_async(req).await {
+            Err(WsError::Http(resp)) => {
+                assert_eq!(resp.status(), 400, "version rejection is HTTP 400");
+                let body = resp.body().as_ref().expect("rejection carries a body");
+                let text = String::from_utf8_lossy(body);
+                let json: serde_json::Value =
+                    serde_json::from_str(&text).expect("rejection body is JSON");
+                assert!(
+                    !json["error"]["details"].is_null(),
+                    "the AIP-193 details block must be present, got: {text}"
+                );
+            }
+            other => panic!("expected an HTTP 400 rejection, got: {other:?}"),
+        }
+    }
+
+    // 20d. A lagged stream is reported to the client as a JSON-RPC error
+    // frame, with the server-error code.
+    //
+    // Kills `delete -` on `JsonRpcError::new(-32000, ..)` in `stream_events`,
+    // which turns the code into a positive 32000. Existing tests assert
+    // -32700 and -32601 elsewhere, but nothing reached this arm at all: it
+    // fires only when the reader yields `Err`, and the only producer of that
+    // is the consumer-lag error.
+    //
+    // The lag is genuine. A queue capacity of 1 plus an executor that writes
+    // far more events than the socket consumer can drain overflows the
+    // broadcast ring for this subscriber, which is exactly the production
+    // condition the frame exists to report.
+    #[tokio::test]
+    async fn ws_lagged_stream_reports_server_error_code() {
+        struct FloodExec;
+        agent_executor!(FloodExec, |ctx, queue| async {
+            for _ in 0..512 {
+                queue
+                    .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        status: TaskStatus::new(TaskState::Working),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+            Ok(())
+        });
+
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(FloodExec)
+                .with_event_queue_capacity(1)
+                .build()
+                .unwrap(),
+        );
+        let addr = Arc::new(WebSocketDispatcher::new(handler))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "SendStreamingMessage",
+            "id": "lag-1",
+            "params": {
+                "message": {
+                    "messageId": "msg-lag-1",
+                    "role": "ROLE_USER",
+                    "parts": [{"text": "flood"}]
+                }
+            }
+        })
+        .to_string();
+        ws.send(WsMessage::Text(req.into())).await.unwrap();
+
+        let found = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while let Some(Ok(msg)) = ws.next().await {
+                let Ok(text) = msg.into_text() else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if let Some(code) = v["error"]["code"].as_i64() {
+                    return Some(code);
+                }
+            }
+            None
+        })
+        .await
+        .expect("the lagged stream must produce an error frame within 10s");
+
+        assert_eq!(
+            found,
+            Some(-32000),
+            "a lagged stream must be reported with the JSON-RPC server-error \
+             code -32000, not a positive code"
+        );
+    }
+
+    // 20e. Back-pressure: the 65th concurrent request on one connection is
+    // rejected rather than queued, with the server-error code.
+    //
+    // Kills `delete -` on the `-32000` in the busy branch, the last survivor in
+    // this file. The branch needs the request semaphore — hardcoded
+    // `Semaphore::new(64)` — to be exhausted, which sounds like a timing test
+    // and is not: the permit is acquired before the handler task is spawned and
+    // released only when that task finishes, so an executor that never returns
+    // holds its permit for the life of the connection. Sixty-five requests then
+    // exhaust it by construction, with no sleeping and nothing racing.
+    #[tokio::test]
+    async fn ws_over_concurrency_limit_is_rejected_with_server_error_code() {
+        struct BlockingExec;
+        agent_executor!(BlockingExec, |_ctx, _queue| async {
+            // Never completes: the spawned handler task keeps its permit.
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+
+        let handler = Arc::new(RequestHandlerBuilder::new(BlockingExec).build().unwrap());
+        let addr = Arc::new(WebSocketDispatcher::new(handler))
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0");
+        let mut ws = ws_connect(addr).await;
+
+        // 64 permits exist; send one more than that.
+        for i in 0..65 {
+            let req = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "SendMessage",
+                "id": format!("busy-{i}"),
+                "params": {
+                    "message": {
+                        "messageId": format!("msg-busy-{i}"),
+                        "role": "ROLE_USER",
+                        "parts": [{"text": "block"}]
+                    }
+                }
+            })
+            .to_string();
+            ws.send(WsMessage::Text(req.into())).await.unwrap();
+        }
+
+        // Only the rejected request answers; the other 64 are still executing.
+        let code = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            while let Some(Ok(msg)) = ws.next().await {
+                let Ok(text) = msg.into_text() else { continue };
+                let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
+                    continue;
+                };
+                if let Some(c) = v["error"]["code"].as_i64() {
+                    assert!(
+                        v["error"]["message"]
+                            .as_str()
+                            .is_some_and(|m| m.contains("server busy")),
+                        "expected the back-pressure rejection, got: {v}"
+                    );
+                    return Some(c);
+                }
+            }
+            None
+        })
+        .await
+        .expect("the over-limit request must be answered within 10s");
+
+        assert_eq!(
+            code,
+            Some(-32000),
+            "back-pressure must be reported with the JSON-RPC server-error \
+             code -32000, not a positive code"
         );
     }
 

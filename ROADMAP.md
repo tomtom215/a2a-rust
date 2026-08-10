@@ -102,11 +102,18 @@ This is the category most worth clearing before any external review.
   separates the blocking per-PR `--in-diff` gate (which a contributor is
   accountable for) from the advisory workspace sweep (pre-existing debt), and
   states the sweep's real number. **Still open:** ADR 0006 carries the old
-  absolute wording, and the exceptions live in a markdown table rather than an
-  in-source `#[mutants::skip]` + reason. That attribute needs the `mutants`
-  crate as a real dependency of a published crate, which is the decision still
-  to make — and it is now a smaller one than it looked, since the exception list
-  is down to two rows, both in `eviction.rs`.
+  absolute wording.
+
+  **The `#[mutants::skip]` question is closed, and closed by removal rather
+  than by decision** (2026-08-09). The exception list is empty: the two
+  `eviction.rs` equivalents were retired by rewriting the guard as
+  `saturating_sub(...)` + `!= 0`, which keeps the O(n log n) short-circuit the
+  old `>` guard existed for while removing the operator whose weakened form was
+  equivalent. `--exclude-re` is gone from both the sweep and the incremental
+  gate, so there are now no mutation exclusions anywhere. Measured: `eviction.rs`
+  25 mutants → 17, all 17 caught (exit 0); the old pattern matches 0 of the
+  crate's 2097 mutants. With nothing left to skip, taking the `mutants` crate as
+  a dependency of a published crate is no longer a decision anyone is waiting on.
 * **Raise coverage on the genuinely weak files.** After the 2026-07-31 pass,
   the weakest are `handler/event_processing/background/mod.rs` (54.2%),
   `serve.rs` (67.5%), and `background/push_delivery.rs` (72.8%). The first
@@ -117,8 +124,12 @@ This is the category most worth clearing before any external review.
   Flagged rather than silently accepted: it is a grab-bag module, so the split
   is real work (validation, call-context, history shaping, and the
   `find_task_by_context` impl are four unrelated concerns) and was not worth
-  doing at the tail of that change. 59 of 232 `.rs` files already exceed the
-  guideline, so this is not novel, but it is one more.
+  doing at the tail of that change. ~~59 of 232~~ **77 of 310** tracked `.rs`
+  files already exceed the guideline (measured 2026-08-10), so this is not
+  novel, but it is one more. Since 2026-08-10 the guideline is enforced as a
+  ratchet by `scripts/check_file_lengths.sh`: the 77 are recorded in
+  `.file-length-baseline` and the list may only shrink, so no further file can
+  cross 500 lines unnoticed the way this one did.
 * **Decide whether `A2aRouter` should route `/tenants/{tenant}/…`.** The
   built-in REST dispatcher strips that prefix and threads the tenant
   through; the axum adapter registers no such routes. Verified to fail
@@ -133,6 +144,12 @@ This is the category most worth clearing before any external review.
   `git tag -a`. Adopting `git tag -s` needs a maintainer key and a documented
   way for adopters to obtain it — an unmade decision, not just a missing
   step. See [`RELEASING.md`](RELEASING.md).
+  **Half of this is closed as of 2026-08-10:** `release.yml` now fails the
+  release if the pushed tag is not an annotated tag, so an eleventh
+  lightweight tag cannot be created through the GitHub UI without stopping
+  the workflow. The signing half is unchanged and still needs the key
+  decision; the check deliberately does not require a signature, because a
+  gate for a key that does not exist could never fail.
 * **PGP key for security reports.** `SECURITY.md` has none, so emailed
   vulnerability reports cannot be encrypted. GitHub Security Advisories is
   the recommended channel in the meantime.
@@ -150,9 +167,15 @@ This is the category most worth clearing before any external review.
   whole 93.62%-badge versus 95.75%-local gap. The entries now carry a glob
   token; **one upload is still needed to confirm the fix took**, by repeating
   the arithmetic in `docs/rust-sdk-assessment.md` §4.4.
-* **Say which coverage number is meant.** `cargo llvm-cov` reports regions
-  90.87%, functions 89.32% and lines 91.49% for the same workspace. A bare
-  "coverage: N%" in this project is ambiguous between at least four figures.
+* **Say which coverage number is meant.** A bare "coverage: N%" in this
+  project is ambiguous between at least four figures, and the *file set*
+  matters as much as the metric. Re-measured 2026-08-10 with
+  `cargo llvm-cov --workspace --all-features`: lines are **90.88%** over
+  everything instrumented, **93.52%** over the badge's file set, and
+  **95.57%** over `codecov.yml`'s full ignore list; functions are **89.00%**.
+  The four-way rollup and the commands behind it are in
+  `docs/rust-sdk-assessment.md` §4.4 — quote a row from that table rather
+  than a bare percentage.
 
 ## Conformance
 
@@ -170,8 +193,19 @@ Full analysis and reproduction steps in
   out of `NOT TESTED` if `a2a-tck` implements them. Nothing to do here except
   re-measure when upstream moves; the ceiling is not this project's to raise.
 * **WebSocket** remains a custom binding under spec §12 and is deliberately
-  outside the official suite's scope. It is covered by this repository's own
-  feature-gated tests.
+  outside the official suite's scope. Since 2026-08-10 it is graded by the
+  in-repo runner's `--binding websocket` leg (21 checks, 1 not applicable) in
+  addition to this repository's feature-gated tests — the official suite's
+  silence about it is expected, but ours was a real gap.
+* **Cross-binding equivalence (§5.1, `BIND-EQUIV-001..004`)** is graded by the
+  in-repo runner's `--equivalence` mode since 2026-08-10, across all four
+  bindings. This does not move the upstream count: the official suite still
+  reports those four MUSTs `NOT TESTED`, because the tests that would change
+  that have to live in `a2aproject/a2a-tck` (its own `task-28`). What changed
+  is that this repository no longer ships a four-binding server with nothing
+  checking the bindings agree. `BIND-EQUIV-004` is graded structurally only —
+  the enforcement half needs a target configured to require credentials,
+  which no job here provides.
 
 ## Open questions
 

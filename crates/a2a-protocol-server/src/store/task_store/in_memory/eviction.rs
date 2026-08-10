@@ -97,8 +97,15 @@ impl InMemoryTaskStore {
         // If there aren't enough terminal tasks, fall back to removing the
         // oldest non-terminal tasks to guarantee the capacity limit is enforced.
         if let Some(max) = config.max_capacity {
-            if store.len() > max {
-                let overflow = store.len() - max;
+            // `saturating_sub` first, then test the count — not `len > max`
+            // then subtract. The two are the same predicate (`saturating_sub`
+            // is zero exactly when `len <= max`), but this shape has no
+            // equivalent mutant in it: under `>=` the old guard entered with
+            // `overflow == 0`, collected and sorted, then `take(0)` removed
+            // nothing, so no test could observe the difference. `!= 0` instead
+            // mutates only to `== 0`, which inverts the guard and is caught.
+            let overflow = store.len().saturating_sub(max);
+            if overflow != 0 {
                 // Collect terminal tasks sorted by age (oldest first).
                 let mut terminal: Vec<(TaskId, Instant)> = store
                     .entries
@@ -120,8 +127,8 @@ impl InMemoryTaskStore {
                 // removal lands, and `len` is `max + overflow` on entry. That
                 // makes `removed < overflow` and `store.len() > max` the same
                 // predicate, and the counter dead weight.
-                if store.len() > max {
-                    let remaining = store.len() - max;
+                let remaining = store.len().saturating_sub(max);
+                if remaining != 0 {
                     let mut non_terminal: Vec<(TaskId, Instant)> = store
                         .entries
                         .iter()

@@ -533,6 +533,170 @@ async fn handle_delete_push_config_inner(
 mod tests {
     use super::*;
 
+    // ── /tasks/* catchall routing ────────────────────────────────────────
+    //
+    // `handle_tasks_catchall` parses the path tail by hand, and every guard in
+    // that match had a surviving mutant: the `:cancel` and `:subscribe`
+    // suffix tests could be forced to either constant, the `!id.contains(':')`
+    // guard to `true`, and the two `len() - suffix.len()` slices to `/`. None
+    // of it was covered, because the tests in this module only reach the
+    // helpers around the router, never the router's own dispatch.
+    //
+    // The slice mutants are the sharp ones and the reason task ids here are
+    // several characters long: for `"task-abc:cancel"`, `len() - ":cancel"
+    // .len()` is the correct 8, while `len() / ":cancel".len()` is 2 — the
+    // handler would silently act on task `"ta"`. A single-character id would
+    // hide that.
+
+    fn catchall_state() -> A2aState {
+        let handler = Arc::new(
+            crate::builder::RequestHandlerBuilder::new({
+                struct Noop;
+                crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
+                Noop
+            })
+            .build()
+            .unwrap(),
+        );
+        A2aState {
+            handler,
+            config: Arc::new(super::super::DispatchConfig::default()),
+        }
+    }
+
+    async fn seed_task(state: &A2aState, id: &str) {
+        use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+        let task = Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Submitted),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        };
+        state.handler.task_store.save(&task).await.unwrap();
+    }
+
+    async fn dispatch_tail(state: &A2aState, method: &str, rest: &str) -> axum::http::StatusCode {
+        let response = handle_tasks_catchall(
+            State(state.clone()),
+            axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
+            Path(rest.to_owned()),
+            axum::http::HeaderMap::new(),
+            Bytes::new(),
+        )
+        .await;
+        response.status()
+    }
+
+    /// `POST /tasks/{id}:cancel` must reach `CancelTask` with the id shorn of
+    /// the suffix. Kills both `ends_with(":cancel")` guard constants and the
+    /// `- with /` slice mutant.
+    #[tokio::test]
+    async fn catchall_routes_cancel_and_strips_the_suffix() {
+        let state = catchall_state();
+        seed_task(&state, "task-abc").await;
+
+        // The task exists, so a correctly-parsed id cancels it.
+        assert_eq!(
+            dispatch_tail(&state, "POST", "task-abc:cancel").await,
+            axum::http::StatusCode::OK,
+            "POST /tasks/task-abc:cancel must cancel task-abc"
+        );
+        // A cancel for an id that does not exist must 404 — this is what the
+        // slice mutants produce, and what proves the id is parsed exactly.
+        assert_eq!(
+            dispatch_tail(&state, "POST", "missing-xyz:cancel").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "an unknown task id must 404 rather than resolve to a truncated one"
+        );
+    }
+
+    /// `GET|POST /tasks/{id}:subscribe` routes to `SubscribeToTask` with the id
+    /// shorn of the suffix. Kills the `ends_with(":subscribe")` guard
+    /// constants and its `- with /` slice mutant.
+    #[tokio::test]
+    async fn catchall_routes_subscribe_and_strips_the_suffix() {
+        let state = catchall_state();
+        seed_task(&state, "task-abc").await;
+
+        // A *seeded* id is essential. The first version of this test used an
+        // unknown id and asserted 404 — which passes, but proves nothing: the
+        // mutants route the request elsewhere and that elsewhere also 404s on
+        // an id that does not exist. Mutation testing caught it, five
+        // survivors still standing after a green test.
+        //
+        // With a task that exists, a correct parse subscribes and answers 200
+        // (an SSE stream), while every wrong parse 404s:
+        //   * `!id.contains(':')` forced true  -> the GET arm above captures
+        //     this first and calls GetTask for the literal id
+        //     "task-abc:subscribe", which does not exist
+        //   * `ends_with(":subscribe")` forced false -> falls through to the
+        //     catch-all 404
+        //   * `len() - ":subscribe".len()` becoming `/` -> 18/10 = 1, so it
+        //     subscribes to task "t"
+        assert_eq!(
+            dispatch_tail(&state, "GET", "task-abc:subscribe").await,
+            axum::http::StatusCode::OK,
+            "GET /tasks/task-abc:subscribe must subscribe to task-abc"
+        );
+        assert_eq!(
+            dispatch_tail(&state, "GET", "missing-xyz:subscribe").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "subscribe on an unknown id must still 404"
+        );
+    }
+
+    /// A single-segment POST that names no colon action must fall through to
+    /// the catch-all, not be treated as an action on a truncated id.
+    ///
+    /// Kills `ends_with(":cancel")` and `ends_with(":subscribe")` forced to
+    /// `true`. Both make *every* single-segment POST an action, on the id
+    /// `path[..len - suffix.len()]`. The path lengths here are chosen so that
+    /// truncation lands exactly on the seeded task: under either mutant the
+    /// request would succeed with 200, where the real router answers 404.
+    #[tokio::test]
+    async fn catchall_post_without_a_colon_action_falls_through() {
+        let state = catchall_state();
+        seed_task(&state, "tid").await;
+
+        // len("tidZZZZZZZ") - len(":cancel") == 3  ->  "tid"
+        assert_eq!(
+            dispatch_tail(&state, "POST", "tidZZZZZZZ").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "a POST with no colon action must not be routed to CancelTask"
+        );
+        // len("tidZZZZZZZZZZ") - len(":subscribe") == 3  ->  "tid"
+        assert_eq!(
+            dispatch_tail(&state, "POST", "tidZZZZZZZZZZ").await,
+            axum::http::StatusCode::NOT_FOUND,
+            "a POST with no colon action must not be routed to SubscribeToTask"
+        );
+    }
+
+    /// A plain `GET /tasks/{id}` routes to `GetTask`, and a colon-bearing id
+    /// does not. Kills `replace match guard !id.contains(':') with true`,
+    /// which would send `{id}:cancel` down the `GetTask` arm instead.
+    #[tokio::test]
+    async fn catchall_plain_get_does_not_swallow_colon_actions() {
+        let state = catchall_state();
+        seed_task(&state, "task-abc").await;
+
+        assert_eq!(
+            dispatch_tail(&state, "GET", "task-abc").await,
+            axum::http::StatusCode::OK,
+            "GET /tasks/task-abc must fetch the task"
+        );
+        // With the guard forced true this would be handled as GetTask for the
+        // literal id "task-abc:cancel" and 404; it must instead fall through
+        // to the cancel arm and succeed.
+        assert_eq!(
+            dispatch_tail(&state, "POST", "task-abc:cancel").await,
+            axum::http::StatusCode::OK,
+            "a colon action must not be captured by the plain `GetTask` arm"
+        );
+    }
+
     #[test]
     fn extract_headers_lowercases_names() {
         let mut map = axum::http::HeaderMap::new();

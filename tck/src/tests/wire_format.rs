@@ -6,14 +6,15 @@
 use super::helpers;
 
 /// Tests that JSON-RPC responses have proper envelope format.
+///
+/// Applies to every binding that carries the envelope — §9 over HTTP and §12
+/// over a socket alike. The runner's `ENVELOPE_ONLY` scope excludes §11 and
+/// reports it as `N/A`; this function no longer self-excludes, because the
+/// `return Ok(())` that used to do it made the check report a pass for two
+/// bindings it never ran against.
 pub async fn test_jsonrpc_envelope_format(url: &str, binding: &str) -> Result<(), String> {
-    if binding != "jsonrpc" {
-        // This test only applies to JSON-RPC binding
-        return Ok(());
-    }
-
     let params = helpers::make_send_params("TCK: wire format test");
-    let resp = helpers::jsonrpc_request(url, "SendMessage", params).await?;
+    let resp = helpers::rpc(url, binding, "SendMessage", params).await?;
 
     // Must have "jsonrpc": "2.0"
     let version = resp

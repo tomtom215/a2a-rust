@@ -49,6 +49,10 @@ jobs:
           exit 1
         env:
           A2A_BIND_ADDR: "127.0.0.1:9090"
+          # Brings up the §12 WebSocket listener and adds its WEBSOCKET
+          # interface to the served agent card, which is how the websocket
+          # leg below finds it — the same path a real client takes.
+          A2A_WS_BIND_ADDR: "127.0.0.1:9091"
 
       # Run TCK against JSON-RPC binding
       - name: TCK — JSON-RPC binding
@@ -57,6 +61,15 @@ jobs:
       # Run TCK against REST binding
       - name: TCK — REST binding
         run: ./target/release/a2a-tck --url http://127.0.0.1:9090 --binding rest
+
+      # Run TCK against the §12 WebSocket binding. `--url` stays the HTTP
+      # origin for every binding: §5 discovery is served over HTTP whichever
+      # transport carries the RPCs, and the socket endpoint is read from the
+      # card. Shipping this transport without a conformance leg meant its only
+      # coverage was the server crate's own unit tests — never an
+      # outside-in run against the wire.
+      - name: TCK — WebSocket binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9090 --binding websocket
 
       - name: Setup Python (a2a-inspector card check)
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -82,6 +95,74 @@ jobs:
         run: |
           pip install httpx
           python itk/interop/inspector_card_check.py http://127.0.0.1:9090
+
+  # ── All four bindings, against the purpose-built SUT ──────────────────────
+  #
+  # Separate from the echo-agent job because the example serves three bindings
+  # and the SUT serves four: it is the only target in the repo that answers
+  # §10 gRPC, so it is the only one the gRPC leg can be graded against.
+  # Splitting the jobs keeps the example an example.
+  tck-all-bindings:
+    name: TCK all bindings (SUT)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build SUT and TCK
+        run: cargo build --release -p a2a-tck-sut -p a2a-tck
+
+      - name: Start SUT (JSON-RPC + REST + gRPC + WebSocket)
+        run: |
+          ./target/release/a2a-tck-sut &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9999/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "SUT ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "SUT failed to start"
+          exit 1
+        env:
+          SUT_HOST: "127.0.0.1:9999"
+          SUT_GRPC_HOST: "127.0.0.1:9998"
+          SUT_WS_HOST: "127.0.0.1:9997"
+
+      # The card must name every listener the SUT brought up, or the legs
+      # below would resolve nothing and the job would report a config error
+      # rather than a conformance verdict. Assert it before grading.
+      - name: Card advertises all four bindings
+        run: |
+          card=$(curl -sf http://127.0.0.1:9999/.well-known/agent-card.json)
+          for b in JSONRPC HTTP+JSON GRPC WEBSOCKET; do
+            echo "$card" | grep -q "\"$b\"" || { echo "card is missing $b"; exit 1; }
+          done
+          echo "all four interfaces advertised"
+
+      - name: TCK — JSON-RPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding jsonrpc
+
+      - name: TCK — REST binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding rest
+
+      - name: TCK — WebSocket binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding websocket
+
+      # §10. The gRPC endpoint is read from the card's GRPC interface, so this
+      # also exercises the discovery path a real gRPC client takes.
+      - name: TCK — gRPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding grpc
+
+      # §5.1 (BIND-EQUIV-001..004). Structurally unlike every step above: it
+      # grades the *relation* between bindings, so it drives all four at once
+      # and compares. Upstream's own suite has these four MUSTs marked
+      # NOT TESTED, with a ticket noting they need exactly this shape of test.
+      # Runs last, since it depends on the four bindings being individually
+      # sound — a failure here should mean disagreement, not a broken binding.
+      - name: TCK — cross-binding equivalence (§5.1)
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --equivalence
 
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})

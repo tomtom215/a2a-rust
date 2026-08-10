@@ -8,9 +8,9 @@ use super::helpers;
 /// Tests that an invalid JSON-RPC method returns a proper error.
 pub async fn test_invalid_method_returns_error(url: &str, binding: &str) -> Result<(), String> {
     match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let resp =
-                helpers::jsonrpc_request(url, "nonexistent/method", serde_json::json!({})).await?;
+                helpers::rpc(url, binding, "nonexistent/method", serde_json::json!({})).await?;
             let error = resp
                 .get("error")
                 .ok_or("expected error response for invalid method")?;
@@ -39,10 +39,11 @@ pub async fn test_invalid_method_returns_error(url: &str, binding: &str) -> Resu
 /// Tests that invalid params return a proper error.
 pub async fn test_invalid_params_returns_error(url: &str, binding: &str) -> Result<(), String> {
     match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             // Send message/send with missing required 'message' field
-            let resp = helpers::jsonrpc_request(
+            let resp = helpers::rpc(
                 url,
+                binding,
                 "SendMessage",
                 serde_json::json!({"invalid_field": true}),
             )
@@ -87,10 +88,14 @@ pub async fn test_invalid_params_returns_error(url: &str, binding: &str) -> Resu
 pub async fn test_get_unknown_task_returns_error(url: &str, binding: &str) -> Result<(), String> {
     let unknown = "tck-nonexistent-task-2f9c8e11-does-not-exist";
     match binding {
-        "jsonrpc" => {
-            let resp =
-                helpers::jsonrpc_request(url, "GetTask", serde_json::json!({ "id": unknown }))
-                    .await?;
+        "jsonrpc" | "websocket" => {
+            let resp = helpers::rpc(
+                url,
+                binding,
+                "GetTask",
+                serde_json::json!({ "id": unknown }),
+            )
+            .await?;
             if resp.get("error").is_none() {
                 return Err(format!(
                     "GetTask on an unknown id must return an error, got: {resp}"
@@ -111,15 +116,18 @@ pub async fn test_get_unknown_task_returns_error(url: &str, binding: &str) -> Re
     }
 }
 
-/// A syntactically invalid JSON body on the JSON-RPC endpoint MUST produce a
-/// JSON-RPC error envelope (parse error), not a task or a silent 200. The
-/// REST binding must answer any non-2xx / error for a malformed body.
+/// A syntactically invalid request MUST produce an error, never a result.
+///
+/// The carriage differs per binding but the requirement does not: an HTTP
+/// body for §9/§11, a text frame for §12. Sending the §12 case over HTTP —
+/// as this check did before the WebSocket leg existed — tests the wrong
+/// transport and reports its verdict under the WebSocket binding's name.
 pub async fn test_malformed_body_returns_error(url: &str, binding: &str) -> Result<(), String> {
+    const MALFORMED: &[u8] = b"{ this is not valid json ";
+
     match binding {
         "jsonrpc" => {
-            let resp =
-                helpers::post_raw(url, "/", b"{ this is not valid json ", "application/json")
-                    .await?;
+            let resp = helpers::post_raw(url, "/", MALFORMED, "application/json").await?;
             // Either a JSON-RPC error envelope or a non-JSON error page is
             // acceptable; a parsed success result is not.
             if resp.get("result").is_some() {
@@ -128,6 +136,30 @@ pub async fn test_malformed_body_returns_error(url: &str, binding: &str) -> Resu
                 ));
             }
             Ok(())
+        }
+        "websocket" => {
+            let text = std::str::from_utf8(MALFORMED).map_err(|e| format!("fixture: {e}"))?;
+            // Closing the connection on garbage is a legitimate answer —
+            // §12 leaves the recovery policy to the binding. Answering with a
+            // *result* is not, and neither is accepting it silently and
+            // leaving the socket open for the next frame.
+            match helpers::ws_send_raw(url, text).await? {
+                None => Ok(()),
+                Some(resp) => {
+                    if resp.get("result").is_some() {
+                        return Err(format!(
+                            "a malformed WebSocket frame must not yield a result, got: {resp}"
+                        ));
+                    }
+                    if resp.get("error").is_none() {
+                        return Err(format!(
+                            "a malformed WebSocket frame must be answered with a JSON-RPC error \
+                             or a closed connection, got: {resp}"
+                        ));
+                    }
+                    Ok(())
+                }
+            }
         }
         "rest" => {
             let (status, body) = helpers::post_raw_status(

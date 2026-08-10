@@ -431,6 +431,74 @@ mod tests {
         }
     }
 
+    /// Kills `replace PushSender::allows_private_urls -> bool with true`.
+    ///
+    /// That method is a *trait default* returning `false`, i.e. SSRF
+    /// protection on — the production behaviour of any sender that does not
+    /// opt out. Every other test double in this crate overrides it to `true`
+    /// so their fixtures can use loopback URLs, and the one that does not
+    /// (`NoopSender` below) only ever passes a public URL. The default was
+    /// therefore never exercised, and flipping it to `true` — silently
+    /// disabling SSRF validation for every sender in the wild — changed no
+    /// assertion.
+    ///
+    /// This test pins it from the outside: a sender that takes the default,
+    /// and a loopback webhook that must be refused at config-creation time.
+    #[tokio::test]
+    async fn set_push_config_rejects_private_url_under_the_default_sender_policy() {
+        use crate::push::PushSender;
+        use a2a_protocol_types::events::StreamResponse;
+        use std::future::Future;
+        use std::pin::Pin;
+
+        // Deliberately does NOT override `allows_private_urls`. The whole
+        // point is to exercise the trait default.
+        struct DefaultPolicySender;
+        impl PushSender for DefaultPolicySender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = a2a_protocol_types::error::A2aResult<()>> + Send + 'a>>
+            {
+                Box::pin(async { Ok(()) })
+            }
+        }
+
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_push_sender(DefaultPolicySender)
+            .build()
+            .unwrap();
+        save_task(&handler, "task-ssrf").await;
+
+        let config = TaskPushNotificationConfig {
+            tenant: None,
+            id: Some("cfg-ssrf".to_owned()),
+            task_id: Some("task-ssrf".to_owned()),
+            url: "http://127.0.0.1:9000/webhook".to_owned(),
+            token: None,
+            authentication: None,
+        };
+
+        // The rejection surfaces as `ServerError::Protocol`, since
+        // `validate_webhook_url` yields an `A2aError` that `?` converts.
+        // Asserted on the message rather than the variant so the test pins the
+        // security behaviour, not the error plumbing.
+        match handler.on_set_push_config(config, None).await {
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("private/loopback"),
+                    "expected the SSRF rejection, got: {msg}"
+                );
+            }
+            Ok(v) => panic!(
+                "a sender taking the default policy must refuse a loopback webhook URL, got: Ok({v:?})"
+            ),
+        }
+    }
+
     /// The global (total) push-config ceiling is enforced across distinct task
     /// ids, not just per task — a client cannot grow the store without bound by
     /// spreading configs over many task ids.

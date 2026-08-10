@@ -44,7 +44,44 @@ jobs:
       version:       ${{ steps.meta.outputs.version }}
       is_prerelease: ${{ steps.meta.outputs.is_prerelease }}
     steps:
+      # `fetch-depth: 0` and `fetch-tags` so the tag *object* is present, not
+      # just the ref: the check below asks what kind of object it is, which
+      # a shallow checkout cannot answer.
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # RELEASING.md step 3 says `git tag -a`. All ten tags to date are
+      # lightweight anyway — bare refs with no tagger, no date, no message —
+      # because creating a release through the GitHub UI produces one. The
+      # instruction was documented and not applied, and nothing noticed for
+      # ten releases. This is the check that notices.
+      #
+      # Annotated, not signed. Signing needs a maintainer key and a published
+      # way for adopters to obtain it, which is a decision this workflow
+      # cannot make; see the "Known gap" note in RELEASING.md. Requiring an
+      # annotated tag is the part that is achievable today, and it is what
+      # makes the tag itself record who cut the release and when.
+      - name: Tag is annotated
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          KIND=$(git cat-file -t "$TAG" 2>/dev/null || echo "missing")
+          printf 'Tag %s is a %s object\n' "$TAG" "$KIND"
+          if [ "$KIND" != "tag" ]; then
+            echo "::error::Tag '$TAG' is lightweight (a $KIND object), not annotated."
+            echo ""
+            echo "A lightweight tag records no tagger and no date, so the tag alone"
+            echo "does not attest who cut the release or when. RELEASING.md step 3"
+            echo "specifies 'git tag -a'; the GitHub release UI does not do that."
+            echo ""
+            echo "Delete the tag and recreate it locally:"
+            echo "    git tag -d $TAG && git push --delete origin $TAG"
+            echo "    git tag -a $TAG -m \"Release $TAG\" && git push origin $TAG"
+            exit 1
+          fi
+          printf 'Tagger: %s\n' "$(git for-each-ref "refs/tags/$TAG" --format='%(taggername) %(taggerdate:iso)')"
 
       - name: Extract version metadata
         id: meta

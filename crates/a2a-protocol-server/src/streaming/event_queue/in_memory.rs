@@ -411,6 +411,171 @@ mod tests {
         })
     }
 
+    // ── terminal-state tracking (`saw_terminal`) ─────────────────────────
+    //
+    // `saw_terminal` is only observable through one behaviour: on channel
+    // close, a reader that has seen a terminal frame ends the stream outright,
+    // while one that has not consults the reattach hook. Asserting the hook is
+    // *not* consulted is therefore the only way to pin it — and it pins four
+    // mutants at once, since `|= carries_terminal_state(..)` staying false and
+    // `carries_terminal_state` losing a match arm are indistinguishable from
+    // the outside.
+
+    /// Records whether the reattach hook was consulted.
+    fn counting_reattach(flag: &Arc<std::sync::atomic::AtomicBool>) -> ReattachFn {
+        let flag = Arc::clone(flag);
+        Arc::new(move || {
+            let flag = Arc::clone(&flag);
+            Box::pin(async move {
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                Reattached::End
+            })
+        })
+    }
+
+    /// Kills `replace |= with &=` on the broadcast path and
+    /// `delete match arm StreamResponse::StatusUpdate(u) in
+    /// carries_terminal_state`. Both leave `saw_terminal` false, which sends a
+    /// finished stream back through the reattach hook it should have skipped.
+    #[tokio::test]
+    async fn terminal_status_update_ends_the_stream_without_reattaching() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (writer, reader) = new_in_memory_queue();
+        let called = Arc::new(AtomicBool::new(false));
+        let mut reader = reader.with_reattach(counting_reattach(&called));
+
+        writer
+            .write(make_status_event("t-term", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        assert!(reader.read().await.is_some(), "the terminal frame arrives");
+        assert!(
+            reader.read().await.is_none(),
+            "a stream that delivered a terminal state ends at close"
+        );
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "the reattach hook must not be consulted once a terminal state has been seen"
+        );
+    }
+
+    /// Same property via the `pending_first` path and a `Task` frame, which
+    /// kills the other two: `replace |= with &=` on the snapshot branch and
+    /// `delete match arm StreamResponse::Task(t) in carries_terminal_state`.
+    #[tokio::test]
+    async fn terminal_task_snapshot_ends_the_stream_without_reattaching() {
+        use a2a_protocol_types::task::Task;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (writer, reader) = new_in_memory_queue();
+        let called = Arc::new(AtomicBool::new(false));
+        let mut reader = reader.with_reattach(counting_reattach(&called));
+        reader.set_first_event(StreamResponse::Task(Task {
+            id: TaskId::new("t-snap"),
+            context_id: ContextId::new("ctx-test"),
+            status: TaskStatus {
+                state: TaskState::Completed,
+                message: None,
+                timestamp: None,
+            },
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }));
+        drop(writer);
+
+        assert!(reader.read().await.is_some(), "the snapshot arrives first");
+        assert!(
+            reader.read().await.is_none(),
+            "a terminal Task snapshot ends the stream at close"
+        );
+        assert!(
+            !called.load(Ordering::SeqCst),
+            "the reattach hook must not be consulted after a terminal Task snapshot"
+        );
+    }
+
+    /// The negative control for both tests above: a NON-terminal frame must
+    /// leave `saw_terminal` false, so the hook *is* consulted. Without this,
+    /// a mutant that hardcoded `saw_terminal = true` would pass the two tests
+    /// above unnoticed.
+    #[tokio::test]
+    async fn non_terminal_event_still_consults_the_reattach_hook() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let (writer, reader) = new_in_memory_queue();
+        let called = Arc::new(AtomicBool::new(false));
+        let mut reader = reader.with_reattach(counting_reattach(&called));
+
+        writer
+            .write(make_status_event("t-working", TaskState::Working))
+            .await
+            .unwrap();
+        drop(writer);
+
+        assert!(reader.read().await.is_some(), "the working frame arrives");
+        assert!(reader.read().await.is_none(), "the hook here returns End");
+        assert!(
+            called.load(Ordering::SeqCst),
+            "without a terminal state the reader must ask the hook whether the task is done"
+        );
+    }
+
+    /// Kills `replace > with >=` on the `serialized_size > self.max_event_size`
+    /// check. That mutation differs only at exactly the cap, so the existing
+    /// pair of tests — one far under it, one far over — cannot see it. An
+    /// event whose serialized size *equals* the limit is within the limit and
+    /// must be accepted.
+    #[tokio::test]
+    async fn event_of_exactly_max_size_is_accepted() {
+        let event = make_status_event("t-exact", TaskState::Working);
+        let exact = serde_json::to_vec(&event).expect("serializes").len();
+
+        let (writer, _reader) = new_in_memory_queue_with_options(16, exact, DEFAULT_WRITE_TIMEOUT);
+        assert!(
+            writer.write(event).await.is_ok(),
+            "an event of exactly max_event_size ({exact} bytes) is within the \
+             limit and must be accepted"
+        );
+
+        // And one byte under the size is still rejected, which pins the
+        // boundary from the other side.
+        let event = make_status_event("t-exact", TaskState::Working);
+        let (writer, _reader) =
+            new_in_memory_queue_with_options(16, exact - 1, DEFAULT_WRITE_TIMEOUT);
+        assert!(
+            writer.write(event).await.is_err(),
+            "one byte over the limit must still be rejected"
+        );
+    }
+
+    /// Kills the whole-method replacement of the reader's `Debug` impl. It
+    /// deliberately elides the channel and reports only the fields that carry
+    /// decisions, so a `Default` implementation would silently drop the
+    /// diagnostics this exists to provide.
+    #[tokio::test]
+    async fn reader_debug_reports_the_decision_carrying_fields() {
+        let (_writer, mut reader) = new_in_memory_queue();
+        reader.set_first_event(make_status_event("t-dbg", TaskState::Working));
+
+        let rendered = format!("{reader:?}");
+        assert!(
+            rendered.contains("InMemoryQueueReader"),
+            "the type name must appear: {rendered}"
+        );
+        assert!(
+            rendered.contains("pending_first: true"),
+            "a pending snapshot must be visible: {rendered}"
+        );
+        assert!(
+            rendered.contains("saw_terminal: false"),
+            "terminal tracking must be visible: {rendered}"
+        );
+    }
+
     // ── write / read lifecycle ───────────────────────────────────────────
 
     /// A streaming-mode write with zero live subscribers must succeed: the

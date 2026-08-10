@@ -194,10 +194,16 @@ pub(super) async fn process_event_bg(
             // Task.history (same cap as the send path) and persist.
             let history = last_task.history.get_or_insert_with(Vec::new);
             history.push(msg);
-            if history.len() > crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES {
-                let excess = history.len() - crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES;
-                history.drain(..excess);
-            }
+            // Third copy of this cap; same shape as `messaging.rs` and the sync
+            // collector, and for the same reason. The `if` this replaces
+            // guarded only a no-op, which made `>` to `>=` an equivalent
+            // mutant, and the raw subtraction under it was mutable to `+` and
+            // `/` with no test able to tell. `drain(..0)` is a no-op, so
+            // behaviour is unchanged.
+            let excess = history
+                .len()
+                .saturating_sub(crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES);
+            history.drain(..excess);
             if let Err(_e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,

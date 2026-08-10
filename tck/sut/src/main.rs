@@ -331,7 +331,12 @@ impl Profile {
 /// not used here, because it would change the suite rather than the SUT.
 const REQUIRED_EXTENSION_URI: &str = "urn:a2a:tck:required-extension";
 
-fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCard {
+fn make_agent_card(
+    base_url: &str,
+    grpc_url: &str,
+    ws_url: Option<&str>,
+    profile: Profile,
+) -> AgentCard {
     AgentCard {
         url: Some(base_url.into()),
         name: "a2a-rust System Under Test (SUT)".into(),
@@ -360,7 +365,19 @@ fn make_agent_card(base_url: &str, grpc_url: &str, profile: Profile) -> AgentCar
                 protocol_version: a2a_protocol_types::A2A_VERSION.into(),
                 tenant: None,
             },
-        ],
+        ]
+        .into_iter()
+        // §12's custom binding, advertised only when the listener is up. The
+        // official suite ignores a binding name it does not know; the in-repo
+        // TCK's `--binding websocket` leg discovers the socket here, the same
+        // way a real client would.
+        .chain(ws_url.map(|url| AgentInterface {
+            url: url.into(),
+            protocol_binding: "WEBSOCKET".into(),
+            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+            tenant: None,
+        }))
+        .collect(),
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
         skills: vec![AgentSkill {
@@ -483,10 +500,20 @@ async fn main() {
     let grpc_advertised =
         std::env::var("SUT_GRPC_ADVERTISE_URL").unwrap_or_else(|_| grpc_addr.to_string());
 
+    // §12's WebSocket binding needs its own listener too — the dispatcher
+    // speaks the HTTP upgrade itself rather than sharing the router below.
+    // Opt-in: the official suite does not drive it, so it stays off unless a
+    // run asks for it (the in-repo TCK's websocket and equivalence legs do).
+    let ws_host = std::env::var("SUT_WS_HOST").ok();
+    let ws_advertised = ws_host
+        .as_ref()
+        .map(|h| std::env::var("SUT_WS_ADVERTISE_URL").unwrap_or_else(|_| format!("ws://{h}")));
+
     let profile = Profile::from_env();
     let mut builder = RequestHandlerBuilder::new(TckSutExecutor).with_agent_card(make_agent_card(
         &advertised,
         &grpc_advertised,
+        ws_advertised.as_deref(),
         profile,
     ));
     // Extension advertises the same capabilities as Full, so it needs the same
@@ -518,6 +545,22 @@ async fn main() {
             // loudly — a silent gRPC failure would show up as six SKIPPED
             // requirements that look like a coverage gap rather than a fault.
             eprintln!("WARNING: gRPC listener failed to bind {grpc_addr}: {e}");
+        }
+    }
+
+    if let Some(ws_host) = ws_host {
+        let ws = Arc::new(
+            a2a_protocol_server::dispatch::websocket::WebSocketDispatcher::new(Arc::clone(
+                &handler,
+            )),
+        );
+        match ws.serve_with_addr(ws_host.as_str()).await {
+            Ok(bound) => println!("a2a-rust TCK SUT WebSocket listening on ws://{bound}"),
+            // Fatal, unlike the gRPC warning above: SUT_WS_HOST is only set by
+            // a run that intends to grade the WebSocket binding, and a leg
+            // whose target silently is not there reports connection errors as
+            // conformance failures.
+            Err(e) => panic!("SUT_WS_HOST={ws_host} was set but the listener failed to bind: {e}"),
         }
     }
 

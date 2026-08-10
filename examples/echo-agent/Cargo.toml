@@ -18,7 +18,10 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing", "dep:tr
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+# `websocket`: the echo agent is the target for the in-repo TCK, and the TCK
+# now has a WebSocket binding. Without this feature there is no server to
+# point it at, and a transport we ship would stay unexercised.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket"] }
 tracing            = { workspace = true, optional = true }
 tracing-subscriber = { version = ">=0.3.18, <0.4", features = ["env-filter"], optional = true }
 

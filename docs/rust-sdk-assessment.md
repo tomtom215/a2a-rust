@@ -261,7 +261,7 @@ the field."
 | | `a2a-rs` | `a2a-rust` |
 |---|---|---|
 | Tests passing (measured locally, Section 6) | 454 | 2,519 (all features) |
-| Codecov coverage | 96.56%, uploaded 2026-07-27 | **93.62%, uploaded 2026-07-31** |
+| Codecov coverage | 96.56%, uploaded 2026-07-27 | **93.62%, uploaded 2026-07-31**; re-measured locally 2026-08-10 at **93.52%** on the same file set (see below) |
 | Property tests (`proptest`) | ❌ | ✅ |
 | Fuzzing | ❌ | ✅ (6 libFuzzer targets; 60s per PR, 10-min nightly) |
 | Mutation testing, CI-gated | ❌ | ⚠️ (`cargo-mutants`, sharded, PR `--in-diff` gate + weekly full sweep — but **both gates were vacuous until 2026-08-06** — neither could fail on a surviving mutant; see [`mutation-history.md`](../book/src/reference/mutation-history.md)) |
@@ -278,6 +278,40 @@ API now reports `615d01f8` (2026-07-31) as `state: complete` at **93.62%**, so
 uploads are current and the patch gate is live again. The cause was the
 upstream key-distribution outage recorded in `coverage.yml`, closed by
 `codecov-action` v5.5.5.
+
+**Re-measured 2026-08-10.** The figures above were nine days old, which for a
+number this widely quoted is long enough to be worth redoing rather than
+repeating. Command, verbatim:
+
+```bash
+cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+```
+
+Rolled up four ways from that one report, because the file set is most of the
+disagreement between any two coverage numbers:
+
+| File set | Lines | Coverage |
+|---|---|---|
+| Everything `llvm-cov` instrumented | 36215/39849 | **90.88%** |
+| The three directory globs only — what the 93.62% badge measures | 35864/38350 | **93.52%** |
+| `codecov.yml`'s full ignore list, postgres files excluded | 35824/37483 | **95.57%** |
+| `tck/` alone | 351/1499 | 23.42% |
+
+Function coverage over the whole report: 4427/4974 = **89.00%**.
+
+Read across the rows rather than down: 93.52% against the badge's 93.62%
+(2026-07-31) and 95.57% against the local 95.75% (2026-08-06) are the two
+like-for-like comparisons, and both moved by about a tenth of a point. The
+denominators did not: the badge's file set grew from 33,668 lines to 38,350
+over that window, so "roughly unchanged" here means coverage kept pace with
+several thousand new lines, not that little changed.
+
+`tck/` at 23.42% is expected and is why `codecov.yml` ignores it. It is a
+conformance binary whose code runs against a live server, not under
+`cargo test` — its 1,499 lines are graded by the runs in
+[`conformance-history.md`](../book/src/reference/conformance-history.md), not
+by this report. Counting them would move the headline number without changing
+what is tested.
 
 A second, unrelated discrepancy replaced it, and it is worth stating precisely
 because it is the kind of number that gets quoted: the badge reads 93.62% while
