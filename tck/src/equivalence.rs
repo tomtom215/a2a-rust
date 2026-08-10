@@ -671,12 +671,12 @@ async fn bind_equiv_003(ifaces: &[Iface], fixture: &Fixture) -> Result<(), Strin
 /// is exactly the shape a non-conforming agent would invent to give one
 /// binding weaker auth than another.
 ///
-/// **This is a structural check, not a behavioural one, and the report says
-/// so.** Proving each binding *enforces* the declared schemes identically
-/// needs a target configured to require credentials, plus a credential to
-/// withhold. Neither is available from a card alone, and asserting it against
-/// an unauthenticated target would be a check that cannot fail. What is
-/// verifiable here is verified; what is not is named.
+/// **The structural half.** Proving each binding *enforces* the declared
+/// schemes identically is [`bind_equiv_004_enforcement`], which needs a target
+/// that actually requires credentials. Against a card declaring none, that
+/// probe would be a check that cannot fail, so it is not run and the report
+/// says the grade is structural. What is verifiable here is verified; what is
+/// not is named.
 fn bind_equiv_004(card: &Value, ifaces: &[Iface]) -> Result<(), String> {
     let mut offenders = Vec::new();
     for iface in card
@@ -726,6 +726,159 @@ fn bind_equiv_004(card: &Value, ifaces: &[Iface]) -> Result<(), String> {
 
     let _ = ifaces;
     Ok(())
+}
+
+// ── BIND-EQUIV-004, enforcement half ─────────────────────────────────────────
+
+/// Whether a binding served a request or refused it.
+///
+/// Deliberately two-valued. *Which* error a binding returns is
+/// `BIND-EQUIV-003`'s subject, and this check duplicating that comparison
+/// would report one divergence as two failures. What is asked here is the
+/// question `BIND-EQUIV-003` cannot ask: did the binding apply the card's
+/// declared security at all?
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthOutcome {
+    Served,
+    Refused,
+}
+
+/// Issues one read through `iface`, with `token` if given, and reports whether
+/// it was served.
+///
+/// `ListTasks` is the operation because it needs no fixture and every binding
+/// implements it — the probe must not be able to fail for want of a task. The
+/// name is §5.3's, matching [`OPERATIONS`]; an earlier draft of this probe sent
+/// the JSON-RPC method as `tasks/list`, which authenticated correctly and then
+/// failed method dispatch. Both JSON-RPC-family bindings reported `Refused` and
+/// the check declared a binding asymmetry that did not exist. The acceptance
+/// sweep is what caught it — on the rejection sweep alone, a probe that can
+/// never succeed looks exactly like enforcement working.
+///
+/// A transport-level error is *not* reported as `Refused`: a connection that
+/// could not be made says nothing about authentication, and folding it in
+/// would let a broken listener read as correct enforcement. Those return
+/// `Err`, which fails the check loudly.
+async fn auth_probe(iface: &Iface, token: Option<&str>) -> Result<AuthOutcome, String> {
+    match iface.binding.as_str() {
+        "grpc" => crate::tests::grpc::list_tasks_auth_probe(&iface.url, token)
+            .await
+            .map(|served| {
+                if served {
+                    AuthOutcome::Served
+                } else {
+                    AuthOutcome::Refused
+                }
+            }),
+        "websocket" => {
+            let resp = helpers::ws_jsonrpc_request_with_auth(
+                &iface.url,
+                "ListTasks",
+                serde_json::json!({}),
+                token,
+            )
+            .await?;
+            Ok(jsonrpc_outcome(&resp))
+        }
+        "rest" => {
+            let (status, _body) =
+                helpers::http_get_with_auth(&format!("{}/tasks", iface.url), token).await?;
+            Ok(if (200..300).contains(&status) {
+                AuthOutcome::Served
+            } else {
+                AuthOutcome::Refused
+            })
+        }
+        // jsonrpc, and anything else this kit drives over the JSON-RPC envelope.
+        _ => {
+            let resp = helpers::jsonrpc_call_with_auth(
+                &iface.url,
+                "ListTasks",
+                serde_json::json!({}),
+                token,
+            )
+            .await?;
+            Ok(jsonrpc_outcome(&resp))
+        }
+    }
+}
+
+fn jsonrpc_outcome(resp: &Value) -> AuthOutcome {
+    if resp.get("error").is_some() {
+        AuthOutcome::Refused
+    } else {
+        AuthOutcome::Served
+    }
+}
+
+/// §5.1's authentication clause, checked behaviourally.
+///
+/// Two sweeps, and both matter:
+///
+/// * **Without credentials, every binding must refuse.** One binding that
+///   serves an uncredentialed caller while the others refuse is precisely the
+///   asymmetry §5.1 forbids, and it is the realistic defect — a transport that
+///   forgets to populate the header its authenticator reads looks completely
+///   normal until someone tries it.
+/// * **With credentials, every binding must serve.** Without this half the
+///   check passes trivially against a server that is simply broken, which is
+///   the failure mode this repository keeps finding in its own gates.
+///
+/// The token is supplied by the caller (`--auth-token`) rather than read from
+/// the target, because a kit that could derive the credential from the agent
+/// it grades would not be testing anything. When no token is given, the second
+/// sweep cannot run; the first still can, and the report says which half was
+/// graded rather than implying both.
+async fn bind_equiv_004_enforcement(
+    ifaces: &[Iface],
+    token: Option<&str>,
+) -> Result<String, String> {
+    let mut served_without = Vec::new();
+    for iface in ifaces {
+        if auth_probe(iface, None).await? == AuthOutcome::Served {
+            served_without.push(iface.declared.clone());
+        }
+    }
+    if !served_without.is_empty() {
+        return Err(format!(
+            "the card declares securityRequirements, so every binding must apply them, but {} \
+             served an uncredentialed request that the other {} refused — that is a \
+             binding-specific authentication posture, which is what §5.1 forbids",
+            served_without.join(", "),
+            ifaces.len() - served_without.len()
+        ));
+    }
+
+    let Some(token) = token else {
+        return Ok(format!(
+            "enforcement graded on the rejection half only: all {} bindings refused an \
+             uncredentialed request. The acceptance half needs --auth-token",
+            ifaces.len()
+        ));
+    };
+
+    let mut refused_with = Vec::new();
+    for iface in ifaces {
+        if auth_probe(iface, Some(token)).await? == AuthOutcome::Refused {
+            refused_with.push(iface.declared.clone());
+        }
+    }
+    if !refused_with.is_empty() {
+        return Err(format!(
+            "with the supplied credential {} still refused the request while the other {} \
+             served it — the bindings do not accept the card's declared scheme identically \
+             (if the credential is simply wrong, every binding would appear here, and none \
+             of this would be about equivalence)",
+            refused_with.join(", "),
+            ifaces.len() - refused_with.len()
+        ));
+    }
+
+    Ok(format!(
+        "enforcement graded on both halves: all {} bindings refused an uncredentialed request \
+         and served a credentialed one",
+        ifaces.len()
+    ))
 }
 
 // ── Fixture ──────────────────────────────────────────────────────────────────
@@ -839,7 +992,10 @@ async fn await_terminal(iface: &Iface, task_id: &str) -> Option<String> {
 /// Errors (rather than returning results) when the target cannot support the
 /// comparison at all: one binding compares with nothing, and a run that grades
 /// no requirement must not exit green.
-pub async fn run_equivalence(url: &str) -> Result<Vec<TestResult>, String> {
+pub async fn run_equivalence(
+    url: &str,
+    auth_token: Option<&str>,
+) -> Result<Vec<TestResult>, String> {
     let (card, ifaces, unsupported) = discover(url).await?;
 
     if !unsupported.is_empty() {
@@ -876,37 +1032,104 @@ pub async fn run_equivalence(url: &str) -> Result<Vec<TestResult>, String> {
     );
     println!();
 
-    let fixture = build_fixture(&ifaces[0]).await?;
+    // Does this target actually require credentials? The answer decides which
+    // of two runs this is, because the two cannot be the same run.
+    //
+    // `BIND-EQUIV-001..003` all compare answers about a *fixture* — a task and
+    // push configs created up front over the first binding. Against a secured
+    // target the kit cannot create one: every request it makes is anonymous by
+    // design, and the alternative is to thread a credential through the forty
+    // call sites those three checks share, so that one check can use it.
+    //
+    // So a secured run grades `BIND-EQUIV-004` and nothing else, and says so.
+    // That is scoping rather than waiving, and the same argument as the
+    // official suite's extension profile: the three checks skipped here are
+    // graded in full by the ordinary unsecured run, which is the one CI gates
+    // on. Neither run alone covers §5.1; the pair does.
+    let requires_credentials = card
+        .get("securityRequirements")
+        .and_then(Value::as_array)
+        .is_some_and(|a| !a.is_empty())
+        && card
+            .get("securitySchemes")
+            .and_then(Value::as_object)
+            .is_some_and(|m| !m.is_empty());
 
     let mut results = Vec::new();
-    record(
-        &mut results,
-        "bind_equiv_001_identical_functionality",
-        bind_equiv_001(&ifaces, &fixture).await,
-    );
-    record(
-        &mut results,
-        "bind_equiv_002_equivalent_results",
-        bind_equiv_002(&ifaces, &fixture).await,
-    );
-    record(
-        &mut results,
-        "bind_equiv_003_consistent_error_mapping",
-        bind_equiv_003(&ifaces, &fixture).await,
-    );
+
+    if requires_credentials {
+        println!(
+            "This target's card declares securityRequirements, so this run grades \
+             BIND-EQUIV-004 only. BIND-EQUIV-001..003 compare answers about a fixture \
+             task that an anonymous client cannot create here; they are graded by the \
+             ordinary unsecured equivalence run."
+        );
+        println!();
+    } else {
+        let fixture = build_fixture(&ifaces[0]).await?;
+        record(
+            &mut results,
+            "bind_equiv_001_identical_functionality",
+            bind_equiv_001(&ifaces, &fixture).await,
+        );
+        record(
+            &mut results,
+            "bind_equiv_002_equivalent_results",
+            bind_equiv_002(&ifaces, &fixture).await,
+        );
+        record(
+            &mut results,
+            "bind_equiv_003_consistent_error_mapping",
+            bind_equiv_003(&ifaces, &fixture).await,
+        );
+    }
+
+    // The structural half always runs — it is the one a card alone can answer.
+    let structural = bind_equiv_004(&card, &ifaces);
+    let structural_ok = structural.is_ok();
     record(
         &mut results,
         "bind_equiv_004_shared_auth_schemes",
-        bind_equiv_004(&card, &ifaces),
+        structural,
     );
 
+    // The enforcement half runs only against a target that actually requires
+    // credentials. Against one that does not, every binding would serve every
+    // request and the probe could not fail — the precise shape of decorative
+    // check this kit refuses to report as a pass.
+    let enforcement_note = if !requires_credentials {
+        None
+    } else if structural_ok {
+        let outcome = bind_equiv_004_enforcement(&ifaces, auth_token).await;
+        let note = match &outcome {
+            Ok(summary) => summary.clone(),
+            Err(_) => "enforcement graded and FAILED — see the check output above".to_string(),
+        };
+        record(
+            &mut results,
+            "bind_equiv_004_enforced_identically",
+            outcome.map(|_| ()),
+        );
+        Some(note)
+    } else {
+        // Declaring per-interface security already failed the structural half.
+        // Probing enforcement on top would report the same defect twice and
+        // bury which one is the cause.
+        Some("enforcement not probed: the structural half failed first".to_string())
+    };
+
     println!();
-    println!(
-        "BIND-EQUIV-004 is graded structurally only: the card declares security once, \
-         at card level, and no interface may override it. Whether each binding \
-         *enforces* those schemes identically needs a target configured to require \
-         credentials, which this run does not have."
-    );
+    match enforcement_note {
+        Some(note) => println!("BIND-EQUIV-004: {note}."),
+        None => println!(
+            "BIND-EQUIV-004 is graded structurally only: the card declares security once, \
+             at card level, and no interface may override it. Whether each binding \
+             *enforces* those schemes identically needs a target configured to require \
+             credentials, which this run does not have — the card declares no \
+             securityRequirements. Run against `SUT_PROFILE=secured` with --auth-token \
+             to grade that half."
+        ),
+    }
 
     Ok(results)
 }

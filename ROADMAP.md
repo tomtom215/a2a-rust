@@ -265,9 +265,25 @@ Full analysis and reproduction steps in
   reports those four MUSTs `NOT TESTED`, because the tests that would change
   that have to live in `a2aproject/a2a-tck` (its own `task-28`). What changed
   is that this repository no longer ships a four-binding server with nothing
-  checking the bindings agree. `BIND-EQUIV-004` is graded structurally only —
+  checking the bindings agree. ~~`BIND-EQUIV-004` is graded structurally only —
   the enforcement half needs a target configured to require credentials,
-  which no job here provides.
+  which no job here provides.~~
+
+  **`BIND-EQUIV-004`'s enforcement half closed 2026-08-11** — the last
+  in-scope conformance claim this repository had recorded as unmeasured.
+  `tck/sut` gained a `SUT_PROFILE=secured` profile that declares a bearer
+  scheme on its card and enforces it with one `BearerTokenAuthInterceptor`
+  above the dispatchers, and `--equivalence --auth-token` grades two sweeps
+  against it: every binding must refuse an uncredentialed request, and every
+  binding must serve a credentialed one. Gated in `tck.yml`.
+
+  The acceptance sweep is not symmetry for its own sake. The first draft of the
+  probe sent the JSON-RPC method as `tasks/list` where this SDK's name is
+  `ListTasks`; it authenticated correctly, failed method dispatch, and reported
+  a binding asymmetry that did not exist. On the rejection sweep alone, a probe
+  that can never succeed looks exactly like enforcement working — the same
+  shape as the gates this repo has found that could not fail. Proved by
+  injection that the check goes red: run with a wrong token it exits 1.
 
 ## Open questions
 

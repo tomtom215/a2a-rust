@@ -200,11 +200,54 @@ rests on that assertion, not on the `4/4`. It is recorded here because reading
 `4/4` as "four bindings agreed" is the natural misreading and it would be
 wrong.
 
-`BIND-EQUIV-004` is graded **structurally only**, and the run says so on
-stdout: the card declares security once at card level and no interface may
-override it. Proving each binding *enforces* those schemes identically needs a
-target configured to require credentials, which no job in this repo currently
-provides. That half is unmeasured, not passing — see register entry W10.
+### `BIND-EQUIV-004`'s enforcement half — closed 2026-08-11
+
+Until 2026-08-11 this section read: *"`BIND-EQUIV-004` is graded structurally
+only … Proving each binding enforces those schemes identically needs a target
+configured to require credentials, which no job in this repo currently
+provides. That half is unmeasured, not passing."*
+
+There is now such a target. `tck/sut` gained a `SUT_PROFILE=secured` profile
+whose card declares a bearer scheme and whose handler enforces it with a single
+`BearerTokenAuthInterceptor` — one interceptor above the dispatchers, which is
+the property being verified: JSON-RPC, HTTP+JSON, gRPC and WebSocket are guarded
+by one implementation reading one `CallContext`.
+
+| Date | Target | Bindings | Structural | Enforcement | Exit |
+|---|---|---|---|---|---:|
+| 2026-08-11 | `tck/sut` (`SUT_PROFILE=secured`) | 4 | PASS | **PASS — both halves** | 0 |
+
+"Both halves" is the load-bearing phrase. The check sweeps twice:
+
+* **without credentials, every binding must refuse** — one binding serving an
+  anonymous caller while the others refuse is the asymmetry §5.1 forbids, and
+  it is the realistic defect, since a transport that forgets to forward the
+  header its authenticator reads looks completely normal until someone tries it;
+* **with credentials, every binding must serve** — without this, the check
+  passes trivially against a server that is simply broken.
+
+That second sweep earned its place immediately. The first draft of the probe
+sent the JSON-RPC method as `tasks/list` where this SDK's name is `ListTasks`;
+it authenticated correctly and then failed method dispatch, so JSON-RPC and
+WebSocket both reported a refusal and the check declared a binding asymmetry
+that did not exist. **On the rejection sweep alone, a probe that can never
+succeed is indistinguishable from enforcement working.** Recorded because it is
+the same failure shape as the five gates this repo has found that could not
+fail, caught this time before it shipped.
+
+Measured the same day, by injection, that the check can fail: run with a
+deliberately wrong token it exits 1 and names all four bindings as refusing.
+Run against the ordinary `full` profile it correctly declines to grade
+enforcement at all and says the card declares no `securityRequirements` —
+against an unsecured target the probe could not fail, so it is not run.
+
+A secured run grades `BIND-EQUIV-004` **and nothing else**: `BIND-EQUIV-001..003`
+compare answers about a fixture task an anonymous client cannot create there.
+Those three are graded by the ordinary unsecured run in the table above.
+Scoping, not waiving — the same argument as the official suite's extension
+profile, and neither run alone covers §5.1. The pair does.
+
+Both are gated in `tck.yml`'s `tck-all-bindings` job.
 
 One upstream discrepancy, found while reading the requirement definitions:
 `a2a-tck`'s backlog ticket `task-28` summarises `BIND-EQUIV-004` as "Streaming
@@ -237,7 +280,7 @@ missing row, but it costs the reader the one thing the row exists to give them.
 | W7 | `tck.yml:94` (step *a2a-inspector card validation*) | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:101` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
 | W9 | `tck/conformance-baseline.json` | baselined known failures | — | **Empty (`{}`).** No MUST failure is currently waived. | already clear |
-| W10 | `tck/src/equivalence.rs:680` (`fn bind_equiv_004`), reported at `:899` | `BIND-EQUIV-004` graded **structurally only** | 1 of the 4 §5.1 requirements | The check reads the card and confirms security schemes are declared once, at card level, with no per-interface override. It does not send a request without credentials and confirm every binding rejects it identically — that needs a target configured to require them, which no job provides. The run prints this on stdout, so it is disclosed at the point of measurement; it was missing from this table until 2026-08-11. | A `tck/sut` profile requiring credentials exists and the check grades enforcement against it. Tracked as ROADMAP item A1. |
+| ~~W10~~ | `tck/src/equivalence.rs` (`fn bind_equiv_004`) | ~~`BIND-EQUIV-004` graded **structurally only**~~ | ~~1 of the 4 §5.1 requirements~~ | **Removed 2026-08-11, the same day it was added.** The row was correct when written: the check confirmed the card declares its schemes once with no per-interface override, and did not confirm every binding *enforces* them, because no job provided a target requiring credentials. `SUT_PROFILE=secured` now does, `fn bind_equiv_004_enforcement` grades both the rejection and acceptance sweeps against it, and `tck.yml` gates it. See "`BIND-EQUIV-004`'s enforcement half" above for the run and for the probe defect the acceptance sweep caught. | already clear |
 | W11 | `tck/src/runner.rs:338` (`run_test`, `Scope::covers`) | checks outside a binding's scope report `N/A` and leave the denominator | 2 of 22 checks, binding-dependent | Applicability, not waiver: `jsonrpc_envelope_format` has nothing to inspect on §10/§11, and `a2a_media_type_accepted` has no field to carry on §10/§12. Listed because it does narrow what a run measures, and because it was a silent inflation bug until 2026-08-10 (`rest` scored 22/22 while 21 checks ran). Now guarded by three compile-time tests: a scope may not name an unknown binding, may not cover all or none, and may not omit its reason. | n/a — removing it would re-introduce the inflation. The guard is the control. |
 
 ### The 2026-08-11 completeness audit
@@ -252,9 +295,13 @@ read for in-tool narrowing that no workflow grep would reach — which is where
 W10 and W11 came from.
 
 **Added: W10 and W11.** Both narrow what a conformance run measures and neither
-was in the table. W10 is the more serious omission: it is a MUST requirement
-graded on half its definition, and while the run does disclose it on stdout,
-the register is where a reader looks for exactly that.
+was in the table. W10 was the more serious omission: it is a MUST requirement
+graded on half its definition, and while the run did disclose it on stdout, the
+register is where a reader looks for exactly that. **W10 was then closed the
+same day** — see "`BIND-EQUIV-004`'s enforcement half" above. Adding it and
+retiring it within one session is not churn: writing the row is what made the
+gap concrete enough to close, which is the argument for keeping the register
+exhaustive even when an entry is expected to be short-lived.
 
 **Deliberately not added.** Three hits are real suppressions that are *not*
 conformance suppressions, and adding them would dilute the table's claim rather
@@ -310,6 +357,10 @@ Ranked by what is within this project's control.
 2. **W5/W6 (in this project's control only to remove, not to fix).** Both are
    upstream SDK defects. The runner now fails if either starts passing, so they
    cannot linger unnoticed.
+2.5. **~~`BIND-EQUIV-004`'s enforcement half.~~ Done 2026-08-11** — the last
+   in-scope conformance claim this repo had recorded as unmeasured. A
+   credential-requiring `tck/sut` profile now exists and both the rejection and
+   acceptance sweeps are graded and gated.
 3. **W3 and W4 — upstream TCK defects, both filed.** Neither can be closed here
    without patching the harness, which this repo declines to do (§18). Removing
    them is gated on `#225` and `#193`.

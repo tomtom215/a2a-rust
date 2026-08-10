@@ -252,6 +252,31 @@ pub async fn list_tasks_basic(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `ListTasks` with an optional `authorization` metadata entry, for
+/// `BIND-EQUIV-004`'s enforcement half.
+///
+/// Returns whether the call was **served**, not whether it succeeded in the
+/// usual sense: any `Status` back is a refusal for this purpose, since the
+/// question is only whether the binding applied the card's declared security.
+/// Which status it chose is `BIND-EQUIV-003`'s subject.
+///
+/// A connect failure stays an `Err`. A gRPC listener that is simply down would
+/// otherwise read as a binding correctly refusing anonymous callers, which is
+/// the shape of false pass this kit exists to avoid.
+pub async fn list_tasks_auth_probe(target: &str, token: Option<&str>) -> Result<bool, String> {
+    let mut client = connect(target).await?;
+    let mut request = Request::new(pb::ListTasksRequest::default());
+    if let Some(t) = token {
+        request.metadata_mut().insert(
+            "authorization",
+            format!("Bearer {t}")
+                .parse()
+                .map_err(|e| format!("gRPC metadata: {e}"))?,
+        );
+    }
+    Ok(client.list_tasks(request).await.is_ok())
+}
+
 /// Cancelling is allowed to fail — a task already terminal is not cancelable —
 /// but the failure must be the mapped status, not an arbitrary one.
 pub async fn cancel_task(target: &str) -> Result<(), String> {

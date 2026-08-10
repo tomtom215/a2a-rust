@@ -126,6 +126,172 @@ pub async fn ws_send_raw(url: &str, payload: &str) -> Result<Option<Value>, Stri
     }
 }
 
+// ── Credentialed variants, for BIND-EQUIV-004's enforcement half ─────────────
+//
+// Separate entry points rather than an extra parameter on the existing
+// helpers. Every other check in this kit drives an *unauthenticated* target
+// and must keep doing so unchanged; threading an `Option<&str>` through them
+// all would put a credential argument on 40 call sites to serve one check.
+//
+// These are also the only helpers that may send `Authorization`. Keeping that
+// in three named functions means "which requests can carry a credential?" is
+// answerable by reading this section, rather than by auditing every caller.
+
+/// [`jsonrpc_request`] with an optional `Authorization: Bearer` header.
+pub async fn jsonrpc_call_with_auth(
+    url: &str,
+    method: &str,
+    params: Value,
+    token: Option<&str>,
+) -> Result<Value, String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": uuid::Uuid::new_v4().to_string(),
+        "method": method,
+        "params": params
+    });
+    let body_bytes = serde_json::to_vec(&body).map_err(|e| format!("serialize: {e}"))?;
+
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http();
+    let mut req = hyper::Request::builder()
+        .method(hyper::Method::POST)
+        .uri(url)
+        .header("content-type", "application/json")
+        .header("a2a-version", "1.0");
+    if let Some(t) = token {
+        req = req.header("authorization", format!("Bearer {t}"));
+    }
+    let req = req
+        .body(http_body_util::Full::new(hyper::body::Bytes::from(
+            body_bytes,
+        )))
+        .map_err(|e| format!("build request: {e}"))?;
+
+    let resp = client
+        .request(req)
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    let body = http_body_util::BodyExt::collect(resp.into_body())
+        .await
+        .map_err(|e| format!("read body: {e}"))?
+        .to_bytes();
+    serde_json::from_slice(&body).map_err(|e| {
+        format!(
+            "parse response: {e} (body: {})",
+            String::from_utf8_lossy(&body)
+        )
+    })
+}
+
+/// [`http_get`] with an optional `Authorization: Bearer` header.
+pub async fn http_get_with_auth(url: &str, token: Option<&str>) -> Result<(u16, Value), String> {
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http();
+    let mut req = hyper::Request::builder()
+        .method(hyper::Method::GET)
+        .uri(url)
+        .header("a2a-version", "1.0");
+    if let Some(t) = token {
+        req = req.header("authorization", format!("Bearer {t}"));
+    }
+    let req = req
+        .body(http_body_util::Full::new(hyper::body::Bytes::new()))
+        .map_err(|e| format!("build request: {e}"))?;
+
+    let resp = client
+        .request(req)
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let body = http_body_util::BodyExt::collect(resp.into_body())
+        .await
+        .map_err(|e| format!("read body: {e}"))?
+        .to_bytes();
+    // A refusal may not carry a JSON body; the status is the signal, so an
+    // unparseable body becomes Null rather than an error.
+    let value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    Ok((status, value))
+}
+
+/// [`ws_jsonrpc_request`] with an optional `Authorization: Bearer` header on
+/// the handshake.
+///
+/// The header goes on the HTTP upgrade, which is where a WebSocket client
+/// presents credentials — and is exactly the step a binding could forget to
+/// forward into its `CallContext`.
+pub async fn ws_jsonrpc_request_with_auth(
+    url: &str,
+    method: &str,
+    params: Value,
+    token: Option<&str>,
+) -> Result<Value, String> {
+    use futures_util::{SinkExt as _, StreamExt as _};
+    use tokio_tungstenite::tungstenite::Message;
+
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": uuid::Uuid::new_v4().to_string(),
+        "method": method,
+        "params": params
+    });
+
+    let ws_url = to_ws_url(url);
+    let mut req = tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(
+        ws_url.as_str(),
+    )
+    .map_err(|e| format!("websocket: bad url {ws_url}: {e}"))?;
+    req.headers_mut().insert(
+        "a2a-version",
+        "1.0".parse().map_err(|e| format!("header: {e}"))?,
+    );
+    if let Some(t) = token {
+        req.headers_mut().insert(
+            "authorization",
+            format!("Bearer {t}")
+                .parse()
+                .map_err(|e| format!("header: {e}"))?,
+        );
+    }
+
+    // A server that refuses the credential may reject the *handshake* rather
+    // than answering with an error frame. That is a refusal, not a transport
+    // fault, so it is reported as a JSON-RPC-shaped error the caller can read
+    // the same way as an in-band one.
+    let (mut ws, _) = match tokio_tungstenite::connect_async(req).await {
+        Ok(pair) => pair,
+        Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+            return Ok(serde_json::json!({
+                "error": {
+                    "code": resp.status().as_u16(),
+                    "message": "websocket handshake rejected",
+                }
+            }));
+        }
+        Err(e) => return Err(format!("websocket connect to {ws_url} failed: {e}")),
+    };
+
+    ws.send(Message::Text(body.to_string().into()))
+        .await
+        .map_err(|e| format!("websocket send failed: {e}"))?;
+
+    loop {
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(20), ws.next())
+            .await
+            .map_err(|_| "websocket: timed out awaiting response".to_string())?
+            .ok_or_else(|| "websocket: closed before responding".to_string())?
+            .map_err(|e| format!("websocket read failed: {e}"))?;
+        match msg {
+            Message::Text(text) => {
+                return serde_json::from_str(&text)
+                    .map_err(|e| format!("websocket: response is not JSON: {e}: {text}"));
+            }
+            Message::Close(_) => return Err("websocket: closed before responding".to_string()),
+            _ => continue,
+        }
+    }
+}
+
 /// Normalises an `http(s)://` or bare authority into a `ws(s)://` URL.
 pub fn to_ws_url_public(url: &str) -> String {
     to_ws_url(url)
