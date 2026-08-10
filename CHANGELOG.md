@@ -29,6 +29,25 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **The verdict-bearing steps outside `ci.yml` are now proven able to fail.**
+  `scripts/prove_gates_fail.sh` covers `ci.yml`'s eight gate jobs by injecting
+  defects into tracked source and running cargo; that mechanism does not reach
+  the other ten workflows, whose gates decide over *data* — a conformance
+  report, a directory of mutation artifacts, a git range, a tag name.
+
+  `scripts/prove_workflow_gates_fail.py` runs each step's real body from the
+  real workflow file against synthetic healthy and defective inputs: 17 gates
+  proven, 11 exempt with recorded reasons, 0 unproven, ~7s. It runs on every
+  PR in the `fmt` job, and drift is a hard error both ways — a step that can
+  fail with no registry entry, and a registry entry naming a step that no
+  longer exists, both exit 2.
+
+  It reproduces GitHub's shell mapping exactly (`bash -e` without a `shell:`
+  key, `bash -eo pipefail` with `shell: bash`), because those two disagree
+  about the defect it was written for, and it asserts each gate exits 0 on
+  healthy input as well — a gate that fails unconditionally would otherwise
+  score as proven while blocking every legitimate run.
+
 - **The TCK drives all four bindings, and grades §5.1 equivalence.** It ran
   JSON-RPC and HTTP+JSON only; `--binding websocket` (§12) and
   `--binding grpc` (§10) complete the set, and `--equivalence` grades
@@ -106,6 +125,28 @@ existing `RELEASING.md` checklist.
   accept both vintages, emit only v1.0.
 
 ### Fixed
+
+- **The official-TCK conformance gate could not fail.** The step
+  `official-tck.yml` calls "THE GATE" ended `| tee /tmp/tck-gate.log`, and
+  GitHub's default shell for a `run:` step with no `shell:` key is
+  `bash -e {0}` — `-e` but not `-o pipefail`. The step's exit status was
+  `tee`'s, which is 0 whatever the checker decided.
+
+  Measured by running the step body verbatim: against an all-SKIPPED report
+  the checker exits 1 and prints `UNDER-MEASURED — 0 MUST requirement(s)
+  graded, floor is 88`; against a report carrying an injected MUST failure it
+  exits 1 and prints `REGRESSION`. Both step bodies exited 0. With
+  `set -o pipefail` both exit 1, a healthy report still exits 0, and the log
+  the `tee` exists to write is still written.
+
+  `--min-graded` was added so a run that measured nothing could not pass this
+  gate; it could never fire. A guard behind a broken gate is not a guard. The
+  minimal- and extension-profile suite steps carried the same masking, so
+  their `|| suite_status=$?` never fired and their closing
+  `exit "$suite_status"` was always 0 — requirement-level regressions were
+  still caught there by the un-piped gate steps that follow, suite-level
+  failures were not. Enabling pipefail does not turn these red: all three
+  suites were run directly and exit 0.
 
 - **A conformance check passed two bindings it never ran against.**
   `jsonrpc_envelope_format` returned `Ok(())` for `rest` and `websocket`
