@@ -69,6 +69,12 @@ gates_for_jobs() {
 
 TOUCHED=()
 
+# Set by an injection that must run somewhere other than the repository root
+# (only `package`, which cannot be tested in a dirty tree). Reset by
+# `revert_all`, so it cannot leak into the next gate.
+INJECT_WORKDIR=""
+PACKAGE_CLONE=""
+
 note_touched() { TOUCHED+=("$1"); }
 
 revert_all() {
@@ -96,6 +102,11 @@ revert_all() {
     fi
     rm -f crates/a2a-protocol-types/src/gate_probe_long.rs
     git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_long.rs 2>/dev/null || true
+    if [ -n "$PACKAGE_CLONE" ]; then
+        rm -rf "$PACKAGE_CLONE"
+        PACKAGE_CLONE=""
+    fi
+    INJECT_WORKDIR=""
 }
 trap revert_all EXIT
 
@@ -309,13 +320,39 @@ apply_injection() {
             note_touched "$TYPES_LIB"
             printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;
         package)
-            note_touched "crates/a2a-protocol-types/Cargo.toml"
-            # Point `readme` at a file that is not there. Only the packaging
-            # gate reads the manifest's file references, so a compile error
-            # would prove nothing about what `cargo package` adds over
-            # `cargo build` — a dangling packaged-file reference is exactly
-            # the class of defect this is the only gate for.
-            printf '\nreadme = "NO_SUCH_README.md"\n' >>crates/a2a-protocol-types/Cargo.toml ;;
+            # `cargo package` refuses outright on a dirty working tree:
+            #
+            #   error: 1 files in the working directory contain changes that
+            #   were not yet committed into git
+            #
+            # So no in-place injection can reach it. Any edit produces that
+            # same generic error, which proves nothing about packaging — it
+            # was reported INCONCLUSIVE for exactly this reason before this
+            # comment existed.
+            #
+            # The defect therefore has to be committed, and it must not be
+            # committed here. A `--shared` clone gets an isolated tree with
+            # its own history, running the gate's command verbatim; only the
+            # directory differs. CARGO_TARGET_DIR is inherited so the clone
+            # reuses the main build cache instead of compiling the world.
+            PACKAGE_CLONE=$(mktemp -d "${TMPDIR:-/tmp}/a2a-pkgprobe.XXXXXX")
+            git clone -q --shared "$REPO_ROOT" "$PACKAGE_CLONE/repo"
+            # A `readme` pointing at a file that is not in the package. Only
+            # the packaging gate reads the manifest's file references, so a
+            # compile error here would prove nothing about what
+            # `cargo package` adds over `cargo build`.
+            python3 - "$PACKAGE_CLONE/repo/crates/a2a-protocol-types/Cargo.toml" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+# Into [package], not appended to the file: a bare key at the end lands in
+# whatever table happens to be last and cargo reports a different error.
+s = re.sub(r'(?m)^(\[package\]\n)', r'\1readme = "NO_SUCH_README.md"\n', s, count=1)
+p.write_text(s)
+PY
+            git -C "$PACKAGE_CLONE/repo" -c user.name=probe -c user.email=probe@invalid \
+                commit -q -am "probe: dangling readme reference"
+            INJECT_WORKDIR="$PACKAGE_CLONE/repo" ;;
         postgres_ignored)
             # This gate runs only `#[ignore]`d tests in one file, so the
             # defect has to be an ignored test in that file. A failure
@@ -427,6 +464,10 @@ apply_ci_env
 # cannot finish is not much better than one that lies.
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
+# So the `package` gate's isolated clone reuses this tree's build cache
+# instead of compiling every dependency from scratch.
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+
 for required in RUSTFLAGS RUSTDOCFLAGS; do
     if [ -z "${!required-}" ]; then
         printf 'prove_gates_fail: %s is unset — ci.yml no longer exports it, or the\n' \
@@ -452,7 +493,7 @@ run_quiet() {
     # status-swallowing defect this script exists to catch, in the script
     # that catches it. It was written that way first, and every gate came
     # back UNPROVEN until this line changed.
-    (cd "$REPO_ROOT" && eval "$cmd") >"$log" 2>&1 || status=$?
+    (cd "${INJECT_WORKDIR:-$REPO_ROOT}" && eval "$cmd") >"$log" 2>&1 || status=$?
     return "$status"
 }
 
