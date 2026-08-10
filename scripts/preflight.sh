@@ -44,12 +44,22 @@ FAIL_FAST=0
 
 # ── CI workflow parsing ──────────────────────────────────────────────────────
 
-# Prints every single-line `run: cargo ...` step belonging to a job whose name
-# matches the given extended regex.
+# Prints every single-line `run:` step belonging to a job whose name matches
+# the given extended regex.
+#
+# This used to match `run: cargo ` only. That was a silent under-cover waiting
+# to happen, and it happened the first time a gate job grew a step that was not
+# a cargo invocation (`./scripts/check_proto_copies.sh` in `fmt`): CI enforced
+# it, preflight did not list it, and nothing anywhere said so — the same defect
+# as the two missing jobs, one level down. A gate is whatever CI runs in a gate
+# job, not whatever CI runs that happens to start with `cargo`.
+#
+# Steps whose `run:` is a block scalar are still invisible here; that is what
+# `warn_on_block_scalars` reports.
 gates_for_jobs() {
     awk -v want="$1" '
         /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
-        /^[[:space:]]+run:[[:space:]]*cargo /    {
+        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
             if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
         }
     ' "$CI_YML"

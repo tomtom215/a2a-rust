@@ -14,13 +14,16 @@
 //! a2a-tck --url http://localhost:8080 --binding rest
 //! a2a-tck --url http://localhost:8080 --binding websocket
 //! a2a-tck --url http://localhost:8080 --binding websocket --ws-url ws://localhost:8081
+//! a2a-tck --url http://localhost:8080 --binding grpc
+//! a2a-tck --url http://localhost:8080 --binding grpc --grpc-url localhost:8079
 //! ```
 //!
 //! `--url` is always the agent's **HTTP origin**, for every binding: §5
 //! discovery is served over HTTPS no matter which binding carries the RPCs.
-//! For `--binding websocket` the socket endpoint is read from the agent
-//! card's `WEBSOCKET` interface — which is how a real client would find it —
-//! and `--ws-url` overrides that for an agent that does not advertise one.
+//! For `--binding websocket` and `--binding grpc` the listener's address is
+//! read from the agent card's `WEBSOCKET` / `GRPC` interface — which is how a
+//! real client would find it — and `--ws-url` / `--grpc-url` override that for
+//! an agent that does not advertise one.
 //!
 //! # Exit codes
 //!
@@ -49,18 +52,22 @@ async fn main() -> ExitCode {
             eprintln!("Error: {msg}");
             eprintln!();
             eprintln!(
-                "Usage: a2a-tck --url <http-origin> [--binding jsonrpc|rest|websocket] \
-                 [--ws-url <ws-endpoint>] [--skip <tests>]"
+                "Usage: a2a-tck --url <http-origin> [--binding {}] \
+                 [--ws-url <ws-endpoint>] [--grpc-url <host:port>] [--skip <tests>]",
+                BINDINGS.join("|")
             );
             eprintln!();
             eprintln!("Options:");
             eprintln!("  --url <url>        HTTP origin of the A2A server (required).");
             eprintln!("                     Used for agent-card discovery in every binding.");
             eprintln!(
-                "  --binding <type>   Protocol binding: jsonrpc (default), rest or websocket"
+                "  --binding <type>   Protocol binding: {} (default: jsonrpc)",
+                BINDINGS.join(", ")
             );
             eprintln!("  --ws-url <url>     WebSocket endpoint, when --binding websocket and the");
             eprintln!("                     agent card advertises no WEBSOCKET interface.");
+            eprintln!("  --grpc-url <addr>  gRPC target, when --binding grpc and the agent card");
+            eprintln!("                     advertises no GRPC interface.");
             eprintln!("  --skip <tests>     Comma-separated test names to skip (repeatable).");
             eprintln!("                     For documented target-implementation deviations");
             eprintln!("                     only — a skipped test is reported, not silent.");
@@ -70,14 +77,24 @@ async fn main() -> ExitCode {
     let Config {
         url,
         binding,
-        ws_url,
+        endpoint,
         skips,
     } = config;
 
     // The RPC endpoint and the discovery origin are the same host for the
-    // HTTP bindings and different for `websocket`, so resolve them apart.
+    // HTTP bindings and a separate listener for `websocket` and `grpc`, so
+    // resolve them apart.
     let rpc_url = match binding.as_str() {
-        "websocket" => match resolve_ws_endpoint(&url, ws_url.as_deref()).await {
+        "websocket" => {
+            match resolve_endpoint(&url, endpoint.as_deref(), "WEBSOCKET", "--ws-url").await {
+                Ok(resolved) => resolved,
+                Err(msg) => {
+                    eprintln!("Error: {msg}");
+                    return ExitCode::from(2);
+                }
+            }
+        }
+        "grpc" => match resolve_endpoint(&url, endpoint.as_deref(), "GRPC", "--grpc-url").await {
             Ok(resolved) => resolved,
             Err(msg) => {
                 eprintln!("Error: {msg}");
@@ -236,27 +253,37 @@ async fn main() -> ExitCode {
     ExitCode::from(0)
 }
 
-/// Finds the endpoint the `websocket` binding should drive.
+/// Finds the endpoint a non-HTTP binding should drive.
 ///
-/// Prefers an explicit `--ws-url`. Otherwise reads it from the agent card the
-/// way a real client would: §5 discovery first, then the `WEBSOCKET` entry in
-/// `supportedInterfaces` (§12 registers it as a custom binding name alongside
-/// the canonical `JSONRPC`/`GRPC`/`HTTP+JSON`). An agent that serves the
-/// socket but does not advertise it is undiscoverable, so that case is a
-/// config error naming the fix rather than a silent fallback to a guessed
-/// port.
-async fn resolve_ws_endpoint(url: &str, ws_url: Option<&str>) -> Result<String, String> {
-    if let Some(explicit) = ws_url {
+/// Prefers the explicit override. Otherwise reads it from the agent card the
+/// way a real client would: §5 discovery first, then the matching entry in
+/// `supportedInterfaces` — `GRPC` is one of §5.3's canonical binding names,
+/// and `WEBSOCKET` is the custom name §12 registers alongside them. An agent
+/// that serves a listener it does not advertise is undiscoverable, so that
+/// case is a config error naming the fix rather than a silent fallback to a
+/// guessed port.
+async fn resolve_endpoint(
+    url: &str,
+    override_url: Option<&str>,
+    protocol_binding: &str,
+    flag: &str,
+) -> Result<String, String> {
+    if let Some(explicit) = override_url {
         return Ok(explicit.to_owned());
     }
 
     let (status, card) = tests::helpers::rest_get(url, "/.well-known/agent-card.json")
         .await
-        .map_err(|e| format!("fetching the agent card from {url} to find the WebSocket endpoint: {e}\nPass --ws-url to skip discovery."))?;
+        .map_err(|e| {
+            format!(
+                "fetching the agent card from {url} to find the {protocol_binding} endpoint: \
+                 {e}\nPass {flag} to skip discovery."
+            )
+        })?;
     if status != 200 {
         return Err(format!(
             "the agent card at {url}/.well-known/agent-card.json returned HTTP {status}, so the \
-             WebSocket endpoint cannot be discovered. Pass --ws-url to name it explicitly."
+             {protocol_binding} endpoint cannot be discovered. Pass {flag} to name it explicitly."
         ));
     }
 
@@ -269,16 +296,16 @@ async fn resolve_ws_endpoint(url: &str, ws_url: Option<&str>) -> Result<String, 
             iface
                 .get("protocolBinding")
                 .and_then(serde_json::Value::as_str)
-                .is_some_and(|b| b.eq_ignore_ascii_case("websocket"))
+                .is_some_and(|b| b.eq_ignore_ascii_case(protocol_binding))
         })
         .and_then(|iface| iface.get("url"))
         .and_then(serde_json::Value::as_str);
 
     advertised.map(str::to_owned).ok_or_else(|| {
         format!(
-            "the agent card at {url} advertises no WEBSOCKET interface in supportedInterfaces, \
-             so a client has no way to find the socket. Add the interface to the card, or pass \
-             --ws-url to test an unadvertised endpoint."
+            "the agent card at {url} advertises no {protocol_binding} interface in \
+             supportedInterfaces, so a client has no way to find that listener. Add the \
+             interface to the card, or pass {flag} to test an unadvertised endpoint."
         )
     })
 }
@@ -286,14 +313,22 @@ async fn resolve_ws_endpoint(url: &str, ws_url: Option<&str>) -> Result<String, 
 struct Config {
     url: String,
     binding: String,
-    ws_url: Option<String>,
+    /// The `--ws-url` / `--grpc-url` override, if given. One field because the
+    /// two are mutually exclusive: a run drives exactly one binding.
+    endpoint: Option<String>,
     skips: Vec<String>,
 }
+
+/// Which `--binding` each endpoint override belongs to. An override named
+/// alongside any other binding is a config error, not a no-op: silently
+/// ignoring it lets a CI step believe it is exercising a listener it never
+/// dials.
+const ENDPOINT_FLAGS: &[(&str, &str)] = &[("--ws-url", "websocket"), ("--grpc-url", "grpc")];
 
 fn parse_args(args: &[String]) -> Result<Config, String> {
     let mut url = None;
     let mut binding = "jsonrpc".to_string();
-    let mut ws_url = None;
+    let mut endpoint: Option<(&str, String)> = None;
     let mut skips: Vec<String> = Vec::new();
 
     let mut i = 1;
@@ -317,9 +352,24 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
                 }
                 binding = b;
             }
-            "--ws-url" => {
+            flag if ENDPOINT_FLAGS.iter().any(|(f, _)| *f == flag) => {
+                let owned = flag.to_string();
                 i += 1;
-                ws_url = Some(args.get(i).ok_or("--ws-url requires a value")?.clone());
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| format!("{owned} requires a value"))?
+                    .clone();
+                let key = ENDPOINT_FLAGS
+                    .iter()
+                    .find(|(f, _)| *f == owned)
+                    .map(|(f, _)| *f)
+                    .expect("matched above");
+                if let Some((previous, _)) = endpoint {
+                    return Err(format!(
+                        "{previous} and {key} are mutually exclusive — a run drives one binding"
+                    ));
+                }
+                endpoint = Some((key, value));
             }
             "--skip" => {
                 i += 1;
@@ -337,22 +387,33 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
     }
 
     let url = url.ok_or("--url is required")?;
-    if ws_url.is_some() && binding != "websocket" {
-        return Err(format!(
-            "--ws-url only applies to --binding websocket, but the binding is '{binding}'"
-        ));
-    }
+    let endpoint = match endpoint {
+        None => None,
+        Some((flag, value)) => {
+            let expected = ENDPOINT_FLAGS
+                .iter()
+                .find(|(f, _)| *f == flag)
+                .map(|(_, b)| *b)
+                .expect("flag came from the table");
+            if binding != expected {
+                return Err(format!(
+                    "{flag} only applies to --binding {expected}, but the binding is '{binding}'"
+                ));
+            }
+            Some(value)
+        }
+    };
     Ok(Config {
         url,
         binding,
-        ws_url,
+        endpoint,
         skips,
     })
 }
 
 #[cfg(test)]
 mod tests_main {
-    use super::{parse_args, BINDINGS};
+    use super::{parse_args, BINDINGS, ENDPOINT_FLAGS};
 
     fn argv(rest: &[&str]) -> Vec<String> {
         std::iter::once("a2a-tck")
@@ -378,43 +439,82 @@ mod tests_main {
         assert!(err.contains("websockets"), "{err}");
     }
 
-    /// `--ws-url` on an HTTP binding names an endpoint nothing will ever
-    /// dial. Silently ignoring it lets a CI step believe it is exercising a
-    /// socket it never touches.
+    /// An endpoint override on a binding that never dials it names something
+    /// nothing will ever connect to. Silently ignoring it lets a CI step
+    /// believe it is exercising a listener it never touches. Checked for
+    /// every flag in the table, so a new one cannot be added without the
+    /// guard applying to it.
     #[test]
-    fn ws_url_without_the_websocket_binding_is_rejected() {
-        let err = parse_args(&argv(&[
-            "--url",
-            "http://x",
-            "--binding",
-            "jsonrpc",
-            "--ws-url",
-            "ws://y",
-        ]))
-        .err()
-        .expect("--ws-url must not be silently ignored on an HTTP binding");
-        assert!(err.contains("--ws-url"), "{err}");
+    fn every_endpoint_override_is_rejected_on_the_wrong_binding() {
+        for (flag, owner) in ENDPOINT_FLAGS {
+            let wrong = BINDINGS
+                .iter()
+                .find(|b| *b != owner)
+                .expect("more than one binding exists");
+            let err = parse_args(&argv(&[
+                "--url",
+                "http://x",
+                "--binding",
+                wrong,
+                flag,
+                "somewhere",
+            ]))
+            .err()
+            .unwrap_or_else(|| panic!("{flag} must not be silently ignored on --binding {wrong}"));
+            assert!(err.contains(flag), "{err}");
+        }
     }
 
     #[test]
-    fn ws_url_is_carried_through_for_the_websocket_binding() {
-        let cfg = parse_args(&argv(&[
+    fn every_endpoint_override_is_carried_through_on_its_own_binding() {
+        for (flag, owner) in ENDPOINT_FLAGS {
+            let cfg = parse_args(&argv(&[
+                "--url",
+                "http://x",
+                "--binding",
+                owner,
+                flag,
+                "the-endpoint",
+            ]))
+            .unwrap_or_else(|e| panic!("{flag} with --binding {owner} must parse: {e}"));
+            assert_eq!(cfg.endpoint.as_deref(), Some("the-endpoint"));
+        }
+    }
+
+    #[test]
+    fn two_endpoint_overrides_at_once_are_rejected() {
+        let err = parse_args(&argv(&[
             "--url",
             "http://x",
             "--binding",
             "websocket",
             "--ws-url",
-            "ws://y:9091",
+            "ws://y",
+            "--grpc-url",
+            "z:1",
         ]))
-        .expect("valid websocket config");
-        assert_eq!(cfg.ws_url.as_deref(), Some("ws://y:9091"));
+        .err()
+        .expect("a run drives one binding, so two endpoint overrides is a config error");
+        assert!(err.contains("mutually exclusive"), "{err}");
+    }
+
+    /// Every flag in the table must name a binding the CLI accepts, or the
+    /// override can never be used and its guard can never fire.
+    #[test]
+    fn every_endpoint_flag_names_a_known_binding() {
+        for (flag, owner) in ENDPOINT_FLAGS {
+            assert!(
+                BINDINGS.contains(owner),
+                "{flag} is owned by unknown binding {owner:?}; known: {BINDINGS:?}"
+            );
+        }
     }
 
     #[test]
     fn binding_defaults_to_jsonrpc() {
         let cfg = parse_args(&argv(&["--url", "http://x"])).expect("valid config");
         assert_eq!(cfg.binding, "jsonrpc");
-        assert!(cfg.ws_url.is_none());
+        assert!(cfg.endpoint.is_none());
     }
 
     #[test]

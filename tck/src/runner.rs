@@ -10,7 +10,7 @@ use crate::tests;
 /// The single source of truth shared with `parse_args` in `main`, so a
 /// binding accepted on the command line and a binding named in a [`Scope`]
 /// cannot drift apart.
-pub const BINDINGS: &[&str] = &["jsonrpc", "rest", "websocket"];
+pub const BINDINGS: &[&str] = &["jsonrpc", "rest", "websocket", "grpc"];
 
 /// Which bindings a check is meaningful for.
 ///
@@ -49,25 +49,26 @@ impl Scope {
     }
 }
 
-/// Checks that ride a JSON-RPC envelope.
+/// Checks that inspect a JSON-RPC envelope.
 ///
-/// §11's HTTP+JSON binding carries bare resources over REST verbs, so there
-/// is no envelope to inspect; §12's WebSocket binding carries the identical
-/// envelope the §9 JSON-RPC binding does, only over a socket.
+/// §11's HTTP+JSON binding carries bare resources over REST verbs and §10's
+/// gRPC binding carries protobuf over HTTP/2; neither has an envelope to
+/// inspect. §12's WebSocket binding carries the identical envelope the §9
+/// JSON-RPC binding does, only over a socket.
 const ENVELOPE_ONLY: Scope = Scope::Only {
     bindings: &["jsonrpc", "websocket"],
-    why: "the HTTP+JSON binding carries bare resources, not JSON-RPC envelopes (§11)",
+    why: "only §9 and §12 carry a JSON-RPC envelope; §10 and §11 have none to inspect",
 };
 
-/// Checks that assert something about an HTTP request body.
+/// Checks that negotiate an HTTP request body's media type.
 ///
-/// A §12 WebSocket request is a text frame: the frame header has no
-/// `Content-Type`, and the only HTTP message in the exchange is the upgrade
-/// handshake, which has no body. There is nothing to negotiate a media type
-/// on, so the check is not applicable rather than passing or failing.
+/// A §12 WebSocket request is a text frame and a §10 gRPC request is a
+/// protobuf body whose content type is fixed at `application/grpc`; neither
+/// can carry `application/a2a+json`, so the check is not applicable rather
+/// than passing or failing.
 const HTTP_BODY_ONLY: Scope = Scope::Only {
     bindings: &["jsonrpc", "rest"],
-    why: "a §12 text frame carries no Content-Type; the media type is an HTTP-body concern",
+    why: "application/a2a+json is an HTTP-body media type; §10 and §12 have no field for it",
 };
 
 /// Result of a single conformance test.
@@ -128,17 +129,41 @@ impl TestResult {
     }
 }
 
+/// Registers one check, choosing the body that matches the binding's wire
+/// format.
+///
+/// §10 needs its own assertions rather than an adapter over the JSON ones —
+/// see the module docs in `tests/grpc.rs` for why converting protobuf to JSON
+/// and reusing the JSON checks produces checks that cannot fail. The names
+/// stay shared so a run can be compared across bindings. Both futures are
+/// constructed and only one is awaited, which costs nothing: futures do no
+/// work until polled.
+macro_rules! check {
+    ($results:expr, $name:literal, $scope:expr, $binding:expr, grpc: $g:expr, otherwise: $j:expr $(,)?) => {
+        run_test(&mut $results, $name, $scope, $binding, async {
+            if $binding == "grpc" {
+                $g.await
+            } else {
+                $j.await
+            }
+        })
+        .await
+    };
+}
+
 /// Runs all TCK conformance tests against the given server.
 ///
 /// `card_url` is always the agent's HTTP origin: §5 discovery is served over
 /// HTTPS regardless of which binding carries the RPCs, so the card checks do
 /// not move when the binding does. `rpc_url` is the endpoint the selected
-/// binding speaks to — the same origin for `jsonrpc`/`rest`, and the
-/// `ws(s)://` endpoint for `websocket`.
+/// binding speaks to — the same origin for `jsonrpc`/`rest`, the `ws(s)://`
+/// endpoint for `websocket`, and the gRPC target for `grpc`.
 pub async fn run_all(card_url: &str, rpc_url: &str, binding: &str) -> Vec<TestResult> {
     let mut results = Vec::new();
 
     // ── Agent Card Discovery ──────────────────────────────────────────────
+    // Always over HTTP: §5 puts the card at a well-known HTTP path whichever
+    // binding carries the RPCs, so these do not vary by binding.
     run_test(
         &mut results,
         "agent_card_discovery",
@@ -167,151 +192,110 @@ pub async fn run_all(card_url: &str, rpc_url: &str, binding: &str) -> Vec<TestRe
     .await;
 
     // ── SendMessage ───────────────────────────────────────────────────────
-    run_test(
-        &mut results,
-        "send_message_basic",
-        Scope::All,
-        binding,
-        async { tests::messaging::test_send_message_basic(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "send_message_basic", Scope::All, binding,
+        grpc: tests::grpc::send_message_basic(rpc_url),
+        otherwise: tests::messaging::test_send_message_basic(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "send_message_returns_task",
-        Scope::All,
-        binding,
-        async { tests::messaging::test_send_message_returns_task(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "send_message_returns_task", Scope::All, binding,
+        grpc: tests::grpc::send_message_returns_task(rpc_url),
+        otherwise: tests::messaging::test_send_message_returns_task(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "send_message_context_id",
-        Scope::All,
-        binding,
-        async { tests::messaging::test_send_message_context_id(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "send_message_context_id", Scope::All, binding,
+        grpc: tests::grpc::send_message_context_id(rpc_url),
+        otherwise: tests::messaging::test_send_message_context_id(rpc_url, binding),
+    );
 
     // ── GetTask ───────────────────────────────────────────────────────────
-    run_test(
-        &mut results,
-        "get_task_existing",
-        Scope::All,
-        binding,
-        async { tests::task_ops::test_get_task_existing(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "get_task_existing", Scope::All, binding,
+        grpc: tests::grpc::get_task_existing(rpc_url),
+        otherwise: tests::task_ops::test_get_task_existing(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "get_task_not_found",
-        Scope::All,
-        binding,
-        async { tests::task_ops::test_get_task_not_found(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "get_task_not_found", Scope::All, binding,
+        grpc: tests::grpc::get_task_not_found(rpc_url),
+        otherwise: tests::task_ops::test_get_task_not_found(rpc_url, binding),
+    );
 
     // ── ListTasks ─────────────────────────────────────────────────────────
-    run_test(
-        &mut results,
-        "list_tasks_basic",
-        Scope::All,
-        binding,
-        async { tests::task_ops::test_list_tasks_basic(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "list_tasks_basic", Scope::All, binding,
+        grpc: tests::grpc::list_tasks_basic(rpc_url),
+        otherwise: tests::task_ops::test_list_tasks_basic(rpc_url, binding),
+    );
 
     // ── CancelTask ────────────────────────────────────────────────────────
-    run_test(&mut results, "cancel_task", Scope::All, binding, async {
-        tests::task_ops::test_cancel_task(rpc_url, binding).await
-    })
-    .await;
+    check!(
+        results, "cancel_task", Scope::All, binding,
+        grpc: tests::grpc::cancel_task(rpc_url),
+        otherwise: tests::task_ops::test_cancel_task(rpc_url, binding),
+    );
 
     // ── Streaming ─────────────────────────────────────────────────────────
-    run_test(
-        &mut results,
-        "streaming_send_message",
-        Scope::All,
-        binding,
-        async { tests::streaming::test_streaming_send_message(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "streaming_send_message", Scope::All, binding,
+        grpc: tests::grpc::streaming_send_message(rpc_url),
+        otherwise: tests::streaming::test_streaming_send_message(rpc_url, binding),
+    );
 
     // ── Push Notification Config ──────────────────────────────────────────
-    run_test(
-        &mut results,
-        "push_config_create",
-        Scope::All,
-        binding,
-        async { tests::push_config::test_create_push_config(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "push_config_create", Scope::All, binding,
+        grpc: tests::grpc::push_config_create(rpc_url),
+        otherwise: tests::push_config::test_create_push_config(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "push_config_get",
-        Scope::All,
-        binding,
-        async { tests::push_config::test_get_push_config(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "push_config_get", Scope::All, binding,
+        grpc: tests::grpc::push_config_get(rpc_url),
+        otherwise: tests::push_config::test_get_push_config(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "push_config_list",
-        Scope::All,
-        binding,
-        async { tests::push_config::test_list_push_configs(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "push_config_list", Scope::All, binding,
+        grpc: tests::grpc::push_config_list(rpc_url),
+        otherwise: tests::push_config::test_list_push_configs(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "push_config_delete",
-        Scope::All,
-        binding,
-        async { tests::push_config::test_delete_push_config(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "push_config_delete", Scope::All, binding,
+        grpc: tests::grpc::push_config_delete(rpc_url),
+        otherwise: tests::push_config::test_delete_push_config(rpc_url, binding),
+    );
 
     // ── Error Handling ────────────────────────────────────────────────────
-    run_test(
-        &mut results,
-        "invalid_method_returns_error",
-        Scope::All,
-        binding,
-        async { tests::errors::test_invalid_method_returns_error(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "invalid_method_returns_error", Scope::All, binding,
+        grpc: tests::grpc::invalid_method_returns_error(rpc_url),
+        otherwise: tests::errors::test_invalid_method_returns_error(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "invalid_params_returns_error",
-        Scope::All,
-        binding,
-        async { tests::errors::test_invalid_params_returns_error(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "invalid_params_returns_error", Scope::All, binding,
+        grpc: tests::grpc::invalid_params_returns_error(rpc_url),
+        otherwise: tests::errors::test_invalid_params_returns_error(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "get_unknown_task_returns_error",
-        Scope::All,
-        binding,
-        async { tests::errors::test_get_unknown_task_returns_error(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "get_unknown_task_returns_error", Scope::All, binding,
+        // Same requirement as `get_task_not_found` at this binding: §10 has
+        // one way to report a missing task, so both names map to the mapped
+        // NOT_FOUND status rather than to two different shapes.
+        grpc: tests::grpc::get_task_not_found(rpc_url),
+        otherwise: tests::errors::test_get_unknown_task_returns_error(rpc_url, binding),
+    );
 
-    run_test(
-        &mut results,
-        "malformed_body_returns_error",
-        Scope::All,
-        binding,
-        async { tests::errors::test_malformed_body_returns_error(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "malformed_body_returns_error", Scope::All, binding,
+        grpc: tests::grpc::malformed_body_returns_error(rpc_url),
+        otherwise: tests::errors::test_malformed_body_returns_error(rpc_url, binding),
+    );
 
     // ── Wire Format ───────────────────────────────────────────────────────
     run_test(
@@ -323,14 +307,11 @@ pub async fn run_all(card_url: &str, rpc_url: &str, binding: &str) -> Vec<TestRe
     )
     .await;
 
-    run_test(
-        &mut results,
-        "task_state_values",
-        Scope::All,
-        binding,
-        async { tests::wire_format::test_task_state_values(rpc_url, binding).await },
-    )
-    .await;
+    check!(
+        results, "task_state_values", Scope::All, binding,
+        grpc: tests::grpc::task_state_values(rpc_url),
+        otherwise: tests::wire_format::test_task_state_values(rpc_url, binding),
+    );
 
     run_test(
         &mut results,
@@ -383,8 +364,8 @@ mod tests_runner {
 
     /// A `Scope` naming a binding the CLI does not accept excludes that check
     /// from *every* run while looking like it covers something — the typo
-    /// `"websockets"` would silently drop a check from all three legs. Anchor
-    /// the names to [`BINDINGS`], which `parse_args` also validates against.
+    /// `"websockets"` would silently drop a check from all legs. Anchor the
+    /// names to [`BINDINGS`], which `parse_args` also validates against.
     #[test]
     fn every_scope_names_only_known_bindings() {
         for (label, scope) in ALL_SCOPES {
@@ -443,7 +424,9 @@ mod tests_runner {
         assert!(ENVELOPE_ONLY.covers("jsonrpc"));
         assert!(ENVELOPE_ONLY.covers("websocket"));
         assert!(!ENVELOPE_ONLY.covers("rest"));
+        assert!(!ENVELOPE_ONLY.covers("grpc"));
         assert!(HTTP_BODY_ONLY.covers("rest"));
         assert!(!HTTP_BODY_ONLY.covers("websocket"));
+        assert!(!HTTP_BODY_ONLY.covers("grpc"));
     }
 }

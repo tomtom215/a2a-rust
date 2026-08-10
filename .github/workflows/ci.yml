@@ -52,6 +52,13 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # Four crates plus the repo root each vendor the canonical a2a.proto,
+      # because build.rs can only reach inside its own crate. Nothing checked
+      # they still agreed, and drift between them yields a client and a server
+      # that both build, both pass their tests, and disagree on the wire.
+      - name: Vendored protos agree
+        run: ./scripts/check_proto_copies.sh
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})

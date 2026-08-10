@@ -130,16 +130,21 @@ dependencies = [
 name = "a2a-tck"
 version = "0.2.0"
 dependencies = [
- "a2a-protocol-client",
- "a2a-protocol-types",
  "futures-util",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "prost",
+ "prost-types",
+ "protoc-bin-vendored",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite 0.29.0",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
  "uuid",
 ]
 

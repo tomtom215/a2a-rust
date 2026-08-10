@@ -96,6 +96,65 @@ jobs:
           pip install httpx
           python itk/interop/inspector_card_check.py http://127.0.0.1:9090
 
+  # ── All four bindings, against the purpose-built SUT ──────────────────────
+  #
+  # Separate from the echo-agent job because the example serves three bindings
+  # and the SUT serves four: it is the only target in the repo that answers
+  # §10 gRPC, so it is the only one the gRPC leg can be graded against.
+  # Splitting the jobs keeps the example an example.
+  tck-all-bindings:
+    name: TCK all bindings (SUT)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Build SUT and TCK
+        run: cargo build --release -p a2a-tck-sut -p a2a-tck
+
+      - name: Start SUT (JSON-RPC + REST + gRPC + WebSocket)
+        run: |
+          ./target/release/a2a-tck-sut &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9999/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "SUT ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "SUT failed to start"
+          exit 1
+        env:
+          SUT_HOST: "127.0.0.1:9999"
+          SUT_GRPC_HOST: "127.0.0.1:9998"
+          SUT_WS_HOST: "127.0.0.1:9997"
+
+      # The card must name every listener the SUT brought up, or the legs
+      # below would resolve nothing and the job would report a config error
+      # rather than a conformance verdict. Assert it before grading.
+      - name: Card advertises all four bindings
+        run: |
+          card=$(curl -sf http://127.0.0.1:9999/.well-known/agent-card.json)
+          for b in JSONRPC HTTP+JSON GRPC WEBSOCKET; do
+            echo "$card" | grep -q "\"$b\"" || { echo "card is missing $b"; exit 1; }
+          done
+          echo "all four interfaces advertised"
+
+      - name: TCK — JSON-RPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding jsonrpc
+
+      - name: TCK — REST binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding rest
+
+      - name: TCK — WebSocket binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding websocket
+
+      # §10. The gRPC endpoint is read from the card's GRPC interface, so this
+      # also exercises the discovery path a real gRPC client takes.
+      - name: TCK — gRPC binding
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding grpc
+
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})
     runs-on: ubuntu-latest

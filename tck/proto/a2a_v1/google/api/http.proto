@@ -1,0 +1,44 @@
+// Minimal vendored stub of google/api/http.proto (Apache-2.0, from
+// github.com/googleapis/googleapis). Contains only the definitions needed
+// to compile a2a.proto. Custom options carry no wire-format significance —
+// they exist solely so protoc can resolve the option imports, keeping the
+// canonical a2a.proto byte-identical to the upstream A2A specification.
+
+syntax = "proto3";
+
+package google.api;
+
+option java_multiple_files = true;
+option java_outer_classname = "HttpProto";
+option java_package = "com.google.api";
+
+// Defines the HTTP configuration for an API service.
+message Http {
+  repeated HttpRule rules = 1;
+  bool fully_decode_reserved_expansion = 2;
+}
+
+// gRPC Transcoding rule: maps an RPC method to one or more HTTP REST
+// endpoints.
+message HttpRule {
+  string selector = 1;
+
+  oneof pattern {
+    string get = 2;
+    string put = 3;
+    string post = 4;
+    string delete = 5;
+    string patch = 6;
+    CustomHttpPattern custom = 8;
+  }
+
+  string body = 7;
+  string response_body = 12;
+  repeated HttpRule additional_bindings = 11;
+}
+
+// A custom pattern is used for defining custom HTTP verb.
+message CustomHttpPattern {
+  string kind = 1;
+  string path = 2;
+}

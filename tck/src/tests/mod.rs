@@ -5,6 +5,7 @@
 
 pub mod agent_card;
 pub mod errors;
+pub mod grpc;
 pub mod helpers;
 pub mod messaging;
 pub mod push_config;
