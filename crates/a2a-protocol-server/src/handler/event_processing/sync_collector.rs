@@ -52,6 +52,37 @@ struct CollectState {
     saw_task_shaped_event: bool,
 }
 
+/// Restores an artifact to its pre-append state after a failed save.
+///
+/// Free function rather than inline in `process_event`, so the lookup it
+/// depends on can be tested. Inline, this ran only on the store-failure path,
+/// and both callers of `process_event` propagate with `?` — so the
+/// `CollectState` this repairs is dropped without ever being read, and
+/// whichever artifact the `find` selected was unobservable. That made
+/// `a.id == artifact_id` a provably equivalent mutant: correct code and code
+/// that reverts *the wrong artifact* were indistinguishable.
+///
+/// Extracting it does not make the revert reachable — it is still defensive,
+/// and still dead under today's control flow. It makes the revert *correct by
+/// test* instead of by inspection, so that if a caller ever handles a
+/// `process_event` error rather than propagating it, the behaviour this
+/// protects is already pinned.
+fn revert_artifact_append(
+    task: &mut Task,
+    artifact_id: &a2a_protocol_types::artifact::ArtifactId,
+    prev_parts_len: usize,
+    prev_metadata: Option<serde_json::Value>,
+) {
+    if let Some(existing) = task
+        .artifacts
+        .as_mut()
+        .and_then(|arts| arts.iter_mut().find(|a| a.id == *artifact_id))
+    {
+        existing.parts.truncate(prev_parts_len);
+        existing.metadata = prev_metadata;
+    }
+}
+
 impl RequestHandler {
     /// Collects events until stream closes, updating the task store and
     /// delivering push notifications.
@@ -235,13 +266,12 @@ impl RequestHandler {
                             }
                         }
                         if let Err(e) = self.task_store.save(last_task).await {
-                            // Revert: truncate parts and restore metadata.
-                            if let Some(existing) = last_task.artifacts.as_mut().and_then(|arts| {
-                                arts.iter_mut().find(|a| a.id == update.artifact.id)
-                            }) {
-                                existing.parts.truncate(prev_parts_len);
-                                existing.metadata = prev_metadata;
-                            }
+                            revert_artifact_append(
+                                last_task,
+                                &update.artifact.id,
+                                prev_parts_len,
+                                prev_metadata,
+                            );
                             return Err(ServerError::from(e));
                         }
                         state.saw_task_shaped_event = true;
@@ -373,6 +403,7 @@ impl RequestHandler {
 mod tests {
     use std::sync::Arc;
 
+    use super::revert_artifact_append;
     use a2a_protocol_types::events::StreamResponse;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
@@ -579,6 +610,77 @@ mod tests {
         let artifacts = final_task.task.artifacts.expect("artifacts should be Some");
         assert_eq!(artifacts.len(), 1);
         assert_eq!(artifacts[0].id, ArtifactId::new("art-1"));
+    }
+
+    // ── revert_artifact_append ───────────────────────────────────────────
+
+    /// Kills `replace == with !=` on the lookup in `revert_artifact_append`.
+    ///
+    /// Two artifacts are required. With one, `!=` simply finds nothing and the
+    /// revert is a no-op, which is indistinguishable from a correct revert of
+    /// an untouched artifact. With two, `!=` selects the *other* one — so the
+    /// mutant truncates a bystander and leaves the artifact it was supposed to
+    /// repair still holding the failed append.
+    #[test]
+    fn revert_restores_the_named_artifact_and_leaves_others_alone() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::message::Part;
+
+        let mut task = make_task("t-revert", TaskState::Working);
+        task.artifacts = Some(vec![
+            Artifact::new(
+                ArtifactId::new("art-1"),
+                vec![Part::text("one-a"), Part::text("one-b")],
+            ),
+            Artifact::new(
+                ArtifactId::new("art-2"),
+                vec![
+                    Part::text("two-a"),
+                    Part::text("two-b"),
+                    Part::text("two-c"),
+                ],
+            ),
+        ]);
+        // art-2 previously held one part and no metadata; the failed append
+        // added two more and some metadata.
+        task.artifacts.as_mut().unwrap()[1].metadata = Some(serde_json::json!({ "added": true }));
+
+        revert_artifact_append(&mut task, &ArtifactId::new("art-2"), 1, None);
+
+        let arts = task.artifacts.expect("artifacts present");
+        assert_eq!(
+            arts[1].parts.len(),
+            1,
+            "art-2 must be truncated back to its pre-append length"
+        );
+        assert!(
+            arts[1].metadata.is_none(),
+            "art-2's metadata must be restored to its previous value"
+        );
+        assert_eq!(
+            arts[0].parts.len(),
+            2,
+            "art-1 is a bystander and must not be touched"
+        );
+    }
+
+    /// A revert naming an artifact that is not present is a no-op rather than
+    /// a panic or a mis-target — the shape the `and_then` exists for.
+    #[test]
+    fn revert_for_an_absent_artifact_changes_nothing() {
+        use a2a_protocol_types::artifact::{Artifact, ArtifactId};
+        use a2a_protocol_types::message::Part;
+
+        let mut task = make_task("t-revert-absent", TaskState::Working);
+        task.artifacts = Some(vec![Artifact::new(
+            ArtifactId::new("art-1"),
+            vec![Part::text("a"), Part::text("b")],
+        )]);
+
+        revert_artifact_append(&mut task, &ArtifactId::new("nope"), 0, None);
+
+        let arts = task.artifacts.expect("artifacts present");
+        assert_eq!(arts[0].parts.len(), 2, "nothing must be truncated");
     }
 
     // ── process_event: artifact validation and append merging ───────────
