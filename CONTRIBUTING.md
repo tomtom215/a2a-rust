@@ -410,6 +410,44 @@ clean file if you go by the numbers alone.
 
 ---
 
+## Proving the gates can fail
+
+Running a gate and watching it pass says nothing about whether it *could*
+have failed. This repository has had three gates that could not: a mutation
+workflow that printed `COMBINED MUTATION SCORE: 100%` from empty result
+files, a conformance job that exited green on a report with zero graded
+requirements, and a preflight script that had never been told two of its
+jobs existed. Each ran, went green, and measured nothing.
+
+`scripts/prove_gates_fail.sh` asserts the other half. For every gate in
+ci.yml it injects a defect that gate is responsible for, confirms the gate
+goes red *citing that defect*, and restores the tree. Feature-gated
+injections go inside code compiled only under that feature, so
+`cargo test --features sqlite` failing on always-compiled code cannot pass
+for the sqlite gate.
+
+```bash
+scripts/prove_gates_fail.sh --list      # the gate/injection pairing
+scripts/prove_gates_fail.sh --only fmt  # one gate
+scripts/prove_gates_fail.sh             # all of them (~15 min)
+```
+
+Adding a gate to ci.yml without adding an injection is a hard error: a gate
+nobody has tried to break is a gate nobody knows works.
+
+Last full run — 2026-08-10, **31 of 31 proven, 0 unproven**.
+
+Two rules while it runs, both learned the expensive way:
+
+- **Do not commit from the same working tree.** A `git add` that catches an
+  injected defect stages it, and probe code reached three commits that way.
+  The script refuses to start in a dirty tree and asserts the tree is clean
+  at exit, but it cannot stop a commit made mid-run.
+- **A non-zero exit is not proof.** The first full run reported 31/31 while
+  the disk filled and nine gates died on ENOSPC. The script now requires the
+  gate's own output to name the injected defect, and reports anything else
+  as `INCONCLUSIVE`.
+
 ## PR Checklist
 
 - [ ] Every commit signed off (`git commit -s`) by a human author — see [DCO](#developer-certificate-of-origin-dco)
@@ -426,6 +464,8 @@ clean file if you go by the numbers alone.
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
+- [ ] If you added or changed a CI gate, `scripts/prove_gates_fail.sh` still
+      passes — a new gate needs an injection proving it can fail
 - [ ] `cargo mutants --in-diff` shows zero surviving mutants for the lines
       this PR changes (this is the blocking gate; the workspace sweep is
       pre-existing debt and not yours to clear)
