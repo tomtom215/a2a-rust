@@ -386,11 +386,12 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `dispatch/websocket.rs` | 33 | 33 | **0** | 0 | **0** | 7 |
 | `push/sender.rs` | 99 | 64 | **0** | 35 | **0** | 7 |
 | `rate_limit.rs` | 56 | 32 | **0** | 24 | **0** | 5 |
-| `handler/event_processing/sync_collector.rs` | 26 | 12 | 1 | 13 | 2 | 9 |
+| `handler/event_processing/sync_collector.rs` | 27 | 14 | **0** | 13 | **0** | 9 |
 | `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
 
-Across these `a2a-server` files: **56 survivors addressed, 1 remaining.** Eight
-of the nine report exit 0, and nothing is excluded anywhere in the project.
+Across these `a2a-server` files: **57 survivors addressed, none remaining.**
+Every one of the nine reports exit 0, and nothing is excluded anywhere in the
+project — no `--exclude-re`, no `#[mutants::skip]`, no baselined exception.
 
 The last three fell to the same move rather than to cleverer tests: each was a
 decision buried behind machinery a test cannot drive, so the decision was moved
@@ -402,11 +403,34 @@ somewhere it could be reached.
 | `rate_limit.rs` — window comparison in the write-lock double-check | Reachable only through a genuine race between callers. Extracted as `admit_or_roll_window`, taking the bucket directly, it is an ordinary state transition; two tests pin both arms. |
 | `websocket.rs` — sign of the back-pressure `-32000` | Not the timing test it looks like: the permit is taken before the handler task spawns and released only when it finishes, so an executor that never returns holds its permit for the life of the connection. 65 requests exhaust `Semaphore::new(64)` by construction. |
 
-One survivor remains, and it is not a coverage gap:
+### Equivalent is not the same as unkillable
 
-| Survivor | Why it stands |
-|---|---|
-| `sync_collector.rs:240` — `==` in the append revert path | Provably equivalent. Both call sites propagate with `?`, so the `CollectState` the revert repairs is dropped unread. The revert is dead under current control flow; deleting it is a maintainer's call, because it becomes live again the moment a caller handles that error instead of propagating it. |
+The last one to fall, `sync_collector.rs:240`, had been recorded here as a
+provably equivalent mutant: the append revert runs only when a store save
+fails, both callers of `process_event` propagate with `?`, and the
+`CollectState` the revert repairs is dropped without being read. Correct code
+and code that reverted *the wrong artifact* were observationally identical.
+
+The proof was sound and the conclusion was too narrow. The revert was
+untestable because it was welded to an error path, not because its logic is
+unobservable. As a free function — `revert_artifact_append(task, id, len,
+meta)` — it is an ordinary transformation with an ordinary assertion, and the
+mutant dies.
+
+Two artifacts are what make that test bite, which is the same lesson as the
+axum routing tests above: with one artifact `!=` finds nothing and the revert
+is a no-op, indistinguishable from correctly reverting an untouched artifact.
+With two it truncates the bystander and leaves the intended artifact holding
+the failed append.
+
+The revert was **not** deleted, and the contrast with the websocket size guard
+is the point. That guard was redundant with a cap enforced by the same constant
+one layer up, so deleting it lost nothing. This one is the only thing that
+would repair in-memory state if a caller ever handled a `process_event` error
+instead of propagating it. Deleting it would have traded a survivor for a
+latent correctness hole. "Delete the dead branch" and "extract the buried
+decision" are both available; which one applies depends on whether the code
+would still be wrong if it ever ran.
 
 ### A refactor can manufacture a survivor
 
