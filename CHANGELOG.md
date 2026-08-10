@@ -29,6 +29,26 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **The TCK drives all four bindings, and grades §5.1 equivalence.** It ran
+  JSON-RPC and HTTP+JSON only; `--binding websocket` (§12) and
+  `--binding grpc` (§10) complete the set, and `--equivalence` grades
+  `BIND-EQUIV-001..004` — the four §5.1 `MUST`s that are statements about the
+  *relation* between bindings and so cannot be graded one binding at a time.
+  Upstream has carried them as `NOT TESTED` since April.
+
+  The gRPC checks are separate assertions rather than a ProtoJSON adapter over
+  the JSON ones. Converting protobuf responses and reusing the JSON assertions
+  would be less code and would produce checks that cannot fail:
+  `task_state_values` asserts the state is one of nine `TASK_STATE_*` strings,
+  and over gRPC that string exists only after this crate's own enum-to-name
+  mapping runs, so the assertion would be about the converter. `tck/sut` now
+  serves all four bindings (`SUT_GRPC_HOST`, `SUT_WS_HOST`).
+
+  `BIND-EQUIV-004` is graded structurally only, and says so in its output:
+  the card declares security once at card level and no interface may override
+  it, but proving each binding *enforces* those schemes identically needs a
+  target configured to require credentials.
+
 - **`SignatureHeader` and `signature_header()` in `a2a-protocol-types`** —
   decodes an `AgentCardSignature`'s JWS protected header, exposing `alg`,
   `kid` and `jku` so a caller can determine *which* key to retrieve before
@@ -86,6 +106,30 @@ existing `RELEASING.md` checklist.
   accept both vintages, emit only v1.0.
 
 ### Fixed
+
+- **A conformance check passed two bindings it never ran against.**
+  `jsonrpc_envelope_format` returned `Ok(())` for `rest` and `websocket`
+  rather than declaring itself inapplicable, so a `rest` run reported
+  `22/22 passed` while 21 checks had actually run. Not-applicable is now a
+  reported outcome, printed with its reason and excluded from the
+  denominator, and a run that grades zero checks exits 2 — every check being
+  skipped is a run that verified nothing, not a pass.
+
+- **`scripts/preflight.sh` silently skipped any non-cargo gate.** It matched
+  `run: cargo ` when collecting CI's gate steps, so the first gate invoking a
+  script rather than cargo would have been dropped without a word. It now
+  matches every `run:` step in the gate jobs and cross-checks both
+  directions. 31 gates, up from 28.
+
+- **The 500-line file limit was an unenforced checklist line.** CONTRIBUTING
+  claimed 46 of 139 files exceeded it; the tree had 77 of 310.
+  `scripts/check_file_lengths.sh` pins the current count so it cannot grow,
+  and CI runs it.
+
+- **`release.yml` accepted lightweight tags.** A release cut from one carries
+  no tagger, date, or message, and cannot carry a signature. The workflow now
+  requires an annotated tag and fails with the `git tag -a` invocation to fix
+  it.
 
 - **A `SubscribeToTask` stream ended when the executor exited, not when the
   task finished.** Spec §3.1.6: "The stream MUST terminate when the task
