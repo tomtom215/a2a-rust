@@ -491,6 +491,9 @@ struct Fault {
     http: u16,
     /// The gRPC status name §5.4 assigns, and its numeric code.
     grpc: (&'static str, i32),
+    /// Printed when [`Fault::triggerable`] says this target cannot produce
+    /// the fault, so a skipped comparison explains itself.
+    why_untriggerable: &'static str,
 }
 
 const FAULTS: &[Fault] = &[
@@ -499,14 +502,31 @@ const FAULTS: &[Fault] = &[
         jsonrpc: -32001,
         http: 404,
         grpc: ("NOT_FOUND", 5),
+        why_untriggerable: "an id nothing owns is always available",
     },
     Fault {
         error_type: "TaskNotCancelableError",
         jsonrpc: -32002,
         http: 409,
         grpc: ("FAILED_PRECONDITION", 9),
+        why_untriggerable: "the fixture task never reached a terminal state, so \
+                            cancelling it is a legitimate success on every binding",
     },
 ];
+
+impl Fault {
+    /// Whether this target can be made to produce the fault at all.
+    ///
+    /// `TaskNotFoundError` always can — an id nothing owns is free. The
+    /// cancellation fault needs a task that has already finished, which
+    /// depends on the agent under test, not on the binding.
+    fn triggerable(&self, fixture: &Fixture) -> bool {
+        match self.error_type {
+            "TaskNotCancelableError" => fixture.terminal_task_id.is_some(),
+            _ => true,
+        }
+    }
+}
 
 /// What one binding answered, rendered for comparison against §5.4.
 struct Answer {
@@ -521,7 +541,10 @@ async fn fault_answer(iface: &Iface, fault: &Fault, fixture: &Fixture) -> Result
     // that has already reached a terminal state.
     let target = match fault.error_type {
         "TaskNotFoundError" => UNKNOWN_TASK_ID.to_owned(),
-        "TaskNotCancelableError" => fixture.terminal_task_id.clone(),
+        "TaskNotCancelableError" => fixture
+            .terminal_task_id
+            .clone()
+            .ok_or("no terminal task; bind_equiv_003 should have skipped this fault")?,
         other => return Err(format!("no trigger defined for {other}")),
     };
     let method = match fault.error_type {
@@ -584,7 +607,22 @@ const UNKNOWN_CONFIG_ID: &str = "tck-equivalence-no-such-config-6b1f2d90";
 
 async fn bind_equiv_003(ifaces: &[Iface], fixture: &Fixture) -> Result<(), String> {
     let mut wrong = Vec::new();
+    let mut graded = 0usize;
     for fault in FAULTS {
+        // A fault this target cannot be made to produce says nothing about
+        // how it maps errors. `TaskNotCancelableError` needs a task already
+        // in a terminal state; against an agent whose work is still running,
+        // `CancelTask` succeeds, and grading that as "expected -32002, got no
+        // error at all" would blame the binding for the harness's inability
+        // to set up the fault.
+        if !fault.triggerable(fixture) {
+            println!(
+                "         (skipping {}: {} — nothing to compare, so nothing is claimed)",
+                fault.error_type, fault.why_untriggerable
+            );
+            continue;
+        }
+        graded += 1;
         for iface in ifaces {
             let answer = fault_answer(iface, fault, fixture).await.map_err(|e| {
                 format!(
@@ -599,6 +637,16 @@ async fn bind_equiv_003(ifaces: &[Iface], fixture: &Fixture) -> Result<(), Strin
                 ));
             }
         }
+    }
+
+    // Skipping every fault would leave a check that compared nothing and
+    // passed — the same vacuity the other two guard against.
+    if graded == 0 {
+        return Err(format!(
+            "none of the {} faults in §5.4's table could be triggered against this \
+             target, so nothing about its error mapping was compared",
+            FAULTS.len()
+        ));
     }
 
     if wrong.is_empty() {
@@ -690,7 +738,15 @@ struct Fixture {
     /// Consumed by the REST `DELETE` availability probe, so that probe never
     /// removes the config the read probes depend on.
     delete_config_id: String,
-    terminal_task_id: String,
+    /// A task observed to have reached a terminal state, if one did.
+    ///
+    /// `Option`, not `String`, because whether a task finishes is a property
+    /// of the agent under test. This was previously set to `task_id`
+    /// unconditionally and documented as "a task known to be terminal" — an
+    /// assumption, not an observation. Against an agent still working, the
+    /// cancel would legitimately succeed and `BIND-EQUIV-003` would report a
+    /// §5.4 violation that was really a harness limitation.
+    terminal_task_id: Option<String>,
 }
 
 /// Builds the fixture over the first advertised binding.
@@ -741,12 +797,39 @@ async fn build_fixture(iface: &Iface) -> Result<Fixture, String> {
     let config_id = config("readable").await?;
     let delete_config_id = config("disposable").await?;
 
+    let terminal_task_id = await_terminal(iface, &task_id).await;
+
     Ok(Fixture {
-        terminal_task_id: task_id.clone(),
+        terminal_task_id,
         task_id,
         config_id,
         delete_config_id,
     })
+}
+
+/// Polls a task briefly and returns its id once it reaches a terminal state.
+///
+/// Bounded and best-effort: an agent that takes longer than this, or that
+/// leaves the task open awaiting input, simply yields `None`, and the
+/// cancellation fault is skipped with its reason printed rather than graded
+/// against a task that was never cancellable-by-refusal in the first place.
+async fn await_terminal(iface: &Iface, task_id: &str) -> Option<String> {
+    const TERMINAL: [&str; 4] = [
+        "TASK_STATE_COMPLETED",
+        "TASK_STATE_FAILED",
+        "TASK_STATE_CANCELED",
+        "TASK_STATE_REJECTED",
+    ];
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+    while tokio::time::Instant::now() < deadline {
+        if let Ok(view) = task_view(iface, task_id).await {
+            if TERMINAL.contains(&view.state.as_str()) {
+                return Some(task_id.to_owned());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    None
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
