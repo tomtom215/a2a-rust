@@ -29,6 +29,65 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **`BIND-EQUIV-004` is now graded behaviourally, not just structurally.**
+  §5.1 requires every binding to support the same authentication schemes. The
+  runner has been checking the half a card can answer — v1.0 gives
+  `AgentInterface` no security fields, so schemes declared once at card level
+  bind every binding. Whether each binding *enforces* them was recorded as
+  unmeasured, because no target here required credentials to withhold.
+
+  `tck/sut` gains `SUT_PROFILE=secured`, whose card declares a bearer scheme
+  and whose handler enforces it with a single `BearerTokenAuthInterceptor`.
+  One interceptor above the dispatchers is the property under test: all four
+  bindings are guarded by one implementation reading one `CallContext`, so a
+  binding that stopped forwarding the header would fail rather than quietly
+  serve anonymous traffic. `a2a-tck --equivalence --auth-token <t>` sweeps
+  twice — every binding must refuse an uncredentialed request, and every
+  binding must serve a credentialed one — and `tck.yml` gates both.
+
+  The acceptance sweep caught a defect in the probe itself during development:
+  an early draft sent the JSON-RPC method as `tasks/list` where this SDK's name
+  is `ListTasks`, which authenticated and then failed dispatch, so two bindings
+  reported a refusal and the check declared an asymmetry that did not exist. On
+  the rejection sweep alone, a probe that can never succeed is
+  indistinguishable from enforcement working. Recorded in
+  `book/src/reference/conformance-history.md` rather than quietly fixed.
+
+- **Four governance files**: `MAINTAINERS.md`, `.github/CODEOWNERS`,
+  `SUPPORT.md` and `TRADEMARKS.md`. `GOVERNANCE.md`'s duplicated maintainer
+  table is removed in favour of `MAINTAINERS.md`, so the two cannot drift.
+  `CODEOWNERS` states in its own header that with one maintainer it is inert
+  for that maintainer's own pull requests — real for outside contributions,
+  and not a claim that these paths are independently reviewed today.
+
+- **`docs/provenance-manifest.md` and `scripts/provenance_manifest.sh`** — the
+  reproducible account of what this repository's history contains and what a
+  DCO history rewrite would cost, for a downstream project's counsel. The
+  script refuses to run on a shallow clone, which is what produced two
+  successive wrong measurements.
+
+### Fixed
+
+- **`PROVENANCE.md` §2.1's commit counts were wrong**, measured on a shallow
+  clone. Over the full 648 non-merge commits the DCO verdict is 126 pass / 477
+  assistant-authored / 29 bot / 16 unsigned human — not 120 / 138 / 21 / 3, and
+  the pass rate is 19%, not 43%. §2.1 also said §1's figure of 608 commits
+  "could not be reproduced"; on a complete clone it reproduces exactly, and §1
+  needed no change. The failure mode is worth knowing: a shallow clone drops
+  the oldest commits, which here are precisely the non-compliant ones, so the
+  pass count survives intact while every failure count shrinks. It reads as
+  good news.
+
+- **The 500-line file-length ratchet now covers `.sh` and `.py`**, not `.rs`
+  alone. Widening turned up two over-limit scripts nobody had counted, which is
+  the argument for a ratchet over a one-time split. Baseline 77 → 81 entries.
+
+- **ADR 0006 no longer says developers must address all surviving mutants
+  before merge.** The gate is `--in-diff`; the obligation is the lines a PR
+  changes. `CONTRIBUTING.md` was corrected earlier and the ADR was not, leaving
+  a governing document contradicting the enforced rule. Its stale 92% / 183
+  figure is now the measured 94% / 125.
+
 - **The verdict-bearing steps outside `ci.yml` are now proven able to fail.**
   `scripts/prove_gates_fail.sh` covers `ci.yml`'s eight gate jobs by injecting
   defects into tracked source and running cargo; that mechanism does not reach
