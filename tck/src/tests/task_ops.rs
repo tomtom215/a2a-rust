@@ -54,9 +54,9 @@ pub async fn test_list_tasks_basic(url: &str, binding: &str) -> Result<(), Strin
 
     // List tasks
     let result = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let params = serde_json::json!({});
-            let resp = helpers::jsonrpc_request(url, "ListTasks", params).await?;
+            let resp = helpers::rpc(url, binding, "ListTasks", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -96,9 +96,9 @@ pub async fn test_cancel_task(url: &str, binding: &str) -> Result<(), String> {
 
     // Attempt to cancel it
     let result = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let params = serde_json::json!({"id": task_id});
-            let resp = helpers::jsonrpc_request(url, "CancelTask", params).await?;
+            let resp = helpers::rpc(url, binding, "CancelTask", params).await?;
             // Cancel may return an error if the task is already completed or not cancelable
             // Both are valid conformance behaviors
             resp

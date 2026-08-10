@@ -23,9 +23,9 @@ pub async fn test_create_push_config(url: &str, binding: &str) -> Result<(), Str
     });
 
     let result = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let resp =
-                helpers::jsonrpc_request(url, "CreateTaskPushNotificationConfig", config).await?;
+                helpers::rpc(url, binding, "CreateTaskPushNotificationConfig", config).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -67,9 +67,9 @@ pub async fn test_get_push_config(url: &str, binding: &str) -> Result<(), String
     });
 
     let created = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let resp =
-                helpers::jsonrpc_request(url, "CreateTaskPushNotificationConfig", config).await?;
+                helpers::rpc(url, binding, "CreateTaskPushNotificationConfig", config).await?;
             resp.get("result").cloned().ok_or("missing 'result'")?
         }
         "rest" => {
@@ -90,10 +90,9 @@ pub async fn test_get_push_config(url: &str, binding: &str) -> Result<(), String
 
     // Get the config
     let result = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let params = serde_json::json!({"taskId": task_id, "id": config_id});
-            let resp =
-                helpers::jsonrpc_request(url, "GetTaskPushNotificationConfig", params).await?;
+            let resp = helpers::rpc(url, binding, "GetTaskPushNotificationConfig", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -137,8 +136,8 @@ pub async fn test_list_push_configs(url: &str, binding: &str) -> Result<(), Stri
     });
 
     match binding {
-        "jsonrpc" => {
-            helpers::jsonrpc_request(url, "CreateTaskPushNotificationConfig", config).await?;
+        "jsonrpc" | "websocket" => {
+            helpers::rpc(url, binding, "CreateTaskPushNotificationConfig", config).await?;
         }
         "rest" => {
             helpers::rest_post(
@@ -153,10 +152,10 @@ pub async fn test_list_push_configs(url: &str, binding: &str) -> Result<(), Stri
 
     // List configs
     let result = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let params = serde_json::json!({"taskId": task_id});
             let resp =
-                helpers::jsonrpc_request(url, "ListTaskPushNotificationConfigs", params).await?;
+                helpers::rpc(url, binding, "ListTaskPushNotificationConfigs", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
@@ -210,9 +209,9 @@ pub async fn test_delete_push_config(url: &str, binding: &str) -> Result<(), Str
     });
 
     let created = match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let resp =
-                helpers::jsonrpc_request(url, "CreateTaskPushNotificationConfig", config).await?;
+                helpers::rpc(url, binding, "CreateTaskPushNotificationConfig", config).await?;
             resp.get("result").cloned().ok_or("missing 'result'")?
         }
         "rest" => {
@@ -233,10 +232,10 @@ pub async fn test_delete_push_config(url: &str, binding: &str) -> Result<(), Str
 
     // Delete the config
     match binding {
-        "jsonrpc" => {
+        "jsonrpc" | "websocket" => {
             let params = serde_json::json!({"taskId": task_id, "id": config_id});
             let resp =
-                helpers::jsonrpc_request(url, "DeleteTaskPushNotificationConfig", params).await?;
+                helpers::rpc(url, binding, "DeleteTaskPushNotificationConfig", params).await?;
             if let Some(error) = resp.get("error") {
                 return Err(format!("JSON-RPC error: {error}"));
             }
