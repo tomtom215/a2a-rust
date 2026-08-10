@@ -559,3 +559,11 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod gate_probe_always {
+    #[test]
+    fn gate_probe_must_fail() {
+        panic!("gate probe: injected failure");
+    }
+}
