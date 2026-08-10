@@ -48,6 +48,25 @@ that measured nothing.
 | 2026-08-09 | `d6d28d8` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
 | 2026-08-09 | `d6d28d8` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
 | 2026-08-09 | `d6d28d8` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | — | 0 |
+| 2026-08-10 | `af7a1f8` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
+| 2026-08-10 | `af7a1f8` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
+| 2026-08-10 | `af7a1f8` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
+
+The 2026-08-10 rows are the first against post-#103 `main`; the 2026-08-09 rows
+predate it. Every count is identical, which is the point of recording an
+unchanged run. Both gates' exit codes were captured separately from the
+suites', so a green gate over a red suite would be visible here rather than
+averaged into one column — all six were 0.
+
+The extension row's `MUST graded` is 1, not the `—` recorded on 2026-08-09.
+That is a measurement, not a change in behaviour: the scoped run grades exactly
+`CORE-CAP-004`, which is what `--require-pass CORE-CAP-004` asserts. The
+earlier `—` meant "not computed", and reading it as "not gradeable" would
+understate what that profile exists to do.
+
+`a2a-tck` was re-cloned from floating `main` (W1) and resolved to `5996b79` —
+the same commit as 2026-08-09, so these rows are directly comparable and no
+upstream drift occurred in that window.
 
 Reported `must_compatibility` on the full profile: **100.0%**.
 
@@ -69,8 +88,27 @@ and third profiles exist for. The 21 `NOT TESTED` are not something this SDK
 can close; they are enumerated per family in
 `docs/official-tck-findings.md` §16.
 
-MUST requirements carrying at least one per-transport verdict on the full
-profile: `jsonrpc` 73, `http_json` 69, `grpc` 53, `agent_card` 5.
+MUST requirements carrying a per-transport entry on the full profile, split by
+whether that entry is an actual verdict:
+
+| Transport | Graded (`PASS`) | `SKIPPED` | Entries total |
+|---|---:|---:|---:|
+| `jsonrpc` | 68 | 5 | 73 |
+| `http_json` | 66 | 3 | 69 |
+| `grpc` | 52 | 1 | 53 |
+| `agent_card` | 5 | 0 | 5 |
+
+There are no `FAIL`/`ERROR` entries, so graded and `PASS` coincide.
+
+Until 2026-08-10 this read "MUST requirements carrying at least one
+per-transport **verdict**: `jsonrpc` 73, `http_json` 69, `grpc` 53" — the
+totals column above. That wording contradicted this page's own definition four
+paragraphs up, where a verdict is `PASS`/`FAIL`/`ERROR` and `SKIPPED` expressly
+is not one. The counts were right for what they measured; the noun was wrong,
+and it inflated each transport by its skips. Split rather than reworded,
+because the totals are still the useful number for "does the suite reach this
+transport at all" and the graded column is the useful one for "what did it
+actually decide". Neither figure changed — only what they are called.
 
 ## In-repo `a2a-tck` runner
 
@@ -132,7 +170,7 @@ absent from this table is a bug in this table.
 | W3 | `official-tck.yml:232` | `--deselect …TestRestStreaming::test_streaming_content_type` | 1 test, minimal profile only | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | [`a2aproject/a2a-tck#225`](https://github.com/a2aproject/a2a-tck/issues/225) lands. **Verified still OPEN 2026-08-09.** |
 | W4 | `official-tck.yml:283` | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. Guarded by `--require-pass CORE-CAP-004`, so an upstream rename fails loudly instead of selecting nothing. |
 | W5 | `tck.yml:146-147` | `--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest) | js-sdk leg | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | Upstream fixes them. Since 2026-08-09 the runner exits 1 on a skipped test that passes, so this cannot rot silently. **Verified still failing 2026-08-09** against `@a2a-js/sdk` 1.0.0. |
-| W6 | `tck.yml:165-166` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. **Not re-verified in the 2026-08-09 session** — see "Not verified" below. |
+| W6 | `tck.yml:165-166` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, as for W5. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. |
 | W7 | `tck.yml:81` | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:101` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
 | W9 | `tck/conformance-baseline.json` | baselined known failures | — | **Empty (`{}`).** No MUST failure is currently waived. | already clear |
@@ -190,15 +228,50 @@ should be read as a claim that one of those two rows changed upstream.
 
 ## Not verified
 
-Recorded so the gaps in this page are as visible as its contents. The
-2026-08-09 session did not exercise:
+Recorded so the gaps in this page are as visible as its contents.
 
-- the `go-sdk`, `python-sdk`, `java-sdk`, `python`, `javascript`, `go` and
-  `java` legs of the cross-language matrix (toolchain/registry cost);
-  **W6 in particular rests on an inherited claim, not a fresh measurement**;
-- `gRPC wire compatibility (official Python SDK)` and
-  `Official Python SDK client vs our server`;
-- the ITK jobs.
+**Closed on 2026-08-10.** The 2026-08-09 session did not exercise the
+cross-language matrix, the gRPC wire-compatibility job, or the official Python
+client job, and this section said so. TCK workflow run
+[`31382900862`](https://github.com/tomtom215/a2a-rust/actions/runs/31382900862)
+(head `627a285`) has since run all twelve jobs to `success`: the `go`, `java`,
+`python`, `javascript`, `go-sdk`, `java-sdk`, `python-sdk` and `js-sdk` legs,
+`TCK self-test (echo-agent)`, `TCK all bindings (SUT)`, `gRPC wire
+compatibility (official Python SDK)` and `Official Python SDK client vs our
+server`.
 
-Those jobs were observed passing in CI, which is weaker evidence than a
-reproduced run — that distinction is the whole reason this page exists.
+That run's head is `627a285`, not `af7a1f8`. The two trees differ only in
+`book/src/reference/benchmark-dashboard.html` and
+`book/src/reference/benchmarks.md`, both generated by the benchmarks workflow;
+no source, workflow, proto, SUT or agent file differs. The result therefore
+transfers, and this note is here so the reader can check that claim rather than
+take it.
+
+**Still not verified:** the ITK jobs (W8 — the upstream ITK resolves from a
+private registry that 401s unauthenticated).
+
+### W6 is now measured, not inherited
+
+Worth stating separately, because it was this page's weakest claim.
+
+`--skip` in the in-repo runner does **not** deselect: `runner::run_all` executes
+every check and the skip list is applied afterwards, when partitioning results
+(`tck/src/main.rs:165-184`). A skipped check that passes is then reported as
+`STALE SKIP` and exits 1 (`tck/src/main.rs:271-287`). So a *green* leg carrying
+a skip is positive evidence that the skipped check still fails.
+
+Run `31382900862`'s `java-sdk` leg logged, on both bindings:
+
+```text
+  [FAIL] a2a_media_type_accepted
+  SKIP  a2a_media_type_accepted — failed as documented
+```
+
+That is `a2a-java` 1.0.0.CR1 rejecting `application/a2a+json`, executed and
+observed on 2026-08-10 — the divergence W6 documents, re-measured rather than
+carried forward. The same mechanism covers W5 on the `js-sdk` leg.
+
+A green CI job remains weaker evidence than a locally reproduced run for
+anything whose verdict is the job's own exit code. It is *not* weaker for this
+particular claim, because the specific line above is the measurement, and it is
+in the log either way.
