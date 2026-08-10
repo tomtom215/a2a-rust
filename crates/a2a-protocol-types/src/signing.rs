@@ -524,6 +524,38 @@ mod tests {
     }
 
     #[test]
+    fn canonicalize_rejects_pathologically_deep_object() {
+        // The array case above is not enough: arrays and objects recurse
+        // through *separate* `depth + 1` call sites, and only the array one
+        // was covered. A mutation sweep caught it — breaking the object site's
+        // increment (so depth never grows through objects) left every test
+        // green, which means an attacker-supplied deeply-nested *object* could
+        // recurse without bound while the array guard looked healthy.
+        let mut v = serde_json::json!(1);
+        for _ in 0..(MAX_CANONICAL_DEPTH + 10) {
+            v = serde_json::json!({ "n": v });
+        }
+        let err = canonicalize(&v).expect_err("over-deep object must be rejected");
+        assert!(err.to_string().contains("depth"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn canonicalize_accepts_exactly_the_depth_bound() {
+        // The bound is `depth > MAX`, so a value sitting exactly *at* MAX is
+        // legal. Nothing pinned that: `>` could become `>=` or `==` and only
+        // this case can tell — every other test nests either far below the
+        // bound or far above it, and both survive a one-off boundary shift.
+        let mut v = serde_json::json!(1);
+        for _ in 0..MAX_CANONICAL_DEPTH {
+            v = serde_json::json!([v]);
+        }
+        assert!(
+            canonicalize(&v).is_ok(),
+            "exactly MAX_CANONICAL_DEPTH must be accepted, not rejected"
+        );
+    }
+
+    #[test]
     fn canonicalize_card_deterministic() {
         let card = minimal_card();
         let c1 = canonicalize_card(&card).unwrap();
