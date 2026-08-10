@@ -233,6 +233,25 @@ injection_for() {
     esac
 }
 
+# The string the gate's own output must contain for its failure to count as
+# proof. Chosen to be something only *this* defect can produce, so a gate that
+# died of ENOSPC, a lock timeout, or an unrelated compile error is reported
+# INCONCLUSIVE instead of PROVEN.
+expected_marker() {
+    local kind=${1%%:*}
+    case "$kind" in
+        fmt)              echo "gate_probe_fmt" ;;
+        proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
+        file_length)      echo "gate_probe_long.rs" ;;
+        doc)              echo "NoSuchItemAnywhere" ;;
+        package)          echo "NO_SUCH_README.md" ;;
+        postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
+        clippy|clippy_always) echo "deref_addrof" ;;
+        test|test_always) echo "gate probe: injected failure" ;;
+        *)                echo "__no_marker_defined__" ;;
+    esac
+}
+
 apply_injection() {
     local spec="$1"
     local kind=${spec%%:*}
@@ -414,10 +433,30 @@ for cmd in "${ALL_GATES[@]}"; do
     revert_all
 
     if [ "$broken_status" -ne 0 ]; then
-        printf '  \033[32mPROVEN\033[0m  gate exited %s with the defect present (%ss)\n' \
-            "$broken_status" "$elapsed"
-        PROVEN=$((PROVEN + 1))
-        RESULTS+=("PROVEN|$broken_status|${elapsed}s|$cmd")
+        # A non-zero exit is necessary and not sufficient. A gate that dies
+        # because the disk filled, a lock timed out, or a dependency failed
+        # to resolve also exits non-zero, and counting that as proof is the
+        # same error this script exists to find — one level up. The first
+        # full run of this script did exactly that: the target directory
+        # filled during the sweep, nine `cargo test` gates failed in 0s on
+        # ENOSPC, and every one was reported PROVEN.
+        #
+        # So the log has to show the gate reacting to *this* defect.
+        marker=$(expected_marker "$spec")
+        if grep -qF -- "$marker" "$log"; then
+            printf '  \033[32mPROVEN\033[0m  gate exited %s citing the injected defect (%ss)\n' \
+                "$broken_status" "$elapsed"
+            PROVEN=$((PROVEN + 1))
+            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$cmd")
+        else
+            printf '  \033[31mINCONCLUSIVE\033[0m  gate exited %s but its output never mentions\n' \
+                "$broken_status"
+            printf '                the injected defect (%s) — it failed for some other\n' "$marker"
+            printf '                reason, which proves nothing (%ss)\n' "$elapsed"
+            printf '                log: %s\n' "$log"
+            UNPROVEN=$((UNPROVEN + 1))
+            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$cmd")
+        fi
     else
         printf '  \033[31mUNPROVEN\033[0m  gate exited 0 WITH the defect present (%ss)\n' "$elapsed"
         printf '            log: %s\n' "$log"
