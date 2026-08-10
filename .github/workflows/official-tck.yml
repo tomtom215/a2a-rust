@@ -161,8 +161,30 @@ jobs:
       # see docs/official-tck-findings.md §1). It is a floor, not an equality,
       # so upstream adding MUST tests does not turn this red. A *drop* is the
       # signal — diagnose it, do not lower the floor to go green.
+      #
+      # `set -o pipefail` is the load-bearing line, not boilerplate. Without
+      # it this entire gate was decorative, from the day the `| tee` was added
+      # until 2026-08-10.
+      #
+      # GitHub's default shell for a `run:` step with no `shell:` key is
+      # `bash -e {0}` — `-e` but NOT `-o pipefail`. (The `shell: bash` spelling
+      # is what gets `-eo pipefail`; release.yml uses that form.) So the step's
+      # exit status was `tee`'s, which is 0 whatever the checker decided. The
+      # checker exited 1 correctly and the step reported success.
+      #
+      # Measured, not deduced. Against a synthetic all-SKIPPED report the
+      # checker exits 1 and prints "UNDER-MEASURED — 0 MUST requirement(s)
+      # graded"; against a report with an injected MUST failure it exits 1 and
+      # prints "REGRESSION". Both step bodies exited 0 before this line.
+      #
+      # The irony is worth recording: `--min-graded` was added specifically to
+      # stop a zero-measurement run passing this gate, and the pipe meant that
+      # protection could never fire either. A guard behind a broken gate is not
+      # a guard. scripts/prove_workflow_gates_fail.py now proves this step can
+      # actually fail, so it cannot regress silently again.
       - name: Gate against the conformance baseline
         run: |
+          set -o pipefail
           python3 tck/scripts/check_conformance.py \
             --report /tmp/full-compatibility.json \
             --baseline tck/conformance-baseline.json \
@@ -227,6 +249,13 @@ jobs:
             sleep 1
           done
           cd /tmp/a2a-tck
+          # Without pipefail the `|| suite_status=$?` below can never fire —
+          # the pipeline's status is `tee`'s. The `exit "$suite_status"` at the
+          # end of this step was therefore always 0, which made the comment
+          # above ("everything else in the minimal profile is a hard gate
+          # again") untrue for suite-level failures. Requirement-level ones
+          # were still caught by the un-piped gate step that follows.
+          set -o pipefail
           suite_status=0
           ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9997 -- \
             --deselect "tests/compatibility/core_operations/test_transport_behavior.py::TestRestStreaming::test_streaming_content_type" \
@@ -278,6 +307,8 @@ jobs:
             sleep 1
           done
           cd /tmp/a2a-tck
+          # Same masking as the minimal step above; same fix.
+          set -o pipefail
           suite_status=0
           ./.venv/bin/python run_tck.py --sut-host http://127.0.0.1:9995 -- \
             -k "TestCapabilityExtensionRequired" \
