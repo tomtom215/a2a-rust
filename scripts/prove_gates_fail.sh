@@ -418,6 +418,15 @@ apply_ci_env() {
 
 apply_ci_env
 
+# Incremental state off, and not to match CI (which does not set it either
+# way) — for disk. This sweep compiles the workspace under a dozen distinct
+# feature permutations, and each keeps its own incremental artifacts:
+# `target/debug/incremental` reached 13 GB partway through a run and filled
+# the device, after which gates failed on ENOSPC instead of on their injected
+# defect. Those failures are caught as INCONCLUSIVE now, but a sweep that
+# cannot finish is not much better than one that lies.
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+
 for required in RUSTFLAGS RUSTDOCFLAGS; do
     if [ -z "${!required-}" ]; then
         printf 'prove_gates_fail: %s is unset — ci.yml no longer exports it, or the\n' \
