@@ -42,6 +42,10 @@ This is the category most worth clearing before any external review.
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
   trustworthy rather than merely produced.
+  **The current figure is 94% (2187/125), from the 2026-08-10 sweep** — this
+  bullet records the first complete sweep, not the latest one. See
+  [`mutation-history.md`](book/src/reference/mutation-history.md) for the
+  dated table, and the burn-down item below for the survivor clusters.
   Getting there took three rounds of gate fixes, because each one exposed the
   next. The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
   re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
@@ -81,11 +85,39 @@ This is the category most worth clearing before any external review.
   "retired by deleting the branch" section. Do not extrapolate a floor from one
   file; measure the next one.
 
-  **~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
+  ~~**~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
   10, a2a-types 8). The next clusters are not yet identified — the sweep that
   named the top four is now three files out of date, so start by re-running it
   (or reading the latest `mutants-summary` artifact) rather than trusting this
-  list. The weekly sweep fails until survivors are killed or explicitly
+  list.~~
+
+  **Superseded 2026-08-11 by measurement.** The estimate was close but it was
+  an estimate; the weekly sweep of 2026-08-10 (run
+  [31352927429](https://github.com/tomtom215/a2a-rust/actions/runs/31352927429),
+  `041c366` on `main`) settles it: **125 survivors, 94% — 2187 caught / 125
+  missed / 2 timeout / 1277 unviable.** Per crate: `a2a-server` 1225/107 (91%),
+  `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0. All 21
+  shards completed and carry a `COMPLETED` marker, and it is the first sweep to
+  run against a live database — Postgres-file survivors fall 18 → 3.
+
+  Verified by re-deriving all of it from the run's 21 raw shard artifacts with
+  a second implementation of the workflow's counting rule. Every figure,
+  including all four per-crate rows, reproduces exactly.
+
+  The clusters are now identified. Largest first:
+  `handler/event_processing/sync_collector.rs` 9, `dispatch/grpc/service.rs` 9,
+  `streaming/event_queue/in_memory.rs` 8,
+  `handler/event_processing/background/state_machine.rs` 8, `push/sender.rs` 7,
+  `dispatch/websocket.rs` 7, `dispatch/axum_adapter.rs` 7, `rate_limit.rs` 6.
+
+  Two caveats before anyone works from that list. It is measured at `041c366`,
+  which is 44 commits behind `af7a1f8`; the ledger quantifies that 61 of the 125
+  sit in files changed since, and 64 are in files unchanged and therefore still
+  valid. And `dispatch/grpc/service.rs`'s 9 sit in the deprecated
+  `grpc-legacy-json` tunnel that 0.8 deletes outright — sequence that removal
+  first rather than testing code scheduled for removal.
+
+  The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
   baseline file: the `--in-diff` PR gate already prevents new code from adding
   survivors, so the count can only fall.
@@ -101,8 +133,12 @@ This is the category most worth clearing before any external review.
   `CONTRIBUTING.md` no longer claims a blanket "zero surviving mutants": it now
   separates the blocking per-PR `--in-diff` gate (which a contributor is
   accountable for) from the advisory workspace sweep (pre-existing debt), and
-  states the sweep's real number. **Still open:** ADR 0006 carries the old
-  absolute wording.
+  states the sweep's real number. ~~**Still open:** ADR 0006 carries the old
+  absolute wording.~~ **Done 2026-08-11** — ADR 0006's Consequences section
+  said developers "must address surviving mutants before merge" with no scope,
+  which read as the whole workspace's 125. It now says "on the lines their PR
+  changes", matching what the gate actually enforces, and the stale 92% / 183
+  figure in its Target section is updated to 94% / 125.
 
   **The `#[mutants::skip]` question is closed, and closed by removal rather
   than by decision** (2026-08-09). The exception list is empty: the two

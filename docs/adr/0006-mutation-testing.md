@@ -43,8 +43,8 @@ orchestration flows.
 
    The target is unconditional; the *enforcement* is scoped. A PR must add no
    survivors to the lines it changes, and that is blocking. The workspace
-   figure is a tracked standing target — 92%, 183 surviving, as of
-   2026-08-07 — burned down over time rather than waived. There is
+   figure is a tracked standing target — **94%, 125 surviving, as of
+   2026-08-10** — burned down over time rather than waived. There is
    deliberately no baseline or allowlist file: the incremental gate already
    prevents the count from growing, so a mechanism whose only purpose is to
    turn a red result green would buy nothing and cost the signal.
@@ -173,5 +173,15 @@ the cost of a semantic bug escaping to multi-data-center production.
   invisible, guiding targeted test improvements.
 - **Negative**: Nightly CI compute increases (~30-120 min depending on crate
   size). Mitigated by caching and parallelism.
-- **Negative**: Developers must address surviving mutants before merge. This is
-  intentional friction — the same class of friction as "fix clippy warnings."
+- **Negative**: Developers must address surviving mutants **on the lines their
+  PR changes** before merge. This is intentional friction — the same class of
+  friction as "fix clippy warnings."
+
+  The qualifier is load-bearing and was missing until 2026-08-11. Read without
+  it, this bullet said a contributor must clear the whole workspace's
+  survivors — 125 of them, in code no recent PR has touched — which is not what
+  any gate enforces and not a bar this project holds anyone to. `CONTRIBUTING.md`
+  was corrected on this point earlier; this ADR was not, which left the
+  governing document contradicting the enforced rule. That is exactly the class
+  of defect this repository keeps finding, so it is fixed here rather than
+  noted.

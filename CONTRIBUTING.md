@@ -287,8 +287,9 @@ scopes. Know which one applies to you:
 surviving mutants to the code it touches. That check is required and it works.
 
 The workspace sweep is a different matter, and honesty about it belongs here
-rather than in a footnote. **It is currently red: 183 surviving mutants,
-92% caught**, measured 2026-08-07. That is pre-existing debt in code no recent
+rather than in a footnote. **It is currently red: 125 surviving mutants,
+94% caught**, measured 2026-08-10 (was 183 / 92% on 2026-08-07). That is
+pre-existing debt in code no recent
 PR has touched, not a bar newcomers are being held to, and it is being burned
 down rather than suppressed — there is deliberately no baseline file, because
 the incremental gate above already prevents the count from growing.

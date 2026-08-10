@@ -649,14 +649,24 @@ Three things this burndown is worth remembering for:
 
 ## History
 
-**Every sweep in this table ran without a database.** Established 2026-08-09:
-the `services:` block and `A2A_TEST_POSTGRES_URL` were added to `mutants.yml`
-by [`4b68ac4`](https://github.com/tomtom215/a2a-rust/commit/4b68ac4)
+~~**Every sweep in this table ran without a database.**~~ **True until the
+2026-08-10 row was added on 2026-08-11; that row is the first sweep with one.**
+Established 2026-08-09: the `services:` block and `A2A_TEST_POSTGRES_URL` were
+added to `mutants.yml` by
+[`4b68ac4`](https://github.com/tomtom215/a2a-rust/commit/4b68ac4)
 (2026-08-09), which takes the file from 0 to 19 mentions of `postgres`, and
 that commit is an ancestor of none of `b416c1a`, `a3c8c0f`, or `803a139`. The
 whole Postgres suite is `#[ignore]`d behind that variable, so in each of those
 runs it did not execute and its mutants survived for want of a server rather
 than for want of a test.
+
+`4b68ac4` **is** an ancestor of `041c366`, and `mutants.yml` at that commit
+carries 20 mentions of `postgres`, so the 2026-08-10 sweep ran against a live
+server. The effect is visible in its survivors: the Postgres-file cluster is
+down to **3**, all in `tenant_postgres_store.rs`. The 12 in `pg_migration.rs`
+and 3 in `postgres_store.rs` that every earlier row carries are gone — they
+were never test gaps, only missing infrastructure, which is what the paragraph
+below predicted and this row confirms.
 
 Measured on the 2026-08-03 artifacts, that accounts for exactly **18**
 survivors: `pg_migration.rs` 12, `postgres_store.rs` 3,
@@ -674,6 +684,7 @@ unattributed rather than reassigned on a guess.
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |
 |------|--------|---------------|-------:|-------:|--------:|-------|
+| 2026-08-10 | [`041c366`](https://github.com/tomtom215/a2a-rust/commit/041c366) | **94%** | 2187 | 125 | 2 | Run [31352927429](https://github.com/tomtom215/a2a-rust/actions/runs/31352927429), scheduled, on `main`. **The first sweep with a live database** — see the note above; Postgres-file survivors fall 18 → 3. All 21 shards completed and all 21 carry a `COMPLETED` marker. Exit 1, correctly: 125 survivors reported rather than rounded away. 1277 unviable. Per crate: `a2a-server` 1225/107 (91%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0. Largest survivor clusters: `handler/event_processing/sync_collector.rs` 9, `dispatch/grpc/service.rs` 9, `streaming/event_queue/in_memory.rs` 8, `handler/event_processing/background/state_machine.rs` 8. **Row added 2026-08-11**, three weeks' worth of readers late — the sweep was described under "Per-file measurements" from the day it ran, but never given a row here, so the canonical dated table still showed 92%/183 as the latest figure. Independently re-derived that day from all 21 shard artifacts with a second implementation of the workflow's counting rule: 2187/125/2/1277 and all four per-crate rows reproduce exactly. |
 | 2026-08-07 | [`f54f33e`](https://github.com/tomtom215/a2a-rust/commit/f54f33e) | **92%** | 2168 | 183 | 3 | Run [31209868659](https://github.com/tomtom215/a2a-rust/actions/runs/31209868659) — first sweep aggregated by CI itself rather than by hand, and the first on the 21-shard matrix (a2a-types and a2a-client split 4 ways each). All 21 shards completed; `Require every shard to have completed` passed on the COMPLETED markers while the matrix result was `failure`, which is the case the previous run could not handle. **Identical 183 survivors to the 15-shard run below**, from a completely different partitioning of the mutant set — the one-mutant difference in caught/timeout is timing flake. 1276 unviable. Wall-clock 117m, still set by `a2a-server` shard 2/12 at 116m. |
 | 2026-08-07 | [`803a139`](https://github.com/tomtom215/a2a-rust/commit/803a139664f7b9326dc8b90bd91d382ea187f481) | **92%** | 2169 | 183 | 2 | First complete sweep. Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921), all 15 shards finished. Per crate: `a2a-server` 1207/165 (87%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0 (a pure re-export facade — it generates no mutants). 1276 unviable. Largest survivor clusters: `handler/messaging.rs` 17, `store/task_store/in_memory/eviction.rs` 13, `dispatch/grpc/native.rs` 11. Postgres-file survivors fell 18 → 3 once the sweep got a live database. |
 | 2026-08-03 | [`a3c8c0f`](https://github.com/tomtom215/a2a-rust/commit/a3c8c0f08f1ba636e4992ea3489bdbae82be271a) | **91%** | 2156 | 196 | 2 | Run [30783745696](https://github.com/tomtom215/a2a-rust/actions/runs/30783745696), scheduled, on `main`. **Recorded retroactively on 2026-08-09** by re-counting the run's own artifacts: CI reported `100%` over `Caught 0 / Missed 0` and concluded `success`, while all 15 shards had in fact completed and their reports were intact. See "A second scheduled run told the same lie" above. Per crate: `a2a-server` 1194/178, `a2a-client` 357/10, `a2a-types` 605/8, `a2a-sdk` 0/0. 1276 unviable — the same count as both 2026-08-07 sweeps. Denominator is sound (no cancelled shards), so unlike run 30236603180 this figure is a measurement rather than forensics. **But it was measured without a database:** `mutants.yml` at `a3c8c0f` contains no `services:` block and no `A2A_TEST_POSTGRES_URL`, so the whole `#[ignore]`d Postgres suite never ran. Exactly 18 of the 196 are Postgres-file survivors that a live database would have killed — `pg_migration.rs` 12, `postgres_store.rs` 3, `tenant_postgres_store.rs` 3. Read the comparable figure as **178 survivors + 18 unmeasured**, not as 196 test gaps. |
