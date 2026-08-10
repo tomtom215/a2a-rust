@@ -99,6 +99,19 @@ git push origin vX.Y.Z
 > (`git tag -s`) is a separate, unmade decision — it needs a maintainer key
 > and a documented way for adopters to obtain it. Tracked in
 > [`ROADMAP.md`](ROADMAP.md).
+>
+> **Enforced since 2026-08-10.** The `-a` above was an instruction with
+> nothing behind it, which is how ten lightweight tags got pushed past a
+> documented step. `release.yml`'s validate job now runs `git cat-file -t` on
+> the pushed tag and fails the release if it is not a `tag` object, with the
+> delete-and-recreate commands in the error. Creating the release through the
+> GitHub UI will now stop the workflow rather than quietly produce an
+> eleventh lightweight tag.
+>
+> That check deliberately does **not** require a signature. A gate for a key
+> that does not exist could never fail, and would read as signing coverage
+> this project does not have. When the key decision above is made, tightening
+> this check to `git tag -v` is the one-line follow-up.
 
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
