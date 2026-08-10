@@ -345,9 +345,14 @@ apply_injection() {
 import re, sys, pathlib
 p = pathlib.Path(sys.argv[1])
 s = p.read_text()
-# Into [package], not appended to the file: a bare key at the end lands in
-# whatever table happens to be last and cargo reports a different error.
-s = re.sub(r'(?m)^(\[package\]\n)', r'\1readme = "NO_SUCH_README.md"\n', s, count=1)
+# Repoint the existing key. Two earlier spellings were wrong in instructive
+# ways: appending to the end of the file puts a bare key in whatever table
+# happens to be last, and inserting one under [package] collides with the
+# `readme` already declared there — cargo then reports a TOML duplicate-key
+# error, not a missing file, and the gate fails for the wrong reason.
+s, n = re.subn(r'(?m)^readme(\s*)=.*$', 'readme = "NO_SUCH_README.md"', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one `readme` key in the manifest; found %d" % n)
 p.write_text(s)
 PY
             git -C "$PACKAGE_CLONE/repo" -c user.name=probe -c user.email=probe@invalid \
