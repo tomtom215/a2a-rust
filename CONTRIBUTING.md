@@ -84,10 +84,19 @@ Markdown / TOML / YAML files use the appropriate comment syntax.
 
 ### 500-line maximum per file
 
-Source files (`.rs`) should generally stay under 500 lines. If your implementation
+Source files should generally stay under 500 lines. If your implementation
 is growing beyond this limit, consider splitting it into focused sub-modules with
 a thin `mod.rs` that only re-exports. Some files exceed this guideline where
 splitting would harm cohesion.
+
+**Scope: `.rs`, `.sh` and `.py`.** Until 2026-08-11 the rule and the checker
+both said `.rs` only. That was consistent — the scripts were never a carve-out,
+just never in scope — but it left this repository's own verification harnesses
+unmeasured, and two of them had reached 1111 and 617 lines. Widening was chosen
+over splitting them because the measurement that prompted it also turned up two
+files nobody had counted (`benches/scripts/extract_benchmark_json.py` at 658 and
+`benches/scripts/generate_book_page.sh` at 650). A ratchet catches the next one;
+splitting two files catches only those two.
 
 This is enforced as a **ratchet**, not a cliff, by
 `scripts/check_file_lengths.sh` (run in CI's Format job). Files already over the
@@ -525,9 +534,9 @@ Two rules while it runs, both learned the expensive way:
 - [ ] `scripts/check_file_lengths.sh` passes — no **new** file exceeds 500
       lines and no file you touched crosses it, or the PR says why splitting
       would harm cohesion (see
-      [500-line maximum](#500-line-maximum-per-file); 77 of 310 tracked
-      sources already exceed it as of 2026-08-10, so this is a rule for new
-      work, not a claim about the tree)
+      [500-line maximum](#500-line-maximum-per-file); 81 of 333 tracked
+      `.rs`/`.sh`/`.py` sources already exceed it as of 2026-08-11, so this is
+      a rule for new work, not a claim about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes

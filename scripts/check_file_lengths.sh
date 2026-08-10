@@ -43,8 +43,24 @@ BASELINE=".file-length-baseline"
 
 # Only files this repository authors. Generated output (target/), vendored
 # JS dependencies, and anything git does not track are not ours to shorten.
+#
+# Scope widened from '*.rs' to include '*.sh' and '*.py' on 2026-08-11.
+# CONTRIBUTING's rule was written for `.rs` and this checker matched it, so the
+# scripts directory was never a carve-out — it was simply never in scope. But
+# two of this repository's own verification harnesses had reached 1111 and 617
+# lines, and the argument for the ratchet applies to them at least as strongly:
+# they are what proves 49 CI gates can fail.
+#
+# Widening rather than splitting those two was the deliberate choice, and this
+# measurement is why. Splitting them would have fixed the two files anyone had
+# noticed and left `benches/scripts/extract_benchmark_json.py` (658) and
+# `benches/scripts/generate_book_page.sh` (650) unmeasured — nobody had counted
+# those, which is the header's own point about numbers that nothing recomputes.
+# A ratchet catches the next one; a refactor only catches this one.
+SCOPE=('*.rs' '*.sh' '*.py')
+
 current_over_limit() {
-    git ls-files '*.rs' \
+    git ls-files "${SCOPE[@]}" \
         | grep -v '^itk/agents/.*/node_modules/' \
         | while IFS= read -r f; do
             [ -f "$f" ] || continue
@@ -56,7 +72,7 @@ current_over_limit() {
 }
 
 total_tracked() {
-    git ls-files '*.rs' | grep -cv '^itk/agents/.*/node_modules/'
+    git ls-files "${SCOPE[@]}" | grep -cv '^itk/agents/.*/node_modules/'
 }
 
 if [ "${1-}" = "--update" ]; then
@@ -66,7 +82,7 @@ if [ "${1-}" = "--update" ]; then
         printf '# See CONTRIBUTING.md "500-line maximum per file".\n'
         current_over_limit
     } >"$BASELINE"
-    printf 'wrote %s (%d entries of %d tracked .rs files)\n' \
+    printf 'wrote %s (%d entries of %d tracked source files)\n' \
         "$BASELINE" "$(current_over_limit | wc -l)" "$(total_tracked)"
     exit 0
 fi
@@ -94,8 +110,9 @@ if [ -n "$crossed" ]; then
     done <<<"$crossed"
     cat >&2 <<EOF
 
-Split it into focused sub-modules with a thin mod.rs, as CONTRIBUTING.md
-describes. If splitting would genuinely harm cohesion, say so in the PR and
+Split it into focused sub-modules with a thin mod.rs (or, for a script, into
+helpers it sources), as CONTRIBUTING.md describes. If splitting would genuinely
+harm cohesion, say so in the PR and
 run scripts/check_file_lengths.sh --update to record the exemption — which
 makes it a visible decision instead of a silent one.
 EOF
@@ -121,7 +138,7 @@ EOF
 fi
 
 if [ "$status" -eq 0 ]; then
-    printf 'check_file_lengths: %d of %d tracked .rs files exceed %d lines, all recorded\n' \
+    printf 'check_file_lengths: %d of %d tracked source files exceed %d lines, all recorded\n' \
         "$(printf '%s\n' "$recorded" | grep -c .)" "$(total_tracked)" "$LIMIT"
 fi
 

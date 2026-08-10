@@ -129,6 +129,16 @@ This is the category most worth clearing before any external review.
   which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
   CI gates locally; a live Postgres and `--run-ignored all` are required or
   every Postgres mutant survives for want of a database.
+* **~~Decide whether the 500-line guideline applies to scripts.~~ Done
+  2026-08-11** — it does, and `check_file_lengths.sh` now enforces it over
+  `.rs`, `.sh` and `.py` rather than `.rs` alone. Widened rather than splitting
+  the two long provers, because the same measurement found two more over-limit
+  scripts nobody had counted (`benches/scripts/extract_benchmark_json.py` 658,
+  `benches/scripts/generate_book_page.sh` 650): a ratchet catches the next one,
+  a refactor catches only this one. Baseline 77 → 81 entries of 333 tracked
+  sources. Both directions of the widened check were proven by injection — a
+  new 501-line script exits 1, and a baseline entry naming a 201-line script
+  exits 1 as stale.
 * **Decide the wording of the zero-survivor rule.** Partly done.
   `CONTRIBUTING.md` no longer claims a blanket "zero surviving mutants": it now
   separates the blocking per-PR `--in-diff` gate (which a contributor is
