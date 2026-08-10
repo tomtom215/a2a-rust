@@ -89,6 +89,22 @@ is growing beyond this limit, consider splitting it into focused sub-modules wit
 a thin `mod.rs` that only re-exports. Some files exceed this guideline where
 splitting would harm cohesion.
 
+This is enforced as a **ratchet**, not a cliff, by
+`scripts/check_file_lengths.sh` (run in CI's Format job). Files already over the
+limit are listed in `.file-length-baseline` and stay legal; growing one is
+allowed, because the rule is about *crossing* 500, not about standing still. The
+list may only shrink:
+
+- a file over 500 lines that is not in the baseline fails the build — split it,
+  or run `scripts/check_file_lengths.sh --update` and justify the exemption in
+  the PR, which makes it a visible decision rather than a silent one;
+- a baselined file that drops to 500 or fewer also fails, until the entry is
+  removed. An exemption that no longer describes anything reads as a live
+  waiver while waiving nothing.
+
+Until 2026-08-10 this rule had no gate at all, and the count quoted below had
+drifted from `46 of 139` to `77 of 310` with nothing to notice.
+
 ### Thin `mod.rs` files
 
 `mod.rs` files should primarily contain `mod` declarations and `pub use`
@@ -398,11 +414,12 @@ clean file if you go by the numbers alone.
 
 - [ ] Every commit signed off (`git commit -s`) by a human author — see [DCO](#developer-certificate-of-origin-dco)
 - [ ] SPDX header on every new file
-- [ ] No **new** file exceeds 500 lines, and no file you touched crosses it —
-      or the PR says why splitting would harm cohesion (see
-      [500-line maximum](#500-line-maximum-per-file); 46 of 139 existing
-      sources already exceed it, so this is a rule for new work, not a
-      claim about the tree)
+- [ ] `scripts/check_file_lengths.sh` passes — no **new** file exceeds 500
+      lines and no file you touched crosses it, or the PR says why splitting
+      would harm cohesion (see
+      [500-line maximum](#500-line-maximum-per-file); 77 of 310 tracked
+      sources already exceed it as of 2026-08-10, so this is a rule for new
+      work, not a claim about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes

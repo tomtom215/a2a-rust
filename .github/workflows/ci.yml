@@ -59,6 +59,13 @@ jobs:
       - name: Vendored protos agree
         run: ./scripts/check_proto_copies.sh
 
+      # CONTRIBUTING's 500-line rule was a PR-checklist item with nothing
+      # enforcing it, and the count printed beside it had drifted from 46/139
+      # to 77/310 unnoticed. This is a ratchet: existing long files stay
+      # legal, the list may only shrink.
+      - name: File lengths (500-line ratchet)
+        run: ./scripts/check_file_lengths.sh
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
