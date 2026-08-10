@@ -43,6 +43,19 @@ These numbers are reproducible with:
 git log --format='%an' | sort | uniq -c | sort -rn
 ```
 
+**Re-verified 2026-08-11 against a complete clone.** All five figures reproduce
+exactly at `b416c1a`: 608 total, 478 / 107 / 23 by author, and 61 commit bodies
+carrying a `Co-Authored-By: Claude` trailer. The §2 statement that none of those
+608 commits carries a `Signed-off-by:` trailer also holds — checked
+individually, the count is 0. A note in §2.1 previously said the 608 figure
+could not be reproduced; that note was itself measured on a shallow clone and
+has been corrected there. This section was right as written.
+
+At `c008ab0` the totals have moved — 749 commits, of which 478 are still the
+same assistant-authored set, because none has been added since. The current
+figures, and what they would cost to change, are in
+[`docs/provenance-manifest.md`](docs/provenance-manifest.md).
+
 **What that does and does not mean.**
 
 The `Claude <noreply@anthropic.com>` author line reflects the mechanics of the
@@ -157,35 +170,37 @@ attestations no longer resolving) are understood and the maintainer is willing
 to do it on request. It was not done unprompted because it destroys verifiable
 supply-chain metadata to gain a formality this document already supplies.
 
-### 2.1 What the history actually contains — measured 2026-08-10
+### 2.1 What the history actually contains — measured 2026-08-11
 
 The blanket certification above says historical commits carry no sign-off. This
 subsection says *how many*, because "some of the history predates the policy"
-and "57% of it does" are different statements and only one of them is a fact.
+and "81% of it does" are different statements and only one of them is a fact.
 
 Replicating `.github/workflows/dco.yml`'s own logic — its `NON_HUMAN` regex and
-its author-matching `Signed-off-by` pattern — over all **282 non-merge commits**
-reachable from `af7a1f8`:
+its author-matching `Signed-off-by` pattern — over all **648 non-merge commits**
+reachable from `c008ab0`:
 
 | Outcome under `dco.yml` | Commits |
 |---|---:|
-| Would **pass** | 120 (43%) |
-| Fail — non-human author `noreply@anthropic.com` | 138 |
-| Fail — non-human author `github-actions[bot]` | 21 |
-| Fail — human author, no matching `Signed-off-by` | 3 |
+| Would **pass** | 126 (19%) |
+| Fail — non-human author `noreply@anthropic.com` | 477 |
+| Fail — non-human author `github-actions[bot]` | 29 |
+| Fail — human author, no matching `Signed-off-by` | 16 |
 
 Three things follow, and the third is the one that is not already covered above.
 
-1. **The assistant-authored commits are closed out.** All 138 fall between
-   2026-04-01 and 2026-07-24 — none postdates §3.2, which discontinued the
-   pattern. The policy took effect and held.
+1. **The assistant-authored commits are closed out.** All 477 fall between
+   2026-03-15 and 2026-07-24 — none postdates §3.2, which discontinued the
+   pattern. Of the 141 commits made since `b416c1a`, **zero** are
+   assistant-authored. The policy took effect and held.
 
-2. **The three unsigned human commits** (`7ac16a2`, `f9ab2c1`, `6a936ce`, all
-   2026-07-24, all "Update README.md") are GitHub web-UI edits, which do not
-   offer a sign-off. Covered by the blanket certification; noted so the count
-   above reconciles.
+2. **The sixteen unsigned human commits** are GitHub web-UI edits, which do not
+   offer a sign-off, plus the initial commit. All sixteen are documentation;
+   none is source. Listed individually in
+   [`docs/provenance-manifest.md`](docs/provenance-manifest.md) §2.1. Covered by
+   the blanket certification; noted so the count above reconciles.
 
-3. **The bot commits are ongoing, not historical.** The 21
+3. **The bot commits are ongoing, not historical.** The 29
    `github-actions[bot]` commits run 2026-04-01 to **2026-08-09** and will keep
    accruing: the benchmarks workflow commits generated results to the book and
    pushes to `main` directly. `dco.yml` triggers on `pull_request` only, so
@@ -195,13 +210,43 @@ Three things follow, and the third is the one that is not already covered above.
    carries a sign-off" is false today and will stay false. Say the narrower
    true thing instead: every *contributed* commit does.
 
-**One figure here could not be reproduced and is left standing.** §1 reports
-608 total commits as of `b416c1a`. A fresh clone of `main` reaches 178 commits
-from `b416c1a` and 311 from `af7a1f8`. The clone used for this measurement
-carries only `main` and one working branch, so a count taken when many
-squash-merged PR branches were still present locally is not checkable from
-here. The discrepancy is recorded rather than resolved, and §1's number is left
-as written rather than replaced by one measured over a different ref set.
+#### Correcting the 2026-08-10 version of this subsection
+
+Every figure in the table above except one changed on 2026-08-11. The previous
+version reported 282 non-merge commits, 120 passing (43%), 138 assistant, 21
+bot, 3 unsigned human. **It was measured on a shallow clone**, and each of
+those failure counts was understated by roughly a factor of three.
+
+That subsection also carried a note saying §1's figure of 608 total commits at
+`b416c1a` "could not be reproduced", attributing the gap to squash-merged PR
+branches still present in the original clone. Both halves of that note were
+wrong. On a complete clone `git rev-list --count b416c1a` returns **608**,
+exactly as §1 states — §1 was correct throughout and needs no change.
+
+The arithmetic identifies the real cause. The note reported reaching 178
+commits from `b416c1a` and 311 from `af7a1f8`; a complete clone reaches 608 and
+741:
+
+```
+608 − 178 = 430
+741 − 311 = 430
+```
+
+An identical shortfall from two different refs is a single truncation boundary,
+not two ref sets — differing local branches could not produce equal
+differences.
+
+The failure mode is worth stating plainly, because it is not obvious and it is
+easy to repeat: **a shallow clone drops the oldest commits, which in this
+repository are exactly the non-compliant ones.** The pass count is unaffected —
+it was 120 in the shallow measurement and 120 over the same ref on a complete
+one — while every failure category is understated. A shallow run does not look
+broken. It looks like better news than the truth.
+
+`scripts/provenance_manifest.sh` now refuses to run on a shallow clone rather
+than print a number from one, and `--self-test` asserts its rules still match
+`dco.yml`'s. Both guards were verified by deliberate injection rather than
+assumed to work.
 
 ---
 
