@@ -395,11 +395,31 @@ Every one of the nine reports exit 0, and nothing is excluded anywhere in the
 project — no `--exclude-re`, no `#[mutants::skip]`, no baselined exception.
 
 **What that sentence does not cover.** Nine files is not the crate.
-`a2a-server` has 2113 mutants; these nine account for 487 of them. There is no
-current whole-crate `a2a-server` figure in this ledger, and the last one that
-exists (1194 caught / 178 missed, 2026-08-03, 12 shards) predates every fix
-above. Treat "zero survivors" as a claim about the nine rows, not the crate —
-the honest whole-crate statement today is *not measured since 2026-08-03*.
+`a2a-server` has 2113 mutants; these nine account for 487 of them. Treat "zero
+survivors" as a claim about the nine rows, not the crate.
+
+**The weekly sweep ran on 2026-08-10** (scheduled 03:33 UTC, `041c3666` on
+`main`) and is the current whole-repo figure:
+
+| | Caught | Missed | Timeout | Unviable | Score |
+|---|---:|---:|---:|---:|---:|
+| All crates, 2026-08-10 | 2187 | 125 | 2 | 1277 | **94%** |
+
+It exited 1, which is the workflow working: 125 survivors, reported rather
+than rounded away. Ten of the twelve `a2a-server` shards carried survivors;
+shards 3 and 8 came back clean.
+
+Two cautions on reading that row. It is a *combined* figure across all four
+crates — the `a2a-server`-only split is recoverable from that run's per-shard
+artifacts but is not reproduced here, so this ledger still has no whole-crate
+`a2a-server` score stated as such. And it was measured on `main`, not on any
+branch in progress.
+
+An earlier revision of this section said the honest statement was "not
+measured since 2026-08-03". That was true when written and false within
+hours — the Monday sweep it did not account for had already run. A ledger
+whose freshness claims are hand-maintained will keep going stale like this;
+the run date above is the thing to check, not the prose.
 
 The two whole-crate rows are current and were produced on this branch:
 `a2a-protocol-types` on 2026-08-09 (674 mutants, exit 2) and
