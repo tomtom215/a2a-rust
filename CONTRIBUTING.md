@@ -133,6 +133,33 @@ Use `?`, `map_err`, `ok_or_else`, or explicit `match`. `expect()` is also
 forbidden unless the message explains an invariant that is *impossible* to
 violate at runtime (documented with `// SAFETY:` style comment).
 
+**This rule is convention, not a lint.** All four crates set
+`#![deny(missing_docs)]`, `#![forbid(unsafe_code)]` and
+`#![warn(clippy::all, pedantic, nursery)]`, but **not**
+`clippy::unwrap_used` / `clippy::expect_used`. Nothing mechanically enforces
+the paragraph above.
+
+Measured 2026-08-10, over `crates/*/src/**/*.rs`:
+
+| | Occurrences | Files |
+|---|---:|---:|
+| Raw `.unwrap(` / `.expect(` | 1872 | 92 |
+| **Excluding in-file `#[cfg(test)]` modules** | **26** | **14** |
+
+Quote the second row, never the first. The raw count is 98.6% test code, where
+`unwrap()` is the correct thing to write — a test that swallows an error
+instead of panicking is a worse test. A grep that does not strip `#[cfg(test)]`
+blocks measures how thoroughly the crate is tested and reports it as a defect
+count.
+
+26 in non-test code is a reviewable number, not a systemic problem, which is
+why turning the lint on is a live option rather than a large project. It has
+not been done: each of the 26 needs a judgement call between `?`, a documented
+invariant, and an `#[allow]` with a reason, and doing that badly at 26 sites
+to gain a lint would trade a real property for a green check. Left as a
+maintainer decision, recorded here so the next person starts from the measured
+number rather than the grep.
+
 ### `unsafe` blocks
 
 Library crates are under `#![forbid(unsafe_code)]`; introducing an `unsafe`
@@ -435,7 +462,49 @@ scripts/prove_gates_fail.sh             # all of them (~15 min)
 Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
-Last full run — 2026-08-10, **31 of 31 proven, 0 unproven**.
+Last full run — 2026-08-10, **32 of 32 proven, 0 unproven, 0 inconclusive**
+(exit 0), on `claude/a2a-rust-continuation-9ozdbm` at `af7a1f8` plus this
+session's commits. 32 rather than 31 because the workflow-gate prover below
+is itself a gate now, and so needs its own injection.
+
+### The other ten workflows
+
+`prove_gates_fail.sh` covers `ci.yml` only. Its gates are compile-and-test
+gates, and the injection mechanism — break tracked source, run cargo — suits
+them. The other ten workflows gate on *data*: a conformance report, a
+directory of mutation artifacts, a git range, a tag name.
+
+`scripts/prove_workflow_gates_fail.py` covers those. It runs each step's real
+body from the real workflow file against synthetic healthy and defective
+inputs, and asserts the verdict moves in both directions.
+
+```bash
+scripts/prove_workflow_gates_fail.py --list     # gate/probe pairing
+scripts/prove_workflow_gates_fail.py --only tck # substring filter
+scripts/prove_workflow_gates_fail.py            # all of them (~7s)
+```
+
+It runs in CI on every PR, in the `fmt` job. Current state: **17 proven, 11
+exempt with reasons, 0 unproven.** Drift is a hard error in both directions —
+a step that can fail with no registry entry, and a registry entry naming a
+step that no longer exists, both exit 2.
+
+It exists because it found one. Until 2026-08-10 the step `official-tck.yml`
+calls "THE GATE" ended `| tee`, and GitHub's default shell for a `run:` step
+with no `shell:` key is `bash -e {0}` — `-e` but not `-o pipefail`. The step's
+exit status was tee's. Against an all-SKIPPED report the checker exited 1,
+printed `UNDER-MEASURED`, and the step went green; against an injected MUST
+failure it printed `REGRESSION` and went green. Three lessons are baked into
+the script and are worth repeating before you extend it:
+
+- **Run the step body, not a paraphrase of it.** Re-invoking
+  `check_conformance.py` directly proves the checker works. It did. The step
+  threw the answer away.
+- **Reproduce the shell CI actually uses.** `bash -e` and `bash -eo pipefail`
+  disagree about precisely this bug.
+- **Check the healthy case too.** A gate that fails unconditionally scores as
+  proven while blocking every legitimate run — the same "measures nothing"
+  failure with the sign flipped.
 
 Two rules while it runs, both learned the expensive way:
 
@@ -466,6 +535,9 @@ Two rules while it runs, both learned the expensive way:
 - [ ] New code has tests
 - [ ] If you added or changed a CI gate, `scripts/prove_gates_fail.sh` still
       passes — a new gate needs an injection proving it can fail
+- [ ] If you added or changed a verdict-bearing step in any workflow other
+      than `ci.yml`, `scripts/prove_workflow_gates_fail.py` still passes — a
+      new one needs a probe, or an exemption with a reason
 - [ ] `cargo mutants --in-diff` shows zero surviving mutants for the lines
       this PR changes (this is the blocking gate; the workspace sweep is
       pre-existing debt and not yours to clear)
