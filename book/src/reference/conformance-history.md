@@ -51,12 +51,40 @@ that measured nothing.
 | 2026-08-10 | `af7a1f8` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
 | 2026-08-10 | `af7a1f8` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
 | 2026-08-10 | `af7a1f8` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
+| 2026-08-11 | `c008ab0` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
+| 2026-08-11 | `c008ab0` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
+| 2026-08-11 | `c008ab0` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
 
 The 2026-08-10 rows are the first against post-#103 `main`; the 2026-08-09 rows
 predate it. Every count is identical, which is the point of recording an
 unchanged run. Both gates' exit codes were captured separately from the
 suites', so a green gate over a red suite would be visible here rather than
 averaged into one column — all six were 0.
+
+The 2026-08-11 rows are the first against post-#104 `main` (`c008ab0`), run
+locally rather than in CI, mirroring `official-tck.yml` step for step. All six
+exit codes were again captured separately and all six were 0:
+
+```text
+EXIT_SUITE_FULL=0       EXIT_GATE_FULL=0
+EXIT_SUITE_MINIMAL=0    EXIT_GATE_MINIMAL=0
+EXIT_SUITE_EXTENSION=0  EXIT_GATE_EXTENSION=0
+```
+
+Every count is unchanged from 2026-08-10 — the third consecutive identical run,
+now across three different a2a-rust commits. The gate output is the load-bearing
+part, since it is what the counts are being compared against:
+
+```text
+  MUST compatibility : 100.0%
+  MUST graded        : 88 (floor 88)     full
+  MUST graded        : 66 (floor 66)     minimal
+  MUST graded        : 1                 extension, --require-pass CORE-CAP-004
+```
+
+The MUST tables below were recomputed from this run's own
+`reports/compatibility.json` rather than carried forward, including the
+per-transport split and the 92-of-114 arithmetic. Both reproduce exactly.
 
 The extension row's `MUST graded` is 1, not the `—` recorded on 2026-08-09.
 That is a measurement, not a change in behaviour: the scoped run grades exactly
@@ -128,6 +156,10 @@ the *target* implementation, never of this SDK — see register entries W5/W6.
 | 2026-08-10 | `tck/sut` | rest | 21/21 | 0 | 1 | 0 | 0 |
 | 2026-08-10 | `tck/sut` | websocket | 21/21 | 0 | 1 | 0 | 0 |
 | 2026-08-10 | `tck/sut` | grpc | 20/20 | 0 | 2 | 0 | 0 |
+| 2026-08-11 | `tck/sut` | jsonrpc | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-11 | `tck/sut` | rest | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-11 | `tck/sut` | websocket | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-11 | `tck/sut` | grpc | 20/20 | 0 | 2 | 0 | 0 |
 
 The `N/A` column is new on 2026-08-10 and is not cosmetic. Until then
 `jsonrpc_envelope_format` opened with `if binding != "jsonrpc" { return Ok(()) }`,
@@ -145,12 +177,34 @@ them. Requirement texts and IDs are quoted from
 | Date | Target | Bindings compared | Passed | Failed | Exit |
 |---|---|---|---:|---:|---:|
 | 2026-08-10 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
+| 2026-08-11 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
+
+**`4/4` counts requirements, not bindings, and the two are independent.** The
+"Bindings compared" column is copied from the run's own `Comparing N bindings:`
+line, which is a separate number the `4/4` does not constrain: the tool's floor
+is **two** bindings (`equivalence.rs:854`, `ifaces.len() < 2` → hard error,
+"reporting a pass would mean nothing"), not four. A run against a card
+advertising three bindings prints `Comparing 3 bindings` and then `4/4`, and
+exits 0.
+
+Measured 2026-08-11, by starting `tck/sut` without `SUT_WS_HOST` so the card
+advertises no WebSocket interface: `--equivalence` reported `Comparing 3
+bindings` … `Results: 4/4 requirements passed` and **exit 0**. Nothing in the
+tool objected.
+
+That is not a hole in CI, because `tck.yml`'s `tck-all-bindings` job asserts
+the four-interface card *before* grading, in a step of its own. Proven the same
+way on the same day — against the same three-binding SUT that step printed
+`card is missing WEBSOCKET` and exited 1. The four-binding claim in this table
+rests on that assertion, not on the `4/4`. It is recorded here because reading
+`4/4` as "four bindings agreed" is the natural misreading and it would be
+wrong.
 
 `BIND-EQUIV-004` is graded **structurally only**, and the run says so on
 stdout: the card declares security once at card level and no interface may
 override it. Proving each binding *enforces* those schemes identically needs a
 target configured to require credentials, which no job in this repo currently
-provides. That half is unmeasured, not passing.
+provides. That half is unmeasured, not passing — see register entry W10.
 
 One upstream discrepancy, found while reading the requirement definitions:
 `a2a-tck`'s backlog ticket `task-28` summarises `BIND-EQUIV-004` as "Streaming
@@ -163,17 +217,65 @@ loads — defines it as the authentication-scheme requirement. This repo follows
 Every mechanism currently narrowing what a conformance job measures. A waiver
 absent from this table is a bug in this table.
 
+Line numbers are given as `file:line` **as of `c008ab0`**, together with the
+YAML key or step name, which is what to search for when the line has moved.
+Audited 2026-08-11 by grepping all twelve workflows for `continue-on-error`,
+`|| true`, `set +e`, `--skip`, `--deselect`, `-k`, and `if:` guards; the audit
+is described below the table. Six of the nine citations were stale at that
+point — W1 by 9 lines, W3 by 29, W4 by 31, W5/W6 by 81, W7 by 13 — and are
+corrected here. A citation that points at the wrong line is not as bad as a
+missing row, but it costs the reader the one thing the row exists to give them.
+
 | # | Where | Mechanism | Scope | Why | Removable when |
 |---|---|---|---|---|---|
-| W1 | `official-tck.yml:46` | `A2A_TCK_REVISION: main` | every run | Not a waiver but a measurement caveat: the harness **floats**. A green PR can go red on upstream drift, and two rows above are only comparable if the a2a-tck column matches. | n/a — a deliberate trade-off. Pinning is a maintainer decision; see the comment at that line. |
+| W1 | `official-tck.yml:55` (`env: A2A_TCK_REVISION`) | `A2A_TCK_REVISION: main` | every run | Not a waiver but a measurement caveat: the harness **floats**. A green PR can go red on upstream drift, and two rows above are only comparable if the a2a-tck column matches. | n/a — a deliberate trade-off. Pinning is a maintainer decision; see the comment at that line. |
 | W2 | `official-tck.yml:142` | `\|\| true` on the full suite | suite exit status only | The differential gate step, not the suite's exit code, is the verdict. | n/a by design. Backed since 2026-08-09 by `--min-graded 88`, without which a zero-measurement run passed this gate. |
-| W3 | `official-tck.yml:232` | `--deselect …TestRestStreaming::test_streaming_content_type` | 1 test, minimal profile only | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | [`a2aproject/a2a-tck#225`](https://github.com/a2aproject/a2a-tck/issues/225) lands. **Verified still OPEN 2026-08-09.** |
-| W4 | `official-tck.yml:283` | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. Guarded by `--require-pass CORE-CAP-004`, so an upstream rename fails loudly instead of selecting nothing. |
-| W5 | `tck.yml:146-147` | `--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest) | js-sdk leg | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | Upstream fixes them. Since 2026-08-09 the runner exits 1 on a skipped test that passes, so this cannot rot silently. **Verified still failing 2026-08-09** against `@a2a-js/sdk` 1.0.0. |
-| W6 | `tck.yml:165-166` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, as for W5. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. |
-| W7 | `tck.yml:81` | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
+| W3 | `official-tck.yml:261` (step *Run the suite against the minimal-capability profile*) | `--deselect …TestRestStreaming::test_streaming_content_type` | 1 test, minimal profile only | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | [`a2aproject/a2a-tck#225`](https://github.com/a2aproject/a2a-tck/issues/225) lands. **Verified still OPEN 2026-08-09.** |
+| W4 | `official-tck.yml:314` (step *Run the suite against the required-extension profile*) | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. Guarded by `--require-pass CORE-CAP-004`, so an upstream rename fails loudly instead of selecting nothing. |
+| W5 | `tck.yml:227-228` (matrix `sdk: js-sdk`), applied at `tck.yml:300,306` | `--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest) | js-sdk leg | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | Upstream fixes them. Since 2026-08-09 the runner exits 1 on a skipped test that passes, so this cannot rot silently. **Verified still failing 2026-08-09** against `@a2a-js/sdk` 1.0.0. |
+| W6 | `tck.yml:246-247` (matrix `sdk: java-sdk`), applied at `tck.yml:300,306` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, as for W5. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. |
+| W7 | `tck.yml:94` (step *a2a-inspector card validation*) | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:101` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
 | W9 | `tck/conformance-baseline.json` | baselined known failures | — | **Empty (`{}`).** No MUST failure is currently waived. | already clear |
+| W10 | `tck/src/equivalence.rs:680` (`fn bind_equiv_004`), reported at `:899` | `BIND-EQUIV-004` graded **structurally only** | 1 of the 4 §5.1 requirements | The check reads the card and confirms security schemes are declared once, at card level, with no per-interface override. It does not send a request without credentials and confirm every binding rejects it identically — that needs a target configured to require them, which no job provides. The run prints this on stdout, so it is disclosed at the point of measurement; it was missing from this table until 2026-08-11. | A `tck/sut` profile requiring credentials exists and the check grades enforcement against it. Tracked as ROADMAP item A1. |
+| W11 | `tck/src/runner.rs:338` (`run_test`, `Scope::covers`) | checks outside a binding's scope report `N/A` and leave the denominator | 2 of 22 checks, binding-dependent | Applicability, not waiver: `jsonrpc_envelope_format` has nothing to inspect on §10/§11, and `a2a_media_type_accepted` has no field to carry on §10/§12. Listed because it does narrow what a run measures, and because it was a silent inflation bug until 2026-08-10 (`rest` scored 22/22 while 21 checks ran). Now guarded by three compile-time tests: a scope may not name an unknown binding, may not cover all or none, and may not omit its reason. | n/a — removing it would re-introduce the inflation. The guard is the control. |
+
+### The 2026-08-11 completeness audit
+
+The table claims to be exhaustive, so it is worth saying how that was checked
+and what was deliberately left out.
+
+**Method.** All twelve workflows were grepped for `continue-on-error`,
+`|| true`, `set +e`, `--skip`, `--deselect`, `-k`, and every `if:` guard, and
+each hit was read in context and classified. The runner's own sources were then
+read for in-tool narrowing that no workflow grep would reach — which is where
+W10 and W11 came from.
+
+**Added: W10 and W11.** Both narrow what a conformance run measures and neither
+was in the table. W10 is the more serious omission: it is a MUST requirement
+graded on half its definition, and while the run does disclose it on stdout,
+the register is where a reader looks for exactly that.
+
+**Deliberately not added.** Three hits are real suppressions that are *not*
+conformance suppressions, and adding them would dilute the table's claim rather
+than strengthen it:
+
+* `ci.yml:216` — `continue-on-error: true` on the `nightly` job. An
+  informational canary against an unpinned nightly toolchain, named
+  "Nightly (informational)". It grades no conformance requirement.
+* `mutants.yml:315` and `:897` — `set +e` around cargo-mutants invocations, so
+  a non-zero exit can be inspected rather than killing the step. Mutation, not
+  conformance; that gate's own history is in
+  [Mutation Testing History](./mutation-history.md).
+* `release.yml:549` — `|| true` on a `cargo yank --undo` in a rollback path.
+
+**Checked and found sound.** `tck.yml:254-272`'s four `if: matrix.sdk == …`
+guards select which agent a matrix leg starts. A leg matching none of them
+would start no agent — but the "wait for agent" step that follows exits 1 after
+30 attempts, so it fails closed rather than grading nothing. The four
+`if: always()` guards in `official-tck.yml` widen rather than narrow: they make
+the gate steps run even after a red suite. `itk.yml:147`'s `if: failure()` is a
+diagnostic upload.
 
 ## Transport coverage
 
