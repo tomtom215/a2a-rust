@@ -24,11 +24,17 @@ Maintainers set the project's technical direction, approve architectural
 changes, manage releases, and administer repository settings. Maintainers have
 final decision-making authority.
 
-**Current Maintainers:**
+**Current Maintainers:** listed in [`MAINTAINERS.md`](MAINTAINERS.md), which is
+the single authoritative record. The table that used to be duplicated here was
+removed on 2026-08-11 when that file was added: two lists of the same people in
+two documents is the exact shape of defect this repository keeps finding
+elsewhere, and there is no reason to introduce a fresh one. This document
+defines what the roles mean; `MAINTAINERS.md` records who holds them.
 
-| Name   | GitHub        | Role               |
-| ------ | ------------- | ------------------ |
-| Tom F. | @tomtom215    | Initial Maintainer |
+There is currently **one** maintainer. The consequences of that — no
+independent review path, no independent escalation for a conduct report about
+the maintainer, no continuity — are set out in `MAINTAINERS.md` and in the
+Escalation section below.
 
 ## Contribution Certification
 

@@ -199,7 +199,23 @@ This is the category most worth clearing before any external review.
 * **PGP key for security reports.** `SECURITY.md` has none, so emailed
   vulnerability reports cannot be encrypted. GitHub Security Advisories is
   the recommended channel in the meantime.
-* **Register `a2a-rust.dev`.** The domain is unregistered (NXDOMAIN), so both
+* **~~Add the four missing governance files.~~ Done 2026-08-11** —
+  `MAINTAINERS.md`, `.github/CODEOWNERS`, `SUPPORT.md` and `TRADEMARKS.md`.
+  `GOVERNANCE.md`'s duplicated maintainer table was removed at the same time
+  and now points at `MAINTAINERS.md`, so the two cannot drift.
+
+  **These are necessary and nowhere near sufficient**, and the checklist being
+  complete must not be read as progress on adoption.
+  [`docs/rust-sdk-assessment.md` §7](docs/rust-sdk-assessment.md) is explicit
+  that the remaining blockers are not repo-hygiene items: an official Rust SDK
+  already occupies the slot, the decision mechanism is an eight-corporation TSC
+  vote, the provenance disclosure has to be assessed by that body, and the
+  maintainer group is one person. Adding four files moves none of those. What
+  it does is stop their absence from being a distraction, and — in the case of
+  `CODEOWNERS` — it documents plainly that with one maintainer the mechanism is
+  inert for the maintainer's own commits.
+* **Register `a2a-rust.dev`.** The domain is unregistered (NXDOMAIN — re-verified
+  2026-08-11 via DoH, `Status: 3`), so both
   `conduct@a2a-rust.dev` and `security@a2a-rust.dev` are undeliverable. Both
   documents now point at the maintainer address instead; the dedicated
   addresses can be restored once the domain is live.
