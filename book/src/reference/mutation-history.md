@@ -388,10 +388,64 @@ reliable signal — `0` all caught, `2` survivors, `4` baseline failed.
 | `rate_limit.rs` | 56 | 32 | **0** | 24 | **0** | 5 |
 | `handler/event_processing/sync_collector.rs` | 27 | 14 | **0** | 13 | **0** | 9 |
 | `a2a-protocol-types` (whole crate) | 674 | 605 | 8 | 61 | 2 | 8 |
+| `a2a-protocol-client` (whole crate) | 804 | 357 | 10 | 437 | 2 | 10 |
 
 Across these `a2a-server` files: **57 survivors addressed, none remaining.**
 Every one of the nine reports exit 0, and nothing is excluded anywhere in the
 project — no `--exclude-re`, no `#[mutants::skip]`, no baselined exception.
+
+**What that sentence does not cover.** Nine files is not the crate.
+`a2a-server` has 2113 mutants; these nine account for 487 of them. There is no
+current whole-crate `a2a-server` figure in this ledger, and the last one that
+exists (1194 caught / 178 missed, 2026-08-03, 12 shards) predates every fix
+above. Treat "zero survivors" as a claim about the nine rows, not the crate —
+the honest whole-crate statement today is *not measured since 2026-08-03*.
+
+The two whole-crate rows are current and were produced on this branch:
+`a2a-protocol-types` on 2026-08-09 (674 mutants, exit 2) and
+`a2a-protocol-client` on 2026-08-10 (804 mutants, 37 minutes, exit 2). Both
+still carry survivors; they are listed below rather than left implicit.
+
+Both reproduce the 2026-08-03 recovered counts exactly — `a2a-client` 357/10
+and `a2a-types` 605/8, matching the table above to the mutant. Two things
+follow. The recovered figures were not an artefact of the archaeology: an
+independent sweep a week later, on a different machine, agrees. And these
+survivors are long-standing rather than newly introduced — neither crate's
+tested behaviour has moved in the interval.
+
+### Standing survivors outside `a2a-server`
+
+Recorded so the count is visible rather than inferred from a missing table.
+Neither crate has been burned down; these are the live lists as of the sweeps
+above.
+
+`a2a-protocol-client` — 10:
+
+| Location | Mutation |
+|---|---|
+| `error.rs:126` | `parse_retry_after` → `None` |
+| `error.rs:126` | `parse_retry_after` → `Some(Default::default())` |
+| `token_provider.rs:86` | `*` → `+` |
+| `token_provider.rs:136` | `Debug for StaticTokenProvider::fmt` → `Ok(())` |
+| `token_provider.rs:174` | `Debug for BearerAuthInterceptor::fmt` → `Ok(())` |
+| `token_provider.rs:403` | `<` → `<=` in `OAuth2ClientCredentials::cached` |
+| `transport/mod.rs:50` | `*` → `+` |
+| `transport/mod.rs:76` | `>` → `==` in `collect_response_limited` |
+| `transport/mod.rs:76` | `>` → `>=` in `collect_response_limited` |
+| `transport/jsonrpc.rs:303` | `delete !` in `JsonRpcTransport::execute_request` |
+
+`a2a-protocol-types` — 8:
+
+| Location | Mutation |
+|---|---|
+| `lib.rs:200` | `+` → `-` in `parse_iso8601_to_unix_millis` |
+| `lib.rs:254` | `-` → `+` in `days_from_civil` |
+| `lib.rs:254` | `-` → `/` in `days_from_civil` |
+| `signing.rs:87` | `>` → `==` in `write_canonical` |
+| `signing.rs:87` | `>` → `>=` in `write_canonical` |
+| `signing.rs:142` | `+` → `*` in `write_canonical` |
+| `proto/convert/mod.rs:67` | `Display for ConvertError::fmt` → `Ok(())` |
+| `proto/convert/mod.rs:165` | `<` → `<=` in `timestamp_to_rfc3339` |
 
 The last three fell to the same move rather than to cleverer tests: each was a
 decision buried behind machinery a test cannot drive, so the decision was moved
