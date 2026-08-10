@@ -73,13 +73,52 @@ note_touched() { TOUCHED+=("$1"); }
 
 revert_all() {
     if [ "${#TOUCHED[@]}" -gt 0 ]; then
-        git checkout -- "${TOUCHED[@]}" 2>/dev/null || true
+        # `git checkout HEAD --`, not `git checkout --`. The latter restores
+        # from the *index*, so if anything stages a file while a defect is
+        # injected, every later revert faithfully restores the defect.
+        #
+        # That is not hypothetical. During the first full run of this script a
+        # concurrent `git add -A && git commit` in the same working tree staged
+        # the injected modules, and from that point the revert put them back:
+        # `cargo test --workspace` then failed on a duplicate module rather
+        # than on the injected panic, and the probe code reached three
+        # commits. Restoring from HEAD makes the revert independent of
+        # whatever the index happens to hold.
+        #
+        # No `|| true`: a revert that fails silently leaves a defect in the
+        # tree, and every subsequent verdict is then about the wrong code.
+        if ! git checkout HEAD -- "${TOUCHED[@]}" 2>&1; then
+            printf '\nprove_gates_fail: FAILED TO REVERT %s\n' "${TOUCHED[*]}" >&2
+            printf 'The working tree still contains an injected defect. Restore it by\n' >&2
+            printf 'hand before doing anything else — do not commit.\n' >&2
+        fi
         TOUCHED=()
     fi
     rm -f crates/a2a-protocol-types/src/gate_probe_long.rs
-    rm -f "$REPO_ROOT/.gate-probe-proto"
+    git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_long.rs 2>/dev/null || true
 }
 trap revert_all EXIT
+
+# Refuse to start in a dirty tree.
+#
+# Every injection is "append, run, restore from HEAD", so an uncommitted change
+# to a file this script touches would be destroyed by the first revert. It also
+# makes the run ambiguous: a gate failing on someone else's work in progress
+# proves nothing about the injected defect.
+if [ -n "$(git status --porcelain)" ]; then
+    printf 'prove_gates_fail: the working tree has uncommitted changes.\n\n' >&2
+    git status --short >&2
+    cat >&2 <<'EOF'
+
+This script injects defects and restores files from HEAD, which would discard
+the changes above. Commit or stash them first.
+
+And while it runs, do not commit from this tree: a `git add` that catches an
+injected defect stages it, which is how probe code reached three commits the
+first time this ran.
+EOF
+    exit 2
+fi
 
 # Appends a line to a file, immediately after the anchor line.
 inject_after() {
@@ -480,5 +519,15 @@ for row in "${RESULTS[@]-}"; do
 done
 printf '\n  %d proven, %d unproven, %d not selected (of %d gates)\n' \
     "$PROVEN" "$UNPROVEN" "$SKIPPED" "${#ALL_GATES[@]}"
+
+# The tree must be exactly as it was found. A script that injects defects and
+# leaves one behind is worse than no script: the next commit carries it.
+revert_all
+if [ -n "$(git status --porcelain)" ]; then
+    printf '\nprove_gates_fail: the tree is dirty after the run — an injection was\n' >&2
+    printf 'not reverted. Inspect and restore before committing:\n\n' >&2
+    git status --short >&2
+    exit 2
+fi
 
 [ "$UNPROVEN" -eq 0 ] || exit 1

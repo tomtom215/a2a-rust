@@ -559,19 +559,3 @@ mod tests {
         );
     }
 }
-
-#[cfg(test)]
-mod gate_probe_always {
-    #[test]
-    fn gate_probe_must_fail() {
-        panic!("gate probe: injected failure");
-    }
-}
-
-#[cfg(all(test, feature = "signing"))]
-mod gate_probe_signing {
-    #[test]
-    fn gate_probe_must_fail() {
-        panic!("gate probe: injected failure for feature signing");
-    }
-}

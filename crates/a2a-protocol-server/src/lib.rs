@@ -147,10 +147,3 @@ pub use tenant_config::{PerTenantConfig, TenantLimits};
 pub use tenant_resolver::{
     BearerTokenTenantResolver, HeaderTenantResolver, PathSegmentTenantResolver, TenantResolver,
 };
-
-#[cfg(feature = "postgres")]
-#[allow(dead_code)]
-fn gate_probe_postgres() -> u8 {
-    let y: u8 = 1;
-    *&y
-}
