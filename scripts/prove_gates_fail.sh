@@ -222,6 +222,8 @@ injection_for() {
             echo "proto" ;;
         "./scripts/check_file_lengths.sh")
             echo "file_length" ;;
+        *"prove_workflow_gates_fail.py"*)
+            echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         "cargo doc"*)
@@ -293,6 +295,7 @@ expected_marker() {
         fmt)              echo "gate_probe_fmt" ;;
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
         file_length)      echo "gate_probe_long.rs" ;;
+        workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
@@ -316,6 +319,32 @@ apply_injection() {
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        workflow_gates)
+            # This gate is itself a prover, so the defect has to be a broken
+            # *gate* rather than broken code — and the most faithful one is the
+            # real defect it was written for: strip `set -o pipefail` from the
+            # official-TCK conformance gate and the step's exit status reverts
+            # to tee's, i.e. always 0.
+            #
+            # The marker is "UNPROVEN", so this passes only if the prover names
+            # that step as unproven. A prover that crashed, found no gates, or
+            # died on a missing dependency exits non-zero too, and every one of
+            # those would otherwise read as success here.
+            note_touched ".github/workflows/official-tck.yml"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path(".github/workflows/official-tck.yml")
+s = p.read_text()
+# Anchored on the pairing, not on `set -o pipefail` alone: the suite-run steps
+# in the same file carry that line too, and removing one of those would prove
+# something else entirely.
+old = '          set -o pipefail\n          python3 tck/scripts/check_conformance.py \\\n'
+new = '          python3 tck/scripts/check_conformance.py \\\n'
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one conformance-gate pipefail pairing; found {s.count(old)}")
+p.write_text(s.replace(old, new))
+PY
+            ;;
         doc)
             note_touched "$TYPES_LIB"
             printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;

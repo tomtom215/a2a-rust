@@ -157,6 +157,52 @@ attestations no longer resolving) are understood and the maintainer is willing
 to do it on request. It was not done unprompted because it destroys verifiable
 supply-chain metadata to gain a formality this document already supplies.
 
+### 2.1 What the history actually contains — measured 2026-08-10
+
+The blanket certification above says historical commits carry no sign-off. This
+subsection says *how many*, because "some of the history predates the policy"
+and "57% of it does" are different statements and only one of them is a fact.
+
+Replicating `.github/workflows/dco.yml`'s own logic — its `NON_HUMAN` regex and
+its author-matching `Signed-off-by` pattern — over all **282 non-merge commits**
+reachable from `af7a1f8`:
+
+| Outcome under `dco.yml` | Commits |
+|---|---:|
+| Would **pass** | 120 (43%) |
+| Fail — non-human author `noreply@anthropic.com` | 138 |
+| Fail — non-human author `github-actions[bot]` | 21 |
+| Fail — human author, no matching `Signed-off-by` | 3 |
+
+Three things follow, and the third is the one that is not already covered above.
+
+1. **The assistant-authored commits are closed out.** All 138 fall between
+   2026-04-01 and 2026-07-24 — none postdates §3.2, which discontinued the
+   pattern. The policy took effect and held.
+
+2. **The three unsigned human commits** (`7ac16a2`, `f9ab2c1`, `6a936ce`, all
+   2026-07-24, all "Update README.md") are GitHub web-UI edits, which do not
+   offer a sign-off. Covered by the blanket certification; noted so the count
+   above reconciles.
+
+3. **The bot commits are ongoing, not historical.** The 21
+   `github-actions[bot]` commits run 2026-04-01 to **2026-08-09** and will keep
+   accruing: the benchmarks workflow commits generated results to the book and
+   pushes to `main` directly. `dco.yml` triggers on `pull_request` only, so
+   these never pass through it. That is not a gap in the gate — a workflow
+   committing its own generated output is not making an assertion about
+   authorship of contributed work — but it does mean "every commit on `main`
+   carries a sign-off" is false today and will stay false. Say the narrower
+   true thing instead: every *contributed* commit does.
+
+**One figure here could not be reproduced and is left standing.** §1 reports
+608 total commits as of `b416c1a`. A fresh clone of `main` reaches 178 commits
+from `b416c1a` and 311 from `af7a1f8`. The clone used for this measurement
+carries only `main` and one working branch, so a count taken when many
+squash-merged PR branches were still present locally is not checkable from
+here. The discrepancy is recorded rather than resolved, and §1's number is left
+as written rather than replaced by one measured over a different ref set.
+
 ---
 
 ## 3. Forward policy — effective immediately

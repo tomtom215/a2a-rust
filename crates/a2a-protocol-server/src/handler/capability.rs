@@ -339,6 +339,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn activated_extensions_returns_the_declared_intersection() {
+        // The test above covers `activated_extensions_header_value`, the
+        // pub(crate) formatter. `activated_extensions` — the *public* one that
+        // dispatchers call — had nothing asserting its return value, so a
+        // mutation sweep could replace its whole body with `vec![]`,
+        // `vec![String::new()]` or `vec!["xyzzy"]` and invert the membership
+        // test, all without turning a test red. Four surviving mutants, one
+        // uncovered public method.
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_agent_card(card_with_extensions())
+            .build()
+            .unwrap();
+
+        let mut headers = std::collections::HashMap::new();
+        headers.insert(
+            "a2a-extensions".to_owned(),
+            "https://example.com/ext/optional/v1,https://unknown.example/ext/v9".to_owned(),
+        );
+        // Exactly the declared one, and only it: an empty result, a wrong
+        // result, and the inverted filter (which would return the *unknown*
+        // URI) are all distinguishable from this.
+        assert_eq!(
+            handler.activated_extensions(&headers),
+            vec!["https://example.com/ext/optional/v1".to_owned()]
+        );
+
+        // No header at all → nothing activated.
+        assert!(handler
+            .activated_extensions(&std::collections::HashMap::new())
+            .is_empty());
+    }
+
     /// End-to-end: a data-plane operation on a handler whose card requires an
     /// extension rejects a client that does not declare it, and serves one
     /// that does.

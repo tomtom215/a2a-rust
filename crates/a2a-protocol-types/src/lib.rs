@@ -472,6 +472,35 @@ mod tests {
     }
 
     #[test]
+    fn parse_accepts_offsets_with_a_minute_component() {
+        // Every offset case above is a whole number of hours, so the offset
+        // total `oh * 60 + om` is computed with `om == 0` — and `+ 0` and
+        // `- 0` are the same number. A mutation sweep found exactly that: the
+        // `+` could become `-` with nothing turning red. India (+05:30) and
+        // Nepal (+05:45) are the ordinary cases that distinguish them.
+        assert_eq!(
+            parse_iso8601_to_unix_millis("2026-03-01T05:30:00+05:30"),
+            parse_iso8601_to_unix_millis("2026-03-01T00:00:00Z"),
+            "+05:30 must resolve to the same instant as its UTC equivalent"
+        );
+        assert_eq!(
+            parse_iso8601_to_unix_millis("2026-03-01T05:45:00+05:45"),
+            parse_iso8601_to_unix_millis("2026-03-01T00:00:00Z")
+        );
+        // Absolute values too, not just equality between two parses — both
+        // sides of the comparisons above route through the same arithmetic.
+        assert_eq!(
+            parse_iso8601_to_unix_millis("2026-03-01T05:30:00+05:30"),
+            Some(1_772_323_200_000)
+        );
+        // And a negative offset carrying minutes (Newfoundland, -03:30).
+        assert_eq!(
+            parse_iso8601_to_unix_millis("2026-02-28T08:30:00-03:30"),
+            Some(1_772_280_000_000)
+        );
+    }
+
+    #[test]
     fn parse_rejects_pre_epoch_dates() {
         // A2A timestamps are post-1970 wall-clock event times, and the
         // canonical formatter clamps pre-epoch instants to the epoch — so

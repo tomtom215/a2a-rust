@@ -409,11 +409,96 @@ It exited 1, which is the workflow working: 125 survivors, reported rather
 than rounded away. Ten of the twelve `a2a-server` shards carried survivors;
 shards 3 and 8 came back clean.
 
-Two cautions on reading that row. It is a *combined* figure across all four
-crates — the `a2a-server`-only split is recoverable from that run's per-shard
-artifacts but is not reproduced here, so this ledger still has no whole-crate
-`a2a-server` score stated as such. And it was measured on `main`, not on any
-branch in progress.
+**The per-crate split, recovered 2026-08-10** by re-counting run
+[31352927429](https://github.com/tomtom215/a2a-rust/actions/runs/31352927429)'s
+21 shard artifacts with the workflow's own counting rule (non-empty lines).
+This closes the gap the paragraph here previously described — the ledger now
+states a whole-crate `a2a-server` score:
+
+| Crate | Caught | Missed | Timeout | Unviable | Score |
+|---|---:|---:|---:|---:|---:|
+| `a2a-server` | 1225 | 107 | 2 | 779 | **91%** |
+| `a2a-client` | 357 | 10 | 0 | 437 | 97% |
+| `a2a-types` | 605 | 8 | 0 | 61 | 98% |
+| `a2a-sdk` | 0 | 0 | 0 | 0 | n/a — pure re-export facade |
+| **combined** | **2187** | **125** | **2** | **1277** | **94%** |
+
+The combined row reproduces the CI figure exactly, which is what makes the
+split trustworthy: the same arithmetic that yields 94% yields these four rows.
+`a2a-server`'s 2113 total (1225 + 107 + 2 + 779) also matches the count quoted
+in "What that sentence does not cover" above.
+
+### The 125 is measured on a commit that predates PR #103
+
+Read the headline with this attached. `041c3666` is **44 commits behind**
+`af7a1f8`; the scheduled sweep ran at 03:33 UTC and PR #103 merged later the
+same day. So the 125 describes a tree that no longer exists.
+
+Quantified rather than asserted: **61 of the 125 survivors (48%) sit in files
+that changed between `041c3666` and `af7a1f8`.**
+
+| Survivors | File (`a2a-server`) | In the per-file table above? |
+|---:|---|---|
+| 9 | `dispatch/grpc/service.rs` | yes — driven to 0 |
+| 9 | `handler/event_processing/sync_collector.rs` | yes — driven to 0 |
+| 8 | `handler/event_processing/background/state_machine.rs` | **no** |
+| 8 | `streaming/event_queue/in_memory.rs` | yes — driven to 0 |
+| 7 | `dispatch/axum_adapter.rs` | yes — driven to 0 |
+| 7 | `dispatch/websocket.rs` | yes — driven to 0 |
+| 7 | `push/sender.rs` | yes — driven to 0 |
+| 6 | `rate_limit.rs` | yes — driven to 0 |
+
+Seven of those eight are files the per-file sweeps above already took to zero
+survivors on 2026-08-09 — against the branch that became PR #103, which the
+weekly sweep had not yet seen. The counts line up closely with that table's
+`Was` column but not exactly (`in_memory.rs` 8 vs 7, `rate_limit.rs` 6 vs 5),
+so the two were not measured at the same commit and the overlap must not be
+treated as an identity.
+
+**What this does and does not license.** It does not license subtracting 61
+and claiming 64: the per-file runs and the sweep are different commits, and
+rewritten code generates new mutants as readily as it retires old ones. The
+only honest statement is that the current-`main` survivor count is **not
+measured**, that 125 is an upper bound carried from a superseded tree, and
+that the next scheduled sweep is what settles it. That sweep, not this
+paragraph, is the thing to check.
+
+The remaining **64 survivors are in files unchanged since `041c3666`**, so
+those are valid against current `main` and are the ones worth triaging today.
+
+### Triage of the 64 still-valid survivors (2026-08-10)
+
+| Bucket | Count | Disposition |
+|---|---:|---|
+| Body-size limit boundaries (`> max` at exactly `max`) | 6 | real — one boundary test per call site kills two each |
+| Whole-function replacements with no asserted return | ~18 | real — names an untested layer, per the section above |
+| `> / >= / ==` and `+ / -` off-by-one arithmetic | ~14 | real, mostly cheap |
+| `Debug`/`Display` `fmt` impls replaced | 3 | low value — needs assertions on formatted output |
+| `authenticates -> bool` on interceptor impls | 3 | real — no test asserts the flag |
+| Logging-only (`warn_unrecognized_params`) | 2 | **equivalent unless log output is asserted**; the function has no effect but a trace event |
+| `serve` / process-lifecycle replaced with `Ok(())` | 4 | hard — the servers block; no test asserts they actually serve |
+| `days_from_civil` negative-year branch | 2 | **equivalent** — see below |
+| remainder | 12 | not individually classified |
+
+**Eight of these were killed on 2026-08-10** (see the commit adding the tests):
+three in `signing.rs` canonicalization depth, four in
+`handler/capability.rs::activated_extensions`, one in
+`parse_iso8601_to_unix_millis`. Each was verified by re-applying the mutant by
+hand and confirming the new test goes red — a test written to kill a mutant,
+without checking that it does, is the unverified green this page is about.
+
+**Two are classified equivalent rather than fixed.** Both `days_from_civil`
+mutants sit on the `y < 0` branch of
+`let era = if y >= 0 { y } else { y - 399 } / 400;`. That branch is reachable
+only for year 0 with a January/February date, and every input reaching it is
+pre-epoch — which `parse_iso8601_to_unix_millis` rejects afterwards via
+`(total >= 0).then_some(total)`, under the mutant as much as under the
+original. No observable difference through the public API, so there is nothing
+to test. Checked, not assumed: both mutants were reasoned through to a
+returned `None` either way.
+
+The remaining caution on the combined row stands: it was measured on `main`,
+not on any branch in progress.
 
 An earlier revision of this section said the honest statement was "not
 measured since 2026-08-03". That was true when written and false within

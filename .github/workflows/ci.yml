@@ -66,6 +66,27 @@ jobs:
       - name: File lengths (500-line ratchet)
         run: ./scripts/check_file_lengths.sh
 
+      # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
+      # but it is a 20-minute source-injection sweep and cannot run on a PR.
+      # This is its fast sibling: it proves the verdict-bearing steps in the
+      # other ten workflows can fail, by running each step's real body against
+      # synthetic healthy and defective inputs. ~7s, no cargo, no network.
+      #
+      # It earns its place on every PR because it already found a live one: the
+      # official-TCK conformance gate ended `| tee`, and GitHub's default shell
+      # is `bash -e` without pipefail, so the step's exit status was tee's. The
+      # gate printed "REGRESSION" and went green.
+      #
+      # setup-python above it rather than relying on the runner's system
+      # interpreter: PyYAML must be present, and a harness that skips the
+      # workflows it cannot parse is the failure mode it exists to prevent.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Workflow verdict gates can fail
+        run: python3 -m pip install --quiet pyyaml && ./scripts/prove_workflow_gates_fail.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
