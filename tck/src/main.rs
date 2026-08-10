@@ -37,6 +37,7 @@
 
 use std::process::ExitCode;
 
+mod equivalence;
 mod runner;
 mod tests;
 
@@ -71,6 +72,9 @@ async fn main() -> ExitCode {
             eprintln!("  --skip <tests>     Comma-separated test names to skip (repeatable).");
             eprintln!("                     For documented target-implementation deviations");
             eprintln!("                     only — a skipped test is reported, not silent.");
+            eprintln!("  --equivalence      Grade §5.1 cross-binding equivalence");
+            eprintln!("                     (BIND-EQUIV-001..004) instead of one binding.");
+            eprintln!("                     Drives every binding the card advertises.");
             return ExitCode::from(2);
         }
     };
@@ -79,7 +83,44 @@ async fn main() -> ExitCode {
         binding,
         endpoint,
         skips,
+        equivalence,
     } = config;
+
+    // §5.1 grades the relation between bindings, not any one of them, so it
+    // discovers and drives them all rather than taking --binding.
+    if equivalence {
+        println!("A2A Protocol v1.0 — TCK cross-binding equivalence (§5.1)");
+        println!("========================================================");
+        println!("Target:  {url}");
+        println!();
+        return match equivalence::run_equivalence(&url).await {
+            Err(msg) => {
+                eprintln!("Error: {msg}");
+                ExitCode::from(2)
+            }
+            Ok(results) => {
+                let failed: Vec<_> = results.iter().filter(|r| !r.passed()).collect();
+                println!();
+                println!(
+                    "Results: {}/{} requirements passed, {} failed",
+                    results.len() - failed.len(),
+                    results.len(),
+                    failed.len()
+                );
+                if failed.is_empty() {
+                    println!("All §5.1 equivalence requirements passed.");
+                    ExitCode::from(0)
+                } else {
+                    println!();
+                    println!("Failed requirements:");
+                    for r in &failed {
+                        println!("  FAIL  {} — {}", r.name, r.message);
+                    }
+                    ExitCode::from(1)
+                }
+            }
+        };
+    }
 
     // The RPC endpoint and the discovery origin are the same host for the
     // HTTP bindings and a separate listener for `websocket` and `grpc`, so
@@ -317,6 +358,8 @@ struct Config {
     /// two are mutually exclusive: a run drives exactly one binding.
     endpoint: Option<String>,
     skips: Vec<String>,
+    /// Grade §5.1 cross-binding equivalence instead of one binding.
+    equivalence: bool,
 }
 
 /// Which `--binding` each endpoint override belongs to. An override named
@@ -330,6 +373,8 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
     let mut binding = "jsonrpc".to_string();
     let mut endpoint: Option<(&str, String)> = None;
     let mut skips: Vec<String> = Vec::new();
+    let mut equivalence = false;
+    let mut binding_was_given = false;
 
     let mut i = 1;
     while i < args.len() {
@@ -351,7 +396,9 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
                     ));
                 }
                 binding = b;
+                binding_was_given = true;
             }
+            "--equivalence" => equivalence = true,
             flag if ENDPOINT_FLAGS.iter().any(|(f, _)| *f == flag) => {
                 let owned = flag.to_string();
                 i += 1;
@@ -387,6 +434,33 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
     }
 
     let url = url.ok_or("--url is required")?;
+
+    // §5.1 drives every advertised binding, so naming one is a contradiction
+    // rather than a refinement. Accepting it silently would let a CI step
+    // believe it had scoped the comparison when it had not.
+    if equivalence {
+        if binding_was_given {
+            return Err(
+                "--equivalence compares every binding the card advertises, so --binding \
+                 has nothing to select. Drop one of them."
+                    .to_string(),
+            );
+        }
+        if let Some((flag, _)) = endpoint {
+            return Err(format!(
+                "{flag} names one binding's endpoint, but --equivalence resolves every \
+                 binding from the card. Drop one of them."
+            ));
+        }
+        if !skips.is_empty() {
+            return Err(
+                "--skip names per-binding checks; --equivalence grades the four §5.1 \
+                 requirements, which have no per-binding names to waive."
+                    .to_string(),
+            );
+        }
+    }
+
     let endpoint = match endpoint {
         None => None,
         Some((flag, value)) => {
@@ -408,6 +482,7 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
         binding,
         endpoint,
         skips,
+        equivalence,
     })
 }
 
@@ -515,6 +590,37 @@ mod tests_main {
         let cfg = parse_args(&argv(&["--url", "http://x"])).expect("valid config");
         assert_eq!(cfg.binding, "jsonrpc");
         assert!(cfg.endpoint.is_none());
+        assert!(!cfg.equivalence);
+    }
+
+    #[test]
+    fn equivalence_is_opt_in() {
+        let cfg = parse_args(&argv(&["--url", "http://x", "--equivalence"]))
+            .expect("valid equivalence config");
+        assert!(cfg.equivalence);
+    }
+
+    /// Every flag that scopes a run to one binding contradicts
+    /// `--equivalence`, which resolves them all from the card. Accepting one
+    /// silently would let a run look narrower than it is.
+    #[test]
+    fn equivalence_rejects_flags_that_scope_to_one_binding() {
+        for extra in [
+            vec!["--binding", "jsonrpc"],
+            vec!["--ws-url", "ws://y"],
+            vec!["--grpc-url", "y:1"],
+            vec!["--skip", "send_message_basic"],
+        ] {
+            let mut args = vec!["--url", "http://x", "--equivalence"];
+            args.extend(extra.iter().copied());
+            let err = parse_args(&argv(&args))
+                .err()
+                .unwrap_or_else(|| panic!("--equivalence with {extra:?} must be rejected"));
+            assert!(
+                err.contains("--equivalence"),
+                "the error must name the conflict: {err}"
+            );
+        }
     }
 
     #[test]

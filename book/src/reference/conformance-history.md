@@ -77,12 +77,48 @@ profile: `jsonrpc` 73, `http_json` 69, `grpc` 53, `agent_card` 5.
 22 conformance checks per binding. `Skipped` counts documented deviations of
 the *target* implementation, never of this SDK — see register entries W5/W6.
 
-| Date | Target | Binding | Passed | Failed | Skipped | Exit |
-|---|---|---|---:|---:|---:|---:|
-| 2026-08-09 | `examples/echo-agent` | jsonrpc | 22/22 | 0 | 0 | 0 |
-| 2026-08-09 | `examples/echo-agent` | rest | 22/22 | 0 | 0 | 0 |
-| 2026-08-09 | `itk/agents/js-sdk` (`@a2a-js/sdk` 1.0.0) | jsonrpc | 20/20 | 0 | 2 | 0 |
-| 2026-08-09 | `itk/agents/js-sdk` (`@a2a-js/sdk` 1.0.0) | rest | 21/21 | 0 | 1 | 0 |
+| Date | Target | Binding | Passed | Failed | N/A | Skipped | Exit |
+|---|---|---|---:|---:|---:|---:|---:|
+| 2026-08-09 | `examples/echo-agent` | jsonrpc | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-09 | `examples/echo-agent` | rest | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-09 | `itk/agents/js-sdk` (`@a2a-js/sdk` 1.0.0) | jsonrpc | 20/20 | 0 | 0 | 2 | 0 |
+| 2026-08-09 | `itk/agents/js-sdk` (`@a2a-js/sdk` 1.0.0) | rest | 21/21 | 0 | 0 | 1 | 0 |
+| 2026-08-10 | `examples/echo-agent` | jsonrpc | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-10 | `examples/echo-agent` | rest | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-10 | `examples/echo-agent` | websocket | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-10 | `tck/sut` | jsonrpc | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-10 | `tck/sut` | rest | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-10 | `tck/sut` | websocket | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-10 | `tck/sut` | grpc | 20/20 | 0 | 2 | 0 | 0 |
+
+The `N/A` column is new on 2026-08-10 and is not cosmetic. Until then
+`jsonrpc_envelope_format` opened with `if binding != "jsonrpc" { return Ok(()) }`,
+so the `rest` rows above scored 22/22 while only 21 checks ran. Not-applicable
+outcomes are now excluded from the denominator and printed with their reason,
+and a run that grades zero checks exits 2 rather than green.
+
+### Cross-binding equivalence (§5.1)
+
+A separate mode — `--equivalence` — because these four requirements are about
+the relation *between* bindings and each is trivially satisfied by any one of
+them. Requirement texts and IDs are quoted from
+`a2aproject/a2a-tck@5996b79` (2026-06-29).
+
+| Date | Target | Bindings compared | Passed | Failed | Exit |
+|---|---|---|---:|---:|---:|
+| 2026-08-10 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
+
+`BIND-EQUIV-004` is graded **structurally only**, and the run says so on
+stdout: the card declares security once at card level and no interface may
+override it. Proving each binding *enforces* those schemes identically needs a
+target configured to require credentials, which no job in this repo currently
+provides. That half is unmeasured, not passing.
+
+One upstream discrepancy, found while reading the requirement definitions:
+`a2a-tck`'s backlog ticket `task-28` summarises `BIND-EQUIV-004` as "Streaming
+equivalence", while `tck/requirements/interop.py` — the file the suite actually
+loads — defines it as the authentication-scheme requirement. This repo follows
+`interop.py`.
 
 ## Suppression register
 
@@ -108,16 +144,22 @@ and a transport with no conformance job is a gap, not a pass.
 
 | Transport | Spec | Official TCK | In-repo TCK | Other evidence |
 |---|---|---|---|---|
-| JSON-RPC | §9 | yes — 73 MUSTs | yes — both agent legs | cross-SDK matrix |
-| HTTP+JSON / REST | §11 | yes — 69 MUSTs | yes — both agent legs | cross-SDK matrix |
-| gRPC | §10 | yes — 53 MUSTs | **no** (`--binding` accepts only `jsonrpc`/`rest`) | golden wire fixtures vs official Python SDK |
-| WebSocket | §12 *custom binding* | **no** | **no** | unit/integration tests only |
+| JSON-RPC | §9 | yes — 73 MUSTs | yes — 22 checks, both agent legs | cross-SDK matrix |
+| HTTP+JSON / REST | §11 | yes — 69 MUSTs | yes — 21 graded, 1 N/A | cross-SDK matrix |
+| gRPC | §10 | yes — 53 MUSTs | yes — 20 graded, 2 N/A (since 2026-08-10) | golden wire fixtures vs official Python SDK |
+| WebSocket | §12 *custom binding* | **no** | yes — 21 graded, 1 N/A (since 2026-08-10) | unit/integration tests |
 
 WebSocket is a §12 custom binding, so the official suite has no notion of it —
 its absence there is expected, not a defect. Its absence from the in-repo
-runner is a genuine coverage gap, since that runner is ours to extend. gRPC is
-graded by the official suite, so the in-repo runner's lack of a gRPC binding is
-a redundancy gap rather than a blind spot.
+runner was a genuine coverage gap and is closed as of 2026-08-10. The gRPC leg
+is redundancy against the official suite rather than a new blind spot closed,
+but it is the only outside-in run of gRPC this repo controls, and it is what
+makes §5.1 equivalence gradeable across all four.
+
+The four bindings are not served by one target. `examples/echo-agent` answers
+three (no gRPC) and `tck/sut` answers four, so the all-bindings and
+equivalence jobs run against the SUT. That is deliberate: the example stays an
+example.
 
 ## What "100%, nothing skipped" would actually require
 
@@ -131,10 +173,16 @@ Ranked by what is within this project's control.
 3. **W3 and W4 — upstream TCK defects, both filed.** Neither can be closed here
    without patching the harness, which this repo declines to do (§18). Removing
    them is gated on `#225` and `#193`.
-4. **WebSocket conformance leg in the in-repo runner.** The only genuinely
-   open, in-scope coverage gap in the table above.
+4. **WebSocket and gRPC legs in the in-repo runner.** ~~The only genuinely
+   open, in-scope coverage gap in the table above.~~ **Done 2026-08-10** —
+   both legs exist and are gated in `tck.yml`.
 5. **The 21 `NOT TESTED` MUSTs.** Not closable by this SDK at all — the suite
    has no tests for them. Closing them means contributing tests upstream.
+   Four of them (`BIND-EQUIV-001..004`) are now graded *here* by
+   `--equivalence`, which does not change the upstream count: the suite still
+   reports them `NOT TESTED`, because the tests that would change that have to
+   live in `a2aproject/a2a-tck`. What changed is that this repo no longer ships
+   a multi-binding server with nothing checking the bindings agree.
 
 Items 3 and 5 mean a literal "100% with nothing skipped" is **not currently
 reachable** from inside this repository. Any claim that it has been reached

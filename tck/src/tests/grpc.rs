@@ -650,9 +650,213 @@ pub async fn task_state_values(target: &str) -> Result<(), String> {
     Ok(())
 }
 
+// ── Cross-binding equivalence support (§5.1) ─────────────────────────────────
+
+/// Whether the server reports this method as `UNIMPLEMENTED`.
+///
+/// The §10 half of `BIND-EQUIV-001`'s availability probe. Only the
+/// `UNIMPLEMENTED` status answers the question §5.1 asks; every other outcome,
+/// success or failure, means the method exists.
+pub async fn probe_method(
+    target: &str,
+    method: &str,
+    task_id: &str,
+    config_id: &str,
+) -> Result<bool, String> {
+    use tokio_stream::StreamExt as _;
+
+    let mut c = connect(target).await?;
+    let code = match method {
+        "SendMessage" => c
+            .send_message(Request::new(send_request("TCK: equivalence probe", None)))
+            .await
+            .err(),
+        "SendStreamingMessage" => {
+            match c
+                .send_streaming_message(Request::new(send_request("TCK: equivalence probe", None)))
+                .await
+            {
+                Err(s) => Some(s),
+                // The status of a server-streaming call can arrive with the
+                // first message rather than the response head, so drain one
+                // before concluding the method exists.
+                Ok(resp) => resp.into_inner().next().await.and_then(Result::err),
+            }
+        }
+        "GetTask" => c
+            .get_task(Request::new(pb::GetTaskRequest {
+                id: task_id.to_owned(),
+                ..Default::default()
+            }))
+            .await
+            .err(),
+        "ListTasks" => c
+            .list_tasks(Request::new(pb::ListTasksRequest::default()))
+            .await
+            .err(),
+        "CancelTask" => c
+            .cancel_task(Request::new(pb::CancelTaskRequest {
+                id: task_id.to_owned(),
+                ..Default::default()
+            }))
+            .await
+            .err(),
+        "SubscribeToTask" => {
+            match c
+                .subscribe_to_task(Request::new(pb::SubscribeToTaskRequest {
+                    id: task_id.to_owned(),
+                    ..Default::default()
+                }))
+                .await
+            {
+                Err(s) => Some(s),
+                Ok(resp) => resp.into_inner().next().await.and_then(Result::err),
+            }
+        }
+        "CreateTaskPushNotificationConfig" => c
+            .create_task_push_notification_config(Request::new(pb::TaskPushNotificationConfig {
+                task_id: task_id.to_owned(),
+                url: "https://example.com/webhook".to_owned(),
+                ..Default::default()
+            }))
+            .await
+            .err(),
+        "GetTaskPushNotificationConfig" => c
+            .get_task_push_notification_config(Request::new(
+                pb::GetTaskPushNotificationConfigRequest {
+                    task_id: task_id.to_owned(),
+                    id: config_id.to_owned(),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .err(),
+        "ListTaskPushNotificationConfigs" => c
+            .list_task_push_notification_configs(Request::new(
+                pb::ListTaskPushNotificationConfigsRequest {
+                    task_id: task_id.to_owned(),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .err(),
+        "DeleteTaskPushNotificationConfig" => c
+            .delete_task_push_notification_config(Request::new(
+                pb::DeleteTaskPushNotificationConfigRequest {
+                    task_id: task_id.to_owned(),
+                    id: config_id.to_owned(),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .err(),
+        "GetExtendedAgentCard" => c
+            .get_extended_agent_card(Request::new(pb::GetExtendedAgentCardRequest::default()))
+            .await
+            .err(),
+        other => return Err(format!("no gRPC probe defined for {other}")),
+    };
+
+    Ok(code.is_some_and(|s| s.code() == Code::Unimplemented))
+}
+
+/// Reads a task over gRPC and reduces it to the same semantic view the JSON
+/// bindings produce, so `BIND-EQUIV-002` compares content and not encoding.
+///
+/// The enum-to-name mapping here is the one place a protobuf value has to be
+/// rendered as a string to be comparable with JSON. That is sound for an
+/// equivalence check — both sides are being reduced to a common vocabulary —
+/// and unsound for a wire-format check, which is why `task_state_values`
+/// asserts on the enum instead.
+pub async fn task_view(
+    target: &str,
+    task_id: &str,
+) -> Result<crate::equivalence::TaskView, String> {
+    let mut client = connect(target).await?;
+    let task = client
+        .get_task(Request::new(pb::GetTaskRequest {
+            id: task_id.to_owned(),
+            ..Default::default()
+        }))
+        .await
+        .map_err(|s| format!("GetTask failed: {}: {}", s.code(), s.message()))?
+        .into_inner();
+
+    let state = task
+        .status
+        .as_ref()
+        .map(|s| decode_state(s.state))
+        .transpose()?
+        .map_or_else(String::new, state_wire_name);
+
+    Ok(crate::equivalence::TaskView {
+        id: task.id,
+        context_id: task.context_id,
+        state,
+        artifact_text: task
+            .artifacts
+            .iter()
+            .flat_map(|a| {
+                a.parts.iter().filter_map(|p| match p.content.as_ref() {
+                    Some(pb::part::Content::Text(t)) => Some(t.clone()),
+                    _ => None,
+                })
+            })
+            .collect(),
+    })
+}
+
+/// The `ProtoJSON` name of a `TaskState`, which is what the JSON bindings put
+/// on the wire for the same value.
+fn state_wire_name(state: pb::TaskState) -> String {
+    match state {
+        pb::TaskState::Unspecified => "TASK_STATE_UNSPECIFIED",
+        pb::TaskState::Submitted => "TASK_STATE_SUBMITTED",
+        pb::TaskState::Working => "TASK_STATE_WORKING",
+        pb::TaskState::Completed => "TASK_STATE_COMPLETED",
+        pb::TaskState::Failed => "TASK_STATE_FAILED",
+        pb::TaskState::Canceled => "TASK_STATE_CANCELED",
+        pb::TaskState::InputRequired => "TASK_STATE_INPUT_REQUIRED",
+        pb::TaskState::Rejected => "TASK_STATE_REJECTED",
+        pb::TaskState::AuthRequired => "TASK_STATE_AUTH_REQUIRED",
+    }
+    .to_owned()
+}
+
+/// Triggers a fault and reports the gRPC status it mapped to, for
+/// `BIND-EQUIV-003`.
+pub async fn fault_code(
+    target: &str,
+    method: &str,
+    task_id: &str,
+) -> Result<(String, i32), String> {
+    let mut client = connect(target).await?;
+    let status = match method {
+        "GetTask" => client
+            .get_task(Request::new(pb::GetTaskRequest {
+                id: task_id.to_owned(),
+                ..Default::default()
+            }))
+            .await
+            .err(),
+        "CancelTask" => client
+            .cancel_task(Request::new(pb::CancelTaskRequest {
+                id: task_id.to_owned(),
+                ..Default::default()
+            }))
+            .await
+            .err(),
+        other => return Err(format!("no gRPC fault trigger defined for {other}")),
+    };
+    Ok(status.map_or_else(
+        || ("OK".to_owned(), 0),
+        |s| (format!("{:?}", s.code()).to_uppercase(), s.code() as i32),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode_state, is_terminal, pb, stream_state};
+    use super::{decode_state, is_terminal, pb, state_wire_name, stream_state};
 
     #[test]
     fn decode_state_rejects_values_the_schema_does_not_define() {
@@ -709,6 +913,40 @@ mod tests {
             )),
         };
         assert_eq!(stream_state(&update), Some(pb::TaskState::Completed as i32));
+    }
+
+    /// `BIND-EQUIV-002` compares a gRPC task against a JSON one, so the enum
+    /// has to render to the exact `ProtoJSON` name the JSON bindings emit. A
+    /// wrong spelling here would report a real equivalence as a mismatch.
+    #[test]
+    fn every_state_renders_to_its_protojson_name() {
+        let expected = [
+            (pb::TaskState::Unspecified, "TASK_STATE_UNSPECIFIED"),
+            (pb::TaskState::Submitted, "TASK_STATE_SUBMITTED"),
+            (pb::TaskState::Working, "TASK_STATE_WORKING"),
+            (pb::TaskState::InputRequired, "TASK_STATE_INPUT_REQUIRED"),
+            (pb::TaskState::AuthRequired, "TASK_STATE_AUTH_REQUIRED"),
+            (pb::TaskState::Completed, "TASK_STATE_COMPLETED"),
+            (pb::TaskState::Failed, "TASK_STATE_FAILED"),
+            (pb::TaskState::Canceled, "TASK_STATE_CANCELED"),
+            (pb::TaskState::Rejected, "TASK_STATE_REJECTED"),
+        ];
+        for (state, name) in expected {
+            assert_eq!(state_wire_name(state), name);
+        }
+        // Anchored to the schema: a state added to the proto without a name
+        // here would make the mapping silently incomplete.
+        assert_eq!(
+            expected.len(),
+            9,
+            "lf.a2a.v1.TaskState has 9 values; every one needs a wire name"
+        );
+        for (state, _) in expected {
+            assert!(
+                decode_state(state as i32).is_ok(),
+                "{state:?} must round-trip through the schema"
+            );
+        }
     }
 
     #[test]

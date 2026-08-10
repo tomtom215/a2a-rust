@@ -155,6 +155,42 @@ pub async fn rpc(url: &str, binding: &str, method: &str, params: Value) -> Resul
     }
 }
 
+/// Calls `method` and reports the JSON-RPC error code, if the answer was an
+/// error envelope at all.
+///
+/// `Ok(None)` covers every non-error answer, including the ones [`rpc`] cannot
+/// parse: `SendStreamingMessage` over §9 replies with an SSE body, not a JSON
+/// envelope, and that is a perfectly good sign the method exists. Used by the
+/// §5.1 availability probe, which only needs to tell "no such method" from
+/// everything else.
+pub async fn rpc_probe(
+    url: &str,
+    binding: &str,
+    method: &str,
+    params: Value,
+) -> Result<Option<i64>, String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": uuid::Uuid::new_v4().to_string(),
+        "method": method,
+        "params": params
+    });
+    let resp = match binding {
+        "jsonrpc" => {
+            let bytes = serde_json::to_vec(&body).map_err(|e| format!("serialize: {e}"))?;
+            // `post_raw` yields Value::Null for a non-JSON body rather than
+            // failing, which is exactly the SSE case above.
+            post_raw(url, "/", &bytes, "application/json").await?
+        }
+        "websocket" => ws_jsonrpc_request(url, method, params).await?,
+        other => return Err(format!("rpc_probe: {other} is not an envelope binding")),
+    };
+    Ok(resp
+        .get("error")
+        .and_then(|e| e.get("code"))
+        .and_then(Value::as_i64))
+}
+
 /// Sends a REST request (POST for actions, GET for queries).
 pub async fn rest_post(url: &str, path: &str, body: &Value) -> Result<Value, String> {
     let full_url = format!("{url}{path}");
@@ -165,6 +201,48 @@ pub async fn rest_post(url: &str, path: &str, body: &Value) -> Result<Value, Str
 pub async fn rest_get(url: &str, path: &str) -> Result<(u16, Value), String> {
     let full_url = format!("{url}{path}");
     http_get(&full_url).await
+}
+
+/// Issues `verb path` and returns only the status code.
+///
+/// The equivalence checks need verbs `rest_get`/`rest_post` do not cover
+/// (`DELETE`) and care about the status rather than the body — a `404` with a
+/// live task id is the signal that a §5.3 route is absent. Bodies are sent
+/// only where the route requires one, so a `400` from a missing body cannot be
+/// mistaken for a missing route.
+pub async fn http_status(url: &str, verb: &str, path: &str) -> Result<u16, String> {
+    let full_url = format!("{url}{path}");
+    let method = hyper::Method::from_bytes(verb.as_bytes())
+        .map_err(|e| format!("bad HTTP verb {verb}: {e}"))?;
+
+    // POST routes in §5.3 take a body; the send/stream pair needs a valid
+    // message or the server rejects it before routing is observable.
+    let body: Vec<u8> = if method == hyper::Method::POST {
+        if path.starts_with("/message:") {
+            serde_json::to_vec(&make_send_params("TCK: route probe"))
+                .map_err(|e| format!("serialize: {e}"))?
+        } else {
+            b"{}".to_vec()
+        }
+    } else {
+        Vec::new()
+    };
+
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build_http();
+    let req = hyper::Request::builder()
+        .method(method)
+        .uri(&full_url)
+        .header("content-type", "application/json")
+        .header("a2a-version", "1.0")
+        .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
+        .map_err(|e| format!("build request: {e}"))?;
+
+    let resp = client
+        .request(req)
+        .await
+        .map_err(|e| format!("request failed: {e}"))?;
+    Ok(resp.status().as_u16())
 }
 
 /// Low-level HTTP POST that returns parsed JSON.

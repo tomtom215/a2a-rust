@@ -155,6 +155,15 @@ jobs:
       - name: TCK — gRPC binding
         run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --binding grpc
 
+      # §5.1 (BIND-EQUIV-001..004). Structurally unlike every step above: it
+      # grades the *relation* between bindings, so it drives all four at once
+      # and compares. Upstream's own suite has these four MUSTs marked
+      # NOT TESTED, with a ticket noting they need exactly this shape of test.
+      # Runs last, since it depends on the four bindings being individually
+      # sound — a failure here should mean disagreement, not a broken binding.
+      - name: TCK — cross-binding equivalence (§5.1)
+        run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --equivalence
+
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})
     runs-on: ubuntu-latest
