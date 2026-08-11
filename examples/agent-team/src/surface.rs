@@ -291,6 +291,85 @@ pub async fn client_for(
     }
 }
 
+/// Runs the sweep and counter-tests against the surface agent, pushing each
+/// outcome into `results` so they flow through the suite's ordinary pass/fail
+/// accounting, and returns the matrix cells that never ran.
+pub async fn run(
+    results: &mut Vec<crate::tests::TestResult>,
+    webhook_addr: std::net::SocketAddr,
+) -> Vec<(a2a_protocol_types::method::Method, Binding)> {
+    use crate::tests::TestResult;
+    use a2a_example_harness::{counter as hcounter, sweep as hsweep, Matrix};
+
+    println!("\n╔══════════════════════════════════════════════════════════════╗");
+    println!("║      SURFACE MATRIX — every method x every binding          ║");
+    println!("╚══════════════════════════════════════════════════════════════╝");
+
+    let ep = start().await;
+    let restricted_url = start_restricted().await;
+    let webhook = format!("http://{webhook_addr}/webhook");
+    let mut matrix = Matrix::new();
+    let mut sweep_failures = 0_usize;
+
+    for binding in Binding::ALL {
+        match client_for(*binding, &ep).await {
+            Ok(client) => {
+                println!("  --- {} ---", binding.label());
+                let outcome = hsweep(&client, *binding, &webhook, SLOW_PREFIX, &mut matrix).await;
+                for l in &outcome.lines {
+                    println!("  {l}");
+                }
+                for f in &outcome.failures {
+                    sweep_failures += 1;
+                    results.push(TestResult::fail("surface-sweep", 0, f));
+                }
+            }
+            Err(e) => {
+                sweep_failures += 1;
+                results.push(TestResult::fail(
+                    "surface-sweep",
+                    0,
+                    &format!("could not build a {} client: {e}", binding.label()),
+                ));
+            }
+        }
+    }
+
+    println!("  --- counter-tests (calls that must be refused) ---");
+    let main_client = a2a_protocol_client::ClientBuilder::new(&ep.jsonrpc)
+        .build()
+        .expect("surface client");
+    let restricted_client = a2a_protocol_client::ClientBuilder::new(&restricted_url)
+        .build()
+        .expect("restricted client");
+    let counter_out = hcounter::run(&main_client, &restricted_client).await;
+    for l in &counter_out.lines {
+        println!("  {l}");
+    }
+    if counter_out.failures.is_empty() {
+        results.push(TestResult::pass(
+            "surface-counter",
+            0,
+            "every counter-test refused as the spec requires",
+        ));
+    } else {
+        for f in &counter_out.failures {
+            results.push(TestResult::fail("surface-counter", 0, f));
+        }
+    }
+
+    println!();
+    let missing = matrix.report();
+    if missing.is_empty() && sweep_failures == 0 {
+        results.push(TestResult::pass(
+            "surface-sweep",
+            0,
+            "every method over every binding",
+        ));
+    }
+    missing
+}
+
 #[cfg(test)]
 mod tests {
     use super::{card, SurfaceEndpoints};

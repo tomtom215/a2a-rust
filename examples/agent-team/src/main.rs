@@ -5,28 +5,26 @@
 //!
 //! This example deploys 4 specialized agents that communicate via A2A:
 //!
-//! | Agent | Transport | Skills | Features exercised |
-//! |-------|-----------|--------|-------------------|
-//! | **CodeAnalyzer** | JSON-RPC | file analysis, LOC counting | Streaming, artifacts, multi-part |
-//! | **BuildMonitor** | REST | cargo check/test runner | Streaming, cancellation, task lifecycle |
-//! | **HealthMonitor** | JSON-RPC | agent health checks | Push notifications, interceptors |
-//! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
+//! | Agent | Transport | Features exercised |
+//! |-------|-----------|-------------------|
+//! | **CodeAnalyzer** | JSON-RPC | streaming, artifacts, multi-part |
+//! | **BuildMonitor** | REST | streaming, cancellation, task lifecycle |
+//! | **HealthMonitor** | JSON-RPC | push notifications, interceptors |
+//! | **Coordinator** | REST | agent-to-agent calls, aggregation, metrics |
 //!
-//! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (81 base tests, 94 with all optional features) that exercises every major SDK feature.
+//! Starts all four agents, runs the E2E suite (102 tests with `--all-features`),
+//! then measures the method x binding surface against a fifth agent that exists
+//! purely to be swept — see [`surface`].
 //!
 //! Run with: `cargo run -p agent-team`
-//! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
 
 mod cards;
 mod executors;
 mod features;
-// The surface matrix drives every method over every binding, so it needs the
-// two feature-gated transports. Without them the claim table below reports it
-// `[ ] NOT RUN` and the binary exits 2, rather than printing a matrix that
-// silently covers half the transports.
 mod helpers;
 mod infrastructure;
+// Needs both feature-gated transports; without them the claim table reports
+// `[ ] NOT RUN` and the binary exits 2 rather than scoring half a matrix.
 #[cfg(all(feature = "websocket", feature = "grpc"))]
 mod surface;
 mod tests;
@@ -83,9 +81,8 @@ async fn main() {
     let health_metrics = Arc::new(TeamMetrics::new("HealthMonitor"));
     let coordinator_metrics = Arc::new(TeamMetrics::new("Coordinator"));
 
-    // ── Pre-bind all listeners to get addresses for agent cards ─────────
-    // This solves the "placeholder URL" problem: we know the real addresses
-    // before building handlers, so agent cards contain correct URLs.
+    // Pre-bind every listener so each card carries a real address, not a
+    // placeholder.
     let (analyzer_listener, analyzer_addr) = bind_listener().await;
     let (build_listener, build_addr) = bind_listener().await;
     let (health_listener, health_addr) = bind_listener().await;
@@ -104,15 +101,10 @@ async fn main() {
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))
             .with_event_queue_capacity(128)
-            // Spec §13.3 requires the extended card to be authenticated, and
-            // the handler refuses to serve it when the chain contains no
-            // authenticating interceptor. `AuditInterceptor` only logs — it
-            // does not override `authenticates()` — so this agent needs the
-            // explicit opt-in. Using it here rather than adding a real
-            // authenticator keeps the ~40 other analyzer tests token-free;
-            // the refusal path that this opt-in bypasses is covered
-            // separately by `extended-card-requires-auth` (Test 68b), which
-            // builds a handler *without* it and asserts the refusal.
+            // §13.3 wants the extended card authenticated; `AuditInterceptor`
+            // only logs, so this agent needs the explicit opt-in. The refusal
+            // path it bypasses is covered by `extended-card-requires-auth`
+            // (Test 68b), which builds a handler without it.
             .allow_unauthenticated_extended_card()
             .build()
             .expect("build code analyzer handler"),
@@ -165,9 +157,7 @@ async fn main() {
     serve_rest(coord_listener, Arc::clone(&coord_handler));
     println!("Agent [Coordinator]   REST     on {coordinator_url}");
 
-    // ── Agent 5: Code Analyzer (gRPC) ────────────────────────────────────
-    // Uses the same pre-bind pattern as other agents to avoid Bug #12
-    // (placeholder URL in agent card).
+    // ── Agent 5: Code Analyzer (gRPC) — same pre-bind pattern ────────────
     #[cfg(feature = "grpc")]
     let grpc_analyzer_metrics = Arc::new(TeamMetrics::new("GrpcAnalyzer"));
     #[cfg(feature = "grpc")]
@@ -368,85 +358,11 @@ async fn main() {
     //
     // Runs before the tally below so its outcomes are ordinary results and
     // flow through the same pass/fail accounting as everything else.
+    // Surface matrix: every method over every binding. Lives in `surface.rs`
+    // so this function stays about orchestration; see that module for why a
+    // fifth agent exists.
     #[cfg(all(feature = "websocket", feature = "grpc"))]
-    let surface_missing = {
-        use a2a_example_harness::{counter as hcounter, sweep as hsweep, Binding, Matrix};
-
-        println!("\n╔══════════════════════════════════════════════════════════════╗");
-        println!("║      SURFACE MATRIX — every method x every binding          ║");
-        println!("╚══════════════════════════════════════════════════════════════╝");
-
-        let ep = surface::start().await;
-        let restricted_url = surface::start_restricted().await;
-        let webhook = format!("http://{webhook_addr}/webhook");
-        let mut matrix = Matrix::new();
-        let mut sweep_failures = 0_usize;
-
-        for binding in Binding::ALL {
-            match surface::client_for(*binding, &ep).await {
-                Ok(client) => {
-                    println!("  --- {} ---", binding.label());
-                    let outcome = hsweep(
-                        &client,
-                        *binding,
-                        &webhook,
-                        surface::SLOW_PREFIX,
-                        &mut matrix,
-                    )
-                    .await;
-                    for l in &outcome.lines {
-                        println!("  {l}");
-                    }
-                    for f in &outcome.failures {
-                        sweep_failures += 1;
-                        results.push(TestResult::fail("surface-sweep", 0, f));
-                    }
-                }
-                Err(e) => {
-                    sweep_failures += 1;
-                    results.push(TestResult::fail(
-                        "surface-sweep",
-                        0,
-                        &format!("could not build a {} client: {e}", binding.label()),
-                    ));
-                }
-            }
-        }
-
-        println!("  --- counter-tests (calls that must be refused) ---");
-        let main_client = a2a_protocol_client::ClientBuilder::new(&ep.jsonrpc)
-            .build()
-            .expect("surface client");
-        let restricted_client = a2a_protocol_client::ClientBuilder::new(&restricted_url)
-            .build()
-            .expect("restricted client");
-        let counter_out = hcounter::run(&main_client, &restricted_client).await;
-        for l in &counter_out.lines {
-            println!("  {l}");
-        }
-        if counter_out.failures.is_empty() {
-            results.push(TestResult::pass(
-                "surface-counter",
-                0,
-                "every counter-test refused as the spec requires",
-            ));
-        } else {
-            for f in &counter_out.failures {
-                results.push(TestResult::fail("surface-counter", 0, f));
-            }
-        }
-
-        println!();
-        let missing = matrix.report();
-        if missing.is_empty() && sweep_failures == 0 {
-            results.push(TestResult::pass(
-                "surface-sweep",
-                0,
-                "every method over every binding",
-            ));
-        }
-        missing
-    };
+    let surface_missing = surface::run(&mut results, webhook_addr).await;
 
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();

@@ -38,6 +38,13 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
+* **~~Make every example's coverage claim measurable.~~ Done 2026-08-11** —
+  all six examples now report **44 of 44 cells** and exit non-zero on a gap,
+  gated by `ci.yml`'s `example-surface` job with each leg proven able to fail.
+  The three that depend on an external service (LLM provider, cross-language
+  workers) report that dependency's status separately, so a green matrix is
+  never read as "the model works" or "four languages round-tripped".
+
 * **~~Make the examples' coverage claims measurable.~~ Done 2026-08-11** —
   `echo-agent` drove 4 of the 11 A2A methods over 2 of the 4 transports and
   `incident-response` 4 over 1, while `examples/README.md` called the first

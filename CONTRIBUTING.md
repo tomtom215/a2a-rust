@@ -484,7 +484,7 @@ ever executed. Proven individually the same day —
 against an injected claim-table drift. Its injection is deliberately drift
 rather than a failing assertion: `if failed > 0 { exit(1) }` was never the
 broken part; the summary table that printed `[x]` regardless of results was.
-The count is **35** as of the same day: `ci.yml` also gained
+The count is **38** as of the same day (`example-surface` carries six legs, one per example, all sharing one injection): `ci.yml` also gained
 `example-surface`, running both examples' method x binding sweeps, whose two
 steps are proven together (`--only echo-agent` and `--only incident-response`
 each report **PROVEN, exit 2** against an injected drop of one method's

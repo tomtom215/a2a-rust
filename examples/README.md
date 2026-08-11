@@ -22,9 +22,9 @@ cargo run -p agent-team
 | [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; runs fully local |
 | [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
-| [**genai-agent**](genai-agent/) | LLM-powered agent using [genai](https://crates.io/crates/genai) (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
+| [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
-| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
+| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go and Java agents; all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
 
@@ -91,3 +91,35 @@ let dispatcher = JsonRpcDispatcher::new(handler);
 - Rust 1.93+ (MSRV)
 - `protoc` only when using `--features grpc`
 - See each example's README for additional requirements
+
+## Surface coverage
+
+Every example serves all four bindings and drives **every** A2A method over
+each, then asserts the resulting matrix is complete. Measured 2026-08-11, all
+six at **44 of 44 cells**:
+
+| Example | Cells | Also |
+|---|---|---|
+| `echo-agent` | 44/44 | 5 counter-tests |
+| `incident-response` | 44/44 | three-act narrative demo first |
+| `agent-team` | 44/44 | + 102 E2E feature tests |
+| `genai-agent` | 44/44 | LLM leg reported separately |
+| `rig-agent` | 44/44 | LLM leg reported separately |
+| `multi-lang-team` | 44/44 | worker reachability reported per language |
+
+The rows are not this project's list. They come from `Method::ALL`, which
+`a2a-protocol-types` asserts equal to `service A2AService` in the ratified
+`proto/a2a_v1/a2a.proto`, and which `scripts/check_method_denominator.py`
+cross-checks against the upstream `a2aproject/a2a-tck` on every Official TCK
+run. A reviewer auditing "is this 11 the real 11?" reads the proto.
+
+Exit codes are the gate: `0` complete, `1` a call or counter-test failed, `2`
+a matrix cell never ran. Gated by `ci.yml`'s `example-surface` job, each leg
+proven able to fail by injection.
+
+**What a green run does *not* mean.** Three examples depend on something CI
+does not have — an LLM provider, or worker agents in four other languages.
+Each says so out loud rather than letting a full matrix imply otherwise:
+`genai`/`rig` print `LLM leg: NOT EXERCISED` and label every fallback answer,
+and `multi-lang-team` prints each worker as `not reachable`. The protocol
+surface is measured either way; the integration is not.

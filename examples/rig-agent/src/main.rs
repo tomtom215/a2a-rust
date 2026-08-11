@@ -255,9 +255,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("OPENAI_API_KEY").is_err() {
         println!("OPENAI_API_KEY unset — defaulting to a placeholder, which local");
         println!("OpenAI-compatible servers ignore. Hosted providers will reject it.");
-        // SAFETY-equivalent note: single-threaded startup, before any task is
-        // spawned, so no other thread can observe the environment mid-write.
-        unsafe { std::env::set_var("OPENAI_API_KEY", "local") };
+        std::env::set_var("OPENAI_API_KEY", "local");
         println!();
     }
 

@@ -29,6 +29,32 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **All six examples now drive every A2A method over every binding they serve,
+  and fail if the matrix has a gap.** Measured 2026-08-11, all six report
+  **44 of 44 cells**. Before the change: `echo-agent` 4 methods / 2 bindings,
+  `incident-response` 4 / 1, `genai-agent` 0 / 1 (it printed a URL and waited),
+  `rig-agent` 0 / 1, `multi-lang-team` 1 / 1, and `agent-team`'s 100 feature
+  tests had no rows for the question at all.
+
+  `agent-team` gains a fifth agent that exists purely to be swept, because its
+  four team agents are deliberately split by binding and no single one of them
+  can answer the coverage question.
+
+  Three examples depend on something CI does not have — an LLM provider, or
+  worker agents in four other languages — and each reports that separately
+  rather than letting a full matrix imply it: `genai`/`rig` print
+  `LLM leg: NOT EXERCISED` and label every fallback answer
+  `[no model reachable — mechanical fallback, not an LLM answer]`;
+  `multi-lang-team` prints each worker as `REACHABLE` or `not reachable` and
+  its artifact says `[no worker agents reachable — nothing was delegated]`.
+  The fallbacks are opt-in per handler: server mode still fails the task on a
+  provider error, which is correct for a real agent.
+
+  `multi-lang-team`'s coordinator now probes workers once at startup instead of
+  fanning out per request. With all four down every call paid a full timeout
+  window, which made the sweep take minutes and told the reader nothing they
+  had not been told at startup.
+
 - **Both examples now drive every A2A method over every binding they serve, and
   fail if the matrix has a gap.** Measured 2026-08-11 before the change:
   `echo-agent` drove 4 of the 11 methods over 2 of the 4 transports, and
