@@ -473,9 +473,11 @@ Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
 Last full run — 2026-08-11, **39 of 39 proven, 0 unproven, 0 inconclusive**
-(exit 0), on `claude/a2a-rust-continuation-69btr9` at `0a3aeeb`. The previous
-complete sweep was 2026-08-10 at 32 of 32; the count grew to 39 in three steps
-that day, each also proven individually as it landed:
+(exit 0), on `claude/a2a-rust-continuation-69btr9` at `e434d88`. An earlier
+sweep the same day at `0a3aeeb` also read 39 of 39; the run between them did
+not, and that is the more useful record — see *When a gate fails for the wrong
+reason* below. The previous complete sweep was 2026-08-10 at 32 of 32; the count
+grew to 39 in three steps that day, each also proven individually as it landed:
 
 | Added | Gates | Injection | Proven |
 |---|---|---|---|
@@ -485,6 +487,38 @@ that day, each also proven individually as it landed:
 
 32 rather than 31 in the earlier sweep because the workflow-gate prover below
 is itself a gate, and so needs its own injection.
+
+### When a gate fails for the wrong reason
+
+The script distinguishes **UNPROVEN** (the gate stayed green through its own
+defect) from **INCONCLUSIVE** (the gate went red, but not because of the
+injected defect). The second verdict looks like pedantry until it fires.
+
+On 2026-08-11 a sweep reported gate 29,
+`cargo test --workspace --no-default-features`, as:
+
+```
+INCONCLUSIVE  gate exited 101 but its output never mentions
+              the injected defect (gate probe: injected failure) — it failed
+              for some other reason, which proves nothing
+```
+
+The real cause was a compile error on the branch: an enum variant constructed
+only by a feature-gated check became dead code with features off, and
+`-D warnings` made that an error. Scored on exit status alone the gate would
+have read **PROVEN** — red is red — and a genuine build break would have been
+recorded as a successful proof of the very gate that was failing to run.
+
+Two lessons, both worth more than the fix:
+
+- A gate's exit status is not evidence on its own. What makes it evidence is
+  that the output names the defect that was injected.
+- The break reached the branch because local verification ran fmt, clippy at
+  default and `--all-features`, and `cargo test --workspace --all-features` —
+  a hand-picked subset that never compiles the workspace with features *off*.
+  `scripts/preflight.sh --full` runs every `ci.yml` gate, including that one.
+  Use it before claiming a change is verified; a subset you chose yourself
+  tends to omit exactly the case you did not think of.
 
 Injections outside `ci.yml`'s gates are worth proving too, and the same
 discipline applies. `examples/incident-response`'s **sixteen** hardening checks
