@@ -17,6 +17,7 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing", "dep:tr
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-example-harness = { path = "../harness" }
 # `websocket` + `grpc` on both sides, not optional.
 #
 # This example serves all four bindings and drives every A2A method over each,

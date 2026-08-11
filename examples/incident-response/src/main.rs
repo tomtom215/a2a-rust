@@ -29,6 +29,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use a2a_example_harness::{counter, sweep, Binding, Matrix};
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
@@ -448,18 +449,47 @@ impl AgentExecutor for TriageExecutor {
 
 // ── Server scaffolding ───────────────────────────────────────────────────────
 
-fn make_card(url: &str, name: &str, description: &str, skill: &str) -> AgentCard {
+fn make_card(
+    url: &str,
+    grpc: &str,
+    ws: &str,
+    name: &str,
+    description: &str,
+    skill: &str,
+) -> AgentCard {
     AgentCard {
         url: Some(url.into()),
         name: name.into(),
         description: description.into(),
         version: env!("CARGO_PKG_VERSION").into(),
-        supported_interfaces: vec![AgentInterface {
-            url: url.into(),
-            protocol_binding: "JSONRPC".into(),
-            protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-            tenant: None,
-        }],
+        supported_interfaces: vec![
+            AgentInterface {
+                url: url.into(),
+                protocol_binding: "JSONRPC".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            },
+            // The same socket answers REST: JSON-RPC owns POST `/`, the REST
+            // dispatcher owns the `/v1/...` paths.
+            AgentInterface {
+                url: url.into(),
+                protocol_binding: "HTTP+JSON".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            },
+            AgentInterface {
+                url: grpc.into(),
+                protocol_binding: "GRPC".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            },
+            AgentInterface {
+                url: ws.into(),
+                protocol_binding: "WEBSOCKET".into(),
+                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
+                tenant: None,
+            },
+        ],
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
         skills: vec![AgentSkill {
@@ -472,9 +502,15 @@ fn make_card(url: &str, name: &str, description: &str, skill: &str) -> AgentCard
             output_modes: None,
             security_requirements: None,
         }],
+        // `extended_agent_card` joins the other two because the surface
+        // sweep drives `GetExtendedAgentCard`, and the server answers
+        // `UnsupportedOperation` for a card that does not advertise it
+        // (spec §3.1.11) — an undriven method and an unavailable one look the
+        // same from the client, and only one of them is this example's fault.
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(true),
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -484,39 +520,92 @@ fn make_card(url: &str, name: &str, description: &str, skill: &str) -> AgentCard
     }
 }
 
-/// Binds `port`, builds a handler around `executor`, and serves it.
+/// Where one agent is reachable, per binding.
+#[derive(Clone)]
+pub struct AgentEndpoints {
+    /// JSON-RPC and HTTP+JSON share this socket.
+    pub http: String,
+    /// gRPC, as `host:port`.
+    pub grpc: String,
+    /// WebSocket, as a `ws://` URL.
+    pub ws: String,
+}
+
+/// Binds `port` (plus two derived ports) and serves `executor` on all four
+/// bindings.
+///
+/// Ports are `port`, `port + 10` for gRPC and `port + 20` for WebSocket, so a
+/// reader starting a role by hand can predict them. Until 2026-08-11 every
+/// agent here spoke JSON-RPC only, which meant three of the four transports
+/// this SDK ships had no representation in the example that `examples/README`
+/// tells people to start with.
 async fn start_agent(
     port: u16,
     name: &str,
     description: &str,
     skill: &str,
     executor: impl AgentExecutor,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<AgentEndpoints, Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     let addr: SocketAddr = listener.local_addr()?;
     let url = format!("http://{addr}");
 
+    let grpc_listener = tokio::net::TcpListener::bind(("127.0.0.1", port + 10)).await?;
+    let grpc_addr: SocketAddr = grpc_listener.local_addr()?;
+    let ws_bind = format!("127.0.0.1:{}", port + 20);
+
+    let endpoints = AgentEndpoints {
+        http: url.clone(),
+        grpc: grpc_addr.to_string(),
+        ws: format!("ws://{ws_bind}"),
+    };
+
     let handler: Arc<RequestHandler> = Arc::new(
         RequestHandlerBuilder::new(executor)
-            .with_agent_card(make_card(&url, name, description, skill))
+            .with_agent_card(make_card(
+                &url,
+                &endpoints.grpc,
+                &endpoints.ws,
+                name,
+                description,
+                skill,
+            ))
             .with_push_config_store(InMemoryPushConfigStore::new())
             .with_push_sender(HttpPushSender::new().allow_private_urls())
+            // Spec §13.3 wants the extended card authenticated; this demo
+            // ships no authenticator, so the opt-in is explicit. The refusal
+            // path is covered by the counter-tests, which use a separate agent
+            // that has neither.
+            .allow_unauthenticated_extended_card()
             .build()?,
     );
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
 
+    // JSON-RPC and REST on one socket, routed by request shape.
+    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
+    let rest = Arc::new(a2a_protocol_server::dispatch::RestDispatcher::new(
+        Arc::clone(&handler),
+    ));
     tokio::spawn(async move {
         loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => continue,
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
             };
             let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
+            let jsonrpc = Arc::clone(&jsonrpc);
+            let rest = Arc::clone(&rest);
             tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
+                    let jsonrpc = Arc::clone(&jsonrpc);
+                    let rest = Arc::clone(&rest);
+                    async move {
+                        let is_jsonrpc = req.method() == hyper::Method::POST
+                            && (req.uri().path() == "/" || req.uri().path().is_empty());
+                        if is_jsonrpc {
+                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
+                        } else {
+                            Ok::<_, std::convert::Infallible>(rest.dispatch(req).await)
+                        }
+                    }
                 });
                 let _ = hyper_util::server::conn::auto::Builder::new(
                     hyper_util::rt::TokioExecutor::new(),
@@ -527,10 +616,24 @@ async fn start_agent(
         }
     });
 
-    Ok(url)
+    {
+        use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+        GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+            .serve_with_listener(grpc_listener)?;
+    }
+    {
+        let ws = Arc::new(
+            a2a_protocol_server::dispatch::websocket::WebSocketDispatcher::new(Arc::clone(
+                &handler,
+            )),
+        );
+        ws.serve_with_addr(ws_bind.as_str()).await?;
+    }
+
+    Ok(endpoints)
 }
 
-async fn start_logs_agent() -> Result<String, Box<dyn std::error::Error>> {
+async fn start_logs_agent() -> Result<AgentEndpoints, Box<dyn std::error::Error>> {
     start_agent(
         LOGS_PORT,
         "Log Search Agent",
@@ -541,7 +644,7 @@ async fn start_logs_agent() -> Result<String, Box<dyn std::error::Error>> {
     .await
 }
 
-async fn start_runbook_agent() -> Result<String, Box<dyn std::error::Error>> {
+async fn start_runbook_agent() -> Result<AgentEndpoints, Box<dyn std::error::Error>> {
     start_agent(
         RUNBOOK_PORT,
         "Runbook Agent",
@@ -558,7 +661,7 @@ async fn start_runbook_agent() -> Result<String, Box<dyn std::error::Error>> {
 async fn start_triage_agent(
     logs_url: String,
     runbook_url: String,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<AgentEndpoints, Box<dyn std::error::Error>> {
     start_agent(
         TRIAGE_PORT,
         "Incident Triage Agent",
@@ -573,6 +676,123 @@ async fn start_triage_agent(
         },
     )
     .await
+}
+
+/// Message-text marker that leaves a triage task parked in `INPUT_REQUIRED`.
+///
+/// Any alert naming no known service parks awaiting input — that is Act 1's
+/// whole point — so the surface sweep reuses it to obtain a non-terminal task
+/// for `SubscribeToTask`.
+const SURFACE_PAUSE_PREFIX: &str = "vague alert, no service named: ";
+
+/// A webhook sink so push configs point at something that answers.
+///
+/// A config accepted against a dead URL proves storage, not delivery.
+async fn start_webhook_sink() -> Result<String, Box<dyn std::error::Error>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(|_req| async {
+                    Ok::<_, std::convert::Infallible>(hyper::Response::new(
+                        http_body_util::Full::new(bytes::Bytes::from_static(b"ok")),
+                    ))
+                });
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, service)
+                    .await;
+            });
+        }
+    });
+    Ok(format!("http://{addr}/webhook"))
+}
+
+/// Builds a client speaking `binding` against `ep`.
+async fn build_client(
+    binding: Binding,
+    ep: &AgentEndpoints,
+) -> Result<a2a_protocol_client::A2aClient, String> {
+    match binding {
+        Binding::JsonRpc => ClientBuilder::new(&ep.http)
+            .build()
+            .map_err(|e| e.to_string()),
+        Binding::HttpJson => ClientBuilder::new(&ep.http)
+            .with_protocol_binding("HTTP+JSON")
+            .build()
+            .map_err(|e| e.to_string()),
+        Binding::Grpc => {
+            let url = format!("http://{}", ep.grpc);
+            let t = a2a_protocol_client::transport::grpc::GrpcTransport::connect(&url)
+                .await
+                .map_err(|e| format!("gRPC connect: {e}"))?;
+            ClientBuilder::new(&url)
+                .with_custom_transport(t)
+                .without_tls()
+                .build()
+                .map_err(|e| e.to_string())
+        }
+        Binding::WebSocket => {
+            let t = a2a_protocol_client::transport::WebSocketTransport::connect(ep.ws.clone())
+                .await
+                .map_err(|e| format!("WebSocket connect: {e}"))?;
+            ClientBuilder::new(&ep.ws)
+                .with_custom_transport(t)
+                .without_tls()
+                .build()
+                .map_err(|e| e.to_string())
+        }
+    }
+}
+
+/// An agent advertising no optional capabilities, for the counter-tests.
+async fn start_restricted_agent() -> Result<String, Box<dyn std::error::Error>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr: SocketAddr = listener.local_addr()?;
+    let url = format!("http://{addr}");
+
+    let mut card = make_card(
+        &url,
+        "",
+        "",
+        "Restricted Agent",
+        "no optional capabilities",
+        "none",
+    );
+    card.capabilities = AgentCapabilities::none();
+    card.supported_interfaces.truncate(1);
+
+    let handler: Arc<RequestHandler> = Arc::new(
+        RequestHandlerBuilder::new(LogSearchExecutor)
+            .with_agent_card(card)
+            .build()?,
+    );
+    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let d = Arc::clone(&dispatcher);
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(move |req| {
+                    let d = Arc::clone(&d);
+                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                });
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, service)
+                .await;
+            });
+        }
+    });
+    Ok(url)
 }
 
 // ── Demo client ──────────────────────────────────────────────────────────────
@@ -632,12 +852,13 @@ async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("on :11434 the agents fall back to labeled mechanical summaries)");
     println!();
 
-    let logs_url = start_logs_agent().await?;
-    let runbook_url = start_runbook_agent().await?;
-    let triage_url = start_triage_agent(logs_url.clone(), runbook_url.clone()).await?;
-    println!("logs    agent: {logs_url}");
-    println!("runbook agent: {runbook_url}");
-    println!("triage  agent: {triage_url}");
+    let logs = start_logs_agent().await?;
+    let runbook = start_runbook_agent().await?;
+    let triage = start_triage_agent(logs.http.clone(), runbook.http.clone()).await?;
+    for (label, ep) in [("logs", &logs), ("runbook", &runbook), ("triage", &triage)] {
+        println!("{label:<8} agent: {}  grpc {}  {}", ep.http, ep.grpc, ep.ws);
+    }
+    let triage_url = triage.http.clone();
 
     let client = ClientBuilder::new(&triage_url).build()?;
 
@@ -709,7 +930,90 @@ async fn run_demo() -> Result<(), Box<dyn std::error::Error>> {
     println!("  → cancel_task(...) ⇒ {}", canceled.status.state);
     assert_eq!(canceled.status.state, TaskState::Canceled);
 
+    // ── Act 4: the whole protocol surface, measured ───────────────────────
+    //
+    // Acts 1-3 show what an agent *is*. They do not show that this SDK serves
+    // the whole A2A surface, and until 2026-08-11 this example drove 4 of the
+    // 11 methods over 1 of the 4 bindings while `examples/README` presented it
+    // as the place to start. That gap was invisible because nothing counted.
+    //
+    // A "vague alert" is the marker that parks a task in INPUT_REQUIRED, which
+    // is what `SubscribeToTask` needs: the server refuses to re-attach to a
+    // terminal task, correctly, so without a non-terminal one the success path
+    // is unreachable and only the refusal is ever observed. Act 1 already
+    // relies on this behaviour, so the sweep reuses the example's own
+    // semantics rather than inventing a sleep.
     println!();
+    println!("ACT 4 — every A2A method over every binding, counted");
+    let webhook = start_webhook_sink().await?;
+    let mut matrix = Matrix::new();
+    let mut failures: Vec<String> = Vec::new();
+
+    for binding in Binding::ALL {
+        let surface_client = match build_client(*binding, &triage).await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("could not build a {} client: {e}", binding.label());
+                std::process::exit(1);
+            }
+        };
+        println!("  --- {} ---", binding.label());
+        let outcome = sweep(
+            &surface_client,
+            *binding,
+            &webhook,
+            SURFACE_PAUSE_PREFIX,
+            &mut matrix,
+        )
+        .await;
+        for l in &outcome.lines {
+            println!("  {l}");
+        }
+        failures.extend(outcome.failures);
+    }
+
+    // Counter-tests need an agent that advertises nothing optional; one agent
+    // cannot both support and refuse a capability.
+    println!("  --- counter-tests (calls that must be refused) ---");
+    let restricted = start_restricted_agent().await?;
+    let counter_out = counter::run(
+        &ClientBuilder::new(&triage_url).build()?,
+        &ClientBuilder::new(&restricted).build()?,
+    )
+    .await;
+    for l in &counter_out.lines {
+        println!("  {l}");
+    }
+    failures.extend(counter_out.failures);
+
+    println!();
+    let missing = matrix.report();
+    if !failures.is_empty() {
+        println!("\n{} call(s) failed:", failures.len());
+        for f in &failures {
+            println!("  - {f}");
+        }
+        std::process::exit(1);
+    }
+    if !missing.is_empty() {
+        println!("\n{} matrix cell(s) never ran:", missing.len());
+        for (m, b) in &missing {
+            println!("  - {} over {}", m.wire_name(), b.label());
+        }
+        std::process::exit(2);
+    }
+    println!();
+    println!("Every A2A method was exercised over every binding, and every");
+    println!("counter-test was refused as the specification requires.");
+
+    println!();
+    // `INCIDENT_EXIT_WHEN_DONE=1` returns instead of parking on Ctrl+C, so CI
+    // can gate on the exit code. Without it the demo stays up for a human to
+    // poke at, which is the point of the three agents still serving.
+    if std::env::var("INCIDENT_EXIT_WHEN_DONE").is_ok() {
+        println!("Done (INCIDENT_EXIT_WHEN_DONE set — exiting).");
+        return Ok(());
+    }
     println!("Done. The three agents are still serving — probe them with curl or");
     println!("the TCK (cargo run -p a2a-tck -- --url {triage_url}),");
     println!("or press Ctrl+C to stop.");
@@ -725,24 +1029,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     match role.as_str() {
         "demo" => run_demo().await,
         "logs" => {
-            let url = start_logs_agent().await?;
-            println!("logs agent listening on {url}");
+            let ep = start_logs_agent().await?;
+            println!("logs agent listening on {}", ep.http);
             tokio::signal::ctrl_c().await?;
             Ok(())
         }
         "runbook" => {
-            let url = start_runbook_agent().await?;
-            println!("runbook agent listening on {url}");
+            let ep = start_runbook_agent().await?;
+            println!("runbook agent listening on {}", ep.http);
             tokio::signal::ctrl_c().await?;
             Ok(())
         }
         "triage" => {
-            let url = start_triage_agent(
+            let ep = start_triage_agent(
                 format!("http://127.0.0.1:{LOGS_PORT}"),
                 format!("http://127.0.0.1:{RUNBOOK_PORT}"),
             )
             .await?;
-            println!("triage agent listening on {url}");
+            println!("triage agent listening on {}", ep.http);
             println!("(expects logs on :{LOGS_PORT} and runbook on :{RUNBOOK_PORT})");
             tokio::signal::ctrl_c().await?;
             Ok(())

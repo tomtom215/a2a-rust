@@ -50,7 +50,7 @@ done
 # Same job set and parser as scripts/preflight.sh, deliberately: a gate this
 # script has never heard of is the exact defect preflight's `require_known_jobs`
 # exists to catch, one level further in.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
 
 gates_for_jobs() {
     awk -v want="$1" '
@@ -232,6 +232,8 @@ injection_for() {
             echo "package" ;;
         "cargo run -p agent-team"*)
             echo "dogfood" ;;
+        "cargo run -p echo-agent"*|"cargo run -p incident-response"*)
+            echo "example_surface" ;;
         "cargo clippy"*"--all-features"*)
             echo "clippy_always:$SERVER_LIB" ;;
         "cargo clippy"*"--features signing"*)
@@ -301,6 +303,7 @@ expected_marker() {
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
+        example_surface)  echo "matrix cell(s) never ran" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         clippy|clippy_always) echo "deref_addrof" ;;
         test|test_always) echo "gate probe: injected failure" ;;
@@ -351,6 +354,31 @@ PY
         doc)
             note_touched "$TYPES_LIB"
             printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;
+        example_surface)
+            # Stop recording one method, without breaking any call.
+            #
+            # A failing call would prove only that the examples propagate
+            # errors. What this gate adds is the *completeness* check: the
+            # matrix must catch a method that quietly stopped being driven
+            # while everything still returned success. Dropping the
+            # `ListTasks` recording is exactly that shape — every call still
+            # succeeds, and the run must still go red.
+            #
+            # Injected in the shared harness so both examples are affected,
+            # which also demonstrates that the two jobs read the same scorer.
+            note_touched "examples/harness/src/sweep.rs"
+            python3 - <<'PY2'
+p = "examples/harness/src/sweep.rs"
+s = open(p).read()
+needle = 'Ok(resp) => ok!(Method::ListTasks, format!("{} task(s)", resp.tasks.len())),'
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
+open(p, "w").write(s)
+PY2
+            ;;
         dogfood)
             # Inject claim-table drift rather than a failing assertion.
             #

@@ -19,7 +19,7 @@ use a2a_protocol_types::error::ErrorCode;
 use a2a_protocol_types::params::TaskQueryParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 
-use crate::demos::make_send_params;
+use crate::sweep::make_send_params;
 
 /// Outcome of the counter-test pass.
 pub struct CounterOutcome {

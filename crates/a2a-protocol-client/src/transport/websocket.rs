@@ -599,6 +599,14 @@ async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text
         tx
     };
 
+    // The end-of-stream sentinel is a transport control frame, not a protocol
+    // event: forwarding it makes the consumer's deserializer fail on a frame
+    // that is not a `StreamResponse`. Drop it and close the entry instead.
+    if is_stream_complete_sentinel(text) {
+        pending.lock().await.remove(&request_id);
+        return;
+    }
+
     // Guard released. Wrap as an SSE data line for the existing EventStream SSE
     // parser and deliver; a slow/stalled consumer blocks only this send now.
     let sse_line = format!("data: {text}\n\n");
@@ -648,6 +656,44 @@ fn task_state_str_is_terminal(state: &str) -> bool {
         state.to_owned(),
     ))
     .is_ok_and(a2a_protocol_types::TaskState::is_terminal)
+}
+
+/// Returns `true` for the transport's end-of-stream control frame.
+///
+/// The WebSocket binding closes a stream with
+/// `{"result":{"status":"stream_complete"}}` (older servers:
+/// `{"result":{"stream_complete":true}}`). That is a *transport* marker, not a
+/// protocol event — it is not a [`StreamResponse`] and never deserializes as
+/// one.
+///
+/// Kept separate from [`is_stream_terminal`], which is deliberately broader:
+/// that one also treats a terminal *task status* as end-of-stream, and a
+/// terminal status update is a real event the consumer must still receive.
+/// Only this narrow sentinel is suppressed.
+///
+/// # The bug this exists to fix
+///
+/// Until 2026-08-11 the reader forwarded every frame to the consumer and only
+/// then consulted `is_stream_terminal` for pending-map cleanup, so the
+/// sentinel reached the consumer's `EventStream` and surfaced as
+/// `unknown variant 'status', expected one of 'task', 'message',
+/// 'statusUpdate', ...`.
+///
+/// It went unnoticed because the common case hides it: when a task reaches a
+/// terminal state the stream ends on that event and the sentinel is never
+/// parsed. It only bites when a stream ends *without* a terminal state — most
+/// obviously a task parked in `INPUT_REQUIRED`, i.e. any agent that asks a
+/// clarifying question over WebSocket. Found by driving the full method set
+/// against exactly such an agent.
+fn is_stream_complete_sentinel(text: &str) -> bool {
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(text) else {
+        return false;
+    };
+    let Some(r) = frame.get("result") else {
+        return false;
+    };
+    r.get("stream_complete").is_some()
+        || r.get("status").and_then(|s| s.as_str()) == Some("stream_complete")
 }
 
 /// Checks whether a JSON-RPC frame represents a terminal streaming event.
@@ -779,6 +825,51 @@ mod tests {
     fn is_stream_terminal_working_is_not_terminal() {
         let frame = r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"working"}}}}"#;
         assert!(!is_stream_terminal(frame));
+    }
+
+    #[test]
+    fn stream_complete_sentinel_is_recognized_in_both_spellings() {
+        assert!(is_stream_complete_sentinel(
+            r#"{"jsonrpc":"2.0","id":"1","result":{"status":"stream_complete"}}"#
+        ));
+        assert!(is_stream_complete_sentinel(
+            r#"{"jsonrpc":"2.0","id":"1","result":{"stream_complete":true}}"#
+        ));
+    }
+
+    /// The sentinel check must be *narrow*. A terminal status update is a real
+    /// event the consumer needs; suppressing it would silently truncate every
+    /// stream at its most important frame — a worse bug than the one the
+    /// sentinel suppression fixes.
+    #[test]
+    fn real_events_are_not_mistaken_for_the_sentinel() {
+        for frame in [
+            r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"TASK_STATE_COMPLETED"}}}}"#,
+            r#"{"jsonrpc":"2.0","id":"1","result":{"statusUpdate":{"status":{"state":"TASK_STATE_INPUT_REQUIRED"}}}}"#,
+            r#"{"jsonrpc":"2.0","id":"1","result":{"task":{"id":"t1"}}}"#,
+            r#"{"jsonrpc":"2.0","id":"1","result":{"artifactUpdate":{"taskId":"t1"}}}"#,
+            // A payload that merely *contains* the words must not match.
+            r#"{"jsonrpc":"2.0","id":"1","result":{"task":{"id":"stream_complete"}}}"#,
+        ] {
+            assert!(
+                !is_stream_complete_sentinel(frame),
+                "wrongly treated as the end-of-stream sentinel: {frame}"
+            );
+        }
+    }
+
+    /// The sentinel is not a `StreamResponse` and never was — this pins the
+    /// reason it must be suppressed rather than forwarded.
+    #[test]
+    fn the_sentinel_cannot_deserialize_as_a_stream_response() {
+        let result = serde_json::from_str::<a2a_protocol_types::events::StreamResponse>(
+            r#"{"status":"stream_complete"}"#,
+        );
+        let err = result.expect_err("the sentinel must not parse as a StreamResponse");
+        assert!(
+            err.to_string().contains("unknown variant"),
+            "expected an unknown-variant error, got: {err}"
+        );
     }
 
     #[test]

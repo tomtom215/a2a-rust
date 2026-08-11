@@ -38,6 +38,25 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
+* **~~Make the examples' coverage claims measurable.~~ Done 2026-08-11** —
+  `echo-agent` drove 4 of the 11 A2A methods over 2 of the 4 transports and
+  `incident-response` 4 over 1, while `examples/README.md` called the first
+  "the complete request lifecycle". Both now drive every method over every
+  binding they serve — **44 of 44 cells each** — and exit non-zero on a gap,
+  gated by `ci.yml`'s `example-surface` job.
+
+  The denominator is deliberately not this project's: `Method::ALL` is asserted
+  equal to `service A2AService` in the ratified `proto/a2a_v1/a2a.proto`, and
+  `scripts/check_method_denominator.py` cross-checks both against the upstream
+  `a2aproject/a2a-tck` on every Official TCK run. All three agreed on the same
+  eleven methods when measured against `a2a-tck@5996b79`.
+
+  Doing this found a real client defect — the WebSocket transport delivered its
+  `stream_complete` control frame to the consumer, where it failed to
+  deserialize. It only surfaces when a stream ends without a terminal task
+  state, so only an agent that asks clarifying questions exposes it. Fixed with
+  regression tests; see the changelog.
+
 * **~~Run the SDK dogfood suite in CI.~~ Done 2026-08-11** — `examples/agent-team`
   holds ~5,900 lines of E2E tests and no workflow had ever executed it. It is a
   `main()`, not `#[test]`s, so `cargo test --workspace` compiled it and ran none

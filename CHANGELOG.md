@@ -29,6 +29,37 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **Both examples now drive every A2A method over every binding they serve, and
+  fail if the matrix has a gap.** Measured 2026-08-11 before the change:
+  `echo-agent` drove 4 of the 11 methods over 2 of the 4 transports, and
+  `incident-response` 4 over 1 — while `examples/README.md` presented the first
+  as demonstrating "the complete request lifecycle". `echo-agent`'s card also
+  advertised neither push notifications nor an extended card, so seven methods
+  were not merely undriven but unavailable on the server it started.
+
+  Both now report 44 of 44 cells and exit 2 on any gap. `echo-agent` serves
+  gRPC for the first time; `incident-response` serves REST, gRPC and WebSocket
+  for the first time, on `port`, `port + 10` and `port + 20`. The narrative
+  Acts 1-3 are unchanged — the sweep is a fourth act, so the example still
+  teaches what an agent is before it measures what the SDK covers.
+
+  Both also run counter-tests against a second agent advertising no optional
+  capabilities, because a full matrix only shows the server says yes to
+  everything it should. Five refusals are checked by error code: unknown task
+  ids on `GetTask` and `CancelTask`, push config and extended card against a
+  card lacking those capabilities, and streaming against an agent that never
+  advertised it.
+
+  Gated by `ci.yml`'s `example-surface` job, registered in `preflight.sh` and
+  `prove_gates_fail.sh`. Proven able to fail: dropping the `ListTasks`
+  recording from the shared harness, with every call still succeeding, exits 2
+  and names all four cells.
+
+- **`a2a-example-harness`** — the coverage matrix, the method sweep and the
+  counter-tests, shared by both examples rather than copied into each. A
+  duplicated scorer is one that eventually disagrees with itself: one copy
+  loses a row and the example built on it reports a full matrix.
+
 - **The SDK dogfood suite now runs in CI, and its feature table is computed
   from results.** `examples/agent-team` holds ~5,900 lines of end-to-end tests
   and had never been executed by any workflow: it is a `main()`, not
@@ -122,6 +153,29 @@ existing `RELEASING.md` checklist.
   successive wrong measurements.
 
 ### Fixed
+
+- **The WebSocket client forwarded its end-of-stream control frame to the
+  consumer.** The binding closes a stream with
+  `{"result":{"status":"stream_complete"}}`; the reader task wrapped *every*
+  frame as an SSE line and delivered it, consulting `is_stream_terminal` only
+  afterwards for pending-map cleanup. The sentinel is not a `StreamResponse`,
+  so it surfaced to callers as
+  `unknown variant 'status', expected one of 'task', 'message', 'statusUpdate', ...`.
+
+  The common case hides it: when a task reaches a terminal state the stream
+  ends on that event and the sentinel is never parsed. It only bites when a
+  stream ends *without* a terminal state — most obviously a task parked in
+  `INPUT_REQUIRED`, i.e. any agent that asks a clarifying question over
+  WebSocket. Found by driving all eleven methods against exactly such an agent
+  while expanding `incident-response`; `echo-agent`, whose tasks always
+  complete, never hit it.
+
+  Fixed with a narrow `is_stream_complete_sentinel` consulted *before*
+  delivery. Deliberately narrower than `is_stream_terminal`, which also treats
+  a terminal task status as end-of-stream: suppressing those would truncate
+  every stream at its most important frame, a worse bug than the one being
+  fixed. Three regression tests pin the split, including one asserting the
+  sentinel genuinely cannot deserialize as a `StreamResponse`.
 
 - **The 15 failing dogfood tests**, all in the suite rather than the SDK, with
   one exception noted below. Root causes, each verified against a live server

@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 
-//! Records which (method, binding) pairs the demo actually drove, and refuses
-//! to report success unless the matrix is complete.
+//! Coverage matrix shared by the examples: which A2A methods ran over which
+//! bindings, and whether that is complete.
+//!
+//! # Why this is a crate rather than a copy in each example
+//!
+//! Two examples make the same "covers everything" claim, and a duplicated
+//! scorer is a scorer that will eventually disagree with itself — one copy
+//! quietly loses a row and the example built on it reports a full matrix. The
+//! denominator is already shared (it comes from the ratified proto via
+//! `a2a_protocol_types::method::Method`); the *scoring* should be too.
 //!
 //! # Why a claim is not enough
 //!
-//! `examples/README.md` used to say this example "demonstrates the complete
-//! request lifecycle". Measured on 2026-08-11 it drove 4 of the 11 methods
-//! over 2 of the 4 transports. The sentence was not a lie anyone told on
-//! purpose; it was a claim with nothing checking it, which is the same thing
-//! six months later.
+//! `examples/README.md` used to say `echo-agent` "demonstrates the complete
+//! request lifecycle" and that `incident-response` showed the agent lifecycle
+//! end to end. Measured on 2026-08-11 the first drove 4 of the 11 methods over
+//! 2 of the 4 transports and the second drove 4 over 1. Neither sentence was a
+//! lie anyone told on purpose; both were claims with nothing checking them,
+//! which is the same thing six months later.
 //!
-//! So the claim is a computation now. Every call the demo makes records
-//! itself here, and [`Matrix::report`] prints the grid and returns a non-zero
-//! exit code if any cell that *should* have been exercised was not.
+//! So the claim is a computation now. Every call an example makes records
+//! itself here, and [`Matrix::report`] prints the grid and returns the cells
+//! that were never exercised, so the caller can exit non-zero.
 //!
 //! # Where the denominator comes from
 //!
@@ -25,8 +34,8 @@
 //! official `a2aproject/a2a-tck` suite on every Official TCK run. A reviewer
 //! auditing "is this 11 the real 11?" reads the proto, not this example.
 //!
-//! The columns are the four bindings this agent serves. Unlike the rows they
-//! *are* this project's choice — the spec names three (§9 JSON-RPC, §10 gRPC,
+//! The columns are the bindings the example serves. Unlike the rows they *are*
+//! this project's choice — the spec names three (§9 JSON-RPC, §10 gRPC,
 //! §11 HTTP+JSON) and WebSocket is a §12 custom binding — so the report says
 //! so rather than presenting four as though the spec required four.
 
@@ -34,7 +43,7 @@ use std::collections::BTreeSet;
 
 use a2a_protocol_types::method::Method;
 
-/// The transports this example serves.
+/// The transports an example can serve.
 ///
 /// `WebSocket` is a §12 *custom* binding, not one of the three the spec
 /// names. Kept distinct in the report so "4 of 4 bindings" is never read as
@@ -52,7 +61,7 @@ pub enum Binding {
 }
 
 impl Binding {
-    /// Every binding this example serves.
+    /// Every binding the examples can serve.
     pub const ALL: &'static [Self] = &[Self::JsonRpc, Self::HttpJson, Self::Grpc, Self::WebSocket];
 
     /// Short label used in the report grid.
@@ -77,7 +86,6 @@ impl Binding {
 /// cell must never look the same — that collapse is what let the old feature
 /// checklist in `agent-team` report `[x]` for things it never ran.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub enum Excuse {
     /// The binding has no transport-level notion of this operation.
     NotApplicable(&'static str),
@@ -117,11 +125,9 @@ impl Matrix {
 
     /// Marks a cell as legitimately unreachable, with a reason that prints.
     ///
-    /// Unused by the current demo, which reaches every cell — kept because an
-    /// excused cell must print its reason rather than vanish, and the day a
-    /// binding genuinely cannot serve a method the alternative is deleting the
-    /// row. Exercised by the unit tests below.
-    #[allow(dead_code)]
+    /// An excused cell must print its reason rather than vanish: the day a
+    /// binding genuinely cannot serve a method, the alternative is deleting
+    /// the row, and a deleted row is indistinguishable from coverage.
     pub fn excuse(&mut self, method: Method, binding: Binding, why: Excuse) {
         self.excused.push((method, binding, why));
     }
@@ -250,3 +256,9 @@ mod tests {
         assert_eq!(m.exercised.len(), 1);
     }
 }
+
+pub mod counter;
+pub mod sweep;
+
+pub use counter::CounterOutcome;
+pub use sweep::{make_send_params, sweep, SweepOutcome};

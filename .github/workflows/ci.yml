@@ -282,7 +282,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude a2a-example-harness --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #
@@ -339,3 +339,49 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Run the dogfood suite
         run: cargo run -p agent-team --release --all-features
+
+  # ── Example surface coverage ─────────────────────────────────────────────
+  #
+  # Both examples drive every A2A method over every binding they serve and
+  # assert the resulting matrix is complete. Added 2026-08-11, when measuring
+  # them showed `echo-agent` drove 4 of the 11 methods over 2 of the 4
+  # transports and `incident-response` 4 over 1, while `examples/README`
+  # presented the first as "the complete request lifecycle".
+  #
+  # The matrix rows are not this project's list. They come from
+  # `Method::ALL`, which `a2a-protocol-types` asserts equal to
+  # `service A2AService` in the ratified `proto/a2a_v1/a2a.proto`, and which
+  # the Official TCK workflow cross-checks against the upstream conformance
+  # suite. A reviewer auditing the denominator reads the proto.
+  #
+  # Exit codes are the gate: 0 complete, 1 a call or counter-test failed,
+  # 2 a matrix cell never ran. A bare `run:` fails on any non-zero, so a
+  # silently shrunk matrix is a red job rather than a shorter report.
+  #
+  # Running these found a real client defect, which is the argument for the
+  # job: the WebSocket transport forwarded its `stream_complete` control frame
+  # to the consumer, where it failed to deserialize as a `StreamResponse`. It
+  # only surfaces when a stream ends *without* a terminal task state — an agent
+  # that asks a clarifying question — which is why `echo-agent` never hit it
+  # and `incident-response` did.
+  #
+  # Proven able to fail, 2026-08-11: dropping the `ListTasks` recording from
+  # the shared sweep, with every call still succeeding, exits 2 and names all
+  # four cells.
+  example-surface:
+    name: Example surface coverage (all methods x all bindings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: echo-agent — every method over every binding
+        run: cargo run -p echo-agent --release
+      # `INCIDENT_EXIT_WHEN_DONE` makes the demo return instead of parking on
+      # Ctrl+C for a human to poke at; without it the job would hit its
+      # timeout after a successful run, which is a red job for a green result.
+      - name: incident-response — narrative demo, then every method over every binding
+        run: cargo run -p incident-response --release
+        env:
+          INCIDENT_EXIT_WHEN_DONE: "1"

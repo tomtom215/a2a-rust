@@ -177,7 +177,7 @@ pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
 #[cfg(test)]
 mod tests {
     use super::{make_agent_card, Endpoints};
-    use crate::coverage::Binding;
+    use a2a_example_harness::Binding;
 
     fn card() -> a2a_protocol_types::agent_card::AgentCard {
         make_agent_card(&Endpoints {

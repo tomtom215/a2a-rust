@@ -40,9 +40,6 @@
 //! has a gap.
 
 mod agent;
-mod counter;
-mod coverage;
-mod demos;
 mod serve;
 
 use std::sync::Arc;
@@ -51,8 +48,8 @@ use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
+use a2a_example_harness::{counter, sweep, Binding, Matrix};
 use agent::{make_agent_card, EchoExecutor, Endpoints};
-use coverage::{Binding, Matrix};
 
 /// A webhook sink so push configs point somewhere real.
 ///
@@ -171,7 +168,14 @@ async fn main() {
             }
         };
         println!("--- {} ---", binding.label());
-        let outcome = demos::sweep(&client, *binding, &webhook_url, &mut matrix).await;
+        let outcome = sweep(
+            &client,
+            *binding,
+            &webhook_url,
+            agent::SLOW_PREFIX,
+            &mut matrix,
+        )
+        .await;
         for l in &outcome.lines {
             println!("{l}");
         }

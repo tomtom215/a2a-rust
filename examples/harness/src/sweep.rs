@@ -19,7 +19,18 @@ use a2a_protocol_types::params::{
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::responses::SendMessageResponse;
 
-use crate::coverage::{Binding, Matrix};
+use crate::{Binding, Matrix};
+
+/// How long to keep draining one stream before moving on.
+///
+/// Not a timeout on the *method* — by the time this expires the call has
+/// already succeeded and been recorded. It bounds how long a stream that
+/// legitimately stays open (a task parked in `INPUT_REQUIRED` never reaches a
+/// terminal event) can hold up the rest of the sweep.
+const STREAM_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Cap on events read from one stream, so a chatty agent cannot stall the run.
+const MAX_STREAM_EVENTS: usize = 50;
 
 /// Builds a single-text-part send.
 pub fn make_send_params(text: &str) -> MessageSendParams {
@@ -54,10 +65,18 @@ pub struct SweepOutcome {
 /// is listening on, otherwise `CreateTaskPushNotificationConfig` may be
 /// accepted while delivery silently fails — and a config that is stored but
 /// never delivered is not evidence that push works.
+///
+/// `slow_prefix` is the message-text marker that makes the agent under test
+/// pause mid-task. `SubscribeToTask` needs a task that is still running: the
+/// server answers `UnsupportedOperation` for a terminal one, correctly, so
+/// without a slow turn the success path is unreachable and only the refusal
+/// is ever observed. Each example supplies its own marker because each has its
+/// own executor.
 pub async fn sweep(
     client: &A2aClient,
     binding: Binding,
     webhook_url: &str,
+    slow_prefix: &str,
     matrix: &mut Matrix,
 ) -> SweepOutcome {
     let mut lines = Vec::new();
@@ -104,30 +123,59 @@ pub async fn sweep(
         Ok(mut stream) => {
             let mut events = 0_usize;
             let mut lagged = 0_usize;
-            while let Some(ev) = stream.next().await {
-                match ev {
-                    Ok(resp) => {
-                        events += 1;
-                        if streamed_task_id.is_none() {
-                            streamed_task_id = task_id_of(&resp);
+            let mut fatal: Option<String> = None;
+
+            // Bounded. A task that parks in INPUT_REQUIRED is not terminal, so
+            // its stream stays open indefinitely and an unbounded drain hangs
+            // the whole sweep — which is exactly what happened the first time
+            // this ran against an agent that asks clarifying questions. The
+            // method under test has demonstrably worked once an event arrives;
+            // reading to the end of time proves nothing further.
+            let drained = tokio::time::timeout(STREAM_DRAIN_BUDGET, async {
+                while let Some(ev) = stream.next().await {
+                    match ev {
+                        Ok(resp) => {
+                            events += 1;
+                            if streamed_task_id.is_none() {
+                                streamed_task_id = task_id_of(&resp);
+                            }
+                        }
+                        // Recoverable: the server says events were dropped for
+                        // this consumer, not that the stream ended.
+                        Err(e) if e.is_stream_lagged() => lagged += 1,
+                        Err(e) => {
+                            fatal = Some(format!("{e}"));
+                            return;
                         }
                     }
-                    // Recoverable: the server says events were dropped for
-                    // this consumer, not that the stream ended.
-                    Err(e) if e.is_stream_lagged() => lagged += 1,
-                    Err(e) => {
-                        bad!(Method::SendStreamingMessage, e);
-                        break;
+                    if events >= MAX_STREAM_EVENTS {
+                        return;
                     }
                 }
-            }
-            if events == 0 {
-                bad!(Method::SendStreamingMessage, "stream produced no events");
-            } else {
-                ok!(
+            })
+            .await;
+
+            match (fatal, events) {
+                (Some(e), _) => bad!(Method::SendStreamingMessage, e),
+                (None, 0) => bad!(
                     Method::SendStreamingMessage,
-                    format!("{events} event(s), {lagged} lag signal(s)")
-                );
+                    if drained.is_err() {
+                        "stream produced no events before the drain budget expired"
+                    } else {
+                        "stream produced no events"
+                    }
+                ),
+                (None, n) => ok!(
+                    Method::SendStreamingMessage,
+                    format!(
+                        "{n} event(s), {lagged} lag signal(s){}",
+                        if drained.is_err() {
+                            " (still open)"
+                        } else {
+                            ""
+                        }
+                    )
+                ),
             }
         }
         Err(e) => bad!(Method::SendStreamingMessage, e),
@@ -182,31 +230,35 @@ pub async fn sweep(
     // `streamed_task_id` from the sweep above is *not* reused for that
     // reason: it names a task that has already finished.
     let _ = &streamed_task_id;
-    match start_slow_task(client).await {
+    match start_slow_task(client, slow_prefix).await {
         Ok(slow_id) => match client.subscribe_to_task(slow_id.clone()).await {
             Ok(mut s) => {
                 let mut events = 0_usize;
                 let mut stream_err: Option<String> = None;
-                while let Some(ev) = s.next().await {
-                    match ev {
-                        Ok(_) => events += 1,
-                        Err(e) if e.is_stream_lagged() => {}
-                        Err(e) => {
-                            // Never swallow this. Some bindings deliver a
-                            // refusal *inside* the stream rather than as an
-                            // immediate `Err`, so `break`ing quietly here
-                            // turns a failed subscribe into "0 events" and
-                            // records coverage for a call that did not work.
-                            // That is exactly what this sweep did on its
-                            // first run.
-                            stream_err = Some(format!("{e}"));
-                            break;
+                // Bounded for the same reason as the send stream above.
+                let _ = tokio::time::timeout(STREAM_DRAIN_BUDGET, async {
+                    while let Some(ev) = s.next().await {
+                        match ev {
+                            Ok(_) => events += 1,
+                            Err(e) if e.is_stream_lagged() => {}
+                            Err(e) => {
+                                // Never swallow this. Some bindings deliver a
+                                // refusal *inside* the stream rather than as an
+                                // immediate `Err`, so `break`ing quietly here
+                                // turns a failed subscribe into "0 events" and
+                                // records coverage for a call that did not
+                                // work. That is exactly what this sweep did on
+                                // its first run.
+                                stream_err = Some(format!("{e}"));
+                                return;
+                            }
+                        }
+                        if events >= MAX_STREAM_EVENTS {
+                            return;
                         }
                     }
-                    if events > 20 {
-                        break;
-                    }
-                }
+                })
+                .await;
                 match stream_err {
                     Some(e) => bad!(Method::SubscribeToTask, format!("stream error: {e}")),
                     None if events == 0 => bad!(
@@ -308,8 +360,8 @@ pub async fn sweep(
 /// Uses the streaming send so the id is available immediately — a synchronous
 /// send would not return until the task had already finished, which is the
 /// problem being worked around.
-async fn start_slow_task(client: &A2aClient) -> Result<String, String> {
-    let params = make_send_params(&format!("{}subscribe target", crate::agent::SLOW_PREFIX));
+async fn start_slow_task(client: &A2aClient, slow_prefix: &str) -> Result<String, String> {
+    let params = make_send_params(&format!("{slow_prefix}subscribe target"));
     let mut stream = client
         .stream_message(params)
         .await
