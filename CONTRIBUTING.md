@@ -472,12 +472,23 @@ scripts/prove_gates_fail.sh             # all of them (~15 min)
 Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
-Last full run — 2026-08-11, **39 of 39 proven, 0 unproven, 0 inconclusive**
-(exit 0), on `claude/a2a-rust-continuation-69btr9` at `e434d88`. An earlier
-sweep the same day at `0a3aeeb` also read 39 of 39; the run between them did
-not, and that is the more useful record — see *When a gate fails for the wrong
-reason* below. The previous complete sweep was 2026-08-10 at 32 of 32; the count
-grew to 39 in three steps that day, each also proven individually as it landed:
+**Correction, 2026-08-11.** Two sweeps that day reported "39 of 39 proven"
+(at `0a3aeeb` and `e434d88`). Both over-counted by one. The `doc` gate was
+failing the whole time on a broken intra-doc link, and the script had no way to
+notice: it injected a defect, ran the gate once, and scored PROVEN on a non-zero
+exit whose log mentioned the marker. The injected link simply added an error to
+a log that already had two. A gate that could not pass at all was recorded as
+proven able to fail.
+
+The honest reading of those runs is **38 proven, 1 gate whose verdict was not
+supported by the evidence**. `PRE-BROKEN` (added at `a1b6e56`, with the baseline
+run that detects it) now catches that case, and the broken links were fixed at
+`70017c7`. The figure below is from the first sweep where a green baseline was
+actually confirmed.
+
+Last full run — pending re-measurement with the baseline check. The previous
+complete sweep was 2026-08-10 at 32 of 32; the count grew to 39 in three steps
+on 2026-08-11, each proven individually as it landed:
 
 | Added | Gates | Injection | Proven |
 |---|---|---|---|
@@ -490,9 +501,15 @@ is itself a gate, and so needs its own injection.
 
 ### When a gate fails for the wrong reason
 
-The script distinguishes **UNPROVEN** (the gate stayed green through its own
-defect) from **INCONCLUSIVE** (the gate went red, but not because of the
-injected defect). The second verdict looks like pedantry until it fires.
+The script distinguishes three ways a gate can fail to be proven:
+
+| Verdict | Meaning |
+|---|---|
+| `UNPROVEN` | It stayed green through its own injected defect |
+| `INCONCLUSIVE` | It went red, but its output never mentions the defect — it died of something else |
+| `PRE-BROKEN` | It was already failing before anything was injected |
+
+All three look like pedantry until they fire. Two of them did, on the same day.
 
 On 2026-08-11 a sweep reported gate 29,
 `cargo test --workspace --no-default-features`, as:
@@ -509,10 +526,25 @@ only by a feature-gated check became dead code with features off, and
 have read **PROVEN** — red is red — and a genuine build break would have been
 recorded as a successful proof of the very gate that was failing to run.
 
-Two lessons, both worth more than the fix:
+**PRE-BROKEN, and why a red gate is not evidence either.** The same day, the
+`doc` gate was reported PROVEN while it had been failing for hours on a broken
+intra-doc link — the injected link added a third error to a log that already
+had two, so the marker matched. Scoring a gate on "went red citing the marker"
+is not enough when it was red to begin with; the script now runs each gate
+untouched first and requires it to pass. That doubles the sweep's runtime,
+which is what the guarantee costs.
+
+Writing that check reproduced, one level up, the exact defect `run_quiet`
+documents: `baseline_status=$?` after `if ! run_quiet ...` always reads 0,
+because bash consumes the status before the branch is entered. The first
+PRE-BROKEN verdict duly announced "gate exited 0 with nothing injected". Read
+the verdict, do not trust it.
+
+Three lessons, all worth more than the fixes:
 
 - A gate's exit status is not evidence on its own. What makes it evidence is
-  that the output names the defect that was injected.
+  that the output names the defect that was injected **and** that the gate
+  passed without it.
 - The break reached the branch because local verification ran fmt, clippy at
   default and `--all-features`, and `cargo test --workspace --all-features` —
   a hand-picked subset that never compiles the workspace with features *off*.
