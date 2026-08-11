@@ -66,12 +66,63 @@ done
 # exists to catch, one level further in.
 GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
 
+# Each command carries the environment its ci.yml step runs under — the job's
+# `env:` block then the step's, so a step-level value wins. Same parser as
+# scripts/preflight.sh, and for the same reason it was added there on
+# 2026-08-11: without it this script does not run the gate CI runs.
+#
+# Two gates proved that the hard way once the baseline check landed. The
+# postgres suite reported PRE-BROKEN because `A2A_TEST_POSTGRES_URL` was unset
+# and all 15 tests failed; and `cargo run -p incident-response --release`
+# *hung the entire sweep*, because without `INCIDENT_EXIT_WHEN_DONE` the demo
+# finishes its five acts and then parks on Ctrl+C waiting for a human. Neither
+# was visible before: only the injected run happened, and it exits before
+# reaching the park.
 gates_for_jobs() {
     awk -v want="$1" '
-        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
+        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
+        # Emits the pending step, if it belongs to a wanted job.
+        function flush(   pair) {
+            # TAB-separated: the injection lookup matches the bare command,
+            # while execution needs the env prefixed. Joining them into one
+            # string would make every `"cargo run -p ..."*` pattern in
+            # `gate_kind_for` miss, and every gate would report as unregistered.
+            if (cmd != "") printf "%s\t%s\n", job_env step_env, cmd
+            cmd = ""; step_env = ""; env_indent = -1
         }
+        # A job header (2-space key) ends the previous job and its env.
+        /^  [a-z0-9_-]+:[[:space:]]*$/ {
+            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
+        }
+        # A new list item ends the previous step.
+        /^[[:space:]]*-[[:space:]]/ { flush() }
+        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
+            flush()
+            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
+            next
+        }
+        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
+        # indent is recorded so only its own keys are read, and anything
+        # shallower closes it.
+        /^    env:[[:space:]]*$/  { env_indent = 4; next }
+        /^        env:[[:space:]]*$/ { env_indent = 8; next }
+        env_indent > 0 {
+            indent = match($0, /[^ ]/) - 1
+            if (indent <= env_indent) { env_indent = -1 }
+            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
+                line = $0
+                sub(/^[[:space:]]+/, "", line)
+                key = line; sub(/:.*$/, "", key)
+                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+                sub(/[[:space:]]+$/, "", val)
+                gsub(/^"|"$/, "", val)
+                gsub(/^'\''|'\''$/, "", val)
+                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
+                else step_env = step_env key "=" shquote(val) " "
+                next
+            }
+        }
+        END { flush() }
     ' "$CI_YML"
 }
 
@@ -541,7 +592,8 @@ if [ "${#ALL_GATES[@]}" -eq 0 ]; then
 fi
 
 unregistered=()
-for cmd in "${ALL_GATES[@]}"; do
+for entry in "${ALL_GATES[@]}"; do
+    cmd=${entry#*$'\t'}
     spec=$(injection_for "$cmd")
     if [ -z "$spec" ]; then
         unregistered+=("$cmd")
@@ -563,8 +615,9 @@ fi
 
 if [ "$LIST_ONLY" -eq 1 ]; then
     printf 'Gate / injection pairing (%d gates):\n\n' "${#ALL_GATES[@]}"
-    for cmd in "${ALL_GATES[@]}"; do
-        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "$cmd"
+    for entry in "${ALL_GATES[@]}"; do
+        cmd=${entry#*$'\t'}
+        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
     done
     exit 0
 fi
@@ -645,14 +698,18 @@ run_quiet() {
 }
 
 idx=0
-for cmd in "${ALL_GATES[@]}"; do
+for entry in "${ALL_GATES[@]}"; do
     idx=$((idx + 1))
+    gate_env=${entry%%$'\t'*}
+    cmd=${entry#*$'\t'}
+    # The gate as CI runs it: env prefix plus command.
+    full="${gate_env}${cmd}"
     if ! printf '%s' "$cmd" | grep -Eq -- "$ONLY"; then
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
     spec=$(injection_for "$cmd")
-    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$cmd"
+    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$full"
     printf '        injection: %s\n' "$spec"
 
     revert_all
@@ -677,7 +734,7 @@ for cmd in "${ALL_GATES[@]}"; do
     # reported "gate exited 0 with nothing injected" — a status-swallowing bug
     # inside the check for status-swallowing bugs.
     baseline_status=0
-    run_quiet "$cmd" "$log" || baseline_status=$?
+    run_quiet "$full" "$log" || baseline_status=$?
     if [ "$baseline_status" -ne 0 ]; then
         elapsed=$((SECONDS - start))
         printf '  \033[31mPRE-BROKEN\033[0m  gate exited %s with nothing injected — it is\n' \
@@ -686,7 +743,7 @@ for cmd in "${ALL_GATES[@]}"; do
         printf '                about it (%ss)\n' "$elapsed"
         printf '                log: %s\n' "$log"
         UNPROVEN=$((UNPROVEN + 1))
-        RESULTS+=("PRE-BROKEN|$baseline_status|${elapsed}s|$cmd")
+        RESULTS+=("PRE-BROKEN|$baseline_status|${elapsed}s|$full")
         continue
     fi
     baseline_elapsed=$((SECONDS - start))
@@ -695,7 +752,7 @@ for cmd in "${ALL_GATES[@]}"; do
 
     log="$LOG_DIR/gate-$idx-broken.log"
     start=$SECONDS
-    if run_quiet "$cmd" "$log"; then
+    if run_quiet "$full" "$log"; then
         broken_status=0
     else
         broken_status=$?
@@ -718,7 +775,7 @@ for cmd in "${ALL_GATES[@]}"; do
             printf '  \033[32mPROVEN\033[0m  gate exited %s citing the injected defect (%ss)\n' \
                 "$broken_status" "$elapsed"
             PROVEN=$((PROVEN + 1))
-            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$cmd")
+            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$full")
         else
             printf '  \033[31mINCONCLUSIVE\033[0m  gate exited %s but its output never mentions\n' \
                 "$broken_status"
@@ -726,13 +783,13 @@ for cmd in "${ALL_GATES[@]}"; do
             printf '                reason, which proves nothing (%ss)\n' "$elapsed"
             printf '                log: %s\n' "$log"
             UNPROVEN=$((UNPROVEN + 1))
-            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$cmd")
+            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$full")
         fi
     else
         printf '  \033[31mUNPROVEN\033[0m  gate exited 0 WITH the defect present (%ss)\n' "$elapsed"
         printf '            log: %s\n' "$log"
         UNPROVEN=$((UNPROVEN + 1))
-        RESULTS+=("UNPROVEN|0|${elapsed}s|$cmd")
+        RESULTS+=("UNPROVEN|0|${elapsed}s|$full")
     fi
 done
 
