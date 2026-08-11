@@ -76,6 +76,14 @@ pub enum Outcome {
     /// cannot do this" and "the binary can do this and nobody tried" are
     /// different facts, and collapsing them is how a capability ends up
     /// counted as covered by a run that never touched it.
+    ///
+    /// The `allow` is for the mirror image of [`NotCompiled`]'s: only the
+    /// PostgreSQL check constructs this, so `--no-default-features` compiles
+    /// that check out and leaves the variant unconstructed. Under CI's
+    /// `-D warnings` that is a build error, and it was one — caught by
+    /// `cargo test --workspace --no-default-features`, which the local
+    /// verification of the commit that added this had not run.
+    #[allow(dead_code)]
     NotRun(String),
 }
 
@@ -107,6 +115,10 @@ impl Check {
     }
 
     /// A capability that is compiled in but had nothing to run against.
+    ///
+    /// Called only by the PostgreSQL check, so a build without that feature
+    /// never reaches it — see [`Outcome::NotRun`].
+    #[allow(dead_code)]
     fn unavailable(label: &'static str, reason: impl Into<String>) -> Self {
         Self {
             label,
