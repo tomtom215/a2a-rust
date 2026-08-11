@@ -481,18 +481,28 @@ that day, each also proven individually as it landed:
 |---|---|---|---|
 | `dogfood` — runs `examples/agent-team`, which no workflow had ever executed | +1 | Claim-table drift, deliberately *not* a failing assertion: `if failed > 0 { exit(1) }` was never the broken part; the summary table that printed `[x]` regardless of results was | **PROVEN, exit 1** (290s) |
 | `example-surface` — six method × binding sweeps, one per example, sharing one injection | +5 | Drop one method's recording from the shared harness: every call still succeeds and the run must still go red | **PROVEN, exit 2** (77–229s per leg) |
-| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | **PROVEN, exit 3** (96s) |
+| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | **PROVEN, exit 3** (96s at 8 checks, 194s at 16) |
 
 32 rather than 31 in the earlier sweep because the workflow-gate prover below
 is itself a gate, and so needs its own injection.
 
 Injections outside `ci.yml`'s gates are worth proving too, and the same
-discipline applies: `examples/incident-response`'s eight hardening checks were
-each proven by removing the capability they cover, and the three that assert a
-call must be *refused* were separately proven to reject a transport failure by
-pointing the client at a closed port. Before that arm existed, all three of
-those injections passed — a refusal check a dead server satisfies is not a
-refusal check.
+discipline applies. `examples/incident-response`'s **sixteen** hardening checks
+were each proven by removing the capability they cover. Two rounds of that
+found defects in the checks rather than the SDK, which is the process working:
+
+- Three checks that assert a call must be *refused* accepted any error as
+  proof, so a dead server satisfied them. They now require a server refusal,
+  proven by pointing the client at a closed port — before the fix all three
+  injections passed.
+- A check whose external service is absent used to be indistinguishable from
+  one that passed. `[NOT RUN]` is now its own state, and
+  `INCIDENT_REQUIRE_ALL=1` (set in CI, alongside the PostgreSQL service that
+  makes it satisfiable) turns it into exit `4`.
+
+A gate that can only go green when someone remembers to provision something is
+a gate that decays quietly. Wiring the service *and* failing without it is what
+makes the check permanent.
 
 ### The other ten workflows
 
