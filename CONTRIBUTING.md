@@ -473,9 +473,20 @@ Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
 Last full run — 2026-08-10, **32 of 32 proven, 0 unproven, 0 inconclusive**
-(exit 0), on `claude/a2a-rust-continuation-9ozdbm` at `af7a1f8` plus this
+(exit 0), on `claude/a2a-rust-continuation-9ozdbm` at `af7a1f8` plus that
 session's commits. 32 rather than 31 because the workflow-gate prover below
 is itself a gate now, and so needs its own injection.
+
+The gate count is **33** as of 2026-08-11: `ci.yml` gained a `dogfood` job
+running the SDK dogfood suite (`examples/agent-team`), which no workflow had
+ever executed. Proven individually the same day —
+`prove_gates_fail.sh --only agent-team` reports **PROVEN, exit 1** (290s)
+against an injected claim-table drift. Its injection is deliberately drift
+rather than a failing assertion: `if failed > 0 { exit(1) }` was never the
+broken part; the summary table that printed `[x]` regardless of results was.
+A full 33-gate run has not been repeated since, so the 32-of-32 figure above
+is the last *complete* sweep, and this paragraph is the delta rather than a
+replacement for it.
 
 ### The other ten workflows
 
