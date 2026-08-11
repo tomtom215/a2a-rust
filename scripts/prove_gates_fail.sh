@@ -12,10 +12,24 @@
 # gate ran, went green, and measured nothing.
 #
 # Running a gate and watching it pass says nothing about whether it *could*
-# have failed. This script asserts the other half: for each gate, break
-# something that gate is responsible for, confirm it goes red, put it back,
-# and confirm it goes green again. A gate that stays green through its own
-# injected defect is reported as UNPROVEN, which is a finding.
+# have failed. This script asserts the other half: for each gate, confirm it
+# is green to begin with, break something that gate is responsible for,
+# confirm it goes red *citing that break*, and put it back.
+#
+# Three ways a gate fails to be proven, all findings:
+#
+#   UNPROVEN      it stayed green through its own injected defect
+#   INCONCLUSIVE  it went red, but its output never mentions the defect — so
+#                 it died of something else and proves nothing
+#   PRE-BROKEN    it was already failing before anything was injected
+#
+# The last of those was added on 2026-08-11, after this script reported the
+# `doc` gate PROVEN while that gate had been red for hours on an unrelated
+# broken intra-doc link: the injected link simply added one more error to a log
+# that already had two. Until then the header above claimed a green baseline
+# was confirmed and no code confirmed it, so "39 of 39 proven" meant less than
+# it said. It costs a second run of every gate, which is what the guarantee is
+# worth.
 #
 # The feature-gated injections are deliberately placed inside code compiled
 # only under that feature. `cargo test --features sqlite` failing because of a
@@ -642,6 +656,35 @@ for cmd in "${ALL_GATES[@]}"; do
     printf '        injection: %s\n' "$spec"
 
     revert_all
+
+    # Baseline: the gate must pass with nothing injected.
+    #
+    # Without this the script cannot tell "went red because of the defect"
+    # from "was already red", and the header's promise to "put it back and
+    # confirm it goes green again" was never kept in code. That gap is not
+    # theoretical: on 2026-08-11 CI's `doc` gate had been failing for hours on
+    # a broken intra-doc link, the injected link added one more error to the
+    # same log, the marker matched, and the gate was reported PROVEN. A gate
+    # that can never pass is not proven able to fail — it is just failing.
+    #
+    # Run first rather than after the injection: a broken gate is reported
+    # without paying for an injected run that could not mean anything.
+    log="$LOG_DIR/gate-$idx-baseline.log"
+    start=$SECONDS
+    if ! run_quiet "$cmd" "$log"; then
+        baseline_status=$?
+        elapsed=$((SECONDS - start))
+        printf '  \033[31mPRE-BROKEN\033[0m  gate exited %s with nothing injected — it is\n' \
+            "$baseline_status"
+        printf '                already failing, so no injection can prove anything\n'
+        printf '                about it (%ss)\n' "$elapsed"
+        printf '                log: %s\n' "$log"
+        UNPROVEN=$((UNPROVEN + 1))
+        RESULTS+=("PRE-BROKEN|$baseline_status|${elapsed}s|$cmd")
+        continue
+    fi
+    baseline_elapsed=$((SECONDS - start))
+
     apply_injection "$spec"
 
     log="$LOG_DIR/gate-$idx-broken.log"
@@ -695,9 +738,9 @@ for row in "${RESULTS[@]-}"; do
     timing=${row#*|*|}; timing=${timing%%|*}
     cmd=${row#*|*|*|}
     if [ "$verdict" = PROVEN ]; then
-        printf '  \033[32m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+        printf '  \033[32m%-12s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
     else
-        printf '  \033[31m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+        printf '  \033[31m%-12s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
     fi
 done
 printf '\n  %d proven, %d unproven, %d not selected (of %d gates)\n' \
