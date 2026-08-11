@@ -477,22 +477,18 @@ Last full run — 2026-08-10, **32 of 32 proven, 0 unproven, 0 inconclusive**
 session's commits. 32 rather than 31 because the workflow-gate prover below
 is itself a gate now, and so needs its own injection.
 
-The gate count is **33** as of 2026-08-11: `ci.yml` gained a `dogfood` job
-running the SDK dogfood suite (`examples/agent-team`), which no workflow had
-ever executed. Proven individually the same day —
-`prove_gates_fail.sh --only agent-team` reports **PROVEN, exit 1** (290s)
-against an injected claim-table drift. Its injection is deliberately drift
-rather than a failing assertion: `if failed > 0 { exit(1) }` was never the
-broken part; the summary table that printed `[x]` regardless of results was.
-The count is **38** as of the same day (`example-surface` carries six legs, one per example, all sharing one injection): `ci.yml` also gained
-`example-surface`, running both examples' method x binding sweeps, whose two
-steps are proven together (`--only echo-agent` and `--only incident-response`
-each report **PROVEN, exit 2** against an injected drop of one method's
-recording — every call still succeeds, and the run still goes red).
+The count is **39** as of 2026-08-11, verified by
+`prove_gates_fail.sh --list` at that day's head. It grew from 32 in three
+steps, each proven individually on the day it landed:
 
-A full 35-gate run has not been repeated since, so the 32-of-32 figure above
-is the last *complete* sweep, and these two paragraphs are the delta rather
-than a replacement for it.
+| Added | Gates | Injection | Proven |
+|---|---|---|---|
+| `dogfood` — runs `examples/agent-team`, which no workflow had ever executed | +1 | Claim-table drift, deliberately *not* a failing assertion: `if failed > 0 { exit(1) }` was never the broken part; the summary table that printed `[x]` regardless of results was | `--only agent-team` → **PROVEN, exit 1** (290s) |
+| `example-surface` — six method × binding sweeps, one per example, sharing one injection | +5 | Drop one method's recording from the shared harness: every call still succeeds and the run must still go red | `--only echo-agent` / `--only incident-response` → **PROVEN, exit 2** (229s) |
+| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | `--only incident-response` → **PROVEN, exit 3** (97s) |
+
+A full 39-gate run has not been made, so the 32-of-32 figure above is the last
+*complete* sweep and this table is the delta rather than a replacement for it.
 
 ### The other ten workflows
 
