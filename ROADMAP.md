@@ -38,6 +38,35 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
+* **~~Demonstrate the SDK capabilities a deployment needs.~~ Done 2026-08-11** —
+  tenant isolation, authentication interceptors, rate limiting, persistent
+  stores, agent-card signing, the `Metrics` hook, OpenTelemetry export and
+  graceful shutdown all shipped, all covered by unit and integration tests, and
+  **no example demonstrated any of them over a socket**. That is a real gap and
+  not a documentation one: a reader evaluating this SDK reads the examples, and
+  the examples showed an in-memory, single-tenant, unauthenticated agent.
+
+  `examples/incident-response` now runs eight such checks as Act 5, each
+  asserting the specific wrong answer it rules out — a tenant reading another's
+  tasks, an anonymous request succeeding, a rate limit that accepts everything,
+  a tampered card verifying, a task that does not survive a handler change, a
+  shutdown that hangs, served requests that reach no recorder, an instrumented
+  handler exporting no datapoint. Runnable alone as
+  `cargo run -p incident-response -- harden`, gated by its own step in
+  `ci.yml`'s `example-surface` job, and proven able to fail by
+  `scripts/prove_gates_fail.sh` (`example_hardening`, which removes the tenant
+  resolver — a defect under which every request still succeeds).
+
+  Two things were checked rather than assumed while writing it. The OTel check
+  collects from a real `ManualReader` because the default global meter provider
+  is a no-op, under which a handler that records nothing and one that records
+  everything are indistinguishable. And the signing check tampers with
+  `supported_interfaces[0].url`, not the deprecated top-level `AgentCard::url`:
+  the latter is `#[serde(skip_serializing)]` since A2A v1.0 removed it, so it is
+  absent from the canonical bytes and rewriting it is correctly a no-op. The
+  first draft tampered there, reported a failure, and the failure was the
+  check's fault rather than the SDK's.
+
 * **~~Make every example's coverage claim measurable.~~ Done 2026-08-11** —
   all six examples now report **44 of 44 cells** and exit non-zero on a gap,
   gated by `ci.yml`'s `example-surface` job with each leg proven able to fail.

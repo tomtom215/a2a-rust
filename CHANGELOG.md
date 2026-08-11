@@ -29,6 +29,47 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **`examples/incident-response` now demonstrates the SDK capabilities a
+  deployment needs, over a socket, with assertions.** Tenant isolation,
+  authentication interceptors, rate limiting, persistent stores, agent-card
+  signing, the `Metrics` hook, OpenTelemetry export and graceful shutdown all
+  shipped and were covered by unit and integration tests, but no example
+  exercised any of them end-to-end. Act 5 runs eight checks, each naming the
+  specific wrong answer it rules out:
+
+  | Check | Fails when |
+  |---|---|
+  | Tenant isolation (`TenantAwareInMemoryTaskStore` + `HeaderTenantResolver`) | A tenant sees another's task, or a caller authenticated as one tenant writes into another by naming it in `params.tenant` |
+  | `BearerTokenAuthInterceptor` | An anonymous request succeeds, **or** a correctly authenticated one is refused |
+  | `RateLimitInterceptor` | Every call is accepted, every call is refused, or more than the limit gets through |
+  | `sign_agent_card`/`verify_agent_card` | A card whose interface URL was rewritten still verifies |
+  | `SqliteTaskStore` | A task written through one handler is not readable through another over the same file |
+  | `RequestHandler::shutdown` | It does not return within 5s |
+  | The `Metrics` hook | Served requests reach no recorder |
+  | `OtelMetrics` | No `a2a.server.requests` datapoint is collected after N requests |
+
+  Runnable on its own as `cargo run -p incident-response -- harden` (exit code
+  `3` on a failure), gated by its own step in `ci.yml`'s `example-surface` job,
+  and proven able to fail by `scripts/prove_gates_fail.sh`, which removes the
+  tenant resolver — a defect under which every request still succeeds and only
+  the isolation check notices.
+
+  Two details were verified rather than assumed. The OTel check collects from a
+  real `ManualReader` rather than trusting the global provider, which defaults
+  to a no-op under which a handler that records nothing looks identical to one
+  that records everything. And the signing check tampers with
+  `supported_interfaces[0].url`, not the deprecated top-level `AgentCard::url`
+  — the latter is `#[serde(skip_serializing)]` because A2A v1.0 removed it, so
+  it is absent from the canonical signing payload and rewriting it correctly
+  changes nothing.
+
+  Capabilities behind Cargo features print `[NOT BUILT]` with the feature they
+  need instead of vanishing, so `--no-default-features` reports a narrower run
+  as narrower (measured: 5 passed, 3 not compiled) rather than printing the
+  same "all passed" line over fewer checks. `incident-response` gains
+  `default = ["sqlite", "signing", "otel"]` so the documented command exercises
+  everything.
+
 - **All six examples now drive every A2A method over every binding they serve,
   and fail if the matrix has a gap.** Measured 2026-08-11, all six report
   **44 of 44 cells**. Before the change: `echo-agent` 4 methods / 2 bindings,

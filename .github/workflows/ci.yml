@@ -385,6 +385,15 @@ jobs:
         run: cargo run -p incident-response --release
         env:
           INCIDENT_EXIT_WHEN_DONE: "1"
+      # Act 5 again, on its own. The demo step above already runs it, so this
+      # step costs a few seconds and buys attribution: a red demo step could be
+      # any of five acts, and `scripts/prove_gates_fail.sh` can only prove a
+      # gate by injecting one defect and naming the step that must go red.
+      # Without a step whose *only* content is the hardening checks, the proof
+      # that they can fail would rest on the demo step, whose proof is already
+      # spoken for by the method x binding matrix.
+      - name: incident-response — production hardening checks
+        run: cargo run -p incident-response --release -- harden
       # The three examples whose point is an external dependency — an LLM
       # provider, or worker agents in four other languages. None is available
       # in CI, and none is needed: the A2A surface these examples serve is the

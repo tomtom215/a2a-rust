@@ -11,6 +11,20 @@ edition.workspace    = true
 rust-version.workspace = true
 license.workspace    = true
 
+[features]
+## Everything Act 5 can demonstrate without an external service, so the
+## documented `cargo run -p incident-response` exercises the whole example
+## rather than a subset. A narrowed build still reports honestly — every
+## capability compiled out prints `[NOT BUILT]` with the feature it needs
+## instead of disappearing from the report.
+default = ["sqlite", "signing", "otel"]
+## SQLite-backed task store (Act 5: persistence across a handler restart).
+sqlite = ["a2a-protocol-server/sqlite"]
+## Agent-card signing (Act 5: sign, verify, detect tampering).
+signing = ["a2a-protocol-types/signing", "dep:ring"]
+## OpenTelemetry metrics export (Act 5: a collected `a2a.server.requests`).
+otel = ["a2a-protocol-server/otel", "dep:opentelemetry", "dep:opentelemetry_sdk"]
+
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
@@ -27,6 +41,16 @@ hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
 bytes          = "1"
 uuid           = { workspace = true }
+
+# Act 5 only. `ring` generates the throwaway P-256 key the signing check signs
+# with; the OpenTelemetry crates let the check read its own exported datapoint
+# back instead of trusting that a no-op provider recorded something.
+# `experimental_metrics_custom_reader` is what makes `ManualReader` public — it
+# is requested here rather than relied on from the server's feature set, so this
+# example does not depend on another crate's choices to compile.
+ring              = { version = "0.17", optional = true }
+opentelemetry     = { version = "0.31", optional = true }
+opentelemetry_sdk = { version = "0.31", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
 
 # genai — multi-provider LLM client; unknown model names route to the local
 # Ollama-compatible endpoint on :11434 (llama-server / Ollama).

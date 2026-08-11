@@ -19,6 +19,15 @@ A wrapped prompt answers once and forgets. An agent holds a **task**:
 | Be **cancelled** | Act 3: the operator calls off a parked task → `TASK_STATE_CANCELED`. Cancellation is cooperative — see `TriageExecutor::cancel` |
 | End in an **honest terminal state** | LLM/provider failures and textless messages end in `TASK_STATE_FAILED`, never a fake success |
 
+Two further acts answer the questions that follow from that one — *does this
+SDK serve the whole protocol?* and *can I deploy it?*
+
+| | Where this demo shows it |
+|---|---|
+| Every A2A method over every binding | Act 4 drives all 11 spec methods across JSON-RPC, HTTP+JSON, gRPC and WebSocket and **exits non-zero if any cell never ran**. The method list is derived from the ratified `a2a.proto`, not from a list this repository maintains |
+| Calls that must be *refused* | Act 4's counter-tests: push notifications, streaming and the extended card against an agent advertising none of them |
+| Multi-tenancy, auth, rate limits, persistence, signing, telemetry, shutdown | Act 5 — see [Act 5](#act-5--production-hardening) |
+
 ## The team
 
 ```
@@ -40,8 +49,12 @@ deterministic; the judgment lives in the agents that call them.
 ## Run it
 
 ```bash
-cargo run -p incident-response          # narrated three-act demo
+cargo run -p incident-response          # narrated five-act demo
+cargo run -p incident-response -- harden   # Act 5 on its own
 ```
+
+Exit codes: `1` a surface call failed, `2` a method × binding cell never ran,
+`3` a hardening check failed.
 
 The demo works with **no model at all** (agents label their output as
 mechanical/verbatim fallbacks so the protocol mechanics stay visible), and
@@ -107,11 +120,45 @@ ACT 2 — the operator answers on the same task; the agents collaborate
 
 ACT 3 — tasks are cancellable: the operator calls off a parked task
   → cancel_task(...) ⇒ TASK_STATE_CANCELED
+
+ACT 4 — every A2A method over every binding, counted
+  --- JSON-RPC ---            (11/11) … and the same for HTTP+JSON, gRPC, WebSocket
+  --- counter-tests (calls that must be refused) ---
+
+ACT 5 — production hardening: tenancy, auth, limits, durability, telemetry
+  [ok] Tenant isolation …     2 tenants isolated; a cross-tenant params.tenant was refused
+  [ok] Bearer-token auth …    anonymous refused, bearer token accepted
+  …
+  8 passed, 0 failed, 0 not compiled into this build
 ```
 
 The incident report combines the LLM's assessment with the raw log
 evidence and runbook guidance — every claim in it is traceable to an
 agent that produced it.
+
+## Act 5 — production hardening
+
+Acts 1–4 cover what an agent is and what the protocol requires. Neither asks
+the question an operator asks first: *what happens when this is exposed to more
+than one caller?* Act 5 exercises the SDK capabilities that answer it, over a
+real socket, and **asserts** each one rather than narrating it:
+
+| Capability | The wrong answer it rules out |
+|---|---|
+| `TenantAwareInMemoryTaskStore` + `HeaderTenantResolver` | One tenant reading another's tasks — including by *naming* the other tenant in `params.tenant`, which is the v0.6.0 regression this check was written for |
+| `BearerTokenAuthInterceptor` (+ the client's `AuthInterceptor`) | An unauthenticated request succeeding — and, in the other direction, a server that refuses everything |
+| `RateLimitInterceptor` | A limit that accepts everything, or one that accepts nothing |
+| `sign_agent_card` / `verify_agent_card` | A rewritten interface URL still verifying, which would let a signed card redirect callers to an impostor |
+| `SqliteTaskStore` | A task that does not survive being read back through a *different* handler over the same file |
+| `RequestHandler::shutdown` | A shutdown that hangs instead of draining |
+| The `Metrics` hook | Served requests that reach no recorder |
+| `OtelMetrics` | An instrumented handler that exports no `a2a.server.requests` datapoint — checked by collecting from a real `ManualReader`, because the default global meter provider is a no-op and would make any wiring look correct |
+
+Every check names the specific wrong answer in its failure message, and
+`scripts/prove_gates_fail.sh` injects the tenant-resolver removal to prove the
+act can go red. Capabilities behind Cargo features print `[NOT BUILT]` with the
+feature they need rather than disappearing, so
+`--no-default-features` reports a narrower run *as* narrower.
 
 ## Patterns worth stealing
 
@@ -128,6 +175,14 @@ agent that produced it.
 - **Degrade loudly**: when a specialist or the model is unreachable, the
   output says so (`[log agent unavailable: …]`, `[verbatim runbook — no
   model reachable]`) instead of pretending.
+- **Resolve the tenant server-side**: a `TenantResolver` derives it from
+  trusted request context, and a client that names a different one is
+  rejected. Trusting `params.tenant` alone is only safe behind a gateway that
+  has already authenticated the caller.
+- **Demonstrations should assert**: a demo that only prints what happened
+  cannot fail, so it tells a reader nothing. Every Act 4 and Act 5 check names
+  the specific wrong answer it rules out, and the process exits non-zero when
+  it sees one.
 
 ## License
 

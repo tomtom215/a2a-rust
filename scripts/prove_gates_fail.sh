@@ -232,6 +232,10 @@ injection_for() {
             echo "package" ;;
         "cargo run -p agent-team"*)
             echo "dogfood" ;;
+        # Before the general incident-response arm: `-- harden` runs Act 5
+        # alone, and its defect is a hardening one, not a matrix one.
+        "cargo run -p incident-response"*"harden"*)
+            echo "example_hardening" ;;
         "cargo run -p echo-agent"*|"cargo run -p incident-response"*|\
         "cargo run -p genai-a2a-agent"*|"cargo run -p rig-a2a-agent"*|\
         "cargo run -p multi-lang-team"*)
@@ -306,6 +310,7 @@ expected_marker() {
         package)          echo "NO_SUCH_README.md" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
+        example_hardening) echo "partitions leak" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         clippy|clippy_always) echo "deref_addrof" ;;
         test|test_always) echo "gate probe: injected failure" ;;
@@ -380,6 +385,37 @@ if s.count(needle) != 1:
 s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
 open(p, "w").write(s)
 PY2
+            ;;
+        example_hardening)
+            # Remove the tenant resolver, which is the exact regression Act 5's
+            # isolation check was written for: with no resolver the handler
+            # trusts the client's `params.tenant` verbatim, so any caller reads
+            # or writes any partition by naming it.
+            #
+            # This is a defect that leaves every call succeeding — the demo's
+            # first four acts stay green, every request returns 200, and only
+            # the isolation check notices. The marker is "partitions leak", the
+            # message that check emits when one tenant can see another's task;
+            # a build error, a bind failure or a hung run all exit non-zero too,
+            # and every one of those would otherwise read as proof.
+            note_touched "examples/incident-response/src/hardening/tenancy.rs"
+            python3 - <<'PY3'
+p = "examples/incident-response/src/hardening/tenancy.rs"
+s = open(p).read()
+needle = "        .with_tenant_resolver(HeaderTenantResolver::default())\n"
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+# `HeaderTenantResolver` becomes unused, and the example is built with
+# warnings allowed here, so the import can stay.
+s = s.replace(needle, "        // gate probe: tenant resolver removed\n")
+s = s.replace(
+    "use a2a_protocol_server::tenant_resolver::HeaderTenantResolver;\n",
+    "#[allow(unused_imports)]\nuse a2a_protocol_server::tenant_resolver::HeaderTenantResolver;\n",
+)
+open(p, "w").write(s)
+PY3
             ;;
         dogfood)
             # Inject claim-table drift rather than a failing assertion.
