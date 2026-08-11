@@ -671,8 +671,14 @@ for cmd in "${ALL_GATES[@]}"; do
     # without paying for an injected run that could not mean anything.
     log="$LOG_DIR/gate-$idx-baseline.log"
     start=$SECONDS
-    if ! run_quiet "$cmd" "$log"; then
-        baseline_status=$?
+    # `|| baseline_status=$?`, for the reason `run_quiet` documents above: after
+    # an `if !` whose branch *is* taken, bash has already consumed the status
+    # and `$?` reads 0. Written that way first, and the PRE-BROKEN verdict duly
+    # reported "gate exited 0 with nothing injected" — a status-swallowing bug
+    # inside the check for status-swallowing bugs.
+    baseline_status=0
+    run_quiet "$cmd" "$log" || baseline_status=$?
+    if [ "$baseline_status" -ne 0 ]; then
         elapsed=$((SECONDS - start))
         printf '  \033[31mPRE-BROKEN\033[0m  gate exited %s with nothing injected — it is\n' \
             "$baseline_status"
