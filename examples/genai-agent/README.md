@@ -31,14 +31,30 @@ cargo run -p genai-a2a-agent             # defaults to gpt-4o-mini
 
 # Fully local, no API key — verified with llama.cpp's llama-server:
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
-llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
+llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
   --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
-GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
+GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
 ```
 
-(Ollama works too: `ollama pull qwen3:0.6b`, then
-`GENAI_MODEL=qwen3:0.6b cargo run -p genai-a2a-agent`.)
+### vLLM
+
+vLLM serves the same OpenAI-compatible API, from the unquantized weights
+rather than a GGUF. Use it when you want throughput or a GPU; llama.cpp is the
+lighter option for a laptop CPU.
+
+```bash
+pip install vllm
+vllm serve Qwen/Qwen3.5-0.8B --port 11434 --served-model-name qwen3.5:0.8b
+```
+
+`--served-model-name` matters: the examples send the model name in the request
+body, and vLLM rejects a name it was not started with. Setting it to the same
+string llama.cpp's `--alias` uses means the same env var works against either
+server, which is the point of both being OpenAI-compatible.
+
+(Ollama works too: `ollama pull qwen3.5:0.8b`, then
+`GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent`.)
 
 Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
 

@@ -34,7 +34,7 @@ RIG_MODEL=gpt-4o cargo run -p rig-a2a-agent
 
 Any OpenAI-compatible server works via rig's `OPENAI_BASE_URL` support. A
 verified walkthrough with [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
-`llama-server` and the Apache-2.0 Qwen3-0.6B model (~640 MB):
+`llama-server` and the Apache-2.0 Qwen3.5-0.8B model (~500 MB):
 
 ```bash
 # 1. Get a prebuilt llama-server (pick the latest release tag) and a model
@@ -43,17 +43,33 @@ curl -L -o llama.tar.gz \
   || echo 'grab the llama-<tag>-bin-<os>.tar.gz asset for your platform'
 tar xzf llama.tar.gz
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
+  'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
 
 # 2. Serve it (OpenAI-compatible API on :11434)
-./llama-*/llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+./llama-*/llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
   --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
 
 # 3. Point the rig agent at it
 export OPENAI_API_KEY=local              # any non-empty value
 export OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-RIG_MODEL=qwen3-0.6b cargo run -p rig-a2a-agent
+RIG_MODEL=qwen3.5:0.8b cargo run -p rig-a2a-agent
 ```
+
+### vLLM
+
+vLLM serves the same OpenAI-compatible API, from the unquantized weights
+rather than a GGUF. Use it when you want throughput or a GPU; llama.cpp is the
+lighter option for a laptop CPU.
+
+```bash
+pip install vllm
+vllm serve Qwen/Qwen3.5-0.8B --port 11434 --served-model-name qwen3.5:0.8b
+```
+
+`--served-model-name` matters: the examples send the model name in the request
+body, and vLLM rejects a name it was not started with. Setting it to the same
+string llama.cpp's `--alias` uses means the same env var works against either
+server, which is the point of both being OpenAI-compatible.
 
 (Ollama works identically — it already listens on `:11434`.)
 

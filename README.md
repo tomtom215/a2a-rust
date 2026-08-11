@@ -201,7 +201,7 @@ the task in `INPUT_REQUIRED`, the operator's answer resumes the *same task*,
 the orchestrator delegates to a deterministic log-search agent and an
 LLM-backed runbook agent over real A2A calls, progress streams live, the
 incident report lands as an artifact, and a parked task can be cancelled.
-Runs fully local with Qwen3-0.6B (a ~640 MB Apache-2.0 model, via llama-server or Ollama) or
+Runs fully local with Qwen3.5-0.8B (a ~500 MB Apache-2.0 model, via llama-server or Ollama) or
 with no model at all:
 
 ```bash

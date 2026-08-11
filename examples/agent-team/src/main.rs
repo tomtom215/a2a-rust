@@ -21,8 +21,14 @@
 mod cards;
 mod executors;
 mod features;
+// The surface matrix drives every method over every binding, so it needs the
+// two feature-gated transports. Without them the claim table below reports it
+// `[ ] NOT RUN` and the binary exits 2, rather than printing a matrix that
+// silently covers half the transports.
 mod helpers;
 mod infrastructure;
+#[cfg(all(feature = "websocket", feature = "grpc"))]
+mod surface;
 mod tests;
 
 use std::collections::HashMap;

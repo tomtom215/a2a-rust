@@ -46,15 +46,31 @@ cargo run -p incident-response          # narrated three-act demo
 The demo works with **no model at all** (agents label their output as
 mechanical/verbatim fallbacks so the protocol mechanics stay visible), and
 shines with a small local model — verified with llama.cpp's `llama-server`
-and the Apache-2.0 Qwen3-0.6B model (~640 MB):
+and the Apache-2.0 Qwen3.5-0.8B model (~500 MB):
 
 ```bash
 curl -L -o model.gguf \
-  'https://huggingface.co/Qwen/Qwen3-0.6B-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf'
-llama-server -m model.gguf --port 11434 --alias qwen3-0.6b \
+  'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
+llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
   --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
-cargo run -p incident-response          # INCIDENT_MODEL defaults to qwen3-0.6b
+cargo run -p incident-response          # INCIDENT_MODEL defaults to qwen3.5:0.8b
 ```
+
+### vLLM
+
+vLLM serves the same OpenAI-compatible API, from the unquantized weights
+rather than a GGUF. Use it when you want throughput or a GPU; llama.cpp is the
+lighter option for a laptop CPU.
+
+```bash
+pip install vllm
+vllm serve Qwen/Qwen3.5-0.8B --port 11434 --served-model-name qwen3.5:0.8b
+```
+
+`--served-model-name` matters: the examples send the model name in the request
+body, and vLLM rejects a name it was not started with. Setting it to the same
+string llama.cpp's `--alias` uses means the same env var works against either
+server, which is the point of both being OpenAI-compatible.
 
 (Ollama on `:11434` works identically; hosted providers work by setting
 `INCIDENT_MODEL` to e.g. `gpt-4o-mini` plus the provider's API key.)

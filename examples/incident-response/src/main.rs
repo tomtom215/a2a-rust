@@ -185,7 +185,7 @@ async fn try_llm(client: &genai::Client, model: &str, prompt: &str) -> Option<St
 }
 
 fn incident_model() -> String {
-    std::env::var("INCIDENT_MODEL").unwrap_or_else(|_| "qwen3-0.6b".to_string())
+    std::env::var("INCIDENT_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string())
 }
 
 // ── Agent 1: logs — a deterministic tool agent (no LLM) ─────────────────────
