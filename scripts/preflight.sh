@@ -56,12 +56,57 @@ FAIL_FAST=0
 #
 # Steps whose `run:` is a block scalar are still invisible here; that is what
 # `warn_on_block_scalars` reports.
+#
+# Each command is prefixed with the environment CI gives it — the job's `env:`
+# block and then the step's, so a step-level value wins. Until 2026-08-11 only
+# the *top-level* `env:` was applied (`apply_ci_env` below), and the gap was not
+# theoretical: `example-surface` sets `INCIDENT_EXIT_WHEN_DONE` on the
+# incident-response demo step, and without it the demo parks on Ctrl+C — so
+# `--full` hung forever rather than running the gate. Two more steps set
+# `A2A_TEST_POSTGRES_URL` and `INCIDENT_REQUIRE_ALL`, and without those the
+# local run exercised strictly less than CI while reporting PASS. A local gate
+# that does not reproduce the CI gate is worse than no local gate.
 gates_for_jobs() {
     awk -v want="$1" '
-        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
+        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
+        # Emits the pending step, if it belongs to a wanted job.
+        function flush(   pair) {
+            if (cmd != "") print job_env step_env cmd
+            cmd = ""; step_env = ""; env_indent = -1
         }
+        # A job header (2-space key) ends the previous job and its env.
+        /^  [a-z0-9_-]+:[[:space:]]*$/ {
+            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
+        }
+        # A new list item ends the previous step.
+        /^[[:space:]]*-[[:space:]]/ { flush() }
+        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
+            flush()
+            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
+            next
+        }
+        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
+        # indent is recorded so only its own keys are read, and anything
+        # shallower closes it.
+        /^    env:[[:space:]]*$/  { env_indent = 4; next }
+        /^        env:[[:space:]]*$/ { env_indent = 8; next }
+        env_indent > 0 {
+            indent = match($0, /[^ ]/) - 1
+            if (indent <= env_indent) { env_indent = -1 }
+            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
+                line = $0
+                sub(/^[[:space:]]+/, "", line)
+                key = line; sub(/:.*$/, "", key)
+                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+                sub(/[[:space:]]+$/, "", val)
+                gsub(/^"|"$/, "", val)
+                gsub(/^'\''|'\''$/, "", val)
+                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
+                else step_env = step_env key "=" shquote(val) " "
+                next
+            }
+        }
+        END { flush() }
     ' "$CI_YML"
 }
 
