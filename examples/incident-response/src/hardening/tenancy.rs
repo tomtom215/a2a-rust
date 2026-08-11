@@ -12,7 +12,7 @@ use a2a_protocol_server::tenant_resolver::HeaderTenantResolver;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::SendMessageResponse;
 
-use super::{bind, plain_card, serve, Check, HeaderInterceptor};
+use super::{bind, is_refusal, plain_card, serve, Check, HeaderInterceptor};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -123,6 +123,12 @@ pub(super) async fn isolation() -> Check {
                  — the resolver is not authoritative",
                 owned[0].0
             ),
+        ),
+        // Without this arm a connection error would read as a refusal, and the
+        // check would pass against an agent that had stopped listening.
+        Err(e) if !is_refusal(&e) => Check::fail(
+            LABEL,
+            format!("the cross-tenant call never reached the server, so nothing refused it: {e}"),
         ),
         Err(_) => Check::pass(
             LABEL,

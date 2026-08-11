@@ -472,23 +472,27 @@ scripts/prove_gates_fail.sh             # all of them (~15 min)
 Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
-Last full run — 2026-08-10, **32 of 32 proven, 0 unproven, 0 inconclusive**
-(exit 0), on `claude/a2a-rust-continuation-9ozdbm` at `af7a1f8` plus that
-session's commits. 32 rather than 31 because the workflow-gate prover below
-is itself a gate now, and so needs its own injection.
-
-The count is **39** as of 2026-08-11, verified by
-`prove_gates_fail.sh --list` at that day's head. It grew from 32 in three
-steps, each proven individually on the day it landed:
+Last full run — 2026-08-11, **39 of 39 proven, 0 unproven, 0 inconclusive**
+(exit 0), on `claude/a2a-rust-continuation-69btr9` at `0a3aeeb`. The previous
+complete sweep was 2026-08-10 at 32 of 32; the count grew to 39 in three steps
+that day, each also proven individually as it landed:
 
 | Added | Gates | Injection | Proven |
 |---|---|---|---|
-| `dogfood` — runs `examples/agent-team`, which no workflow had ever executed | +1 | Claim-table drift, deliberately *not* a failing assertion: `if failed > 0 { exit(1) }` was never the broken part; the summary table that printed `[x]` regardless of results was | `--only agent-team` → **PROVEN, exit 1** (290s) |
-| `example-surface` — six method × binding sweeps, one per example, sharing one injection | +5 | Drop one method's recording from the shared harness: every call still succeeds and the run must still go red | `--only echo-agent` / `--only incident-response` → **PROVEN, exit 2** (229s) |
-| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | `--only incident-response` → **PROVEN, exit 3** (97s) |
+| `dogfood` — runs `examples/agent-team`, which no workflow had ever executed | +1 | Claim-table drift, deliberately *not* a failing assertion: `if failed > 0 { exit(1) }` was never the broken part; the summary table that printed `[x]` regardless of results was | **PROVEN, exit 1** (290s) |
+| `example-surface` — six method × binding sweeps, one per example, sharing one injection | +5 | Drop one method's recording from the shared harness: every call still succeeds and the run must still go red | **PROVEN, exit 2** (77–229s per leg) |
+| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | **PROVEN, exit 3** (96s) |
 
-A full 39-gate run has not been made, so the 32-of-32 figure above is the last
-*complete* sweep and this table is the delta rather than a replacement for it.
+32 rather than 31 in the earlier sweep because the workflow-gate prover below
+is itself a gate, and so needs its own injection.
+
+Injections outside `ci.yml`'s gates are worth proving too, and the same
+discipline applies: `examples/incident-response`'s eight hardening checks were
+each proven by removing the capability they cover, and the three that assert a
+call must be *refused* were separately proven to reject a transport failure by
+pointing the client at a closed port. Before that arm existed, all three of
+those injections passed — a refusal check a dead server satisfies is not a
+refusal check.
 
 ### The other ten workflows
 

@@ -67,6 +67,33 @@ This is the category most worth clearing before any external review.
   first draft tampered there, reported a failure, and the failure was the
   check's fault rather than the SDK's.
 
+  Three of the eight assert that something must *not* succeed, and each
+  originally accepted any error as proof — so killing the agent between setup
+  and assertion would have read as "correctly refused". They now require the
+  error to be a server refusal (`Protocol`/`AuthRequired`/`UnexpectedStatus`)
+  rather than a transport failure, and all three arms were proven to fire by
+  pointing the client at a closed port: before the change all three injections
+  passed, after it all three go red naming the unreached server.
+
+  **What this entry does not claim.** "Done" means the eight capabilities above
+  are demonstrated, not that every capability the SDK ships now has an example.
+  Measured by grep across `examples/` on 2026-08-11, these are still exercised
+  by no example, each for a reason:
+
+  | Capability | Why no example |
+  |---|---|
+  | `PostgresTaskStore`, `TenantAwarePostgresTaskStore` | Needs a live server; covered by `ci.yml`'s `test-postgres` job instead |
+  | `auth-jwt` (`JwtAuthInterceptor`, JWKS/OIDC) | Needs an issuer or a static JWKS fixture |
+  | `init_otlp_pipeline` | Needs an OTLP collector; Act 5 collects in-process instead, which checks the instrumentation but not the export path |
+  | `tls-rustls` HTTPS push delivery | Needs a certificate |
+  | `ApiKeyAuthInterceptor` | Sibling of the bearer interceptor that *is* shown; not independently demonstrated |
+  | `HandlerLimits` | Not demonstrated |
+  | `TenantAwareSqliteTaskStore` | The two halves are shown separately; the combination is not |
+  | `RetryPolicy` (client) | Not demonstrated |
+
+  `A2aRouter` is the one on that shortlist that *is* covered — by
+  `examples/agent-team`'s `axum` leg.
+
 * **~~Make every example's coverage claim measurable.~~ Done 2026-08-11** —
   all six examples now report **44 of 44 cells** and exit non-zero on a gap,
   gated by `ci.yml`'s `example-surface` job with each leg proven able to fail.

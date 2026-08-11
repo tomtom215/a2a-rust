@@ -39,7 +39,7 @@ mod trust;
 use std::sync::Arc;
 
 use a2a_protocol_client::interceptor::{CallInterceptor, ClientRequest, ClientResponse};
-use a2a_protocol_client::ClientResult;
+use a2a_protocol_client::{ClientError, ClientResult};
 use a2a_protocol_server::handler::RequestHandler;
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard};
 
@@ -142,6 +142,27 @@ fn serve(listener: tokio::net::TcpListener, handler: Arc<RequestHandler>) {
             });
         }
     });
+}
+
+/// `true` when the server refused, rather than the example failing to reach it.
+///
+/// Three checks here assert that something *must not* succeed, and every one of
+/// them would otherwise pass on a connection error — which is the vacuous-pass
+/// shape this repository has spent its time removing. A refusal check that a
+/// dead server satisfies is not a refusal check: kill the agent between the
+/// setup and the assertion and it still reports "correctly refused".
+///
+/// The list is deliberately positive rather than a list of transport errors to
+/// exclude. `ClientError` is `#[non_exhaustive]`, so a variant added upstream
+/// falls through to `false` here and surfaces as a failing check that names the
+/// error, instead of being silently counted as a refusal.
+fn is_refusal(error: &ClientError) -> bool {
+    matches!(
+        error,
+        ClientError::Protocol(_)
+            | ClientError::AuthRequired { .. }
+            | ClientError::UnexpectedStatus { .. }
+    )
 }
 
 /// A minimal single-binding card — Act 4 already measures the full matrix, so

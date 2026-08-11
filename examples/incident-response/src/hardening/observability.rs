@@ -201,14 +201,13 @@ pub(super) async fn otel_export() -> Check {
             }
             found = true;
             if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
-                total += sum
-                    .data_points()
-                    .map(super::observability::point_value)
-                    .sum::<u64>();
+                total += sum.data_points().map(point_value).sum::<u64>();
             }
         }
     }
-    provider.shutdown().ok();
+    // Best-effort: the datapoint has already been collected, and a failure to
+    // shut the provider down would say nothing about whether it was exported.
+    let _ = provider.shutdown();
 
     if !found {
         return Check::fail(

@@ -12,7 +12,7 @@ use a2a_protocol_server::auth::BearerTokenAuthInterceptor;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
 
-use super::{bind, plain_card, serve, Check};
+use super::{bind, is_refusal, plain_card, serve, Check};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -45,19 +45,31 @@ pub(super) async fn bearer_auth() -> Check {
     };
     serve(listener, handler);
 
-    // No credentials — must be refused.
+    // No credentials — must be refused, and refused *by the server*: a
+    // connection error here would otherwise satisfy the assertion.
     let anonymous = match ClientBuilder::new(&url).build() {
         Ok(client) => client,
         Err(e) => return Check::fail(LABEL, format!("building the anonymous client: {e}")),
     };
-    if let Ok(response) = anonymous
+    match anonymous
         .send_message(send_params(user_message("payments-api")))
         .await
     {
-        return Check::fail(
-            LABEL,
-            format!("an unauthenticated request SUCCEEDED ({response:?}) — auth is not enforced"),
-        );
+        Ok(response) => {
+            return Check::fail(
+                LABEL,
+                format!(
+                    "an unauthenticated request SUCCEEDED ({response:?}) — auth is not enforced"
+                ),
+            )
+        }
+        Err(e) if !is_refusal(&e) => {
+            return Check::fail(
+                LABEL,
+                format!("the anonymous call never reached the server, so nothing refused it: {e}"),
+            )
+        }
+        Err(_) => {}
     }
 
     // With the token — must be accepted.
@@ -123,13 +135,21 @@ pub(super) async fn rate_limiting() -> Check {
 
     let mut accepted = 0_u64;
     let mut refused = 0_u64;
-    for _ in 0..ATTEMPTS {
+    for n in 0..ATTEMPTS {
         match client
             .send_message(send_params(user_message("payments-api")))
             .await
         {
             Ok(_) => accepted += 1,
-            Err(_) => refused += 1,
+            Err(e) if is_refusal(&e) => refused += 1,
+            // Counting a connection error as a refusal would let a dead agent
+            // satisfy the limit, which is the opposite of what is being shown.
+            Err(e) => {
+                return Check::fail(
+                    LABEL,
+                    format!("call {} of {ATTEMPTS} never reached the server: {e}", n + 1),
+                )
+            }
         }
     }
 
