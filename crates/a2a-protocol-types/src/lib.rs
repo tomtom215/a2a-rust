@@ -16,6 +16,7 @@
 //! | [`error`] | [`error::A2aError`], [`error::ErrorCode`], [`error::A2aResult`] |
 //! | [`task`] | [`task::Task`], [`task::TaskStatus`], [`task::TaskState`], ID newtypes |
 //! | [`message`] | [`message::Message`], [`message::Part`], [`message::PartContent`] |
+//! | [`method`] | [`method::Method`] — the eleven service methods, as one list |
 //! | [`artifact`] | [`artifact::Artifact`], [`artifact::ArtifactId`] |
 //! | [`agent_card`] | [`agent_card::AgentCard`], capabilities, skills |
 //! | [`security`] | [`security::SecurityScheme`] variants, OAuth flows |
@@ -69,6 +70,7 @@ pub mod events;
 pub mod extensions;
 pub mod jsonrpc;
 pub mod message;
+pub mod method;
 pub mod params;
 #[cfg(feature = "proto")]
 pub mod proto;

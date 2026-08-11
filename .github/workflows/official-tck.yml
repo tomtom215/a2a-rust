@@ -86,6 +86,34 @@ jobs:
           uv venv
           uv pip install -e .
 
+      # Triangulate the method denominator against sources this project does
+      # not own, while a fresh upstream clone is on disk.
+      #
+      # Several claims here are of the form "every A2A method is exercised".
+      # That is only meaningful if the denominator is not this project's own
+      # invention — a list the measured party writes about itself can be
+      # trimmed until the numerator looks complete, and no reviewer can tell
+      # from outside. So the set is checked three ways: the ratified
+      # `a2a.proto` (whose vendored copies `check_proto_copies.sh` holds
+      # byte-identical), the freshly cloned official suite, and this repo's
+      # `Method` enum. All three must name the same methods.
+      #
+      # Runs here rather than in ci.yml because only this job has the upstream
+      # clone. `a2a-protocol-types` also asserts the enum against the proto as
+      # an ordinary unit test, so the two-source half is enforced on every PR;
+      # this step adds the third source and catches upstream drift.
+      #
+      # Proven able to fail, 2026-08-11, by injection into a copy of
+      # `method.rs`: an invented method -> exit 1 naming it; a removed method
+      # -> exit 1 naming it. An unreadable or unparseable source exits 2 rather
+      # than being scored as agreement.
+      - name: Cross-check the method denominator (proto vs upstream TCK vs this repo)
+        run: |
+          python3 scripts/check_method_denominator.py \
+            --proto proto/a2a_v1/a2a.proto \
+            --rust crates/a2a-protocol-types/src/method.rs \
+            --tck /tmp/a2a-tck
+
       - name: Start the SUT
         run: |
           # The SUT serves JSON-RPC and HTTP+JSON on :9999 and gRPC on :9998,
