@@ -113,7 +113,7 @@ impl AgentExecutor for SurfaceExecutor {
                 .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
                     task_id: ctx.task_id.clone(),
                     context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("surface", vec![Part::text(&format!("echo: {text}"))]),
+                    artifact: Artifact::new("surface", vec![Part::text(format!("echo: {text}"))]),
                     append: None,
                     last_chunk: Some(true),
                     metadata: None,

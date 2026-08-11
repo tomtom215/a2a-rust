@@ -358,6 +358,96 @@ async fn main() {
     results.push(coverage_gaps::test_otel_metrics_integration(&ctx).await);
 
     // ── Report ───────────────────────────────────────────────────────────
+    // ── Surface matrix: every method over every binding ──────────────────
+    //
+    // The tests above measure *features*. They do not answer "does every
+    // method work on every binding?" — before this, `SubscribeToTask` was
+    // driven on two bindings and `GetExtendedAgentCard` on one, with nothing
+    // recording that as a gap. A feature table cannot answer a coverage
+    // question it has no rows for.
+    //
+    // Runs before the tally below so its outcomes are ordinary results and
+    // flow through the same pass/fail accounting as everything else.
+    #[cfg(all(feature = "websocket", feature = "grpc"))]
+    let surface_missing = {
+        use a2a_example_harness::{counter as hcounter, sweep as hsweep, Binding, Matrix};
+
+        println!("\n╔══════════════════════════════════════════════════════════════╗");
+        println!("║      SURFACE MATRIX — every method x every binding          ║");
+        println!("╚══════════════════════════════════════════════════════════════╝");
+
+        let ep = surface::start().await;
+        let restricted_url = surface::start_restricted().await;
+        let webhook = format!("http://{webhook_addr}/webhook");
+        let mut matrix = Matrix::new();
+        let mut sweep_failures = 0_usize;
+
+        for binding in Binding::ALL {
+            match surface::client_for(*binding, &ep).await {
+                Ok(client) => {
+                    println!("  --- {} ---", binding.label());
+                    let outcome = hsweep(
+                        &client,
+                        *binding,
+                        &webhook,
+                        surface::SLOW_PREFIX,
+                        &mut matrix,
+                    )
+                    .await;
+                    for l in &outcome.lines {
+                        println!("  {l}");
+                    }
+                    for f in &outcome.failures {
+                        sweep_failures += 1;
+                        results.push(TestResult::fail("surface-sweep", 0, f));
+                    }
+                }
+                Err(e) => {
+                    sweep_failures += 1;
+                    results.push(TestResult::fail(
+                        "surface-sweep",
+                        0,
+                        &format!("could not build a {} client: {e}", binding.label()),
+                    ));
+                }
+            }
+        }
+
+        println!("  --- counter-tests (calls that must be refused) ---");
+        let main_client = a2a_protocol_client::ClientBuilder::new(&ep.jsonrpc)
+            .build()
+            .expect("surface client");
+        let restricted_client = a2a_protocol_client::ClientBuilder::new(&restricted_url)
+            .build()
+            .expect("restricted client");
+        let counter_out = hcounter::run(&main_client, &restricted_client).await;
+        for l in &counter_out.lines {
+            println!("  {l}");
+        }
+        if counter_out.failures.is_empty() {
+            results.push(TestResult::pass(
+                "surface-counter",
+                0,
+                "every counter-test refused as the spec requires",
+            ));
+        } else {
+            for f in &counter_out.failures {
+                results.push(TestResult::fail("surface-counter", 0, f));
+            }
+        }
+
+        println!();
+        let missing = matrix.report();
+        if missing.is_empty() && sweep_failures == 0 {
+            results.push(TestResult::pass(
+                "surface-sweep",
+                0,
+                "every method over every binding",
+            ));
+        }
+        missing
+    };
+
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
     let failed = results.iter().filter(|r| !r.passed).count();
@@ -452,6 +542,18 @@ async fn main() {
         .filter(|c| features::status_of(c, &by_name) == features::ClaimStatus::NotRun)
         .map(|c| c.label)
         .collect();
+
+    #[cfg(all(feature = "websocket", feature = "grpc"))]
+    if !surface_missing.is_empty() {
+        println!(
+            "\n{} surface matrix cell(s) never ran:",
+            surface_missing.len()
+        );
+        for (m, b) in &surface_missing {
+            println!("  - {} over {}", m.wire_name(), b.label());
+        }
+        std::process::exit(2);
+    }
 
     if failed > 0 {
         std::process::exit(1);

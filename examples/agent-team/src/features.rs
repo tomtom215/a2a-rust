@@ -296,6 +296,19 @@ pub fn claims() -> Vec<FeatureClaim> {
                 "wire-aip193-error",
             ],
         ),
+        // The surface matrix needs both feature-gated transports, so it is a
+        // gated claim: without them it reports `[ ] NOT RUN` rather than
+        // quietly scoring a matrix that covers half the columns.
+        gated(
+            "Surface matrix — every A2A method over every binding",
+            &["surface-sweep"],
+            cfg!(all(feature = "websocket", feature = "grpc")),
+        ),
+        gated(
+            "Capability refusals (unknown task, push/extended/streaming unadvertised)",
+            &["surface-counter"],
+            cfg!(all(feature = "websocket", feature = "grpc")),
+        ),
         gated(
             "Axum A2aRouter (send + stream + card discovery)",
             &["axum-send-message", "axum-streaming", "axum-agent-card"],
