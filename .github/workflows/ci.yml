@@ -385,3 +385,20 @@ jobs:
         run: cargo run -p incident-response --release
         env:
           INCIDENT_EXIT_WHEN_DONE: "1"
+      # The three examples whose point is an external dependency — an LLM
+      # provider, or worker agents in four other languages. None is available
+      # in CI, and none is needed: the A2A surface these examples serve is the
+      # part this SDK owns, and it is measured either way.
+      #
+      # What each run does NOT do, it says. `genai`/`rig` print
+      # "LLM leg: NOT EXERCISED" and label every fallback answer; `multi-lang`
+      # prints each worker as "not reachable" and says delegation was not
+      # exercised. A green job here therefore means "the protocol surface is
+      # complete", never "the model works" or "four languages round-tripped" —
+      # a distinction that only holds because the runs assert it out loud.
+      - name: genai-agent — every method over every binding
+        run: cargo run -p genai-a2a-agent --release
+      - name: rig-agent — every method over every binding
+        run: cargo run -p rig-a2a-agent --release
+      - name: multi-lang-team — coordinator surface over every binding
+        run: cargo run -p multi-lang-team --release

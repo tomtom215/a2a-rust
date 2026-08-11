@@ -232,7 +232,9 @@ injection_for() {
             echo "package" ;;
         "cargo run -p agent-team"*)
             echo "dogfood" ;;
-        "cargo run -p echo-agent"*|"cargo run -p incident-response"*)
+        "cargo run -p echo-agent"*|"cargo run -p incident-response"*|\
+        "cargo run -p genai-a2a-agent"*|"cargo run -p rig-a2a-agent"*|\
+        "cargo run -p multi-lang-team"*)
             echo "example_surface" ;;
         "cargo clippy"*"--all-features"*)
             echo "clippy_always:$SERVER_LIB" ;;

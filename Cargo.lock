@@ -1982,9 +1982,11 @@ dependencies = [
 name = "multi-lang-team"
 version = "0.0.0"
 dependencies = [
+ "a2a-example-harness",
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "bytes",
  "http-body-util",
  "hyper",
  "hyper-util",
@@ -2865,9 +2867,11 @@ dependencies = [
 name = "rig-a2a-agent"
 version = "0.0.0"
 dependencies = [
+ "a2a-example-harness",
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "bytes",
  "http-body-util",
  "hyper",
  "hyper-util",
