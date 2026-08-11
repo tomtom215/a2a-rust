@@ -20,6 +20,7 @@
 
 mod cards;
 mod executors;
+mod features;
 mod helpers;
 mod infrastructure;
 mod tests;
@@ -97,6 +98,16 @@ async fn main() {
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))
             .with_event_queue_capacity(128)
+            // Spec §13.3 requires the extended card to be authenticated, and
+            // the handler refuses to serve it when the chain contains no
+            // authenticating interceptor. `AuditInterceptor` only logs — it
+            // does not override `authenticates()` — so this agent needs the
+            // explicit opt-in. Using it here rather than adding a real
+            // authenticator keeps the ~40 other analyzer tests token-free;
+            // the refusal path that this opt-in bypasses is covered
+            // separately by `extended-card-requires-auth` (Test 68b), which
+            // builds a handler *without* it and asserts the refusal.
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build code analyzer handler"),
     );
@@ -282,6 +293,7 @@ async fn main() {
     results.push(coverage_gaps::test_batch_subscribe_rejected(&ctx).await);
     results.push(coverage_gaps::test_real_auth_rejection(&ctx).await);
     results.push(coverage_gaps::test_extended_agent_card(&ctx).await);
+    results.push(coverage_gaps::test_extended_card_requires_auth(&ctx).await);
     results.push(coverage_gaps::test_dynamic_agent_card(&ctx).await);
     results.push(coverage_gaps::test_agent_card_caching(&ctx).await);
     results.push(coverage_gaps::test_backpressure_lagged(&ctx).await);
@@ -390,86 +402,73 @@ async fn main() {
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║                SDK FEATURES EXERCISED                      ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
-    let features = [
-        "AgentExecutor trait (4 implementations)",
-        "RequestHandlerBuilder (all options)",
-        "JsonRpcDispatcher",
-        "RestDispatcher",
-        "ClientBuilder (JSON-RPC + REST)",
-        "Sync SendMessage",
-        "Streaming SendStreamingMessage",
-        "EventStream consumer",
-        "GetTask",
-        "ListTasks (pagination + context + status filters)",
-        "CancelTask executor override",
-        "Push notification config CRUD (JSON-RPC + REST)",
-        "HttpPushSender delivery + event classification",
-        "Webhook receiver (with snapshot/drain)",
-        "ServerInterceptor (audit + auth)",
-        "Custom Metrics observer",
-        "AgentCard discovery (correct URLs via pre-bind)",
-        "Multi-part messages (text + data + file)",
-        "Artifact append mode + multiple artifacts",
-        "TaskState lifecycle (all states)",
-        "CancellationToken checking",
-        "Executor timeout config",
-        "Event queue capacity config",
-        "Max concurrent streams config",
-        "Agent-to-agent A2A communication",
-        "Multi-level orchestration",
-        "Request metadata",
-        "SubscribeToTask resubscribe (REST + JSON-RPC)",
-        "boxed_future + EventEmitter helpers",
-        "Concurrent streams on same agent",
-        "return_immediately mode",
-        "history_length config",
-        "TenantAwareInMemoryTaskStore isolation",
-        "TenantContext::scope task_local threading",
-        "Batch JSON-RPC (single, multi, empty, mixed, streaming rejection)",
-        "Real auth rejection (interceptor short-circuit)",
-        "GetExtendedAgentCard via JSON-RPC",
-        "DynamicAgentCardHandler (runtime-generated cards)",
-        "Agent card HTTP caching (ETag + 304 Not Modified)",
-        "Backpressure / lagged event queue (capacity=2)",
-        "State transition validation (streaming)",
-        "Executor error → Failed propagation",
-        "Streaming event completeness verification",
-        "Oversized metadata rejection",
-        "Artifact content correctness",
-        "GetTask history content",
-        "Rapid sequential request throughput",
-        "Cancel terminal-state task",
-        "Agent card semantic validation",
-        "GetTask after streaming (background processor)",
-        #[cfg(feature = "axum")]
-        "Axum A2aRouter (send + stream + card discovery)",
-        #[cfg(feature = "sqlite")]
-        "SqliteTaskStore (send→get→list persistence)",
-        #[cfg(feature = "sqlite")]
-        "SqlitePushConfigStore (set→list→delete lifecycle)",
-        #[cfg(all(feature = "axum", feature = "sqlite"))]
-        "Axum + SQLite combined production stack",
-        #[cfg(feature = "websocket")]
-        "WebSocket transport (SendMessage + streaming)",
-        #[cfg(feature = "grpc")]
-        "gRPC transport (SendMessage + streaming + GetTask)",
-        #[cfg(feature = "signing")]
-        "Agent card signing (JWS ES256, sign + verify + tamper detection)",
-        #[cfg(feature = "otel")]
-        "OpenTelemetry metrics (OtelMetrics with noop provider)",
-    ];
-    for f in &features {
-        println!("║   [x] {f}");
+    // Each claim is scored from the tests that back it, and the table is
+    // cross-checked against the run in both directions. Until 2026-08-11 this
+    // was a hardcoded array printed as `[x]` unconditionally — it stayed green
+    // through six failing batch tests, and silently omitted feature-gated rows
+    // rather than reporting them unexercised. See `features.rs`.
+    let by_name: std::collections::HashMap<&str, bool> = results
+        .iter()
+        .map(|r| (r.name.as_str(), r.passed))
+        .collect();
+    let claims = features::claims();
+    for claim in &claims {
+        let status = features::status_of(claim, &by_name);
+        println!("║   {} {}", status.marker(), claim.label);
     }
 
     println!("╚══════════════════════════════════════════════════════════════╝");
+
+    // The claim table must describe this run, not a remembered one. A claim
+    // with no surviving evidence, or a test no claim mentions, means the
+    // summary above is fiction — fail rather than print it and exit 0.
+    let audit = features::audit(&claims, &results);
+    if !audit.is_clean() {
+        println!("\n── CLAIM TABLE DRIFT ──────────────────────────────────────────");
+        for label in &audit.unbacked_claims {
+            println!("  claim has no backing test that ran: {label}");
+        }
+        for (label, name) in &audit.unknown_tests {
+            println!("  claim {label:?} names unknown test {name:?}");
+        }
+        for name in &audit.unclaimed_tests {
+            println!("  test ran but no claim mentions it: {name}");
+        }
+        println!(
+            "\nThe \"SDK FEATURES EXERCISED\" table no longer matches the suite. \
+             Update examples/agent-team/src/features.rs."
+        );
+        std::process::exit(1);
+    }
+
+    let not_run: Vec<&str> = claims
+        .iter()
+        .filter(|c| features::status_of(c, &by_name) == features::ClaimStatus::NotRun)
+        .map(|c| c.label)
+        .collect();
 
     if failed > 0 {
         std::process::exit(1);
     }
 
     println!(
-        "\nAll {passed} tests passed in {}ms. SDK dogfood complete.",
+        "\nAll {passed} tests passed in {}ms.",
         total_duration.as_millis()
     );
+    if not_run.is_empty() {
+        println!("Every claimed SDK feature was exercised. SDK dogfood complete.");
+    } else {
+        // Never say "complete" when features were compiled out. This is the
+        // line whose absence let `cargo run -p agent-team` with no features
+        // print "SDK dogfood complete" while skipping six feature areas.
+        println!(
+            "{} feature area(s) NOT exercised in this build — rerun with \
+             `--all-features` for a complete dogfood:",
+            not_run.len()
+        );
+        for label in &not_run {
+            println!("  - {label}");
+        }
+        std::process::exit(2);
+    }
 }

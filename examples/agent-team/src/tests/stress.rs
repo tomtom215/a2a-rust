@@ -247,13 +247,14 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
     let webhook_url = format!("http://{}/webhook", ctx.webhook_addr);
     match client.stream_message(make_send_params("slow")).await {
         Ok(mut stream) => {
-            let mut task_id = None;
-            if let Some(Ok(StreamResponse::StatusUpdate(ev))) = stream.next().await {
-                task_id = Some(ev.task_id.0.clone());
+            // The first event is a Task snapshot, not a status update.
+            let task_id = crate::helpers::first_task_id(&mut stream, 10).await;
+            let mut set_config_err = None;
+            if let Some(ref tid) = task_id {
                 let push_config = TaskPushNotificationConfig {
                     tenant: None,
                     id: None,
-                    task_id: Some(ev.task_id.0.clone()),
+                    task_id: Some(tid.clone()),
                     url: webhook_url.clone(),
                     token: Some("e2e-push-token".into()),
                     authentication: Some(AuthenticationInfo {
@@ -261,22 +262,50 @@ pub async fn test_push_delivery_e2e(ctx: &TestContext) -> TestResult {
                         credentials: Some("push-secret".into()),
                     }),
                 };
-                let _ = client.set_push_config(push_config).await;
+                if let Err(e) = client.set_push_config(push_config).await {
+                    set_config_err = Some(format!("{e}"));
+                }
             }
             while stream.next().await.is_some() {}
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             let push_events = ctx.webhook_receiver.drain().await;
-            if task_id.is_some() {
-                TestResult::pass(
-                    "push-delivery-e2e",
-                    start.elapsed().as_millis(),
-                    &format!("{} push events received", push_events.len()),
-                )
-            } else {
-                TestResult::fail(
+
+            let Some(tid) = task_id else {
+                return TestResult::fail(
                     "push-delivery-e2e",
                     start.elapsed().as_millis(),
                     "no task_id from stream",
+                );
+            };
+            if let Some(e) = set_config_err {
+                return TestResult::fail(
+                    "push-delivery-e2e",
+                    start.elapsed().as_millis(),
+                    &format!("set_push_config failed for task {tid}: {e}"),
+                );
+            }
+            // The point of an *end-to-end* push test is that a webhook was
+            // actually called. Passing on `task_id.is_some()` — as this did
+            // until 2026-08-11 — asserted only that a stream produced a task,
+            // which every other streaming test already proves, and would have
+            // stayed green if push delivery were entirely broken.
+            if push_events.is_empty() {
+                TestResult::fail(
+                    "push-delivery-e2e",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "push config registered for task {tid} but the webhook received \
+                         nothing within 200ms of the stream ending"
+                    ),
+                )
+            } else {
+                TestResult::pass(
+                    "push-delivery-e2e",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "{} push event(s) delivered to the webhook",
+                        push_events.len()
+                    ),
                 )
             }
         }

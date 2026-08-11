@@ -50,7 +50,7 @@ done
 # Same job set and parser as scripts/preflight.sh, deliberately: a gate this
 # script has never heard of is the exact defect preflight's `require_known_jobs`
 # exists to catch, one level further in.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood)$'
 
 gates_for_jobs() {
     awk -v want="$1" '
@@ -230,6 +230,8 @@ injection_for() {
             echo "doc" ;;
         "cargo package"*)
             echo "package" ;;
+        "cargo run -p agent-team"*)
+            echo "dogfood" ;;
         "cargo clippy"*"--all-features"*)
             echo "clippy_always:$SERVER_LIB" ;;
         "cargo clippy"*"--features signing"*)
@@ -298,6 +300,7 @@ expected_marker() {
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
+        dogfood)          echo "CLAIM TABLE DRIFT" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         clippy|clippy_always) echo "deref_addrof" ;;
         test|test_always) echo "gate probe: injected failure" ;;
@@ -348,6 +351,36 @@ PY
         doc)
             note_touched "$TYPES_LIB"
             printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;
+        dogfood)
+            # Inject claim-table drift rather than a failing assertion.
+            #
+            # A test failure would prove only that `if failed > 0` still
+            # exits 1, which was never the broken part. What *was* broken is
+            # that the "SDK FEATURES EXERCISED" summary was a hardcoded list
+            # printed as `[x]` with no link to the results — it stayed green
+            # through fifteen failing tests. The drift check is the guard that
+            # replaced it, so the drift check is what has to be proven.
+            #
+            # Naming a test that does not exist is the cheapest defect that
+            # reaches it: it compiles, every test still passes, and the run
+            # must still exit non-zero because the table now describes
+            # something the suite does not contain.
+            note_touched "examples/agent-team/src/features.rs"
+            python3 - <<'PY'
+p = "examples/agent-team/src/features.rs"
+s = open(p).read()
+needle = 'c("CancellationToken checking", &["cancel-task"]),'
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+s = s.replace(
+    needle,
+    'c("CancellationToken checking", &["cancel-task", "gate-probe-no-such-test"]),',
+)
+open(p, "w").write(s)
+PY
+            ;;
         package)
             # `cargo package` refuses outright on a dirty working tree:
             #

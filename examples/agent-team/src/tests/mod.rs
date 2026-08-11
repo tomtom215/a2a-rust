@@ -9,9 +9,21 @@
 //! - [`edge_cases`]: Tests 21-30 — error paths, concurrency, metrics, CRUD
 //! - [`stress`]: Tests 31-40 — stress, durability, observability, event ordering
 //! - [`dogfood`]: Tests 41-50 — SDK gaps and regressions found during review
+//! - [`transport`]: Tests 51-60 — WebSocket transport and multi-tenancy.
+//!   Partly `#[cfg(feature = "websocket")]` / `#[cfg(feature = "grpc")]`.
+//!   This line was missing until 2026-08-11, so the list jumped 41-50 → 61-90
+//!   and the only sign that a whole module existed was the numbering gap.
 //! - [`coverage_gaps`]: Tests 61-90 — E2E coverage gaps (batch JSON-RPC, auth,
 //!   dynamic/extended cards, caching, backpressure, timeout retryability,
 //!   concurrent cancels, stale pagination, deep dogfood probes)
+//!
+//! # Running this suite
+//!
+//! `cargo run -p agent-team` runs it with the default features, which cover
+//! every optional area except `tracing`. The binary exits 2 if any claimed
+//! feature area was not compiled in, so a narrowed build cannot be mistaken
+//! for a complete one. CI runs it with `--all-features` (`ci.yml`, job
+//! `dogfood`).
 
 pub mod basic;
 pub mod coverage_gaps;

@@ -314,25 +314,23 @@ impl InMemoryQueueReader {
 /// in-process sync collector recognizes the marker via [`is_lag_error`] and
 /// keeps draining (the store, fed by the lossless persistence channel or the
 /// collector's own writes, remains authoritative).
-const LAG_ERROR_MARKER: &str = "streamLagged";
-
 /// Builds the consumer-lag stream error.
+///
+/// Delegates to [`a2a_protocol_types::error::A2aError::stream_lagged`]. The
+/// marker string and the message used to be duplicated here; they now have a
+/// single definition in the types crate, because the marker is a wire contract
+/// that out-of-tree clients must be able to recognize too — and until
+/// 2026-08-11 no *public* predicate for it existed, so every consumer outside
+/// this crate had to match the raw JSON key by hand.
 fn lag_error(dropped: u64) -> a2a_protocol_types::error::A2aError {
-    let mut err = a2a_protocol_types::error::A2aError::internal(format!(
-        "event stream lagged: {dropped} events were dropped because this consumer read too \
-         slowly; resubscribe to resynchronize from a fresh task snapshot"
-    ));
-    err.data = Some(serde_json::json!({ LAG_ERROR_MARKER: dropped }));
-    err
+    a2a_protocol_types::error::A2aError::stream_lagged(dropped)
 }
 
 /// Returns `true` when `err` is the consumer-lag error produced by
 /// [`InMemoryQueueReader::read`] (as opposed to a task-execution failure).
 #[allow(clippy::redundant_pub_crate)] // Re-exported crate-wide via event_queue/mod.rs.
 pub(crate) fn is_lag_error(err: &a2a_protocol_types::error::A2aError) -> bool {
-    err.data
-        .as_ref()
-        .is_some_and(|d| d.get(LAG_ERROR_MARKER).is_some())
+    err.is_stream_lagged()
 }
 
 impl EventQueueReader for InMemoryQueueReader {

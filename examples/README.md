@@ -21,16 +21,30 @@ cargo run -p agent-team
 |---------|-------------|--------------|------------|
 | [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; runs fully local |
 | [**echo-agent**](echo-agent/) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
-| [**agent-team**](agent-team/) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
+| [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent using [genai](https://crates.io/crates/genai) (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
 | [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
 
 ## What to start with
 
-- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it demonstrates the complete request lifecycle (send, stream, discover, retrieve) with no external dependencies.
+- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it demonstrates the
+  core request lifecycle (send, stream, discover, retrieve) with no external
+  dependencies. It is deliberately a *subset*: its demo drives 4 of the 11 RPC
+  methods over 2 of the 4 transports, and does not advertise push
+  notifications. For full coverage see `agent-team` below.
 
-- **Evaluating the SDK?** Run [`agent-team`](agent-team/) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
+- **Evaluating the SDK?** Run [`agent-team`](agent-team/) — the dogfood suite,
+  100 automated end-to-end tests across all four transports, printing a
+  pass/fail report and a feature table computed from the results. It exits
+  non-zero if any test fails, if the feature table drifts from the tests that
+  back it, or if any claimed feature area was not compiled into the build.
+
+  Until 2026-08-11 this row read "exercises every SDK feature with 81+
+  automated tests". That was not measurable: no CI job ran the binary, 15 of
+  its 86 tests were failing, and its feature table printed `[x]` for every row
+  regardless of outcome. All three are fixed and the suite is now gated in CI
+  (`ci.yml`, job `dogfood`).
 
 - **Integrating an LLM?** See [`genai-agent`](genai-agent/) or [`rig-agent`](rig-agent/) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
 

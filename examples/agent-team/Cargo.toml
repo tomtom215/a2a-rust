@@ -12,6 +12,17 @@ rust-version.workspace = true
 license.workspace      = true
 
 [features]
+## Everything that needs no external service, so a bare
+## `cargo run -p agent-team` dogfoods the whole SDK rather than a subset.
+##
+## Until 2026-08-11 there was no `default`, so the command the README gives
+## for "exercises every SDK feature" silently compiled out WebSocket, gRPC,
+## Axum, SQLite, signing and OTel — six feature areas — and still printed
+## "SDK dogfood complete". The binary now exits 2 when any claimed area is
+## unexercised, so a narrowed build is visible rather than silent.
+##
+## `tracing` is deliberately excluded: it changes output volume, not coverage.
+default = ["websocket", "grpc", "axum", "sqlite", "signing", "otel"]
 ## Enable structured logging output.
 tracing = [
     "a2a-protocol-client/tracing",

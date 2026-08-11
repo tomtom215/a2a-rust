@@ -283,3 +283,59 @@ jobs:
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
         run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+
+  # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
+  #
+  # Runs the 100-test end-to-end dogfood suite. It is a `main()`, not
+  # `#[test]`s, so `cargo test --workspace` compiles it and executes none of
+  # it — which is exactly how it went unrun.
+  #
+  # Added 2026-08-11 after measuring that no workflow had ever executed this
+  # binary. Three things were true at once when that was found:
+  #
+  #   * 15 of its 86 tests were failing, and had been for long enough that the
+  #     causes were ordinary rot (a raw-HTTP helper that never sent
+  #     `A2A-Version`, three tests assuming the first stream event is a status
+  #     update rather than a Task snapshot) plus one test — Test 68,
+  #     `GetExtendedAgentCard` — whose agent had never been configured to
+  #     support the operation, so it could not have passed on any commit;
+  #   * the suite printed a hardcoded `[x] <feature>` checklist unconnected to
+  #     the results, so a run with six failing batch tests still reported
+  #     `[x] Batch JSON-RPC (...)`; and
+  #   * the crate declared no `default` features, so the `cargo run -p
+  #     agent-team` the README prescribes silently compiled out WebSocket,
+  #     gRPC, Axum, SQLite, signing and OTel, then printed
+  #     "SDK dogfood complete".
+  #
+  # `--all-features` is load-bearing, not thoroughness for its own sake: the
+  # WebSocket leg is `#[cfg(feature = "websocket")]` and had never been
+  # compiled by any automated run. When it was finally enabled it failed
+  # immediately — its handshake omitted the `A2A-Version` header — and it
+  # `.expect()`ed on connect, aborting the whole process rather than failing
+  # one test. Both are fixed; this job is what stops them recurring.
+  #
+  # The binary's exit codes are the gate and are distinct on purpose:
+  #   0 — every test passed AND every claimed feature area was exercised
+  #   1 — a test failed, or the claim table drifted from the suite
+  #   2 — all tests passed but a claimed feature area was not compiled in
+  # A bare `run:` fails the step on any non-zero, so 2 is a hard failure here.
+  # That is deliberate: "all green, but six feature areas were never built" is
+  # the precise shape of false assurance this job exists to prevent.
+  #
+  # Proven able to fail before being trusted, per CONTRIBUTING's gate rule.
+  # Measured 2026-08-11 by injection:
+  #   * claim naming a nonexistent test        -> exit 1, names the claim
+  #   * test present but claimed by nothing    -> exit 1, names the test
+  #   * `A2A-Version` header removed           -> exit 1, 12 tests fail with a
+  #     self-describing cause, 5 claim rows render [FAIL]
+  #   * `--no-default-features`                -> exit 2, lists all 8 areas
+  dogfood:
+    name: SDK dogfood (agent-team, all features)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Run the dogfood suite
+        run: cargo run -p agent-team --release --all-features

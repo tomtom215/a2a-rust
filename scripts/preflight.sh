@@ -80,7 +80,7 @@ warn_on_block_scalars() {
     fi
 }
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood)$'
 
 # Jobs deliberately outside the local gate set, each with a reason. This list
 # is not decoration: `require_known_jobs` below fails if ci.yml grows a job

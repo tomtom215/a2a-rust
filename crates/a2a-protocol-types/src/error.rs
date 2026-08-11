@@ -211,6 +211,14 @@ impl fmt::Display for ErrorCode {
 
 // ── A2aError ──────────────────────────────────────────────────────────────────
 
+/// Key in [`A2aError::data`] marking the recoverable consumer-lag signal on a
+/// streaming subscription; its value is the number of dropped events.
+///
+/// Part of the wire contract: a server writes it, a client reads it, and it
+/// survives SSE enveloping. Prefer [`A2aError::is_stream_lagged`] over matching
+/// this string by hand.
+pub const STREAM_LAGGED_MARKER: &str = "streamLagged";
+
 /// The canonical error type for A2A protocol operations.
 ///
 /// Carries an [`ErrorCode`], a human-readable `message`, and an optional
@@ -278,6 +286,60 @@ impl A2aError {
     #[must_use]
     pub fn invalid_params(msg: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidParams, msg)
+    }
+
+    /// Returns `true` when this error is the recoverable consumer-lag signal
+    /// a server emits on a streaming subscription.
+    ///
+    /// This is **not** a terminal error. The server surfaces it to say "you
+    /// read too slowly and `n` events were dropped"; the stream continues, and
+    /// a consumer that keeps polling still receives every later event,
+    /// including the terminal status. A consumer that treats it like any other
+    /// error and stops reading will silently miss the end of the task.
+    ///
+    /// It is detected by the [`STREAM_LAGGED_MARKER`] key in [`A2aError::data`]
+    /// rather than by code or message, because the code is a generic
+    /// `InternalError` and the message is human-facing prose.
+    ///
+    /// ```
+    /// use a2a_protocol_types::error::{A2aError, ErrorCode};
+    ///
+    /// let lag = A2aError::stream_lagged(7);
+    /// assert!(lag.is_stream_lagged());
+    /// assert_eq!(lag.dropped_event_count(), Some(7));
+    ///
+    /// // An ordinary internal error is not a lag signal.
+    /// assert!(!A2aError::internal("boom").is_stream_lagged());
+    /// assert!(!A2aError::new(ErrorCode::TaskNotFound, "gone").is_stream_lagged());
+    /// ```
+    #[must_use]
+    pub fn is_stream_lagged(&self) -> bool {
+        self.data
+            .as_ref()
+            .is_some_and(|d| d.get(STREAM_LAGGED_MARKER).is_some())
+    }
+
+    /// Returns how many events were dropped, when this is a consumer-lag
+    /// signal (see [`A2aError::is_stream_lagged`]); `None` otherwise.
+    #[must_use]
+    pub fn dropped_event_count(&self) -> Option<u64> {
+        self.data.as_ref()?.get(STREAM_LAGGED_MARKER)?.as_u64()
+    }
+
+    /// Builds the consumer-lag signal carrying `dropped`.
+    ///
+    /// Servers emit this; consumers identify it with
+    /// [`A2aError::is_stream_lagged`]. It lives here rather than in the server
+    /// crate so that both sides — and any third-party client — agree on one
+    /// definition of the marker.
+    #[must_use]
+    pub fn stream_lagged(dropped: u64) -> Self {
+        let mut err = Self::internal(format!(
+            "event stream lagged: {dropped} events were dropped because this consumer read too \
+             slowly; resubscribe to resynchronize from a fresh task snapshot"
+        ));
+        err.data = Some(serde_json::json!({ STREAM_LAGGED_MARKER: dropped }));
+        err
     }
 
     /// Creates an "Unsupported operation" error.

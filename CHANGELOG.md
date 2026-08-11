@@ -29,6 +29,61 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **The SDK dogfood suite now runs in CI, and its feature table is computed
+  from results.** `examples/agent-team` holds ~5,900 lines of end-to-end tests
+  and had never been executed by any workflow: it is a `main()`, not
+  `#[test]`s, so `cargo test --workspace` compiled it and ran none of it, and
+  it appeared in the workflows only inside `cargo package --exclude` lists.
+  Measured when first run locally on 2026-08-11: **86 tests, 71 passed, 15
+  failed, exit 1**.
+
+  Three independent defects kept that invisible, and all three are fixed:
+
+  * **The feature table could not fail.** "SDK FEATURES EXERCISED" was a
+    hardcoded array printed as `[x] <label>` in a loop, with no connection to
+    any result. The failing run still printed `[x] Batch JSON-RPC (single,
+    multi, empty, mixed, streaming rejection)` with all six batch tests red.
+    Feature-gated labels were `#[cfg]`'d out of the *array*, so a build
+    without `--features websocket` omitted the row entirely rather than
+    reporting it unexercised — absence rendered as completeness. The table now
+    lives in `examples/agent-team/src/features.rs`, where each claim names the
+    tests that evidence it and renders `[x]`, `[FAIL]` or `[ ] NOT RUN` from
+    their outcomes. A bidirectional drift check fails the run if a claim names
+    no test that ran, names a test that does not exist, or if a test ran that
+    no claim mentions.
+  * **No `default` features.** `cargo run -p agent-team` — the command
+    `examples/README.md` gave for "exercises every SDK feature" — compiled out
+    WebSocket, gRPC, Axum, SQLite, signing and OTel, then printed "SDK dogfood
+    complete". There is now a `default` set covering all six, and the binary
+    exits 2 listing every unexercised area rather than claiming completion.
+  * **Nothing ran it.** `ci.yml` gains a `dogfood` job running the suite with
+    `--all-features`, registered in `scripts/preflight.sh` and
+    `scripts/prove_gates_fail.sh` so the existing bidirectional job-coverage
+    guard accounts for it.
+
+  With all features enabled the suite is now **100 tests, 100 passing**.
+
+- **`A2aError::is_stream_lagged`, `dropped_event_count`, `stream_lagged`, and
+  `STREAM_LAGGED_MARKER`** (`a2a-protocol-types`), plus
+  `ClientError::is_stream_lagged` / `dropped_event_count`
+  (`a2a-protocol-client`).
+
+  A server emits a recoverable lag signal when a streaming consumer falls
+  behind; the stream continues and a consumer that keeps polling still
+  receives later events. Recognising it required matching the raw
+  `data.streamLagged` JSON key by hand, because the only predicate was
+  `pub(crate)` inside `a2a-protocol-server`. Every out-of-tree consumer faced
+  that, and the dogfood suite's own backpressure test got it wrong — it broke
+  out of the read loop on the lag signal, then asserted on an event it had
+  just stopped waiting for. The marker and message now have one definition in
+  the types crate, which the server's `lag_error`/`is_lag_error` delegate to.
+
+- **`extended-card-requires-auth`** (dogfood Test 68b) — asserts that an agent
+  advertising `extendedAgentCard` with no authenticating interceptor refuses
+  to serve it (spec §13.3). This path is bypassed on the shared analyzer agent
+  by `allow_unauthenticated_extended_card()`, so without a dedicated test the
+  suite would prove the card is served and never that it is protected.
+
 - **`BIND-EQUIV-004` is now graded behaviourally, not just structurally.**
   §5.1 requires every binding to support the same authentication schemes. The
   runner has been checking the half a card can answer — v1.0 gives
@@ -67,6 +122,61 @@ existing `RELEASING.md` checklist.
   successive wrong measurements.
 
 ### Fixed
+
+- **The 15 failing dogfood tests**, all in the suite rather than the SDK, with
+  one exception noted below. Root causes, each verified against a live server
+  rather than inferred:
+
+  * **9 tests** — `post_raw`/`get_raw` sent no `A2A-Version` header. The server
+    negotiates the version per request and defaults to `0.3`, so every raw-HTTP
+    test was asserting against a `VERSION_NOT_SUPPORTED` envelope instead of a
+    real response. Both helpers now send it, sourced from
+    `A2A_VERSION_HEADER`/`A2A_VERSION` so they cannot drift, and both return
+    `Err` on a version rejection so the failure names its own cause.
+  * **3 tests** (`resubscribe-rest`, `resubscribe-jsonrpc`, `push-delivery-e2e`)
+    — each read one event and pattern-matched `StatusUpdate` to get a task id.
+    The first stream event is a full `Task` snapshot; the observed order is
+    `task` → `artifactUpdate` → `statusUpdate`. All three had never passed.
+    Replaced with a shared `helpers::first_task_id`, which reads until an event
+    names a task — the same correction already applied to `BIND-EQUIV-003`.
+  * **`extended-agent-card`** — the only one that was a genuine configuration
+    gap rather than rot: the analyzer's card never set
+    `extended_agent_card`, so the handler correctly answered
+    `UnsupportedOperation` per spec §3.1.11 and the test could not have passed
+    on any commit. The capability is now advertised and the §13.3
+    authentication requirement satisfied explicitly.
+  * **`backpressure-lagged`** — asserted that a lagged consumer still receives
+    the terminal event. It does not, by design: the SDK's own lag message says
+    to resubscribe, and events are dropped for that consumer only while the
+    store stays authoritative. The test now asserts that invariant — that
+    backpressure costs events, never the task — by confirming via `GetTask`
+    that the task still reached `Completed`.
+
+- **A vacuous pass.** `wire-part-flat-oneof` asserts the *absence* of a
+  `"type":"text"` discriminator, and passed against the version-error envelope,
+  which also lacks it. Verified by injection: with the header removed it now
+  reports `[FAIL] … request failed: server rejected protocol version …`
+  instead of `[PASS] response uses v1.0 flat Part…`.
+
+- **WebSocket dogfood tests aborted the process.** Tests 51-60 are
+  `#[cfg(feature = "websocket")]`, and with no `default` features and no CI job
+  they had never been compiled by an automated run. Enabling them showed the
+  handshake omitted `A2A-Version` (spec §3.6.1 — for a WebSocket that is the
+  upgrade request), and the test `.expect()`ed on connect, so one broken test
+  killed the other 86. The handshake now carries the header, mirroring
+  `a2a-protocol-client`'s own WebSocket transport, and the panic sites are
+  `TestResult::fail`.
+
+- **`push-delivery-e2e` asserted nothing about push delivery.** It passed on
+  `task_id.is_some()`, which every other streaming test already proves, and
+  would have stayed green with push entirely broken. It now requires the
+  webhook to have actually received something — currently 6 events.
+
+- **`examples/agent-team/src/tests/mod.rs` omitted the `transport` module**
+  from its own module list, so the numbering jumped 41-50 → 61-90 and the only
+  evidence that Tests 51-60 existed was the gap. `examples/README.md`'s
+  "exercises every SDK feature with 81+ automated tests" and echo-agent's
+  "complete request lifecycle" are corrected to what is measured.
 
 - **`PROVENANCE.md` §2.1's commit counts were wrong**, measured on a shallow
   clone. Over the full 648 non-merge commits the DCO verdict is 126 pass / 477

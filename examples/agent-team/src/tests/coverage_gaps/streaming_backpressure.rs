@@ -76,7 +76,16 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
     {
         Ok(mut stream) => {
             let mut event_count = 0;
+            let mut lag_signals = 0_u32;
+            let mut dropped_total = 0_u64;
             let mut saw_completed = false;
+            let mut fatal: Option<String> = None;
+
+            // Grab the task id up front so the store can be consulted below
+            // even when this consumer's stream is truncated by lag.
+            let task_id = crate::helpers::first_task_id(&mut stream, 10).await;
+            event_count += 1;
+
             while let Some(event) = stream.next().await {
                 match event {
                     Ok(a2a_protocol_types::events::StreamResponse::StatusUpdate(ev)) => {
@@ -86,23 +95,104 @@ pub async fn test_backpressure_lagged(_ctx: &TestContext) -> TestResult {
                         }
                     }
                     Ok(_) => event_count += 1,
-                    Err(_) => break,
+                    // A lag signal is recoverable and the stream continues —
+                    // that is the whole contract being tested here. This arm
+                    // used to be `Err(_) => break`, which abandoned the stream
+                    // at the first lag and so could never observe the terminal
+                    // status it then asserted on. The test was failing on its
+                    // own error handling, not on server behaviour.
+                    Err(e) if e.is_stream_lagged() => {
+                        lag_signals += 1;
+                        dropped_total += e.dropped_event_count().unwrap_or(0);
+                    }
+                    Err(e) => {
+                        fatal = Some(format!("{e}"));
+                        break;
+                    }
                 }
             }
-            // With capacity=2, the reader may miss some events but should still
-            // see the final Completed status (it's the last thing emitted).
+
+            if let Some(err) = fatal {
+                return TestResult::fail(
+                    "backpressure-lagged",
+                    start.elapsed().as_millis(),
+                    &format!("non-lag stream error after {event_count} events: {err}"),
+                );
+            }
+            // A lagged consumer may legitimately never see the terminal event:
+            // the SDK's own lag message says to "resubscribe to resynchronize
+            // from a fresh task snapshot", and the queue drops events *for
+            // that consumer only* while the store stays authoritative.
+            //
+            // So the invariant worth asserting is not "the stream still
+            // delivers Completed" — that is false by design, and asserting it
+            // is what made this test red — but "backpressure costs you events,
+            // never the task". Both earlier versions of this test got that
+            // wrong in opposite directions: the original broke out of the loop
+            // on the lag signal, and the first repair assumed the terminal
+            // event would arrive anyway.
             if saw_completed {
-                TestResult::pass(
+                return TestResult::pass(
                     "backpressure-lagged",
                     start.elapsed().as_millis(),
-                    &format!("{event_count} events received, completed=true"),
-                )
-            } else {
-                TestResult::fail(
+                    &format!(
+                        "{event_count} events, {lag_signals} lag signal(s) covering \
+                         {dropped_total} dropped event(s), terminal status still streamed"
+                    ),
+                );
+            }
+
+            let Some(tid) = task_id else {
+                return TestResult::fail(
                     "backpressure-lagged",
                     start.elapsed().as_millis(),
-                    &format!("{event_count} events received, but Completed status was not seen"),
-                )
+                    "stream never named a task",
+                );
+            };
+            if lag_signals == 0 {
+                return TestResult::fail(
+                    "backpressure-lagged",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "{event_count} events, no lag signal, yet the terminal status \
+                         never arrived — truncation without a truncation signal"
+                    ),
+                );
+            }
+            // Lagged: the store must still show the task finished.
+            match client
+                .get_task(a2a_protocol_types::params::TaskQueryParams {
+                    tenant: None,
+                    id: tid.clone(),
+                    history_length: None,
+                })
+                .await
+            {
+                Ok(task) if task.status.state == a2a_protocol_types::task::TaskState::Completed => {
+                    TestResult::pass(
+                        "backpressure-lagged",
+                        start.elapsed().as_millis(),
+                        &format!(
+                            "{event_count} events, {lag_signals} lag signal(s) covering \
+                             {dropped_total} dropped event(s); stream truncated but the \
+                             store still reports Completed"
+                        ),
+                    )
+                }
+                Ok(task) => TestResult::fail(
+                    "backpressure-lagged",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "lagged consumer missed the terminal event AND the store reports \
+                         {:?} for task {tid} — backpressure lost the task, not just events",
+                        task.status.state
+                    ),
+                ),
+                Err(e) => TestResult::fail(
+                    "backpressure-lagged",
+                    start.elapsed().as_millis(),
+                    &format!("could not verify task {tid} in the store after lag: {e}"),
+                ),
             }
         }
         Err(e) => TestResult::fail(

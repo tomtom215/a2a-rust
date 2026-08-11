@@ -29,9 +29,16 @@ pub fn code_analyzer_card(url: &str) -> AgentCard {
             output_modes: None,
             security_requirements: None,
         }],
+        // `extended_agent_card` is on because Test 68 drives
+        // `GetExtendedAgentCard` against this agent. Until 2026-08-11 the
+        // capability was absent while the test existed, so the handler
+        // correctly answered `UnsupportedOperation` (spec §3.1.11) and the
+        // test could never have passed — the suite carried a permanently red
+        // check for a feature it had never configured.
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(false),
+            .with_push_notifications(false)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,

@@ -159,6 +159,68 @@ pub async fn test_extended_agent_card(ctx: &TestContext) -> TestResult {
     }
 }
 
+/// Test 68b: an agent advertising `extendedAgentCard` but configured with no
+/// authenticating interceptor MUST refuse to serve it (spec §13.3).
+///
+/// This is the path that `allow_unauthenticated_extended_card()` bypasses on
+/// the shared analyzer agent, so without this test the opt-in would hide the
+/// guard entirely — the suite would prove the card is *served* and never that
+/// it is *protected*. Builds its own agent precisely so the opt-in is absent.
+pub async fn test_extended_card_requires_auth(ctx: &TestContext) -> TestResult {
+    let _ = ctx; // Uses its own ephemeral server.
+    let start = Instant::now();
+
+    let (listener, addr) = bind_listener().await;
+    let url = format!("http://{addr}");
+    let mut card = crate::cards::code_analyzer_card(&url);
+    card.name = "UnauthenticatedExtendedCardAgent".into();
+    // Capability advertised; no authenticator, and no opt-in below.
+    card.capabilities = AgentCapabilities::none().with_extended_agent_card(true);
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(crate::executors::CodeAnalyzerExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("build unauthenticated extended-card handler"),
+    );
+    serve_jsonrpc(listener, handler);
+
+    let body = jsonrpc_request(
+        serde_json::json!(1),
+        "GetExtendedAgentCard",
+        serde_json::json!({}),
+    );
+    match post_raw(&url, &body).await {
+        Ok((_status, resp_body)) => {
+            let v: serde_json::Value = serde_json::from_str(&resp_body).unwrap_or_default();
+            let msg = v["error"]["message"].as_str().unwrap_or("");
+            // The card must not leak, and the refusal must explain itself.
+            let served_card = v["result"].get("name").is_some();
+            if !served_card && msg.contains("requires authentication") {
+                TestResult::pass(
+                    "extended-card-requires-auth",
+                    start.elapsed().as_millis(),
+                    "unauthenticated extended card refused per spec §13.3",
+                )
+            } else {
+                TestResult::fail(
+                    "extended-card-requires-auth",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "expected refusal, got served_card={served_card}, msg={msg}, body={}",
+                        &resp_body[..resp_body.len().min(120)]
+                    ),
+                )
+            }
+        }
+        Err(e) => TestResult::fail(
+            "extended-card-requires-auth",
+            start.elapsed().as_millis(),
+            &e,
+        ),
+    }
+}
+
 // ── Dynamic agent cards (69) ────────────────────────────────────────────────
 
 /// A producer that returns a card with an incrementing counter.

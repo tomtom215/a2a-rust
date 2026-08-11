@@ -114,6 +114,42 @@ impl ClientError {
             _ => None,
         }
     }
+
+    /// Returns `true` when this is the server's recoverable consumer-lag
+    /// signal on a streaming subscription rather than a real failure.
+    ///
+    /// **Do not stop reading when this is true.** The stream continues, and a
+    /// consumer that keeps polling still receives every later event including
+    /// the terminal status. Treating it as fatal silently truncates the task:
+    ///
+    /// ```no_run
+    /// # async fn demo(stream: &mut a2a_protocol_client::streaming::EventStream) {
+    /// while let Some(event) = stream.next().await {
+    ///     match event {
+    ///         Ok(ev) => { /* handle */ }
+    ///         // Recoverable: note the gap and keep going.
+    ///         Err(e) if e.is_stream_lagged() => {
+    ///             eprintln!("dropped {:?} events", e.dropped_event_count());
+    ///         }
+    ///         Err(e) => break, // genuinely fatal
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn is_stream_lagged(&self) -> bool {
+        matches!(self, Self::Protocol(e) if e.is_stream_lagged())
+    }
+
+    /// Number of events the server dropped, when this is a consumer-lag
+    /// signal (see [`ClientError::is_stream_lagged`]); `None` otherwise.
+    #[must_use]
+    pub fn dropped_event_count(&self) -> Option<u64> {
+        match self {
+            Self::Protocol(e) => e.dropped_event_count(),
+            _ => None,
+        }
+    }
 }
 
 /// Parses a `Retry-After` header value into a delay.

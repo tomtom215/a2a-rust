@@ -65,6 +65,19 @@ use crate::infrastructure::{
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// POST raw JSON to a JSON-RPC endpoint and return `(status, body)`.
+///
+/// Sends `A2A-Version: 1.0`. This is not optional decoration: the server
+/// negotiates the protocol version per request and defaults to `0.3` when the
+/// header is absent, so a request without it is answered with
+/// `-32009 VERSION_NOT_SUPPORTED` and never reaches the method being tested.
+///
+/// Until 2026-08-11 this helper sent only `content-type`, and every test
+/// driving raw HTTP through it was asserting against that error envelope
+/// rather than against a real response. Twelve of them failed for that reason
+/// alone; `wire-part-flat-oneof` *passed* for it, because it asserts the
+/// absence of a field the error envelope also lacks. The header and the value
+/// are taken from the SDK's own constants so this cannot drift from the
+/// version the server enforces.
 pub(crate) async fn post_raw(url: &str, body: &str) -> Result<(u16, String), String> {
     let uri: hyper::Uri = url.parse().map_err(|e| format!("bad URI: {e}"))?;
 
@@ -72,6 +85,10 @@ pub(crate) async fn post_raw(url: &str, body: &str) -> Result<(u16, String), Str
         .method("POST")
         .uri(&uri)
         .header("content-type", "application/json")
+        .header(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        )
         .body(Full::new(Bytes::from(body.to_owned())))
         .map_err(|e| format!("build request: {e}"))?;
 
@@ -101,17 +118,56 @@ pub(crate) async fn post_raw(url: &str, body: &str) -> Result<(u16, String), Str
         .await
         .map_err(|e| format!("read body: {e}"))?
         .to_bytes();
-    Ok((status, String::from_utf8_lossy(&body_bytes).to_string()))
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+
+    // A version-negotiation rejection is never a meaningful subject for an
+    // assertion — it means the request never reached the code under test.
+    // Returning `Err` here rather than the envelope makes that a loud,
+    // self-describing failure instead of a mismatched-expectation one, and it
+    // is what stops a *negative* assertion ("the response must not contain
+    // X") from passing vacuously against an error body. Both failure modes
+    // were live in this suite until 2026-08-11.
+    if body.contains("VERSION_NOT_SUPPORTED") {
+        return Err(format!(
+            "server rejected protocol version negotiation — the request never reached \
+             the handler under test, so any assertion on this response is meaningless. \
+             Send `{}: {}`. Body: {body}",
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        ));
+    }
+
+    Ok((status, body))
 }
 
 /// GET a URL and return `(status, headers_map, body)`.
+///
+/// Sends `A2A-Version: 1.0` for the same reason [`post_raw`] does — the REST
+/// binding negotiates the version on reads too, so without it
+/// `GET /v1/tasks/{id}` answers `400 VERSION_NOT_SUPPORTED` instead of the
+/// `404` + AIP-193 body a caller is trying to assert on. Verified against a
+/// live SUT: same URL, header absent → 400/`UNIMPLEMENTED`; header present →
+/// 404/`NOT_FOUND` with `details[0].reason = TASK_NOT_FOUND`.
+///
+/// A caller that supplies its own `A2A-Version` in `extra_headers` wins, so
+/// tests that deliberately probe version negotiation still can.
 pub(crate) async fn get_raw(
     url: &str,
     extra_headers: &[(&str, &str)],
 ) -> Result<(u16, Vec<(String, String)>, String), String> {
     let uri: hyper::Uri = url.parse().map_err(|e| format!("bad URI: {e}"))?;
 
+    let caller_set_version = extra_headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case(a2a_protocol_types::A2A_VERSION_HEADER));
+
     let mut builder = Request::builder().method("GET").uri(&uri);
+    if !caller_set_version {
+        builder = builder.header(
+            a2a_protocol_types::A2A_VERSION_HEADER,
+            a2a_protocol_types::A2A_VERSION,
+        );
+    }
     for (k, v) in extra_headers {
         builder = builder.header(*k, *v);
     }
@@ -150,11 +206,20 @@ pub(crate) async fn get_raw(
         .await
         .map_err(|e| format!("read body: {e}"))?
         .to_bytes();
-    Ok((
-        status,
-        headers,
-        String::from_utf8_lossy(&body_bytes).to_string(),
-    ))
+    let body = String::from_utf8_lossy(&body_bytes).to_string();
+
+    // Same guard as `post_raw`, skipped when the caller drove version
+    // negotiation deliberately — in that case the rejection *is* the subject
+    // of the assertion rather than an accident.
+    if !caller_set_version && body.contains("VERSION_NOT_SUPPORTED") {
+        return Err(format!(
+            "server rejected protocol version negotiation on a GET that did not \
+             ask to test it — the request never reached the handler under test. \
+             Body: {body}"
+        ));
+    }
+
+    Ok((status, headers, body))
 }
 
 pub(crate) fn jsonrpc_request(

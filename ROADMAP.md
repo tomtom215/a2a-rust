@@ -38,6 +38,30 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
+* **~~Run the SDK dogfood suite in CI.~~ Done 2026-08-11** — `examples/agent-team`
+  holds ~5,900 lines of E2E tests and no workflow had ever executed it. It is a
+  `main()`, not `#[test]`s, so `cargo test --workspace` compiled it and ran none
+  of it; it appeared in the workflows only inside `cargo package --exclude`
+  lists. First local run: **86 tests, 71 passed, 15 failed, exit 1**.
+  Now **100 tests, 100 passing** with `--all-features`, gated by `ci.yml`'s
+  `dogfood` job.
+
+  This was the sixth gate found structurally incapable of failing, and the
+  largest: the suite's "SDK FEATURES EXERCISED" table was a hardcoded list
+  printed as `[x]` with no link to the results, so it stayed green through
+  fifteen failing tests, and feature-gated rows were `#[cfg]`'d out of the list
+  rather than reported unexercised. The table is now computed from outcomes and
+  cross-checked against the suite in both directions; see
+  `examples/agent-team/src/features.rs`.
+
+  Of the 15 failures, 14 were test rot (a raw-HTTP helper that never sent
+  `A2A-Version`; three tests assuming the first stream event is a status update
+  rather than a `Task` snapshot; one assertion that contradicted the SDK's
+  documented lag contract) and one — `GetExtendedAgentCard` — was a test whose
+  agent had never been configured to support the operation, so it could not
+  have passed on any commit. No SDK defect was found. That is a real result and
+  worth stating plainly, but it was unknowable while nothing ran the suite.
+
 * **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31209868659,
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
