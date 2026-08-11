@@ -262,3 +262,104 @@ pub mod sweep;
 
 pub use counter::CounterOutcome;
 pub use sweep::{make_send_params, sweep, SweepOutcome};
+
+// ── One-call surface phase ───────────────────────────────────────────────────
+
+/// Everything an example must supply to have its surface measured.
+pub struct SurfaceRun<'a> {
+    /// A client per binding, already connected. A binding absent from this
+    /// list is *not* silently excused — [`run_surface`] reports its whole
+    /// column as missing, because "we could not connect" and "this binding is
+    /// covered" must never look the same.
+    pub clients: Vec<(Binding, a2a_protocol_client::A2aClient)>,
+    /// A client against the agent under test, for the counter-tests.
+    pub main_client: &'a a2a_protocol_client::A2aClient,
+    /// A client against an agent advertising *no* optional capabilities.
+    pub restricted_client: &'a a2a_protocol_client::A2aClient,
+    /// URL of something that answers, so push configs point somewhere real.
+    pub webhook_url: String,
+    /// Message-text marker that makes the agent pause mid-task.
+    pub slow_prefix: &'a str,
+}
+
+/// What the surface phase concluded.
+pub struct SurfaceOutcome {
+    /// Calls that failed outright.
+    pub failures: Vec<String>,
+    /// Cells that should have been exercised but were not.
+    pub missing: Vec<(a2a_protocol_types::method::Method, Binding)>,
+}
+
+impl SurfaceOutcome {
+    /// The exit code this outcome implies: `0` complete, `1` a call failed,
+    /// `2` the matrix has a gap.
+    ///
+    /// Distinct codes on purpose. "Something broke" and "we never checked"
+    /// are different findings, and collapsing them into one non-zero loses
+    /// the more insidious of the two.
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        if !self.failures.is_empty() {
+            1
+        } else if !self.missing.is_empty() {
+            2
+        } else {
+            0
+        }
+    }
+}
+
+/// Runs the sweep over every supplied binding, then the counter-tests, then
+/// prints the matrix.
+///
+/// Shared by every example so their coverage claims are the same computation
+/// rather than four private definitions of "complete".
+pub async fn run_surface(run: SurfaceRun<'_>) -> SurfaceOutcome {
+    let mut matrix = Matrix::new();
+    let mut failures = Vec::new();
+
+    for (binding, client) in &run.clients {
+        println!("  --- {} ---", binding.label());
+        let outcome = sweep(
+            client,
+            *binding,
+            &run.webhook_url,
+            run.slow_prefix,
+            &mut matrix,
+        )
+        .await;
+        for l in &outcome.lines {
+            println!("  {l}");
+        }
+        failures.extend(outcome.failures);
+    }
+
+    println!("  --- counter-tests (calls that must be refused) ---");
+    let counter_out = counter::run(run.main_client, run.restricted_client).await;
+    for l in &counter_out.lines {
+        println!("  {l}");
+    }
+    failures.extend(counter_out.failures);
+
+    println!();
+    let missing = matrix.report();
+
+    if !failures.is_empty() {
+        println!("\n{} call(s) failed:", failures.len());
+        for f in &failures {
+            println!("  - {f}");
+        }
+    }
+    if !missing.is_empty() {
+        println!("\n{} matrix cell(s) never ran:", missing.len());
+        for (m, b) in &missing {
+            println!("  - {} over {}", m.wire_name(), b.label());
+        }
+    }
+    if failures.is_empty() && missing.is_empty() {
+        println!("\nEvery A2A method was exercised over every binding, and every");
+        println!("counter-test was refused as the specification requires.");
+    }
+
+    SurfaceOutcome { failures, missing }
+}
