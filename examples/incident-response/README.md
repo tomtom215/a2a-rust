@@ -26,7 +26,7 @@ SDK serve the whole protocol?* and *can I deploy it?*
 |---|---|
 | Every A2A method over every binding | Act 4 drives all 11 spec methods across JSON-RPC, HTTP+JSON, gRPC and WebSocket and **exits non-zero if any cell never ran**. The method list is derived from the ratified `a2a.proto`, not from a list this repository maintains |
 | Calls that must be *refused* | Act 4's counter-tests: push notifications, streaming and the extended card against an agent advertising none of them |
-| Multi-tenancy, auth, rate limits, persistence, signing, telemetry, shutdown | Act 5 — see [Act 5](#act-5--production-hardening) |
+| Multi-tenancy, five kinds of auth and limits, three task stores, signing, telemetry, retries, HTTPS push and shutdown | Act 5's **16 checks** — see [Act 5](#act-5--production-hardening) |
 
 ## The team
 
@@ -54,7 +54,8 @@ cargo run -p incident-response -- harden   # Act 5 on its own
 ```
 
 Exit codes: `1` a surface call failed, `2` a method × binding cell never ran,
-`3` a hardening check failed.
+`3` a hardening check failed, `4` a capability went unexercised while
+`INCIDENT_REQUIRE_ALL` was set.
 
 The demo works with **no model at all** (agents label their output as
 mechanical/verbatim fallbacks so the protocol mechanics stay visible), and
@@ -127,9 +128,10 @@ ACT 4 — every A2A method over every binding, counted
 
 ACT 5 — production hardening: tenancy, auth, limits, durability, telemetry
   [ok] Tenant isolation …     2 tenants isolated; a cross-tenant params.tenant was refused
-  [ok] Bearer-token auth …    anonymous refused, bearer token accepted
+  [ok] Client retry …         2 x 503 ridden out; 502 on a non-idempotent method not retried
+  [ok] OTLP pipeline …        2150 bytes of HTTP/2 exported to the configured collector
   …
-  8 passed, 0 failed, 0 not compiled into this build
+  16 passed, 0 failed, 0 not compiled, 0 not run
 ```
 
 The incident report combines the LLM's assessment with the raw log
@@ -147,18 +149,39 @@ real socket, and **asserts** each one rather than narrating it:
 |---|---|
 | `TenantAwareInMemoryTaskStore` + `HeaderTenantResolver` | One tenant reading another's tasks — including by *naming* the other tenant in `params.tenant`, which is the v0.6.0 regression this check was written for |
 | `BearerTokenAuthInterceptor` (+ the client's `AuthInterceptor`) | An unauthenticated request succeeding — and, in the other direction, a server that refuses everything |
+| `ApiKeyAuthInterceptor` | An interceptor that rejects on the header being *present* rather than on its value |
+| `JwtAuthInterceptor` against a served JWKS | A forged ES256 signature verifying, or an expired token still working |
 | `RateLimitInterceptor` | A limit that accepts everything, or one that accepts nothing |
+| `HandlerLimits` | An unbounded caller-supplied `context_id` the server allocates |
+| `RetryPolicy` (client) | A retry layer that retries a `502` on `SendMessage` — an ambiguous failure a gateway may already have forwarded, so the work can run twice |
 | `sign_agent_card` / `verify_agent_card` | A rewritten interface URL still verifying, which would let a signed card redirect callers to an impostor |
 | `SqliteTaskStore` | A task that does not survive being read back through a *different* handler over the same file |
+| `TenantAwareSqliteTaskStore` | Partitions that look right in memory and share one table on disk, leaking the moment the process restarts |
+| `PostgresTaskStore` | A second SQL backend assumed correct because the first one is |
 | `RequestHandler::shutdown` | A shutdown that hangs instead of draining |
 | The `Metrics` hook | Served requests that reach no recorder |
 | `OtelMetrics` | An instrumented handler that exports no `a2a.server.requests` datapoint — checked by collecting from a real `ManualReader`, because the default global meter provider is a no-op and would make any wiring look correct |
+| `init_otlp_pipeline` | A pipeline that builds cleanly and never reaches the collector — checked by pointing it at a socket this example owns and requiring HTTP/2 bytes |
+| `HttpPushSender::with_tls_config` | A sender that speaks HTTPS without verifying certificates — the same self-signed cert must be accepted with a trust store naming it and rejected with the default one |
 
-Every check names the specific wrong answer in its failure message, and
-`scripts/prove_gates_fail.sh` injects the tenant-resolver removal to prove the
-act can go red. Capabilities behind Cargo features print `[NOT BUILT]` with the
-feature they need rather than disappearing, so
-`--no-default-features` reports a narrower run *as* narrower.
+Every check names the specific wrong answer in its failure message, and every
+one was proven able to fail by removing the capability it covers.
+`scripts/prove_gates_fail.sh` injects the tenant-resolver removal to keep the
+act's CI step honest.
+
+**Nothing here passes by not running.** A capability compiled out prints
+`[NOT BUILT]` with the feature it needs; one whose external service is absent
+prints `[NOT RUN]` with what to set. Only PostgreSQL is in the second category
+— set `A2A_TEST_POSTGRES_URL` to exercise it:
+
+```bash
+A2A_TEST_POSTGRES_URL=postgres://user:pass@localhost:5432/db \
+  cargo run -p incident-response -- harden
+```
+
+Set `INCIDENT_REQUIRE_ALL=1` (as CI does) to make either state exit `4` instead
+of passing quietly, so a service that stops being provisioned fails the run
+rather than downgrading a check to a printed line.
 
 ## Patterns worth stealing
 

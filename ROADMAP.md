@@ -75,24 +75,38 @@ This is the category most worth clearing before any external review.
   pointing the client at a closed port: before the change all three injections
   passed, after it all three go red naming the unreached server.
 
-  **What this entry does not claim.** "Done" means the eight capabilities above
-  are demonstrated, not that every capability the SDK ships now has an example.
-  Measured by grep across `examples/` on 2026-08-11, these are still exercised
-  by no example, each for a reason:
+  **What this entry claims, and its boundary.** "Done" means each capability
+  is demonstrated over a socket by an example, with an assertion that can fail —
+  not that it is bug-free. Sixteen capabilities are covered as of 2026-08-11;
+  a grep of `examples/` for the eight that had none confirms each now has one.
 
-  | Capability | Why no example |
-  |---|---|
-  | `PostgresTaskStore`, `TenantAwarePostgresTaskStore` | Needs a live server; covered by `ci.yml`'s `test-postgres` job instead |
-  | `auth-jwt` (`JwtAuthInterceptor`, JWKS/OIDC) | Needs an issuer or a static JWKS fixture |
-  | `init_otlp_pipeline` | Needs an OTLP collector; Act 5 collects in-process instead, which checks the instrumentation but not the export path |
-  | `tls-rustls` HTTPS push delivery | Needs a certificate |
-  | `ApiKeyAuthInterceptor` | Sibling of the bearer interceptor that *is* shown; not independently demonstrated |
-  | `HandlerLimits` | Not demonstrated |
-  | `TenantAwareSqliteTaskStore` | The two halves are shown separately; the combination is not |
-  | `RetryPolicy` (client) | Not demonstrated |
+  Eight more landed the same day, closing the list this entry previously
+  carried as outstanding:
 
-  `A2aRouter` is the one on that shortlist that *is* covered — by
-  `examples/agent-team`'s `axum` leg.
+  | Capability | How it is demonstrated | What the check rules out |
+  |---|---|---|
+  | `ApiKeyAuthInterceptor` | Custom header, three cases | An interceptor that rejects on header *presence* rather than value |
+  | `JwtAuthInterceptor` (remote JWKS) | ES256 tokens against a JWKS the example serves | A forged signature accepted, or an expired token accepted |
+  | `HandlerLimits` | `max_id_length` on a caller-controlled `context_id` | An unbounded identifier a caller can make the server allocate |
+  | `RetryPolicy` (client) | Fault-injecting proxy in front of a real agent | A retry layer that treats every 5xx alike and double-executes a non-idempotent `SendMessage` on an ambiguous `502` |
+  | `TenantAwareSqliteTaskStore` | Two tenants, handler replaced, read back as both | Partitions that are correct in memory and share one table on disk |
+  | `PostgresTaskStore` | Round-trip through two handlers | A second SQL backend assumed correct because SQLite is |
+  | `init_otlp_pipeline` | Real collector socket, byte and HTTP/2-preface assertions | A pipeline that builds cleanly and exports nothing |
+  | `HttpPushSender::with_tls_config` | rcgen cert, `tokio-rustls` sink, both trust stores | A sender that "supports HTTPS" without verifying certificates |
+
+  Each was proven able to fail by removing the capability it covers. Two of the
+  eight needed an external service the example cannot start; only PostgreSQL
+  still does, so that check reports `[NOT RUN]` naming
+  `A2A_TEST_POSTGRES_URL` rather than silently passing, and CI provides the
+  service. `INCIDENT_REQUIRE_ALL=1` — set in CI — turns any `[NOT RUN]` or
+  `[NOT BUILT]` into exit `4`, so a service that stops being provisioned fails
+  the job instead of quietly downgrading a check to a printed line.
+
+  Writing them found two mistakes in the checks themselves, both fixed rather
+  than worked around: an "expired" JWT that expired 30 seconds ago is *correctly*
+  accepted inside `JwtValidator`'s 60-second clock-skew leeway, and a proxy that
+  forwards a request without its headers strips `A2A-Version` and gets
+  `-32009` back. Both first reported as SDK defects; neither was.
 
 * **~~Make every example's coverage claim measurable.~~ Done 2026-08-11** —
   all six examples now report **44 of 44 cells** and exit non-zero on a gap,

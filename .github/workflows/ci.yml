@@ -372,6 +372,23 @@ jobs:
     name: Example surface coverage (all methods x all bindings)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Act 5's PostgreSQL check is the one capability the example cannot start a
+    # server for. Without this service it reports `[NOT RUN]` and the job still
+    # passes — honest, but a permanent gap. The service turns it into a check
+    # that actually runs, which is the difference between "we ship a Postgres
+    # store" and "we ran against Postgres".
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@stable
@@ -394,6 +411,12 @@ jobs:
       # spoken for by the method x binding matrix.
       - name: incident-response — production hardening checks
         run: cargo run -p incident-response --release -- harden
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+          # Turns a `[NOT RUN]` into exit 4. Without it, a Postgres service that
+          # stopped being provisioned would silently downgrade a real check to a
+          # printed line and this job would stay green.
+          INCIDENT_REQUIRE_ALL: "1"
       # The three examples whose point is an external dependency — an LLM
       # provider, or worker agents in four other languages. None is available
       # in CI, and none is needed: the A2A surface these examples serve is the

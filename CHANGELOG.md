@@ -29,6 +29,43 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **Act 5 grows to sixteen checks: every SDK capability that had no example now
+  has one.** The previous entry left eight capabilities demonstrated by no
+  example — measured by grep, not recalled — each for a stated reason. All eight
+  are now covered, and each was proven able to fail by removing what it covers:
+
+  | Capability | Demonstrated by | Proven failure |
+  |---|---|---|
+  | `ApiKeyAuthInterceptor` | Custom header, three cases (absent / wrong / right key) | `a request with no key SUCCEEDED` |
+  | `JwtAuthInterceptor` via remote JWKS | ES256 tokens against a JWKS the example serves on a loopback socket | `a token signed by an unpublished key was ACCEPTED` |
+  | `HandlerLimits` | `max_id_length` against a caller-controlled `context_id` | `a 33-char context_id was accepted with max_id_length 32` |
+  | `RetryPolicy` (client) | Fault-injecting reverse proxy in front of a real agent | `2 injected 503s were not ridden out` |
+  | `TenantAwareSqliteTaskStore` | Two tenants written, handler replaced, both read back | `after the restart acme can see globex's task` |
+  | `PostgresTaskStore` | Round-trip through two handlers over one database | `task … did not survive the handler change` |
+  | `init_otlp_pipeline` | A collector socket the example owns, asserting HTTP/2 bytes arrive | `3 requests recorded but the collector received 0 bytes` |
+  | `HttpPushSender::with_tls_config` | `rcgen` cert + `tokio-rustls` sink, delivered with both trust stores | `delivery to a certificate the sender was told to trust failed` |
+
+  The retry check is the one worth reading: it asserts a `503` on
+  `SendMessage` *is* retried and a `502` is *not*. `503` means the request was
+  refused up front, so re-sending a non-idempotent method is safe; `502` means
+  a gateway may already have forwarded it, so retrying can create a second
+  task. A retry layer that treats every 5xx alike passes both other assertions
+  and fails only that one.
+
+  New reporting state: `[NOT RUN]`, distinct from `[NOT BUILT]`. "The binary
+  cannot do this" and "the binary can and nobody tried" are different facts.
+  Only the PostgreSQL check can be `[NOT RUN]` (it names
+  `A2A_TEST_POSTGRES_URL`); CI provides the service, and
+  `INCIDENT_REQUIRE_ALL=1` makes either state exit `4` so a service that stops
+  being provisioned fails the job instead of silently downgrading a check to a
+  printed line.
+
+  Two failures reported while writing these were the checks' own fault, not the
+  SDK's, and are recorded because the distinction is the point: a JWT that
+  expired 30 seconds ago is *correctly* accepted inside `JwtValidator`'s
+  60-second clock-skew leeway, and a proxy that forwards a request without its
+  headers strips `A2A-Version` and earns a `-32009`.
+
 - **`examples/incident-response` now demonstrates the SDK capabilities a
   deployment needs, over a socket, with assertions.** Tenant isolation,
   authentication interceptors, rate limiting, persistent stores, agent-card

@@ -32,7 +32,11 @@
 
 mod access;
 mod durability;
+mod jwt;
+mod limits;
 mod observability;
+mod push_tls;
+mod resilience;
 mod tenancy;
 mod trust;
 
@@ -66,6 +70,13 @@ pub enum Outcome {
     /// silently printing the same "all passed" line over fewer checks.
     #[allow(dead_code)]
     NotCompiled(&'static str),
+    /// Compiled in, but the service it needs was not available.
+    ///
+    /// Distinct from [`NotCompiled`](Self::NotCompiled) on purpose. "The binary
+    /// cannot do this" and "the binary can do this and nobody tried" are
+    /// different facts, and collapsing them is how a capability ends up
+    /// counted as covered by a run that never touched it.
+    NotRun(String),
 }
 
 impl Check {
@@ -95,6 +106,14 @@ impl Check {
         }
     }
 
+    /// A capability that is compiled in but had nothing to run against.
+    fn unavailable(label: &'static str, reason: impl Into<String>) -> Self {
+        Self {
+            label,
+            outcome: Outcome::NotRun(reason.into()),
+        }
+    }
+
     /// `true` when this check found something wrong.
     const fn failed(&self) -> bool {
         matches!(self.outcome, Outcome::Fail(_))
@@ -103,6 +122,11 @@ impl Check {
     /// `true` when the capability was not built into this binary.
     const fn not_compiled(&self) -> bool {
         matches!(self.outcome, Outcome::NotCompiled(_))
+    }
+
+    /// `true` when the capability was built but not exercised.
+    const fn not_run(&self) -> bool {
+        matches!(self.outcome, Outcome::NotRun(_))
     }
 }
 
@@ -230,13 +254,58 @@ pub async fn run() -> Vec<Check> {
     vec![
         tenancy::isolation().await,
         access::bearer_auth().await,
+        access::api_key_auth().await,
+        jwt::jwt_auth().await,
         access::rate_limiting().await,
+        limits::handler_limits().await,
+        resilience::client_retry().await,
         trust::card_signing(),
         durability::sqlite_persistence().await,
+        durability::tenant_sqlite().await,
+        durability::postgres_persistence().await,
         durability::graceful_shutdown().await,
         observability::metrics_hook().await,
         observability::otel_export().await,
+        observability::otlp_pipeline().await,
+        push_tls::https_push().await,
     ]
+}
+
+/// Environment variable that makes an unexercised capability an error.
+///
+/// Set it wherever every capability is expected to be reachable — CI, which
+/// provides the PostgreSQL service the one external-dependency check needs.
+/// Without it a `[NOT RUN]` is reported and the process still exits 0, which is
+/// right for a laptop and wrong for a gate: a service that quietly stopped
+/// being provisioned would turn a real check into a printed line, and the job
+/// would stay green. This is the switch that makes that a failure.
+pub const REQUIRE_ALL_ENV: &str = "INCIDENT_REQUIRE_ALL";
+
+/// Exits `4` if [`REQUIRE_ALL_ENV`] is set and any capability went unexercised.
+///
+/// A distinct code from the `3` a failing check produces, because the two are
+/// different findings: `3` says a capability is broken, `4` says nobody looked.
+pub fn require_all_exercised(checks: &[Check]) {
+    if std::env::var(REQUIRE_ALL_ENV).is_err() {
+        return;
+    }
+    let unexercised: Vec<&str> = checks
+        .iter()
+        .filter(|c| c.not_compiled() || c.not_run())
+        .map(|c| c.label)
+        .collect();
+    if unexercised.is_empty() {
+        return;
+    }
+    println!();
+    println!(
+        "{REQUIRE_ALL_ENV} is set, so {} unexercised capability(s) is an error:",
+        unexercised.len()
+    );
+    for label in &unexercised {
+        println!("  - {label}");
+    }
+    std::process::exit(4);
 }
 
 /// Prints the checks and returns how many failed.
@@ -249,17 +318,24 @@ pub fn report(checks: &[Check]) -> usize {
                 "  [NOT BUILT] {:<52} needs --features {feature}",
                 check.label
             ),
+            Outcome::NotRun(reason) => {
+                println!("  [NOT RUN]   {:<52} {reason}", check.label);
+            }
         }
     }
     let failed = checks.iter().filter(|c| c.failed()).count();
     let not_built = checks.iter().filter(|c| c.not_compiled()).count();
+    let not_run = checks.iter().filter(|c| c.not_run()).count();
     println!();
     println!(
-        "  {} passed, {failed} failed, {not_built} not compiled into this build",
-        checks.len() - failed - not_built
+        "  {} passed, {failed} failed, {not_built} not compiled, {not_run} not run",
+        checks.len() - failed - not_built - not_run
     );
     if not_built > 0 {
-        println!("  Rerun with --all-features to exercise every capability.");
+        println!("  Rerun with --all-features to compile every capability in.");
+    }
+    if not_run > 0 {
+        println!("  A [NOT RUN] check is not a passing one — it is a gap this run did not close.");
     }
     failed
 }

@@ -31,7 +31,8 @@
 //! back to mechanical summaries so the protocol mechanics stay visible.
 //!
 //! Exit codes: `1` a surface call failed, `2` a method x binding cell never
-//! ran, `3` a hardening check failed.
+//! ran, `3` a hardening check failed, `4` a hardening capability went
+//! unexercised while `INCIDENT_REQUIRE_ALL` was set.
 
 mod agents;
 mod demo;
@@ -242,6 +243,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if hardening::report(&checks) > 0 {
                 std::process::exit(3);
             }
+            hardening::require_all_exercised(&checks);
             Ok(())
         }
         other => {

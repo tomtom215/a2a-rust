@@ -19,7 +19,7 @@ cargo run -p agent-team
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation, then the full surface matrix and eight production-hardening checks (tenancy, auth, rate limits, persistence, signing, telemetry, shutdown); runs fully local |
+| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation, then the full surface matrix and sixteen production-hardening checks (tenancy, four auth mechanisms, limits, retries, three task stores, signing, telemetry, HTTPS push, shutdown); runs fully local |
 | [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
@@ -101,7 +101,7 @@ six at **44 of 44 cells**:
 | Example | Cells | Also |
 |---|---|---|
 | `echo-agent` | 44/44 | 5 counter-tests |
-| `incident-response` | 44/44 | three-act narrative demo first, then 8 hardening checks |
+| `incident-response` | 44/44 | three-act narrative demo first, then 16 hardening checks |
 | `agent-team` | 44/44 | + 102 E2E feature tests |
 | `genai-agent` | 44/44 | LLM leg reported separately |
 | `rig-agent` | 44/44 | LLM leg reported separately |
@@ -115,21 +115,29 @@ run. A reviewer auditing "is this 11 the real 11?" reads the proto.
 
 Exit codes are the gate: `0` complete, `1` a call or counter-test failed, `2`
 a matrix cell never ran, and in `incident-response` `3` a hardening check
-failed. Gated by `ci.yml`'s `example-surface` job, each leg proven able to fail
-by injection.
+failed and `4` a capability went unexercised. Gated by `ci.yml`'s
+`example-surface` job, each leg proven able to fail by injection.
 
 ### Beyond the protocol
 
 `incident-response` adds an Act 5 that leaves the method × binding matrix
-behind and exercises the SDK capabilities a deployment needs — tenant
-isolation, bearer-token auth, rate limiting, SQLite persistence across a
-handler restart, agent-card signing, the `Metrics` hook, OpenTelemetry export
-and graceful shutdown — eight checks, each asserting the specific wrong answer
-it rules out. Run them alone with
-`cargo run -p incident-response -- harden`. Until 2026-08-11 no example in this
-repository demonstrated any of them over a socket: they were covered by unit
-and integration tests, which is not the same thing as being shown to a reader
-evaluating the SDK.
+behind and exercises the SDK capabilities a deployment needs — **16 checks**
+covering tenant isolation, four authentication mechanisms (bearer, API key,
+JWT-via-JWKS, and the client-side credential store), rate limiting, handler
+limits, client retries, three task stores (in-memory, SQLite, PostgreSQL, plus
+the tenant-partitioned variants), agent-card signing, the `Metrics` hook,
+OpenTelemetry both in-process and over OTLP, HTTPS push delivery and graceful
+shutdown. Each asserts the specific wrong answer it rules out, and each was
+proven able to fail by removing the capability it covers. Run them alone with
+`cargo run -p incident-response -- harden`.
+
+Until 2026-08-11 no example in this repository demonstrated any of them over a
+socket: they were covered by unit and integration tests, which is not the same
+thing as being shown to a reader evaluating the SDK. Capabilities that need
+something the example cannot start report `[NOT RUN]` naming what to set rather
+than passing quietly — only PostgreSQL is in that category, and
+`INCIDENT_REQUIRE_ALL=1` (set in CI, which provides the service) makes it an
+error rather than a note.
 
 **What a green run does *not* mean.** Three examples depend on something CI
 does not have — an LLM provider, or worker agents in four other languages.

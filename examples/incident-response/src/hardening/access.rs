@@ -8,11 +8,11 @@ use std::sync::Arc;
 use a2a_protocol_client::{
     AuthInterceptor, ClientBuilder, CredentialsStore, InMemoryCredentialsStore, SessionId,
 };
-use a2a_protocol_server::auth::BearerTokenAuthInterceptor;
+use a2a_protocol_server::auth::{ApiKeyAuthInterceptor, BearerTokenAuthInterceptor};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::rate_limit::{RateLimitConfig, RateLimitInterceptor};
 
-use super::{bind, is_refusal, plain_card, serve, Check};
+use super::{bind, is_refusal, plain_card, serve, Check, HeaderInterceptor};
 use crate::agents::LogSearchExecutor;
 use crate::{send_params, user_message};
 
@@ -92,6 +92,86 @@ pub(super) async fn bearer_auth() -> Check {
             LABEL,
             format!("a correctly authenticated request was refused: {e}"),
         ),
+    }
+}
+
+// ── API-key authentication ───────────────────────────────────────────────────
+
+/// The same shape as bearer auth, on a header the deployment names.
+///
+/// Worth showing separately rather than assuming it follows from the bearer
+/// check: the two interceptors read different headers, and this one's header
+/// is configurable, so "auth works" for one says nothing about whether the
+/// other reads the header it was told to.
+///
+/// Three cases, because two of them are individually satisfiable by a broken
+/// interceptor: no key at all (a missing-header path), a *wrong* key (the
+/// comparison itself), and the right key (that it accepts anything). An
+/// interceptor that rejected on presence rather than value would pass the
+/// first two.
+pub(super) async fn api_key_auth() -> Check {
+    const LABEL: &str = "API-key auth (custom header, wrong key refused)";
+    const HEADER: &str = "x-incident-key";
+    const KEY: &str = "incident-key-7f3a";
+
+    let (listener, url) = bind().await;
+    let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
+        .with_agent_card(plain_card(&url, "Keyed Agent"))
+        .with_interceptor(ApiKeyAuthInterceptor::new([KEY.to_owned()]).with_header(HEADER))
+        .build()
+    {
+        Ok(handler) => Arc::new(handler),
+        Err(e) => return Check::fail(LABEL, format!("building the handler: {e}")),
+    };
+    serve(listener, handler);
+
+    // (1) no key and (2) the wrong key — both must be refused by the server.
+    for (case, header) in [("no key", None), ("a wrong key", Some("not-the-key"))] {
+        let mut builder = ClientBuilder::new(&url);
+        if let Some(value) = header {
+            builder = builder.with_interceptor(HeaderInterceptor::new(HEADER, value));
+        }
+        let client = match builder.build() {
+            Ok(client) => client,
+            Err(e) => return Check::fail(LABEL, format!("building the {case} client: {e}")),
+        };
+        match client
+            .send_message(send_params(user_message("payments-api")))
+            .await
+        {
+            Ok(_) => {
+                return Check::fail(
+                    LABEL,
+                    format!("a request with {case} SUCCEEDED — the key is not checked"),
+                )
+            }
+            Err(e) if !is_refusal(&e) => {
+                return Check::fail(
+                    LABEL,
+                    format!("the {case} call never reached the server: {e}"),
+                )
+            }
+            Err(_) => {}
+        }
+    }
+
+    // (3) the right key — must be accepted.
+    let authorized = match ClientBuilder::new(&url)
+        .with_interceptor(HeaderInterceptor::new(HEADER, KEY))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => return Check::fail(LABEL, format!("building the authorized client: {e}")),
+    };
+    match authorized
+        .send_message(send_params(user_message("payments-api")))
+        .await
+    {
+        Ok(_) => Check::pass(
+            LABEL,
+            format!("{HEADER}: absent and wrong keys refused, correct key accepted"),
+        ),
+        Err(e) => Check::fail(LABEL, format!("the correct key was refused: {e}")),
     }
 }
 

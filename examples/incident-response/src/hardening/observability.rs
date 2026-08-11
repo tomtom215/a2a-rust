@@ -245,3 +245,145 @@ fn point_value(point: &opentelemetry_sdk::metrics::data::SumDataPoint<u64>) -> u
 pub(super) async fn otel_export() -> Check {
     Check::skipped(OTEL_LABEL, "otel")
 }
+
+// ── The bundled OTLP pipeline ────────────────────────────────────────────────
+
+const OTLP_LABEL: &str = "OTLP pipeline (bytes reach the configured collector)";
+
+/// Points `init_otlp_pipeline` at a socket this example owns and requires the
+/// exporter to actually connect and transmit.
+///
+/// [`otel_export`] checks the *instrumentation* — that requests reach the
+/// meter. It says nothing about the **export** path, which is the half a
+/// deployment depends on and the half that involves a network: a wrong
+/// endpoint, a channel that never dials, an exporter that silently swallows
+/// its errors all leave the in-process reader looking perfect.
+///
+/// The collector here is a bare TCP listener rather than a real OTLP receiver,
+/// because the assertion does not need one. What is being established is that
+/// the pipeline opened a connection to the endpoint it was configured with and
+/// pushed a payload: the HTTP/2 connection preface arrives verbatim (it is sent
+/// before any HPACK state exists), so its presence proves a real HTTP/2 client
+/// dialled, and bytes beyond it prove frames followed. A pipeline that built
+/// cleanly and exported nothing delivers zero.
+#[cfg(feature = "otel")]
+pub(super) async fn otlp_pipeline() -> Check {
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
+
+    use tokio::io::AsyncReadExt as _;
+
+    /// Sent verbatim by every HTTP/2 client before its first frame (RFC 9113
+    /// §3.4), so it survives having no HPACK decoder on this side.
+    const H2_PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+
+    let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(e) => return Check::fail(OTLP_LABEL, format!("binding a collector socket: {e}")),
+    };
+    let endpoint = match listener.local_addr() {
+        Ok(addr) => format!("http://{addr}"),
+        Err(e) => return Check::fail(OTLP_LABEL, format!("reading the collector address: {e}")),
+    };
+
+    let received = Arc::new(AtomicUsize::new(0));
+    let saw_preface = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let received = Arc::clone(&received);
+        let saw_preface = Arc::clone(&saw_preface);
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    continue;
+                };
+                let received = Arc::clone(&received);
+                let saw_preface = Arc::clone(&saw_preface);
+                tokio::spawn(async move {
+                    let mut first = true;
+                    let mut buf = vec![0_u8; 8192];
+                    while let Ok(n) = stream.read(&mut buf).await {
+                        if n == 0 {
+                            break;
+                        }
+                        if first && buf[..n].starts_with(H2_PREFACE) {
+                            saw_preface.store(true, Ordering::SeqCst);
+                        }
+                        first = false;
+                        received.fetch_add(n, Ordering::SeqCst);
+                    }
+                });
+            }
+        });
+    }
+
+    // `MetricExporter` reads its endpoint from the environment. Set before the
+    // pipeline is built; the checks run sequentially and nothing else in this
+    // process reads the variable, so the process-global write is contained.
+    std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint);
+    let provider = match a2a_protocol_server::otel::init_otlp_pipeline("incident-response") {
+        Ok(provider) => provider,
+        Err(e) => return Check::fail(OTLP_LABEL, format!("building the pipeline: {e}")),
+    };
+
+    let (listener, url) = bind().await;
+    let handler = match RequestHandlerBuilder::new(LogSearchExecutor)
+        .with_agent_card(plain_card(&url, "Exported Agent"))
+        .with_metrics(a2a_protocol_server::otel::OtelMetricsBuilder::new().build())
+        .build()
+    {
+        Ok(handler) => Arc::new(handler),
+        Err(e) => return Check::fail(OTLP_LABEL, format!("building the handler: {e}")),
+    };
+    serve(listener, handler);
+
+    let client = match ClientBuilder::new(&url).build() {
+        Ok(client) => client,
+        Err(e) => return Check::fail(OTLP_LABEL, format!("building the client: {e}")),
+    };
+    for n in 0..CALLS {
+        if let Err(e) = client
+            .send_message(send_params(user_message("payments-api")))
+            .await
+        {
+            return Check::fail(OTLP_LABEL, format!("call {} of {CALLS} failed: {e}", n + 1));
+        }
+    }
+
+    // The periodic reader would otherwise wait out its interval. The flush is
+    // expected to *fail* — nothing here speaks OTLP back — and that is fine:
+    // the bytes have already left, which is the whole assertion.
+    let _ = tokio::time::timeout(Duration::from_secs(10), async { provider.force_flush() }).await;
+    // The write is asynchronous on the collector side; give the reader a moment
+    // to drain what the exporter already put on the wire.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = provider.shutdown();
+
+    let bytes = received.load(Ordering::SeqCst);
+    if bytes == 0 {
+        return Check::fail(
+            OTLP_LABEL,
+            format!("{CALLS} requests recorded but the collector at {endpoint} received 0 bytes"),
+        );
+    }
+    if !saw_preface.load(Ordering::SeqCst) {
+        return Check::fail(
+            OTLP_LABEL,
+            format!("{bytes} bytes reached {endpoint} but not as HTTP/2 — no connection preface"),
+        );
+    }
+    if bytes <= H2_PREFACE.len() {
+        return Check::fail(
+            OTLP_LABEL,
+            format!("only the {bytes}-byte HTTP/2 preface arrived — the exporter connected but sent no frames"),
+        );
+    }
+    Check::pass(
+        OTLP_LABEL,
+        format!("{bytes} bytes of HTTP/2 exported to the configured collector"),
+    )
+}
+
+#[cfg(not(feature = "otel"))]
+pub(super) async fn otlp_pipeline() -> Check {
+    Check::skipped(OTLP_LABEL, "otel")
+}

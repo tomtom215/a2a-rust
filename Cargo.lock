@@ -1683,6 +1683,7 @@ dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
  "a2a-protocol-types",
+ "base64",
  "bytes",
  "genai",
  "http-body-util",
@@ -1690,9 +1691,13 @@ dependencies = [
  "hyper-util",
  "opentelemetry",
  "opentelemetry_sdk",
+ "rcgen",
  "ring",
+ "rustls",
+ "rustls-pki-types",
  "serde_json",
  "tokio",
+ "tokio-rustls",
  "uuid",
 ]
 
