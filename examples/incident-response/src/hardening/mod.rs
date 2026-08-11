@@ -77,7 +77,8 @@ pub enum Outcome {
     /// different facts, and collapsing them is how a capability ends up
     /// counted as covered by a run that never touched it.
     ///
-    /// The `allow` is for the mirror image of [`NotCompiled`]'s: only the
+    /// The `allow` is for the mirror image of [`NotCompiled`](Self::NotCompiled)'s:
+    /// only the
     /// PostgreSQL check constructs this, so `--no-default-features` compiles
     /// that check out and leaves the variant unconstructed. Under CI's
     /// `-D warnings` that is a build error, and it was one — caught by

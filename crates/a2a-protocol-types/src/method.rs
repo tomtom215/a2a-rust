@@ -24,9 +24,12 @@
 //!
 //! 1. **The ratified spec artifact.** `service A2AService` in
 //!    `proto/a2a_v1/a2a.proto` declares exactly these eleven RPCs.
-//!    [`tests::all_matches_the_ratified_proto`] parses that file at test time
-//!    and asserts set equality in both directions — a method here that the
-//!    proto does not declare fails, and a proto RPC missing here fails.
+//!    The `all_matches_the_ratified_proto` test in this module parses that
+//!    file at test time and asserts set equality in both directions — a method
+//!    here that the proto does not declare fails, and a proto RPC missing here
+//!    fails. (Named rather than linked: it lives in a `#[cfg(test)]` module,
+//!    which rustdoc does not document, so a link to it is unresolvable and
+//!    `cargo doc` runs with `-D warnings`.)
 //! 2. **That artifact is itself guarded.** `scripts/check_proto_copies.sh`
 //!    asserts all vendored copies of the proto are byte-identical, so the
 //!    file this test reads cannot quietly diverge from the one the gRPC
@@ -87,8 +90,8 @@ impl Method {
     /// Every method, in spec order.
     ///
     /// Mirrors `service A2AService` in `proto/a2a_v1/a2a.proto` and is checked
-    /// against it by [`tests::all_matches_the_ratified_proto`] — see this
-    /// module's docs for why the denominator is the proto and not this slice.
+    /// against it by this module's `all_matches_the_ratified_proto` test — see
+    /// the module docs for why the denominator is the proto and not this slice.
     ///
     /// Exhaustiveness is separately enforced by [`Method::wire_name`]'s
     /// `match`: adding a variant without adding it here fails

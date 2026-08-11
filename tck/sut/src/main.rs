@@ -307,10 +307,12 @@ enum Profile {
     /// no credentials to withhold the question cannot even be posed. Until
     /// this profile existed, that half was recorded as unmeasured.
     ///
-    /// Enforcement is a single [`BearerTokenAuthInterceptor`] on the
+    /// Enforcement is a single
+    /// [`BearerTokenAuthInterceptor`](a2a_protocol_server::auth::BearerTokenAuthInterceptor) on the
     /// `RequestHandler`, which is the point: interceptors run above the
     /// dispatchers, so JSON-RPC, HTTP+JSON, gRPC and WebSocket are guarded by
-    /// one implementation reading one [`CallContext`]. That is the design the
+    /// one implementation reading one
+    /// [`CallContext`](a2a_protocol_server::CallContext). That is the design the
     /// check is verifying, so the check must be able to fail if a binding ever
     /// stops populating those headers — which is the failure mode a
     /// per-binding auth implementation would produce.

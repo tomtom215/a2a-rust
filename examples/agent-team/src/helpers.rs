@@ -35,13 +35,16 @@ pub use a2a_protocol_server::executor_helpers::EventEmitter;
 /// that id.
 ///
 /// **Why this exists.** The first event on a streaming send is a full
-/// [`StreamResponse::Task`] snapshot, not a status update — verified against a
+/// [`StreamResponse::Task`](a2a_protocol_types::events::StreamResponse::Task)
+/// snapshot, not a status update — verified against a
 /// live server, where the order is `task` → `artifactUpdate` → `statusUpdate`.
 /// Three tests here each hand-rolled `if let Some(Ok(StatusUpdate(ev)))` on the
 /// *first* event, so all three read the snapshot, failed to match, and reported
 /// "no task_id from stream". They had never passed.
 ///
-/// Every variant except [`StreamResponse::Message`] carries a task id, so this
+/// Every variant except
+/// [`StreamResponse::Message`](a2a_protocol_types::events::StreamResponse::Message)
+/// carries a task id, so this
 /// keeps reading rather than assuming any particular arrival order — the same
 /// correction already applied to `BIND-EQUIV-003` in the in-repo TCK.
 ///
