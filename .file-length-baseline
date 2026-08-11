@@ -72,7 +72,6 @@ crates/a2a-protocol-types/tests/tck_wire_format.rs
 examples/agent-team/src/tests/coverage_gaps/axum_sqlite.rs
 examples/agent-team/src/tests/coverage_gaps/deep_dogfood.rs
 examples/agent-team/src/tests/transport.rs
-examples/echo-agent/src/main.rs
 examples/incident-response/src/main.rs
 itk/src/main.rs
 scripts/prove_gates_fail.sh

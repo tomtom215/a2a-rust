@@ -17,11 +17,18 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing", "dep:tr
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
-a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
-# `websocket`: the echo agent is the target for the in-repo TCK, and the TCK
-# now has a WebSocket binding. Without this feature there is no server to
-# point it at, and a transport we ship would stay unexercised.
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket"] }
+# `websocket` + `grpc` on both sides, not optional.
+#
+# This example serves all four bindings and drives every A2A method over each,
+# then asserts the resulting matrix is complete (see `coverage.rs`). Behind
+# Cargo features that would be a lie by default: `cargo run -p echo-agent`
+# would quietly shrink the matrix and still print a full-looking report. The
+# sibling `agent-team` example shipped exactly that shape until 2026-08-11 —
+# six feature areas compiled out, "SDK dogfood complete" printed anyway — so
+# here the transports are hard dependencies and the completeness claim is
+# unconditional.
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
 tracing            = { workspace = true, optional = true }
 tracing-subscriber = { version = ">=0.3.18, <0.4", features = ["env-filter"], optional = true }
 
@@ -30,4 +37,5 @@ tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "n
 hyper          = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
+bytes          = "1"
 uuid           = { workspace = true }

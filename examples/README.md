@@ -20,7 +20,7 @@ cargo run -p agent-team
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
 | [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; runs fully local |
-| [**echo-agent**](echo-agent/) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
+| [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
 | [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
 | [**genai-agent**](genai-agent/) | LLM-powered agent using [genai](https://crates.io/crates/genai) (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
@@ -28,11 +28,21 @@ cargo run -p agent-team
 
 ## What to start with
 
-- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it demonstrates the
-  core request lifecycle (send, stream, discover, retrieve) with no external
-  dependencies. It is deliberately a *subset*: its demo drives 4 of the 11 RPC
-  methods over 2 of the 4 transports, and does not advertise push
-  notifications. For full coverage see `agent-team` below.
+- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it serves all four
+  bindings behind one handler, drives **every** A2A method over **every**
+  binding, and prints the resulting coverage matrix (currently 44 of 44 cells).
+  It then runs counter-tests against a second, deliberately restricted agent to
+  check the refusals the spec requires. No external dependencies.
+
+  It exits `1` if any call or counter-test fails and `2` if any matrix cell was
+  never exercised, so "covers everything" is a computation rather than a
+  sentence. The matrix rows come from the ratified `a2a.proto`, not from the
+  example — see `a2a_protocol_types::method`.
+
+  Until 2026-08-11 this row claimed the example demonstrated "the complete
+  request lifecycle" while it drove 4 of the 11 methods over 2 of the 4
+  transports, with push notifications and the extended card unadvertised, so
+  seven methods were unavailable on the server it started.
 
 - **Evaluating the SDK?** Run [`agent-team`](agent-team/) — the dogfood suite,
   100 automated end-to-end tests across all four transports, printing a
