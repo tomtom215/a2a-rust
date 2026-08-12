@@ -371,3 +371,83 @@ fn a_zero_drop_count_is_reported_as_zero_not_as_absent() {
     assert!(lagged.is_stream_lagged());
     assert_eq!(lagged.dropped_event_count(), Some(0));
 }
+
+// ── parse_retry_after ────────────────────────────────────────────────────
+//
+// This helper had no direct tests at all — every test above only ever set
+// `retry_after: None` on the struct. `cargo mutants` replaced the whole
+// function body with `Some(Duration::default())`, i.e. "retry immediately",
+// and nothing failed. A client would then hammer a server that had explicitly
+// asked it to wait, which is the one behaviour `Retry-After` exists to
+// prevent.
+//
+// The gap was pre-existing and invisible until `error.rs` was split, because
+// CI mutates changed *files* while the local run had been scoped to changed
+// *lines*.
+
+/// Builds a `HeaderMap` carrying a single `Retry-After` value.
+fn retry_after_header(value: &str) -> hyper::HeaderMap {
+    let mut headers = hyper::HeaderMap::new();
+    headers.insert(
+        hyper::header::RETRY_AFTER,
+        hyper::header::HeaderValue::from_str(value).expect("test header value is ASCII"),
+    );
+    headers
+}
+
+/// The delay is the one the server asked for, not merely *a* delay.
+#[test]
+fn retry_after_delta_seconds_is_parsed_exactly() {
+    assert_eq!(
+        parse_retry_after(&retry_after_header("120")),
+        Some(std::time::Duration::from_secs(120)),
+        "the parsed delay must be the header's value; `Some(0)` would mean \
+         retrying instantly against a server that asked for two minutes"
+    );
+}
+
+/// An absurd value is clamped rather than honoured.
+///
+/// The clamp is a defence, not a nicety: without it a hostile or misconfigured
+/// header parks a retry for as long as it likes.
+#[test]
+fn retry_after_is_clamped_to_one_hour() {
+    assert_eq!(
+        parse_retry_after(&retry_after_header("86400")),
+        Some(std::time::Duration::from_secs(3600))
+    );
+    // Exactly at the ceiling is not clamped further.
+    assert_eq!(
+        parse_retry_after(&retry_after_header("3600")),
+        Some(std::time::Duration::from_secs(3600))
+    );
+}
+
+/// No header means no server-supplied delay — the caller falls back to its own
+/// backoff, which is different from being told to wait zero seconds.
+#[test]
+fn retry_after_absent_is_none() {
+    assert_eq!(parse_retry_after(&hyper::HeaderMap::new()), None);
+}
+
+/// The HTTP-date form is documented as unparsed; it must yield `None` rather
+/// than a wrong duration.
+#[test]
+fn retry_after_http_date_form_is_none() {
+    assert_eq!(
+        parse_retry_after(&retry_after_header("Wed, 21 Oct 2026 07:28:00 GMT")),
+        None
+    );
+    assert_eq!(parse_retry_after(&retry_after_header("not-a-number")), None);
+    // Negative values are not delta-seconds either.
+    assert_eq!(parse_retry_after(&retry_after_header("-5")), None);
+}
+
+/// Surrounding whitespace is trimmed before parsing.
+#[test]
+fn retry_after_tolerates_surrounding_whitespace() {
+    assert_eq!(
+        parse_retry_after(&retry_after_header("  30  ")),
+        Some(std::time::Duration::from_secs(30))
+    );
+}
