@@ -120,7 +120,13 @@ can close; they are enumerated per family in
 `docs/official-tck-findings.md` §16.
 
 MUST requirements carrying a per-transport entry on the full profile, split by
-whether that entry is an actual verdict:
+whether that entry is an actual verdict. **The unit is MUST requirements** —
+`docs/official-tck-findings.md` §1 carries a second per-transport table reading
+`jsonrpc` 95/102, which counts individual test results at every level (the
+report's own `per_transport` block, built by `a2a-tck`'s
+`reporting/aggregator.py:172-187` from `TestResult` objects). The two are not in
+conflict and neither is wrong; they answer different questions from the same
+`compatibility.json`:
 
 | Transport | Graded (`PASS`) | `SKIPPED` | Entries total |
 |---|---:|---:|---:|
