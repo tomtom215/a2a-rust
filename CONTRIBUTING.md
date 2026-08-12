@@ -486,9 +486,12 @@ run that detects it) now catches that case, and the broken links were fixed at
 `70017c7`. The figure below is from the first sweep where a green baseline was
 actually confirmed.
 
-Last full run — pending re-measurement with the baseline check. The previous
-complete sweep was 2026-08-10 at 32 of 32; the count grew to 39 in three steps
-on 2026-08-11, each proven individually as it landed:
+Last full run — 2026-08-12, **39 of 39 proven, 0 unproven, 0 inconclusive,
+0 pre-broken** (exit 0), at `1cc2024`. This is the first sweep in which every
+gate was confirmed green before its defect was injected, so it is the first
+whose count means what it says. The previous complete sweep was 2026-08-10 at
+32 of 32; the count grew to 39 in three steps on 2026-08-11, each proven
+individually as it landed:
 
 | Added | Gates | Injection | Proven |
 |---|---|---|---|
@@ -540,11 +543,32 @@ because bash consumes the status before the branch is entered. The first
 PRE-BROKEN verdict duly announced "gate exited 0 with nothing injected". Read
 the verdict, do not trust it.
 
-Three lessons, all worth more than the fixes:
+**What the baseline check found on its first real run.** Three gates it had
+never actually reproduced, none of them a code defect and all three invisible
+until a green baseline was required:
+
+| Gate | Symptom | Cause |
+|---|---|---|
+| `postgres_store_tests --ignored` | PRE-BROKEN, 15 of 15 failed | `A2A_TEST_POSTGRES_URL` unset |
+| `cargo run -p incident-response --release` | **hung the sweep for an hour** | `INCIDENT_EXIT_WHEN_DONE` unset, so the demo finished and parked on Ctrl+C |
+| `cargo package --workspace` | PRE-BROKEN, `no hash listed` | stale `target/package/tmp-registry` from a killed sweep |
+
+The first two are one bug: this script parses `run:` lines and ignored every
+`env:` block, exactly as `preflight.sh` did — two copies of the same parser,
+each missing the same thing. Both now apply the job-level then step-level
+environment. Note the shape of the hang: only the *injected* run had ever
+happened, and it exits on the injected defect long before the demo reaches its
+park, so a gate that could not complete un-injected had been scoring PROVEN.
+
+Four lessons, all worth more than the fixes:
 
 - A gate's exit status is not evidence on its own. What makes it evidence is
   that the output names the defect that was injected **and** that the gate
   passed without it.
+- A local harness that does not reproduce the CI command is not a weaker
+  check, it is a different one. Both harnesses here ran commands CI runs, with
+  environments CI does not have, and reported on the result as though it were
+  the same thing.
 - The break reached the branch because local verification ran fmt, clippy at
   default and `--all-features`, and `cargo test --workspace --all-features` —
   a hand-picked subset that never compiles the workspace with features *off*.
