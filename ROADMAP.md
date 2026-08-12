@@ -46,12 +46,13 @@ This is the category most worth clearing before any external review.
   not a documentation one: a reader evaluating this SDK reads the examples, and
   the examples showed an in-memory, single-tenant, unauthenticated agent.
 
-  `examples/incident-response` now runs eight such checks as Act 5, each
-  asserting the specific wrong answer it rules out — a tenant reading another's
-  tasks, an anonymous request succeeding, a rate limit that accepts everything,
-  a tampered card verifying, a task that does not survive a handler change, a
-  shutdown that hangs, served requests that reach no recorder, an instrumented
-  handler exporting no datapoint. Runnable alone as
+  `examples/incident-response` now runs **sixteen** such checks as Act 5, each
+  asserting the specific wrong answer it rules out. The first eight covered a
+  tenant reading another's tasks, an anonymous request succeeding, a rate limit
+  that accepts everything, a tampered card verifying, a task that does not
+  survive a handler change, a shutdown that hangs, served requests that reach no
+  recorder, and an instrumented handler exporting no datapoint; the other eight
+  are in the table below. Runnable alone as
   `cargo run -p incident-response -- harden`, gated by its own step in
   `ci.yml`'s `example-surface` job, and proven able to fail by
   `scripts/prove_gates_fail.sh` (`example_hardening`, which removes the tenant
