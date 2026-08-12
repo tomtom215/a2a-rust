@@ -343,13 +343,42 @@ This is the category most worth clearing before any external review.
 
 ## Reporting accuracy
 
-* **Codecov's total excludes less than `codecov.yml` says.** Verified
-  2026-08-06 against Codecov's per-file report for `615d01f8`: the three `**`
-  directory globs are applied, the five bare Postgres file paths are not, so
-  793 permanently-uncoverable lines sit in the public denominator. That is the
-  whole 93.62%-badge versus 95.75%-local gap. The entries now carry a glob
-  token; **one upload is still needed to confirm the fix took**, by repeating
-  the arithmetic in `docs/rust-sdk-assessment.md` §4.4.
+* **Codecov's total excludes less than `codecov.yml` says — and the glob-token
+  fix did NOT take.** Verified 2026-08-06 against Codecov's per-file report for
+  `615d01f8`: the three `**` directory globs are applied, the five bare Postgres
+  file paths are not, so 793 permanently-uncoverable lines sit in the public
+  denominator. The entries were rewritten into glob-token form
+  (`**/store/postgres_store.rs` etc.) in `0e64636` on the hypothesis that
+  "the three patterns that do work here all contain a glob token".
+
+  **Measured 2026-08-12: the hypothesis is disproven, not merely unconfirmed.**
+  `git merge-base --is-ancestor 0e64636 db1da90` is true, and four uploads
+  post-date the fix (`d6d28d8`, `af7a1f8`, `c008ab0`, `db1da90`), so the
+  confirmation this entry was waiting on has happened. Codecov API v2, per-file
+  report for `db1da9006cdf98e37ed3ea38b4a1f7817abdf429`:
+
+  | Query | Result |
+  |---|---|
+  | files in report | 124 |
+  | CONTROL — `tck/` files | **0** (that ignore *does* work) |
+  | CONTROL — `crates/` files | **124** (query is live, not empty) |
+  | TEST — postgres / `pg_migration` files | **5 — still present** |
+
+  Both controls are load-bearing. A first attempt used the abbreviated sha, got
+  HTTP 404 with an empty body, and "found no postgres files" — a vacuous pass;
+  the `crates/` control is what separates "absent" from "nothing was queried".
+
+  The five total **793 lines / 40 hits**, exactly the 793 this entry predicted:
+  `postgres_config_store.rs` 124, `tenant_postgres_config_store.rs` 140,
+  `pg_migration.rs` 73, `postgres_store.rs` 228, `tenant_postgres_store.rs` 228.
+  Reported at `db1da90`: 35343 lines / 33290 hits = **94.19%**. With the five
+  genuinely ignored: 34550 / 33250 = **96.24%** — a 2.05 point gap.
+
+  So "contains a glob token" is *not* the discriminating property. What is
+  remains **UNKNOWN** — no experiment here isolated it, and this entry will not
+  name a cause it has not tested. **Do not write a third fix into `codecov.yml`
+  without a way to test it before merge**; the first two were each plausible and
+  each shipped without a pre-merge check that could have caught them.
 * **Say which coverage number is meant.** A bare "coverage: N%" in this
   project is ambiguous between at least four figures, and the *file set*
   matters as much as the metric. Re-measured 2026-08-10 with
