@@ -874,7 +874,32 @@ jobs:
           # Without it, a large rename (e.g. crates/a2a-* -> crates/a2a-protocol-*)
           # looks like thousands of brand-new lines and balloons the run to the
           # entire mutant set, blowing the timeout. We scope to library source.
-          git diff -M "${BASE}...HEAD" -- 'crates/*/src/**/*.rs' > pr-src.diff
+          #
+          # `:(glob)` is load-bearing, not decoration. Without it a pathspec is
+          # matched by fnmatch WITHOUT FNM_PATHNAME, so `*` crosses `/` and the
+          # `**/` in the middle degenerates into "one or more directories" — the
+          # literal slash after it still has to match something. The effect was
+          # that `crates/*/src/**/*.rs` saw only files in a SUBDIRECTORY of
+          # `src/` and was blind to every file sitting directly in
+          # `crates/<crate>/src/`: 41 of 141 tracked sources at 6ebf821,
+          # including rate_limit.rs, serve.rs, builder.rs, method.rs, signing.rs
+          # and all four lib.rs.
+          #
+          # That is not theoretical. Nine of the last 120 commits changed only
+          # such files, so `ADDED` came out 0, `skip` came out true, this job's
+          # mutation step was skipped by its own `if:`, and the summary below
+          # announced "No Rust source files changed in crates/*/src/" — which
+          # was false. Among them: two behavioural fixes to rate_limit.rs
+          # (a9e1235, a116bc5) and e6aa9e1, a feature commit carrying 376 added
+          # source lines that were never mutated. Measured, not deduced: those
+          # three give ADDED = 0 / 0 / 0 under the old pathspec and 57 / 24 /
+          # 376 under this one.
+          #
+          # With `:(glob)`, `**` means "zero or more directories" as readers
+          # already assume, and the pattern matches all 141. Verified with
+          # `git ls-files -- ':(glob)crates/*/src/**/*.rs' | wc -l` = 141,
+          # against 100 for the unprefixed form, with nothing outside `src/`.
+          git diff -M "${BASE}...HEAD" -- ':(glob)crates/*/src/**/*.rs' > pr-src.diff
           ADDED=$(grep -cE '^\+[^+]' pr-src.diff || true)
 
           if [ "${ADDED:-0}" -eq 0 ]; then

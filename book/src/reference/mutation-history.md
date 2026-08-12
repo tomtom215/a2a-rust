@@ -185,6 +185,68 @@ newer row is CI's own output on the 21-shard matrix — same 183 survivors from
 a different partitioning, which is what makes the figure trustworthy rather
 than merely produced.
 
+### A seventh gate defect: the PR gate was blind to 41 of 141 source files
+
+Found 2026-08-12 while re-measuring at `6ebf821`. This one is not about the
+weekly sweep — it is the **incremental, per-PR** gate in
+`mutants.yml`'s `Build PR source diff` step, and it had been silently scoping
+out roughly a third of the library.
+
+The step read:
+
+```sh
+git diff -M "${BASE}...HEAD" -- 'crates/*/src/**/*.rs' > pr-src.diff
+ADDED=$(grep -cE '^\+[^+]' pr-src.diff || true)
+if [ "${ADDED:-0}" -eq 0 ]; then echo "skip=true" ...
+```
+
+A git pathspec is matched by `fnmatch` **without** `FNM_PATHNAME` unless it
+carries `:(glob)` magic, so `*` crosses `/` freely and the `**/` in the middle
+collapses to "one or more directories" — the literal slash after it still has to
+match something. `crates/*/src/**/*.rs` therefore matched only files in a
+*subdirectory* of `src/`, and was blind to every file sitting directly in
+`crates/<crate>/src/`.
+
+Measured at `6ebf821` with `git ls-files`, not deduced:
+
+| Pathspec | Files matched | Matches `types/src/method.rs`? |
+|---|---:|---|
+| `crates/*/src/**/*.rs` (old) | **100** | no |
+| `:(glob)crates/*/src/**/*.rs` (new) | **141** | yes |
+
+**41 of 141 tracked sources — 29% — were invisible**, among them
+`server/src/rate_limit.rs`, `server/src/serve.rs`, `server/src/builder.rs`,
+`server/src/executor.rs`, `types/src/method.rs`, `types/src/signing.rs`,
+`client/src/client.rs`, `client/src/retry.rs`, and all four `lib.rs`.
+`rate_limit.rs` is one of the eight largest survivor clusters in the table
+below, and `serve.rs` is one of the three weakest-covered files in `ROADMAP.md`.
+
+When `ADDED` came out 0 the mutation step was skipped by its own `if:`, the job
+went green, and the summary printed **"No Rust source files changed in
+`crates/*/src/` — nothing to mutate"**, which was false. That is this page's
+oldest theme in a new place: not a gate that failed to fail, but a gate that
+declared there was nothing to measure and was believed.
+
+**Proven against real history rather than a synthetic case.** Of the last 120
+commits, **nine** changed `crates/*/src` sources *exclusively* in the invisible
+set, so each would have produced `ADDED=0` as a PR. Replaying the CI step on
+three of them:
+
+| Commit | What it did | `ADDED` old | `ADDED` fixed |
+|---|---|---:|---:|
+| `a9e1235` | `fix(server): extract the slow path, not the fast one` | 0 | **57** |
+| `a116bc5` | `fix(server): collapse the duplicated rate-limit predicate` | 0 | **24** |
+| `e6aa9e1` | `feat(types): derive the A2A method set from the spec` | 0 | **376** |
+
+Two behavioural fixes to `rate_limit.rs` and a *feature* commit carrying 376
+added source lines, none of it mutated, all three reported as nothing to mutate.
+
+The fix is the `:(glob)` prefix, which gives `**` the "zero or more directories"
+meaning readers already assume. The weekly full sweep is unaffected — it does
+not use `--in-diff` — so this narrowed the PR gate, not the headline score. It
+does mean **"the incremental gate was green" has been a weaker statement than it
+looked for every PR touching only top-level modules.**
+
 ## Known equivalent mutants
 
 Mutants that no test can kill, because the mutation does not change observable
@@ -465,6 +527,32 @@ paragraph, is the thing to check.
 
 The remaining **64 survivors are in files unchanged since `041c3666`**, so
 those are valid against current `main` and are the ones worth triaging today.
+
+#### Re-checked 2026-08-12 at `6ebf821` — and the sweep was NOT re-run
+
+Stated plainly, because the distinction is the whole point of this page: the
+mutation sweep was **NOT RUN** in the 2026-08-12 session. Not "unchanged", not
+"still 125" — **not measured**. The machine had 4 cores (`nproc`), and a sweep
+that needs 21 CI shards does not fit there in a session; running a partial one
+and reporting it beside a full one is how denominators move silently. So the
+headline row below is still `041c366`'s, and `git rev-list --count
+041c366..6ebf821` puts it **91 commits behind** `main` — up from the 44 recorded
+above against `af7a1f8`.
+
+What *was* re-measured is the staleness itself, which is cheap and does not need
+a sweep:
+
+* All **eight** named survivor-cluster files still changed between `041c366` and
+  `6ebf821`, so the "61 of 125 sit in changed files" half holds unchanged.
+* The set of changed `crates/*/src` sources grew from **9** files at `af7a1f8`
+  to **13** at `6ebf821` — four more files entered it. Since the 64 "still
+  valid" survivors were never enumerated per file, it cannot be said which of
+  them those four touch. **64 is therefore an upper bound at `6ebf821`, not a
+  current count**, and the same refusal to subtract applies as above.
+
+The honest position is unchanged and now further from its evidence: the
+current-`main` survivor count is not measured, 125 is an upper bound carried
+from a tree 91 commits back, and the next full sweep settles it.
 
 ### Triage of the 64 still-valid survivors (2026-08-10)
 
