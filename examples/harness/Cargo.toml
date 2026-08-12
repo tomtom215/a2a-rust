@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-example-harness"
+version     = "0.0.0"
+description = "Coverage matrix shared by the examples: which A2A methods ran over which bindings"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
+uuid                = { workspace = true }
+tokio               = { workspace = true, features = ["time"] }

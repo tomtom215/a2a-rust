@@ -11,17 +11,65 @@ edition.workspace    = true
 rust-version.workspace = true
 license.workspace    = true
 
+[features]
+## Everything Act 5 can demonstrate without an external service, so the
+## documented `cargo run -p incident-response` exercises the whole example
+## rather than a subset. A narrowed build still reports honestly — every
+## capability compiled out prints `[NOT BUILT]` with the feature it needs
+## instead of disappearing from the report.
+default = ["sqlite", "postgres", "signing", "otel", "auth-jwt", "tls-rustls"]
+## SQLite-backed task store, plain and tenant-partitioned (Act 5).
+sqlite = ["a2a-protocol-server/sqlite"]
+## PostgreSQL-backed task store (Act 5). The check reports [NOT RUN]
+## unless A2A_TEST_POSTGRES_URL names a reachable database — a server this
+## example cannot start for itself.
+postgres = ["a2a-protocol-server/postgres"]
+## Agent-card signing (Act 5: sign, verify, detect tampering).
+signing = ["a2a-protocol-types/signing", "dep:ring"]
+## JWT bearer auth validated against a JWKS the example serves (Act 5).
+auth-jwt = ["a2a-protocol-server/auth-jwt", "dep:ring", "dep:base64"]
+## HTTPS push delivery with a caller-supplied rustls trust store (Act 5).
+tls-rustls = [
+    "a2a-protocol-server/tls-rustls",
+    "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:rcgen",
+]
+## OpenTelemetry metrics export (Act 5: a collected `a2a.server.requests`).
+otel = ["a2a-protocol-server/otel", "dep:opentelemetry", "dep:opentelemetry_sdk"]
+
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
-a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
+# All four bindings are hard dependencies, not features: this example asserts
+# a complete method x binding matrix, and behind a feature flag the default
+# build would quietly shrink the matrix and still report it full.
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
+a2a-example-harness = { path = "../harness" }
 
 serde_json     = { workspace = true }
 tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper          = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
+bytes          = "1"
 uuid           = { workspace = true }
+
+# Act 5 only. `ring` generates the throwaway P-256 key the signing check signs
+# with; the OpenTelemetry crates let the check read its own exported datapoint
+# back instead of trusting that a no-op provider recorded something.
+# `experimental_metrics_custom_reader` is what makes `ManualReader` public — it
+# is requested here rather than relied on from the server's feature set, so this
+# example does not depend on another crate's choices to compile.
+ring              = { version = "0.17", optional = true }
+base64            = { version = "0.22", optional = true }
+# HTTPS push: `rcgen` mints the throwaway certificate, `tokio-rustls` runs
+# the TLS webhook sink, and `rustls` builds the trust store the sender is
+# handed. All four are already in the workspace lockfile via the server.
+rustls            = { version = "0.23", optional = true, default-features = false, features = ["std", "ring", "tls12"] }
+rustls-pki-types  = { version = "1", optional = true }
+tokio-rustls      = { version = "0.26", optional = true, default-features = false, features = ["ring", "tls12"] }
+rcgen             = { version = "0.14", optional = true }
+opentelemetry     = { version = "0.31", optional = true }
+opentelemetry_sdk = { version = "0.31", optional = true, features = ["metrics", "experimental_metrics_custom_reader"] }
 
 # genai — multi-provider LLM client; unknown model names route to the local
 # Ollama-compatible endpoint on :11434 (llama-server / Ollama).

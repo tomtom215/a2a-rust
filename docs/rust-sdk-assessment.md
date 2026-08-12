@@ -151,10 +151,15 @@ Both SLIMRPC and WebSocket are **non-spec transports**. The A2A v1.0 spec
 names `JSONRPC`, `GRPC`, and `HTTP+JSON`; both implementations treat
 `protocolBinding` as an open string per §12. Neither should be scored as a
 compliance advantage. SLIMRPC's practical weight is that it connects the SDK
-to the AGNTCY SLIM fabric; its practical cost is that the official Rust SDK's
-workspace depends on `agntcy-slim-rpc` **2.0.0-alpha.7** — an alpha-versioned
-vendor-adjacent dependency in an official Linux Foundation SDK. That is worth
-a conversation independent of anything in this document.
+to the AGNTCY SLIM fabric.
+
+~~Its practical cost is that the official Rust SDK's workspace depends on
+`agntcy-slim-rpc` **2.0.0-alpha.7** — an alpha-versioned vendor-adjacent
+dependency in an official Linux Foundation SDK.~~ **Retired 2026-08-11:** that
+dependency is now `agntcy-slim-rpc` **2.0.0**, stable, and `a2a-slimrpc` is a
+published crate (`0.2.4`) and a first-class member of the `a2a-rs` workspace.
+The concern was legitimate when written and is now spent; see §4.1.1's
+re-verification for what does and does not follow from it.
 
 #### 4.1.1 No preparatory refactor is needed to support SLIMRPC here
 
@@ -187,6 +192,47 @@ binding specification is self-described as *"Experimental — community-contribu
 specification contains zero occurrences of "slim" or "agntcy", the
 recommendation is to **not build it now** and to revisit if and when the
 binding stabilises or a user asks for it.
+
+##### Re-verified 2026-08-11 — the binding stabilised; the recommendation does not change
+
+The condition this subsection set for revisiting has been met, so it is
+revisited here rather than left to be noticed later.
+
+| Premise, as written 2026-07-30 | Status 2026-08-11 |
+|---|---|
+| The ratified A2A v1.0 spec contains zero occurrences of "slim" or "agntcy" | **Holds.** 0 of each in both in-repo copies of the 796-line `a2a.proto`. |
+| The upstream work lives in `a2aproject/experimental-cpb-slimrpc` | **Holds.** Still present, README still reads *"Status: Experimental — This is a community-contributed custom protocol binding for A2A. It is not part of the core A2A specification."* |
+| This repo's transport abstraction already permits a separate-crate binding | **Holds.** All four extension points re-read: `Transport` is `pub` and used as `Box<dyn Transport>`; `with_custom_transport` is `pub`; `protocol_binding` is a plain `String`; `RequestHandler` is a `pub` struct with 10 `pub on_*` methods. |
+| `a2a-rs` depends on `agntcy-slim-rpc` **2.0.0-alpha.7** | **Changed.** It now depends on **`2.0.0` — stable.** |
+
+The fourth premise has flipped. `a2a-rs`'s workspace `Cargo.toml` reads
+`slim_rpc = { package = "agntcy-slim-rpc", version = "2.0.0" }`, and crates.io
+confirms `2.0.0` is the published release, following an alpha series that ran
+to `2.0.0-alpha.12`. SLIMRPC is also no longer incidental there: `a2a-slimrpc`
+is a first-class workspace and `default-members` entry, published at `0.2.4`
+(first release 2026-04-14, last update 2026-08-05).
+
+**The answer to "should we prepare for SLIMRPC?" is still no**, but one of the
+two arguments for it has expired and should not keep being cited:
+
+* The *architectural* argument is unchanged and was always the load-bearing
+  one. The extension points exist, so a SLIMRPC binding is a separate crate
+  built whenever someone wants it. The cost of waiting is still zero.
+* The *contamination* argument is now spent. "Keeping `agntcy-slim-*` alphas
+  out of this workspace's `Cargo.lock`" is no longer a reason for anything,
+  because they are not alphas. Anyone still making that case is arguing from a
+  fact that stopped being true.
+
+What actually changed is the picture of SLIM's maturity elsewhere: it has gone
+from an alpha pinned inside an official SDK to a stable dependency behind a
+published crate. That makes a future `a2a-rust` SLIMRPC crate *more* viable,
+not less — and it makes the separate-crate design more valuable, since it is
+what lets this repository adopt a stabilised binding without having carried it
+during the alpha years.
+
+The trigger to reopen properly is unchanged and has **not** fired: SLIMRPC
+being proposed as a spec binding. On the evidence above it is still explicitly
+outside the core specification.
 
 ### 4.2 Persistence, tenancy, and operations
 
@@ -509,8 +555,10 @@ the more expensive option pre-agreed if the ruling requires it.
 - **A standing interop failure**: the same 12 `HTTP_JSON — Resubscribe`
   scenarios have failed on every recorded nightly run since 2026-06-14 — six
   weeks, publicly visible on the ITK dashboard.
-- **One formal maintainer**, and an alpha-versioned vendor dependency
-  (`agntcy-slim-rpc 2.0.0-alpha.7`) in the workspace of an official SDK.
+- **One formal maintainer.** ~~And an alpha-versioned vendor dependency
+  (`agntcy-slim-rpc 2.0.0-alpha.7`) in the workspace of an official SDK.~~
+  **Retired 2026-08-11** — that dependency is now `2.0.0` stable. The
+  single-maintainer point stands; the dependency point does not.
 
 ---
 
@@ -606,7 +654,13 @@ as a fallback if Option B stalls on provenance.
 ### The mechanism, verified — "donate to the LF" is not one of the options
 
 *Added 2026-07-30. Confidence: verified against `a2aproject/A2A`'s own
-`GOVERNANCE.md` and README, read live.*
+`GOVERNANCE.md` and README, read live. **Re-verified live 2026-08-11: every
+claim in this subsection still holds, unchanged.** `A2A/GOVERNANCE.md` still
+describes a Technical Steering Committee of eight voting members, still names
+the same eight organizations — Google, Microsoft, Cisco, AWS, Salesforce,
+ServiceNow, SAP, IBM — still makes maintainership a TSC vote, and still refers
+to the Linux Foundation only via the Series Agreement and the meeting platform.
+The recommendation below rests on these premises and they have not moved.*
 
 Every option above assumes a decision-making body. It is worth naming which
 one, because "prepare for a Linux Foundation donation" implies an LF intake
@@ -692,9 +746,11 @@ underway.
    or in the Go/Java baselines, and what is the plan?
 3. To both: what is the intended MSRV policy for the official Rust SDK? This
    silently constrains which code can move.
-4. To `a2a-rs` / AGNTCY: what is the plan for `agntcy-slim-rpc`'s alpha
-   version pin, and is SLIMRPC intended to be proposed as a spec binding or to
-   remain an extension?
+4. To `a2a-rs` / AGNTCY: is SLIMRPC intended to be proposed as a spec
+   binding, or to remain an extension? *(The first half of this question —
+   the plan for `agntcy-slim-rpc`'s alpha version pin — was answered by events
+   on or before 2026-08-11: it shipped `2.0.0` stable. Only the spec-binding
+   half is still open, and it is the half that would change anything here.)*
 5. To the A2A project: can the ITK's private-registry dependency be replaced
    with a public one? It currently prevents any non-AGNTCY implementation from
    running the official harness in public CI — a barrier to exactly the kind

@@ -5,23 +5,28 @@
 //!
 //! This example deploys 4 specialized agents that communicate via A2A:
 //!
-//! | Agent | Transport | Skills | Features exercised |
-//! |-------|-----------|--------|-------------------|
-//! | **CodeAnalyzer** | JSON-RPC | file analysis, LOC counting | Streaming, artifacts, multi-part |
-//! | **BuildMonitor** | REST | cargo check/test runner | Streaming, cancellation, task lifecycle |
-//! | **HealthMonitor** | JSON-RPC | agent health checks | Push notifications, interceptors |
-//! | **Coordinator** | REST | orchestration, delegation | A2A client calls, task aggregation, metrics |
+//! | Agent | Transport | Features exercised |
+//! |-------|-----------|-------------------|
+//! | **CodeAnalyzer** | JSON-RPC | streaming, artifacts, multi-part |
+//! | **BuildMonitor** | REST | streaming, cancellation, task lifecycle |
+//! | **HealthMonitor** | JSON-RPC | push notifications, interceptors |
+//! | **Coordinator** | REST | agent-to-agent calls, aggregation, metrics |
 //!
-//! The binary starts all 4 agent servers, then runs a comprehensive E2E test
-//! suite (81 base tests, 94 with all optional features) that exercises every major SDK feature.
+//! Starts all four agents, runs the E2E suite (102 tests with `--all-features`),
+//! then measures the method x binding surface against a fifth agent that exists
+//! purely to be swept — see [`surface`].
 //!
 //! Run with: `cargo run -p agent-team`
-//! With logging: `RUST_LOG=debug cargo run -p agent-team --features tracing`
 
 mod cards;
 mod executors;
+mod features;
 mod helpers;
 mod infrastructure;
+// Needs both feature-gated transports; without them the claim table reports
+// `[ ] NOT RUN` and the binary exits 2 rather than scoring half a matrix.
+#[cfg(all(feature = "websocket", feature = "grpc"))]
+mod surface;
 mod tests;
 
 use std::collections::HashMap;
@@ -76,9 +81,8 @@ async fn main() {
     let health_metrics = Arc::new(TeamMetrics::new("HealthMonitor"));
     let coordinator_metrics = Arc::new(TeamMetrics::new("Coordinator"));
 
-    // ── Pre-bind all listeners to get addresses for agent cards ─────────
-    // This solves the "placeholder URL" problem: we know the real addresses
-    // before building handlers, so agent cards contain correct URLs.
+    // Pre-bind every listener so each card carries a real address, not a
+    // placeholder.
     let (analyzer_listener, analyzer_addr) = bind_listener().await;
     let (build_listener, build_addr) = bind_listener().await;
     let (health_listener, health_addr) = bind_listener().await;
@@ -97,6 +101,11 @@ async fn main() {
             .with_metrics(MetricsForward(Arc::clone(&analyzer_metrics)))
             .with_executor_timeout(std::time::Duration::from_secs(30))
             .with_event_queue_capacity(128)
+            // §13.3 wants the extended card authenticated; `AuditInterceptor`
+            // only logs, so this agent needs the explicit opt-in. The refusal
+            // path it bypasses is covered by `extended-card-requires-auth`
+            // (Test 68b), which builds a handler without it.
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build code analyzer handler"),
     );
@@ -148,9 +157,7 @@ async fn main() {
     serve_rest(coord_listener, Arc::clone(&coord_handler));
     println!("Agent [Coordinator]   REST     on {coordinator_url}");
 
-    // ── Agent 5: Code Analyzer (gRPC) ────────────────────────────────────
-    // Uses the same pre-bind pattern as other agents to avoid Bug #12
-    // (placeholder URL in agent card).
+    // ── Agent 5: Code Analyzer (gRPC) — same pre-bind pattern ────────────
     #[cfg(feature = "grpc")]
     let grpc_analyzer_metrics = Arc::new(TeamMetrics::new("GrpcAnalyzer"));
     #[cfg(feature = "grpc")]
@@ -282,6 +289,7 @@ async fn main() {
     results.push(coverage_gaps::test_batch_subscribe_rejected(&ctx).await);
     results.push(coverage_gaps::test_real_auth_rejection(&ctx).await);
     results.push(coverage_gaps::test_extended_agent_card(&ctx).await);
+    results.push(coverage_gaps::test_extended_card_requires_auth(&ctx).await);
     results.push(coverage_gaps::test_dynamic_agent_card(&ctx).await);
     results.push(coverage_gaps::test_agent_card_caching(&ctx).await);
     results.push(coverage_gaps::test_backpressure_lagged(&ctx).await);
@@ -340,6 +348,22 @@ async fn main() {
     results.push(coverage_gaps::test_otel_metrics_integration(&ctx).await);
 
     // ── Report ───────────────────────────────────────────────────────────
+    // ── Surface matrix: every method over every binding ──────────────────
+    //
+    // The tests above measure *features*. They do not answer "does every
+    // method work on every binding?" — before this, `SubscribeToTask` was
+    // driven on two bindings and `GetExtendedAgentCard` on one, with nothing
+    // recording that as a gap. A feature table cannot answer a coverage
+    // question it has no rows for.
+    //
+    // Runs before the tally below so its outcomes are ordinary results and
+    // flow through the same pass/fail accounting as everything else.
+    // Surface matrix: every method over every binding. Lives in `surface.rs`
+    // so this function stays about orchestration; see that module for why a
+    // fifth agent exists.
+    #[cfg(all(feature = "websocket", feature = "grpc"))]
+    let surface_missing = surface::run(&mut results, webhook_addr).await;
+
     let total_duration = total_start.elapsed();
     let passed = results.iter().filter(|r| r.passed).count();
     let failed = results.iter().filter(|r| !r.passed).count();
@@ -390,86 +414,85 @@ async fn main() {
     println!("╠══════════════════════════════════════════════════════════════╣");
     println!("║                SDK FEATURES EXERCISED                      ║");
     println!("╠══════════════════════════════════════════════════════════════╣");
-    let features = [
-        "AgentExecutor trait (4 implementations)",
-        "RequestHandlerBuilder (all options)",
-        "JsonRpcDispatcher",
-        "RestDispatcher",
-        "ClientBuilder (JSON-RPC + REST)",
-        "Sync SendMessage",
-        "Streaming SendStreamingMessage",
-        "EventStream consumer",
-        "GetTask",
-        "ListTasks (pagination + context + status filters)",
-        "CancelTask executor override",
-        "Push notification config CRUD (JSON-RPC + REST)",
-        "HttpPushSender delivery + event classification",
-        "Webhook receiver (with snapshot/drain)",
-        "ServerInterceptor (audit + auth)",
-        "Custom Metrics observer",
-        "AgentCard discovery (correct URLs via pre-bind)",
-        "Multi-part messages (text + data + file)",
-        "Artifact append mode + multiple artifacts",
-        "TaskState lifecycle (all states)",
-        "CancellationToken checking",
-        "Executor timeout config",
-        "Event queue capacity config",
-        "Max concurrent streams config",
-        "Agent-to-agent A2A communication",
-        "Multi-level orchestration",
-        "Request metadata",
-        "SubscribeToTask resubscribe (REST + JSON-RPC)",
-        "boxed_future + EventEmitter helpers",
-        "Concurrent streams on same agent",
-        "return_immediately mode",
-        "history_length config",
-        "TenantAwareInMemoryTaskStore isolation",
-        "TenantContext::scope task_local threading",
-        "Batch JSON-RPC (single, multi, empty, mixed, streaming rejection)",
-        "Real auth rejection (interceptor short-circuit)",
-        "GetExtendedAgentCard via JSON-RPC",
-        "DynamicAgentCardHandler (runtime-generated cards)",
-        "Agent card HTTP caching (ETag + 304 Not Modified)",
-        "Backpressure / lagged event queue (capacity=2)",
-        "State transition validation (streaming)",
-        "Executor error → Failed propagation",
-        "Streaming event completeness verification",
-        "Oversized metadata rejection",
-        "Artifact content correctness",
-        "GetTask history content",
-        "Rapid sequential request throughput",
-        "Cancel terminal-state task",
-        "Agent card semantic validation",
-        "GetTask after streaming (background processor)",
-        #[cfg(feature = "axum")]
-        "Axum A2aRouter (send + stream + card discovery)",
-        #[cfg(feature = "sqlite")]
-        "SqliteTaskStore (send→get→list persistence)",
-        #[cfg(feature = "sqlite")]
-        "SqlitePushConfigStore (set→list→delete lifecycle)",
-        #[cfg(all(feature = "axum", feature = "sqlite"))]
-        "Axum + SQLite combined production stack",
-        #[cfg(feature = "websocket")]
-        "WebSocket transport (SendMessage + streaming)",
-        #[cfg(feature = "grpc")]
-        "gRPC transport (SendMessage + streaming + GetTask)",
-        #[cfg(feature = "signing")]
-        "Agent card signing (JWS ES256, sign + verify + tamper detection)",
-        #[cfg(feature = "otel")]
-        "OpenTelemetry metrics (OtelMetrics with noop provider)",
-    ];
-    for f in &features {
-        println!("║   [x] {f}");
+    // Each claim is scored from the tests that back it, and the table is
+    // cross-checked against the run in both directions. Until 2026-08-11 this
+    // was a hardcoded array printed as `[x]` unconditionally — it stayed green
+    // through six failing batch tests, and silently omitted feature-gated rows
+    // rather than reporting them unexercised. See `features.rs`.
+    let by_name: std::collections::HashMap<&str, bool> = results
+        .iter()
+        .map(|r| (r.name.as_str(), r.passed))
+        .collect();
+    let claims = features::claims();
+    for claim in &claims {
+        let status = features::status_of(claim, &by_name);
+        println!("║   {} {}", status.marker(), claim.label);
     }
 
     println!("╚══════════════════════════════════════════════════════════════╝");
+
+    // The claim table must describe this run, not a remembered one. A claim
+    // with no surviving evidence, or a test no claim mentions, means the
+    // summary above is fiction — fail rather than print it and exit 0.
+    let audit = features::audit(&claims, &results);
+    if !audit.is_clean() {
+        println!("\n── CLAIM TABLE DRIFT ──────────────────────────────────────────");
+        for label in &audit.unbacked_claims {
+            println!("  claim has no backing test that ran: {label}");
+        }
+        for (label, name) in &audit.unknown_tests {
+            println!("  claim {label:?} names unknown test {name:?}");
+        }
+        for name in &audit.unclaimed_tests {
+            println!("  test ran but no claim mentions it: {name}");
+        }
+        println!(
+            "\nThe \"SDK FEATURES EXERCISED\" table no longer matches the suite. \
+             Update examples/agent-team/src/features.rs."
+        );
+        std::process::exit(1);
+    }
+
+    let not_run: Vec<&str> = claims
+        .iter()
+        .filter(|c| features::status_of(c, &by_name) == features::ClaimStatus::NotRun)
+        .map(|c| c.label)
+        .collect();
+
+    #[cfg(all(feature = "websocket", feature = "grpc"))]
+    if !surface_missing.is_empty() {
+        println!(
+            "\n{} surface matrix cell(s) never ran:",
+            surface_missing.len()
+        );
+        for (m, b) in &surface_missing {
+            println!("  - {} over {}", m.wire_name(), b.label());
+        }
+        std::process::exit(2);
+    }
 
     if failed > 0 {
         std::process::exit(1);
     }
 
     println!(
-        "\nAll {passed} tests passed in {}ms. SDK dogfood complete.",
+        "\nAll {passed} tests passed in {}ms.",
         total_duration.as_millis()
     );
+    if not_run.is_empty() {
+        println!("Every claimed SDK feature was exercised. SDK dogfood complete.");
+    } else {
+        // Never say "complete" when features were compiled out. This is the
+        // line whose absence let `cargo run -p agent-team` with no features
+        // print "SDK dogfood complete" while skipping six feature areas.
+        println!(
+            "{} feature area(s) NOT exercised in this build — rerun with \
+             `--all-features` for a complete dogfood:",
+            not_run.len()
+        );
+        for label in &not_run {
+            println!("  - {label}");
+        }
+        std::process::exit(2);
+    }
 }

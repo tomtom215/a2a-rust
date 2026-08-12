@@ -21,7 +21,7 @@
 //! cargo run -p genai-a2a-agent
 //!
 //! # Fully local (Ollama or llama-server on :11434), no key needed:
-//! GENAI_MODEL=qwen3-0.6b cargo run -p genai-a2a-agent
+//! GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent
 //! ```
 //!
 //! # How it works
@@ -42,6 +42,8 @@ use std::sync::Arc;
 
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+
+mod surface;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_server::request_context::RequestContext;
@@ -54,10 +56,18 @@ use a2a_protocol_types::message::{Part, PartContent};
 use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 /// An A2A `AgentExecutor` that wraps a genai LLM client.
+/// Message-text prefix that makes the executor pause mid-task.
+const SLOW_PREFIX: &str = "slow:";
+
 struct GenaiAgentExecutor {
+    /// When `true`, an unreachable model produces a labelled mechanical reply
+    /// instead of failing the task. Set for the surface run so the protocol
+    /// can be measured without an LLM; a real deployment wants `false`, which
+    /// is what `A2A_BIND_ADDR` server mode uses.
+    fallback_on_error: bool,
     /// The genai client instance.
     client: genai::Client,
-    /// The model to use (e.g., "gpt-4o-mini", "qwen3-0.6b").
+    /// The model to use (e.g., "gpt-4o-mini", "qwen3.5:0.8b").
     model: String,
 }
 
@@ -66,6 +76,16 @@ impl GenaiAgentExecutor {
         Self {
             client: genai::Client::default(),
             model: model.into(),
+            fallback_on_error: false,
+        }
+    }
+
+    /// Same agent, but an unreachable model yields a labelled mechanical
+    /// reply instead of failing the task.
+    fn with_fallback(model: impl Into<String>) -> Self {
+        Self {
+            fallback_on_error: true,
+            ..Self::new(model)
         }
     }
 }
@@ -108,14 +128,42 @@ impl AgentExecutor for GenaiAgentExecutor {
                 genai::chat::ChatMessage::user(user_text),
             ]);
 
-            let response = self
-                .client
-                .exec_chat(&self.model, chat_req, None)
-                .await
-                .map_err(|e| A2aError::internal(format!("LLM request failed: {e}")))?;
-            let response_text = response
-                .first_text()
-                .ok_or_else(|| A2aError::internal("LLM returned no text content"))?;
+            // A deliberately slow turn, so a caller can observe a task that is
+            // still running. `SubscribeToTask` is refused on a terminal task,
+            // correctly, so without one the success path is unreachable.
+            if user_text.starts_with(SLOW_PREFIX) {
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+
+            let owned;
+            let response_text = match self.client.exec_chat(&self.model, chat_req, None).await {
+                Ok(response) => match response.first_text() {
+                    Some(t) => {
+                        owned = t.to_owned();
+                        owned.as_str()
+                    }
+                    None => return Err(A2aError::internal("LLM returned no text content")),
+                },
+                // No model reachable. Degrade to a *labelled* mechanical reply
+                // rather than failing, so the protocol mechanics stay
+                // demonstrable with no LLM at all — the same choice
+                // `incident-response` makes.
+                //
+                // The label is load-bearing: an unlabelled fallback would make
+                // "the agent answered" indistinguishable from "the model
+                // answered", which is the kind of quiet substitution this
+                // repository spends its time removing.
+                Err(e) if self.fallback_on_error => {
+                    owned = format!(
+                        "[no model reachable — mechanical fallback, not an LLM answer] \
+                         echo of your input: {user_text}\n(underlying error: {e})"
+                    );
+                    owned.as_str()
+                }
+                Err(e) => {
+                    return Err(A2aError::internal(format!("LLM request failed: {e}")));
+                }
+            };
 
             // 4. Package as A2A artifact
             queue
@@ -172,7 +220,8 @@ fn make_agent_card(url: &str, model: &str) -> AgentCard {
         }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(true),
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -213,40 +262,97 @@ fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) 
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let model = std::env::var("GENAI_MODEL").unwrap_or_else(|_| "gpt-4o-mini".to_string());
-    let bind_addr = std::env::var("A2A_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string());
+    let model = std::env::var("GENAI_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string());
 
     println!("Genai + A2A Agent Example");
     println!("=========================");
     println!();
     println!("Model: {model}");
     println!("Set GENAI_MODEL to change it. Unknown model names route to the");
-    println!("Ollama adapter (http://localhost:11434/v1/) — run Ollama or");
-    println!("llama-server there for a fully local, key-free agent.");
+    println!("OpenAI-compatible endpoint on http://localhost:11434/v1/ — run");
+    println!("llama.cpp's llama-server, vLLM or Ollama there for a local agent.");
     println!();
 
-    // Bind first so the agent card can advertise the real address.
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    let addr: SocketAddr = listener.local_addr()?;
-    let url = format!("http://{addr}");
+    // ── Server-only mode ─────────────────────────────────────────────────
+    // Real deployment shape: one binding, and an unreachable model FAILS the
+    // task rather than answering mechanically.
+    if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
+        let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+        let addr: SocketAddr = listener.local_addr()?;
+        let url = format!("http://{addr}");
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(GenaiAgentExecutor::new(&model))
+                .with_agent_card(make_agent_card(&url, &model))
+                .with_push_config_store(InMemoryPushConfigStore::new())
+                .with_push_sender(HttpPushSender::new().allow_private_urls())
+                .allow_unauthenticated_extended_card()
+                .build()?,
+        );
+        serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
+        println!("Genai A2A agent listening on {url}");
+        tokio::signal::ctrl_c().await?;
+        return Ok(());
+    }
 
-    let executor = GenaiAgentExecutor::new(&model);
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(executor)
-            .with_agent_card(make_agent_card(&url, &model))
-            .with_push_config_store(InMemoryPushConfigStore::new())
-            .with_push_sender(HttpPushSender::new().allow_private_urls())
-            .build()?,
-    );
-    serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
+    // ── Surface run ──────────────────────────────────────────────────────
+    let ep = surface::start(&model).await?;
+    let webhook = surface::start_webhook().await?;
+    let restricted = surface::start_restricted(&model).await?;
 
-    println!("Genai A2A agent listening on {url}");
+    println!("JSON-RPC  {}", ep.jsonrpc);
+    println!("HTTP+JSON {}", ep.rest);
+    println!("gRPC      {}", ep.grpc);
+    println!("WebSocket {}", ep.websocket);
     println!();
-    println!("Test with:");
-    println!("  cargo run -p a2a-tck -- --url {url} --binding jsonrpc");
 
-    tokio::signal::ctrl_c().await?;
-    println!("Shutting down.");
+    // Is a model actually reachable? Asked once, up front, and reported —
+    // never inferred from whether the sweep passed. The sweep passes either
+    // way, because the fallback keeps the protocol working; that is exactly
+    // why the LLM leg needs its own explicit verdict.
+    let llm_reachable = surface::probe_model(&ep.jsonrpc).await;
+    if llm_reachable {
+        println!("LLM leg: EXERCISED — '{model}' answered a real request.");
+    } else {
+        println!("LLM leg: NOT EXERCISED — no model reachable on the configured");
+        println!("  endpoint, so every answer below is the labelled mechanical");
+        println!("  fallback. The A2A surface is still fully measured; the model");
+        println!("  integration is not. Start llama-server/vLLM/Ollama to cover it.");
+    }
+    println!();
 
+    let mut clients = Vec::new();
+    for binding in a2a_example_harness::Binding::ALL {
+        match surface::client_for(*binding, &ep).await {
+            Ok(c) => clients.push((*binding, c)),
+            Err(e) => {
+                eprintln!("could not build a {} client: {e}", binding.label());
+                std::process::exit(1);
+            }
+        }
+    }
+    let main_client = a2a_protocol_client::ClientBuilder::new(&ep.jsonrpc).build()?;
+    let restricted_client = a2a_protocol_client::ClientBuilder::new(&restricted).build()?;
+
+    println!("=== Coverage: every A2A method over every binding ===\n");
+    let outcome = a2a_example_harness::run_surface(a2a_example_harness::SurfaceRun {
+        clients,
+        main_client: &main_client,
+        restricted_client: &restricted_client,
+        webhook_url: webhook,
+        slow_prefix: SLOW_PREFIX,
+    })
+    .await;
+
+    println!();
+    if llm_reachable {
+        println!("LLM leg exercised against '{model}'.");
+    } else {
+        println!("Reminder: the LLM leg was NOT exercised in this run.");
+    }
+
+    let code = outcome.exit_code();
+    if code != 0 {
+        std::process::exit(code);
+    }
     Ok(())
 }

@@ -13,14 +13,16 @@ license.workspace    = true
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
-a2a-protocol-client = { path = "../../crates/a2a-protocol-client" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server" }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
+a2a-example-harness = { path = "../harness" }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
 
 serde_json     = { workspace = true }
 tokio          = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time", "signal"] }
 hyper          = { workspace = true }
 hyper-util     = { workspace = true, features = ["server", "server-auto"] }
 http-body-util = { workspace = true }
+bytes          = "1"
 uuid           = { workspace = true }
 
 # rig — LLM agent framework (https://github.com/0xPlaygrounds/rig)

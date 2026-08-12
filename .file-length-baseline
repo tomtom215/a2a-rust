@@ -4,6 +4,8 @@
 benches/benches/advanced_scenarios.rs
 benches/benches/enterprise_scenarios.rs
 benches/benches/production_scenarios.rs
+benches/scripts/extract_benchmark_json.py
+benches/scripts/generate_book_page.sh
 crates/a2a-protocol-client/src/builder/mod.rs
 crates/a2a-protocol-client/src/discovery.rs
 crates/a2a-protocol-client/src/retry.rs
@@ -70,9 +72,9 @@ crates/a2a-protocol-types/tests/tck_wire_format.rs
 examples/agent-team/src/tests/coverage_gaps/axum_sqlite.rs
 examples/agent-team/src/tests/coverage_gaps/deep_dogfood.rs
 examples/agent-team/src/tests/transport.rs
-examples/echo-agent/src/main.rs
-examples/incident-response/src/main.rs
 itk/src/main.rs
+scripts/prove_gates_fail.sh
+scripts/prove_workflow_gates_fail.py
 tck/src/equivalence.rs
 tck/src/main.rs
 tck/src/tests/grpc.rs

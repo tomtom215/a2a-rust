@@ -164,6 +164,46 @@ jobs:
       - name: TCK — cross-binding equivalence (§5.1)
         run: ./target/release/a2a-tck --url http://127.0.0.1:9999 --equivalence
 
+      # BIND-EQUIV-004's *enforcement* half. The run above grades it
+      # structurally — the card declares security once, at card level, and no
+      # interface may override it — which is all a card can answer. Whether
+      # every binding actually applies those schemes is behavioural, and needs
+      # a target that requires credentials. Until 2026-08-11 no job provided
+      # one and that half was recorded as unmeasured (register entry W10).
+      #
+      # A second SUT, because the two cannot be one run: this profile refuses
+      # anonymous requests, and BIND-EQUIV-001..003 compare answers about a
+      # fixture task an anonymous client cannot create. Those three are graded
+      # by the step above; this step grades 004. Scoping, not waiving.
+      #
+      # The token is passed in rather than discovered. A kit that could derive
+      # the credential from the agent it grades would not be proving anything
+      # about that agent.
+      - name: Start the credential-requiring SUT
+        run: |
+          SUT_PROFILE=secured SUT_HOST=127.0.0.1:9899 \
+            SUT_GRPC_HOST=127.0.0.1:9898 SUT_WS_HOST=127.0.0.1:9897 \
+            ./target/release/a2a-tck-sut &
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:9899/.well-known/agent-card.json > /dev/null 2>&1; then
+              echo "secured SUT ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "secured SUT failed to start"
+          exit 1
+
+      # Both halves are asserted. The rejection sweep alone would pass against
+      # a server that is simply broken — and did, in development: a probe
+      # sending the wrong JSON-RPC method name never authenticated successfully
+      # on two bindings, which looked exactly like enforcement working. The
+      # acceptance sweep is what caught it.
+      - name: TCK — BIND-EQUIV-004 enforcement (§5.1)
+        run: |
+          ./target/release/a2a-tck --url http://127.0.0.1:9899 --equivalence \
+            --auth-token tck-bind-equiv-004-token
+
   tck-cross-language:
     name: TCK cross-language (${{ matrix.sdk }})
     runs-on: ubuntu-latest

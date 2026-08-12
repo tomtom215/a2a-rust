@@ -17,6 +17,67 @@ use crate::tests::{TestContext, TestResult};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
 
+/// Opens a WebSocket to `ws_addr`, carrying the protocol-version header.
+///
+/// Spec §3.6.1: a client MUST send `A2A-Version` with every request, and for
+/// a WebSocket that means the upgrade handshake. These tests hand-rolled
+/// `connect_async(url)` without it, so the server answered the handshake with
+/// `400 VERSION_NOT_SUPPORTED` and the test panicked on `.expect("ws connect")`
+/// — which aborted the whole suite rather than failing one test.
+///
+/// Nobody saw it because Tests 51-60 are `#[cfg(feature = "websocket")]`, the
+/// crate had no `default` features, and no CI job ran this binary: the code
+/// compiled only when someone passed `--features websocket` by hand. Mirrors
+/// what `a2a_protocol_client`'s own WebSocket transport does.
+#[cfg(feature = "websocket")]
+async fn ws_connect(
+    ws_addr: &std::net::SocketAddr,
+) -> Result<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    String,
+> {
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    let mut request = format!("ws://{ws_addr}")
+        .into_client_request()
+        .map_err(|e| format!("build ws request: {e}"))?;
+    request.headers_mut().insert(
+        a2a_protocol_types::A2A_VERSION_HEADER,
+        tokio_tungstenite::tungstenite::http::HeaderValue::from_static(
+            a2a_protocol_types::A2A_VERSION,
+        ),
+    );
+    let (ws, _resp) = tokio_tungstenite::connect_async(request)
+        .await
+        .map_err(|e| format!("ws connect: {e}"))?;
+    Ok(ws)
+}
+
+/// Reads one text frame with a timeout, mapping every failure to a message
+/// instead of unwrapping. The original chain was
+/// `.await.expect(..).unwrap().unwrap()` — three panic sites in one
+/// expression.
+#[cfg(feature = "websocket")]
+async fn read_ws_text<S>(ws: &mut S) -> Result<String, String>
+where
+    S: futures_util::StreamExt<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + Unpin,
+{
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
+        .await
+        .map_err(|_| "timed out waiting for a WebSocket frame".to_owned())?
+        .ok_or_else(|| "WebSocket closed before responding".to_owned())?
+        .map_err(|e| format!("ws read: {e}"))?;
+    frame
+        .into_text()
+        .map(|t| t.to_string())
+        .map_err(|e| format!("frame was not text: {e}"))
+}
+
 // ── WebSocket tests (require `websocket` feature) ───────────────────────────
 
 /// Test 51: WebSocket send message over the code analyzer agent.
@@ -24,7 +85,7 @@ use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
 pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
     use a2a_protocol_server::dispatch::WebSocketDispatcher;
     use a2a_protocol_types::jsonrpc::{JsonRpcRequest, JsonRpcSuccessResponse};
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::SinkExt;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
     let start = Instant::now();
@@ -37,33 +98,54 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
             .expect("build ws handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    let ws_addr = dispatcher
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server");
+    let ws_addr = match dispatcher.serve_with_addr("127.0.0.1:0").await {
+        Ok(a) => a,
+        Err(e) => {
+            return TestResult::fail(
+                "51-ws-send-message",
+                start.elapsed().as_millis(),
+                &format!("start WS server: {e}"),
+            )
+        }
+    };
 
-    // Connect via WebSocket.
-    let (mut ws, _) = tokio_tungstenite::connect_async(&format!("ws://{ws_addr}"))
-        .await
-        .expect("ws connect");
+    // Connect via WebSocket. A failure here is a test failure, not a panic —
+    // aborting the process would take the other 86 tests with it.
+    let mut ws = match ws_connect(&ws_addr).await {
+        Ok(ws) => ws,
+        Err(e) => return TestResult::fail("51-ws-send-message", start.elapsed().as_millis(), &e),
+    };
 
     // Send a JSON-RPC request.
     let params = make_send_params("fn main() { println!(\"hello\"); }");
     let rpc_req = JsonRpcRequest::with_params(
         serde_json::json!("ws-test-51"),
         "SendMessage",
-        serde_json::to_value(&params).unwrap(),
+        serde_json::to_value(&params).unwrap_or_default(),
     );
-    let json = serde_json::to_string(&rpc_req).unwrap();
-    ws.send(WsMessage::Text(json.into())).await.unwrap();
+    let json = match serde_json::to_string(&rpc_req) {
+        Ok(j) => j,
+        Err(e) => {
+            return TestResult::fail(
+                "51-ws-send-message",
+                start.elapsed().as_millis(),
+                &format!("serialize request: {e}"),
+            )
+        }
+    };
+    if let Err(e) = ws.send(WsMessage::Text(json.into())).await {
+        return TestResult::fail(
+            "51-ws-send-message",
+            start.elapsed().as_millis(),
+            &format!("ws send: {e}"),
+        );
+    }
 
     // Read response.
-    let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws.next())
-        .await
-        .expect("ws timeout")
-        .unwrap()
-        .unwrap();
-    let text = msg.into_text().unwrap();
+    let text = match read_ws_text(&mut ws).await {
+        Ok(t) => t,
+        Err(e) => return TestResult::fail("51-ws-send-message", start.elapsed().as_millis(), &e),
+    };
 
     match serde_json::from_str::<JsonRpcSuccessResponse<serde_json::Value>>(&text) {
         Ok(resp) => {
@@ -90,7 +172,7 @@ pub async fn test_ws_send_message(_ctx: &TestContext) -> TestResult {
 pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
     use a2a_protocol_server::dispatch::WebSocketDispatcher;
     use a2a_protocol_types::jsonrpc::JsonRpcRequest;
-    use futures_util::{SinkExt, StreamExt};
+    use futures_util::SinkExt;
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
     let start = Instant::now();
@@ -102,41 +184,76 @@ pub async fn test_ws_streaming(_ctx: &TestContext) -> TestResult {
             .expect("build ws handler"),
     );
     let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
-    let ws_addr = dispatcher
-        .serve_with_addr("127.0.0.1:0")
-        .await
-        .expect("start WS server");
+    let ws_addr = match dispatcher.serve_with_addr("127.0.0.1:0").await {
+        Ok(a) => a,
+        Err(e) => {
+            return TestResult::fail(
+                "52-ws-streaming",
+                start.elapsed().as_millis(),
+                &format!("start WS server: {e}"),
+            )
+        }
+    };
 
-    let (mut ws, _) = tokio_tungstenite::connect_async(&format!("ws://{ws_addr}"))
-        .await
-        .expect("ws connect");
+    let mut ws = match ws_connect(&ws_addr).await {
+        Ok(ws) => ws,
+        Err(e) => return TestResult::fail("52-ws-streaming", start.elapsed().as_millis(), &e),
+    };
 
     let params = make_send_params("fn main() {}");
     let rpc_req = JsonRpcRequest::with_params(
         serde_json::json!("ws-stream-52"),
         "SendStreamingMessage",
-        serde_json::to_value(&params).unwrap(),
+        serde_json::to_value(&params).unwrap_or_default(),
     );
-    ws.send(WsMessage::Text(
-        serde_json::to_string(&rpc_req).unwrap().into(),
-    ))
-    .await
-    .unwrap();
+    let json = match serde_json::to_string(&rpc_req) {
+        Ok(j) => j,
+        Err(e) => {
+            return TestResult::fail(
+                "52-ws-streaming",
+                start.elapsed().as_millis(),
+                &format!("serialize request: {e}"),
+            )
+        }
+    };
+    if let Err(e) = ws.send(WsMessage::Text(json.into())).await {
+        return TestResult::fail(
+            "52-ws-streaming",
+            start.elapsed().as_millis(),
+            &format!("ws send: {e}"),
+        );
+    }
 
-    // Collect frames.
+    // Collect frames. A read error ends the loop rather than aborting the
+    // process; the frame count then decides pass/fail below.
     let mut frame_count = 0;
+    let mut read_err: Option<String> = None;
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
-            let msg = ws.next().await.unwrap().unwrap();
-            let text = msg.into_text().unwrap();
-            frame_count += 1;
-            if text.contains("stream_complete") {
-                break;
+            match read_ws_text(&mut ws).await {
+                Ok(text) => {
+                    frame_count += 1;
+                    if text.contains("stream_complete") {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    read_err = Some(e);
+                    break;
+                }
             }
         }
     });
 
-    match timeout.await {
+    let outcome = timeout.await;
+    if let Some(e) = read_err {
+        return TestResult::fail(
+            "52-ws-streaming",
+            start.elapsed().as_millis(),
+            &format!("after {frame_count} frame(s): {e}"),
+        );
+    }
+    match outcome {
         Ok(()) if frame_count >= 3 => TestResult::pass(
             "52-ws-streaming",
             start.elapsed().as_millis(),

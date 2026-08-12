@@ -75,6 +75,11 @@ async fn main() -> ExitCode {
             eprintln!("  --equivalence      Grade §5.1 cross-binding equivalence");
             eprintln!("                     (BIND-EQUIV-001..004) instead of one binding.");
             eprintln!("                     Drives every binding the card advertises.");
+            eprintln!("  --auth-token <t>   Bearer token to present in BIND-EQUIV-004's");
+            eprintln!("                     enforcement probe. Only meaningful with");
+            eprintln!("                     --equivalence, against a target whose card");
+            eprintln!("                     declares securityRequirements. Without it that");
+            eprintln!("                     check grades the rejection half only.");
             return ExitCode::from(2);
         }
     };
@@ -84,6 +89,7 @@ async fn main() -> ExitCode {
         endpoint,
         skips,
         equivalence,
+        auth_token,
     } = config;
 
     // §5.1 grades the relation between bindings, not any one of them, so it
@@ -93,7 +99,7 @@ async fn main() -> ExitCode {
         println!("========================================================");
         println!("Target:  {url}");
         println!();
-        return match equivalence::run_equivalence(&url).await {
+        return match equivalence::run_equivalence(&url, auth_token.as_deref()).await {
             Err(msg) => {
                 eprintln!("Error: {msg}");
                 ExitCode::from(2)
@@ -360,6 +366,12 @@ struct Config {
     skips: Vec<String>,
     /// Grade §5.1 cross-binding equivalence instead of one binding.
     equivalence: bool,
+    /// Bearer token for `BIND-EQUIV-004`'s enforcement probe.
+    ///
+    /// Supplied rather than discovered on purpose: a kit that could derive a
+    /// credential from the agent it grades would not be proving anything about
+    /// that agent's authentication.
+    auth_token: Option<String>,
 }
 
 /// Which `--binding` each endpoint override belongs to. An override named
@@ -374,6 +386,7 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
     let mut endpoint: Option<(&str, String)> = None;
     let mut skips: Vec<String> = Vec::new();
     let mut equivalence = false;
+    let mut auth_token: Option<String> = None;
     let mut binding_was_given = false;
 
     let mut i = 1;
@@ -399,6 +412,10 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
                 binding_was_given = true;
             }
             "--equivalence" => equivalence = true,
+            "--auth-token" => {
+                i += 1;
+                auth_token = Some(args.get(i).ok_or("--auth-token requires a value")?.clone());
+            }
             flag if ENDPOINT_FLAGS.iter().any(|(f, _)| *f == flag) => {
                 let owned = flag.to_string();
                 i += 1;
@@ -477,12 +494,25 @@ fn parse_args(args: &[String]) -> Result<Config, String> {
             Some(value)
         }
     };
+    // A token outside --equivalence is dead configuration: no single-binding
+    // check presents credentials, so it would be silently ignored. The same
+    // reasoning as the endpoint-override check above — a CI step must not
+    // believe it is exercising something it is not.
+    if auth_token.is_some() && !equivalence {
+        return Err(
+            "--auth-token is only used by --equivalence (BIND-EQUIV-004's enforcement probe); \
+             no single-binding check presents credentials"
+                .to_string(),
+        );
+    }
+
     Ok(Config {
         url,
         binding,
         endpoint,
         skips,
         equivalence,
+        auth_token,
     })
 }
 
@@ -598,6 +628,55 @@ mod tests_main {
         let cfg = parse_args(&argv(&["--url", "http://x", "--equivalence"]))
             .expect("valid equivalence config");
         assert!(cfg.equivalence);
+    }
+
+    #[test]
+    fn auth_token_is_carried_through_on_equivalence() {
+        let cfg = parse_args(&argv(&[
+            "--url",
+            "http://x",
+            "--equivalence",
+            "--auth-token",
+            "t0ken",
+        ]))
+        .expect("valid equivalence config with a token");
+        assert_eq!(cfg.auth_token.as_deref(), Some("t0ken"));
+    }
+
+    /// A token outside `--equivalence` is dead configuration: no
+    /// single-binding check presents credentials, so accepting it would let a
+    /// CI step believe it is exercising authentication it never sends. Same
+    /// reasoning as the endpoint-override checks below.
+    #[test]
+    fn auth_token_without_equivalence_is_a_config_error() {
+        let err = parse_args(&argv(&[
+            "--url",
+            "http://x",
+            "--binding",
+            "jsonrpc",
+            "--auth-token",
+            "t0ken",
+        ]))
+        .err()
+        .expect("--auth-token outside --equivalence must be rejected");
+        assert!(
+            err.contains("--auth-token"),
+            "the error must name the flag it is rejecting, got: {err}"
+        );
+    }
+
+    #[test]
+    fn auth_token_requires_a_value() {
+        assert!(
+            parse_args(&argv(&[
+                "--url",
+                "http://x",
+                "--equivalence",
+                "--auth-token"
+            ]))
+            .is_err(),
+            "--auth-token with no value must be rejected"
+        );
     }
 
     /// Every flag that scopes a run to one binding contradicts

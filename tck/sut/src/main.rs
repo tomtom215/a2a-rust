@@ -293,13 +293,54 @@ enum Profile {
     /// This profile is only usable for a **scoped** run — see that constant's
     /// documentation for why.
     Extension,
+
+    /// Full capabilities, plus a card that **declares** a bearer scheme and
+    /// **enforces** it on every binding.
+    ///
+    /// This profile exists for exactly one requirement: `BIND-EQUIV-004`'s
+    /// enforcement half. §5.1 asks that every binding support the same
+    /// authentication schemes, and half of that is checkable from the card
+    /// alone — v1.0 has no per-interface security field, so the schemes are
+    /// shared by construction. The other half is behavioural: *do all four
+    /// bindings actually reject an uncredentialed caller, and accept a
+    /// credentialed one?* No card can answer that, and against a target with
+    /// no credentials to withhold the question cannot even be posed. Until
+    /// this profile existed, that half was recorded as unmeasured.
+    ///
+    /// Enforcement is a single
+    /// [`BearerTokenAuthInterceptor`](a2a_protocol_server::auth::BearerTokenAuthInterceptor) on the
+    /// `RequestHandler`, which is the point: interceptors run above the
+    /// dispatchers, so JSON-RPC, HTTP+JSON, gRPC and WebSocket are guarded by
+    /// one implementation reading one
+    /// [`CallContext`](a2a_protocol_server::CallContext). That is the design the
+    /// check is verifying, so the check must be able to fail if a binding ever
+    /// stops populating those headers — which is the failure mode a
+    /// per-binding auth implementation would produce.
+    ///
+    /// Deliberately **not** used for the official suite: the harness has no
+    /// credential to present, so every check would fail on authentication and
+    /// grade nothing. Only the in-repo runner's `--equivalence` mode drives it.
+    Secured,
 }
+
+/// The bearer token [`Profile::Secured`] accepts.
+///
+/// A fixed constant rather than an environment variable because both sides of
+/// the probe need it — the SUT to accept it and the TCK to present it — and a
+/// mismatch would make the check fail for a reason that has nothing to do with
+/// binding equivalence. It is a conformance fixture, not a secret; the profile
+/// is never used outside a test harness driving loopback.
+pub const SECURED_PROFILE_TOKEN: &str = "tck-bind-equiv-004-token";
+
+/// The name under which [`Profile::Secured`] declares its bearer scheme.
+pub const SECURED_PROFILE_SCHEME: &str = "tckBearer";
 
 impl Profile {
     fn from_env() -> Self {
         match std::env::var("SUT_PROFILE").as_deref() {
             Ok("minimal") => Self::Minimal,
             Ok("extension") => Self::Extension,
+            Ok("secured") => Self::Secured,
             _ => Self::Full,
         }
     }
@@ -418,12 +459,55 @@ fn make_agent_card(
                 }]);
                 caps
             }
+            // Same capabilities as Full. The only variable this profile
+            // introduces is authentication, so anything BIND-EQUIV-004
+            // observes is attributable to that and not to a capability change.
+            Profile::Secured => AgentCapabilities::none()
+                .with_streaming(true)
+                .with_push_notifications(true)
+                .with_extended_agent_card(true),
         },
         provider: None,
         icon_url: None,
         documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
+        // Declared at card level and nowhere else, which is the shape
+        // BIND-EQUIV-004's structural half asserts: v1.0 gives
+        // `AgentInterface` no security fields, so one declaration here binds
+        // every binding equally.
+        security_schemes: match profile {
+            Profile::Secured => Some(
+                [(
+                    SECURED_PROFILE_SCHEME.to_string(),
+                    a2a_protocol_types::SecurityScheme::Http(
+                        a2a_protocol_types::HttpAuthSecurityScheme {
+                            scheme: "bearer".into(),
+                            bearer_format: None,
+                            description: Some(
+                                "Static bearer token, for the TCK's BIND-EQUIV-004 \
+                                 enforcement probe. Not a credential scheme to copy."
+                                    .into(),
+                            ),
+                        },
+                    ),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+            _ => None,
+        },
+        security_requirements: match profile {
+            Profile::Secured => Some(vec![a2a_protocol_types::SecurityRequirement {
+                schemes: [(
+                    SECURED_PROFILE_SCHEME.to_string(),
+                    // No scopes: a bearer token that grants everything. The
+                    // requirement is about presenting a credential at all.
+                    a2a_protocol_types::StringList { list: Vec::new() },
+                )]
+                .into_iter()
+                .collect(),
+            }]),
+            _ => None,
+        },
         signatures: None,
     }
 }
@@ -516,6 +600,17 @@ async fn main() {
         ws_advertised.as_deref(),
         profile,
     ));
+    // One interceptor, above the dispatchers, guarding all four bindings —
+    // which is precisely the property BIND-EQUIV-004's enforcement half exists
+    // to verify. It reads `Authorization` from the `CallContext`, which
+    // JSON-RPC, HTTP+JSON, gRPC and WebSocket all populate; a binding that
+    // stopped doing so would fail the probe rather than silently serve
+    // unauthenticated traffic.
+    if profile == Profile::Secured {
+        builder = builder.with_interceptor(
+            a2a_protocol_server::auth::BearerTokenAuthInterceptor::new([SECURED_PROFILE_TOKEN]),
+        );
+    }
     // Extension advertises the same capabilities as Full, so it needs the same
     // supporting stores; only Minimal advertises nothing and needs none.
     if profile != Profile::Minimal {

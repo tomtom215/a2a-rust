@@ -282,4 +282,155 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude a2a-example-harness --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+
+  # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
+  #
+  # Runs the 100-test end-to-end dogfood suite. It is a `main()`, not
+  # `#[test]`s, so `cargo test --workspace` compiles it and executes none of
+  # it — which is exactly how it went unrun.
+  #
+  # Added 2026-08-11 after measuring that no workflow had ever executed this
+  # binary. Three things were true at once when that was found:
+  #
+  #   * 15 of its 86 tests were failing, and had been for long enough that the
+  #     causes were ordinary rot (a raw-HTTP helper that never sent
+  #     `A2A-Version`, three tests assuming the first stream event is a status
+  #     update rather than a Task snapshot) plus one test — Test 68,
+  #     `GetExtendedAgentCard` — whose agent had never been configured to
+  #     support the operation, so it could not have passed on any commit;
+  #   * the suite printed a hardcoded `[x] <feature>` checklist unconnected to
+  #     the results, so a run with six failing batch tests still reported
+  #     `[x] Batch JSON-RPC (...)`; and
+  #   * the crate declared no `default` features, so the `cargo run -p
+  #     agent-team` the README prescribes silently compiled out WebSocket,
+  #     gRPC, Axum, SQLite, signing and OTel, then printed
+  #     "SDK dogfood complete".
+  #
+  # `--all-features` is load-bearing, not thoroughness for its own sake: the
+  # WebSocket leg is `#[cfg(feature = "websocket")]` and had never been
+  # compiled by any automated run. When it was finally enabled it failed
+  # immediately — its handshake omitted the `A2A-Version` header — and it
+  # `.expect()`ed on connect, aborting the whole process rather than failing
+  # one test. Both are fixed; this job is what stops them recurring.
+  #
+  # The binary's exit codes are the gate and are distinct on purpose:
+  #   0 — every test passed AND every claimed feature area was exercised
+  #   1 — a test failed, or the claim table drifted from the suite
+  #   2 — all tests passed but a claimed feature area was not compiled in
+  # A bare `run:` fails the step on any non-zero, so 2 is a hard failure here.
+  # That is deliberate: "all green, but six feature areas were never built" is
+  # the precise shape of false assurance this job exists to prevent.
+  #
+  # Proven able to fail before being trusted, per CONTRIBUTING's gate rule.
+  # Measured 2026-08-11 by injection:
+  #   * claim naming a nonexistent test        -> exit 1, names the claim
+  #   * test present but claimed by nothing    -> exit 1, names the test
+  #   * `A2A-Version` header removed           -> exit 1, 12 tests fail with a
+  #     self-describing cause, 5 claim rows render [FAIL]
+  #   * `--no-default-features`                -> exit 2, lists all 8 areas
+  dogfood:
+    name: SDK dogfood (agent-team, all features)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: Run the dogfood suite
+        run: cargo run -p agent-team --release --all-features
+
+  # ── Example surface coverage ─────────────────────────────────────────────
+  #
+  # Both examples drive every A2A method over every binding they serve and
+  # assert the resulting matrix is complete. Added 2026-08-11, when measuring
+  # them showed `echo-agent` drove 4 of the 11 methods over 2 of the 4
+  # transports and `incident-response` 4 over 1, while `examples/README`
+  # presented the first as "the complete request lifecycle".
+  #
+  # The matrix rows are not this project's list. They come from
+  # `Method::ALL`, which `a2a-protocol-types` asserts equal to
+  # `service A2AService` in the ratified `proto/a2a_v1/a2a.proto`, and which
+  # the Official TCK workflow cross-checks against the upstream conformance
+  # suite. A reviewer auditing the denominator reads the proto.
+  #
+  # Exit codes are the gate: 0 complete, 1 a call or counter-test failed,
+  # 2 a matrix cell never ran. A bare `run:` fails on any non-zero, so a
+  # silently shrunk matrix is a red job rather than a shorter report.
+  #
+  # Running these found a real client defect, which is the argument for the
+  # job: the WebSocket transport forwarded its `stream_complete` control frame
+  # to the consumer, where it failed to deserialize as a `StreamResponse`. It
+  # only surfaces when a stream ends *without* a terminal task state — an agent
+  # that asks a clarifying question — which is why `echo-agent` never hit it
+  # and `incident-response` did.
+  #
+  # Proven able to fail, 2026-08-11: dropping the `ListTasks` recording from
+  # the shared sweep, with every call still succeeding, exits 2 and names all
+  # four cells.
+  example-surface:
+    name: Example surface coverage (all methods x all bindings)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Act 5's PostgreSQL check is the one capability the example cannot start a
+    # server for. Without this service it reports `[NOT RUN]` and the job still
+    # passes — honest, but a permanent gap. The service turns it into a check
+    # that actually runs, which is the difference between "we ship a Postgres
+    # store" and "we ran against Postgres".
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      - name: echo-agent — every method over every binding
+        run: cargo run -p echo-agent --release
+      # `INCIDENT_EXIT_WHEN_DONE` makes the demo return instead of parking on
+      # Ctrl+C for a human to poke at; without it the job would hit its
+      # timeout after a successful run, which is a red job for a green result.
+      - name: incident-response — narrative demo, then every method over every binding
+        run: cargo run -p incident-response --release
+        env:
+          INCIDENT_EXIT_WHEN_DONE: "1"
+      # Act 5 again, on its own. The demo step above already runs it, so this
+      # step costs a few seconds and buys attribution: a red demo step could be
+      # any of five acts, and `scripts/prove_gates_fail.sh` can only prove a
+      # gate by injecting one defect and naming the step that must go red.
+      # Without a step whose *only* content is the hardening checks, the proof
+      # that they can fail would rest on the demo step, whose proof is already
+      # spoken for by the method x binding matrix.
+      - name: incident-response — production hardening checks
+        run: cargo run -p incident-response --release -- harden
+        env:
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+          # Turns a `[NOT RUN]` into exit 4. Without it, a Postgres service that
+          # stopped being provisioned would silently downgrade a real check to a
+          # printed line and this job would stay green.
+          INCIDENT_REQUIRE_ALL: "1"
+      # The three examples whose point is an external dependency — an LLM
+      # provider, or worker agents in four other languages. None is available
+      # in CI, and none is needed: the A2A surface these examples serve is the
+      # part this SDK owns, and it is measured either way.
+      #
+      # What each run does NOT do, it says. `genai`/`rig` print
+      # "LLM leg: NOT EXERCISED" and label every fallback answer; `multi-lang`
+      # prints each worker as "not reachable" and says delegation was not
+      # exercised. A green job here therefore means "the protocol surface is
+      # complete", never "the model works" or "four languages round-tripped" —
+      # a distinction that only holds because the runs assert it out loud.
+      - name: genai-agent — every method over every binding
+        run: cargo run -p genai-a2a-agent --release
+      - name: rig-agent — every method over every binding
+        run: cargo run -p rig-a2a-agent --release
+      - name: multi-lang-team — coordinator surface over every binding
+        run: cargo run -p multi-lang-team --release

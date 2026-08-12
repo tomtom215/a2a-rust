@@ -38,10 +38,135 @@ hunt. Worth sequencing so that effort is not spent twice.
 Work where the project's own gates do not yet measure what they claim to.
 This is the category most worth clearing before any external review.
 
+* **~~Demonstrate the SDK capabilities a deployment needs.~~ Done 2026-08-11** —
+  tenant isolation, authentication interceptors, rate limiting, persistent
+  stores, agent-card signing, the `Metrics` hook, OpenTelemetry export and
+  graceful shutdown all shipped, all covered by unit and integration tests, and
+  **no example demonstrated any of them over a socket**. That is a real gap and
+  not a documentation one: a reader evaluating this SDK reads the examples, and
+  the examples showed an in-memory, single-tenant, unauthenticated agent.
+
+  `examples/incident-response` now runs **sixteen** such checks as Act 5, each
+  asserting the specific wrong answer it rules out. The first eight covered a
+  tenant reading another's tasks, an anonymous request succeeding, a rate limit
+  that accepts everything, a tampered card verifying, a task that does not
+  survive a handler change, a shutdown that hangs, served requests that reach no
+  recorder, and an instrumented handler exporting no datapoint; the other eight
+  are in the table below. Runnable alone as
+  `cargo run -p incident-response -- harden`, gated by its own step in
+  `ci.yml`'s `example-surface` job, and proven able to fail by
+  `scripts/prove_gates_fail.sh` (`example_hardening`, which removes the tenant
+  resolver — a defect under which every request still succeeds).
+
+  Two things were checked rather than assumed while writing it. The OTel check
+  collects from a real `ManualReader` because the default global meter provider
+  is a no-op, under which a handler that records nothing and one that records
+  everything are indistinguishable. And the signing check tampers with
+  `supported_interfaces[0].url`, not the deprecated top-level `AgentCard::url`:
+  the latter is `#[serde(skip_serializing)]` since A2A v1.0 removed it, so it is
+  absent from the canonical bytes and rewriting it is correctly a no-op. The
+  first draft tampered there, reported a failure, and the failure was the
+  check's fault rather than the SDK's.
+
+  Three of the eight assert that something must *not* succeed, and each
+  originally accepted any error as proof — so killing the agent between setup
+  and assertion would have read as "correctly refused". They now require the
+  error to be a server refusal (`Protocol`/`AuthRequired`/`UnexpectedStatus`)
+  rather than a transport failure, and all three arms were proven to fire by
+  pointing the client at a closed port: before the change all three injections
+  passed, after it all three go red naming the unreached server.
+
+  **What this entry claims, and its boundary.** "Done" means each capability
+  is demonstrated over a socket by an example, with an assertion that can fail —
+  not that it is bug-free. Sixteen capabilities are covered as of 2026-08-11;
+  a grep of `examples/` for the eight that had none confirms each now has one.
+
+  Eight more landed the same day, closing the list this entry previously
+  carried as outstanding:
+
+  | Capability | How it is demonstrated | What the check rules out |
+  |---|---|---|
+  | `ApiKeyAuthInterceptor` | Custom header, three cases | An interceptor that rejects on header *presence* rather than value |
+  | `JwtAuthInterceptor` (remote JWKS) | ES256 tokens against a JWKS the example serves | A forged signature accepted, or an expired token accepted |
+  | `HandlerLimits` | `max_id_length` on a caller-controlled `context_id` | An unbounded identifier a caller can make the server allocate |
+  | `RetryPolicy` (client) | Fault-injecting proxy in front of a real agent | A retry layer that treats every 5xx alike and double-executes a non-idempotent `SendMessage` on an ambiguous `502` |
+  | `TenantAwareSqliteTaskStore` | Two tenants, handler replaced, read back as both | Partitions that are correct in memory and share one table on disk |
+  | `PostgresTaskStore` | Round-trip through two handlers | A second SQL backend assumed correct because SQLite is |
+  | `init_otlp_pipeline` | Real collector socket, byte and HTTP/2-preface assertions | A pipeline that builds cleanly and exports nothing |
+  | `HttpPushSender::with_tls_config` | rcgen cert, `tokio-rustls` sink, both trust stores | A sender that "supports HTTPS" without verifying certificates |
+
+  Each was proven able to fail by removing the capability it covers. Two of the
+  eight needed an external service the example cannot start; only PostgreSQL
+  still does, so that check reports `[NOT RUN]` naming
+  `A2A_TEST_POSTGRES_URL` rather than silently passing, and CI provides the
+  service. `INCIDENT_REQUIRE_ALL=1` — set in CI — turns any `[NOT RUN]` or
+  `[NOT BUILT]` into exit `4`, so a service that stops being provisioned fails
+  the job instead of quietly downgrading a check to a printed line.
+
+  Writing them found two mistakes in the checks themselves, both fixed rather
+  than worked around: an "expired" JWT that expired 30 seconds ago is *correctly*
+  accepted inside `JwtValidator`'s 60-second clock-skew leeway, and a proxy that
+  forwards a request without its headers strips `A2A-Version` and gets
+  `-32009` back. Both first reported as SDK defects; neither was.
+
+* **~~Make every example's coverage claim measurable.~~ Done 2026-08-11** —
+  all six examples now report **44 of 44 cells** and exit non-zero on a gap,
+  gated by `ci.yml`'s `example-surface` job with each leg proven able to fail.
+  The three that depend on an external service (LLM provider, cross-language
+  workers) report that dependency's status separately, so a green matrix is
+  never read as "the model works" or "four languages round-tripped".
+
+* **~~Make the examples' coverage claims measurable.~~ Done 2026-08-11** —
+  `echo-agent` drove 4 of the 11 A2A methods over 2 of the 4 transports and
+  `incident-response` 4 over 1, while `examples/README.md` called the first
+  "the complete request lifecycle". Both now drive every method over every
+  binding they serve — **44 of 44 cells each** — and exit non-zero on a gap,
+  gated by `ci.yml`'s `example-surface` job.
+
+  The denominator is deliberately not this project's: `Method::ALL` is asserted
+  equal to `service A2AService` in the ratified `proto/a2a_v1/a2a.proto`, and
+  `scripts/check_method_denominator.py` cross-checks both against the upstream
+  `a2aproject/a2a-tck` on every Official TCK run. All three agreed on the same
+  eleven methods when measured against `a2a-tck@5996b79`.
+
+  Doing this found a real client defect — the WebSocket transport delivered its
+  `stream_complete` control frame to the consumer, where it failed to
+  deserialize. It only surfaces when a stream ends without a terminal task
+  state, so only an agent that asks clarifying questions exposes it. Fixed with
+  regression tests; see the changelog.
+
+* **~~Run the SDK dogfood suite in CI.~~ Done 2026-08-11** — `examples/agent-team`
+  holds ~5,900 lines of E2E tests and no workflow had ever executed it. It is a
+  `main()`, not `#[test]`s, so `cargo test --workspace` compiled it and ran none
+  of it; it appeared in the workflows only inside `cargo package --exclude`
+  lists. First local run: **86 tests, 71 passed, 15 failed, exit 1**.
+  Now **100 tests, 100 passing** with `--all-features`, gated by `ci.yml`'s
+  `dogfood` job.
+
+  This was the sixth gate found structurally incapable of failing, and the
+  largest: the suite's "SDK FEATURES EXERCISED" table was a hardcoded list
+  printed as `[x]` with no link to the results, so it stayed green through
+  fifteen failing tests, and feature-gated rows were `#[cfg]`'d out of the list
+  rather than reported unexercised. The table is now computed from outcomes and
+  cross-checked against the suite in both directions; see
+  `examples/agent-team/src/features.rs`.
+
+  Of the 15 failures, 14 were test rot (a raw-HTTP helper that never sent
+  `A2A-Version`; three tests assuming the first stream event is a status update
+  rather than a `Task` snapshot; one assertion that contradicted the SDK's
+  documented lag contract) and one — `GetExtendedAgentCard` — was a test whose
+  agent had never been configured to support the operation, so it could not
+  have passed on any commit. No SDK defect was found. That is a real result and
+  worth stating plainly, but it was unknowable while nothing ran the suite.
+
 * **~~Land one complete mutation sweep.~~ Done 2026-08-07** — run 31209868659,
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
   trustworthy rather than merely produced.
+  **The current figure is 94% (2187/125), from the 2026-08-10 sweep** — this
+  bullet records the first complete sweep, not the latest one. See
+  [`mutation-history.md`](book/src/reference/mutation-history.md) for the
+  dated table, and the burn-down item below for the survivor clusters.
   Getting there took three rounds of gate fixes, because each one exposed the
   next. The 2026-07-31 diagnosis — two shards lost to the job timeout — was wrong:
   re-checked on 2026-08-06 against the 2026-07-27 run's own artifacts, the
@@ -81,11 +206,39 @@ This is the category most worth clearing before any external review.
   "retired by deleting the branch" section. Do not extrapolate a floor from one
   file; measure the next one.
 
-  **~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
+  ~~**~132 survivors remain** from that sweep's 183 (a2a-server 165, a2a-client
   10, a2a-types 8). The next clusters are not yet identified — the sweep that
   named the top four is now three files out of date, so start by re-running it
   (or reading the latest `mutants-summary` artifact) rather than trusting this
-  list. The weekly sweep fails until survivors are killed or explicitly
+  list.~~
+
+  **Superseded 2026-08-11 by measurement.** The estimate was close but it was
+  an estimate; the weekly sweep of 2026-08-10 (run
+  [31352927429](https://github.com/tomtom215/a2a-rust/actions/runs/31352927429),
+  `041c366` on `main`) settles it: **125 survivors, 94% — 2187 caught / 125
+  missed / 2 timeout / 1277 unviable.** Per crate: `a2a-server` 1225/107 (91%),
+  `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0. All 21
+  shards completed and carry a `COMPLETED` marker, and it is the first sweep to
+  run against a live database — Postgres-file survivors fall 18 → 3.
+
+  Verified by re-deriving all of it from the run's 21 raw shard artifacts with
+  a second implementation of the workflow's counting rule. Every figure,
+  including all four per-crate rows, reproduces exactly.
+
+  The clusters are now identified. Largest first:
+  `handler/event_processing/sync_collector.rs` 9, `dispatch/grpc/service.rs` 9,
+  `streaming/event_queue/in_memory.rs` 8,
+  `handler/event_processing/background/state_machine.rs` 8, `push/sender.rs` 7,
+  `dispatch/websocket.rs` 7, `dispatch/axum_adapter.rs` 7, `rate_limit.rs` 6.
+
+  Two caveats before anyone works from that list. It is measured at `041c366`,
+  which is 44 commits behind `af7a1f8`; the ledger quantifies that 61 of the 125
+  sit in files changed since, and 64 are in files unchanged and therefore still
+  valid. And `dispatch/grpc/service.rs`'s 9 sit in the deprecated
+  `grpc-legacy-json` tunnel that 0.8 deletes outright — sequence that removal
+  first rather than testing code scheduled for removal.
+
+  The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
   baseline file: the `--in-diff` PR gate already prevents new code from adding
   survivors, so the count can only fall.
@@ -97,12 +250,26 @@ This is the category most worth clearing before any external review.
   which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
   CI gates locally; a live Postgres and `--run-ignored all` are required or
   every Postgres mutant survives for want of a database.
+* **~~Decide whether the 500-line guideline applies to scripts.~~ Done
+  2026-08-11** — it does, and `check_file_lengths.sh` now enforces it over
+  `.rs`, `.sh` and `.py` rather than `.rs` alone. Widened rather than splitting
+  the two long provers, because the same measurement found two more over-limit
+  scripts nobody had counted (`benches/scripts/extract_benchmark_json.py` 658,
+  `benches/scripts/generate_book_page.sh` 650): a ratchet catches the next one,
+  a refactor catches only this one. Baseline 77 → 81 entries of 333 tracked
+  sources. Both directions of the widened check were proven by injection — a
+  new 501-line script exits 1, and a baseline entry naming a 201-line script
+  exits 1 as stale.
 * **Decide the wording of the zero-survivor rule.** Partly done.
   `CONTRIBUTING.md` no longer claims a blanket "zero surviving mutants": it now
   separates the blocking per-PR `--in-diff` gate (which a contributor is
   accountable for) from the advisory workspace sweep (pre-existing debt), and
-  states the sweep's real number. **Still open:** ADR 0006 carries the old
-  absolute wording.
+  states the sweep's real number. ~~**Still open:** ADR 0006 carries the old
+  absolute wording.~~ **Done 2026-08-11** — ADR 0006's Consequences section
+  said developers "must address surviving mutants before merge" with no scope,
+  which read as the whole workspace's 125. It now says "on the lines their PR
+  changes", matching what the gate actually enforces, and the stale 92% / 183
+  figure in its Target section is updated to 94% / 125.
 
   **The `#[mutants::skip]` question is closed, and closed by removal rather
   than by decision** (2026-08-09). The exception list is empty: the two
@@ -153,7 +320,23 @@ This is the category most worth clearing before any external review.
 * **PGP key for security reports.** `SECURITY.md` has none, so emailed
   vulnerability reports cannot be encrypted. GitHub Security Advisories is
   the recommended channel in the meantime.
-* **Register `a2a-rust.dev`.** The domain is unregistered (NXDOMAIN), so both
+* **~~Add the four missing governance files.~~ Done 2026-08-11** —
+  `MAINTAINERS.md`, `.github/CODEOWNERS`, `SUPPORT.md` and `TRADEMARKS.md`.
+  `GOVERNANCE.md`'s duplicated maintainer table was removed at the same time
+  and now points at `MAINTAINERS.md`, so the two cannot drift.
+
+  **These are necessary and nowhere near sufficient**, and the checklist being
+  complete must not be read as progress on adoption.
+  [`docs/rust-sdk-assessment.md` §7](docs/rust-sdk-assessment.md) is explicit
+  that the remaining blockers are not repo-hygiene items: an official Rust SDK
+  already occupies the slot, the decision mechanism is an eight-corporation TSC
+  vote, the provenance disclosure has to be assessed by that body, and the
+  maintainer group is one person. Adding four files moves none of those. What
+  it does is stop their absence from being a distraction, and — in the case of
+  `CODEOWNERS` — it documents plainly that with one maintainer the mechanism is
+  inert for the maintainer's own commits.
+* **Register `a2a-rust.dev`.** The domain is unregistered (NXDOMAIN — re-verified
+  2026-08-11 via DoH, `Status: 3`), so both
   `conduct@a2a-rust.dev` and `security@a2a-rust.dev` are undeliverable. Both
   documents now point at the maintainer address instead; the dedicated
   addresses can be restored once the domain is live.
@@ -203,9 +386,25 @@ Full analysis and reproduction steps in
   reports those four MUSTs `NOT TESTED`, because the tests that would change
   that have to live in `a2aproject/a2a-tck` (its own `task-28`). What changed
   is that this repository no longer ships a four-binding server with nothing
-  checking the bindings agree. `BIND-EQUIV-004` is graded structurally only —
+  checking the bindings agree. ~~`BIND-EQUIV-004` is graded structurally only —
   the enforcement half needs a target configured to require credentials,
-  which no job here provides.
+  which no job here provides.~~
+
+  **`BIND-EQUIV-004`'s enforcement half closed 2026-08-11** — the last
+  in-scope conformance claim this repository had recorded as unmeasured.
+  `tck/sut` gained a `SUT_PROFILE=secured` profile that declares a bearer
+  scheme on its card and enforces it with one `BearerTokenAuthInterceptor`
+  above the dispatchers, and `--equivalence --auth-token` grades two sweeps
+  against it: every binding must refuse an uncredentialed request, and every
+  binding must serve a credentialed one. Gated in `tck.yml`.
+
+  The acceptance sweep is not symmetry for its own sake. The first draft of the
+  probe sent the JSON-RPC method as `tasks/list` where this SDK's name is
+  `ListTasks`; it authenticated correctly, failed method dispatch, and reported
+  a binding asymmetry that did not exist. On the rejection sweep alone, a probe
+  that can never succeed looks exactly like enforcement working — the same
+  shape as the gates this repo has found that could not fail. Proved by
+  injection that the check goes red: run with a wrong token it exits 1.
 
 ## Open questions
 

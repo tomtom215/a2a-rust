@@ -1,0 +1,58 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Code owners for a2a-rust. GitHub requests review from the matching owner when
+# a pull request touches a path below. Later matches win, so the catch-all is
+# first and the specific paths follow.
+#
+# READ THIS BEFORE TREATING IT AS A REVIEW CONTROL.
+#
+# This project has one maintainer (see MAINTAINERS.md). GitHub does not request
+# review from the author of a pull request, so for anything the maintainer
+# writes, every rule below matches and then does nothing. This file is a real
+# control for outside contributions and inert for the majority of commits.
+#
+# It is committed anyway for two reasons: outside contributions are exactly the
+# case it works for, and it becomes load-bearing the moment a second maintainer
+# exists without anyone having to remember to add it. What it must not do is
+# create the impression that changes to the paths below are independently
+# reviewed today. They are not.
+
+# Everything, unless something more specific matches.
+*                               @tomtom215
+
+# ── Things whose failure mode is silent ──────────────────────────────────────
+#
+# The paths below are called out separately not because they are more important
+# than the source, but because a defect in them does not announce itself: a
+# broken gate reports success, and a stale ledger reads as a current
+# measurement. This repository has shipped six such defects and found all six
+# after the fact.
+
+# CI, and the harnesses that prove the CI gates can actually fail.
+/.github/workflows/            @tomtom215
+/scripts/                      @tomtom215
+
+# Provenance, licensing and governance. Changes here alter what the project
+# asserts about itself to downstream recipients and their counsel.
+/PROVENANCE.md                 @tomtom215
+/docs/provenance-manifest.md   @tomtom215
+/LICENSE                       @tomtom215
+/NOTICE                        @tomtom215
+/DCO                           @tomtom215
+/GOVERNANCE.md                 @tomtom215
+/MAINTAINERS.md                @tomtom215
+/TRADEMARKS.md                 @tomtom215
+/CODE_OF_CONDUCT.md            @tomtom215
+/SECURITY.md                   @tomtom215
+
+# Conformance and mutation ledgers, and the baselines a gate reads.
+/book/src/reference/conformance-history.md   @tomtom215
+/book/src/reference/mutation-history.md      @tomtom215
+/tck/conformance-baseline.json               @tomtom215
+/.file-length-baseline                       @tomtom215
+/mutants.toml                                @tomtom215
+/deny.toml                                   @tomtom215
+
+# The upstream specification schema, kept byte-identical and enforced by a test.
+/proto/                        @tomtom215

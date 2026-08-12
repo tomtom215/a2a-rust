@@ -29,6 +29,333 @@ existing `RELEASING.md` checklist.
 
 ### Added
 
+- **Act 5 grows to sixteen checks: every SDK capability that had no example now
+  has one.** The previous entry left eight capabilities demonstrated by no
+  example — measured by grep, not recalled — each for a stated reason. All eight
+  are now covered, and each was proven able to fail by removing what it covers:
+
+  | Capability | Demonstrated by | Proven failure |
+  |---|---|---|
+  | `ApiKeyAuthInterceptor` | Custom header, three cases (absent / wrong / right key) | `a request with no key SUCCEEDED` |
+  | `JwtAuthInterceptor` via remote JWKS | ES256 tokens against a JWKS the example serves on a loopback socket | `a token signed by an unpublished key was ACCEPTED` |
+  | `HandlerLimits` | `max_id_length` against a caller-controlled `context_id` | `a 33-char context_id was accepted with max_id_length 32` |
+  | `RetryPolicy` (client) | Fault-injecting reverse proxy in front of a real agent | `2 injected 503s were not ridden out` |
+  | `TenantAwareSqliteTaskStore` | Two tenants written, handler replaced, both read back | `after the restart acme can see globex's task` |
+  | `PostgresTaskStore` | Round-trip through two handlers over one database | `task … did not survive the handler change` |
+  | `init_otlp_pipeline` | A collector socket the example owns, asserting HTTP/2 bytes arrive | `3 requests recorded but the collector received 0 bytes` |
+  | `HttpPushSender::with_tls_config` | `rcgen` cert + `tokio-rustls` sink, delivered with both trust stores | `delivery to a certificate the sender was told to trust failed` |
+
+  The retry check is the one worth reading: it asserts a `503` on
+  `SendMessage` *is* retried and a `502` is *not*. `503` means the request was
+  refused up front, so re-sending a non-idempotent method is safe; `502` means
+  a gateway may already have forwarded it, so retrying can create a second
+  task. A retry layer that treats every 5xx alike passes both other assertions
+  and fails only that one.
+
+  New reporting state: `[NOT RUN]`, distinct from `[NOT BUILT]`. "The binary
+  cannot do this" and "the binary can and nobody tried" are different facts.
+  Only the PostgreSQL check can be `[NOT RUN]` (it names
+  `A2A_TEST_POSTGRES_URL`); CI provides the service, and
+  `INCIDENT_REQUIRE_ALL=1` makes either state exit `4` so a service that stops
+  being provisioned fails the job instead of silently downgrading a check to a
+  printed line.
+
+  Two failures reported while writing these were the checks' own fault, not the
+  SDK's, and are recorded because the distinction is the point: a JWT that
+  expired 30 seconds ago is *correctly* accepted inside `JwtValidator`'s
+  60-second clock-skew leeway, and a proxy that forwards a request without its
+  headers strips `A2A-Version` and earns a `-32009`.
+
+- **`examples/incident-response` now demonstrates the SDK capabilities a
+  deployment needs, over a socket, with assertions.** Tenant isolation,
+  authentication interceptors, rate limiting, persistent stores, agent-card
+  signing, the `Metrics` hook, OpenTelemetry export and graceful shutdown all
+  shipped and were covered by unit and integration tests, but no example
+  exercised any of them end-to-end. Act 5 runs eight checks, each naming the
+  specific wrong answer it rules out:
+
+  | Check | Fails when |
+  |---|---|
+  | Tenant isolation (`TenantAwareInMemoryTaskStore` + `HeaderTenantResolver`) | A tenant sees another's task, or a caller authenticated as one tenant writes into another by naming it in `params.tenant` |
+  | `BearerTokenAuthInterceptor` | An anonymous request succeeds, **or** a correctly authenticated one is refused |
+  | `RateLimitInterceptor` | Every call is accepted, every call is refused, or more than the limit gets through |
+  | `sign_agent_card`/`verify_agent_card` | A card whose interface URL was rewritten still verifies |
+  | `SqliteTaskStore` | A task written through one handler is not readable through another over the same file |
+  | `RequestHandler::shutdown` | It does not return within 5s |
+  | The `Metrics` hook | Served requests reach no recorder |
+  | `OtelMetrics` | No `a2a.server.requests` datapoint is collected after N requests |
+
+  Runnable on its own as `cargo run -p incident-response -- harden` (exit code
+  `3` on a failure), gated by its own step in `ci.yml`'s `example-surface` job,
+  and proven able to fail by `scripts/prove_gates_fail.sh`, which removes the
+  tenant resolver — a defect under which every request still succeeds and only
+  the isolation check notices.
+
+  Two details were verified rather than assumed. The OTel check collects from a
+  real `ManualReader` rather than trusting the global provider, which defaults
+  to a no-op under which a handler that records nothing looks identical to one
+  that records everything. And the signing check tampers with
+  `supported_interfaces[0].url`, not the deprecated top-level `AgentCard::url`
+  — the latter is `#[serde(skip_serializing)]` because A2A v1.0 removed it, so
+  it is absent from the canonical signing payload and rewriting it correctly
+  changes nothing.
+
+  Capabilities behind Cargo features print `[NOT BUILT]` with the feature they
+  need instead of vanishing, so `--no-default-features` reports a narrower run
+  as narrower (measured: 5 passed, 3 not compiled) rather than printing the
+  same "all passed" line over fewer checks. `incident-response` gains
+  `default = ["sqlite", "signing", "otel"]` so the documented command exercises
+  everything.
+
+- **All six examples now drive every A2A method over every binding they serve,
+  and fail if the matrix has a gap.** Measured 2026-08-11, all six report
+  **44 of 44 cells**. Before the change: `echo-agent` 4 methods / 2 bindings,
+  `incident-response` 4 / 1, `genai-agent` 0 / 1 (it printed a URL and waited),
+  `rig-agent` 0 / 1, `multi-lang-team` 1 / 1, and `agent-team`'s 100 feature
+  tests had no rows for the question at all.
+
+  `agent-team` gains a fifth agent that exists purely to be swept, because its
+  four team agents are deliberately split by binding and no single one of them
+  can answer the coverage question.
+
+  Three examples depend on something CI does not have — an LLM provider, or
+  worker agents in four other languages — and each reports that separately
+  rather than letting a full matrix imply it: `genai`/`rig` print
+  `LLM leg: NOT EXERCISED` and label every fallback answer
+  `[no model reachable — mechanical fallback, not an LLM answer]`;
+  `multi-lang-team` prints each worker as `REACHABLE` or `not reachable` and
+  its artifact says `[no worker agents reachable — nothing was delegated]`.
+  The fallbacks are opt-in per handler: server mode still fails the task on a
+  provider error, which is correct for a real agent.
+
+  `multi-lang-team`'s coordinator now probes workers once at startup instead of
+  fanning out per request. With all four down every call paid a full timeout
+  window, which made the sweep take minutes and told the reader nothing they
+  had not been told at startup.
+
+- **Both examples now drive every A2A method over every binding they serve, and
+  fail if the matrix has a gap.** Measured 2026-08-11 before the change:
+  `echo-agent` drove 4 of the 11 methods over 2 of the 4 transports, and
+  `incident-response` 4 over 1 — while `examples/README.md` presented the first
+  as demonstrating "the complete request lifecycle". `echo-agent`'s card also
+  advertised neither push notifications nor an extended card, so seven methods
+  were not merely undriven but unavailable on the server it started.
+
+  Both now report 44 of 44 cells and exit 2 on any gap. `echo-agent` serves
+  gRPC for the first time; `incident-response` serves REST, gRPC and WebSocket
+  for the first time, on `port`, `port + 10` and `port + 20`. The narrative
+  Acts 1-3 are unchanged — the sweep is a fourth act, so the example still
+  teaches what an agent is before it measures what the SDK covers.
+
+  Both also run counter-tests against a second agent advertising no optional
+  capabilities, because a full matrix only shows the server says yes to
+  everything it should. Five refusals are checked by error code: unknown task
+  ids on `GetTask` and `CancelTask`, push config and extended card against a
+  card lacking those capabilities, and streaming against an agent that never
+  advertised it.
+
+  Gated by `ci.yml`'s `example-surface` job, registered in `preflight.sh` and
+  `prove_gates_fail.sh`. Proven able to fail: dropping the `ListTasks`
+  recording from the shared harness, with every call still succeeding, exits 2
+  and names all four cells.
+
+- **`a2a-example-harness`** — the coverage matrix, the method sweep and the
+  counter-tests, shared by both examples rather than copied into each. A
+  duplicated scorer is one that eventually disagrees with itself: one copy
+  loses a row and the example built on it reports a full matrix.
+
+- **The SDK dogfood suite now runs in CI, and its feature table is computed
+  from results.** `examples/agent-team` holds ~5,900 lines of end-to-end tests
+  and had never been executed by any workflow: it is a `main()`, not
+  `#[test]`s, so `cargo test --workspace` compiled it and ran none of it, and
+  it appeared in the workflows only inside `cargo package --exclude` lists.
+  Measured when first run locally on 2026-08-11: **86 tests, 71 passed, 15
+  failed, exit 1**.
+
+  Three independent defects kept that invisible, and all three are fixed:
+
+  * **The feature table could not fail.** "SDK FEATURES EXERCISED" was a
+    hardcoded array printed as `[x] <label>` in a loop, with no connection to
+    any result. The failing run still printed `[x] Batch JSON-RPC (single,
+    multi, empty, mixed, streaming rejection)` with all six batch tests red.
+    Feature-gated labels were `#[cfg]`'d out of the *array*, so a build
+    without `--features websocket` omitted the row entirely rather than
+    reporting it unexercised — absence rendered as completeness. The table now
+    lives in `examples/agent-team/src/features.rs`, where each claim names the
+    tests that evidence it and renders `[x]`, `[FAIL]` or `[ ] NOT RUN` from
+    their outcomes. A bidirectional drift check fails the run if a claim names
+    no test that ran, names a test that does not exist, or if a test ran that
+    no claim mentions.
+  * **No `default` features.** `cargo run -p agent-team` — the command
+    `examples/README.md` gave for "exercises every SDK feature" — compiled out
+    WebSocket, gRPC, Axum, SQLite, signing and OTel, then printed "SDK dogfood
+    complete". There is now a `default` set covering all six, and the binary
+    exits 2 listing every unexercised area rather than claiming completion.
+  * **Nothing ran it.** `ci.yml` gains a `dogfood` job running the suite with
+    `--all-features`, registered in `scripts/preflight.sh` and
+    `scripts/prove_gates_fail.sh` so the existing bidirectional job-coverage
+    guard accounts for it.
+
+  With all features enabled the suite is now **100 tests, 100 passing**.
+
+- **`A2aError::is_stream_lagged`, `dropped_event_count`, `stream_lagged`, and
+  `STREAM_LAGGED_MARKER`** (`a2a-protocol-types`), plus
+  `ClientError::is_stream_lagged` / `dropped_event_count`
+  (`a2a-protocol-client`).
+
+  A server emits a recoverable lag signal when a streaming consumer falls
+  behind; the stream continues and a consumer that keeps polling still
+  receives later events. Recognising it required matching the raw
+  `data.streamLagged` JSON key by hand, because the only predicate was
+  `pub(crate)` inside `a2a-protocol-server`. Every out-of-tree consumer faced
+  that, and the dogfood suite's own backpressure test got it wrong — it broke
+  out of the read loop on the lag signal, then asserted on an event it had
+  just stopped waiting for. The marker and message now have one definition in
+  the types crate, which the server's `lag_error`/`is_lag_error` delegate to.
+
+- **`extended-card-requires-auth`** (dogfood Test 68b) — asserts that an agent
+  advertising `extendedAgentCard` with no authenticating interceptor refuses
+  to serve it (spec §13.3). This path is bypassed on the shared analyzer agent
+  by `allow_unauthenticated_extended_card()`, so without a dedicated test the
+  suite would prove the card is served and never that it is protected.
+
+- **`BIND-EQUIV-004` is now graded behaviourally, not just structurally.**
+  §5.1 requires every binding to support the same authentication schemes. The
+  runner has been checking the half a card can answer — v1.0 gives
+  `AgentInterface` no security fields, so schemes declared once at card level
+  bind every binding. Whether each binding *enforces* them was recorded as
+  unmeasured, because no target here required credentials to withhold.
+
+  `tck/sut` gains `SUT_PROFILE=secured`, whose card declares a bearer scheme
+  and whose handler enforces it with a single `BearerTokenAuthInterceptor`.
+  One interceptor above the dispatchers is the property under test: all four
+  bindings are guarded by one implementation reading one `CallContext`, so a
+  binding that stopped forwarding the header would fail rather than quietly
+  serve anonymous traffic. `a2a-tck --equivalence --auth-token <t>` sweeps
+  twice — every binding must refuse an uncredentialed request, and every
+  binding must serve a credentialed one — and `tck.yml` gates both.
+
+  The acceptance sweep caught a defect in the probe itself during development:
+  an early draft sent the JSON-RPC method as `tasks/list` where this SDK's name
+  is `ListTasks`, which authenticated and then failed dispatch, so two bindings
+  reported a refusal and the check declared an asymmetry that did not exist. On
+  the rejection sweep alone, a probe that can never succeed is
+  indistinguishable from enforcement working. Recorded in
+  `book/src/reference/conformance-history.md` rather than quietly fixed.
+
+- **Four governance files**: `MAINTAINERS.md`, `.github/CODEOWNERS`,
+  `SUPPORT.md` and `TRADEMARKS.md`. `GOVERNANCE.md`'s duplicated maintainer
+  table is removed in favour of `MAINTAINERS.md`, so the two cannot drift.
+  `CODEOWNERS` states in its own header that with one maintainer it is inert
+  for that maintainer's own pull requests — real for outside contributions,
+  and not a claim that these paths are independently reviewed today.
+
+- **`docs/provenance-manifest.md` and `scripts/provenance_manifest.sh`** — the
+  reproducible account of what this repository's history contains and what a
+  DCO history rewrite would cost, for a downstream project's counsel. The
+  script refuses to run on a shallow clone, which is what produced two
+  successive wrong measurements.
+
+### Fixed
+
+- **The WebSocket client forwarded its end-of-stream control frame to the
+  consumer.** The binding closes a stream with
+  `{"result":{"status":"stream_complete"}}`; the reader task wrapped *every*
+  frame as an SSE line and delivered it, consulting `is_stream_terminal` only
+  afterwards for pending-map cleanup. The sentinel is not a `StreamResponse`,
+  so it surfaced to callers as
+  `unknown variant 'status', expected one of 'task', 'message', 'statusUpdate', ...`.
+
+  The common case hides it: when a task reaches a terminal state the stream
+  ends on that event and the sentinel is never parsed. It only bites when a
+  stream ends *without* a terminal state — most obviously a task parked in
+  `INPUT_REQUIRED`, i.e. any agent that asks a clarifying question over
+  WebSocket. Found by driving all eleven methods against exactly such an agent
+  while expanding `incident-response`; `echo-agent`, whose tasks always
+  complete, never hit it.
+
+  Fixed with a narrow `is_stream_complete_sentinel` consulted *before*
+  delivery. Deliberately narrower than `is_stream_terminal`, which also treats
+  a terminal task status as end-of-stream: suppressing those would truncate
+  every stream at its most important frame, a worse bug than the one being
+  fixed. Three regression tests pin the split, including one asserting the
+  sentinel genuinely cannot deserialize as a `StreamResponse`.
+
+- **The 15 failing dogfood tests**, all in the suite rather than the SDK, with
+  one exception noted below. Root causes, each verified against a live server
+  rather than inferred:
+
+  * **9 tests** — `post_raw`/`get_raw` sent no `A2A-Version` header. The server
+    negotiates the version per request and defaults to `0.3`, so every raw-HTTP
+    test was asserting against a `VERSION_NOT_SUPPORTED` envelope instead of a
+    real response. Both helpers now send it, sourced from
+    `A2A_VERSION_HEADER`/`A2A_VERSION` so they cannot drift, and both return
+    `Err` on a version rejection so the failure names its own cause.
+  * **3 tests** (`resubscribe-rest`, `resubscribe-jsonrpc`, `push-delivery-e2e`)
+    — each read one event and pattern-matched `StatusUpdate` to get a task id.
+    The first stream event is a full `Task` snapshot; the observed order is
+    `task` → `artifactUpdate` → `statusUpdate`. All three had never passed.
+    Replaced with a shared `helpers::first_task_id`, which reads until an event
+    names a task — the same correction already applied to `BIND-EQUIV-003`.
+  * **`extended-agent-card`** — the only one that was a genuine configuration
+    gap rather than rot: the analyzer's card never set
+    `extended_agent_card`, so the handler correctly answered
+    `UnsupportedOperation` per spec §3.1.11 and the test could not have passed
+    on any commit. The capability is now advertised and the §13.3
+    authentication requirement satisfied explicitly.
+  * **`backpressure-lagged`** — asserted that a lagged consumer still receives
+    the terminal event. It does not, by design: the SDK's own lag message says
+    to resubscribe, and events are dropped for that consumer only while the
+    store stays authoritative. The test now asserts that invariant — that
+    backpressure costs events, never the task — by confirming via `GetTask`
+    that the task still reached `Completed`.
+
+- **A vacuous pass.** `wire-part-flat-oneof` asserts the *absence* of a
+  `"type":"text"` discriminator, and passed against the version-error envelope,
+  which also lacks it. Verified by injection: with the header removed it now
+  reports `[FAIL] … request failed: server rejected protocol version …`
+  instead of `[PASS] response uses v1.0 flat Part…`.
+
+- **WebSocket dogfood tests aborted the process.** Tests 51-60 are
+  `#[cfg(feature = "websocket")]`, and with no `default` features and no CI job
+  they had never been compiled by an automated run. Enabling them showed the
+  handshake omitted `A2A-Version` (spec §3.6.1 — for a WebSocket that is the
+  upgrade request), and the test `.expect()`ed on connect, so one broken test
+  killed the other 86. The handshake now carries the header, mirroring
+  `a2a-protocol-client`'s own WebSocket transport, and the panic sites are
+  `TestResult::fail`.
+
+- **`push-delivery-e2e` asserted nothing about push delivery.** It passed on
+  `task_id.is_some()`, which every other streaming test already proves, and
+  would have stayed green with push entirely broken. It now requires the
+  webhook to have actually received something — currently 6 events.
+
+- **`examples/agent-team/src/tests/mod.rs` omitted the `transport` module**
+  from its own module list, so the numbering jumped 41-50 → 61-90 and the only
+  evidence that Tests 51-60 existed was the gap. `examples/README.md`'s
+  "exercises every SDK feature with 81+ automated tests" and echo-agent's
+  "complete request lifecycle" are corrected to what is measured.
+
+- **`PROVENANCE.md` §2.1's commit counts were wrong**, measured on a shallow
+  clone. Over the full 648 non-merge commits the DCO verdict is 126 pass / 477
+  assistant-authored / 29 bot / 16 unsigned human — not 120 / 138 / 21 / 3, and
+  the pass rate is 19%, not 43%. §2.1 also said §1's figure of 608 commits
+  "could not be reproduced"; on a complete clone it reproduces exactly, and §1
+  needed no change. The failure mode is worth knowing: a shallow clone drops
+  the oldest commits, which here are precisely the non-compliant ones, so the
+  pass count survives intact while every failure count shrinks. It reads as
+  good news.
+
+- **The 500-line file-length ratchet now covers `.sh` and `.py`**, not `.rs`
+  alone. Widening turned up two over-limit scripts nobody had counted, which is
+  the argument for a ratchet over a one-time split. Baseline 77 → 81 entries.
+
+- **ADR 0006 no longer says developers must address all surviving mutants
+  before merge.** The gate is `--in-diff`; the obligation is the lines a PR
+  changes. `CONTRIBUTING.md` was corrected earlier and the ADR was not, leaving
+  a governing document contradicting the enforced rule. Its stale 92% / 183
+  figure is now the measured 94% / 125.
+
 - **The verdict-bearing steps outside `ci.yml` are now proven able to fail.**
   `scripts/prove_gates_fail.sh` covers `ci.yml`'s eight gate jobs by injecting
   defects into tracked source and running cargo; that mechanism does not reach

@@ -19,18 +19,42 @@ cargo run -p agent-team
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation; runs fully local |
-| [**echo-agent**](echo-agent/) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
-| [**agent-team**](agent-team/) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
-| [**genai-agent**](genai-agent/) | LLM-powered agent using [genai](https://crates.io/crates/genai) (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
+| [`incident-response/`](incident-response/) | **Start here** — three-agent team: multi-turn `INPUT_REQUIRED`, delegation, streaming progress, artifacts, cooperative cancellation, then the full surface matrix and sixteen production-hardening checks (tenancy, four auth mechanisms, limits, retries, three task stores, signing, telemetry, HTTPS push, shutdown); runs fully local |
+| [**echo-agent**](echo-agent/) | All four bindings; drives every A2A method over each and asserts the coverage matrix | None | Beginner |
+| [**agent-team**](agent-team/) | 4-agent team with 100 E2E tests; the SDK's dogfood suite | None | Advanced |
+| [**genai-agent**](genai-agent/) | LLM-powered agent via [genai](https://crates.io/crates/genai); all four bindings, full surface matrix | Optional model | Intermediate |
 | [`rig-agent/`](rig-agent/) | **Real rig-core agent** served over A2A — hosted OpenAI or any local OpenAI-compatible server (llama-server / Ollama via `OPENAI_BASE_URL`); passes the TCK 20/20 |
-| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go, and Java A2A agents | Worker agents | Advanced |
+| [**multi-lang-team**](multi-lang-team/) | Rust coordinator delegating to Python, JS, Go and Java agents; all four bindings, full surface matrix | Optional workers | Advanced |
 
 ## What to start with
 
-- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it demonstrates the complete request lifecycle (send, stream, discover, retrieve) with no external dependencies.
+- **New to A2A?** Start with [`echo-agent`](echo-agent/) — it serves all four
+  bindings behind one handler, drives **every** A2A method over **every**
+  binding, and prints the resulting coverage matrix (currently 44 of 44 cells).
+  It then runs counter-tests against a second, deliberately restricted agent to
+  check the refusals the spec requires. No external dependencies.
 
-- **Evaluating the SDK?** Run [`agent-team`](agent-team/) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
+  It exits `1` if any call or counter-test fails and `2` if any matrix cell was
+  never exercised, so "covers everything" is a computation rather than a
+  sentence. The matrix rows come from the ratified `a2a.proto`, not from the
+  example — see `a2a_protocol_types::method`.
+
+  Until 2026-08-11 this row claimed the example demonstrated "the complete
+  request lifecycle" while it drove 4 of the 11 methods over 2 of the 4
+  transports, with push notifications and the extended card unadvertised, so
+  seven methods were unavailable on the server it started.
+
+- **Evaluating the SDK?** Run [`agent-team`](agent-team/) — the dogfood suite,
+  100 automated end-to-end tests across all four transports, printing a
+  pass/fail report and a feature table computed from the results. It exits
+  non-zero if any test fails, if the feature table drifts from the tests that
+  back it, or if any claimed feature area was not compiled into the build.
+
+  Until 2026-08-11 this row read "exercises every SDK feature with 81+
+  automated tests". That was not measurable: no CI job ran the binary, 15 of
+  its 86 tests were failing, and its feature table printed `[x]` for every row
+  regardless of outcome. All three are fixed and the suite is now gated in CI
+  (`ci.yml`, job `dogfood`).
 
 - **Integrating an LLM?** See [`genai-agent`](genai-agent/) or [`rig-agent`](rig-agent/) for patterns that bridge LLM frameworks with A2A's `AgentExecutor` trait.
 
@@ -67,3 +91,57 @@ let dispatcher = JsonRpcDispatcher::new(handler);
 - Rust 1.93+ (MSRV)
 - `protoc` only when using `--features grpc`
 - See each example's README for additional requirements
+
+## Surface coverage
+
+Every example serves all four bindings and drives **every** A2A method over
+each, then asserts the resulting matrix is complete. Measured 2026-08-11, all
+six at **44 of 44 cells**:
+
+| Example | Cells | Also |
+|---|---|---|
+| `echo-agent` | 44/44 | 5 counter-tests |
+| `incident-response` | 44/44 | three-act narrative demo first, then 16 hardening checks |
+| `agent-team` | 44/44 | + 102 E2E feature tests |
+| `genai-agent` | 44/44 | LLM leg reported separately |
+| `rig-agent` | 44/44 | LLM leg reported separately |
+| `multi-lang-team` | 44/44 | worker reachability reported per language |
+
+The rows are not this project's list. They come from `Method::ALL`, which
+`a2a-protocol-types` asserts equal to `service A2AService` in the ratified
+`proto/a2a_v1/a2a.proto`, and which `scripts/check_method_denominator.py`
+cross-checks against the upstream `a2aproject/a2a-tck` on every Official TCK
+run. A reviewer auditing "is this 11 the real 11?" reads the proto.
+
+Exit codes are the gate: `0` complete, `1` a call or counter-test failed, `2`
+a matrix cell never ran, and in `incident-response` `3` a hardening check
+failed and `4` a capability went unexercised. Gated by `ci.yml`'s
+`example-surface` job, each leg proven able to fail by injection.
+
+### Beyond the protocol
+
+`incident-response` adds an Act 5 that leaves the method × binding matrix
+behind and exercises the SDK capabilities a deployment needs — **16 checks**
+covering tenant isolation, four authentication mechanisms (bearer, API key,
+JWT-via-JWKS, and the client-side credential store), rate limiting, handler
+limits, client retries, three task stores (in-memory, SQLite, PostgreSQL, plus
+the tenant-partitioned variants), agent-card signing, the `Metrics` hook,
+OpenTelemetry both in-process and over OTLP, HTTPS push delivery and graceful
+shutdown. Each asserts the specific wrong answer it rules out, and each was
+proven able to fail by removing the capability it covers. Run them alone with
+`cargo run -p incident-response -- harden`.
+
+Until 2026-08-11 no example in this repository demonstrated any of them over a
+socket: they were covered by unit and integration tests, which is not the same
+thing as being shown to a reader evaluating the SDK. Capabilities that need
+something the example cannot start report `[NOT RUN]` naming what to set rather
+than passing quietly — only PostgreSQL is in that category, and
+`INCIDENT_REQUIRE_ALL=1` (set in CI, which provides the service) makes it an
+error rather than a note.
+
+**What a green run does *not* mean.** Three examples depend on something CI
+does not have — an LLM provider, or worker agents in four other languages.
+Each says so out loud rather than letting a full matrix imply otherwise:
+`genai`/`rig` print `LLM leg: NOT EXERCISED` and label every fallback answer,
+and `multi-lang-team` prints each worker as `not reachable`. The protocol
+surface is measured either way; the integration is not.

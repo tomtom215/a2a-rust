@@ -505,6 +505,61 @@ def build_registry() -> dict[str, Probe | Exempt]:
             "the verdict these steps feed is gated by the three probed steps above"
         )
 
+    # The denominator cross-check. Its whole purpose is to stop a coverage
+    # claim being measured against a list this project wrote about itself, so
+    # a version of it that cannot fail would be worse than not having it.
+    #
+    # `--proto` and `--rust` stay pointed at the real repo files (hence
+    # `cwd_is_repo`); the probe varies the third source, the upstream clone,
+    # because that is the one the harness can substitute without editing
+    # tracked files. The other two directions are covered by
+    # `a2a_protocol_types::method::tests::all_matches_the_ratified_proto`,
+    # which runs on every PR and was itself proven by injection.
+    def _tck_fixture(methods: list[str]):
+        def setup(d: Path) -> None:
+            root = d / "a2a-tck" / "tck"
+            root.mkdir(parents=True, exist_ok=True)
+            body = "\n".join(f'CALLS = "{m}"' for m in methods)
+            (root / "requirements.py").write_text(body + "\n", encoding="utf-8")
+
+        return setup
+
+    ALL_METHODS = [
+        "SendMessage",
+        "SendStreamingMessage",
+        "GetTask",
+        "ListTasks",
+        "CancelTask",
+        "SubscribeToTask",
+        "CreateTaskPushNotificationConfig",
+        "GetTaskPushNotificationConfig",
+        "ListTaskPushNotificationConfigs",
+        "DeleteTaskPushNotificationConfig",
+        "GetExtendedAgentCard",
+    ]
+    reg[
+        "official-tck.yml::official-tck::"
+        "Cross-check the method denominator (proto vs upstream TCK vs this repo)"
+    ] = Probe(
+        healthy=_tck_fixture(ALL_METHODS),
+        defects=[
+            Defect(
+                f"upstream suite no longer names {dropped}",
+                _tck_fixture([m for m in ALL_METHODS if m != dropped]),
+                "never names",
+            )
+            for dropped in ("CancelTask", "GetExtendedAgentCard")
+        ]
+        + [
+            Defect(
+                "upstream clone is empty (a failed or partial checkout)",
+                lambda d: (d / "a2a-tck").mkdir(parents=True, exist_ok=True),
+                "refusing to report agreement",
+            )
+        ],
+        cwd_is_repo=True,
+    )
+
     # ── mutants.yml ──────────────────────────────────────────────────────────
     reg["mutants.yml::mutants-crate::Require a readable mutation report"] = Probe(
         healthy=lambda d: mutants_out(d, caught=10, missed=0),
@@ -752,6 +807,11 @@ def build_registry() -> dict[str, Probe | Exempt]:
     for job, name in (
         ("tck-self-test", "Start echo-agent"),
         ("tck-all-bindings", "Start SUT (JSON-RPC + REST + gRPC + WebSocket)"),
+        # Added with the BIND-EQUIV-004 enforcement leg on 2026-08-11 and left
+        # unregistered in that change; the drift guard flagged it the next time
+        # this script ran, which is the guard doing its job. Same shape and
+        # same reasoning as its three siblings above.
+        ("tck-all-bindings", "Start the credential-requiring SUT"),
         ("tck-cross-language", "Wait for agent to be ready"),
         ("official-client-vs-rust-server", "Build and start our echo agent"),
     ):
@@ -960,6 +1020,10 @@ def prepare_body(step: Step, scratch: Path) -> Step:
         # leaving it at the real /tmp path would make the verdict depend on
         # whatever a previous run left behind.
         "mutants-run.log",
+        # The upstream TCK clone. The denominator cross-check reads it as a
+        # third opinion on the method set, so the probe substitutes a fixture
+        # tree to exercise "upstream disagrees" without needing a real clone.
+        "a2a-tck",
     ):
         body = body.replace(f"/tmp/{name}", str(scratch / name))
     return Step(step.workflow, step.job, step.name, body, step.shell, step.env)

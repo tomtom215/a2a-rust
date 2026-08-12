@@ -3,292 +3,83 @@
 
 //! End-to-end A2A echo agent example.
 //!
-//! This example demonstrates the full A2A protocol stack:
+//! Serves all four bindings — JSON-RPC (§9), HTTP+JSON (§11), gRPC (§10) and
+//! WebSocket (§12 custom) — behind one handler, then drives **every** A2A
+//! service method over **every** binding and prints the resulting coverage
+//! matrix.
 //!
-//! 1. **Agent executor** — Implements [`AgentExecutor`] to echo incoming
-//!    messages back as artifacts with status updates.
-//! 2. **Server** — Starts a hyper HTTP server with both JSON-RPC and REST
-//!    dispatchers on separate ports (with correct URLs via pre-binding).
-//! 3. **Client** — Connects to the server and exercises synchronous send,
-//!    streaming send, agent card discovery, and task retrieval.
+//! # Why the matrix exists
+//!
+//! `examples/README.md` used to describe this example as demonstrating "the
+//! complete request lifecycle". Measured on 2026-08-11 it drove 4 of the 11
+//! methods over 2 of the 4 transports, and its card advertised neither push
+//! notifications nor an extended card — so seven methods were not merely
+//! undriven, they were unavailable on the server it started.
+//!
+//! Nobody wrote that sentence dishonestly. It was a claim with nothing
+//! checking it, which becomes the same thing given time. So the claim is now a
+//! computation: each call records itself, and the process exits non-zero if
+//! any cell of the matrix that should have been exercised was not.
+//!
+//! The rows come from `a2a_protocol_types::method::Method::ALL`, which is
+//! asserted equal to `service A2AService` in the ratified
+//! `proto/a2a_v1/a2a.proto` and cross-checked against the official
+//! `a2aproject/a2a-tck` suite in CI. The denominator is therefore the
+//! specification's, not this example's.
+//!
+//! # Beyond the happy path
+//!
+//! A full matrix only shows the server says yes to everything it should. A
+//! second agent, advertising no optional capabilities, is started so the
+//! counter-tests can check it says *no* where the spec requires — see
+//! [`counter`].
 //!
 //! Run with: `cargo run -p echo-agent`
+//!
+//! Exit codes: `0` complete, `1` a call or counter-test failed, `2` the matrix
+//! has a gap.
 
-use std::future::Future;
-use std::net::SocketAddr;
-use std::pin::Pin;
+mod agent;
+mod serve;
+
 use std::sync::Arc;
-
-use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_protocol_types::artifact::Artifact;
-use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
-use a2a_protocol_types::params::MessageSendParams;
-use a2a_protocol_types::responses::SendMessageResponse;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
 use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
-use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
-use a2a_protocol_server::executor::AgentExecutor;
-use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::EventQueueWriter;
+use a2a_protocol_types::agent_card::AgentCapabilities;
 
-// ── Echo executor ────────────────────────────────────────────────────────────
+use a2a_example_harness::{counter, sweep, Binding, Matrix};
+use agent::{make_agent_card, EchoExecutor, Endpoints};
 
-/// A simple agent that echoes the first text part of the incoming message
-/// back as an artifact, going through Working → Completed status transitions.
-struct EchoExecutor;
-
-impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Transition to Working.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
-
-            // Extract text from the incoming message.
-            let input_text = ctx
-                .message
-                .parts
-                .iter()
-                .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.as_str()),
-                    _ => None,
-                })
-                .unwrap_or("<no text>");
-
-            // Echo back as an artifact.
-            let echo_text = format!("Echo: {input_text}");
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
-                .await?;
-
-            // Transition to Completed.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
-
-            Ok(())
-        })
-    }
-}
-
-// ── Agent card ───────────────────────────────────────────────────────────────
-
-fn make_agent_card(jsonrpc_url: &str, rest_url: &str) -> AgentCard {
-    AgentCard {
-        url: None,
-        name: "Echo Agent".into(),
-        description: "A simple echo agent that mirrors your input".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![
-            AgentInterface {
-                url: jsonrpc_url.into(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: rest_url.into(),
-                protocol_binding: "HTTP+JSON".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-        ],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes your message back as an artifact".into(),
-            tags: vec!["echo".into(), "demo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(false),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
-}
-
-// ── Server startup ───────────────────────────────────────────────────────────
-
-/// Pre-binds a TCP listener to an ephemeral port. Returns the listener and
-/// address so agent cards can be built with the correct URL before the handler
-/// is constructed.
-async fn bind_listener() -> (tokio::net::TcpListener, SocketAddr) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("bind listener");
-    let addr = listener.local_addr().expect("local addr");
-    (listener, addr)
-}
-
-fn serve_jsonrpc(
-    listener: tokio::net::TcpListener,
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) {
-    let dispatcher = Arc::new(JsonRpcDispatcher::new(handler));
-
+/// A webhook sink so push configs point somewhere real.
+///
+/// A config accepted against a dead URL proves storage, not delivery, and this
+/// example should not imply the latter from the former.
+async fn start_webhook() -> String {
+    let (listener, addr) = serve::bind_listener().await;
     tokio::spawn(async move {
         loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => continue, // Transient errors should not kill the server
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
             };
             let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
             tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                let service = hyper::service::service_fn(|_req| async {
+                    Ok::<_, std::convert::Infallible>(hyper::Response::new(
+                        http_body_util::Full::new(bytes::Bytes::from_static(b"ok")),
+                    ))
                 });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, service)
+                    .await;
             });
         }
     });
+    format!("http://{addr}/webhook")
 }
-
-fn serve_rest(
-    listener: tokio::net::TcpListener,
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-) {
-    let dispatcher = Arc::new(RestDispatcher::new(handler));
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => continue, // Transient errors should not kill the server
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let dispatcher = Arc::clone(&dispatcher);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req| {
-                    let d = Arc::clone(&dispatcher);
-                    async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
-    });
-}
-
-/// Start a combined server serving both JSON-RPC and REST on a single address.
-async fn start_combined_server(
-    handler: Arc<a2a_protocol_server::handler::RequestHandler>,
-    bind_addr: &str,
-) -> SocketAddr {
-    let jsonrpc = Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler)));
-    let rest = Arc::new(RestDispatcher::new(handler));
-
-    let listener = tokio::net::TcpListener::bind(bind_addr)
-        .await
-        .unwrap_or_else(|e| panic!("bind {bind_addr}: {e}"));
-    let addr = listener.local_addr().expect("local addr");
-
-    tokio::spawn(async move {
-        loop {
-            let (stream, _) = match listener.accept().await {
-                Ok(s) => s,
-                Err(_) => continue, // Transient errors should not kill the server
-            };
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let jsonrpc = Arc::clone(&jsonrpc);
-            let rest = Arc::clone(&rest);
-            tokio::spawn(async move {
-                let service = hyper::service::service_fn(move |req: hyper::Request<_>| {
-                    let jsonrpc = Arc::clone(&jsonrpc);
-                    let rest = Arc::clone(&rest);
-                    async move {
-                        // Route: POST with JSON to root → JSON-RPC; everything else → REST.
-                        let is_jsonrpc = req.method() == hyper::Method::POST
-                            && (req.uri().path() == "/" || req.uri().path().is_empty());
-                        if is_jsonrpc {
-                            Ok::<_, std::convert::Infallible>(jsonrpc.dispatch(req).await)
-                        } else {
-                            Ok::<_, std::convert::Infallible>(rest.dispatch(req).await)
-                        }
-                    }
-                });
-                let _ = hyper_util::server::conn::auto::Builder::new(
-                    hyper_util::rt::TokioExecutor::new(),
-                )
-                .serve_connection(io, service)
-                .await;
-            });
-        }
-    });
-
-    addr
-}
-
-// ── Client helpers ───────────────────────────────────────────────────────────
-
-fn make_send_params(text: &str) -> MessageSendParams {
-    MessageSendParams {
-        tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text(text)],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-    }
-}
-
-// ── Main ─────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
 async fn main() {
-    // When the `tracing` feature is enabled, initialize a subscriber that
-    // prints structured logs to stderr. Set RUST_LOG=debug for verbose output.
     #[cfg(feature = "tracing")]
     {
         use tracing_subscriber::EnvFilter;
@@ -299,273 +90,263 @@ async fn main() {
             .init();
     }
 
-    // ── Server-only mode (for TCK / CI) ────────────────────────────────────
-    // When A2A_BIND_ADDR is set, start a combined JSON-RPC + REST server on
-    // that address and block forever.  No client demos are run.
+    // ── Server-only mode (for the in-repo TCK / CI) ──────────────────────
     if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
-        let url = format!("http://{bind_addr}");
-        let mut card = make_agent_card(&url, &url);
-        card.url = Some(url.clone());
-        card.capabilities = AgentCapabilities::none()
-            .with_streaming(true)
-            .with_push_notifications(true);
-        // Advertise the socket *before* the handler is built, so the card the
-        // server serves names every transport it answers on. An agent that
-        // listens on a port it never announces is undiscoverable: §5 makes the
-        // card the only way a client learns where to connect, and "WEBSOCKET"
-        // is the custom binding name §12 registers alongside the canonical
-        // JSONRPC / GRPC / HTTP+JSON.
-        let ws_bind_addr = std::env::var("A2A_WS_BIND_ADDR").ok();
-        if let Some(ws_addr) = &ws_bind_addr {
-            card.supported_interfaces.push(AgentInterface {
-                url: format!("ws://{ws_addr}"),
-                protocol_binding: "WEBSOCKET".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            });
-        }
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(EchoExecutor)
-                .with_agent_card(card)
-                .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
-                .with_push_sender(
-                    a2a_protocol_server::push::HttpPushSender::new().allow_private_urls(),
-                )
-                .build()
-                .expect("build handler"),
-        );
-
-        let addr = start_combined_server(Arc::clone(&handler), &bind_addr).await;
-        println!("Echo agent listening on http://{addr} (combined JSON-RPC + REST)");
-
-        // Optional WebSocket listener (§12 custom binding). Separate port
-        // because the dispatcher owns its own listener and speaks the HTTP
-        // upgrade itself, rather than sharing the combined server's router.
-        // The in-repo TCK's `--binding websocket` leg discovers this endpoint
-        // from the card interface pushed above; without it that transport
-        // ships with no conformance coverage at all.
-        if let Some(ws_addr) = ws_bind_addr {
-            let ws = std::sync::Arc::new(
-                a2a_protocol_server::dispatch::websocket::WebSocketDispatcher::new(handler),
-            );
-            let bound = ws
-                .serve_with_addr(ws_addr.as_str())
-                .await
-                .expect("bind websocket listener");
-            println!("Echo agent WebSocket listening on ws://{bound}");
-        }
-
-        // Block forever — the server runs in background tasks.
-        std::future::pending::<()>().await;
+        server_only(&bind_addr).await;
+        return;
     }
 
-    println!("=== A2A Echo Agent Example ===\n");
+    println!("=== A2A Echo Agent — full-surface demo ===\n");
 
-    // ── Pre-bind listeners to get addresses for agent cards ───────────────
-    // This ensures the agent card contains the correct URL *before* the
-    // handler is constructed (avoids placeholder URL bugs).
-    let (jsonrpc_listener, jsonrpc_addr) = bind_listener().await;
-    let (rest_listener, rest_addr) = bind_listener().await;
+    // Pre-bind every listener so the card names real addresses.
+    let (jsonrpc_l, jsonrpc_a) = serve::bind_listener().await;
+    let (rest_l, rest_a) = serve::bind_listener().await;
+    let (grpc_l, grpc_a) = serve::bind_listener().await;
+    let (ws_probe, ws_a) = serve::bind_listener().await;
+    drop(ws_probe); // the WebSocket dispatcher binds its own listener
 
-    let jsonrpc_url = format!("http://{jsonrpc_addr}");
-    let rest_url = format!("http://{rest_addr}");
+    let endpoints = Endpoints {
+        jsonrpc: format!("http://{jsonrpc_a}"),
+        rest: format!("http://{rest_a}"),
+        grpc: grpc_a.to_string(),
+        websocket: format!("ws://{ws_a}"),
+    };
 
-    // Build the shared request handler with correct URLs.
+    let webhook_url = start_webhook().await;
+
     let handler = Arc::new(
         RequestHandlerBuilder::new(EchoExecutor)
-            .with_agent_card(make_agent_card(&jsonrpc_url, &rest_url))
+            .with_agent_card(make_agent_card(&endpoints))
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
+            // Spec §13.3 requires the extended card to be authenticated. This
+            // example ships no authenticator, so the opt-in is explicit rather
+            // than implied — and `counter` checks the refusal on an agent that
+            // has neither.
+            .allow_unauthenticated_extended_card()
             .build()
             .expect("build handler"),
     );
 
-    // Start servers on pre-bound listeners.
-    serve_jsonrpc(jsonrpc_listener, Arc::clone(&handler));
-    serve_rest(rest_listener, Arc::clone(&handler));
+    serve::serve_jsonrpc(jsonrpc_l, Arc::clone(&handler));
+    serve::serve_rest(rest_l, Arc::clone(&handler));
+    serve::serve_grpc(grpc_l, Arc::clone(&handler));
+    let ws_bound = serve::serve_websocket(&ws_a.to_string(), Arc::clone(&handler)).await;
 
-    println!("JSON-RPC server listening on {jsonrpc_url}");
-    println!("REST server listening on {rest_url}\n");
+    println!("JSON-RPC  {}", endpoints.jsonrpc);
+    println!("HTTP+JSON {}", endpoints.rest);
+    println!("gRPC      {}", endpoints.grpc);
+    println!("WebSocket ws://{ws_bound}");
+    println!("webhook   {webhook_url}\n");
 
-    // ── Demo 1: Synchronous SendMessage via JSON-RPC ─────────────────────
-
-    println!("--- Demo 1: Synchronous SendMessage (JSON-RPC) ---");
-    let client = ClientBuilder::new(&jsonrpc_url)
-        .build()
-        .expect("build client");
-
-    let jsonrpc_response = client
-        .send_message(make_send_params("Hello from JSON-RPC client!"))
-        .await
-        .expect("send_message");
-
-    match &jsonrpc_response {
-        SendMessageResponse::Task(task) => {
-            println!("  Task ID:    {}", task.id);
-            println!("  Status:     {:?}", task.status.state);
-            if let Some(artifacts) = &task.artifacts {
-                for art in artifacts {
-                    println!("  Artifact:   {}", art.id);
-                    for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content
-                        {
-                            println!("  Content:    {text}");
-                        }
-                    }
-                }
-            }
-        }
-        SendMessageResponse::Message(msg) => {
-            println!("  Got immediate message: {msg:?}");
-        }
-        _ => {}
-    }
-    println!();
-
-    // ── Demo 2: Streaming SendMessage via JSON-RPC ───────────────────────
-
-    println!("--- Demo 2: Streaming SendMessage (JSON-RPC) ---");
-    let mut stream = client
-        .stream_message(make_send_params("Hello from streaming client!"))
-        .await
-        .expect("stream_message");
-
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamResponse::StatusUpdate(ev)) => {
-                println!("  Status update: {:?}", ev.status.state);
-            }
-            Ok(StreamResponse::ArtifactUpdate(ev)) => {
-                println!("  Artifact update: {}", ev.artifact.id);
-                for part in &ev.artifact.parts {
-                    if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
-                        println!("  Content:    {text}");
-                    }
-                }
-            }
-            Ok(StreamResponse::Task(task)) => {
-                println!("  Task snapshot: {} ({:?})", task.id, task.status.state);
-            }
-            Ok(StreamResponse::Message(msg)) => {
-                println!("  Message: {msg:?}");
-            }
-            Ok(_) => {
-                // Future stream response variants — ignore gracefully.
-            }
-            Err(e) => {
-                println!("  Stream error: {e}");
-                break;
-            }
-        }
-    }
-    println!();
-
-    // ── Demo 3: Synchronous SendMessage via REST ─────────────────────────
-
-    println!("--- Demo 3: Synchronous SendMessage (REST) ---");
-    let rest_client = ClientBuilder::new(&rest_url)
-        .with_protocol_binding("HTTP+JSON")
-        .build()
-        .expect("build REST client");
-
-    let rest_response = rest_client
-        .send_message(make_send_params("Hello from REST client!"))
-        .await
-        .expect("send_message REST");
-
-    match &rest_response {
-        SendMessageResponse::Task(task) => {
-            println!("  Task ID:    {}", task.id);
-            println!("  Status:     {:?}", task.status.state);
-            if let Some(artifacts) = &task.artifacts {
-                for art in artifacts {
-                    for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content
-                        {
-                            println!("  Content:    {text}");
-                        }
-                    }
-                }
-            }
-        }
-        SendMessageResponse::Message(msg) => {
-            println!("  Got immediate message: {msg:?}");
-        }
-        _ => {}
-    }
-    println!();
-
-    // ── Demo 4: Streaming via REST ───────────────────────────────────────
-
-    println!("--- Demo 4: Streaming SendMessage (REST) ---");
-    let mut stream = rest_client
-        .stream_message(make_send_params("Hello from REST streaming!"))
-        .await
-        .expect("stream_message REST");
-
-    while let Some(event) = stream.next().await {
-        match event {
-            Ok(StreamResponse::StatusUpdate(ev)) => {
-                println!("  Status update: {:?}", ev.status.state);
-            }
-            Ok(StreamResponse::ArtifactUpdate(ev)) => {
-                for part in &ev.artifact.parts {
-                    if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
-                        println!("  Content:    {text}");
-                    }
-                }
-            }
-            Ok(_) => {}
-            Err(e) => {
-                println!("  Stream error: {e}");
-                break;
-            }
-        }
-    }
-    println!();
-
-    // ── Demo 5: Agent Card Discovery ─────────────────────────────────────
-    // The server exposes /.well-known/agent-card.json — the client can discover
-    // the agent's capabilities without any prior configuration.
-
-    println!("--- Demo 5: Agent Card Discovery ---");
-    match resolve_agent_card(&jsonrpc_url).await {
-        Ok(card) => {
-            println!("  Agent:      {}", card.name);
-            println!("  Version:    {}", card.version);
-            println!(
-                "  Skills:     {:?}",
-                card.skills.iter().map(|s| &s.name).collect::<Vec<_>>()
-            );
-            println!(
-                "  Streaming:  {}",
-                card.capabilities.streaming.unwrap_or(false)
-            );
-            println!("  Interfaces: {}", card.supported_interfaces.len());
-        }
+    // Discovery, once — the card is shared by every binding.
+    match resolve_agent_card(&endpoints.jsonrpc).await {
+        Ok(card) => println!(
+            "Discovered '{}' v{} — {} interface(s), streaming={:?} push={:?} extended={:?}\n",
+            card.name,
+            card.version,
+            card.supported_interfaces.len(),
+            card.capabilities.streaming,
+            card.capabilities.push_notifications,
+            card.capabilities.extended_agent_card,
+        ),
         Err(e) => {
-            println!("  Discovery failed: {e}");
+            eprintln!("agent card discovery failed: {e}");
+            std::process::exit(1);
         }
     }
-    println!();
 
-    // ── Demo 6: GetTask ──────────────────────────────────────────────────
-    // Retrieve the task created in Demo 1 by its ID.
+    let mut matrix = Matrix::new();
+    let mut failures: Vec<String> = Vec::new();
 
-    println!("--- Demo 6: GetTask ---");
-    if let SendMessageResponse::Task(task) = &jsonrpc_response {
-        let fetched = client
-            .get_task(a2a_protocol_types::params::TaskQueryParams {
-                tenant: None,
-                id: task.id.to_string(),
-                history_length: None,
-            })
-            .await
-            .expect("get_task");
-        println!(
-            "  Fetched task: {} ({:?})",
-            fetched.id, fetched.status.state
-        );
+    for binding in Binding::ALL {
+        let client = match build_client(*binding, &endpoints).await {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("could not build a {} client: {e}", binding.label());
+                std::process::exit(1);
+            }
+        };
+        println!("--- {} ---", binding.label());
+        let outcome = sweep(
+            &client,
+            *binding,
+            &webhook_url,
+            agent::SLOW_PREFIX,
+            &mut matrix,
+        )
+        .await;
+        for l in &outcome.lines {
+            println!("{l}");
+        }
+        failures.extend(outcome.failures);
+        println!();
     }
+
+    // ── Counter-tests ────────────────────────────────────────────────────
+    println!("--- counter-tests (calls that must be refused) ---");
+    let restricted_url = start_restricted_agent().await;
+    let main_client = ClientBuilder::new(&endpoints.jsonrpc)
+        .build()
+        .expect("client");
+    let restricted_client = ClientBuilder::new(&restricted_url)
+        .build()
+        .expect("restricted client");
+    let counter = counter::run(&main_client, &restricted_client).await;
+    for l in &counter.lines {
+        println!("{l}");
+    }
+    failures.extend(counter.failures);
     println!();
 
-    println!("=== All demos completed successfully! ===");
+    // ── Report ───────────────────────────────────────────────────────────
+    println!("=== Coverage: every A2A method over every binding ===\n");
+    let missing = matrix.report();
+
+    if !failures.is_empty() {
+        println!("\n{} call(s) failed:", failures.len());
+        for f in &failures {
+            println!("  - {f}");
+        }
+        std::process::exit(1);
+    }
+    if !missing.is_empty() {
+        println!("\n{} matrix cell(s) never ran:", missing.len());
+        for (m, b) in &missing {
+            println!("  - {} over {}", m.wire_name(), b.label());
+        }
+        std::process::exit(2);
+    }
+
+    println!("\nEvery A2A method was exercised over every binding, and every");
+    println!("counter-test was refused as the specification requires.");
+}
+
+/// Builds a client speaking `binding`.
+async fn build_client(
+    binding: Binding,
+    ep: &Endpoints,
+) -> Result<a2a_protocol_client::A2aClient, String> {
+    match binding {
+        Binding::JsonRpc => ClientBuilder::new(&ep.jsonrpc)
+            .build()
+            .map_err(|e| e.to_string()),
+        Binding::HttpJson => ClientBuilder::new(&ep.rest)
+            .with_protocol_binding("HTTP+JSON")
+            .build()
+            .map_err(|e| e.to_string()),
+        Binding::Grpc => {
+            let url = format!("http://{}", ep.grpc);
+            let transport = a2a_protocol_client::transport::grpc::GrpcTransport::connect(&url)
+                .await
+                .map_err(|e| format!("gRPC connect: {e}"))?;
+            ClientBuilder::new(&url)
+                .with_custom_transport(transport)
+                .without_tls()
+                .build()
+                .map_err(|e| e.to_string())
+        }
+        Binding::WebSocket => {
+            let transport =
+                a2a_protocol_client::transport::WebSocketTransport::connect(ep.websocket.clone())
+                    .await
+                    .map_err(|e| format!("WebSocket connect: {e}"))?;
+            ClientBuilder::new(&ep.websocket)
+                .with_custom_transport(transport)
+                .without_tls()
+                .build()
+                .map_err(|e| e.to_string())
+        }
+    }
+}
+
+/// Starts a second agent advertising no optional capabilities.
+///
+/// One agent cannot both support and refuse a feature, so the capability
+/// refusals in [`counter`] are unobservable without this. Returns its URL.
+async fn start_restricted_agent() -> String {
+    let (listener, addr) = serve::bind_listener().await;
+    let url = format!("http://{addr}");
+    let mut card = make_agent_card(&Endpoints {
+        jsonrpc: url.clone(),
+        rest: url.clone(),
+        grpc: addr.to_string(),
+        websocket: format!("ws://{addr}"),
+    });
+    card.name = "Restricted Echo Agent".into();
+    card.capabilities = AgentCapabilities::none();
+    card.supported_interfaces.truncate(1);
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(card)
+            .build()
+            .expect("build restricted handler"),
+    );
+    serve::serve_jsonrpc(listener, handler);
+    url
+}
+
+/// Long-running server mode used by the in-repo TCK.
+async fn server_only(bind_addr: &str) {
+    let url = format!("http://{bind_addr}");
+    let ws_addr = std::env::var("A2A_WS_BIND_ADDR").ok();
+    let grpc_addr = std::env::var("A2A_GRPC_BIND_ADDR").ok();
+
+    let mut endpoints = Endpoints {
+        jsonrpc: url.clone(),
+        rest: url.clone(),
+        grpc: grpc_addr.clone().unwrap_or_default(),
+        websocket: ws_addr
+            .clone()
+            .map(|a| format!("ws://{a}"))
+            .unwrap_or_default(),
+    };
+    if endpoints.grpc.is_empty() {
+        endpoints.grpc = String::new();
+    }
+
+    let mut card = make_agent_card(&endpoints);
+    card.url = Some(url.clone());
+    // Only advertise what is actually listening. A card naming a port nothing
+    // answers on turns a config error into what looks like a conformance
+    // failure of that binding.
+    card.supported_interfaces
+        .retain(|i| match i.protocol_binding.as_str() {
+            "WEBSOCKET" => ws_addr.is_some(),
+            "GRPC" => grpc_addr.is_some(),
+            _ => true,
+        });
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(card)
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
+            .allow_unauthenticated_extended_card()
+            .build()
+            .expect("build handler"),
+    );
+
+    // One socket answering both HTTP bindings: the in-repo TCK points its
+    // jsonrpc and rest legs at the same A2A_BIND_ADDR.
+    let bound = serve::serve_combined(bind_addr, Arc::clone(&handler)).await;
+    println!("Echo agent listening on http://{bound} (JSON-RPC + REST)");
+
+    if let Some(a) = grpc_addr {
+        let (l, _) = (
+            tokio::net::TcpListener::bind(&a)
+                .await
+                .unwrap_or_else(|e| panic!("bind grpc {a}: {e}")),
+            (),
+        );
+        let bound = serve::serve_grpc(l, Arc::clone(&handler));
+        println!("Echo agent gRPC listening on {bound}");
+    }
+    if let Some(a) = ws_addr {
+        let bound = serve::serve_websocket(&a, Arc::clone(&handler)).await;
+        println!("Echo agent WebSocket listening on ws://{bound}");
+    }
+
+    std::future::pending::<()>().await;
 }

@@ -84,10 +84,19 @@ Markdown / TOML / YAML files use the appropriate comment syntax.
 
 ### 500-line maximum per file
 
-Source files (`.rs`) should generally stay under 500 lines. If your implementation
+Source files should generally stay under 500 lines. If your implementation
 is growing beyond this limit, consider splitting it into focused sub-modules with
 a thin `mod.rs` that only re-exports. Some files exceed this guideline where
 splitting would harm cohesion.
+
+**Scope: `.rs`, `.sh` and `.py`.** Until 2026-08-11 the rule and the checker
+both said `.rs` only. That was consistent — the scripts were never a carve-out,
+just never in scope — but it left this repository's own verification harnesses
+unmeasured, and two of them had reached 1111 and 617 lines. Widening was chosen
+over splitting them because the measurement that prompted it also turned up two
+files nobody had counted (`benches/scripts/extract_benchmark_json.py` at 658 and
+`benches/scripts/generate_book_page.sh` at 650). A ratchet catches the next one;
+splitting two files catches only those two.
 
 This is enforced as a **ratchet**, not a cliff, by
 `scripts/check_file_lengths.sh` (run in CI's Format job). Files already over the
@@ -287,8 +296,9 @@ scopes. Know which one applies to you:
 surviving mutants to the code it touches. That check is required and it works.
 
 The workspace sweep is a different matter, and honesty about it belongs here
-rather than in a footnote. **It is currently red: 183 surviving mutants,
-92% caught**, measured 2026-08-07. That is pre-existing debt in code no recent
+rather than in a footnote. **It is currently red: 125 surviving mutants,
+94% caught**, measured 2026-08-10 (was 183 / 92% on 2026-08-07). That is
+pre-existing debt in code no recent
 PR has touched, not a bar newcomers are being held to, and it is being burned
 down rather than suppressed — there is deliberately no baseline file, because
 the incremental gate above already prevents the count from growing.
@@ -462,10 +472,127 @@ scripts/prove_gates_fail.sh             # all of them (~15 min)
 Adding a gate to ci.yml without adding an injection is a hard error: a gate
 nobody has tried to break is a gate nobody knows works.
 
-Last full run — 2026-08-10, **32 of 32 proven, 0 unproven, 0 inconclusive**
-(exit 0), on `claude/a2a-rust-continuation-9ozdbm` at `af7a1f8` plus this
-session's commits. 32 rather than 31 because the workflow-gate prover below
-is itself a gate now, and so needs its own injection.
+**Correction, 2026-08-11.** Two sweeps that day reported "39 of 39 proven"
+(at `0a3aeeb` and `e434d88`). Both over-counted by one. The `doc` gate was
+failing the whole time on a broken intra-doc link, and the script had no way to
+notice: it injected a defect, ran the gate once, and scored PROVEN on a non-zero
+exit whose log mentioned the marker. The injected link simply added an error to
+a log that already had two. A gate that could not pass at all was recorded as
+proven able to fail.
+
+The honest reading of those runs is **38 proven, 1 gate whose verdict was not
+supported by the evidence**. `PRE-BROKEN` (added at `a1b6e56`, with the baseline
+run that detects it) now catches that case, and the broken links were fixed at
+`70017c7`. The figure below is from the first sweep where a green baseline was
+actually confirmed.
+
+Last full run — 2026-08-12, **39 of 39 proven, 0 unproven, 0 inconclusive,
+0 pre-broken** (exit 0), at `1cc2024`. This is the first sweep in which every
+gate was confirmed green before its defect was injected, so it is the first
+whose count means what it says. The previous complete sweep was 2026-08-10 at
+32 of 32; the count grew to 39 in three steps on 2026-08-11, each proven
+individually as it landed:
+
+| Added | Gates | Injection | Proven |
+|---|---|---|---|
+| `dogfood` — runs `examples/agent-team`, which no workflow had ever executed | +1 | Claim-table drift, deliberately *not* a failing assertion: `if failed > 0 { exit(1) }` was never the broken part; the summary table that printed `[x]` regardless of results was | **PROVEN, exit 1** (290s) |
+| `example-surface` — six method × binding sweeps, one per example, sharing one injection | +5 | Drop one method's recording from the shared harness: every call still succeeds and the run must still go red | **PROVEN, exit 2** (77–229s per leg) |
+| `example-surface`'s hardening step — `incident-response -- harden` | +1 | Remove the tenant resolver, so `params.tenant` alone selects the partition: every request still succeeds and only the isolation check notices | **PROVEN, exit 3** (96s at 8 checks, 194s at 16) |
+
+32 rather than 31 in the earlier sweep because the workflow-gate prover below
+is itself a gate, and so needs its own injection.
+
+### When a gate fails for the wrong reason
+
+The script distinguishes three ways a gate can fail to be proven:
+
+| Verdict | Meaning |
+|---|---|
+| `UNPROVEN` | It stayed green through its own injected defect |
+| `INCONCLUSIVE` | It went red, but its output never mentions the defect — it died of something else |
+| `PRE-BROKEN` | It was already failing before anything was injected |
+
+All three look like pedantry until they fire. Two of them did, on the same day.
+
+On 2026-08-11 a sweep reported gate 29,
+`cargo test --workspace --no-default-features`, as:
+
+```
+INCONCLUSIVE  gate exited 101 but its output never mentions
+              the injected defect (gate probe: injected failure) — it failed
+              for some other reason, which proves nothing
+```
+
+The real cause was a compile error on the branch: an enum variant constructed
+only by a feature-gated check became dead code with features off, and
+`-D warnings` made that an error. Scored on exit status alone the gate would
+have read **PROVEN** — red is red — and a genuine build break would have been
+recorded as a successful proof of the very gate that was failing to run.
+
+**PRE-BROKEN, and why a red gate is not evidence either.** The same day, the
+`doc` gate was reported PROVEN while it had been failing for hours on a broken
+intra-doc link — the injected link added a third error to a log that already
+had two, so the marker matched. Scoring a gate on "went red citing the marker"
+is not enough when it was red to begin with; the script now runs each gate
+untouched first and requires it to pass. That doubles the sweep's runtime,
+which is what the guarantee costs.
+
+Writing that check reproduced, one level up, the exact defect `run_quiet`
+documents: `baseline_status=$?` after `if ! run_quiet ...` always reads 0,
+because bash consumes the status before the branch is entered. The first
+PRE-BROKEN verdict duly announced "gate exited 0 with nothing injected". Read
+the verdict, do not trust it.
+
+**What the baseline check found on its first real run.** Three gates it had
+never actually reproduced, none of them a code defect and all three invisible
+until a green baseline was required:
+
+| Gate | Symptom | Cause |
+|---|---|---|
+| `postgres_store_tests --ignored` | PRE-BROKEN, 15 of 15 failed | `A2A_TEST_POSTGRES_URL` unset |
+| `cargo run -p incident-response --release` | **hung the sweep for an hour** | `INCIDENT_EXIT_WHEN_DONE` unset, so the demo finished and parked on Ctrl+C |
+| `cargo package --workspace` | PRE-BROKEN, `no hash listed` | stale `target/package/tmp-registry` from a killed sweep |
+
+The first two are one bug: this script parses `run:` lines and ignored every
+`env:` block, exactly as `preflight.sh` did — two copies of the same parser,
+each missing the same thing. Both now apply the job-level then step-level
+environment. Note the shape of the hang: only the *injected* run had ever
+happened, and it exits on the injected defect long before the demo reaches its
+park, so a gate that could not complete un-injected had been scoring PROVEN.
+
+Four lessons, all worth more than the fixes:
+
+- A gate's exit status is not evidence on its own. What makes it evidence is
+  that the output names the defect that was injected **and** that the gate
+  passed without it.
+- A local harness that does not reproduce the CI command is not a weaker
+  check, it is a different one. Both harnesses here ran commands CI runs, with
+  environments CI does not have, and reported on the result as though it were
+  the same thing.
+- The break reached the branch because local verification ran fmt, clippy at
+  default and `--all-features`, and `cargo test --workspace --all-features` —
+  a hand-picked subset that never compiles the workspace with features *off*.
+  `scripts/preflight.sh --full` runs every `ci.yml` gate, including that one.
+  Use it before claiming a change is verified; a subset you chose yourself
+  tends to omit exactly the case you did not think of.
+
+Injections outside `ci.yml`'s gates are worth proving too, and the same
+discipline applies. `examples/incident-response`'s **sixteen** hardening checks
+were each proven by removing the capability they cover. Two rounds of that
+found defects in the checks rather than the SDK, which is the process working:
+
+- Three checks that assert a call must be *refused* accepted any error as
+  proof, so a dead server satisfied them. They now require a server refusal,
+  proven by pointing the client at a closed port — before the fix all three
+  injections passed.
+- A check whose external service is absent used to be indistinguishable from
+  one that passed. `[NOT RUN]` is now its own state, and
+  `INCIDENT_REQUIRE_ALL=1` (set in CI, alongside the PostgreSQL service that
+  makes it satisfiable) turns it into exit `4`.
+
+A gate that can only go green when someone remembers to provision something is
+a gate that decays quietly. Wiring the service *and* failing without it is what
+makes the check permanent.
 
 ### The other ten workflows
 
@@ -524,9 +651,9 @@ Two rules while it runs, both learned the expensive way:
 - [ ] `scripts/check_file_lengths.sh` passes — no **new** file exceeds 500
       lines and no file you touched crosses it, or the PR says why splitting
       would harm cohesion (see
-      [500-line maximum](#500-line-maximum-per-file); 77 of 310 tracked
-      sources already exceed it as of 2026-08-10, so this is a rule for new
-      work, not a claim about the tree)
+      [500-line maximum](#500-line-maximum-per-file); 81 of 333 tracked
+      `.rs`/`.sh`/`.py` sources already exceed it as of 2026-08-11, so this is
+      a rule for new work, not a claim about the tree)
 - [ ] `cargo fmt --all` passes
 - [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
 - [ ] `cargo test --workspace` passes

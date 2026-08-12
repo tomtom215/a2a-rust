@@ -8,6 +8,7 @@ members = [
     "crates/a2a-protocol-client",
     "crates/a2a-protocol-server",
     "crates/a2a-protocol-sdk",
+    "examples/harness",
     "examples/echo-agent",
     "examples/agent-team",
     "examples/multi-lang-team",

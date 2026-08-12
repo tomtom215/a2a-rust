@@ -212,10 +212,8 @@ pub async fn test_resubscribe_jsonrpc(ctx: &TestContext) -> TestResult {
     let code = "fn slow() {\n".repeat(100);
     match client.stream_message(make_send_params(&code)).await {
         Ok(mut stream) => {
-            let mut task_id = None;
-            if let Some(Ok(StreamResponse::StatusUpdate(ev))) = stream.next().await {
-                task_id = Some(ev.task_id.0.clone());
-            }
+            // The first event is a Task snapshot, not a status update.
+            let task_id = crate::helpers::first_task_id(&mut stream, 10).await;
             if let Some(tid) = task_id {
                 match client.subscribe_to_task(tid).await {
                     Ok(mut sub_stream) => {

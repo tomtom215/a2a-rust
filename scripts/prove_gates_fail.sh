@@ -12,10 +12,24 @@
 # gate ran, went green, and measured nothing.
 #
 # Running a gate and watching it pass says nothing about whether it *could*
-# have failed. This script asserts the other half: for each gate, break
-# something that gate is responsible for, confirm it goes red, put it back,
-# and confirm it goes green again. A gate that stays green through its own
-# injected defect is reported as UNPROVEN, which is a finding.
+# have failed. This script asserts the other half: for each gate, confirm it
+# is green to begin with, break something that gate is responsible for,
+# confirm it goes red *citing that break*, and put it back.
+#
+# Three ways a gate fails to be proven, all findings:
+#
+#   UNPROVEN      it stayed green through its own injected defect
+#   INCONCLUSIVE  it went red, but its output never mentions the defect — so
+#                 it died of something else and proves nothing
+#   PRE-BROKEN    it was already failing before anything was injected
+#
+# The last of those was added on 2026-08-11, after this script reported the
+# `doc` gate PROVEN while that gate had been red for hours on an unrelated
+# broken intra-doc link: the injected link simply added one more error to a log
+# that already had two. Until then the header above claimed a green baseline
+# was confirmed and no code confirmed it, so "39 of 39 proven" meant less than
+# it said. It costs a second run of every gate, which is what the guarantee is
+# worth.
 #
 # The feature-gated injections are deliberately placed inside code compiled
 # only under that feature. `cargo test --features sqlite` failing because of a
@@ -50,14 +64,65 @@ done
 # Same job set and parser as scripts/preflight.sh, deliberately: a gate this
 # script has never heard of is the exact defect preflight's `require_known_jobs`
 # exists to catch, one level further in.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
 
+# Each command carries the environment its ci.yml step runs under — the job's
+# `env:` block then the step's, so a step-level value wins. Same parser as
+# scripts/preflight.sh, and for the same reason it was added there on
+# 2026-08-11: without it this script does not run the gate CI runs.
+#
+# Two gates proved that the hard way once the baseline check landed. The
+# postgres suite reported PRE-BROKEN because `A2A_TEST_POSTGRES_URL` was unset
+# and all 15 tests failed; and `cargo run -p incident-response --release`
+# *hung the entire sweep*, because without `INCIDENT_EXIT_WHEN_DONE` the demo
+# finishes its five acts and then parks on Ctrl+C waiting for a human. Neither
+# was visible before: only the injected run happened, and it exits before
+# reaching the park.
 gates_for_jobs() {
     awk -v want="$1" '
-        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            if (job ~ want) { sub(/^[[:space:]]+run:[[:space:]]*/, ""); print }
+        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
+        # Emits the pending step, if it belongs to a wanted job.
+        function flush(   pair) {
+            # TAB-separated: the injection lookup matches the bare command,
+            # while execution needs the env prefixed. Joining them into one
+            # string would make every `"cargo run -p ..."*` pattern in
+            # `gate_kind_for` miss, and every gate would report as unregistered.
+            if (cmd != "") printf "%s\t%s\n", job_env step_env, cmd
+            cmd = ""; step_env = ""; env_indent = -1
         }
+        # A job header (2-space key) ends the previous job and its env.
+        /^  [a-z0-9_-]+:[[:space:]]*$/ {
+            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
+        }
+        # A new list item ends the previous step.
+        /^[[:space:]]*-[[:space:]]/ { flush() }
+        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
+            flush()
+            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
+            next
+        }
+        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
+        # indent is recorded so only its own keys are read, and anything
+        # shallower closes it.
+        /^    env:[[:space:]]*$/  { env_indent = 4; next }
+        /^        env:[[:space:]]*$/ { env_indent = 8; next }
+        env_indent > 0 {
+            indent = match($0, /[^ ]/) - 1
+            if (indent <= env_indent) { env_indent = -1 }
+            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
+                line = $0
+                sub(/^[[:space:]]+/, "", line)
+                key = line; sub(/:.*$/, "", key)
+                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
+                sub(/[[:space:]]+$/, "", val)
+                gsub(/^"|"$/, "", val)
+                gsub(/^'\''|'\''$/, "", val)
+                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
+                else step_env = step_env key "=" shquote(val) " "
+                next
+            }
+        }
+        END { flush() }
     ' "$CI_YML"
 }
 
@@ -230,6 +295,16 @@ injection_for() {
             echo "doc" ;;
         "cargo package"*)
             echo "package" ;;
+        "cargo run -p agent-team"*)
+            echo "dogfood" ;;
+        # Before the general incident-response arm: `-- harden` runs Act 5
+        # alone, and its defect is a hardening one, not a matrix one.
+        "cargo run -p incident-response"*"harden"*)
+            echo "example_hardening" ;;
+        "cargo run -p echo-agent"*|"cargo run -p incident-response"*|\
+        "cargo run -p genai-a2a-agent"*|"cargo run -p rig-a2a-agent"*|\
+        "cargo run -p multi-lang-team"*)
+            echo "example_surface" ;;
         "cargo clippy"*"--all-features"*)
             echo "clippy_always:$SERVER_LIB" ;;
         "cargo clippy"*"--features signing"*)
@@ -298,6 +373,9 @@ expected_marker() {
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
+        dogfood)          echo "CLAIM TABLE DRIFT" ;;
+        example_surface)  echo "matrix cell(s) never ran" ;;
+        example_hardening) echo "partitions leak" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
         clippy|clippy_always) echo "deref_addrof" ;;
         test|test_always) echo "gate probe: injected failure" ;;
@@ -348,6 +426,92 @@ PY
         doc)
             note_touched "$TYPES_LIB"
             printf '\n/// Gate probe: [`NoSuchItemAnywhere`] is not a real path.\n#[allow(dead_code)]\npub fn gate_probe_doc() {}\n' >>"$TYPES_LIB" ;;
+        example_surface)
+            # Stop recording one method, without breaking any call.
+            #
+            # A failing call would prove only that the examples propagate
+            # errors. What this gate adds is the *completeness* check: the
+            # matrix must catch a method that quietly stopped being driven
+            # while everything still returned success. Dropping the
+            # `ListTasks` recording is exactly that shape — every call still
+            # succeeds, and the run must still go red.
+            #
+            # Injected in the shared harness so both examples are affected,
+            # which also demonstrates that the two jobs read the same scorer.
+            note_touched "examples/harness/src/sweep.rs"
+            python3 - <<'PY2'
+p = "examples/harness/src/sweep.rs"
+s = open(p).read()
+needle = 'Ok(resp) => ok!(Method::ListTasks, format!("{} task(s)", resp.tasks.len())),'
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+s = s.replace(needle, "Ok(resp) => { let _ = resp; }")
+open(p, "w").write(s)
+PY2
+            ;;
+        example_hardening)
+            # Remove the tenant resolver, which is the exact regression Act 5's
+            # isolation check was written for: with no resolver the handler
+            # trusts the client's `params.tenant` verbatim, so any caller reads
+            # or writes any partition by naming it.
+            #
+            # This is a defect that leaves every call succeeding — the demo's
+            # first four acts stay green, every request returns 200, and only
+            # the isolation check notices. The marker is "partitions leak", the
+            # message that check emits when one tenant can see another's task;
+            # a build error, a bind failure or a hung run all exit non-zero too,
+            # and every one of those would otherwise read as proof.
+            note_touched "examples/incident-response/src/hardening/tenancy.rs"
+            python3 - <<'PY3'
+p = "examples/incident-response/src/hardening/tenancy.rs"
+s = open(p).read()
+needle = "        .with_tenant_resolver(HeaderTenantResolver::default())\n"
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+# `HeaderTenantResolver` becomes unused, and the example is built with
+# warnings allowed here, so the import can stay.
+s = s.replace(needle, "        // gate probe: tenant resolver removed\n")
+s = s.replace(
+    "use a2a_protocol_server::tenant_resolver::HeaderTenantResolver;\n",
+    "#[allow(unused_imports)]\nuse a2a_protocol_server::tenant_resolver::HeaderTenantResolver;\n",
+)
+open(p, "w").write(s)
+PY3
+            ;;
+        dogfood)
+            # Inject claim-table drift rather than a failing assertion.
+            #
+            # A test failure would prove only that `if failed > 0` still
+            # exits 1, which was never the broken part. What *was* broken is
+            # that the "SDK FEATURES EXERCISED" summary was a hardcoded list
+            # printed as `[x]` with no link to the results — it stayed green
+            # through fifteen failing tests. The drift check is the guard that
+            # replaced it, so the drift check is what has to be proven.
+            #
+            # Naming a test that does not exist is the cheapest defect that
+            # reaches it: it compiles, every test still passes, and the run
+            # must still exit non-zero because the table now describes
+            # something the suite does not contain.
+            note_touched "examples/agent-team/src/features.rs"
+            python3 - <<'PY'
+p = "examples/agent-team/src/features.rs"
+s = open(p).read()
+needle = 'c("CancellationToken checking", &["cancel-task"]),'
+if s.count(needle) != 1:
+    raise SystemExit(
+        f"gate probe: expected exactly one anchor in {p}; found {s.count(needle)}"
+    )
+s = s.replace(
+    needle,
+    'c("CancellationToken checking", &["cancel-task", "gate-probe-no-such-test"]),',
+)
+open(p, "w").write(s)
+PY
+            ;;
         package)
             # `cargo package` refuses outright on a dirty working tree:
             #
@@ -428,7 +592,8 @@ if [ "${#ALL_GATES[@]}" -eq 0 ]; then
 fi
 
 unregistered=()
-for cmd in "${ALL_GATES[@]}"; do
+for entry in "${ALL_GATES[@]}"; do
+    cmd=${entry#*$'\t'}
     spec=$(injection_for "$cmd")
     if [ -z "$spec" ]; then
         unregistered+=("$cmd")
@@ -450,8 +615,9 @@ fi
 
 if [ "$LIST_ONLY" -eq 1 ]; then
     printf 'Gate / injection pairing (%d gates):\n\n' "${#ALL_GATES[@]}"
-    for cmd in "${ALL_GATES[@]}"; do
-        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "$cmd"
+    for entry in "${ALL_GATES[@]}"; do
+        cmd=${entry#*$'\t'}
+        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
     done
     exit 0
 fi
@@ -532,22 +698,61 @@ run_quiet() {
 }
 
 idx=0
-for cmd in "${ALL_GATES[@]}"; do
+for entry in "${ALL_GATES[@]}"; do
     idx=$((idx + 1))
+    gate_env=${entry%%$'\t'*}
+    cmd=${entry#*$'\t'}
+    # The gate as CI runs it: env prefix plus command.
+    full="${gate_env}${cmd}"
     if ! printf '%s' "$cmd" | grep -Eq -- "$ONLY"; then
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
     spec=$(injection_for "$cmd")
-    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$cmd"
+    printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$full"
     printf '        injection: %s\n' "$spec"
 
     revert_all
+
+    # Baseline: the gate must pass with nothing injected.
+    #
+    # Without this the script cannot tell "went red because of the defect"
+    # from "was already red", and the header's promise to "put it back and
+    # confirm it goes green again" was never kept in code. That gap is not
+    # theoretical: on 2026-08-11 CI's `doc` gate had been failing for hours on
+    # a broken intra-doc link, the injected link added one more error to the
+    # same log, the marker matched, and the gate was reported PROVEN. A gate
+    # that can never pass is not proven able to fail — it is just failing.
+    #
+    # Run first rather than after the injection: a broken gate is reported
+    # without paying for an injected run that could not mean anything.
+    log="$LOG_DIR/gate-$idx-baseline.log"
+    start=$SECONDS
+    # `|| baseline_status=$?`, for the reason `run_quiet` documents above: after
+    # an `if !` whose branch *is* taken, bash has already consumed the status
+    # and `$?` reads 0. Written that way first, and the PRE-BROKEN verdict duly
+    # reported "gate exited 0 with nothing injected" — a status-swallowing bug
+    # inside the check for status-swallowing bugs.
+    baseline_status=0
+    run_quiet "$full" "$log" || baseline_status=$?
+    if [ "$baseline_status" -ne 0 ]; then
+        elapsed=$((SECONDS - start))
+        printf '  \033[31mPRE-BROKEN\033[0m  gate exited %s with nothing injected — it is\n' \
+            "$baseline_status"
+        printf '                already failing, so no injection can prove anything\n'
+        printf '                about it (%ss)\n' "$elapsed"
+        printf '                log: %s\n' "$log"
+        UNPROVEN=$((UNPROVEN + 1))
+        RESULTS+=("PRE-BROKEN|$baseline_status|${elapsed}s|$full")
+        continue
+    fi
+    baseline_elapsed=$((SECONDS - start))
+
     apply_injection "$spec"
 
     log="$LOG_DIR/gate-$idx-broken.log"
     start=$SECONDS
-    if run_quiet "$cmd" "$log"; then
+    if run_quiet "$full" "$log"; then
         broken_status=0
     else
         broken_status=$?
@@ -570,7 +775,7 @@ for cmd in "${ALL_GATES[@]}"; do
             printf '  \033[32mPROVEN\033[0m  gate exited %s citing the injected defect (%ss)\n' \
                 "$broken_status" "$elapsed"
             PROVEN=$((PROVEN + 1))
-            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$cmd")
+            RESULTS+=("PROVEN|$broken_status|${elapsed}s|$full")
         else
             printf '  \033[31mINCONCLUSIVE\033[0m  gate exited %s but its output never mentions\n' \
                 "$broken_status"
@@ -578,13 +783,13 @@ for cmd in "${ALL_GATES[@]}"; do
             printf '                reason, which proves nothing (%ss)\n' "$elapsed"
             printf '                log: %s\n' "$log"
             UNPROVEN=$((UNPROVEN + 1))
-            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$cmd")
+            RESULTS+=("INCONCLUSIVE|$broken_status|${elapsed}s|$full")
         fi
     else
         printf '  \033[31mUNPROVEN\033[0m  gate exited 0 WITH the defect present (%ss)\n' "$elapsed"
         printf '            log: %s\n' "$log"
         UNPROVEN=$((UNPROVEN + 1))
-        RESULTS+=("UNPROVEN|0|${elapsed}s|$cmd")
+        RESULTS+=("UNPROVEN|0|${elapsed}s|$full")
     fi
 done
 
@@ -596,9 +801,9 @@ for row in "${RESULTS[@]-}"; do
     timing=${row#*|*|}; timing=${timing%%|*}
     cmd=${row#*|*|*|}
     if [ "$verdict" = PROVEN ]; then
-        printf '  \033[32m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+        printf '  \033[32m%-12s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
     else
-        printf '  \033[31m%-8s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
+        printf '  \033[31m%-12s\033[0m exit %-3s %6s  %s\n' "$verdict" "$code" "$timing" "$cmd"
     fi
 done
 printf '\n  %d proven, %d unproven, %d not selected (of %d gates)\n' \

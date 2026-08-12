@@ -691,6 +691,30 @@ pub async fn test_wire_format_part_flat_oneof(ctx: &TestContext) -> TestResult {
 
     match post_raw(&ctx.analyzer_url, &body).await {
         Ok((200, resp_body)) => {
+            // This assertion is *negative* — "no `type` discriminator" — so it
+            // is satisfied by any response that happens to contain no parts at
+            // all, including an error envelope. It passed exactly that way
+            // against `VERSION_NOT_SUPPORTED` until 2026-08-11. `post_raw` now
+            // rejects version errors outright, but that only closes one route
+            // to an empty body; require a part to actually be present before
+            // drawing any conclusion about how parts are encoded.
+            let parsed: serde_json::Value = serde_json::from_str(&resp_body).unwrap_or_default();
+            let has_a_text_part = parsed["result"]["task"]["artifacts"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|art| art["parts"].as_array())
+                .and_then(|parts| parts.first())
+                .is_some_and(|p| p.get("text").is_some());
+            if !has_a_text_part {
+                return TestResult::fail(
+                    "wire-part-flat-oneof",
+                    start.elapsed().as_millis(),
+                    &format!(
+                        "no text part in the response, so 'the Part encoding has no type \
+                         discriminator' would hold vacuously: {resp_body}"
+                    ),
+                );
+            }
             let has_type_discriminator = resp_body.contains("\"type\":\"text\"")
                 || resp_body.contains("\"type\":\"file\"")
                 || resp_body.contains("\"type\":\"data\"");
@@ -706,7 +730,7 @@ pub async fn test_wire_format_part_flat_oneof(ctx: &TestContext) -> TestResult {
                 TestResult::pass(
                     "wire-part-flat-oneof",
                     start.elapsed().as_millis(),
-                    "response uses v1.0 flat Part format (no type discriminator)",
+                    "flat Part format confirmed on a present text part",
                 )
             }
         }
@@ -871,6 +895,17 @@ pub async fn test_include_artifacts_parameter(ctx: &TestContext) -> TestResult {
     let list_result = client.list_tasks(list_params_no_artifacts).await;
     match list_result {
         Ok(resp) => {
+            // `.all()` is true on an empty list, so an empty page would satisfy
+            // "artifacts are omitted" without a single task having been
+            // examined. Require something to examine first.
+            if resp.tasks.is_empty() {
+                return TestResult::fail(
+                    "include-artifacts",
+                    start.elapsed().as_millis(),
+                    "ListTasks returned no tasks, so the default-omits-artifacts \
+                     assertion below would hold vacuously",
+                );
+            }
             let all_artifacts_none = resp.tasks.iter().all(|t| t.artifacts.is_none());
             if !all_artifacts_none {
                 return TestResult::fail(

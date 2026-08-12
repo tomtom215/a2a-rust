@@ -45,6 +45,8 @@ use std::time::Duration;
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
+
+mod surface;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;
@@ -133,8 +135,24 @@ async fn call_worker(worker: &Worker, user_text: &str) -> String {
     }
 }
 
+/// Message-text prefix that makes the coordinator pause mid-task.
+///
+/// `SubscribeToTask` is refused on a terminal task, correctly, so without a
+/// slow turn its success path is unreachable.
+const SLOW_PREFIX: &str = "slow:";
+
 /// Coordinator executor that delegates to cross-language workers.
-struct CoordinatorExecutor;
+struct CoordinatorExecutor {
+    /// Workers found reachable at startup.
+    ///
+    /// Probed once rather than discovered per request. With all four down, a
+    /// per-request fan-out costs a full timeout window on *every* call, which
+    /// makes the surface sweep take minutes and tells the reader nothing they
+    /// were not told at startup. Empty means "delegate to nobody" — and the
+    /// artifact says so, rather than presenting an empty result as a
+    /// successful round-trip.
+    reachable: Vec<&'static Worker>,
+}
 
 impl AgentExecutor for CoordinatorExecutor {
     fn execute<'a>(
@@ -160,19 +178,34 @@ impl AgentExecutor for CoordinatorExecutor {
             // failures are reported inline in the combined artifact
             // (partial results are this coordinator's contract); the task
             // itself only fails if the coordinator cannot make progress.
-            let tasks: Vec<_> = WORKERS
+            if user_text.starts_with(SLOW_PREFIX) {
+                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+            }
+
+            let tasks: Vec<_> = self
+                .reachable
                 .iter()
                 .map(|worker| {
                     let user_text = user_text.clone();
+                    let worker: &'static Worker = worker;
                     tokio::spawn(async move { call_worker(worker, &user_text).await })
                 })
                 .collect();
 
             let mut responses = Vec::new();
-            for (worker, task) in WORKERS.iter().zip(tasks) {
+            for (worker, task) in self.reachable.iter().zip(tasks) {
                 responses.push(task.await.unwrap_or_else(|join_err| {
                     format!("[{}] Worker call panicked: {join_err}", worker.language)
                 }));
+            }
+            if responses.is_empty() {
+                responses.push(
+                    "[no worker agents reachable — nothing was delegated] \
+                     The coordinator answered on its own. This is not a \
+                     cross-language round-trip; start the workers under \
+                     itk/agents/ to make it one."
+                        .to_owned(),
+                );
             }
 
             // Combine results into a single artifact
@@ -229,7 +262,8 @@ fn make_coordinator_card(url: &str) -> AgentCard {
         }],
         capabilities: AgentCapabilities::none()
             .with_streaming(true)
-            .with_push_notifications(false),
+            .with_push_notifications(true)
+            .with_extended_agent_card(true),
         provider: None,
         icon_url: None,
         documentation_url: None,
@@ -268,89 +302,133 @@ fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) 
     });
 }
 
+/// Probes each worker's agent-card endpoint.
+///
+/// Reported explicitly, never inferred. The coordinator answers with or
+/// without workers, so "the demo ran" says nothing about whether any
+/// cross-language delegation happened — which is the entire point of this
+/// example.
+async fn probe_workers() -> Vec<&'static Worker> {
+    let mut up = Vec::new();
+    for w in WORKERS {
+        let url = format!("{}/.well-known/agent-card.json", w.url);
+        let reachable = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            a2a_protocol_client::resolve_agent_card(w.url),
+        )
+        .await
+        .is_ok_and(|r| r.is_ok());
+        let _ = url;
+        if reachable {
+            up.push(w);
+        }
+    }
+    up
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Multi-Language Agent Team Example");
     println!("=================================");
     println!();
 
-    // Bind first so the agent card can advertise the real address — one
-    // listener, one handler.
-    let bind_addr = std::env::var("A2A_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:0".to_string());
-    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    let addr: SocketAddr = listener.local_addr()?;
-
-    let handler = Arc::new(
-        RequestHandlerBuilder::new(CoordinatorExecutor)
-            .with_agent_card(make_coordinator_card(&format!("http://{addr}")))
-            .build()?,
-    );
-    serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
-    println!("Coordinator listening on http://{addr}");
-
-    // ── Demo: Send a request to the coordinator ────────────────────────────
+    let reachable = probe_workers().await;
+    println!("Worker agents:");
+    for w in WORKERS {
+        let up = reachable.iter().any(|r| r.language == w.language);
+        println!(
+            "  {:<11} {:<24} {}",
+            w.language,
+            w.url,
+            if up { "REACHABLE" } else { "not reachable" }
+        );
+    }
+    if reachable.is_empty() {
+        println!();
+        println!("No workers reachable — the coordinator will answer on its own and");
+        println!("say so in its artifact. The A2A surface below is still fully");
+        println!("measured; cross-language delegation is NOT. Start the workers:");
+        println!("  Python: cd itk/agents/python    && python agent.py");
+        println!("  JS:     cd itk/agents/js-agent  && node index.js");
+        println!("  Go:     cd itk/agents/go-agent  && go run .");
+        println!("  Java:   cd itk/agents/java-agent && mvn compile exec:java");
+    }
     println!();
-    println!("Sending request to coordinator...");
 
-    let client = ClientBuilder::new(format!("http://{addr}")).build()?;
-    let params = MessageSendParams {
-        tenant: None,
-        message: Message {
-            id: MessageId::new(uuid::Uuid::new_v4().to_string()),
-            role: MessageRole::User,
-            parts: vec![Part::text("Hello from the multi-language team demo!")],
-            task_id: None,
-            context_id: None,
-            reference_task_ids: None,
-            extensions: None,
-            metadata: None,
-        },
-        configuration: None,
-        metadata: None,
-    };
-
-    match client.send_message(params).await {
-        Ok(response) => {
-            println!();
-            match response {
-                SendMessageResponse::Task(task) => {
-                    println!("Task ID: {}", task.id.0);
-                    println!("State:   {}", task.status.state);
-                    if let Some(artifacts) = &task.artifacts {
-                        for artifact in artifacts {
-                            println!();
-                            println!(
-                                "Artifact: {}",
-                                artifact.name.as_deref().unwrap_or("(unnamed)")
-                            );
-                            println!("{}", extract_text(&artifact.parts));
-                        }
-                    }
-                }
-                SendMessageResponse::Message(msg) => {
-                    println!("Direct message response:");
-                    println!("  {}", extract_text(&msg.parts));
-                }
-                _ => println!("Unknown response type"),
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {e}");
-            eprintln!();
-            eprintln!("Make sure the worker agents are running:");
-            eprintln!("  Python: cd itk/agents/python && python agent.py");
-            eprintln!("  JS:     cd itk/agents/js-agent && node index.js");
-            eprintln!("  Go:     cd itk/agents/go-agent && go run .");
-            eprintln!("  Java:   cd itk/agents/java-agent && mvn compile exec:java");
-        }
+    // ── Server-only mode ─────────────────────────────────────────────────
+    if let Ok(bind_addr) = std::env::var("A2A_BIND_ADDR") {
+        let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+        let addr: SocketAddr = listener.local_addr()?;
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(CoordinatorExecutor {
+                reachable: reachable.clone(),
+            })
+            .with_agent_card(make_coordinator_card(&format!("http://{addr}")))
+            .with_push_config_store(a2a_protocol_server::push::InMemoryPushConfigStore::new())
+            .with_push_sender(a2a_protocol_server::push::HttpPushSender::new().allow_private_urls())
+            .allow_unauthenticated_extended_card()
+            .build()?,
+        );
+        serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
+        println!("Coordinator listening on http://{addr}");
+        tokio::signal::ctrl_c().await?;
+        return Ok(());
     }
 
-    // Keep serving so the coordinator can be probed with the TCK or any
-    // A2A client after the demo round-trip.
-    println!();
-    println!("Coordinator still serving on http://{addr} — press Ctrl+C to stop.");
-    tokio::signal::ctrl_c().await?;
-    println!("Shutting down.");
+    // ── Surface run ──────────────────────────────────────────────────────
+    let ep = surface::start(reachable.clone()).await?;
+    let webhook = surface::start_webhook().await?;
+    let restricted = surface::start_restricted().await?;
 
+    println!("Coordinator:");
+    println!("  JSON-RPC  {}", ep.jsonrpc);
+    println!("  HTTP+JSON {}", ep.rest);
+    println!("  gRPC      {}", ep.grpc);
+    println!("  WebSocket {}", ep.websocket);
+    println!();
+
+    let mut clients = Vec::new();
+    for binding in a2a_example_harness::Binding::ALL {
+        match surface::client_for(*binding, &ep).await {
+            Ok(c) => clients.push((*binding, c)),
+            Err(e) => {
+                eprintln!("could not build a {} client: {e}", binding.label());
+                std::process::exit(1);
+            }
+        }
+    }
+    let main_client = ClientBuilder::new(&ep.jsonrpc).build()?;
+    let restricted_client = ClientBuilder::new(&restricted).build()?;
+
+    println!("=== Coverage: every A2A method over every binding ===\n");
+    let outcome = a2a_example_harness::run_surface(a2a_example_harness::SurfaceRun {
+        clients,
+        main_client: &main_client,
+        restricted_client: &restricted_client,
+        webhook_url: webhook,
+        slow_prefix: SLOW_PREFIX,
+    })
+    .await;
+
+    println!();
+    if reachable.is_empty() {
+        println!("Reminder: cross-language delegation was NOT exercised — no worker");
+        println!("agents were reachable. Only the coordinator's own A2A surface was.");
+    } else {
+        println!(
+            "Cross-language delegation exercised against {} worker(s): {}.",
+            reachable.len(),
+            reachable
+                .iter()
+                .map(|w| w.language)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+
+    let code = outcome.exit_code();
+    if code != 0 {
+        std::process::exit(code);
+    }
     Ok(())
 }
