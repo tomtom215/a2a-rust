@@ -343,6 +343,26 @@ This is the category most worth clearing before any external review.
 
 ## Reporting accuracy
 
+* **All 39 CI gates re-run locally at `6ebf821` on 2026-08-12 — 39 of 39 pass.**
+  `scripts/preflight.sh --full`, with a live PostgreSQL so the 16 `#[ignore]`d
+  `postgres_store_tests` actually execute rather than being skipped into a
+  green. Notable timings: workspace clippy 233s, `cargo test --workspace` 233s,
+  `agent-team --release --all-features` 343s.
+
+  The first pass reported 38 pass / 1 fail, and the failure was **an artefact of
+  the harness, not a defect**: `examples/incident-response` binds ports
+  **9200, 9201 and 9202**, and a `@a2a-js/sdk` experiment running in the same
+  session was holding 9200 and 9201, so the demo died with
+  `Os { code: 98, AddrInUse }`. Re-run with the ports free it exits 0 with
+  "15 passed, 0 failed, 0 not compiled, 1 not run" — the one `[NOT RUN]` being
+  the PostgreSQL check, which that invocation does not set
+  `A2A_TEST_POSTGRES_URL` for and which the separate `harden` gate does cover.
+
+  Recorded because it is defect class 4 — a measurement artefact that reads
+  exactly like a real failure in a summary line. **Anything run locally
+  alongside this suite must avoid 9200-9202**, along with the TCK's
+  9994-9999 and 9897-9899.
+
 * **Codecov's total excludes less than `codecov.yml` says — and the glob-token
   fix did NOT take.** Verified 2026-08-06 against Codecov's per-file report for
   `615d01f8`: the three `**` directory globs are applied, the five bare Postgres

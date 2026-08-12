@@ -258,6 +258,37 @@ existing `RELEASING.md` checklist.
 
 ### Fixed
 
+- **The per-PR mutation gate could not see 41 of 141 library source files.**
+  `mutants.yml`'s `Build PR source diff` step scoped with
+  `git diff -M … -- 'crates/*/src/**/*.rs'`. A git pathspec is matched by
+  `fnmatch` *without* `FNM_PATHNAME` unless it carries `:(glob)` magic, so `*`
+  crosses `/` and the `**/` collapses to "one or more directories" — the
+  literal slash after it still has to match something. The pattern therefore
+  reached only files in a *subdirectory* of `src/`, and never a file sitting
+  directly in `crates/<crate>/src/`. Measured with `git ls-files` at `6ebf821`:
+  100 files matched, against **141** for `:(glob)crates/*/src/**/*.rs`.
+
+  The 41 invisible files include `rate_limit.rs`, `serve.rs`, `builder.rs`,
+  `executor.rs`, `method.rs`, `signing.rs`, `client.rs`, `retry.rs` and all
+  four `lib.rs`. When the diff came back empty the job set `skip=true`, its own
+  `if:` skipped the mutation step, the check went green, and the summary
+  printed "No Rust source files changed in `crates/*/src/` — nothing to
+  mutate", which was untrue.
+
+  Proven on real history rather than a synthetic defect: nine of the last 120
+  commits changed `crates/*/src` sources *only* in the invisible set. Replaying
+  the step gives `ADDED` = 0 for `a9e1235` (a `rate_limit.rs` fix), `a116bc5`
+  (another) and `e6aa9e1` (a feature commit) under the old pathspec, and 57,
+  24 and **376** under the fixed one.
+
+  The weekly full sweep is unaffected, and that was checked rather than
+  assumed: it never passes `--in-diff`, and its `examine_globs` are consumed by
+  cargo-mutants' glob crate where `**/` does mean "zero or more directories" —
+  demonstrated by run `31352927429` finding 6 survivors in `rate_limit.rs`, a
+  top-level file. So the headline mutation score is unchanged; what was
+  narrower than it looked is every green *incremental* check on a PR touching
+  only top-level modules.
+
 - **The WebSocket client forwarded its end-of-stream control frame to the
   consumer.** The binding closes a stream with
   `{"result":{"status":"stream_complete"}}`; the reader task wrapped *every*

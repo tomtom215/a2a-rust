@@ -242,10 +242,20 @@ Two behavioural fixes to `rate_limit.rs` and a *feature* commit carrying 376
 added source lines, none of it mutated, all three reported as nothing to mutate.
 
 The fix is the `:(glob)` prefix, which gives `**` the "zero or more directories"
-meaning readers already assume. The weekly full sweep is unaffected — it does
-not use `--in-diff` — so this narrowed the PR gate, not the headline score. It
-does mean **"the incremental gate was green" has been a weaker statement than it
-looked for every PR touching only top-level modules.**
+meaning readers already assume. It means **"the incremental gate was green" has
+been a weaker statement than it looked for every PR touching only top-level
+modules.**
+
+**The weekly full sweep is not affected, and that is checked rather than
+assumed.** `mutants.toml`'s `examine_globs` carry the same
+`crates/…/src/**/*.rs` shape, which is the obvious next place for this bug to
+live — but those are consumed by cargo-mutants' glob crate, not by git's
+pathspec matcher, and there `**/` does mean "zero or more directories". The
+evidence is in the table below rather than in a reading of the semantics: run
+`31352927429` reported **6 survivors in `rate_limit.rs`**, a file sitting
+directly in `src/`. A sweep blind to top-level files could not have found them.
+The full sweep also never passes `--in-diff`, so it takes no scoping from the
+PR diff at all. Both halves had to hold, and both do.
 
 ## Known equivalent mutants
 
