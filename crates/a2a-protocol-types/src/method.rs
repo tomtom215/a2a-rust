@@ -389,6 +389,24 @@ mod tests {
             .collect();
         assert_eq!(extended, ["GetExtendedAgentCard"]);
 
+        // The streaming capability, asserted as an exact set rather than only
+        // through the bound below. `cargo mutants` replaced
+        // `requires_streaming_capability` with `false` and nothing failed: the
+        // `n <= 1` assertion is an *upper* bound, so a method that stops
+        // requiring a capability satisfies it just as well. A server that
+        // consulted this would then offer streaming methods against a card
+        // that never advertised streaming.
+        let streaming_capability: Vec<_> = Method::ALL
+            .iter()
+            .filter(|m| m.requires_streaming_capability())
+            .map(|m| m.wire_name())
+            .collect();
+        assert_eq!(
+            streaming_capability,
+            ["SendStreamingMessage", "SubscribeToTask"],
+            "exactly the streaming methods must require the streaming capability"
+        );
+
         // No method needs two capabilities at once; the examples rely on this
         // when deciding which card to drive a method against.
         for m in Method::ALL {

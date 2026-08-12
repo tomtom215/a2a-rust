@@ -194,7 +194,7 @@ pub type ClientResult<T> = Result<T, ClientError>;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use a2a_protocol_types::ErrorCode;
+    use a2a_protocol_types::{A2aError, ErrorCode};
 
     #[test]
     fn client_error_display_http_client() {
@@ -495,5 +495,65 @@ mod tests {
             task_id: TaskId::new("t")
         }
         .is_retryable());
+    }
+
+    // ── Stream-lag passthrough ───────────────────────────────────────────
+    //
+    // `is_stream_lagged` and `dropped_event_count` forward to the wrapped
+    // `A2aError`, and both were untested: `cargo mutants` killed nothing when
+    // it replaced them with `true`, `false`, `None`, `Some(0)` and `Some(1)`,
+    // or deleted the `Protocol` arm entirely. A consumer uses these to tell a
+    // recoverable gap from a fatal stream error, so a wrong answer either
+    // aborts a stream that could have continued or silently swallows one that
+    // could not.
+
+    /// A lag error must be recognised as one, through the client wrapper.
+    #[test]
+    fn stream_lag_is_recognised_through_the_client_error() {
+        let lagged = ClientError::Protocol(A2aError::stream_lagged(42));
+        assert!(
+            lagged.is_stream_lagged(),
+            "a wrapped stream-lag error must report as lagged"
+        );
+        assert_eq!(
+            lagged.dropped_event_count(),
+            Some(42),
+            "the dropped count must survive the wrapper, not be invented"
+        );
+    }
+
+    /// Any other protocol error must not be mistaken for one.
+    #[test]
+    fn an_ordinary_protocol_error_is_not_stream_lag() {
+        let other = ClientError::Protocol(A2aError::internal("something else"));
+        assert!(
+            !other.is_stream_lagged(),
+            "an unrelated protocol error must not report as lagged — a consumer \
+             would treat a fatal error as a recoverable gap"
+        );
+        assert_eq!(other.dropped_event_count(), None);
+    }
+
+    /// A non-protocol error has no lag information at all.
+    ///
+    /// Distinct from the case above: this is the arm `cargo mutants` deleted,
+    /// and without it the `Protocol` match arm can be removed with every test
+    /// still passing.
+    #[test]
+    fn a_transport_error_carries_no_lag_information() {
+        let transport = ClientError::Transport("connection reset".into());
+        assert!(!transport.is_stream_lagged());
+        assert_eq!(transport.dropped_event_count(), None);
+    }
+
+    /// Zero dropped events is still a lag signal, and still reports zero.
+    ///
+    /// Pins the `Some(0)` mutant specifically: a count of zero must not be
+    /// confused with "no count", and vice versa.
+    #[test]
+    fn a_zero_drop_count_is_reported_as_zero_not_as_absent() {
+        let lagged = ClientError::Protocol(A2aError::stream_lagged(0));
+        assert!(lagged.is_stream_lagged());
+        assert_eq!(lagged.dropped_event_count(), Some(0));
     }
 }
