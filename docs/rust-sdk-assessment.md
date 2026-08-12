@@ -345,6 +345,49 @@ disagreement between any two coverage numbers:
 
 Function coverage over the whole report: 4427/4974 = **89.00%**.
 
+**Re-measured 2026-08-12 at `6ebf821`** (`af7a1f8` was 47 commits back), same
+command, `COV_EXIT=0`, with a live PostgreSQL so the ignored suite ran. Both
+halves of every fraction are given, because three of the four denominators
+moved and a coverage percentage compared across a moved denominator says
+nothing:
+
+| File set | Lines | Coverage | vs 2026-08-10 |
+|---|---|---|---|
+| Everything `llvm-cov` instrumented | 36323/40147 | **90.48%** | −0.40 pt; denominator 39849 → 40147 |
+| The three directory globs only | 35925/38396 | **93.56%** | +0.04 pt; denominator 38350 → 38396 |
+| `codecov.yml`'s full ignore list, postgres excluded | 35885/37529 | **95.62%** | +0.05 pt; denominator 37483 → 37529 |
+| `tck/` alone | 398/1751 | 22.73% | −0.69 pt; denominator 1499 → 1751 |
+
+Function coverage over the whole report: 4455/5011 = **88.90%** (was
+4427/4974 = 89.00%; denominator 4974 → 5011).
+
+The whole-report row fell 0.40 of a point while the two rows anyone quotes rose
+slightly. That is not a contradiction and it is worth understanding rather than
+averaging: `tck/` grew by 252 lines at 22.73%, and `tck/` is in the first row's
+file set and in neither of the other two. Nearly all of the whole-report
+movement is that one directory, which `codecov.yml` deliberately ignores.
+
+One caveat on the row labels, since it changes what the second row proves. The
+2026-08-12 report instruments **two** top-level directories, not four:
+`crates/` (124 files, 38396 lines) and `tck/` (4 files, 1751 lines).
+`examples/` and `itk/` contribute nothing, so of the three directory globs only
+`tck/**` has any effect here — the other two are ignoring file sets that were
+never in the report. The row is still the badge's file set; it just gets there
+by excluding one directory rather than three.
+
+**The `codecov.yml` row remains a local-only figure.** It is what the badge
+*would* show if the five Postgres entries were honoured; measured 2026-08-12,
+they still are not — see `ROADMAP.md`'s "Reporting accuracy".
+
+The two measurements do cross-check on the thing that matters, though. Codecov's
+report for `db1da90` carries **124 files**, and `llvm-cov`'s `crates/` set is
+**124 files** — the file sets agree exactly, which is independent confirmation
+that Codecov applies `tck/**`, `examples/**` and `itk/**` and does *not* apply
+the five Postgres paths. What does not agree is the line counting: Codecov says
+33290/35343 = **94.19%** where `llvm-cov` says 35925/38396 over the same files.
+So compare Codecov row-to-row against an earlier Codecov figure, and `llvm-cov`
+against an earlier `llvm-cov` one — never one against the other.
+
 Read across the rows rather than down: 93.52% against the badge's 93.62%
 (2026-07-31) and 95.57% against the local 95.75% (2026-08-06) are the two
 like-for-like comparisons, and both moved by about a tenth of a point. The
