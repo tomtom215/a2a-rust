@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.0] - 2026-08-13
 
+> [!WARNING]
+> **If you serve gRPC to 0.6 clients, upgrade order matters — get it wrong and
+> it is an outage, not a degradation.**
+>
+> This release deletes the JSON tunnel that let a 0.6 gRPC client talk to a
+> 0.7 server. The service those clients dial, `a2a.v1.A2aService`, is no longer
+> registered on the listener, so their calls fail at the gRPC layer — they do
+> not fall back to anything.
+>
+> **Move gRPC clients onto the canonical `lf.a2a.v1.A2AService` first, then
+> upgrade servers.** The tunnel existed precisely to keep a mixed fleet working
+> during that migration, and 0.8 closes the window.
+>
+> Unaffected: JSON-RPC, REST and WebSocket deployments, and any gRPC deployment
+> already on the canonical binding — the default since 0.7, and what the
+> official Go, Python and Java SDKs speak.
+
 **A breaking release, and the deletions are the headline.** Three deprecations
 announced in 0.7 come out here, on the schedule their own deprecation notes
 named. Nothing is deprecated-but-kept a second time: an item that says "removed
