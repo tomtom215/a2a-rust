@@ -279,20 +279,43 @@ This is the category most worth clearing before any external review.
   `serve` at all, so a server that never bound was indistinguishable from a
   working one, and only the out-of-crate TCK run covered it.
 
-  Confirmed by a targeted `cargo mutants --file` over both files rather than
-  by the tests passing, which proves nothing about a mutant: **76 mutants, 26
-  caught, 49 unviable, 0 missed**, with all five in `caught.txt`. Two limits
-  on that run, stated rather than glossed: it used `--features grpc` instead
-  of CI's `--all-features --run-ignored all`, because the `#[ignore]`d
-  Postgres suite needs a live database — a strictly smaller test set, so a
-  kill here is a kill there — and it covers only those two files. **The
-  workspace figure of 63 predates these five and has not been re-measured**;
-  it is not 58 until a sweep says so.
+  Confirmed first by a targeted `cargo mutants --file` over both files rather
+  than by the tests passing, which proves nothing about a mutant: 76 mutants,
+  26 caught, 49 unviable, 0 missed. That run carried two stated limits — it
+  used `--features grpc` rather than CI's `--all-features --run-ignored all`
+  (the `#[ignore]`d Postgres suite needs a live database), and it covered two
+  files rather than the workspace.
 
-  The one `TIMEOUT` in that run, `replace EventQueueManager::destroy with ()`,
-  is pre-existing: it is one of the three timeouts run 31681284244 already
-  recorded (as `manager.rs:403:9` against `main`'s line numbering, `385:9`
-  on the branch after the `with_write_timeout` removal shifted the file).
+  **Both limits are now closed by a full sweep of the release branch.** Run
+  [31742334862](https://github.com/tomtom215/a2a-rust/actions/runs/31742334862)
+  at `7469fd5`, the complete CI configuration — `--all-features --run-ignored
+  all`, live PostgreSQL service, 21 shards: **97%, 2210 caught / 57 missed /
+  2 timeout / 1289 unviable**, with 21/21 `COMPLETED` markers and a
+  `missed.txt` line count matching the summary. `manager.rs` and
+  `dispatcher.rs` are **0**, so the narrower run was not misleading.
+  `dispatch/grpc/service.rs` is absent from the report entirely, 0.8 having
+  deleted it, and `dispatch/grpc/native.rs` remains 0.
+
+  **Only five of the six-survivor drop from 63 is this branch's doing.** Two
+  mutants changed classification in files the branch does not modify —
+  `rest/mod.rs:255 delete match arm ("POST", ["tasks", id, "cancel"])` went
+  from `MISSED` to caught, and `sse.rs:102 send_event` from `TIMEOUT` to
+  caught. Both sit on async paths where the harness is timing-sensitive, so
+  this is run-to-run variance, not an improvement to claim. Counted honestly,
+  the branch removes five and the measured total happens to be 57.
+
+  The remaining `TIMEOUT` on `replace EventQueueManager::destroy with ()` is
+  pre-existing — recorded by run 31681284244 too, as `manager.rs:403:9`
+  against `main`'s line numbering versus `385:9` on the branch, the
+  `with_write_timeout` removal having shifted the file.
+
+  **The 57 is measured at `7469fd5` and is already behind.** All nine
+  `a2a-protocol-types` survivors it reports — 5 in `error.rs`, 2 in
+  `days_from_civil`, 2 in `proto/convert` — are addressed in `df6f023` and
+  `05272fa`, which post-date the sweep. The `error.rs` five are confirmed
+  dead by a targeted run (70 mutants, 54 caught, 16 unviable, 0 missed); the
+  other four await theirs. **The figure is not 48 until a sweep says so** —
+  the same rule that this file's "116 at most" line broke once already.
 
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
