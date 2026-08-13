@@ -27,11 +27,15 @@ promised against what shipped, rather than deleted.
 |---|---|
 | Remove the `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service it serves | **Done** — feature dropped from both `a2a-protocol-server` and `a2a-protocol-sdk`; `dispatch/grpc/service.rs`, the `a2a.v1` protos, the build-script step, the JSON codec helpers, `into_legacy_service`, the `Legacy*` re-exports and the coexistence test all deleted |
 | Remove `with_event_queue_write_timeout` — a deprecated no-op | **Done** — that setter and `EventQueueManager::with_write_timeout` both removed, with the builder field, its `build()` plumbing, its `Debug` field and both tests |
-| Stop sending the legacy bare `a2a-notification-token` header | **Done** — dropped from the default CORS `allow_headers`; canonical `x-a2a-notification-token` retained |
+| Stop sending the legacy bare `a2a-notification-token` header | **Done** — two sites, not one: `HttpPushSender` no longer *sends* it (the row's actual wording), and it is dropped from the default CORS `allow_headers`. Canonical `x-a2a-notification-token` retained, and the `push_sender_https_e2e` assertion inverted to pin the header's absence rather than deleted |
 
-`dispatch/grpc/service.rs` is gone, which also retires the 9 surviving mutants
-the 2026-08-10 sweep recorded against it — the reason that file was worth
-sequencing ahead of any mutation work on it.
+`dispatch/grpc/service.rs` is gone. Deleting it was expected to retire the 9
+surviving mutants the 2026-08-10 sweep recorded against it — the reason the
+file was worth sequencing ahead of any mutation work on it. **The 2026-08-13
+re-run (run 31681284244, at `6ebf821`) measures 0 survivors in that file**, so
+those 9 had already been killed by tests landed in between and the deletion
+retires none of them. Kept visible rather than quietly corrected: the estimate
+was sound reasoning over a stale number, and the number moved.
 
 ### Residue left behind deliberately
 
@@ -174,8 +178,10 @@ This is the category most worth clearing before any external review.
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
   trustworthy rather than merely produced.
-  **The current figure is 94% (2187/125), from the 2026-08-10 sweep** — this
-  bullet records the first complete sweep, not the latest one. See
+  **The current figure is 97% (2254/63), from the 2026-08-13 sweep** (run
+  31681284244, all 21 shards complete, 21/21 `COMPLETED` markers verified
+  against the artifacts) — this bullet records the first complete sweep, not
+  the latest one. See
   [`mutation-history.md`](book/src/reference/mutation-history.md) for the
   dated table, and the burn-down item below for the survivor clusters.
   Getting there took three rounds of gate fixes, because each one exposed the
@@ -245,12 +251,24 @@ This is the category most worth clearing before any external review.
   Two caveats before anyone works from that list. It is measured at `041c366`,
   which is 44 commits behind `af7a1f8`; the ledger quantifies that 61 of the 125
   sit in files changed since, and 64 are in files unchanged and therefore still
-  valid. And `dispatch/grpc/service.rs`'s 9 sat in the deprecated
-  `grpc-legacy-json` tunnel — **that file was deleted when 0.8 was cut on
-  2026-08-13**, so those 9 are retired rather than outstanding, and the
-  remaining survivor count is 116 at most rather than 125. Note "at most": the
-  sweep has not been re-run, so this is arithmetic on a stale measurement, not
-  a new one.
+  valid.
+
+  **Superseded 2026-08-13 — the sweep was re-run, and the arithmetic this
+  paragraph used to carry was wrong.** It predicted "116 at most rather than
+  125" on the reasoning that `dispatch/grpc/service.rs`'s 9 survivors sat in
+  the `grpc-legacy-json` tunnel and would retire when 0.8 deleted the file.
+  Run 31681284244 at `6ebf821` measures **63 survivors, 97%** — and
+  `service.rs` holds **0** of them. Those 9 had already been killed by tests
+  landed between `041c366` and `6ebf821`, so 0.8's deletion retires none of
+  them; the improvement came from test work, not from removing code. The
+  estimate was labelled "arithmetic on a stale measurement, not a new one",
+  and the measurement duly disagreed with it in both directions: the total is
+  lower than predicted, and the mechanism was not the one assumed.
+
+  Also now zero, having been the two largest clusters: `handler/messaging.rs`
+  (was 17) and `store/task_store/in_memory/eviction.rs` (was 13).
+  `dispatch/grpc/native.rs` (was 11) is zero as well — worth noting because it
+  is the only gRPC surface after 0.8.
 
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
