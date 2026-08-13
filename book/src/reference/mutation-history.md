@@ -246,6 +246,32 @@ meaning readers already assume. It means **"the incremental gate was green" has
 been a weaker statement than it looked for every PR touching only top-level
 modules.**
 
+**A guard now exists, and it is itself proven able to fail.** Fixing the
+pathspec fixes today's tree and nothing else; the next person to edit that line
+has the same trap waiting. So `scripts/check_mutation_scope.sh` reads the
+pathspec **out of `mutants.yml`** — not a copy, or it could drift from the thing
+that runs — and asserts it matches exactly the tracked `.rs` files under
+`crates/*/src/`, failing in both directions (a missed file hides code from the
+gate; an over-matched one can balloon a PR run past its timeout). It is gate
+**40** in `ci.yml`'s `fmt` job, costs two `git ls-files` calls, and prints
+`141 of 141 tracked sources … are reachable by the PR gate`.
+
+It is registered in `scripts/prove_gates_fail.sh` as the `mutation_scope`
+injection, whose defect is the historical bug restored verbatim — drop the
+`:(glob)` prefix — and whose marker is `MUTATION SCOPE GAP`. Verified: with the
+prefix removed the check exits 1 and names all 41 files; with it, exits 0.
+
+Worth being precise about why this is a `ci.yml` gate and not a probe in
+`scripts/prove_workflow_gates_fail.py`, since that harness owns the other
+workflows. That harness proves a step can fail on bad **input**. This step's
+input was fine — it read its git range correctly, asked for the wrong files, and
+reported success. It also never exits non-zero (it writes `skip=true` to
+`$GITHUB_OUTPUT`), so it matched neither `discover()`'s `EXPLICIT_FAIL` regex nor
+the curated registry, and **fell through the drift guard in both directions**.
+"Can this gate fail?" and "is this gate pointed at everything it claims to
+cover?" are different questions. Only the second one catches a pathspec, and
+nothing in the repository had been asking it.
+
 **The weekly full sweep is not affected, and that is checked rather than
 assumed.** `mutants.toml`'s `examine_globs` carry the same
 `crates/…/src/**/*.rs` shape, which is the obvious next place for this bug to
