@@ -270,6 +270,30 @@ This is the category most worth clearing before any external review.
   `dispatch/grpc/native.rs` (was 11) is zero as well — worth noting because it
   is the only gRPC surface after 0.8.
 
+  **Five of the 63 were in files 0.8 touches, and are killed on the release
+  branch.** None sat in deleted code, so all five would otherwise have
+  shipped: four in `streaming/event_queue/manager.rs` (`with_capacity`,
+  the `>=` concurrency-limit guard, `raw_subscribe`, `subscribe_with_snapshot`)
+  and one in `dispatch/grpc/dispatcher.rs` — `replace GrpcDispatcher::serve
+  with Ok(())`, which is the one worth naming: no test in the crate called
+  `serve` at all, so a server that never bound was indistinguishable from a
+  working one, and only the out-of-crate TCK run covered it.
+
+  Confirmed by a targeted `cargo mutants --file` over both files rather than
+  by the tests passing, which proves nothing about a mutant: **76 mutants, 26
+  caught, 49 unviable, 0 missed**, with all five in `caught.txt`. Two limits
+  on that run, stated rather than glossed: it used `--features grpc` instead
+  of CI's `--all-features --run-ignored all`, because the `#[ignore]`d
+  Postgres suite needs a live database — a strictly smaller test set, so a
+  kill here is a kill there — and it covers only those two files. **The
+  workspace figure of 63 predates these five and has not been re-measured**;
+  it is not 58 until a sweep says so.
+
+  The one `TIMEOUT` in that run, `replace EventQueueManager::destroy with ()`,
+  is pre-existing: it is one of the three timeouts run 31681284244 already
+  recorded (as `manager.rs:403:9` against `main`'s line numbering, `385:9`
+  on the branch after the `with_write_timeout` removal shifted the file).
+
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
   baseline file: the `--in-diff` PR gate already prevents new code from adding
