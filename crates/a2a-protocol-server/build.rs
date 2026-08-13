@@ -40,17 +40,5 @@ fn main() {
             .extern_path(".lf.a2a.v1", "::a2a_protocol_types::proto")
             .compile_protos(&[v1_file], &includes)
             .expect("Failed to compile canonical A2A proto (lf.a2a.v1)");
-
-        // Deprecated pre-0.7 JSON-tunnel service (`a2a.v1.A2aService`), kept
-        // one release for rolling upgrades from 0.6 gRPC clients.
-        #[cfg(feature = "grpc-legacy-json")]
-        {
-            let legacy_file = proto_root.join("a2a.proto");
-            tonic_prost_build::configure()
-                .build_server(true)
-                .build_client(false)
-                .compile_protos(&[&legacy_file], &[&proto_root])
-                .expect("Failed to compile legacy A2A tunnel proto (a2a.v1)");
-        }
     }
 }

@@ -75,11 +75,12 @@ semantics so protobuf and JSON round-trips agree:
   client core's JSON params to typed messages per method. Streaming events
   arrive as typed `StreamResponse` messages and are re-encoded into the
   existing SSE envelope for the shared `EventStream` parser.
-- Because the two service names differ, the deprecated tunnel is served
+- Because the two service names differ, the deprecated tunnel was served
   *alongside* the canonical service behind the server-only
-  `grpc-legacy-json` feature (off by default) so 0.6 gRPC clients survive
-  rolling upgrades. The tunnel **client** was removed. The tunnel service
-  will be removed in 0.8.
+  `grpc-legacy-json` feature (off by default) so 0.6 gRPC clients survived
+  rolling upgrades. The tunnel **client** was removed in 0.7, and the tunnel
+  **service** and its feature were removed in 0.8 as scheduled. The canonical
+  service is now the only gRPC surface.
 
 ## Consequences
 

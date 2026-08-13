@@ -129,24 +129,6 @@ impl EventQueueManager {
         }
     }
 
-    /// Sets the write timeout for event queue sends.
-    ///
-    /// Retained for API compatibility only. Broadcast-based queues never
-    /// block on writes, so this value has no effect — a slow consumer
-    /// instead receives an explicit lag error on its reader when it falls
-    /// behind the broadcast ring.
-    #[deprecated(
-        since = "0.7.0",
-        note = "has no effect: broadcast-based queues never block on writes; \
-                slow consumers receive an explicit lag error instead. \
-                Will be removed in 0.8."
-    )]
-    #[must_use]
-    pub const fn with_write_timeout(mut self, timeout: std::time::Duration) -> Self {
-        self.write_timeout = timeout;
-        self
-    }
-
     /// Creates a new event queue manager with the specified maximum event size.
     ///
     /// Events exceeding this size (in serialized bytes) will be rejected with
@@ -630,22 +612,6 @@ mod tests {
             1,
             "should still have only 1 queue (second was not stored)"
         );
-    }
-
-    /// Covers lines 99-102 (`with_write_timeout` builder method).
-    #[tokio::test]
-    #[allow(deprecated)] // The no-op option must keep building until removed in 0.8.
-    async fn manager_with_write_timeout() {
-        let manager =
-            EventQueueManager::new().with_write_timeout(std::time::Duration::from_secs(10));
-        // Verify the manager still works after configuring write_timeout
-        let task_id = TaskId::new("t1");
-        let (writer, reader) = manager.get_or_create(&task_id).await;
-        assert!(reader.is_some());
-        writer
-            .write(make_status_event("t1", TaskState::Working))
-            .await
-            .expect("write should succeed with custom write_timeout");
     }
 
     #[tokio::test]

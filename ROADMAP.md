@@ -17,21 +17,32 @@ Items are grouped by whether the work is *already decided* (0.8 removals that
 the code and docs commit to), *decided but unscheduled*, or *open questions*
 that need a maintainer decision before any work starts.
 
-## 0.8 — removals this repository has already committed to
+## 0.8 — removals this repository committed to — **DONE 2026-08-13**
 
-These are announced in the code and docs, so 0.8 is a breaking release
-regardless of what else lands. Each is a `#[deprecated]` attribute or an
-explicit "removal planned for 0.8" note today.
+All three landed in the 0.8.0 preparation commit, and all four crates were
+reconciled to 0.8.0 at the same time. Kept here as the record of what was
+promised against what shipped, rather than deleted.
 
-| Item | Where it is announced |
+| Item | Status |
 |---|---|
-| Remove the `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service it serves | `crates/README.md`, `proto/README.md`, `book/src/building-agents/dispatchers.md`, `docs/adr/0009-protobuf-native-grpc.md` |
-| Remove `with_event_queue_write_timeout` — a deprecated no-op; queue writes never block, and slow consumers get an explicit lag error | `crates/a2a-protocol-server/src/builder.rs`, `.../streaming/event_queue/manager.rs`, `book/src/reference/configuration.md`, `book/src/building-agents/handler.md` |
-| Stop sending the legacy bare `a2a-notification-token` header; keep only the canonical `X-A2A-Notification-Token` | `CHANGELOG.md` (0.7.0 entry) |
+| Remove the `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service it serves | **Done** — feature dropped from both `a2a-protocol-server` and `a2a-protocol-sdk`; `dispatch/grpc/service.rs`, the `a2a.v1` protos, the build-script step, the JSON codec helpers, `into_legacy_service`, the `Legacy*` re-exports and the coexistence test all deleted |
+| Remove `with_event_queue_write_timeout` — a deprecated no-op | **Done** — that setter and `EventQueueManager::with_write_timeout` both removed, with the builder field, its `build()` plumbing, its `Debug` field and both tests |
+| Stop sending the legacy bare `a2a-notification-token` header | **Done** — dropped from the default CORS `allow_headers`; canonical `x-a2a-notification-token` retained |
 
-Removing the legacy gRPC tunnel also deletes `dispatch/grpc/service.rs`,
-which is the file whose thin test coverage prompted the 2026-07-31 defect
-hunt. Worth sequencing so that effort is not spent twice.
+`dispatch/grpc/service.rs` is gone, which also retires the 9 surviving mutants
+the 2026-08-10 sweep recorded against it — the reason that file was worth
+sequencing ahead of any mutation work on it.
+
+### Residue left behind deliberately
+
+The two public `write_timeout` setters are gone, but the value is still
+threaded through `new_in_memory_queue_with_options` into an
+`#[allow(dead_code)]` field on `InMemoryQueueWriter`, and
+`DEFAULT_WRITE_TIMEOUT` is still `pub`. Removing those changes a public
+constructor's arity and deletes an exported constant, neither of which was on
+the announced list — an unadvertised API break riding along with an advertised
+one is exactly what a deprecation schedule exists to prevent. Left for a later
+release, recorded here so it is a decision rather than an oversight.
 
 ## Verification debt
 
@@ -234,9 +245,12 @@ This is the category most worth clearing before any external review.
   Two caveats before anyone works from that list. It is measured at `041c366`,
   which is 44 commits behind `af7a1f8`; the ledger quantifies that 61 of the 125
   sit in files changed since, and 64 are in files unchanged and therefore still
-  valid. And `dispatch/grpc/service.rs`'s 9 sit in the deprecated
-  `grpc-legacy-json` tunnel that 0.8 deletes outright — sequence that removal
-  first rather than testing code scheduled for removal.
+  valid. And `dispatch/grpc/service.rs`'s 9 sat in the deprecated
+  `grpc-legacy-json` tunnel — **that file was deleted when 0.8 was cut on
+  2026-08-13**, so those 9 are retired rather than outstanding, and the
+  remaining survivor count is 116 at most rather than 125. Note "at most": the
+  sweep has not been re-run, so this is arithmetic on a stale measurement, not
+  a new one.
 
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No

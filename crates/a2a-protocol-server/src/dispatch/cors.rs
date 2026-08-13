@@ -50,12 +50,13 @@ impl CorsConfig {
             allow_methods: "GET, POST, PUT, DELETE, OPTIONS".into(),
             // a2a-version and a2a-extensions are protocol headers A2A clients
             // send on every request — without them here, a browser client's
-            // CORS preflight rejects the actual request. The notification
-            // token names are kept for webhook receivers colocated behind the
-            // same CORS policy (x-a2a-notification-token is canonical; the
-            // bare form is this SDK's pre-0.7 name, removal planned for 0.8).
+            // CORS preflight rejects the actual request.
+            // x-a2a-notification-token is kept for webhook receivers colocated
+            // behind the same CORS policy. The bare `a2a-notification-token`
+            // spelling was this SDK's pre-0.7 name and was removed in 0.8; a
+            // receiver still reading it can add it back via `allow_headers`.
             allow_headers: "content-type, authorization, a2a-version, a2a-extensions, \
-                            x-a2a-notification-token, a2a-notification-token"
+                            x-a2a-notification-token"
                 .into(),
             max_age_secs: 86400,
         }
@@ -116,8 +117,8 @@ mod tests {
         );
         assert_eq!(
             cors.allow_headers,
-            "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token, a2a-notification-token",
-            "default headers should include content-type, authorization, and a2a-notification-token"
+            "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token",
+            "default headers should include content-type, authorization, and the canonical x-a2a-notification-token"
         );
         assert_eq!(
             cors.max_age_secs, 86400,
@@ -160,7 +161,7 @@ mod tests {
         );
         assert_eq!(
             headers.get("access-control-allow-headers").unwrap(),
-            "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token, a2a-notification-token"
+            "content-type, authorization, a2a-version, a2a-extensions, x-a2a-notification-token"
         );
         assert_eq!(headers.get("access-control-max-age").unwrap(), "86400");
     }

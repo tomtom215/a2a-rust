@@ -691,12 +691,12 @@ impl PushSender for HttpPushSender {
                 // `X-A2A-Notification-Token` is the canonical name — it is what
                 // the spec's push example uses and what official-SDK webhook
                 // receivers look for. The bare `a2a-notification-token` name
-                // was this SDK's own pre-0.7 invention; it is still sent so
-                // existing receivers keep working, and will be removed in 0.8.
+                // was this SDK's own pre-0.7 invention and was sent alongside
+                // it through 0.7 so existing receivers kept working; 0.8 stops
+                // sending it. A receiver that still reads only the bare name
+                // must be updated to the canonical one.
                 if let Some(ref token) = config.token {
-                    builder = builder
-                        .header("x-a2a-notification-token", token.as_str())
-                        .header("a2a-notification-token", token.as_str());
+                    builder = builder.header("x-a2a-notification-token", token.as_str());
                 }
 
                 let req = builder

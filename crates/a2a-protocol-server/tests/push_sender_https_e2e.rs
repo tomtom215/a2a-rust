@@ -234,13 +234,17 @@ async fn https_push_delivered_over_real_tls() {
         Some("notif-token-xyz"),
         "canonical token header (official-SDK receiver convention)"
     );
+    // Asserted absent rather than simply unasserted: 0.8 stopped sending the
+    // bare pre-0.7 spelling, and a removal that no test pins is one a later
+    // refactor can quietly undo.
     assert_eq!(
         captured
             .headers
             .get("a2a-notification-token")
             .map(String::as_str),
-        Some("notif-token-xyz"),
-        "legacy token header kept until 0.8"
+        None,
+        "the legacy bare token header was removed in 0.8; only the canonical \
+         x-a2a-notification-token is sent"
     );
     // The body is the serialized StreamResponse (externally-tagged status update).
     assert!(

@@ -39,7 +39,7 @@ signature and its `exp`/`nbf`/`iss`/`aud` claims. Keys come from a static
 `Jwks`, a shared HS256 secret, or a remote JWKS endpoint.
 
 ```toml
-a2a-protocol-server = { version = "0.7", features = ["auth-jwt"] }
+a2a-protocol-server = { version = "0.8", features = ["auth-jwt"] }
 ```
 
 **Validate tokens from an OIDC issuer** (discovers the issuer's JWKS, caches it,

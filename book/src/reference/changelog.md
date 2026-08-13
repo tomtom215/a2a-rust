@@ -47,8 +47,8 @@ Highlights of the upcoming release — see [CHANGELOG.md](https://github.com/tom
 - **Protobuf-native gRPC** — the transport speaks the canonical
   `lf.a2a.v1.A2AService` with fully-typed messages, wire-compatible with the
   official A2A SDKs and proven against official-SDK golden fixtures in both
-  directions (ADR 0009). The pre-0.7 JSON tunnel is deprecated behind
-  `grpc-legacy-json`.
+  directions (ADR 0009). The pre-0.7 JSON tunnel was deprecated behind
+  `grpc-legacy-json` in 0.7 and removed in 0.8.
 - **WebSocket is a full-surface, authenticated transport** — all 11 methods
   routed, upgrade-request headers drive auth and tenant resolution, handshake
   timeout, accept-loop resilience, and a configurable client

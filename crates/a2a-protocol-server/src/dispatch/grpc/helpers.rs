@@ -7,25 +7,10 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-#[cfg(feature = "grpc-legacy-json")]
-use std::pin::Pin;
 
-#[cfg(feature = "grpc-legacy-json")]
-use tokio::sync::mpsc;
-#[cfg(feature = "grpc-legacy-json")]
-use tokio_stream::wrappers::ReceiverStream;
 use tonic::Status;
 
-#[cfg(feature = "grpc-legacy-json")]
-use super::proto::JsonPayload;
 use crate::error::ServerError;
-#[cfg(feature = "grpc-legacy-json")]
-use crate::streaming::EventQueueReader;
-
-/// The streaming response type for the legacy JSON-tunnel streaming methods.
-#[cfg(feature = "grpc-legacy-json")]
-pub(super) type GrpcStream =
-    Pin<Box<dyn tokio_stream::Stream<Item = Result<JsonPayload, Status>> + Send + 'static>>;
 
 /// Extracts gRPC metadata into a `HashMap` matching the HTTP headers
 /// interface used by `RequestHandler`.
@@ -65,25 +50,6 @@ pub(super) fn validated_metadata(
         }
     }
     Ok(headers)
-}
-
-/// Deserializes a JSON payload from a legacy-tunnel gRPC request.
-#[cfg(feature = "grpc-legacy-json")]
-#[allow(clippy::result_large_err)]
-pub(super) fn decode_json<T: serde::de::DeserializeOwned>(
-    payload: &JsonPayload,
-) -> Result<T, Status> {
-    serde_json::from_slice(&payload.data)
-        .map_err(|e| Status::invalid_argument(format!("invalid JSON payload: {e}")))
-}
-
-/// Serializes a value into a JSON payload for a legacy-tunnel gRPC response.
-#[cfg(feature = "grpc-legacy-json")]
-#[allow(clippy::result_large_err)]
-pub(super) fn encode_json<T: serde::Serialize>(value: &T) -> Result<JsonPayload, Status> {
-    let data = serde_json::to_vec(value)
-        .map_err(|e| Status::internal(format!("JSON serialization failed: {e}")))?;
-    Ok(JsonPayload { data })
 }
 
 /// Converts a [`ServerError`] into a tonic [`Status`].
@@ -143,68 +109,10 @@ pub(super) async fn resolve_addr(
     })
 }
 
-/// Converts an [`InMemoryQueueReader`](crate::streaming::InMemoryQueueReader)
-/// into a legacy-tunnel gRPC streaming response.
-#[cfg(feature = "grpc-legacy-json")]
-pub(super) fn reader_to_grpc_stream(
-    mut reader: crate::streaming::InMemoryQueueReader,
-    capacity: usize,
-) -> GrpcStream {
-    let (tx, rx) = mpsc::channel(capacity);
-    tokio::spawn(async move {
-        loop {
-            match reader.read().await {
-                Some(Ok(event)) => {
-                    let payload = match encode_json(&event) {
-                        Ok(p) => p,
-                        Err(status) => {
-                            let _ = tx.send(Err(status)).await;
-                            break;
-                        }
-                    };
-                    if tx.send(Ok(payload)).await.is_err() {
-                        break;
-                    }
-                }
-                Some(Err(_)) => {
-                    let _ = tx.send(Err(Status::internal("event queue error"))).await;
-                    break;
-                }
-                None => break,
-            }
-        }
-    });
-    Box::pin(ReceiverStream::new(rx))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::error::ServerError;
-
-    // decode_json / encode_json round-trip
-    #[cfg(feature = "grpc-legacy-json")]
-    #[test]
-    fn encode_decode_json_roundtrip() {
-        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
-        struct Foo {
-            x: u32,
-        }
-        let original = Foo { x: 42 };
-        let payload = encode_json(&original).unwrap();
-        let decoded: Foo = decode_json(&payload).unwrap();
-        assert_eq!(original, decoded);
-    }
-
-    #[cfg(feature = "grpc-legacy-json")]
-    #[test]
-    fn decode_json_invalid_returns_status_error() {
-        let payload = JsonPayload {
-            data: b"not-json".to_vec(),
-        };
-        let result: Result<serde_json::Value, _> = decode_json(&payload);
-        assert!(result.is_err());
-    }
 
     // server_error_to_status mapping
     #[test]

@@ -113,7 +113,7 @@ This project aimed to be the first complete and production ready **v1.0.0-compli
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.7"
+a2a-protocol-sdk = "0.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

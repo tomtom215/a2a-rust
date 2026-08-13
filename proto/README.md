@@ -38,10 +38,11 @@ JSON-in-`bytes` tunnel: every RPC takes and returns a `JsonPayload`
 wrapper around UTF-8 JSON. It is **not** the A2A gRPC binding and cannot
 interoperate with the official SDKs.
 
-It is retained only so 0.6 clients can be rolling-upgraded: the server can
-serve it *alongside* the canonical service via the off-by-default
-`grpc-legacy-json` feature. The client support was removed in 0.7, and the
-tunnel is scheduled for removal in 0.8.
+It was retained only so 0.6 clients could be rolling-upgraded, served
+*alongside* the canonical service via the off-by-default `grpc-legacy-json`
+feature. The client support was removed in 0.7 and the tunnel service, its
+feature and its `a2a.proto` schema were removed in 0.8. Nothing in this
+workspace compiles or serves it any more.
 
 ## Usage
 

@@ -24,8 +24,8 @@ fn main() {
         // Message types come from `a2a-protocol-types` (feature `proto`) via
         // `extern_path`, so the workspace has a single set of message types
         // and a single conversion layer. The pre-0.7 JSON-tunnel client was
-        // removed in 0.7 — servers keep serving the tunnel behind their
-        // `grpc-legacy-json` feature so 0.6 clients still work.
+        // removed in 0.7, and the server side of that tunnel went in 0.8, so
+        // the canonical service is the only gRPC surface either side speaks.
         let v1_dir = proto_root.join("a2a_v1");
         let v1_file = v1_dir.join("a2a.proto");
         let mut includes = vec![v1_dir];

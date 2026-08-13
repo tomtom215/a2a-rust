@@ -10,22 +10,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Note on crate versions in this section
+## [0.8.0] - 2026-08-13
 
-`a2a-protocol-server`'s `Cargo.toml` is at **0.8.0** while
-`a2a-protocol-types`/`a2a-protocol-client`/`a2a-protocol-sdk` remain at 0.7.0,
-ahead of the lockstep bump `RELEASING.md` otherwise calls for. This is
-deliberate, not a mismatch to fix: `cargo-semver-checks` (which compares
-against the last crates.io release) correctly flagged two breaking changes in
-this section — `InMemoryQueueReader`/`SendMessageResult` losing
-`UnwindSafe`/`RefUnwindSafe` (the streaming reattach hook below adds a
-`dyn Fn` field) and `HandlerLimits` gaining two `pub` fields (the same fix's
-reattach/idle bounds) — and per Rust's 0.x convention a breaking change bumps
-the minor position. Bumping only the crate that actually broke, rather than
-all four in lockstep, keeps that check meaningful without pre-deciding the
-next release's version for crates it found no issue with. The next real
-release should reconcile all four to whatever version it cuts, per the
-existing `RELEASING.md` checklist.
+**A breaking release, and the deletions are the headline.** Three deprecations
+announced in 0.7 come out here, on the schedule their own deprecation notes
+named. Nothing is deprecated-but-kept a second time: an item that says "removed
+in 0.8" is removed in 0.8.
+
+All four crates are now at **0.8.0**. Until this release
+`a2a-protocol-server` alone sat at 0.8.0 while the other three stayed at 0.7.0
+— deliberately, because `cargo-semver-checks` had flagged breaking changes in
+that crate and only that crate, and bumping just the crate that broke keeps the
+check meaningful. That split was always documented as something the next real
+release had to reconcile, and this is that release.
+
+### Removed
+
+- **The `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service.**
+  Releases before 0.7 tunneled JSON inside a protobuf `bytes` envelope on a
+  non-standard service (`a2a.v1.A2aService`), served alongside the canonical
+  binding behind an off-by-default feature so 0.6 clients survived a rolling
+  upgrade. That window has closed. Gone with it: the feature on both
+  `a2a-protocol-server` and `a2a-protocol-sdk`, `dispatch/grpc/service.rs`,
+  `GrpcDispatcher::into_legacy_service`, the `LegacyA2aServiceServer` /
+  `LegacyGrpcServiceImpl` re-exports, the JSON codec helpers
+  (`encode_json`/`decode_json`/`reader_to_grpc_stream`), the `a2a.v1` proto and
+  its build-script compile step, and the coexistence test.
+
+  **Migration:** none is available in-process — a 0.6 client must move to the
+  canonical `lf.a2a.v1.A2AService`, which is the protobuf-native binding the
+  official Go, Python and Java SDKs already speak. `GrpcDispatcher::serve` and
+  `into_service` are unchanged for everyone already on it.
+
+- **`RequestHandlerBuilder::with_event_queue_write_timeout` and
+  `EventQueueManager::with_write_timeout`**, both deprecated no-ops since 0.7.
+  Event-queue writes never block — the queue is a broadcast channel, so a slow
+  streaming consumer receives an explicit lag error on its reader rather than
+  exerting backpressure on the executor — so neither setter ever had an effect.
+
+  **Migration:** delete the call. There is no replacement because there was no
+  behaviour. To bound a slow consumer, size the queue with
+  `with_event_queue_capacity` and handle the lag error on the reader.
+
+  Said plainly rather than left to be discovered: the two *public setters* are
+  gone, but the value they set is still threaded through
+  `new_in_memory_queue_with_options` into an `#[allow(dead_code)]` field on
+  `InMemoryQueueWriter`, and `DEFAULT_WRITE_TIMEOUT` is still exported. Those
+  were not on the announced removal list, and changing that constructor's arity
+  would be an unadvertised API break on top of an advertised one. The dead
+  plumbing is tracked in `ROADMAP.md` for a later release.
+
+- **The bare `a2a-notification-token` header from the default CORS
+  `allow_headers`.** `x-a2a-notification-token` is canonical and stays; the
+  unprefixed spelling was this SDK's own pre-0.7 name.
+
+  **Migration:** a webhook receiver still reading the bare header can restore
+  it by assigning to `CorsConfig::allow_headers` — it is a plain `String` and
+  always was, so this changes a default, not a capability.
 
 ### Added
 

@@ -68,7 +68,6 @@ pub struct RequestHandlerBuilder {
     event_queue_capacity: Option<usize>,
     max_event_size: Option<usize>,
     max_concurrent_streams: Option<usize>,
-    event_queue_write_timeout: Option<Duration>,
     metrics: Arc<dyn Metrics>,
     handler_limits: HandlerLimits,
     tenant_resolver: Option<Arc<dyn TenantResolver>>,
@@ -95,7 +94,6 @@ impl RequestHandlerBuilder {
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
-            event_queue_write_timeout: None,
             metrics: Arc::new(NoopMetrics),
             handler_limits: HandlerLimits::default(),
             tenant_resolver: None,
@@ -215,23 +213,6 @@ impl RequestHandlerBuilder {
     #[must_use]
     pub const fn with_max_concurrent_streams(mut self, max: usize) -> Self {
         self.max_concurrent_streams = Some(max);
-        self
-    }
-
-    /// Sets the write timeout for event queue sends.
-    ///
-    /// Retained for API compatibility only. Event queue writes never block
-    /// (the broadcast channel is non-blocking), so this value has no effect;
-    /// a slow streaming consumer receives an explicit lag error on its
-    /// reader instead of exerting backpressure on the executor.
-    #[deprecated(
-        since = "0.7.0",
-        note = "has no effect: event queue writes never block; slow consumers \
-                receive an explicit lag error instead. Will be removed in 0.8."
-    )]
-    #[must_use]
-    pub const fn with_event_queue_write_timeout(mut self, timeout: Duration) -> Self {
-        self.event_queue_write_timeout = Some(timeout);
         self
     }
 
@@ -392,12 +373,6 @@ impl RequestHandlerBuilder {
                 if let Some(max_size) = self.max_event_size {
                     mgr = mgr.with_max_event_size(max_size);
                 }
-                if let Some(timeout) = self.event_queue_write_timeout {
-                    #[allow(deprecated)] // Forwarding a deprecated no-op option until 0.8.
-                    {
-                        mgr = mgr.with_write_timeout(timeout);
-                    }
-                }
                 mgr = mgr.with_max_concurrent_queues(
                     self.max_concurrent_streams
                         .unwrap_or(DEFAULT_MAX_CONCURRENT_STREAMS),
@@ -438,7 +413,6 @@ impl std::fmt::Debug for RequestHandlerBuilder {
             .field("event_queue_capacity", &self.event_queue_capacity)
             .field("max_event_size", &self.max_event_size)
             .field("max_concurrent_streams", &self.max_concurrent_streams)
-            .field("event_queue_write_timeout", &self.event_queue_write_timeout)
             .field("metrics", &"<dyn Metrics>")
             .field("handler_limits", &self.handler_limits)
             .field("tenant_resolver", &self.tenant_resolver.is_some())
@@ -639,15 +613,6 @@ mod tests {
             .with_push_config_store(InMemoryPushConfigStore::new())
             .build();
         let _h = result.expect("builder with push config store should succeed");
-    }
-
-    #[test]
-    #[allow(deprecated)] // The no-op option must keep building until removed in 0.8.
-    fn builder_with_event_queue_write_timeout_builds_ok() {
-        let result = RequestHandlerBuilder::new(TestExecutor)
-            .with_event_queue_write_timeout(Duration::from_secs(10))
-            .build();
-        let _h = result.expect("builder with event queue write timeout should succeed");
     }
 
     #[test]
