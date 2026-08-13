@@ -589,4 +589,37 @@ mod tests {
             Some(951_782_400_000)
         );
     }
+
+    /// Kills the two survivors at `days_from_civil`'s `y - 399`: `replace -
+    /// with +` and `replace - with /`.
+    ///
+    /// They survived because that branch is unreachable through the public
+    /// parser. `y` only goes negative for year 0 (January and February take
+    /// the `m <= 2` adjustment to `y = -1`), and every such instant is
+    /// pre-epoch, which `parse_iso8601_to_unix_millis` rejects via its
+    /// `total >= 0` guard. A wrong answer in that branch is discarded either
+    /// way, so no round-trip through the public API can observe it. Calling
+    /// the arithmetic directly is what makes the mutants visible.
+    #[test]
+    fn days_from_civil_handles_the_negative_year_branch() {
+        use super::days_from_civil;
+
+        // Anchors on the `y >= 0` path, so a break here is unambiguous.
+        assert_eq!(days_from_civil(1970, 1, 1), 0, "the epoch is day zero");
+        assert_eq!(days_from_civil(2000, 3, 1), 11_017);
+
+        // The only route into `y - 399`.
+        assert_eq!(days_from_civil(0, 1, 1), -719_528);
+
+        // Independent of the constant above, and the assertion that actually
+        // bites: year 0 is a leap year in the proleptic Gregorian calendar,
+        // so 0000-01-01 and 0001-01-01 are 366 days apart. 0001-01-01 takes
+        // the `y >= 0` branch and is therefore unmutated, so both mutants
+        // shift only the first term — each yields 365 and fails here.
+        assert_eq!(
+            days_from_civil(1, 1, 1) - days_from_civil(0, 1, 1),
+            366,
+            "year 0 is a leap year, so the gap to year 1 is 366 days"
+        );
+    }
 }

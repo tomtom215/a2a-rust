@@ -636,8 +636,8 @@ mod tests {
     // function in general — a test that merely calls the function would have
     // passed under the mutant too, which is how these survived.
 
-    /// Kills: `replace EventQueueManager::with_capacity -> Self with
-    /// `Default::default()``.
+    /// Kills the surviving `with_capacity` mutant, which replaces the
+    /// constructor body with `Default::default()`.
     ///
     /// Asserts through observable behaviour rather than a getter, because the
     /// `capacity` field is private. A capacity-1 broadcast channel drops the
@@ -669,8 +669,8 @@ mod tests {
         );
     }
 
-    /// Kills: `replace >= with < in
-    /// `EventQueueManager::get_or_create_with_persistence``.
+    /// Kills the surviving mutant that flips `>=` to `<` in
+    /// `EventQueueManager::get_or_create_with_persistence`.
     ///
     /// The guard is `map.len() >= max`. With `max = 1` and an empty map,
     /// `0 >= 1` is false, so the *first* queue is tracked and gets a reader.
