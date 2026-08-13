@@ -15,9 +15,9 @@ use crate::handler::RequestHandler;
 /// gRPC dispatcher that routes A2A requests to a [`RequestHandler`].
 ///
 /// Serves the canonical `lf.a2a.v1.A2AService` (protobuf-native, wire
-/// compatible with the official A2A SDKs). With the `grpc-legacy-json`
-/// feature enabled, [`serve`](Self::serve) additionally registers the
-/// deprecated pre-0.7 JSON-tunnel service on the same listener.
+/// compatible with the official A2A SDKs). That is the only gRPC surface:
+/// the deprecated pre-0.7 JSON-tunnel service, and the `grpc-legacy-json`
+/// feature that gated it, were removed in 0.8.
 ///
 /// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
 /// or build a tonic service with [`GrpcDispatcher::into_service`].

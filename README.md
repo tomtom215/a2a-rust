@@ -20,17 +20,17 @@
 [![Guide](https://img.shields.io/badge/guide-a2a--rust.com-blue)](https://a2a-rust.com)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![MSRV](https://img.shields.io/badge/rust-1.93%2B-orange.svg)](https://www.rust-lang.org)
-[![A2A Conformance](https://img.shields.io/badge/A2A%20v1.0-TCK%20conformant-brightgreen)](tck/)
+[![A2A Conformance](https://img.shields.io/badge/official%20TCK-92%2F114%20MUST%2C%200%20failing-blue)](docs/official-tck-findings.md)
 
-Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), built to the final **v1.0.0** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
+Pure Rust implementation of the [**Agent2Agent (A2A) protocol**](https://a2a-protocol.org/), written against the **v1.0.0** wire specification — the open, vendor-neutral standard for AI-agent interoperability.
 
 Build, connect, and orchestrate AI agents with a type-safe, async-first SDK spanning four transports — JSON-RPC 2.0, REST, WebSocket, and gRPC — for both client and server.
 
-## Motivation
+## About
 
-The A2A protocol — originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025 — provides a vendor-neutral standard for AI agent interoperability. The [official SDKs](https://a2a-protocol.org/latest/sdk/) cover Python, Go, Java, JavaScript, and C#/.NET, and at the time of starting this project myself, Rust was absent for v1.0.0. The [community samples](https://github.com/a2aproject/a2a-samples/tree/main/samples) cover the same five languages — Rust was absent there too at the time of starting this project.
+The A2A protocol was originally developed by Google and [donated to the Linux Foundation](https://developers.googleblog.com/en/google-cloud-donates-a2a-to-linux-foundation/) in June 2025. The A2A project maintains its own [official SDKs](https://a2a-protocol.org/latest/sdk/) and publishes the specification and conformance suite this implementation is measured against.
 
-This project aimed to be the first complete and production ready **v1.0.0-compliant** Rust SDK for A2A. We intend to contribute this work to the [A2A project](https://github.com/a2aproject) under the Linux Foundation so that Rust has first-class support alongside the other official SDKs.
+**This is an independent project.** It is not affiliated with, endorsed by, or governed by the A2A project, the Linux Foundation, or Google, and it is not an official SDK. It tracks the published v1.0.0 specification and is graded against the A2A project's official Technology Compatibility Kit; where it falls short of that suite, [`docs/official-tck-findings.md`](docs/official-tck-findings.md) records exactly where and why.
 
 ## Features
 
@@ -38,7 +38,7 @@ This project aimed to be the first complete and production ready **v1.0.0-compli
 
 | | |
 |---|---|
-| **Full A2A v1.0.0 wire types** | Every struct, enum, and field from the spec with correct serde annotations |
+| **A2A v1.0.0 wire types** | The spec's structs, enums, and fields, with serde annotations matched to the wire format |
 | **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
 | **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
 | **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
@@ -81,7 +81,7 @@ This project aimed to be the first complete and production ready **v1.0.0-compli
 
 | | |
 |---|---|
-| **Enterprise hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, health endpoints |
+| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, health endpoints |
 | **SSRF protection** | Push webhook URL validation, header injection prevention, SSE memory limits |
 | **CORS support** | `CorsConfig` for browser-based clients with preflight handling |
 | **Executor timeout** | Configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors |
@@ -94,7 +94,7 @@ This project aimed to be the first complete and production ready **v1.0.0-compli
 | **Mutation-tested** | `cargo-mutants` runs on every pull request (incremental, changed-files only) and fails the build if any mutant goes undetected by the test suite; mutants that time out are reported separately in the job summary rather than failing the build. A full-sweep matrix runs on demand |
 | **No `unsafe`** | `#![forbid(unsafe_code)]` at every library crate root; zero `unsafe` blocks in `crates/`, `tck/`, or the benches harness |
 | **Regression-gated benchmarks** | Pull requests run `transport_throughput` and `protocol_overhead` twice (base branch vs PR) and fail when the 95 %-CI lower bound of a benchmark's median regression exceeds 50 % (default; individually noisy benchmarks carry documented per-benchmark overrides, e.g. `from_str/16384` at 75 %) — only statistically confident, substantial regressions trip the gate. See [`book/src/reference/regression-gate.md`](book/src/reference/regression-gate.md) for the threshold's derivation and the runner-noise limitations behind it |
-| **TCK conformance** | The A2A v1.0 Technology Compatibility Kit runs on every push to `main` and every pull request, covering the JSON-RPC and REST bindings; the WebSocket and gRPC transports are exercised by the agent-team end-to-end suite rather than the TCK |
+| **Conformance-gated** | The in-repo conformance runner grades all four bindings — JSON-RPC, REST, WebSocket, and gRPC — plus cross-binding equivalence, on every push to `main` and every pull request. Measurement against the A2A project's *official* TCK is reported separately under [Project Status](#project-status), including what that suite does not cover |
 
 ## Crate Structure
 
@@ -210,7 +210,7 @@ cargo run -p incident-response
 
 ### Agent Team (Full Dogfood)
 
-A comprehensive 4-agent team that exercises every SDK feature — 81 base E2E tests (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
+A 4-agent team that exercises the SDK broadly — 81 base E2E tests (94 with all optional features: WebSocket, gRPC, Axum, SQLite, signing, and OTel) covering all four transports (JSON-RPC, REST, WebSocket, gRPC), streaming, push notifications, agent-to-agent orchestration, cancellation, concurrency stress, multi-tenancy, large payloads, metrics, SDK regression testing, batch JSON-RPC, auth rejection, extended/dynamic agent cards, HTTP caching, backpressure, agent card signing, Axum framework integration, and SQLite-backed stores:
 
 ```bash
 cargo run -p agent-team
@@ -318,7 +318,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run the test suite (2,000+ tests with --all-features; CI runs nine feature combinations)
+# Run the test suite (~2,690 tests with --all-features; CI runs sixteen feature combinations)
 cargo test --workspace --all-features
 
 # Run the end-to-end example
@@ -347,7 +347,11 @@ cd fuzz && cargo +nightly fuzz run json_deser
 
 ## Project Status
 
-All phases are complete. The SDK is production-ready with all 11 A2A methods, quad transport, HTTP caching, agent card signing, optional `tracing`, TLS support, enterprise hardening (body limits, health checks, task TTL/eviction, CORS, SSRF protection), and a hardened CI pipeline. See [`docs/implementation/plan.md`](docs/implementation/plan.md) for the full implementation roadmap and beyond-spec extensions.
+Published as `0.x`. All 11 A2A methods are implemented across the four transports, alongside HTTP caching, agent-card signing, optional `tracing` and OpenTelemetry, TLS, and the request-hardening features listed above. The API is still stabilizing — minor versions may carry breaking changes, as described under [Stability](#stability). [`docs/implementation/plan.md`](docs/implementation/plan.md) covers the implementation history and beyond-spec extensions.
+
+Against the A2A project's official Technology Compatibility Kit, **92 of 114 MUST requirements pass and none fail**. Of the remaining 22, 21 have no test function in the upstream suite and one (`CARD-EXT-002`) is structurally inapplicable — so they are unmeasured rather than passing. [`docs/official-tck-findings.md`](docs/official-tck-findings.md) has the per-requirement breakdown and reproduction steps.
+
+[ROADMAP.md](ROADMAP.md) is the honest counterpart to this section: it records where this project's own gates do not yet measure everything they appear to, which conformance claims rest on the in-repo runner rather than the official suite, and which questions are still undecided. Worth reading before depending on this SDK for anything load-bearing.
 
 
 ## Stability
@@ -366,9 +370,9 @@ standards, testing requirements, and quality gates, and
 governed by the [Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant
 2.1).
 
-[ROADMAP.md](ROADMAP.md) lists what is already committed for the next release
-(0.8 is a breaking one — it removes several deprecated APIs), the known gaps
-in this project's own verification, and the questions still open.
+[ROADMAP.md](ROADMAP.md) lists what is committed for upcoming releases,
+alongside the verification gaps and open questions noted under
+[Project Status](#project-status).
 
 Every commit must be signed off under the
 [Developer Certificate of Origin](DCO) (`git commit -s`) by a human git author;

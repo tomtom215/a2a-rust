@@ -163,7 +163,7 @@ let client = ClientBuilder::new("ws://agent.example.com:3002")
 
 ## gRPC
 
-The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. As of 0.7 it is **protobuf-native**: the transport speaks the canonical `lf.a2a.v1.A2AService` service with fully-typed messages generated from the A2A specification's protobuf schema, making it wire-compatible with the official Go, Python, and Java SDKs. (Through 0.6 it tunneled JSON inside a protobuf `bytes` field on a non-standard service; that tunnel was removed in 0.7. Servers can still serve 0.6 clients alongside the canonical service via the `grpc-legacy-json` feature.)
+The **gRPC** transport (`grpc` feature flag) provides high-performance RPC via protocol buffers and HTTP/2. As of 0.7 it is **protobuf-native**: the transport speaks the canonical `lf.a2a.v1.A2AService` service with fully-typed messages generated from the A2A specification's protobuf schema, making it wire-compatible with the official Go, Python, and Java SDKs. (Through 0.6 it tunneled JSON inside a protobuf `bytes` field on a non-standard service. The tunnel **client** was removed in 0.7; the tunnel **service** and the `grpc-legacy-json` feature that served it alongside the canonical one were removed in 0.8. A 0.6 client must now upgrade rather than be tunneled for.)
 
 ```toml
 # Server
