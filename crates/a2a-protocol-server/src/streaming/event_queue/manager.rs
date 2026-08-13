@@ -423,7 +423,7 @@ impl EventQueueManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::streaming::event_queue::EventQueueWriter;
+    use crate::streaming::event_queue::{EventQueueReader, EventQueueWriter};
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
     use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
 
@@ -626,6 +626,155 @@ mod tests {
         assert!(
             result.is_err(),
             "event should be rejected by the size limit configured on the manager"
+        );
+    }
+
+    // ── Mutation-gap coverage (2026-08-13 sweep, run 31681284244) ────────
+    //
+    // Four mutants survived in this file. Each test below is written against
+    // the specific wrong behaviour its mutant introduces, not against the
+    // function in general — a test that merely calls the function would have
+    // passed under the mutant too, which is how these survived.
+
+    /// Kills: `replace EventQueueManager::with_capacity -> Self with
+    /// `Default::default()``.
+    ///
+    /// Asserts through observable behaviour rather than a getter, because the
+    /// `capacity` field is private. A capacity-1 broadcast channel drops the
+    /// older event when a second is written before either is read, and the
+    /// reader surfaces that as an error; `DEFAULT_QUEUE_CAPACITY` is 256, so
+    /// under the mutant both events are buffered and both reads succeed.
+    #[tokio::test]
+    async fn with_capacity_uses_the_given_capacity_not_the_default() {
+        let manager = EventQueueManager::with_capacity(1);
+        let task_id = TaskId::new("cap");
+        let (writer, reader) = manager.get_or_create(&task_id).await;
+        let mut reader = reader.expect("first get_or_create yields a reader");
+
+        // Two events, nothing read in between: overruns a capacity of 1.
+        writer
+            .write(make_status_event("cap", TaskState::Working))
+            .await
+            .expect("first write");
+        writer
+            .write(make_status_event("cap", TaskState::Completed))
+            .await
+            .expect("second write");
+
+        let first = reader.read().await.expect("reader is still open");
+        assert!(
+            first.is_err(),
+            "a capacity-1 queue must surface an overrun to the reader; \
+             got Ok, which is what DEFAULT_QUEUE_CAPACITY (256) would give"
+        );
+    }
+
+    /// Kills: `replace >= with < in
+    /// `EventQueueManager::get_or_create_with_persistence``.
+    ///
+    /// The guard is `map.len() >= max`. With `max = 1` and an empty map,
+    /// `0 >= 1` is false, so the *first* queue is tracked and gets a reader.
+    /// Inverted to `0 < 1` it is true, so the first queue takes the
+    /// at-capacity branch: no reader, and nothing inserted. Asserting on the
+    /// first call is what separates the two — the second call behaves the
+    /// same either way.
+    #[tokio::test]
+    async fn first_queue_is_tracked_when_a_concurrency_limit_is_set() {
+        let manager = EventQueueManager::new().with_max_concurrent_queues(1);
+
+        let first = TaskId::new("q1");
+        let (_w, reader, persistence) = manager.get_or_create_with_persistence(&first).await;
+        assert!(
+            reader.is_some(),
+            "the first queue is below the limit and must be tracked, \
+             with a reader; None means the at-capacity branch was taken"
+        );
+        assert!(
+            persistence.is_some(),
+            "a tracked queue gets a persistence rx"
+        );
+        assert_eq!(
+            manager.active_count().await,
+            1,
+            "first queue must be stored"
+        );
+
+        // And the limit still bites on the next one.
+        let second = TaskId::new("q2");
+        let (_w2, reader2, _p2) = manager.get_or_create_with_persistence(&second).await;
+        assert!(
+            reader2.is_none(),
+            "the second queue exceeds the limit and must not be tracked"
+        );
+        assert_eq!(
+            manager.active_count().await,
+            1,
+            "an over-limit queue must not be stored"
+        );
+    }
+
+    /// Kills: `replace EventQueueManager::raw_subscribe -> Option<..> with
+    /// None`.
+    #[tokio::test]
+    async fn raw_subscribe_returns_a_receiver_for_a_live_queue() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("raw");
+        let (_writer, _reader) = manager.get_or_create(&task_id).await;
+
+        assert!(
+            manager.raw_subscribe(&task_id).await.is_some(),
+            "a live queue must yield a receiver"
+        );
+        assert!(
+            manager
+                .raw_subscribe(&TaskId::new("absent"))
+                .await
+                .is_none(),
+            "an unknown task must yield None — pins that Some is not blanket"
+        );
+    }
+
+    /// Kills: `replace EventQueueManager::subscribe_with_snapshot ->
+    /// Option<InMemoryQueueReader> with None`.
+    ///
+    /// Also asserts the snapshot arrives first, which is the spec obligation
+    /// the method exists to satisfy (§ `SubscribeToTask`: the first event MUST
+    /// represent current state).
+    #[tokio::test]
+    async fn subscribe_with_snapshot_returns_a_reader_that_yields_the_snapshot() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("snap");
+        let (_writer, _reader) = manager.get_or_create(&task_id).await;
+
+        let snapshot = make_status_event("snap", TaskState::Working);
+        let reader = manager.subscribe_with_snapshot(&task_id, snapshot).await;
+        let mut reader = reader.expect("a live queue must yield a reader");
+
+        let first = reader
+            .read()
+            .await
+            .expect("reader is open")
+            .expect("snapshot is delivered as Ok");
+        match first {
+            StreamResponse::StatusUpdate(ev) => {
+                assert_eq!(
+                    ev.status.state,
+                    TaskState::Working,
+                    "snapshot arrives first"
+                );
+            }
+            other => panic!("expected the snapshot StatusUpdate first, got {other:?}"),
+        }
+
+        assert!(
+            manager
+                .subscribe_with_snapshot(
+                    &TaskId::new("absent"),
+                    make_status_event("absent", TaskState::Working)
+                )
+                .await
+                .is_none(),
+            "an unknown task must yield None — pins that Some is not blanket"
         );
     }
 }
