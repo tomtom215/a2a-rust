@@ -696,4 +696,52 @@ mod tests {
         let cfg = TenantStoreConfig::default();
         assert_eq!(cfg.max_tenants, 1000);
     }
+
+    /// Kills `replace TenantAwareInMemoryTaskStore::run_eviction_all with ()`.
+    ///
+    /// Nothing else in the suite called it, so a no-op body was invisible:
+    /// per-tenant `run_eviction` has its own coverage, and this method's only
+    /// job is to reach every tenant. A no-op leaves terminal tasks resident in
+    /// every partition forever — the unbounded growth the method exists to
+    /// prevent.
+    ///
+    /// Two tenants, because "reaches every tenant" is the actual contract; a
+    /// single-tenant assertion would also pass against a body that evicted
+    /// only the first partition it found.
+    #[tokio::test]
+    async fn run_eviction_all_evicts_in_every_tenant() {
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig {
+                task_ttl: Some(std::time::Duration::from_millis(1)),
+                ..TaskStoreConfig::default()
+            },
+            ..TenantStoreConfig::default()
+        });
+
+        for tenant in ["tenant-a", "tenant-b"] {
+            TenantContext::scope(tenant, async {
+                store
+                    .save(&make_task("t1", TaskState::Completed))
+                    .await
+                    .expect("save");
+            })
+            .await;
+        }
+
+        // Outlive the TTL so both tasks are eligible.
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        store.run_eviction_all().await;
+
+        for tenant in ["tenant-a", "tenant-b"] {
+            let still_there = TenantContext::scope(tenant, async {
+                store.get(&TaskId::new("t1")).await.expect("get")
+            })
+            .await;
+            assert!(
+                still_there.is_none(),
+                "a terminal task past its TTL must be evicted in {tenant}; \
+                 surviving means run_eviction_all did not reach this partition"
+            );
+        }
+    }
 }

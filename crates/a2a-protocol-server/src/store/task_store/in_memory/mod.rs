@@ -1321,4 +1321,41 @@ mod tests {
         assert_eq!(cfg.eviction_interval, 64);
         assert_eq!(cfg.max_page_size, 1000);
     }
+
+    /// Kills `replace now_unix_millis -> i64` with `0`, `1` and `-1`.
+    ///
+    /// This is the order-key fallback for tasks whose status carries no
+    /// parseable timestamp. A constant still produces a *usable* key — the
+    /// `seq` component keeps ordering stable — so pagination tests pass with
+    /// the clock stuck at the epoch, and every one of the three constants
+    /// survived. What a constant destroys is the key's meaning: two tasks
+    /// stored an hour apart become indistinguishable in time, and a key
+    /// minted now sorts before every task that already carries a real
+    /// timestamp.
+    ///
+    /// Asserting the value is a plausible wall-clock reading is what
+    /// separates them. The lower bound is a fixed past instant rather than a
+    /// second `SystemTime::now()` call, so the test cannot pass by comparing
+    /// a mutated clock against itself.
+    #[test]
+    fn now_unix_millis_returns_a_real_wall_clock_reading() {
+        /// 2023-01-01T00:00:00Z. Any date comfortably in the past works; this
+        /// one predates the project and postdates 0, 1 and -1 by ~53 years.
+        const JAN_2023: i64 = 1_672_531_200_000;
+        /// 2100-01-01T00:00:00Z — guards against a wildly wrong unit (e.g.
+        /// nanoseconds mistaken for millis) as well as against a constant.
+        const JAN_2100: i64 = 4_102_444_800_000;
+
+        let now = now_unix_millis();
+        assert!(
+            now > JAN_2023,
+            "expected a current Unix-millis timestamp, got {now}; a value at \
+             or near zero means the clock read was replaced by a constant"
+        );
+        assert!(
+            now < JAN_2100,
+            "expected a current Unix-millis timestamp, got {now}; a value \
+             this large suggests the wrong time unit"
+        );
+    }
 }
