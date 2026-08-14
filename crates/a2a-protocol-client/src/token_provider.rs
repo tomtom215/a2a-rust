@@ -91,6 +91,20 @@ const DEFAULT_TOKEN_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Default margin before expiry at which a cached token is refreshed.
 const DEFAULT_REFRESH_LEEWAY: Duration = Duration::from_secs(30);
 
+/// Whether a cached token is still usable at `now`.
+///
+/// Fresh means *strictly* before the deadline: at exactly `refresh_after` the
+/// token is due for refresh, not still good.
+///
+/// Extracted from [`OAuth2ClientCredentials::cached`] rather than left inline
+/// so the boundary is reachable from a test. `Instant::now()` cannot be made
+/// to land exactly on a stored deadline, so an inline `now < refresh_after`
+/// leaves `<` and `<=` indistinguishable to any test and to mutation testing
+/// — both mutants of that comparison survived the 2026-08-13 sweep.
+fn is_fresh(now: Instant, refresh_after: Instant) -> bool {
+    now < refresh_after
+}
+
 /// Cache lifetime applied when the token response omits `expires_in`
 /// (RFC 6749 leaves expiry unspecified in that case — re-check soon rather
 /// than either hammering the endpoint or holding a token forever).
@@ -400,7 +414,7 @@ impl OAuth2ClientCredentials {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         guard.as_ref().and_then(|c| {
-            if Instant::now() < c.refresh_after {
+            if is_fresh(Instant::now(), c.refresh_after) {
                 Some(c.token.clone())
             } else {
                 None
@@ -714,12 +728,60 @@ mod tests {
     #[test]
     fn debug_redacts_secrets() {
         let p = StaticTokenProvider::new("super-secret");
-        assert!(!format!("{p:?}").contains("super-secret"));
+        let dbg = format!("{p:?}");
+        assert!(!dbg.contains("super-secret"), "secret leaked: {dbg}");
+        // Positive assertions matter as much as the redaction here. Asserting
+        // only "does not contain the secret" is satisfied by a `Debug` that
+        // writes *nothing* — which is exactly the mutant that survived the
+        // 2026-08-13 sweep, since `"".contains("super-secret")` is false.
+        assert!(
+            dbg.contains("StaticTokenProvider"),
+            "Debug must name the type; empty output would pass the redaction \
+             check while telling a reader nothing: {dbg}"
+        );
+        assert!(
+            dbg.contains("<redacted>"),
+            "the token field must be present and redacted, not omitted: {dbg}"
+        );
 
         let o = OAuth2ClientCredentials::new("http://localhost/token", "id", "very-secret");
         let dbg = format!("{o:?}");
         assert!(!dbg.contains("very-secret"), "secret leaked: {dbg}");
         assert!(dbg.contains("id"), "client_id should be visible");
+    }
+
+    /// Kills the `BearerAuthInterceptor` `Debug` mutant that writes nothing.
+    /// It had no `Debug` coverage at all before the 2026-08-13 sweep.
+    #[test]
+    fn bearer_interceptor_debug_names_the_type() {
+        let interceptor = BearerAuthInterceptor::new(Arc::new(StaticTokenProvider::new("t")));
+        let dbg = format!("{interceptor:?}");
+        assert!(
+            dbg.contains("BearerAuthInterceptor"),
+            "Debug must name the type, got: {dbg:?}"
+        );
+    }
+
+    /// Kills both mutants on the cached-token freshness comparison
+    /// (`<` → `<=`), which survived because `Instant::now()` can never be
+    /// made to land exactly on a stored deadline. Testing the extracted
+    /// predicate is what makes the boundary reachable.
+    #[test]
+    fn is_fresh_is_exclusive_at_the_deadline() {
+        let t = Instant::now();
+
+        assert!(
+            !is_fresh(t, t),
+            "at exactly the refresh deadline a token is due for refresh, not fresh"
+        );
+        assert!(
+            is_fresh(t, t + Duration::from_secs(1)),
+            "before the deadline the token is still usable"
+        );
+        assert!(
+            !is_fresh(t + Duration::from_secs(1), t),
+            "after the deadline the token is stale"
+        );
     }
 
     // -- StaticTokenProvider --------------------------------------------------
@@ -1076,5 +1138,42 @@ mod tests {
             .await
             .expect_err("no token_endpoint");
         assert!(err.to_string().contains("token_endpoint"));
+    }
+
+    /// Kills `replace * with +` in `MAX_TOKEN_RESPONSE_SIZE = 64 * 1024`.
+    ///
+    /// The mutant turns a 65 536-byte ceiling into 1 088, which every
+    /// existing test survives because their token responses are only a
+    /// couple of hundred bytes — comfortably under both. Only a body sized
+    /// between the two values can tell them apart.
+    #[tokio::test]
+    async fn token_response_larger_than_the_mutated_ceiling_is_accepted() {
+        // Well clear of 1 088 and well under 65 536, so neither bound is
+        // ambiguous. Servers really do return padded token responses — extra
+        // claims, long scope lists — so this is a realistic body, not a
+        // contrived one.
+        let filler = "s".repeat(4096);
+        let body = format!(
+            r#"{{"access_token":"tok-big","token_type":"Bearer","expires_in":3600,"scope":"{filler}"}}"#
+        );
+        assert!(
+            body.len() > 1088 && body.len() < 64 * 1024,
+            "body must sit strictly between the mutated and real ceilings to \
+             discriminate; got {} bytes",
+            body.len()
+        );
+
+        let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let hits = Arc::new(AtomicUsize::new(0));
+        let addr =
+            spawn_token_server(vec![(200, body)], Arc::clone(&captured), Arc::clone(&hits)).await;
+
+        let p = OAuth2ClientCredentials::new(format!("http://{addr}/token"), "cid", "csec");
+        assert_eq!(
+            p.access_token()
+                .await
+                .expect("a 4 KiB token response is well within the 64 KiB limit"),
+            "tok-big"
+        );
     }
 }
