@@ -136,10 +136,7 @@ pub async fn serve(
                 // exhaustion) must not tear down the whole server. Log, back off
                 // if the fd table is full so we don't busy-spin, and keep going.
                 trace_warn!(error = %e, "accept() failed; retrying");
-                let backoff = accept_retry_backoff(&e);
-                if !backoff.is_zero() {
-                    tokio::time::sleep(backoff).await;
-                }
+                pause_after_accept_error(&e).await;
                 continue;
             }
         };
@@ -187,10 +184,7 @@ pub async fn serve_with_addr(
                 Err(e) => {
                     // Never let a transient accept() error kill the loop.
                     trace_warn!(error = %e, "accept() failed; retrying");
-                    let backoff = accept_retry_backoff(&e);
-                    if !backoff.is_zero() {
-                        tokio::time::sleep(backoff).await;
-                    }
+                    pause_after_accept_error(&e).await;
                     continue;
                 }
             };
@@ -225,6 +219,23 @@ pub async fn serve_with_addr(
 /// of the process the first time the fd table momentarily fills. For fd
 /// exhaustion we pause briefly so we don't busy-spin while the table is full;
 /// other errors retry immediately.
+/// Pauses after a failed `accept()`, for as long as the error warrants.
+///
+/// Split out of the two accept loops rather than inlined in both, because the
+/// decision it makes — pause on fd exhaustion, retry immediately otherwise —
+/// is only observable as elapsed time. Inline, the `!` in
+/// `if !backoff.is_zero()` could be deleted in either loop and nothing would
+/// notice: `sleep(ZERO)` is a no-op, so the mutation's entire effect is to
+/// *remove* the pause on EMFILE/ENFILE and busy-spin the accept loop against a
+/// full descriptor table. As a named function it can be driven under a paused
+/// clock, which is what `backoff_pauses_only_on_fd_exhaustion` does.
+pub(crate) async fn pause_after_accept_error(err: &std::io::Error) {
+    let backoff = accept_retry_backoff(err);
+    if !backoff.is_zero() {
+        tokio::time::sleep(backoff).await;
+    }
+}
+
 pub(crate) fn accept_retry_backoff(err: &std::io::Error) -> std::time::Duration {
     // EMFILE (24) / ENFILE (23) on Unix. On platforms that report other codes
     // the loop still retries — just without the extra pause.
@@ -309,5 +320,103 @@ mod tests {
             let body = resp.into_body().collect().await.unwrap().to_bytes();
             assert_eq!(&body[..], b"ok", "request {i} returned unexpected body");
         }
+    }
+
+    /// Kills `delete !` in both accept loops — now a single `!` inside
+    /// `pause_after_accept_error`.
+    ///
+    /// Driven on a paused clock, so the assertion is on *virtual* elapsed
+    /// time: deterministic, instant, and immune to scheduler noise. A
+    /// wall-clock version would be either flaky at 20 ms or slow enough that
+    /// nobody keeps it.
+    ///
+    /// Inverted, the guard sleeps zero when the backoff is zero (a no-op) and
+    /// skips the sleep when it is not — so the EMFILE pause disappears and the
+    /// accept loop spins against a full descriptor table. That is what the
+    /// first assertion pins.
+    #[tokio::test(start_paused = true)]
+    async fn backoff_pauses_only_on_fd_exhaustion() {
+        use std::io::Error;
+        use std::time::Duration;
+
+        let start = tokio::time::Instant::now();
+        pause_after_accept_error(&Error::from_raw_os_error(24)).await;
+        assert!(
+            start.elapsed() >= Duration::from_millis(20),
+            "fd exhaustion (EMFILE) must pause the accept loop; no elapsed \
+             time means it would busy-spin while the descriptor table is full"
+        );
+
+        let start = tokio::time::Instant::now();
+        pause_after_accept_error(&Error::from_raw_os_error(23)).await;
+        assert!(
+            start.elapsed() >= Duration::from_millis(20),
+            "ENFILE must pause for the same reason"
+        );
+
+        // A per-connection abort retries immediately. Asserted so the test
+        // cannot pass against a body that simply always sleeps.
+        let start = tokio::time::Instant::now();
+        pause_after_accept_error(&Error::from_raw_os_error(103)).await;
+        assert_eq!(
+            start.elapsed(),
+            Duration::ZERO,
+            "a transient per-connection error must retry at once"
+        );
+    }
+
+    /// Kills `replace serve -> std::io::Result<()> with Ok(())`.
+    ///
+    /// Every other test in this module drives `serve_with_addr`, a different
+    /// function. `serve` itself was never called, so a body that bound nothing
+    /// and returned success was indistinguishable from a working one.
+    #[tokio::test]
+    async fn serve_binds_and_answers_requests() {
+        // Reserve an ephemeral port and release it: `serve` takes an address
+        // rather than a listener, so it needs a concrete one to bind.
+        let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("reserve a port");
+        let addr = probe.local_addr().expect("addr");
+        drop(probe);
+
+        let server = tokio::spawn(async move { serve(addr, MockDispatcher).await });
+
+        // Binding is asynchronous, so the first connect can lose the race
+        // legitimately. Bounded, so the mutant fails fast rather than hanging.
+        let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+        let mut last_err = None;
+        let mut response = None;
+        for _ in 0..50 {
+            match client
+                .get(format!("http://{addr}/").parse().expect("uri"))
+                .await
+            {
+                Ok(resp) => {
+                    response = Some(resp);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                }
+            }
+        }
+
+        let resp = response.unwrap_or_else(|| {
+            panic!(
+                "nothing served on {addr} after ~1s; `serve` never bound it. \
+                 last error: {last_err:?}"
+            )
+        });
+        assert_eq!(
+            resp.status(),
+            200,
+            "the dispatcher's response must come back"
+        );
+        let body = resp.into_body().collect().await.expect("body").to_bytes();
+        assert_eq!(&body[..], b"ok", "the body must come from MockDispatcher");
+
+        server.abort();
     }
 }
