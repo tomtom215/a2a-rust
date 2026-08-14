@@ -91,6 +91,7 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dev-dependencies]
+tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "time", "test-util"] }
 hyper = { workspace = true }
 hyper-util = { workspace = true, features = ["server", "server-auto"] }

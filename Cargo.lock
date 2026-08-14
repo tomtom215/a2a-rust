@@ -61,6 +61,7 @@ dependencies = [
  "tonic-prost-build",
  "tonic-types",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "webpki-roots 1.0.6",
 ]
@@ -114,6 +115,7 @@ dependencies = [
  "tonic-prost-build",
  "tonic-types",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "webpki-roots 1.0.6",
 ]
