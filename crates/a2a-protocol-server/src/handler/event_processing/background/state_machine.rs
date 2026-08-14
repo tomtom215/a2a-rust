@@ -942,11 +942,18 @@ mod tests {
         );
     }
 
-    /// Kills `replace == with !=` in the *revert* lookup on the
-    /// parts-cap-exceeded path — a different `find` from the merge one, on a
-    /// branch only reachable by overflowing the cap.
+    /// The parts cap drops an over-limit append and leaves stored artifacts
+    /// untouched.
+    ///
+    /// **This does not reach the revert lookup at line 143, and an earlier
+    /// version of this test claimed it did.** The cap branch returns before
+    /// the merge; the revert is on the *store-save-failure* path further
+    /// down. The claim was wrong, the mutation sweep caught it, and
+    /// `save_failure_revert_targets_the_matching_artifact` below is the test
+    /// that actually covers line 143. Kept because the cap behaviour is worth
+    /// pinning on its own.
     #[tokio::test]
-    async fn parts_cap_revert_restores_the_matching_artifact() {
+    async fn parts_cap_drops_the_append_and_leaves_artifacts_untouched() {
         let limits = HandlerLimits::default().with_max_parts_per_artifact(2);
         let mut task = make_task("t1", TaskState::Working);
 
@@ -994,6 +1001,72 @@ mod tests {
             1,
             "art-1 was never touched, so the revert must not truncate it; a \
              change here means the revert lookup matched the wrong artifact: \
+             {arts:?}"
+        );
+    }
+
+    /// Kills `replace == with !=` at line 143 — the `find` in the
+    /// store-save-failure revert.
+    ///
+    /// Reaching that line needs four things at once: `append == Some(true)`,
+    /// an artifact with the same id already present, the parts cap *not*
+    /// exceeded, and `task_store.save` failing. No existing test had all
+    /// four. `artifact_update_save_failure_reverts_artifact_list` drives a
+    /// *non-append* artifact, which takes the `pop()` revert instead, and the
+    /// cap test above returns before the merge ever happens.
+    ///
+    /// Two artifacts, so a mismatched lookup is distinguishable from no
+    /// lookup: under `!=` the revert finds `art-1` — the artifact the update
+    /// did not name — truncates it to a length captured from `art-2`, and
+    /// leaves `art-2` holding the parts the failed save should have rolled
+    /// back. Both halves are asserted.
+    #[tokio::test]
+    async fn save_failure_revert_targets_the_matching_artifact() {
+        let task_store = FailingSaveStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        let task_id = TaskId::new("t1");
+
+        let mut last_task = make_task("t1", TaskState::Working);
+        last_task.artifacts = Some(vec![
+            Artifact::new(ArtifactId::new("art-1"), vec![Part::text("a1")]),
+            Artifact::new(ArtifactId::new("art-2"), vec![Part::text("b1")]),
+        ]);
+
+        // Append one part to art-2: well under the default cap, so the merge
+        // happens and then the save fails, which is the only route to the
+        // revert lookup.
+        process_event_bg(
+            Ok(artifact_event(
+                "t1",
+                "art-2",
+                vec![Part::text("b2")],
+                Some(true),
+            )),
+            &task_id,
+            &mut last_task,
+            &task_store,
+            &push_store,
+            None,
+            &default_limits(),
+        )
+        .await;
+
+        let arts = last_task.artifacts.as_ref().expect("artifacts remain");
+        let find = |id: &str| {
+            arts.iter()
+                .find(|a| a.id == ArtifactId::new(id))
+                .unwrap_or_else(|| panic!("{id} missing from {arts:?}"))
+        };
+        assert_eq!(
+            find("art-2").parts.len(),
+            1,
+            "the failed save must roll back the append on the artifact it \
+             targeted; 2 parts means the revert looked at the wrong one: {arts:?}"
+        );
+        assert_eq!(
+            find("art-1").parts.len(),
+            1,
+            "art-1 was never appended to, so the revert must not truncate it: \
              {arts:?}"
         );
     }

@@ -1189,3 +1189,65 @@ mod rest_dispatch_guards {
         );
     }
 }
+
+// ── Slash-separated cancel route ────────────────────────────────────────────
+//
+// Kills `delete match arm ("POST", ["tasks", id, "cancel"])`.
+//
+// The REST binding accepts two spellings of cancel: the colon form
+// `/tasks/{id}:cancel` handled around line 227, and the slash form
+// `/tasks/{id}/cancel` at line 255. Every existing test uses the colon form —
+// including `GET /tasks/some-task:cancel` and `POST /tasks/:cancel`, which
+// look like cancel-route coverage and are — so deleting the *slash* arm broke
+// nothing any test observed.
+//
+// This mutant is also a lesson in reading a sweep carefully. It appeared in
+// the 2026-08-13 main sweep, was absent from the branch sweep at 7469fd5, and
+// I recorded that as run-to-run variance. It was not: it was never killed,
+// and the final sweep brought it back. "Absent from one run" is not "caught".
+mod slash_cancel_route {
+    use super::{http_client, http_request, make_send_params, start_rest_server};
+    use a2a_protocol_types::responses::SendMessageResponse;
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
+
+    #[tokio::test]
+    async fn post_tasks_id_cancel_is_routed() {
+        let (addr, _handle) = start_rest_server().await;
+
+        // A real task, so a 404 can only mean the route missed — cancelling an
+        // unknown id would itself answer 404 and prove nothing.
+        let client = http_client();
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/message:send"))
+            .header("content-type", "application/json")
+            .header("a2a-version", "1.0")
+            .body(Full::new(Bytes::from(
+                serde_json::to_vec(&make_send_params()).expect("params"),
+            )))
+            .expect("request");
+        let resp = client.request(req).await.expect("send");
+        assert_eq!(resp.status(), 200, "seeding a task must succeed");
+        let body = resp.into_body().collect().await.expect("body").to_bytes();
+        let task_id = match serde_json::from_slice::<SendMessageResponse>(&body).expect("parse") {
+            SendMessageResponse::Task(t) => t.id.0,
+            other => panic!("expected a Task, got {other:?}"),
+        };
+
+        let (status, text) = http_request(
+            addr,
+            "POST",
+            &format!("/tasks/{task_id}/cancel"),
+            None,
+            None,
+        )
+        .await;
+
+        assert_ne!(
+            status, 404,
+            "the slash-separated cancel route must be routed; 404 on a task \
+             that exists means the match arm is gone. body: {text}"
+        );
+    }
+}
