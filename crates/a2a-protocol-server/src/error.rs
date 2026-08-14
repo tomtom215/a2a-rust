@@ -491,4 +491,73 @@ mod tests {
         let a2a_err = err.to_a2a_error();
         assert_eq!(a2a_err.code, ErrorCode::InternalError);
     }
+
+    /// Kills `replace ServerError::metric_label -> &'static str` with `""`
+    /// and with `"xyzzy"`.
+    ///
+    /// Both mutants collapse every variant to one label. Nothing broke,
+    /// because no test read the value — and a metrics label is exactly the
+    /// kind of output that is easy to leave unasserted. What it costs is the
+    /// property the method exists for: a *bounded, discriminating* label set.
+    /// One label for all errors makes every error series identical and the
+    /// metric useless for telling a `task_not_found` storm from an
+    /// `overloaded` one.
+    ///
+    /// Asserting one label would not do it — `"xyzzy"` fails that, but a
+    /// second mutation to the expected string would pass. Distinctness across
+    /// variants is the property, so distinctness is what is asserted.
+    #[test]
+    fn metric_labels_are_distinct_and_non_empty_per_variant() {
+        use std::collections::HashSet;
+
+        let labelled: Vec<(&str, ServerError)> = vec![
+            (
+                "task_not_found",
+                ServerError::TaskNotFound(TaskId::new("t")),
+            ),
+            (
+                "task_not_cancelable",
+                ServerError::TaskNotCancelable(TaskId::new("t")),
+            ),
+            ("invalid_params", ServerError::InvalidParams("x".into())),
+            ("http_client", ServerError::HttpClient("x".into())),
+            ("transport", ServerError::Transport("x".into())),
+            ("push_not_supported", ServerError::PushNotSupported),
+            ("internal", ServerError::Internal("x".into())),
+            ("method_not_found", ServerError::MethodNotFound("x".into())),
+            (
+                "payload_too_large",
+                ServerError::PayloadTooLarge("x".into()),
+            ),
+            (
+                "unsupported_operation",
+                ServerError::UnsupportedOperation("x".into()),
+            ),
+            ("overloaded", ServerError::Overloaded("x".into())),
+        ];
+
+        let mut seen = HashSet::new();
+        for (expected, err) in &labelled {
+            let actual = err.metric_label();
+            assert_eq!(
+                actual, *expected,
+                "wrong label for {err:?}; a constant here would make every \
+                 error series identical"
+            );
+            assert!(
+                !actual.is_empty(),
+                "an empty label is not a usable metric dimension: {err:?}"
+            );
+            assert!(
+                seen.insert(actual),
+                "label {actual:?} is reused across variants, so the metric \
+                 cannot discriminate between them"
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            labelled.len(),
+            "every variant needs its own label"
+        );
+    }
 }

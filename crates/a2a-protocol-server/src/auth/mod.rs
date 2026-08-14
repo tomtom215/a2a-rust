@@ -391,4 +391,32 @@ mod tests {
             "raw bearer tokens must never appear in Debug output"
         );
     }
+
+    /// Kills `replace <impl ServerInterceptor for ApiKeyAuthInterceptor>
+    /// ::authenticates -> bool with false`.
+    ///
+    /// The existing tests here all check that the interceptor *rejects* bad
+    /// keys and *accepts* good ones — behaviour that is identical either way,
+    /// because `authenticates` is a declaration, not an enforcement. It is
+    /// what `has_authenticator` consults before the extended agent card is
+    /// served (spec §13.3). Returning `false`, a correctly-configured API-key
+    /// chain reports no authenticator and the card is refused to everyone —
+    /// the failure is a lockout rather than a leak, but it is still silent.
+    #[test]
+    fn api_key_interceptor_declares_that_it_authenticates() {
+        let interceptor = ApiKeyAuthInterceptor::new(["k1"]);
+        assert!(
+            interceptor.authenticates(),
+            "an auth interceptor must declare itself as one, or a chain \
+             containing only it reports no authenticator"
+        );
+
+        let mut chain = crate::interceptor::ServerInterceptorChain::new();
+        chain.push(std::sync::Arc::new(ApiKeyAuthInterceptor::new(["k1"])));
+        assert!(
+            chain.has_authenticator(),
+            "a chain guarded by an API-key interceptor must satisfy the \
+             extended-agent-card authentication requirement"
+        );
+    }
 }

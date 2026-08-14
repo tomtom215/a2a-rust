@@ -196,4 +196,41 @@ mod tests {
         chain.run_before(&ctx).await.unwrap();
         chain.run_after(&ctx).await.unwrap();
     }
+
+    /// Kills `replace ServerInterceptor::authenticates -> bool with true` on
+    /// the trait's default body.
+    ///
+    /// The default is `false`: a logging or metrics interceptor does not
+    /// authenticate anyone. `has_authenticator` is what the handler consults
+    /// before serving the extended agent card, which spec §13.3 says MUST
+    /// require authentication. Flipped to `true`, *any* interceptor — a bare
+    /// metrics hook — satisfies that check, and an unauthenticated caller is
+    /// served the extended card.
+    ///
+    /// `NoopInterceptor` above overrides nothing, so it inherits the default
+    /// and is the right probe.
+    #[test]
+    fn a_non_authenticating_interceptor_does_not_satisfy_the_auth_check() {
+        assert!(
+            !NoopInterceptor.authenticates(),
+            "the trait default must be false; an interceptor that does no \
+             auth must not claim to"
+        );
+
+        let mut chain = ServerInterceptorChain::new();
+        chain.push(Arc::new(NoopInterceptor));
+        assert!(
+            !chain.has_authenticator(),
+            "a chain of non-authenticating interceptors must not report an \
+             authenticator; reporting one lets the extended agent card be \
+             served to unauthenticated callers (spec §13.3)"
+        );
+
+        // And an empty chain, so the assertion above cannot pass merely
+        // because `any()` is vacuously false for both.
+        assert!(
+            !ServerInterceptorChain::new().has_authenticator(),
+            "an empty chain has no authenticator"
+        );
+    }
 }
