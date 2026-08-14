@@ -325,4 +325,123 @@ mod tests {
         let prefix = result.trim_end_matches("...(truncated)");
         assert_eq!(prefix.len(), MAX_ERROR_BODY_LEN - 1);
     }
+
+    // ── collect_response_limited boundary ────────────────────────────────
+    //
+    // Three mutants survived here in the 2026-08-13 sweep: the `>` in
+    // `upper > max_size` replaced with `>=` and with `==`, and the `*` in
+    // `DEFAULT_MAX_RESPONSE_SIZE`.
+    //
+    // The `==` one is the instructive case. The early `size_hint` check is a
+    // fast path; `Limited` still aborts an oversized body during the read, so
+    // a test asserting only "oversized is rejected" passes either way — which
+    // is what `hostile_server_tests::oversized_card_body_rejected` does (and
+    // that test goes through `discovery.rs`, which uses `Limited` directly and
+    // never calls this function at all). Telling the paths apart needs the
+    // error *message*: the early rejection names the declared byte count, the
+    // late one cannot know it.
+
+    /// Serves one response with the given declared `Content-Length` and
+    /// `body_len` bytes of payload, then closes.
+    async fn spawn_sized_body(declared: usize, body_len: usize) -> std::net::SocketAddr {
+        use tokio::io::AsyncWriteExt as _;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                // Read and discard the request head.
+                let mut buf = [0_u8; 1024];
+                let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await;
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \
+                     {declared}\r\n\r\n"
+                );
+                let _ = stream.write_all(head.as_bytes()).await;
+                let _ = stream.write_all(&vec![b'x'; body_len]).await;
+                let _ = stream.flush().await;
+            }
+        });
+        addr
+    }
+
+    async fn fetch(addr: std::net::SocketAddr) -> hyper::Response<hyper::body::Incoming> {
+        use http_body_util::Full;
+        use hyper::body::Bytes;
+
+        let client: hyper_util::client::legacy::Client<
+            hyper_util::client::legacy::connect::HttpConnector,
+            Full<Bytes>,
+        > = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+            .build_http();
+        let uri: hyper::Uri = format!("http://{addr}/").parse().expect("uri");
+        client.get(uri).await.expect("request")
+    }
+
+    /// Kills `replace > with >=`: a body of exactly `max_size` is within the
+    /// limit and must be returned, not rejected.
+    #[tokio::test]
+    async fn body_of_exactly_max_size_is_accepted() {
+        const LIMIT: usize = 4096;
+        let addr = spawn_sized_body(LIMIT, LIMIT).await;
+        let resp = fetch(addr).await;
+
+        let bytes = collect_response_limited(resp, LIMIT, std::time::Duration::from_secs(10))
+            .await
+            .expect("a body of exactly the limit is not over the limit");
+        assert_eq!(bytes.len(), LIMIT);
+    }
+
+    /// Kills `replace > with ==`: an over-limit body must be rejected by the
+    /// *early* `Content-Length` check, which is the only one that can name
+    /// the declared size. Under `==` the early branch never fires for a body
+    /// that is merely larger, and the request still fails — but from
+    /// `Limited`, with a message that omits the count.
+    #[tokio::test]
+    async fn oversized_body_is_rejected_before_reading_and_names_the_size() {
+        const LIMIT: usize = 4096;
+        const DECLARED: usize = LIMIT * 4;
+        // Send only the head plus a little: if the early check works, no body
+        // is read, so the server need not produce all of it.
+        let addr = spawn_sized_body(DECLARED, 64).await;
+        let resp = fetch(addr).await;
+
+        let err = collect_response_limited(resp, LIMIT, std::time::Duration::from_secs(10))
+            .await
+            .expect_err("a declared body four times the limit must be rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&DECLARED.to_string()),
+            "the early Content-Length rejection names the declared size; a \
+             message without it means the read-time limiter caught this \
+             instead, leaving the size_hint branch untested. got: {msg}"
+        );
+    }
+
+    /// Kills `replace * with +` in `DEFAULT_MAX_RESPONSE_SIZE = 32 * 1024 *
+    /// 1024`. Either mutation collapses a 33 554 432-byte ceiling to at most
+    /// ~1 MiB, so a 2 MiB body — comfortably legal by default — starts being
+    /// rejected.
+    #[tokio::test]
+    async fn two_mib_body_is_within_the_default_ceiling() {
+        const BODY: usize = 2 * 1024 * 1024;
+        assert!(
+            BODY > 32 * 1024 + 1024 && BODY > 32 + 1024 * 1024 && BODY < DEFAULT_MAX_RESPONSE_SIZE,
+            "the probe must exceed both mutated ceilings while staying under \
+             the real one, or it discriminates nothing"
+        );
+
+        let addr = spawn_sized_body(BODY, BODY).await;
+        let resp = fetch(addr).await;
+
+        let bytes = collect_response_limited(
+            resp,
+            DEFAULT_MAX_RESPONSE_SIZE,
+            std::time::Duration::from_secs(30),
+        )
+        .await
+        .expect("2 MiB is well inside the 32 MiB default");
+        assert_eq!(bytes.len(), BODY);
+    }
 }
