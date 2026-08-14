@@ -426,10 +426,20 @@ mod tests {
     #[tokio::test]
     async fn two_mib_body_is_within_the_default_ceiling() {
         const BODY: usize = 2 * 1024 * 1024;
-        assert!(
-            BODY > 32 * 1024 + 1024 && BODY > 32 + 1024 * 1024 && BODY < DEFAULT_MAX_RESPONSE_SIZE,
-            "the probe must exceed both mutated ceilings while staying under \
-             the real one, or it discriminates nothing"
+        // Enforced at compile time rather than asserted at run time: these are
+        // all constants, so a bad probe should fail the build, not a test run.
+        // Each bound is separate so a failure names which one broke.
+        const _: () = assert!(
+            BODY > 32 * 1024 + 1024,
+            "must exceed the `32 * 1024 + 1024` mutant"
+        );
+        const _: () = assert!(
+            BODY > 32 + 1024 * 1024,
+            "must exceed the `32 + 1024 * 1024` mutant"
+        );
+        const _: () = assert!(
+            BODY < DEFAULT_MAX_RESPONSE_SIZE,
+            "must stay under the real ceiling"
         );
 
         let addr = spawn_sized_body(BODY, BODY).await;
