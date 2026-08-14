@@ -406,7 +406,15 @@ mod tests {
             .await
             .expect("send_event should succeed while receiver is alive");
 
-        let received = rx.recv().await.expect("should receive a frame");
+        // Bounded. A writer that returns Ok without sending leaves the
+        // channel empty *and* the sender alive, so an unbounded `recv()`
+        // blocks forever — which the mutation sweep reports as TIMEOUT rather
+        // than a kill, and CI would report as a hung job naming no assertion.
+        // The bound turns that into a clean failure.
+        let received = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("send_event must deliver a frame; a timeout here means it returned Ok without sending")
+            .expect("channel should still be open");
         let frame = received.expect("frame result should be Ok");
         let data = frame.into_data().expect("frame should be a data frame");
         assert_eq!(
@@ -426,7 +434,11 @@ mod tests {
             .await
             .expect("send_keep_alive should succeed while receiver is alive");
 
-        let received = rx.recv().await.expect("should receive a frame");
+        // Bounded for the same reason as the send_event test above.
+        let received = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+            .await
+            .expect("send_keep_alive must deliver a frame; a timeout here means it returned Ok without sending")
+            .expect("channel should still be open");
         let frame = received.expect("frame result should be Ok");
         let data = frame.into_data().expect("frame should be a data frame");
         assert_eq!(

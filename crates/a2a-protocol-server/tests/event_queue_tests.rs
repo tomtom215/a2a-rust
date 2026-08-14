@@ -296,9 +296,24 @@ async fn destroy_causes_reader_to_see_none() {
     drop(writer);
 
     // Drain the buffered event.
-    let _ = reader.read().await;
-    // Now reader should see None.
-    let result = reader.read().await;
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+        .await
+        .expect("the buffered event must be readable");
+
+    // Now the reader should see None.
+    //
+    // Bounded deliberately. If `destroy` does not remove the manager's Arc,
+    // the sender outlives `drop(writer)` and this read never returns — the
+    // mutation sweep reports that as TIMEOUT rather than a kill, and CI would
+    // report a hung job naming no assertion. With the bound it is a clean
+    // failure that says what broke.
+    let result = tokio::time::timeout(std::time::Duration::from_secs(5), reader.read())
+        .await
+        .expect(
+            "reader must observe the closed channel; a timeout here means \
+             destroy left the manager holding a writer Arc, so a sender is \
+             still alive",
+        );
     assert!(
         result.is_none(),
         "reader should see None after destroy + writer drop"
