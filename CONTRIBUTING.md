@@ -225,7 +225,7 @@ prevent.
 | TCK conformance | `crates/a2a-protocol-types/tests/tck_wire_format.rs` | `cargo test -p a2a-protocol-types --test tck_wire_format` |
 | Property-based tests | `crates/a2a-protocol-types/tests/proptest_types.rs` | `cargo test -p a2a-protocol-types --test proptest_types` |
 | Corpus-based JSON tests | `crates/a2a-protocol-types/tests/corpus_json.rs` | `cargo test -p a2a-protocol-types --test corpus_json` |
-| Mutation tests | `mutants.toml` (workspace root) | `cargo mutants --workspace` |
+| Mutation tests | `.github/workflows/mutants.yml` + `.config/nextest.toml` (the root `mutants.toml` is **not** read — see below) | `cargo mutants -p <crate> --test-tool=nextest -- --all-features` |
 | End-to-end examples | `examples/echo-agent`, `examples/agent-team`, `examples/multi-lang-team`, `examples/rig-agent`, `examples/genai-agent`, `examples/incident-response` | `cargo run -p echo-agent` |
 | Benchmarks | `crates/*/benches/` | `cargo bench` |
 
@@ -264,25 +264,38 @@ flipping a boolean, returning a default value). If a mutant compiles and all
 tests still pass, the test suite has a gap.
 
 ```bash
-# Install cargo-mutants
-cargo install cargo-mutants
+# Install cargo-mutants and cargo-nextest
+cargo install cargo-mutants cargo-nextest --locked
 
-# Run mutation tests on all library crates
-cargo mutants --workspace
+# A live database, or every Postgres mutant survives for want of one
+export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
 
-# Run on a specific crate
-cargo mutants -p a2a-protocol-types
+# What CI runs, per crate. Match it before drawing conclusions —
+# a narrower invocation measures a smaller feature set.
+cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
+  -- --all-features --run-ignored all
 
 # Run on a specific file
-cargo mutants --file crates/a2a-protocol-types/src/task.rs
+cargo mutants --file crates/a2a-protocol-types/src/task.rs \
+  --test-tool=nextest -- --all-features
 
 # List mutants without running (dry-run)
 cargo mutants --list --workspace
 ```
 
-**Configuration** is in `mutants.toml` at the workspace root. It controls which
-files are examined, which patterns are excluded (e.g., `Display`/`Debug` impls),
-and timeout settings.
+`--test-tool=nextest` is not optional. It is what makes `.config/nextest.toml`
+apply, and that file kills any single test at 45 seconds — without it a mutant
+that makes a test *hang* rather than fail is reported `TIMEOUT`, which the
+score counts in neither the numerator nor the denominator.
+
+**Configuration is not where it looks like it is.** There is a `mutants.toml` at
+the workspace root and cargo-mutants 27.1.0 does not read it — it discovers
+`.cargo/mutants.toml`. Its `examine_globs`, `exclude_globs` and timeout settings
+have never applied to a run; generated protobuf code is mutated like any other
+source, and the per-mutant timeout is the tool's default 5x baseline with no
+cap. The file's own header carries the two proofs, `ROADMAP.md` carries the plan
+for activating it, and what actually configures a sweep is the command line in
+`.github/workflows/mutants.yml` plus `.config/nextest.toml`.
 
 **Zero surviving mutants is the standard**, enforced at two different
 scopes. Know which one applies to you:

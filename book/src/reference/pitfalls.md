@@ -294,6 +294,44 @@ by a reader who trusted the numbers.
 empty denominator as "did not run" rather than "passed". `mutants.yml` does
 this at the aggregation step for the same reason.
 
+### A mutation TIMEOUT is a third outcome, and the score hides it
+
+`caught` and `missed` are not the whole result. A mutant that makes a test
+*hang* rather than fail is reported `TIMEOUT`, and the usual score —
+`caught / (caught + missed)`, which is what `mutants.yml` computes — puts it in
+neither term. It is not a mutant the score counts against; it is a mutant the
+score does not describe. `0 missed` and `0 timeouts` are different statements
+and this repository has published the first as if it were the second.
+
+Hangs are also the failure mode that reads worst in CI: the job wedges with no
+assertion named, and under nextest's run-wide fail-fast a suite cannot exit
+while a hung test is still running, so tests that *do* catch the mutant fail in
+milliseconds and never get to report.
+
+**Solution:** bound it at the harness, not test by test. `.config/nextest.toml`
+kills any single test at 45 seconds, so the hang becomes a named failure and the
+mutant is scored. Read the timeout column on every sweep, and treat a non-zero
+one as unfinished work.
+
+### The config file a tool ignores is worse than no config file
+
+cargo-mutants 27.1.0 discovers `.cargo/mutants.toml`. This repository's
+`mutants.toml` is at the workspace root, so none of it — file globs, exclusions,
+timeout multiplier, cap — has ever applied to a run. It was believed to for
+months, and three of its keys had individually been written off as "silently
+ignored" without anyone asking why three unrelated keys would all misbehave.
+
+Two checks tell you which situation you are in, and neither takes a full run:
+compare `--list` output with and without `--no-config` (identical output means
+the config is not being read, because disabling something inert changes
+nothing), and pass the file explicitly with `--config <file>` (a config that is
+never discovered can carry a fatal parse error indefinitely — this one does).
+
+**Solution:** treat "is this configuration loaded?" as a question with an
+answer, separate from "is this configuration right?" — the same distinction as
+"can this gate fail?" versus "is this gate pointed at what it claims to cover?"
+Assert it if the configuration matters.
+
 ### Matching CI's commands is not the same as matching CI
 
 `scripts/preflight.sh` reads its gate list from `.github/workflows/ci.yml` so

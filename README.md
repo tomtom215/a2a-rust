@@ -338,8 +338,11 @@ RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 # see book/src/reference/benchmarks.md for caveats on how to read it)
 cargo bench -p a2a-benchmarks
 
-# Mutation testing (requires cargo-mutants)
-cargo mutants --workspace
+# Mutation testing (requires cargo-mutants and cargo-nextest).
+# --test-tool=nextest is not optional: .config/nextest.toml supplies the
+# per-test kill that stops a hung mutant reporting TIMEOUT instead of caught.
+# See book/src/deployment/testing.md for the full CI invocation.
+cargo mutants --workspace --test-tool=nextest -- --all-features
 
 # Fuzz JSON deserialization (requires nightly)
 cd fuzz && cargo +nightly fuzz run json_deser

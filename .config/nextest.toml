@@ -1,0 +1,80 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# cargo-nextest configuration.
+#
+# CI runs `cargo test`, not nextest, and deliberately so: nextest does not
+# execute doctests, and this workspace documents its public API with runnable
+# examples that are part of the tested surface. The one place nextest *is* used
+# is mutation testing — `.github/workflows/mutants.yml` passes
+# `--test-tool=nextest` — so this file exists for that run and for anyone
+# running nextest by hand.
+#
+# ── Why there is a per-test kill ────────────────────────────────────────────
+#
+# A mutant that makes a test *hang* is worth less than one that makes a test
+# fail. cargo-mutants reports the first as TIMEOUT, and `mutants.yml` scores
+# `caught / (caught + missed)` — a timeout is in neither term, so it is a
+# mutant the score does not describe rather than one it counts against.
+#
+# Measured 2026-08-14 on `replace EventQueueManager::destroy with ()`
+# (`crates/a2a-protocol-server/src/streaming/event_queue/manager.rs:385`), which
+# the CI sweeps kept reporting as TIMEOUT. It is not a weak test. `destroy` is
+# what closes a task's event queue — the blocking send path calls it from
+# `CleanupGuard::drop` — so a no-op `destroy` leaves a sender alive and every
+# test that drains a task stream to EOF waits forever. Applying that mutation by
+# hand and running the server suite, tests stopped returning across
+# `dispatch::grpc::native`, `handler::messaging`, `event_processing_tests`,
+# `handler_tests`, `audit_tests`, `auth_jwt_e2e` and more. Meanwhile the tests
+# that catch it head-on — `manager_destroy_removes_queue`,
+# `active_count_decrements_on_destroy` — failed in milliseconds and never got to
+# report, because the process never exited.
+#
+# The A/B, same tree, same command, this file the only variable:
+#
+#   without   TIMEOUT  …manager.rs:385:9: replace EventQueueManager::destroy
+#             with () in 8s build + 334s test
+#             1 mutant tested in 8m: 1 timeouts
+#   with      1 mutant tested in 3m: 1 caught
+#
+# Under the sweep's own configuration the timeout is deterministic — the CI
+# sweep and that control agree. A narrower local run over a different file set
+# once reported the same mutant caught, which is not a contradiction: fewer
+# tests, so a different race between the cancel a failing test triggers under
+# nextest's fail-fast and the hung tests already scheduled. An outcome that
+# turns on that race is not a measurement, whichever way it lands.
+#
+# One test-level bound cannot fix that, and scattering dozens of them would be
+# a worse codebase. A per-test kill fixes it at the harness: hung tests are
+# terminated and named, the run exits non-zero, and cargo-mutants records
+# CAUGHT.
+#
+# ── Choosing the numbers ────────────────────────────────────────────────────
+#
+# `period = 15s` with `terminate-after = 3` kills a test at 45 seconds, after
+# reporting it SLOW at 15s and 30s.
+#
+#   Floor — the slowest test in `a2a-protocol-server` is 5.008s
+#     (`otel_pipeline_tests::pipeline_provider_produces_usable_instruments`,
+#     which waits on an OTLP flush). Measured 2026-08-14 over
+#     `cargo nextest run -p a2a-protocol-server --all-features --run-ignored all`
+#     against a live PostgreSQL 16.13: 1560 tests, 1560 passed, 12.075s
+#     wall-clock, exactly one test above 5s. 45s is 9x that. That crate is the
+#     one measured because it is the largest suite by an order of magnitude and
+#     every hang in this investigation came from it; the other three are
+#     millisecond-scale.
+#
+#   Ceiling — cargo-mutants must not kill nextest first, or the outcome is a
+#     TIMEOUT again. Its budget is 5.0x the baseline with no cap: `Auto-set test
+#     timeout to 328s` and `334s` on the two runs above. Note that this is the
+#     tool's *default*, not what `mutants.toml` says — that file is never read,
+#     which is the other finding this investigation turned up and which the
+#     file's own header now documents. 45s fires first with wide margin, and
+#     would still fire if a shard's baseline came in several times faster.
+#
+# If a legitimate test ever trips this, raise the period rather than removing
+# the kill — a test that runs for three quarters of a minute in this workspace
+# is itself worth a look.
+
+[profile.default]
+slow-timeout = { period = "15s", terminate-after = 3 }

@@ -18,7 +18,10 @@ number last moved.
 A conformance score is only meaningful next to the list of things it did not
 ask. This repo has twice shipped a gate that could not fail — the mutation gate
 reporting 100% over reports nobody read, and `exclude_re` entries in
-`mutants.toml` that were silently ignored. A conformance suite has the same
+`mutants.toml` that were silently ignored. (Since 2026-08-14 the second one
+reads worse: the whole file is silently ignored, because cargo-mutants looks for
+it at `.cargo/mutants.toml` and it sits at the repository root.) A conformance
+suite has the same
 failure mode in a nastier form, because *skipping* is a normal, expected
 outcome there: the suite legitimately skips what the agent card does not
 advertise. "0 failures" and "nothing ran" look identical.

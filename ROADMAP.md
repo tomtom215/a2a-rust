@@ -86,9 +86,9 @@ exactly like test gaps in the report.
 **Everything else in the sweep was killable.** Of the 57 survivors measured at
 `7469fd5`, **53 fell to tests**; these four are the remainder.
 
-**Two of those 53 were claimed before they were true, and the confirming sweep
-caught both.** Recorded here because the burn-down's credibility rests on the
-claims being checkable, and these two were not:
+**Three of those 53 were claimed before they were true, and the confirming
+sweep caught all three.** Recorded here because the burn-down's credibility
+rests on the claims being checkable, and these were not:
 
 * `state_machine.rs:143` was reported killed in `8e3f321`. The test written
   for it exercised the parts-cap branch, which `return`s at line 112 — the
@@ -102,10 +102,59 @@ claims being checkable, and these two were not:
   tests exercise the colon form (`/tasks/{id}:cancel`) while the slash form had
   no coverage at all. A survivor that disappears with no test change is a
   question, not noise.
+* `manager.rs:385` — `replace EventQueueManager::destroy with ()` was reported
+  resolved in `90bf065`, which said the three timeouts were "bounded in
+  `1d51be0` — re-verified as 26 caught / 0 timeouts". The only run matching that
+  "26 caught" printed:
 
-Both are fixed in `2607280` and verified (96 mutants, 42 caught, 0 missed).
+  ```text
+  TIMEOUT  crates/…/manager.rs:385:9: replace EventQueueManager::destroy with ()
+  76 mutants tested in 22m: 26 caught, 49 unviable, 1 timeouts
+  ```
+
+  and it finished 2026-08-13 17:51 UTC — **21 hours before `1d51be0` was
+  authored**, so it could not have verified anything about it. There was also no
+  local-versus-CI disagreement to reconcile: the CI sweep and this run said the
+  same thing, and "0 missed" was read off the summary as "0 timeouts". The
+  *diagnosis* was wrong as well as the reading: `destroy` is what closes a
+  task's event queue (the blocking send path calls it from
+  `CleanupGuard::drop`), so a no-op `destroy` hangs every test that drains a
+  task stream to EOF — applying the mutation by hand stops tests returning
+  across `dispatch::grpc::native`, `handler::messaging`, `event_processing_tests`,
+  `handler_tests`, `audit_tests` and `auth_jwt_e2e` — while the tests that catch
+  it head-on (`manager_destroy_removes_queue`,
+  `active_count_decrements_on_destroy`) fail in milliseconds and never get to
+  report, because the process never exits. Bounding the one unbounded receive in
+  `1d51be0` could not have fixed that, and did not.
+
+The first two are fixed in `2607280` and verified (96 mutants, 42 caught, 0
+missed). The third is fixed at the harness rather than in a test: a 45s
+per-test kill in `.config/nextest.toml` terminates the hangs and names them, so
+the run exits non-zero and the mutant is scored. Verified under the sweep's own
+configuration — `cargo mutants -p a2a-protocol-server --test-tool=nextest
+--profile=mutants -f …/manager.rs -F 'destroy with \(\)' -- --all-features
+--run-ignored all` against a live PostgreSQL 16.13 — **1 mutant tested, 1
+caught, empty `timeout.txt`**. Then the same command again with the file moved
+out of the tree, as a control:
+
+```text
+without  TIMEOUT  …manager.rs:385:9: replace EventQueueManager::destroy with ()
+                  in 8s build + 334s test
+         1 mutant tested in 8m: 1 timeouts
+with     1 mutant tested in 3m: 1 caught
+```
+
+Same tree, same command, one file the difference — and no `.rs` file differs
+from the sweep at `1d51be0` that reported the same mutant as `TIMEOUT`
+(`git diff 1d51be0 HEAD -- '*.rs' 'Cargo.*'` is empty). The claim is measured in
+both directions rather than inferred from the fixed one, which is the whole
+lesson of the two bullets above it.
+
 The general rule this produced: **a passing test is not evidence that a mutant
-died — only a mutation run is.**
+died — only a mutation run is.** The third adds the corollary that was still
+missed after the first two: **and a mutation run is only evidence if the outcome
+column is read.** `0 missed` and `0 timeouts` are different statements, and the
+summary line prints both.
 
 ### Residue left behind deliberately
 
@@ -377,7 +426,10 @@ This is the category most worth clearing before any external review.
   The remaining `TIMEOUT` on `replace EventQueueManager::destroy with ()` is
   pre-existing — recorded by run 31681284244 too, as `manager.rs:403:9`
   against `main`'s line numbering versus `385:9` on the branch, the
-  `with_write_timeout` removal having shifted the file.
+  `with_write_timeout` removal having shifted the file. **Closed 2026-08-14**
+  by the 45s per-test kill in `.config/nextest.toml`; it now reports caught.
+  See the third bullet under "claimed before they were true" above for what it
+  actually was, and why the fix is not a test.
 
   **The 57 is measured at `7469fd5` and is already behind.** All nine
   `a2a-protocol-types` survivors it reports — 5 in `error.rs`, 2 in
@@ -399,6 +451,57 @@ This is the category most worth clearing before any external review.
   which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
   CI gates locally; a live Postgres and `--run-ignored all` are required or
   every Postgres mutant survives for want of a database.
+* **`mutants.toml` is not read by cargo-mutants, and never has been.** Found
+  2026-08-14 while chasing the `destroy` timeout above. cargo-mutants 27.1.0
+  discovers `.cargo/mutants.toml`; this repository's file is at the root.
+  Individual keys were already documented as "silently ignored" — `test_tool`,
+  `profile`, `exclude_re` each carry a note saying so — but the cause was never
+  per-key. Two independent proofs, both in the file's own banner: `cargo mutants
+  -p a2a-protocol-types --all-features --list` lists 155 mutants under
+  `src/proto/`, the exact path `exclude_globs` claims to exclude, and the count
+  is identical under `--no-config`; and `cargo mutants --config mutants.toml`
+  aborts with `unknown field 'cap_timeout'`, so a discovered file would fail
+  every sweep rather than configure it.
+
+  What that means in practice, all measured the same day: the per-mutant budget
+  is cargo-mutants' default **5.0x baseline with no cap** (`baseline 65s test` →
+  `Auto-set test timeout to 328s`; 328 > the 300 `cap_timeout` claims, which
+  settles it independently of the multiplier), and **generated protobuf code is
+  mutated**, its mutants inside every score this project has published. Only the
+  `mutants-incremental` job passes `--timeout 300` on the command line, so the
+  PR gate is capped and the full sweep is not.
+
+  **Deliberately not fixed for 0.8.** Activating it changes what the sweep
+  measures — 155 fewer mutants in `a2a-protocol-types`, the only crate with a
+  `src/proto/`, and a budget cut from ~328s to 195s that is close to the ~120s
+  which previously reported trivial mutants as TIMEOUT. That needs a sweep to
+  land on, not a
+  tail-of-release edit, and it would make the number non-comparable with every
+  row of the mutation history until re-measured. The one thing `cap_timeout`
+  existed to prevent — a hung mutant burning the job timeout — is now handled
+  better a layer down, by the 45s per-test kill in `.config/nextest.toml`, which
+  bounds the hang *and* names the test.
+
+  When it is done: move the file to `.cargo/mutants.toml`, delete `cap_timeout`
+  first or nothing runs, re-measure with `--list` before and after so the scope
+  change is a number rather than an assumption, and record the new baseline as
+  its own row. Worth pairing with a check that the config is actually loaded —
+  the repository already treats "is this gate pointed at what it claims to
+  cover?" as a separate question from "can this gate fail?"
+  (`scripts/check_mutation_scope.sh`), and this is the same question again.
+* **The blocking send path's post-executor drain has no bound.** Noted while
+  proving out the `destroy` mutant, and left as an observation rather than a
+  change. `SyncCollector::collect` breaks on a terminal or interrupted state, or
+  on the reader returning `None`; that `None` requires the event queue to close,
+  which requires `EventQueueManager::destroy`, which `CleanupGuard::drop` spawns
+  as a task. In normal operation the executor is bounded by `executor_timeout`
+  and a well-behaved executor reaches a terminal state, so the loop exits on the
+  state check without needing EOF. The gap is narrow: an executor that completes
+  without a terminal state, and a `destroy` that never runs, waits forever — and
+  the only realistic way the spawn does not run is runtime shutdown, when the
+  process is going away regardless. Not changed at the tail of a release, since
+  bounding it means deciding what a blocking `message/send` returns when the
+  drain gives up, which is a protocol answer and not a local one.
 * **~~Decide whether the 500-line guideline applies to scripts.~~ Done
   2026-08-11** — it does, and `check_file_lengths.sh` now enforces it over
   `.rs`, `.sh` and `.py` rather than `.rs` alone. Widened rather than splitting

@@ -6,22 +6,81 @@
 # Install:  cargo install cargo-mutants
 # Run:      cargo mutants --workspace
 # Docs:     https://mutants.rs/
+#
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  NOTHING IN THIS FILE IS IN EFFECT. Measured 2026-08-14, cargo-mutants   ║
+# ║  27.1.0. Read this before reasoning from any value below.                ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+#
+# cargo-mutants does not discover a `mutants.toml` at the repository root; it
+# looks for `.cargo/mutants.toml`. Individual keys were already known to be
+# ignored — `test_tool`, `profile` and `exclude_re` each carry a note below
+# saying so — but the cause is not per-key. The file is never read.
+#
+# Two independent checks, both reproducible:
+#
+#   1. `cargo mutants -p a2a-protocol-types --all-features --list` lists 155
+#      mutants under `crates/a2a-protocol-types/src/proto/`, the exact path
+#      `exclude_globs` below claims to exclude. Identical count with
+#      `--no-config`, which is the tell: disabling a config that is not being
+#      read changes nothing.
+#
+#   2. `cargo mutants --config mutants.toml --list` — pointing at this file
+#      explicitly — does not run at all:
+#
+#          Error: parse toml from mutants.toml
+#          Caused by: TOML parse error at line 1, column 1
+#                     unknown field `cap_timeout`
+#
+#      cargo-mutants 27.1.0 rejects unknown fields outright, so if this file
+#      *were* discovered, every sweep would abort on it. It has never aborted,
+#      which is the second proof that it is not being read.
+#
+# What actually governs a sweep is the command line in
+# .github/workflows/mutants.yml: `-p <crate> --shard --jobs 4
+# --test-tool=nextest --profile=mutants -- --all-features --run-ignored all`.
+# Concretely, what that means versus what this file says:
+#
+#   * Timeout: cargo-mutants' default 5.0x baseline with NO cap, not the 3.0x
+#     and 300s below. Measured on the same day: `Unmutated baseline in 50s
+#     build + 65s test` / `Auto-set test timeout to 328s`. 328 > 300 settles it
+#     independently of the multiplier — a cap that was applied could not be
+#     exceeded. (The `mutants-incremental` job does pass `--timeout 300` on the
+#     command line, so the PR gate is capped and the full sweep is not.)
+#   * Exclusions: none. Generated protobuf code IS mutated, and its mutants are
+#     inside every score this repository has published.
+#   * `examine_globs`: moot — `-p <crate>` already scopes each shard.
+#
+# Deliberately NOT fixed as part of the 0.8 release. Moving this to
+# `.cargo/mutants.toml` and dropping `cap_timeout` so it parses would change
+# what the sweep measures — roughly 155 fewer mutants per crate with a proto
+# module, and a per-mutant budget cut from ~328s to 195s — which makes the
+# number non-comparable with every row in the mutation history and risks
+# reintroducing the TIMEOUTs that a tighter budget caused before. That is a
+# measured change, not a tail-of-release edit. See ROADMAP.md.
+#
+# The hazard `cap_timeout` was written for — a hung mutant burning the whole
+# job timeout — is now handled a layer down and better, by the 45s per-test
+# kill in `.config/nextest.toml`: it bounds the hang *and* names the test.
 
 # ── Timeout ──────────────────────────────────────────────────────────────────
-# Generous timeout multiplier so async / network tests don't flake under
-# mutation.  The base timeout is auto-detected from `cargo test`.
+# Not in effect. See the banner above.
 timeout_multiplier = 3.0
 
 # Floor: no mutant gets less than 30s even if the baseline is very fast.
 minimum_test_timeout = 30
 
-# Hard cap: kill any mutant that runs longer than this. Prevents infinite
-# loops and deadlocks from blocking CI. 120s proved too tight on slower
-# GitHub runners where the a2a-server baseline alone is ~60s; after the
-# 3x multiplier the effective timeout was ~120s, leaving almost no
-# headroom and causing trivial mutations (Debug impls, accessor methods)
-# to be reported as TIMEOUT rather than CAUGHT. 300s gives safe room
-# above the 183s nominal timeout while still catching genuine hangs.
+# Not in effect, and this key in particular is why the whole file is not read:
+# cargo-mutants 27.1.0 has no `cap_timeout` field and rejects unknown fields, so
+# the moment this file is actually discovered it becomes a hard parse error, not
+# a warning. Anyone moving this to `.cargo/mutants.toml` must delete this line
+# first. See the banner at the top.
+#
+# What it was written for, kept because the reasoning still holds if a cap is
+# ever set on the command line: 120s proved too tight on slower GitHub runners
+# where the a2a-server baseline alone is ~60s; at a 3x multiplier the effective
+# timeout was ~120s, leaving almost no headroom and reporting trivial mutations
+# (Debug impls, accessor methods) as TIMEOUT rather than CAUGHT.
 cap_timeout = 300
 
 # ── Test tool & build profile ───────────────────────────────────────────────
@@ -60,6 +119,12 @@ examine_globs = [
 # carry real logic (InMemoryTaskStore, the background event processor, the
 # REST/JSON-RPC dispatch entry points, builder accessors, …), and the glob
 # silently exempted ~2,800 lines from the mutation gate.
+# Not in effect — measured 2026-08-14, and this is the check that first exposed
+# the banner at the top of this file. `cargo mutants -p a2a-protocol-types
+# --all-features --list` lists 155 mutants under
+# `crates/a2a-protocol-types/src/proto/`, and `--no-config` lists the same 155.
+# Generated protobuf code is mutated in every sweep, and its mutants are part of
+# every published score.
 exclude_globs = [
     "crates/*/src/proto/**",              # generated protobuf code
 ]
@@ -71,6 +136,11 @@ exclude_globs = [
 # with `--list`: the entries below change nothing, and a precise pattern added
 # here still produced the mutant it named. The same version ignores `test_tool`
 # and `profile` the same way (see above), which is why those are CLI flags too.
+#
+# 2026-08-14 — the cause of all three is now known and it is not per-key: this
+# file is not read at all, because cargo-mutants looks for `.cargo/mutants.toml`
+# and this is at the repository root. See the banner at the top. The advice
+# below is still the right advice; it was simply never the key's fault.
 #
 # The entries are kept because they express intent and will start working if a
 # future version honours the key — but **do not add an exclusion here and assume
@@ -135,4 +205,10 @@ exclude_re = [
 # ── Additional cargo test arguments ─────────────────────────────────────────
 # Pass --all-features so mutation tests exercise signing, tracing, websocket,
 # sqlite, etc.  This matches the CI test matrix.
+#
+# Not in effect either (see the banner at the top), but harmless here and only
+# here: every invocation in .github/workflows/mutants.yml already passes
+# `-- --all-features --run-ignored all` on the command line, so the sweep gets
+# what this line asks for by another route. A local `cargo mutants` with no
+# trailing args does NOT, and will quietly measure a smaller feature set.
 additional_cargo_test_args = ["--all-features"]

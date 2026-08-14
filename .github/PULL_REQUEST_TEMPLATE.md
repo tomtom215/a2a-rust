@@ -20,6 +20,8 @@
 - [ ] `cargo doc --workspace --no-deps` passes without warnings
 - [ ] New public types/functions have doc comments
 - [ ] New code has tests
-- [ ] `cargo mutants` shows zero surviving mutants for changed files
+- [ ] `cargo mutants --test-tool=nextest -- --all-features` shows zero surviving
+      mutants for changed files (`--test-tool=nextest` is required — see
+      CONTRIBUTING.md)
 - [ ] `CHANGELOG.md` updated if the change is user-visible
 - [ ] ADR created or updated if an architectural decision was made or revised
