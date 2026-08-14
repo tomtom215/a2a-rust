@@ -1027,4 +1027,119 @@ mod tests {
             "expected at least one event from the stream"
         );
     }
+
+    // ── Error-response id validation (log-only branch) ───────────────────
+    //
+    // `if !response_id_matches(..)` guards a `trace_warn!` and nothing else:
+    // both arms return the same `ClientError::Protocol`, so no behavioural
+    // test can separate them and `delete !` survived the 2026-08-13 sweep.
+    // `response_id_matches` itself is well covered — the gap was that nothing
+    // checked the caller acted on its answer, the same shape as several other
+    // survivors on this branch.
+    //
+    // JSON-RPC 2.0 §5 requires the response id to equal the request id. This
+    // client deliberately does not *fail* on a mismatch — a server that
+    // scrambles ids is broken, but the error it sent is still the useful
+    // signal — so the warning is the only place the violation is recorded.
+    // Inverted, it fires on every well-formed response and stays silent on the
+    // malformed one: precisely backwards, and invisible without reading logs.
+
+    /// Installs a capturing subscriber for the duration of the returned
+    /// guard and hands back the shared buffer.
+    ///
+    /// `set_default` rather than `with_default`: the latter takes a closure
+    /// and cannot span an `.await`, which the request under test needs. The
+    /// guard it returns is thread-local, so the tests using it run on the
+    /// default current-thread runtime — a multi-threaded one could migrate the
+    /// future to a thread where the subscriber is not installed and silently
+    /// capture nothing, which would make both assertions below meaningless in
+    /// opposite directions.
+    #[cfg(feature = "tracing")]
+    fn capture_logs() -> (
+        tracing::subscriber::DefaultGuard,
+        std::sync::Arc<std::sync::Mutex<Vec<u8>>>,
+    ) {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("log buffer").extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Buf {
+            type Writer = Self;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(Buf(Arc::clone(&sink)))
+            .with_ansi(false)
+            .finish();
+        (tracing::subscriber::set_default(subscriber), sink)
+    }
+
+    #[cfg(feature = "tracing")]
+    fn captured(sink: &std::sync::Arc<std::sync::Mutex<Vec<u8>>>) -> String {
+        String::from_utf8_lossy(&sink.lock().expect("log buffer")).into_owned()
+    }
+
+    #[cfg(feature = "tracing")]
+    #[tokio::test]
+    async fn mismatched_error_response_id_is_warned_about() {
+        // Hard-coded id, so it cannot match whatever the client generated.
+        let addr = start_server(
+            200,
+            r#"{"jsonrpc":"2.0","id":"not-the-request-id","error":{"code":-32000,"message":"boom"}}"#,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+
+        let (_guard, sink) = capture_logs();
+        let transport = JsonRpcTransport::new(&url).expect("transport");
+        let _ = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        let logs = captured(&sink);
+
+        assert!(
+            logs.contains("id mismatch"),
+            "a JSON-RPC error response whose id does not echo the request must \
+             be warned about (JSON-RPC 2.0 §5); silence means the check is \
+             inverted. got: {logs:?}"
+        );
+    }
+
+    #[cfg(feature = "tracing")]
+    #[tokio::test]
+    async fn matching_error_response_id_is_not_warned_about() {
+        // `__ID__` is substituted with the request's own id by start_server.
+        let addr = start_server(
+            200,
+            r#"{"jsonrpc":"2.0","id":"__ID__","error":{"code":-32000,"message":"boom"}}"#,
+        )
+        .await;
+        let url = format!("http://127.0.0.1:{}", addr.port());
+
+        let (_guard, sink) = capture_logs();
+        let transport = JsonRpcTransport::new(&url).expect("transport");
+        let _ = transport
+            .execute_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        let logs = captured(&sink);
+
+        assert!(
+            !logs.contains("id mismatch"),
+            "a correctly-echoed id must not produce a mismatch warning; one \
+             here means the condition fires on well-formed responses. got: {logs:?}"
+        );
+    }
 }

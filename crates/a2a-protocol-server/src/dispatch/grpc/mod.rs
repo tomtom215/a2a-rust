@@ -12,14 +12,11 @@
 //! the same domain types the JSON-RPC and REST bindings use before being
 //! routed to the underlying [`crate::RequestHandler`].
 //!
-//! # Legacy JSON tunnel
-//!
-//! Releases before 0.7 tunneled JSON inside a protobuf `bytes` envelope on
-//! a non-standard service (`a2a.v1.A2aService`). Enabling the
-//! `grpc-legacy-json` feature serves that service *alongside* the canonical
-//! one (the two have distinct fully-qualified names) so 0.6 gRPC clients
-//! keep working during rolling upgrades. The tunnel is deprecated and will
-//! be removed in 0.8.
+//! Releases before 0.7 tunneled JSON inside a protobuf `bytes` envelope on a
+//! non-standard service (`a2a.v1.A2aService`), served alongside the canonical
+//! one behind the off-by-default `grpc-legacy-json` feature. That feature and
+//! its service were **removed in 0.8**; the canonical binding is the only gRPC
+//! surface. A 0.6 client must upgrade rather than be tunneled for.
 //!
 //! # Configuration
 //!
@@ -54,8 +51,6 @@ mod config;
 mod dispatcher;
 mod helpers;
 mod native;
-#[cfg(feature = "grpc-legacy-json")]
-mod service;
 
 /// Generated tonic glue for the canonical `lf.a2a.v1.A2AService`.
 ///
@@ -72,26 +67,7 @@ pub(crate) mod pb {
     tonic::include_proto!("lf.a2a.v1");
 }
 
-/// Generated code for the deprecated pre-0.7 JSON tunnel (`a2a.v1`).
-#[cfg(feature = "grpc-legacy-json")]
-pub(crate) mod proto {
-    #![allow(
-        clippy::all,
-        clippy::pedantic,
-        clippy::nursery,
-        missing_docs,
-        unused_qualifications
-    )]
-    tonic::include_proto!("a2a.v1");
-}
-
 pub use config::GrpcConfig;
 pub use dispatcher::GrpcDispatcher;
 pub use native::A2aServiceImpl;
 pub use pb::a2a_service_server::A2aServiceServer;
-
-/// Server wrapper for the deprecated JSON-tunnel service (`a2a.v1.A2aService`).
-#[cfg(feature = "grpc-legacy-json")]
-pub use proto::a2a_service_server::A2aServiceServer as LegacyA2aServiceServer;
-#[cfg(feature = "grpc-legacy-json")]
-pub use service::GrpcServiceImpl as LegacyGrpcServiceImpl;

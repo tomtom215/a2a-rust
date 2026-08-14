@@ -13,13 +13,15 @@
 
 ## Community Landscape
 
-Before this project, no Rust SDK targeting A2A v1.0.0 existed:
+A snapshot of Rust A2A implementations taken when this project started. It is
+not a maintained comparison — other implementations may have appeared or moved
+on since, and no claim of primacy is intended:
 
 | Project | Version | Status | License | Notes |
 |---|---|---|---|---|
-| [a2a-rs](https://github.com/EmilLindfors/a2a-rs) | v0.3.0 | Active (81 stars) | — | Full v0.3.0 coverage; hexagonal architecture; no v1.0 support |
+| [a2a-rs](https://github.com/EmilLindfors/a2a-rs) | v0.3.0 | Active (81 stars) | — | Full v0.3.0 coverage; hexagonal architecture; no v1.0 support as surveyed |
 | [A2A](https://github.com/robert-at-pretension-io/A2A) | unspecified | Moderate (22 stars) | GPL-3.0 | Testing framework / validator; 358 commits |
-| **a2a-rust** (this project) | **v1.0.0** | **Active** | Apache-2.0 | First Rust SDK targeting v1.0.0; gaps documented below |
+| **a2a-rust** (this project) | **v1.0.0** | **Active** | Apache-2.0 | Targets v1.0.0; gaps documented below |
 
 ---
 

@@ -251,3 +251,78 @@ async fn multiple_dispatchers_from_same_handler() {
 
     assert_ne!(addr1.port(), addr2.port(), "should bind to different ports");
 }
+
+// ── `serve` actually serves ─────────────────────────────────────────────────
+//
+// Kills the mutant `replace GrpcDispatcher::serve -> std::io::Result<()> with
+// Ok(())`, which survived the 2026-08-13 sweep (run 31681284244). Every other
+// test in this file exercises `into_service`, `serve_with_listener` or config
+// builders; none called `serve`, so a `serve` that returned Ok(()) without
+// binding anything was indistinguishable from a working one.
+//
+// The assertion is deliberately at the wire level rather than "the future did
+// not resolve". Under the mutant `serve` returns `Ok(())` immediately and
+// nothing listens, so the connect fails; a bare `TcpStream::connect` would
+// therefore be enough to kill it. It goes one step further and completes the
+// HTTP/2 connection preface, because "a socket is open" and "an HTTP/2 server
+// is running on it" are different claims, and only the second is what `serve`
+// promises. Same byte-level approach the OTel pipeline check uses.
+#[tokio::test]
+async fn serve_binds_the_address_and_speaks_http2() {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    // Reserve an ephemeral port, then release it so `serve` can bind it.
+    // Deliberately not a fixed port: the TCK and the incident-response demo
+    // hold 9994-9999, 9897-9899 and 9200-9202, and a fixed port here would
+    // collide with them under a parallel local run.
+    let probe = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("reserve an ephemeral port");
+    let addr = probe.local_addr().expect("read reserved addr");
+    drop(probe);
+
+    let dispatcher = GrpcDispatcher::new(build_handler(), GrpcConfig::default());
+    let server = tokio::spawn(async move { dispatcher.serve(addr).await });
+
+    // Retry: `serve` binds asynchronously, so the first connect can lose the
+    // race legitimately. Bounded so the mutant fails fast rather than hanging.
+    let mut stream = None;
+    for _ in 0..50 {
+        if let Ok(s) = tokio::net::TcpStream::connect(addr).await {
+            stream = Some(s);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let mut stream = stream
+        .unwrap_or_else(|| panic!("nothing listening on {addr} after 1s — `serve` never bound it"));
+
+    // Client connection preface, then an empty SETTINGS frame.
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .expect("write HTTP/2 client preface");
+    stream
+        .write_all(&[0, 0, 0, 0x04, 0, 0, 0, 0, 0])
+        .await
+        .expect("write empty SETTINGS frame");
+
+    // The server's preface MUST begin with a SETTINGS frame (RFC 9113 §3.4).
+    let mut header = [0_u8; 9];
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_exact(&mut header),
+    )
+    .await
+    .expect("server responded within 5s")
+    .expect("read the server's first frame header");
+
+    assert_eq!(
+        header[3], 0x04,
+        "first frame from the server must be SETTINGS (type 0x04); \
+         got type {:#04x} — an open socket that is not an HTTP/2 server",
+        header[3]
+    );
+
+    server.abort();
+}

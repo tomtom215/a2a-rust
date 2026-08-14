@@ -287,6 +287,8 @@ injection_for() {
             echo "proto" ;;
         "./scripts/check_file_lengths.sh")
             echo "file_length" ;;
+        "./scripts/check_mutation_scope.sh")
+            echo "mutation_scope" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
@@ -370,6 +372,7 @@ expected_marker() {
         fmt)              echo "gate_probe_fmt" ;;
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
         file_length)      echo "gate_probe_long.rs" ;;
+        mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
@@ -397,6 +400,27 @@ apply_injection() {
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        mutation_scope)
+            # The defect is the historical one, restored verbatim: drop the
+            # `:(glob)` prefix from the mutation gate's scoping pathspec and it
+            # silently stops matching every file directly under a crate's src/.
+            #
+            # An injection that added a source file instead would prove nothing
+            # — the fixed pathspec matches new files fine, and the bug was never
+            # about which files exist. It was about which files the pattern can
+            # reach, so the pattern is what has to be broken.
+            note_touched ".github/workflows/mutants.yml"
+            python3 - <<'PY'
+import pathlib, sys
+p = pathlib.Path(".github/workflows/mutants.yml")
+s = p.read_text()
+old = "-- ':(glob)crates/*/src/**/*.rs' > pr-src.diff"
+new = "-- 'crates/*/src/**/*.rs' > pr-src.diff"
+if s.count(old) != 1:
+    sys.exit(f"expected exactly one mutation scoping pathspec; found {s.count(old)}")
+p.write_text(s.replace(old, new))
+PY
+            ;;
         workflow_gates)
             # This gate is itself a prover, so the defect has to be a broken
             # *gate* rather than broken code — and the most faithful one is the

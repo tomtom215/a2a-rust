@@ -726,4 +726,59 @@ mod tests {
         let err = proto_value_to_json(v, "m").expect_err("over-deep proto value must be rejected");
         assert!(err.reason.contains("maximum depth"), "{}", err.reason);
     }
+
+    /// Kills the surviving `ConvertError` `Display` mutant, which replaces
+    /// the formatter body with `Ok(Default::default())` — writing nothing.
+    ///
+    /// Existing tests read `err.reason` as a field, which the mutant leaves
+    /// untouched; nothing rendered the error through `Display`. That matters
+    /// because `Display` is how this error reaches a user — it is what
+    /// `Error::source` chains and `format!("{e}")` produce.
+    #[test]
+    fn convert_error_display_renders_field_and_reason() {
+        let err = ConvertError::new("task.status", "not a known state");
+        assert_eq!(
+            err.to_string(),
+            "invalid task.status: not a known state",
+            "Display must render both parts; an empty string means it wrote nothing"
+        );
+
+        // `missing` goes through the same formatter with a canned reason.
+        assert_eq!(
+            ConvertError::missing("message.role").to_string(),
+            "invalid message.role: missing required field"
+        );
+    }
+
+    /// Kills: `replace < with <= in timestamp_to_rfc3339`, the nanos range
+    /// check `*n < 1_000_000_000`.
+    ///
+    /// One second expressed as nanos is exactly the first invalid value, so
+    /// it is the only input that separates `<` from `<=`. Both sides of the
+    /// boundary are asserted: `999_999_999` must format, and `1_000_000_000`
+    /// must be rejected.
+    #[test]
+    fn timestamp_nanos_boundary_is_exclusive() {
+        let ok = prost_types::Timestamp {
+            seconds: 0,
+            nanos: 999_999_999,
+        };
+        let formatted = timestamp_to_rfc3339(&ok, "ts").expect("999_999_999 nanos is in range");
+        assert!(
+            formatted.starts_with("1970-01-01T00:00:00"),
+            "unexpected rendering: {formatted}"
+        );
+
+        let over = prost_types::Timestamp {
+            seconds: 0,
+            nanos: 1_000_000_000,
+        };
+        let err = timestamp_to_rfc3339(&over, "ts")
+            .expect_err("1_000_000_000 nanos is one second, not a sub-second remainder");
+        assert!(
+            err.reason.contains("out of range"),
+            "expected a range rejection, got: {}",
+            err.reason
+        );
+    }
 }

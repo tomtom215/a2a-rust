@@ -541,4 +541,48 @@ mod tests {
             "overwriting should not count toward global limit"
         );
     }
+
+    /// Kills `replace == with !=` on the `*count == 0` secondary-index
+    /// cleanup in `delete`.
+    ///
+    /// The index is not decorative: it is what enforces
+    /// `max_configs_per_task` in O(1). Inverted, the entry is dropped while
+    /// configs still exist and kept once they are all gone — so the count
+    /// resets to zero on the first delete and the per-task cap stops being
+    /// enforced for the rest of that task's life.
+    ///
+    /// Deleting and re-adding is what exposes it. `max_configs_per_task_limit_enforced`
+    /// above never deletes, so the cleanup branch it shares is unreachable
+    /// from there; the limit has to be probed *after* a delete.
+    #[tokio::test]
+    async fn deleting_one_config_does_not_reset_the_per_task_limit() {
+        let store = InMemoryPushConfigStore::with_max_configs_per_task(2);
+
+        store
+            .set(make_config("task-1", Some("c1"), "https://a.com"))
+            .await
+            .expect("first config is within the cap");
+        store
+            .set(make_config("task-1", Some("c2"), "https://b.com"))
+            .await
+            .expect("second config is within the cap");
+
+        store.delete("task-1", "c1").await.expect("delete c1");
+
+        // One config remains, so exactly one more slot is free.
+        store
+            .set(make_config("task-1", Some("c3"), "https://c.com"))
+            .await
+            .expect("the delete freed exactly one slot");
+
+        let over = store
+            .set(make_config("task-1", Some("c4"), "https://d.com"))
+            .await;
+        assert!(
+            over.is_err(),
+            "the task is back at its cap of 2, so a further config must be \
+             refused; acceptance means the delete wiped the count entry and \
+             the per-task limit stopped being enforced"
+        );
+    }
 }

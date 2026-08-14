@@ -122,7 +122,7 @@ incremental `--in-diff` mutation gate on the changed lines.
 | 0006 | `cargo-mutants` as on-demand test-effectiveness audit |
 | 0007 | Axum integration + TCK wire format conformance tests |
 | 0008 | `AgentExecutor` kept object-safe so `RequestHandler` stays non-generic |
-| 0009 | Protobuf-native gRPC on the canonical `lf.a2a.v1.A2AService`, wire-compatible with the official SDKs; the pre-0.7 JSON tunnel is deprecated behind `grpc-legacy-json` |
+| 0009 | Protobuf-native gRPC on the canonical `lf.a2a.v1.A2AService`, wire-compatible with the official SDKs; the pre-0.7 JSON tunnel was deprecated behind `grpc-legacy-json` in 0.7 and removed in 0.8 |
 | 0010 | First-party auth helpers (client OAuth2 client-credentials + token providers; server API-key/bearer/JWT interceptors) built on `ring`/`hyper`, not the OAuth-ecosystem crates |
 
 The full ADR documents are in the [`docs/adr/`](https://github.com/tomtom215/a2a-rust/tree/main/docs/adr) directory.

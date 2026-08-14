@@ -33,7 +33,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "a2a-protocol-server",
  "a2a-protocol-types",
@@ -61,13 +61,14 @@ dependencies = [
  "tonic-prost-build",
  "tonic-types",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "webpki-roots 1.0.6",
 ]
 
 [[package]]
 name = "a2a-protocol-sdk"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -75,7 +76,6 @@ dependencies = [
  "prost",
  "serde_json",
  "tokio",
- "tonic",
  "tonic-prost",
 ]
 
@@ -115,13 +115,14 @@ dependencies = [
  "tonic-prost-build",
  "tonic-types",
  "tracing",
+ "tracing-subscriber",
  "uuid",
  "webpki-roots 1.0.6",
 ]
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64",
  "criterion",

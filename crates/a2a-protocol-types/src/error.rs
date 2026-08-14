@@ -1063,4 +1063,53 @@ mod tests {
         let with = err.error_info_data(Some(serde_json::json!({"x": 1})));
         assert_eq!(with[0]["metadata"], serde_json::json!({"x": 1}));
     }
+
+    // ── Consumer-lag accessors ──────────────────────────────────────────
+    //
+    // These duplicate the doctest on `is_stream_lagged`, deliberately.
+    //
+    // Five mutants survived here in the 2026-08-13 sweeps — both
+    // `is_stream_lagged` replacements and all three `dropped_event_count`
+    // ones — even though the doctest already asserts exactly this behaviour.
+    // The reason is the harness, not the coverage: the sweep runs
+    // `--test-tool=nextest`, and nextest does not execute doctests, so that
+    // block is invisible to mutation testing. The same is true of the
+    // `--in-diff` PR gate.
+    //
+    // So this is not redundant with the doctest — it is the same assertions
+    // in a form the mutation harness can run. Deleting either one loses
+    // something: the doctest is the rendered example on docs.rs, and these
+    // are what hold the accessors under mutation.
+
+    #[test]
+    fn stream_lagged_reports_the_dropped_count() {
+        let err = A2aError::stream_lagged(42);
+
+        assert!(
+            err.is_stream_lagged(),
+            "a stream_lagged error must identify as one"
+        );
+        // 42 rather than 0 or 1: the surviving mutants replaced this with
+        // `Some(0)` and `Some(1)`, which any small sentinel would have
+        // matched by accident.
+        assert_eq!(
+            err.dropped_event_count(),
+            Some(42),
+            "the dropped count must round-trip through the marker"
+        );
+    }
+
+    #[test]
+    fn ordinary_errors_are_not_lag_signals() {
+        // A generic internal error: same ErrorCode as a lag signal, which is
+        // why the marker exists rather than keying off the code.
+        let internal = A2aError::internal("boom");
+        assert!(!internal.is_stream_lagged());
+        assert_eq!(internal.dropped_event_count(), None);
+
+        // An error with no `data` at all.
+        let typed = A2aError::new(ErrorCode::TaskNotFound, "gone");
+        assert!(!typed.is_stream_lagged());
+        assert_eq!(typed.dropped_event_count(), None);
+    }
 }

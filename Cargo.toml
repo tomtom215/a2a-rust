@@ -49,6 +49,8 @@ uuid = { version = ">=1.8, <2", features = ["v4"] }
 
 # Observability (optional)
 tracing = { version = ">=0.1.40, <0.2" }
+# Test-only: capture emitted tracing events so log-only branches are assertable.
+tracing-subscriber = { version = ">=0.3.18, <0.4", default-features = false, features = ["fmt", "std"] }
 
 # gRPC (optional — behind `grpc` feature flag)
 tonic              = { version = "0.14" }

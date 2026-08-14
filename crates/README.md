@@ -74,7 +74,6 @@ Features are defined on individual crates and passed through by the SDK umbrella
 | `postgres` | server | PostgreSQL-backed stores |
 | `websocket` | client, server | WebSocket transport |
 | `grpc` | client, server | Protobuf-native gRPC (canonical `lf.a2a.v1.A2AService`) via tonic |
-| `grpc-legacy-json` | server | Serves the deprecated pre-0.7 JSON-tunnel gRPC service alongside the canonical one (off by default; removal planned for 0.8) |
 | `proto` | types | Canonical protobuf message types + JSON⇄proto conversion layer (enabled transitively by `grpc`) |
 | `otel` | server | OpenTelemetry OTLP metrics export |
 | `axum` | server | Axum framework integration |

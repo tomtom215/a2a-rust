@@ -3,7 +3,7 @@
 
 [package]
 name        = "a2a-protocol-sdk"
-version     = "0.7.0"
+version     = "0.8.0"
 description = "Agent2Agent (A2A) protocol v1.0 — convenience umbrella re-export crate"
 readme      = "README.md"
 
@@ -31,9 +31,6 @@ tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]
 tls-rustls = ["a2a-protocol-client/tls-rustls", "a2a-protocol-server/tls-rustls"]
 ## Enable gRPC transport via tonic.
 grpc = ["a2a-protocol-client/grpc", "a2a-protocol-server/grpc"]
-## Additionally serve the deprecated pre-0.7 JSON-tunnel gRPC service for
-## rolling upgrades from 0.6 clients. Will be removed in 0.8.
-grpc-legacy-json = ["grpc", "a2a-protocol-server/grpc-legacy-json"]
 ## Enable OpenTelemetry integration.
 otel = ["a2a-protocol-server/otel"]
 ## Enable WebSocket transport via tokio-tungstenite.
@@ -55,15 +52,12 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-a2a-protocol-types  = { version = "0.7.0", path = "../a2a-protocol-types" }
-a2a-protocol-client = { version = "0.7.0", path = "../a2a-protocol-client" }
+a2a-protocol-types  = { version = "0.8.0", path = "../a2a-protocol-types" }
+a2a-protocol-client = { version = "0.8.0", path = "../a2a-protocol-client" }
 a2a-protocol-server = { version = "0.8.0", path = "../a2a-protocol-server" }
 
 [dev-dependencies]
 tokio       = { workspace = true, features = ["rt-multi-thread", "macros"] }
 serde_json  = { workspace = true }
-# Used by the gRPC legacy-coexistence test to hand-roll a 0.6-style
-# JSON-tunnel client without regenerating the removed client stubs.
-tonic       = { workspace = true }
 tonic-prost = { workspace = true }
 prost       = { workspace = true }

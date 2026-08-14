@@ -17,21 +17,164 @@ Items are grouped by whether the work is *already decided* (0.8 removals that
 the code and docs commit to), *decided but unscheduled*, or *open questions*
 that need a maintainer decision before any work starts.
 
-## 0.8 — removals this repository has already committed to
+## 0.8 — removals this repository committed to — **DONE 2026-08-13**
 
-These are announced in the code and docs, so 0.8 is a breaking release
-regardless of what else lands. Each is a `#[deprecated]` attribute or an
-explicit "removal planned for 0.8" note today.
+All three landed in the 0.8.0 preparation commit, and all four crates were
+reconciled to 0.8.0 at the same time. Kept here as the record of what was
+promised against what shipped, rather than deleted.
 
-| Item | Where it is announced |
+| Item | Status |
 |---|---|
-| Remove the `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service it serves | `crates/README.md`, `proto/README.md`, `book/src/building-agents/dispatchers.md`, `docs/adr/0009-protobuf-native-grpc.md` |
-| Remove `with_event_queue_write_timeout` — a deprecated no-op; queue writes never block, and slow consumers get an explicit lag error | `crates/a2a-protocol-server/src/builder.rs`, `.../streaming/event_queue/manager.rs`, `book/src/reference/configuration.md`, `book/src/building-agents/handler.md` |
-| Stop sending the legacy bare `a2a-notification-token` header; keep only the canonical `X-A2A-Notification-Token` | `CHANGELOG.md` (0.7.0 entry) |
+| Remove the `grpc-legacy-json` feature and the pre-0.7 JSON-tunnel gRPC service it serves | **Done** — feature dropped from both `a2a-protocol-server` and `a2a-protocol-sdk`; `dispatch/grpc/service.rs`, the `a2a.v1` protos, the build-script step, the JSON codec helpers, `into_legacy_service`, the `Legacy*` re-exports and the coexistence test all deleted |
+| Remove `with_event_queue_write_timeout` — a deprecated no-op | **Done** — that setter and `EventQueueManager::with_write_timeout` both removed, with the builder field, its `build()` plumbing, its `Debug` field and both tests |
+| Stop sending the legacy bare `a2a-notification-token` header | **Done** — two sites, not one: `HttpPushSender` no longer *sends* it (the row's actual wording), and it is dropped from the default CORS `allow_headers`. Canonical `x-a2a-notification-token` retained, and the `push_sender_https_e2e` assertion inverted to pin the header's absence rather than deleted |
 
-Removing the legacy gRPC tunnel also deletes `dispatch/grpc/service.rs`,
-which is the file whose thin test coverage prompted the 2026-07-31 defect
-hunt. Worth sequencing so that effort is not spent twice.
+`dispatch/grpc/service.rs` is gone. Deleting it was expected to retire the 9
+surviving mutants the 2026-08-10 sweep recorded against it — the reason the
+file was worth sequencing ahead of any mutation work on it. **The 2026-08-13
+re-run (run 31681284244, at `6ebf821`) measures 0 survivors in that file**, so
+those 9 had already been killed by tests landed in between and the deletion
+retires none of them. Kept visible rather than quietly corrected: the estimate
+was sound reasoning over a stale number, and the number moved.
+
+### Mutants no test can kill — proved, not assumed
+
+ADR 0006 sets the target at zero surviving mutants "with the single
+documented exception" of mutants that no test can kill, and requires that an
+equivalence claim be *proved* rather than asserted. Three came up while
+burning down the 2026-08-13 sweep. They are recorded here rather than skipped
+in source, because the `#[mutants::skip]` attribute needs the `mutants` crate
+as a **runtime** dependency of published crates — a supply-chain decision the
+ADR says must be raised on its own terms, not settled inside a test PR.
+Decision taken 2026-08-14: keep them documented, add no dependency.
+
+| Mutant | Why no test can kill it |
+|---|---|
+| `tenant_config.rs` — `TenantLimits::builder` → `Default::default()` | The body *is* `TenantLimitsBuilder::default()`. In a function returning `TenantLimitsBuilder`, `Default::default()` resolves to `<TenantLimitsBuilder as Default>::default()` — the same call. |
+| `tenant_config.rs` — `PerTenantConfig::builder` → `Default::default()` | Identical argument for `PerTenantConfigBuilder`. |
+| `streaming/sse.rs` — `SseBodyWriter::close` → `()` | The body is `drop(self)` and the receiver is `self` by value. With or without the explicit `drop`, `self` is dropped when the function returns, and nothing follows it. |
+| `auth/jwt.rs` — `build_jwks_client` → `Default::default()` | Not an equivalence: the mutated variant is `#[cfg(not(feature = "tls-rustls"))]` and the sweep builds `--all-features`, so it is not compiled at all. See below. |
+
+The first three are equivalences of *form*: the mutated expression compiles to
+the same observable behaviour, so a test written against it could not fail.
+
+**The fourth is a different category, and ADR 0006 does not yet name it.**
+`build_jwks_client` has two `#[cfg]` variants — one for `tls-rustls`, one for
+its absence. cargo-mutants parses the source, sees both, and generates a
+mutant for each; the sweep then builds with `--all-features`, which *enables*
+`tls-rustls`, so the `#[cfg(not(...))]` variant is never compiled. Mutating a
+body that is not in the binary changes nothing, the suite passes, and the
+result is reported as `MISSED` rather than `unviable`. It is not a test gap
+and not a semantic equivalence: it is a mutant in code the build excludes.
+
+Proved in two directions rather than argued:
+
+1. Line 790 at `7469fd5` — the commit the sweep measured — is inside the
+   `#[cfg(not(feature = "tls-rustls"))]` variant. Verified with
+   `git show 7469fd5:crates/a2a-protocol-server/src/auth/jwt.rs`.
+2. The *other* variant's return type does not implement `Default`: a
+   compile probe of `let _: JwksHttpClient = Default::default();` under
+   `--all-features` fails with `the trait bound Client<HttpsConnector<
+   HttpConnector>, Full<Bytes>>: Default is not satisfied`. So a mutant on
+   the TLS variant would be `unviable`, not `MISSED` — the reported one has
+   to be the cfg-excluded variant.
+
+Worth knowing generally: any `#[cfg]`-gated function that is not part of the
+sweep's feature set will produce mutants of this kind, and they will look
+exactly like test gaps in the report.
+
+**Everything else in the sweep was killable.** Of the 57 survivors measured at
+`7469fd5`, **53 fell to tests**; these four are the remainder.
+
+**Confirmed by measurement, not by the claim.** Run
+[31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306) at
+`1d51be0`, full CI configuration, 21/21 shards with `COMPLETED` markers:
+**2262 caught / 4 missed / 1 timeout / 1293 unviable — 99%** (99.82% exact). The
+four `missed.txt` lines across all 21 artifacts are exactly the four above and
+nothing else. Every count was re-derived from the raw artifacts rather than read
+off the summary, and the arithmetic closes: 2262 + 4 + 1 + 1293 = 3560, which is
+the total number of entries in the shards' `mutants.json` files.
+
+**Three of those 53 were claimed before they were true, and the confirming
+sweep caught all three.** Recorded here because the burn-down's credibility
+rests on the claims being checkable, and these were not:
+
+* `state_machine.rs:143` was reported killed in `8e3f321`. The test written
+  for it exercised the parts-cap branch, which `return`s at line 112 — the
+  mutant lives in the store-save-failure revert further down, and the test
+  never reached it. It passed, on a different code path. The underlying error
+  was skipping mutation verification for that file and asserting a kill from a
+  green test, which is the one thing this whole exercise shows does not follow.
+* `rest/mod.rs:255` was called run-to-run variance in `11f4456` when it
+  appeared in the `6ebf821` sweep and not the `7469fd5` one. It had never been
+  killed. The REST binding accepts two cancel spellings, and three existing
+  tests exercise the colon form (`/tasks/{id}:cancel`) while the slash form had
+  no coverage at all. A survivor that disappears with no test change is a
+  question, not noise.
+* `manager.rs:385` — `replace EventQueueManager::destroy with ()` was reported
+  resolved in `90bf065`, which said the three timeouts were "bounded in
+  `1d51be0` — re-verified as 26 caught / 0 timeouts". The only run matching that
+  "26 caught" printed:
+
+  ```text
+  TIMEOUT  crates/…/manager.rs:385:9: replace EventQueueManager::destroy with ()
+  76 mutants tested in 22m: 26 caught, 49 unviable, 1 timeouts
+  ```
+
+  and it finished 2026-08-13 17:51 UTC — **21 hours before `1d51be0` was
+  authored**, so it could not have verified anything about it. There was also no
+  local-versus-CI disagreement to reconcile: the CI sweep and this run said the
+  same thing, and "0 missed" was read off the summary as "0 timeouts". The
+  *diagnosis* was wrong as well as the reading: `destroy` is what closes a
+  task's event queue (the blocking send path calls it from
+  `CleanupGuard::drop`), so a no-op `destroy` hangs every test that drains a
+  task stream to EOF — applying the mutation by hand stops tests returning
+  across `dispatch::grpc::native`, `handler::messaging`, `event_processing_tests`,
+  `handler_tests`, `audit_tests` and `auth_jwt_e2e` — while the tests that catch
+  it head-on (`manager_destroy_removes_queue`,
+  `active_count_decrements_on_destroy`) fail in milliseconds and never get to
+  report, because the process never exits. Bounding the one unbounded receive in
+  `1d51be0` could not have fixed that, and did not.
+
+The first two are fixed in `2607280` and verified (96 mutants, 42 caught, 0
+missed). The third is fixed at the harness rather than in a test: a 45s
+per-test kill in `.config/nextest.toml` terminates the hangs and names them, so
+the run exits non-zero and the mutant is scored. Verified under the sweep's own
+configuration — `cargo mutants -p a2a-protocol-server --test-tool=nextest
+--profile=mutants -f …/manager.rs -F 'destroy with \(\)' -- --all-features
+--run-ignored all` against a live PostgreSQL 16.13 — **1 mutant tested, 1
+caught, empty `timeout.txt`**. Then the same command again with the file moved
+out of the tree, as a control:
+
+```text
+without  TIMEOUT  …manager.rs:385:9: replace EventQueueManager::destroy with ()
+                  in 8s build + 334s test
+         1 mutant tested in 8m: 1 timeouts
+with     1 mutant tested in 3m: 1 caught
+```
+
+Same tree, same command, one file the difference — and no `.rs` file differs
+from the sweep at `1d51be0` that reported the same mutant as `TIMEOUT`
+(`git diff 1d51be0 HEAD -- '*.rs' 'Cargo.*'` is empty). The claim is measured in
+both directions rather than inferred from the fixed one, which is the whole
+lesson of the two bullets above it.
+
+The general rule this produced: **a passing test is not evidence that a mutant
+died — only a mutation run is.** The third adds the corollary that was still
+missed after the first two: **and a mutation run is only evidence if the outcome
+column is read.** `0 missed` and `0 timeouts` are different statements, and the
+summary line prints both.
+
+### Residue left behind deliberately
+
+The two public `write_timeout` setters are gone, but the value is still
+threaded through `new_in_memory_queue_with_options` into an
+`#[allow(dead_code)]` field on `InMemoryQueueWriter`, and
+`DEFAULT_WRITE_TIMEOUT` is still `pub`. Removing those changes a public
+constructor's arity and deletes an exported constant, neither of which was on
+the announced list — an unadvertised API break riding along with an advertised
+one is exactly what a deprecation schedule exists to prevent. Left for a later
+release, recorded here so it is a decision rather than an oversight.
 
 ## Verification debt
 
@@ -163,8 +306,10 @@ This is the category most worth clearing before any external review.
   all 21 shards complete, aggregated by CI: **92%**, 2168 caught / 183 missed.
   Reproduced across two different shardings, which is why the number is
   trustworthy rather than merely produced.
-  **The current figure is 94% (2187/125), from the 2026-08-10 sweep** — this
-  bullet records the first complete sweep, not the latest one. See
+  **The current figure is 97% (2254/63), from the 2026-08-13 sweep** (run
+  31681284244, all 21 shards complete, 21/21 `COMPLETED` markers verified
+  against the artifacts) — this bullet records the first complete sweep, not
+  the latest one. See
   [`mutation-history.md`](book/src/reference/mutation-history.md) for the
   dated table, and the burn-down item below for the survivor clusters.
   Getting there took three rounds of gate fixes, because each one exposed the
@@ -234,9 +379,87 @@ This is the category most worth clearing before any external review.
   Two caveats before anyone works from that list. It is measured at `041c366`,
   which is 44 commits behind `af7a1f8`; the ledger quantifies that 61 of the 125
   sit in files changed since, and 64 are in files unchanged and therefore still
-  valid. And `dispatch/grpc/service.rs`'s 9 sit in the deprecated
-  `grpc-legacy-json` tunnel that 0.8 deletes outright — sequence that removal
-  first rather than testing code scheduled for removal.
+  valid.
+
+  **Superseded 2026-08-13 — the sweep was re-run, and the arithmetic this
+  paragraph used to carry was wrong.** It predicted "116 at most rather than
+  125" on the reasoning that `dispatch/grpc/service.rs`'s 9 survivors sat in
+  the `grpc-legacy-json` tunnel and would retire when 0.8 deleted the file.
+  Run 31681284244 at `6ebf821` measures **63 survivors, 97%** — and
+  `service.rs` holds **0** of them. Those 9 had already been killed by tests
+  landed between `041c366` and `6ebf821`, so 0.8's deletion retires none of
+  them; the improvement came from test work, not from removing code. The
+  estimate was labelled "arithmetic on a stale measurement, not a new one",
+  and the measurement duly disagreed with it in both directions: the total is
+  lower than predicted, and the mechanism was not the one assumed.
+
+  Also now zero, having been the two largest clusters: `handler/messaging.rs`
+  (was 17) and `store/task_store/in_memory/eviction.rs` (was 13).
+  `dispatch/grpc/native.rs` (was 11) is zero as well — worth noting because it
+  is the only gRPC surface after 0.8.
+
+  **Five of the 63 were in files 0.8 touches, and are killed on the release
+  branch.** None sat in deleted code, so all five would otherwise have
+  shipped: four in `streaming/event_queue/manager.rs` (`with_capacity`,
+  the `>=` concurrency-limit guard, `raw_subscribe`, `subscribe_with_snapshot`)
+  and one in `dispatch/grpc/dispatcher.rs` — `replace GrpcDispatcher::serve
+  with Ok(())`, which is the one worth naming: no test in the crate called
+  `serve` at all, so a server that never bound was indistinguishable from a
+  working one, and only the out-of-crate TCK run covered it.
+
+  Confirmed first by a targeted `cargo mutants --file` over both files rather
+  than by the tests passing, which proves nothing about a mutant: 76 mutants,
+  26 caught, 49 unviable, 0 missed. That run carried two stated limits — it
+  used `--features grpc` rather than CI's `--all-features --run-ignored all`
+  (the `#[ignore]`d Postgres suite needs a live database), and it covered two
+  files rather than the workspace.
+
+  **Both limits are now closed by a full sweep of the release branch.** Run
+  [31742334862](https://github.com/tomtom215/a2a-rust/actions/runs/31742334862)
+  at `7469fd5`, the complete CI configuration — `--all-features --run-ignored
+  all`, live PostgreSQL service, 21 shards: **97%, 2210 caught / 57 missed /
+  2 timeout / 1289 unviable**, with 21/21 `COMPLETED` markers and a
+  `missed.txt` line count matching the summary. `manager.rs` and
+  `dispatcher.rs` are **0**, so the narrower run was not misleading.
+  `dispatch/grpc/service.rs` is absent from the report entirely, 0.8 having
+  deleted it, and `dispatch/grpc/native.rs` remains 0.
+
+  **Only five of the six-survivor drop from 63 is this branch's doing.** Two
+  mutants changed classification in files the branch does not modify —
+  `rest/mod.rs:255 delete match arm ("POST", ["tasks", id, "cancel"])` went
+  from `MISSED` to caught, and `sse.rs:102 send_event` from `TIMEOUT` to
+  caught. Both sit on async paths where the harness is timing-sensitive, so
+  this is run-to-run variance, not an improvement to claim. Counted honestly,
+  the branch removes five and the measured total happens to be 57.
+
+  The remaining `TIMEOUT` on `replace EventQueueManager::destroy with ()` is
+  pre-existing — recorded by run 31681284244 too, as `manager.rs:403:9`
+  against `main`'s line numbering versus `385:9` on the branch, the
+  `with_write_timeout` removal having shifted the file. It survived a third
+  sweep — run 31814679306 at `1d51be0` reports it as the run's only `TIMEOUT`,
+  in shard 12/12, **a shard that exited 0**, because the workflow fails on
+  `missed` and not on `timeout`. **Closed 2026-08-14** by the 45s per-test kill
+  in `.config/nextest.toml`; it now reports caught. See the third bullet under
+  "claimed before they were true" above for what it actually was, and why the
+  fix is not a test.
+
+  **The 57 is measured at `7469fd5` and is already behind.** All nine
+  `a2a-protocol-types` survivors it reports — 5 in `error.rs`, 2 in
+  `days_from_civil`, 2 in `proto/convert` — are addressed in `df6f023` and
+  `05272fa`, which post-date the sweep. The `error.rs` five are confirmed
+  dead by a targeted run (70 mutants, 54 caught, 16 unviable, 0 missed); the
+  other four await theirs. ~~**The figure is not 48 until a sweep says so**~~ —
+  the same rule that this file's "116 at most" line broke once already.
+
+  **A sweep has now said so, and it is not 48 either.** Run
+  [31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306)
+  at `1d51be0`, full CI configuration, 21/21 shards with `COMPLETED` markers:
+  **2262 caught / 4 missed / 1 timeout / 1293 unviable, 99%** (99.82% exact),
+  3560 mutants total. `a2a-protocol-types` and `a2a-protocol-client` are both
+  **100% with zero survivors and zero timeouts** — so the nine types survivors
+  really were dead, but the count was 57 → 4, not 57 → 48. Estimating the
+  endpoint would have been wrong by an order of magnitude in the other
+  direction this time; the rule holds regardless of which way the error runs.
 
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
@@ -250,6 +473,57 @@ This is the category most worth clearing before any external review.
   which is indistinguishable from a clean file. `scripts/preflight.sh` runs the
   CI gates locally; a live Postgres and `--run-ignored all` are required or
   every Postgres mutant survives for want of a database.
+* **`mutants.toml` is not read by cargo-mutants, and never has been.** Found
+  2026-08-14 while chasing the `destroy` timeout above. cargo-mutants 27.1.0
+  discovers `.cargo/mutants.toml`; this repository's file is at the root.
+  Individual keys were already documented as "silently ignored" — `test_tool`,
+  `profile`, `exclude_re` each carry a note saying so — but the cause was never
+  per-key. Two independent proofs, both in the file's own banner: `cargo mutants
+  -p a2a-protocol-types --all-features --list` lists 155 mutants under
+  `src/proto/`, the exact path `exclude_globs` claims to exclude, and the count
+  is identical under `--no-config`; and `cargo mutants --config mutants.toml`
+  aborts with `unknown field 'cap_timeout'`, so a discovered file would fail
+  every sweep rather than configure it.
+
+  What that means in practice, all measured the same day: the per-mutant budget
+  is cargo-mutants' default **5.0x baseline with no cap** (`baseline 65s test` →
+  `Auto-set test timeout to 328s`; 328 > the 300 `cap_timeout` claims, which
+  settles it independently of the multiplier), and **generated protobuf code is
+  mutated**, its mutants inside every score this project has published. Only the
+  `mutants-incremental` job passes `--timeout 300` on the command line, so the
+  PR gate is capped and the full sweep is not.
+
+  **Deliberately not fixed for 0.8.** Activating it changes what the sweep
+  measures — 155 fewer mutants in `a2a-protocol-types`, the only crate with a
+  `src/proto/`, and a budget cut from ~328s to 195s that is close to the ~120s
+  which previously reported trivial mutants as TIMEOUT. That needs a sweep to
+  land on, not a
+  tail-of-release edit, and it would make the number non-comparable with every
+  row of the mutation history until re-measured. The one thing `cap_timeout`
+  existed to prevent — a hung mutant burning the job timeout — is now handled
+  better a layer down, by the 45s per-test kill in `.config/nextest.toml`, which
+  bounds the hang *and* names the test.
+
+  When it is done: move the file to `.cargo/mutants.toml`, delete `cap_timeout`
+  first or nothing runs, re-measure with `--list` before and after so the scope
+  change is a number rather than an assumption, and record the new baseline as
+  its own row. Worth pairing with a check that the config is actually loaded —
+  the repository already treats "is this gate pointed at what it claims to
+  cover?" as a separate question from "can this gate fail?"
+  (`scripts/check_mutation_scope.sh`), and this is the same question again.
+* **The blocking send path's post-executor drain has no bound.** Noted while
+  proving out the `destroy` mutant, and left as an observation rather than a
+  change. `SyncCollector::collect` breaks on a terminal or interrupted state, or
+  on the reader returning `None`; that `None` requires the event queue to close,
+  which requires `EventQueueManager::destroy`, which `CleanupGuard::drop` spawns
+  as a task. In normal operation the executor is bounded by `executor_timeout`
+  and a well-behaved executor reaches a terminal state, so the loop exits on the
+  state check without needing EOF. The gap is narrow: an executor that completes
+  without a terminal state, and a `destroy` that never runs, waits forever — and
+  the only realistic way the spawn does not run is runtime shutdown, when the
+  process is going away regardless. Not changed at the tail of a release, since
+  bounding it means deciding what a blocking `message/send` returns when the
+  drain gives up, which is a protocol answer and not a local one.
 * **~~Decide whether the 500-line guideline applies to scripts.~~ Done
   2026-08-11** — it does, and `check_file_lengths.sh` now enforces it over
   `.rs`, `.sh` and `.py` rather than `.rs` alone. Widened rather than splitting
@@ -343,13 +617,62 @@ This is the category most worth clearing before any external review.
 
 ## Reporting accuracy
 
-* **Codecov's total excludes less than `codecov.yml` says.** Verified
-  2026-08-06 against Codecov's per-file report for `615d01f8`: the three `**`
-  directory globs are applied, the five bare Postgres file paths are not, so
-  793 permanently-uncoverable lines sit in the public denominator. That is the
-  whole 93.62%-badge versus 95.75%-local gap. The entries now carry a glob
-  token; **one upload is still needed to confirm the fix took**, by repeating
-  the arithmetic in `docs/rust-sdk-assessment.md` §4.4.
+* **All 39 CI gates re-run locally at `6ebf821` on 2026-08-12 — 39 of 39 pass.**
+  `scripts/preflight.sh --full`, with a live PostgreSQL so the 16 `#[ignore]`d
+  `postgres_store_tests` actually execute rather than being skipped into a
+  green. Notable timings: workspace clippy 233s, `cargo test --workspace` 233s,
+  `agent-team --release --all-features` 343s.
+
+  The first pass reported 38 pass / 1 fail, and the failure was **an artefact of
+  the harness, not a defect**: `examples/incident-response` binds ports
+  **9200, 9201 and 9202**, and a `@a2a-js/sdk` experiment running in the same
+  session was holding 9200 and 9201, so the demo died with
+  `Os { code: 98, AddrInUse }`. Re-run with the ports free it exits 0 with
+  "15 passed, 0 failed, 0 not compiled, 1 not run" — the one `[NOT RUN]` being
+  the PostgreSQL check, which that invocation does not set
+  `A2A_TEST_POSTGRES_URL` for and which the separate `harden` gate does cover.
+
+  Recorded because it is defect class 4 — a measurement artefact that reads
+  exactly like a real failure in a summary line. **Anything run locally
+  alongside this suite must avoid 9200-9202**, along with the TCK's
+  9994-9999 and 9897-9899.
+
+* **Codecov's total excludes less than `codecov.yml` says — and the glob-token
+  fix did NOT take.** Verified 2026-08-06 against Codecov's per-file report for
+  `615d01f8`: the three `**` directory globs are applied, the five bare Postgres
+  file paths are not, so 793 permanently-uncoverable lines sit in the public
+  denominator. The entries were rewritten into glob-token form
+  (`**/store/postgres_store.rs` etc.) in `0e64636` on the hypothesis that
+  "the three patterns that do work here all contain a glob token".
+
+  **Measured 2026-08-12: the hypothesis is disproven, not merely unconfirmed.**
+  `git merge-base --is-ancestor 0e64636 db1da90` is true, and four uploads
+  post-date the fix (`d6d28d8`, `af7a1f8`, `c008ab0`, `db1da90`), so the
+  confirmation this entry was waiting on has happened. Codecov API v2, per-file
+  report for `db1da9006cdf98e37ed3ea38b4a1f7817abdf429`:
+
+  | Query | Result |
+  |---|---|
+  | files in report | 124 |
+  | CONTROL — `tck/` files | **0** (that ignore *does* work) |
+  | CONTROL — `crates/` files | **124** (query is live, not empty) |
+  | TEST — postgres / `pg_migration` files | **5 — still present** |
+
+  Both controls are load-bearing. A first attempt used the abbreviated sha, got
+  HTTP 404 with an empty body, and "found no postgres files" — a vacuous pass;
+  the `crates/` control is what separates "absent" from "nothing was queried".
+
+  The five total **793 lines / 40 hits**, exactly the 793 this entry predicted:
+  `postgres_config_store.rs` 124, `tenant_postgres_config_store.rs` 140,
+  `pg_migration.rs` 73, `postgres_store.rs` 228, `tenant_postgres_store.rs` 228.
+  Reported at `db1da90`: 35343 lines / 33290 hits = **94.19%**. With the five
+  genuinely ignored: 34550 / 33250 = **96.24%** — a 2.05 point gap.
+
+  So "contains a glob token" is *not* the discriminating property. What is
+  remains **UNKNOWN** — no experiment here isolated it, and this entry will not
+  name a cause it has not tested. **Do not write a third fix into `codecov.yml`
+  without a way to test it before merge**; the first two were each plausible and
+  each shipped without a pre-merge check that could have caught them.
 * **Say which coverage number is meant.** A bare "coverage: N%" in this
   project is ambiguous between at least four figures, and the *file set*
   matters as much as the metric. Re-measured 2026-08-10 with

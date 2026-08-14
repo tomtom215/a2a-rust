@@ -80,7 +80,6 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_event_queue_capacity(usize)` | 256 | Bounded channel size per stream |
 | `with_max_event_size(usize)` | 16 MiB | Maximum serialized event size |
 | `with_max_concurrent_streams(usize)` | 1,024 | Limit concurrent SSE streams (pass `usize::MAX` to disable) |
-| `with_event_queue_write_timeout(Duration)` | — | Deprecated no-op: queue writes never block; a slow streaming consumer receives an explicit lag error instead. Removal planned for 0.8 |
 | `with_handler_limits(HandlerLimits)` | Sensible defaults | Configurable limits (see [HandlerLimits](#handlerlimits) below) |
 | `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
 | `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |

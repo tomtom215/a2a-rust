@@ -26,6 +26,12 @@ row below, dated to the run, with the commit it ran against. A clean sweep
 (zero missed) is still worth recording — "still zero" is signal too, not a
 no-op.
 
+Copy the **Timeout** column too, and read it as unfinished business rather than
+a footnote. `mutants.yml` scores `caught / (caught + missed)`: a timeout is in
+neither term, so it is not a mutant the score counts against — it is a mutant
+the score does not describe. "Zero missed" and "zero timeouts" are different
+statements. The 2026-08-14 row below is what it costs to read one as the other.
+
 ## How the ledger came to be empty for so long
 
 The first row below was recorded on 2026-08-07. Every sweep before it produced
@@ -184,6 +190,166 @@ fixed aggregation by hand over run 31193107921's 15 complete reports. The
 newer row is CI's own output on the 21-shard matrix — same 183 survivors from
 a different partitioning, which is what makes the figure trustworthy rather
 than merely produced.
+
+### A seventh gate defect: the PR gate was blind to 41 of 141 source files
+
+Found 2026-08-12 while re-measuring at `6ebf821`. This one is not about the
+weekly sweep — it is the **incremental, per-PR** gate in
+`mutants.yml`'s `Build PR source diff` step, and it had been silently scoping
+out roughly a third of the library.
+
+The step read:
+
+```sh
+git diff -M "${BASE}...HEAD" -- 'crates/*/src/**/*.rs' > pr-src.diff
+ADDED=$(grep -cE '^\+[^+]' pr-src.diff || true)
+if [ "${ADDED:-0}" -eq 0 ]; then echo "skip=true" ...
+```
+
+A git pathspec is matched by `fnmatch` **without** `FNM_PATHNAME` unless it
+carries `:(glob)` magic, so `*` crosses `/` freely and the `**/` in the middle
+collapses to "one or more directories" — the literal slash after it still has to
+match something. `crates/*/src/**/*.rs` therefore matched only files in a
+*subdirectory* of `src/`, and was blind to every file sitting directly in
+`crates/<crate>/src/`.
+
+Measured at `6ebf821` with `git ls-files`, not deduced:
+
+| Pathspec | Files matched | Matches `types/src/method.rs`? |
+|---|---:|---|
+| `crates/*/src/**/*.rs` (old) | **100** | no |
+| `:(glob)crates/*/src/**/*.rs` (new) | **141** | yes |
+
+**41 of 141 tracked sources — 29% — were invisible**, among them
+`server/src/rate_limit.rs`, `server/src/serve.rs`, `server/src/builder.rs`,
+`server/src/executor.rs`, `types/src/method.rs`, `types/src/signing.rs`,
+`client/src/client.rs`, `client/src/retry.rs`, and all four `lib.rs`.
+`rate_limit.rs` is one of the eight largest survivor clusters in the table
+below, and `serve.rs` is one of the three weakest-covered files in `ROADMAP.md`.
+
+When `ADDED` came out 0 the mutation step was skipped by its own `if:`, the job
+went green, and the summary printed **"No Rust source files changed in
+`crates/*/src/` — nothing to mutate"**, which was false. That is this page's
+oldest theme in a new place: not a gate that failed to fail, but a gate that
+declared there was nothing to measure and was believed.
+
+**Proven against real history rather than a synthetic case.** Of the last 120
+commits, **nine** changed `crates/*/src` sources *exclusively* in the invisible
+set, so each would have produced `ADDED=0` as a PR. Replaying the CI step on
+three of them:
+
+| Commit | What it did | `ADDED` old | `ADDED` fixed |
+|---|---|---:|---:|
+| `a9e1235` | `fix(server): extract the slow path, not the fast one` | 0 | **57** |
+| `a116bc5` | `fix(server): collapse the duplicated rate-limit predicate` | 0 | **24** |
+| `e6aa9e1` | `feat(types): derive the A2A method set from the spec` | 0 | **376** |
+
+Two behavioural fixes to `rate_limit.rs` and a *feature* commit carrying 376
+added source lines, none of it mutated, all three reported as nothing to mutate.
+
+The fix is the `:(glob)` prefix, which gives `**` the "zero or more directories"
+meaning readers already assume. It means **"the incremental gate was green" has
+been a weaker statement than it looked for every PR touching only top-level
+modules.**
+
+**A guard now exists, and it is itself proven able to fail.** Fixing the
+pathspec fixes today's tree and nothing else; the next person to edit that line
+has the same trap waiting. So `scripts/check_mutation_scope.sh` reads the
+pathspec **out of `mutants.yml`** — not a copy, or it could drift from the thing
+that runs — and asserts it matches exactly the tracked `.rs` files under
+`crates/*/src/`, failing in both directions (a missed file hides code from the
+gate; an over-matched one can balloon a PR run past its timeout). It is gate
+**40** in `ci.yml`'s `fmt` job, costs two `git ls-files` calls, and prints
+`141 of 141 tracked sources … are reachable by the PR gate`.
+
+It is registered in `scripts/prove_gates_fail.sh` as the `mutation_scope`
+injection, whose defect is the historical bug restored verbatim — drop the
+`:(glob)` prefix — and whose marker is `MUTATION SCOPE GAP`. Verified: with the
+prefix removed the check exits 1 and names all 41 files; with it, exits 0.
+
+Worth being precise about why this is a `ci.yml` gate and not a probe in
+`scripts/prove_workflow_gates_fail.py`, since that harness owns the other
+workflows. That harness proves a step can fail on bad **input**. This step's
+input was fine — it read its git range correctly, asked for the wrong files, and
+reported success. It also never exits non-zero (it writes `skip=true` to
+`$GITHUB_OUTPUT`), so it matched neither `discover()`'s `EXPLICIT_FAIL` regex nor
+the curated registry, and **fell through the drift guard in both directions**.
+"Can this gate fail?" and "is this gate pointed at everything it claims to
+cover?" are different questions. Only the second one catches a pathspec, and
+nothing in the repository had been asking it.
+
+**The weekly full sweep is not affected, and that is checked rather than
+assumed.** `mutants.toml`'s `examine_globs` carry the same
+`crates/…/src/**/*.rs` shape, which is the obvious next place for this bug to
+live — but those are consumed by cargo-mutants' glob crate, not by git's
+pathspec matcher, and there `**/` does mean "zero or more directories". The
+evidence is in the table below rather than in a reading of the semantics: run
+`31352927429` reported **6 survivors in `rate_limit.rs`**, a file sitting
+directly in `src/`. A sweep blind to top-level files could not have found them.
+The full sweep also never passes `--in-diff`, so it takes no scoping from the
+PR diff at all. Both halves had to hold, and both do.
+
+**The conclusion stands; half the reasoning did not.** See the next section:
+`examine_globs` is not consumed by cargo-mutants' glob crate or by anything
+else, because `mutants.toml` is never read. What actually keeps the sweep
+pointed at the whole library is `-p <crate>` on the command line, and what
+proves it is the `rate_limit.rs` evidence above — which is why that evidence
+was worth gathering instead of resting on the semantics.
+
+### An eighth gate defect: `mutants.toml` is not read at all
+
+Found 2026-08-14 while chasing the `EventQueueManager::destroy` timeout in the
+2026-08-14 row. cargo-mutants 27.1.0 discovers `.cargo/mutants.toml`; this
+repository's file is at the root. Three keys had already been documented as
+"silently ignored" — `test_tool`, `profile`, `exclude_re` — each with its own
+note. The cause was never per-key.
+
+Two independent proofs, both reproducible in a checkout:
+
+```console
+$ cargo mutants -p a2a-protocol-types --all-features --list | grep -c 'src/proto/'
+155
+$ cargo mutants -p a2a-protocol-types --all-features --list --no-config | grep -c 'src/proto/'
+155
+```
+
+`exclude_globs` names `crates/*/src/proto/**` and those mutants are listed
+anyway — and `--no-config`, which disables the file, changes nothing. Disabling
+something that is not being read is a no-op, and that is the tell.
+
+```console
+$ cargo mutants --config mutants.toml --list
+Error: parse toml from mutants.toml
+Caused by: TOML parse error at line 1, column 1
+           unknown field `cap_timeout`
+```
+
+Pointing at the file explicitly does not run. cargo-mutants 27.1.0 rejects
+unknown fields outright, so a *discovered* `mutants.toml` would abort every
+sweep rather than configure one. No sweep has ever aborted on it, which is the
+second proof.
+
+What this changes about reading the table below:
+
+* **Generated protobuf code is mutated.** Every score on this page includes
+  `src/proto/` mutants. They are not excluded and never have been.
+* **The per-mutant budget is cargo-mutants' default 5.0x baseline with no cap**,
+  not the 3.0x / 300s the config states. Measured the same day:
+  `Unmutated baseline in 50s build + 65s test` → `Auto-set test timeout to
+  328s`. 328 exceeds the 300s `cap_timeout`, which settles it without needing
+  to agree on the multiplier — a cap that was applied could not be exceeded.
+  Only the `mutants-incremental` job passes `--timeout 300` on the command
+  line, so the PR gate is capped and the full sweep is not.
+* **What does govern a sweep** is the command line in `mutants.yml`:
+  `-p <crate> --shard --jobs 4 --test-tool=nextest --profile=mutants --
+  --all-features --run-ignored all`, plus `.config/nextest.toml`, which nextest
+  reads normally and which now supplies the per-test kill described in the
+  2026-08-14 row.
+
+Not fixed here, deliberately: activating the config changes what the sweep
+measures, in both scope and budget, and that belongs on a sweep of its own
+rather than at the tail of a release. `ROADMAP.md` carries the plan and the
+numbers it would move.
 
 ## Known equivalent mutants
 
@@ -466,6 +632,32 @@ paragraph, is the thing to check.
 The remaining **64 survivors are in files unchanged since `041c3666`**, so
 those are valid against current `main` and are the ones worth triaging today.
 
+#### Re-checked 2026-08-12 at `6ebf821` — and the sweep was NOT re-run
+
+Stated plainly, because the distinction is the whole point of this page: the
+mutation sweep was **NOT RUN** in the 2026-08-12 session. Not "unchanged", not
+"still 125" — **not measured**. The machine had 4 cores (`nproc`), and a sweep
+that needs 21 CI shards does not fit there in a session; running a partial one
+and reporting it beside a full one is how denominators move silently. So the
+headline row below is still `041c366`'s, and `git rev-list --count
+041c366..6ebf821` puts it **91 commits behind** `main` — up from the 44 recorded
+above against `af7a1f8`.
+
+What *was* re-measured is the staleness itself, which is cheap and does not need
+a sweep:
+
+* All **eight** named survivor-cluster files still changed between `041c366` and
+  `6ebf821`, so the "61 of 125 sit in changed files" half holds unchanged.
+* The set of changed `crates/*/src` sources grew from **9** files at `af7a1f8`
+  to **13** at `6ebf821` — four more files entered it. Since the 64 "still
+  valid" survivors were never enumerated per file, it cannot be said which of
+  them those four touch. **64 is therefore an upper bound at `6ebf821`, not a
+  current count**, and the same refusal to subtract applies as above.
+
+The honest position is unchanged and now further from its evidence: the
+current-`main` survivor count is not measured, 125 is an upper bound carried
+from a tree 91 commits back, and the next full sweep settles it.
+
 ### Triage of the 64 still-valid survivors (2026-08-10)
 
 | Bucket | Count | Disposition |
@@ -684,6 +876,10 @@ unattributed rather than reassigned on a guess.
 
 | Date | Commit | Overall Score | Caught | Missed | Timeout | Notes |
 |------|--------|---------------|-------:|-------:|--------:|-------|
+| 2026-08-14 | [`1d51be0`](https://github.com/tomtom215/a2a-rust/commit/1d51be0) | **99%** | 2262 | 4 | 1 | Run [31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306), `workflow_dispatch` on the 0.8 release branch — **the confirming sweep for the whole burn-down**, and the last row measured before the release. Full CI configuration: `--all-features --run-ignored all`, live PostgreSQL, 21 shards. 1293 unviable. 99.82% exact. Per crate: `a2a-types` 631/0 and `a2a-client` 375/0 — **100%, zero survivors, zero timeouts**; `a2a-server` 1256/4/1; `a2a-sdk` 0/0. Every figure re-derived from all 21 raw artifacts rather than read off the summary: 21/21 `COMPLETED` markers, and the four `missed.txt` lines and one `timeout.txt` line counted directly. The arithmetic closes against the shards' own `mutants.json`: 2262 + 4 + 1 + 1293 = **3560**, the exact number of mutants those files enumerate, so nothing is unaccounted for. Against `8642e78`: same 3560-mutant set, survivors **6 → 4** and timeouts **3 → 1**, and the four mutants that moved are exactly the four that were worked on — `state_machine.rs:143` and `rest/mod.rs:255` (fixed in `2607280`) plus `sse.rs:102 send_event` and `sse.rs:125 send_keep_alive` (fixed in `1d51be0`), all four now in `caught.txt`. **The four survivors are exactly the documented-unkillable set** and nothing else: `tenant_config.rs:82 TenantLimits::builder`, `tenant_config.rs:167 PerTenantConfig::builder`, `streaming/sse.rs:131 SseBodyWriter::close` (three semantic equivalences) and `auth/jwt.rs:790 build_jwks_client` (a `#[cfg]` artifact). **The one timeout is not expected and is reported rather than rounded off:** `manager.rs:385 replace EventQueueManager::destroy with ()`, which `90bf065` had claimed re-verified at "0 timeouts". It is fixed in `ef4b109` — see that row's note and the `.config/nextest.toml` header. Note which shards failed and which did not: 2/12, 4/12 and 9/12 exited 1 on their survivors, while 12/12, holding the timeout, exited **0**. That is the workflow's scoring rule made visible — a timeout fails nothing. |
+| 2026-08-14 | [`8642e78`](https://github.com/tomtom215/a2a-rust/commit/8642e78) | **99%** | 2258 | 6 | 3 | Run on the 0.8 release branch after burning down the 57 survivors measured at `7469fd5`. `a2a-types`, `a2a-client` and `a2a-sdk` all reach **100%, zero survivors**; `a2a-server` 99%. 1293 unviable. **The sweep caught two claims that were wrong**, both mine and both recorded rather than quietly fixed: `state_machine.rs:143` was reported killed in `8e3f321`, but that test exercised the parts-cap branch, which returns before the save-failure revert the mutant lives in — a passing test for a different code path. And `rest/mod.rs:255` was called run-to-run variance in `11f4456` when it vanished between sweeps; it had never been killed, and the REST binding's *slash* cancel spelling had no coverage at all while three tests exercised the colon one. Both fixed in `2607280` and verified (96 mutants, 42 caught, 0 missed). **The sentence this row used to end on was a third false claim, corrected here rather than deleted.** It read: *"The 3 timeouts were unbounded receives, not weak tests, and are bounded in `1d51be0` — re-verified as 26 caught / 0 timeouts."* The only run matching that "26 caught" printed `TIMEOUT crates/…/manager.rs:385:9: replace EventQueueManager::destroy with ()` and closed `76 mutants tested in 22m: 26 caught, 49 unviable, 1 timeouts` — and it finished 21 hours *before* `1d51be0` was authored, so it verified nothing about the commit it was cited for. There was never a local-versus-CI disagreement either: both said the same thing, and `0 missed` was read off the summary as `0 timeouts`. Two of the three (`sse.rs` `send_event`, `send_keep_alive`) were unbounded receives and are genuinely fixed. The third was misdiagnosed as well as misread: `destroy` is what closes a task's event queue — the blocking send path calls it from `CleanupGuard::drop` — so a no-op `destroy` hangs every test that drains a task stream to EOF, across `dispatch::grpc::native`, `handler::messaging`, `event_processing_tests`, `handler_tests`, `audit_tests` and `auth_jwt_e2e`, while the tests that catch it head-on fail in milliseconds and never get to report because the process never exits. Bounding one receive could not have fixed that and did not. Fixed at the harness instead: `.config/nextest.toml` kills any test past 45s, so the hangs are terminated and named. Measured in both directions under the sweep's own configuration against a live PostgreSQL 16.13 — with the file, `1 mutant tested in 3m: 1 caught` and an empty `timeout.txt`; with it moved out of the tree and nothing else changed, `TIMEOUT … in 8s build + 334s test` / `1 mutant tested in 8m: 1 timeouts`. No `.rs` file differs from `1d51be0`, the commit this sweep's TIMEOUT was recorded against. Read the score accordingly: 2258 / (2258 + 6) is over **2264** mutants, and 2267 were examined. |
+| 2026-08-13 | [`7469fd5`](https://github.com/tomtom215/a2a-rust/commit/7469fd5) | **97%** | 2210 | 57 | 2 | Run [31742334862](https://github.com/tomtom215/a2a-rust/actions/runs/31742334862), `workflow_dispatch` on the 0.8 release branch — **the first sweep of this table measured on something other than `main`**, and the first covering the code 0.8 actually ships. Full CI configuration: `--all-features --run-ignored all`, live PostgreSQL, 21 shards. All 21 completed; 21/21 `COMPLETED` markers and a 57-line `missed.txt` total both verified against the artifacts rather than taken from the summary. 1289 unviable. Per crate: `a2a-server` 40, `a2a-types` 9, `a2a-client` 8. `dispatch/grpc/service.rs` is absent (deleted in 0.8) and `dispatch/grpc/native.rs` stays 0. `streaming/event_queue/manager.rs` and `dispatch/grpc/dispatcher.rs` are **0**, confirming the five killed in `288d703` stay dead under the full feature set — the narrower `--features grpc` run that first verified them was not misleading. **Of the 63 → 57 drop, five are this branch's; the other is variance** — `rest/mod.rs:255` (cancel match arm) and `sse.rs:102` (`send_event`, previously a `TIMEOUT`) both flipped to caught in files the branch does not touch, on async paths where the harness is timing-sensitive. Superseded for `a2a-protocol-types`: the 9 it reports there are addressed in `df6f023` and `05272fa`, which post-date this commit. |
+| 2026-08-13 | [`6ebf821`](https://github.com/tomtom215/a2a-rust/commit/6ebf821) | **97%** | 2254 | 63 | 3 | Run [31681284244](https://github.com/tomtom215/a2a-rust/actions/runs/31681284244), `workflow_dispatch` on `main`. All 21 shards completed: 21/21 `COMPLETED` markers present across the uploaded artifacts, and the concatenated `missed.txt` files hold exactly 63 lines — the aggregate matches the shard reports rather than being trusted on the summary's word. 1291 unviable. Wall-clock 103m. **Survivors halved against 2026-08-10, 125 → 63**, and all three clusters the earlier sweeps led with are now zero: `handler/messaging.rs` 17 → 0, `store/task_store/in_memory/eviction.rs` 13 → 0, `dispatch/grpc/native.rs` 11 → 0. Largest remaining are `types/error.rs`, `dispatch/rest/mod.rs` and `dispatch/jsonrpc/response.rs` at 5 each. `dispatch/grpc/service.rs` is **0** here too — see the ROADMAP note: the 9 that 0.8's deletion was expected to retire had already been killed by tests landed since `041c366`, so the deletion retires none. |
 | 2026-08-10 | [`041c366`](https://github.com/tomtom215/a2a-rust/commit/041c366) | **94%** | 2187 | 125 | 2 | Run [31352927429](https://github.com/tomtom215/a2a-rust/actions/runs/31352927429), scheduled, on `main`. **The first sweep with a live database** — see the note above; Postgres-file survivors fall 18 → 3. All 21 shards completed and all 21 carry a `COMPLETED` marker. Exit 1, correctly: 125 survivors reported rather than rounded away. 1277 unviable. Per crate: `a2a-server` 1225/107 (91%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0. Largest survivor clusters: `handler/event_processing/sync_collector.rs` 9, `dispatch/grpc/service.rs` 9, `streaming/event_queue/in_memory.rs` 8, `handler/event_processing/background/state_machine.rs` 8. **Row added 2026-08-11**, three weeks' worth of readers late — the sweep was described under "Per-file measurements" from the day it ran, but never given a row here, so the canonical dated table still showed 92%/183 as the latest figure. Independently re-derived that day from all 21 shard artifacts with a second implementation of the workflow's counting rule: 2187/125/2/1277 and all four per-crate rows reproduce exactly. |
 | 2026-08-07 | [`f54f33e`](https://github.com/tomtom215/a2a-rust/commit/f54f33e) | **92%** | 2168 | 183 | 3 | Run [31209868659](https://github.com/tomtom215/a2a-rust/actions/runs/31209868659) — first sweep aggregated by CI itself rather than by hand, and the first on the 21-shard matrix (a2a-types and a2a-client split 4 ways each). All 21 shards completed; `Require every shard to have completed` passed on the COMPLETED markers while the matrix result was `failure`, which is the case the previous run could not handle. **Identical 183 survivors to the 15-shard run below**, from a completely different partitioning of the mutant set — the one-mutant difference in caught/timeout is timing flake. 1276 unviable. Wall-clock 117m, still set by `a2a-server` shard 2/12 at 116m. |
 | 2026-08-07 | [`803a139`](https://github.com/tomtom215/a2a-rust/commit/803a139664f7b9326dc8b90bd91d382ea187f481) | **92%** | 2169 | 183 | 2 | First complete sweep. Run [31193107921](https://github.com/tomtom215/a2a-rust/actions/runs/31193107921), all 15 shards finished. Per crate: `a2a-server` 1207/165 (87%), `a2a-client` 357/10 (97%), `a2a-types` 605/8 (98%), `a2a-sdk` 0/0 (a pure re-export facade — it generates no mutants). 1276 unviable. Largest survivor clusters: `handler/messaging.rs` 17, `store/task_store/in_memory/eviction.rs` 13, `dispatch/grpc/native.rs` 11. Postgres-file survivors fell 18 → 3 once the sweep got a live database. |

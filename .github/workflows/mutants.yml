@@ -112,9 +112,14 @@ jobs:
     # GitHub-hosted runners.
     #
     # Raising a timeout is not free — a genuinely stuck job now burns four
-    # hours instead of two. That is bounded in practice: `cap_timeout = 300` in
-    # mutants.toml kills any single mutant after five minutes, so a shard can
-    # be slow but not hung.
+    # hours instead of two. ~~That is bounded in practice: `cap_timeout = 300`
+    # in mutants.toml kills any single mutant after five minutes, so a shard
+    # can be slow but not hung.~~ **False, and measured false on 2026-08-14:**
+    # cargo-mutants never reads that file (it looks for `.cargo/mutants.toml`),
+    # so there is no cap and the per-mutant budget is the tool's default 5x
+    # baseline. What actually bounds a shard is `.config/nextest.toml`, which
+    # nextest does read and which kills any single *test* at 45s. That is a
+    # tighter bound than `cap_timeout` ever described, and it names the test.
     #
     # Note what the table shows: runtime tracks *unviable* mutants more than
     # total ones. Shard 2/12 and shard 3/12 both had 180 mutants and differed
@@ -147,7 +152,10 @@ jobs:
     # have recorded 18 real, checkable mutants as permanently out of scope on
     # the strength of a CI limitation — the same trade that put a blanket
     # `**/mod.rs` exclusion in this project's config and silently exempted
-    # ~2,800 lines. Measuring them costs one service container.
+    # ~2,800 lines. Measuring them costs one service container. (Post-2026-08-14
+    # footnote: an exclusion there would not have taken effect anyway, since
+    # cargo-mutants never reads that file. The judgement was right for the
+    # wrong reason, which is worth knowing before trusting the next one.)
     services:
       postgres:
         image: postgres:16
@@ -166,7 +174,8 @@ jobs:
         # a2a-server has > 1,800 mutants and cannot finish inside a single
         # 2-hour job even at 4-way intra-crate parallelism — so we shard it
         # across 12 separate runners. Wall-clock ≈ the slowest shard; runs
-        # use nextest + a debuginfo-free profile (see mutants.toml).
+        # use nextest + a debuginfo-free profile, both passed as CLI flags in
+        # the step below (`[profile.mutants]` is defined in Cargo.toml).
         #
         # It was 8, and 8 was not enough: in run 30236603180 (2026-07-27) the
         # shards that finished took 86-113 minutes, and shards 3/8 and 4/8
@@ -326,11 +335,17 @@ jobs:
           # what made this gate vacuous; the next step asserts the layout
           # rather than trusting this comment.
           #
-          # Per-mutant timeout is controlled via `cap_timeout` in
+          # ~~Per-mutant timeout is controlled via `cap_timeout` in
           # mutants.toml (raised from 120 → 300 because the a2a-server
           # baseline test suite alone takes ~60s on GitHub-hosted runners;
           # at 3x the auto-computed timeout already exceeds 120, so the
-          # previous cap was masking real CAUGHT results as TIMEOUT).
+          # previous cap was masking real CAUGHT results as TIMEOUT).~~
+          # **Measured false 2026-08-14** — mutants.toml is never read, so the
+          # per-mutant budget here is cargo-mutants' default 5x baseline with
+          # no cap (`baseline 65s test` → `Auto-set test timeout to 328s`,
+          # above the 300 that file claims). The reasoning about ~60s baselines
+          # still explains why a tight cap was a bad idea; it just never
+          # applied. `.config/nextest.toml` is what bounds a hang now.
           # `--run-ignored all` so the Postgres suite actually runs against
           # the service container above; without it those tests stay
           # `#[ignore]`d and every Postgres mutant survives for want of a
@@ -341,6 +356,15 @@ jobs:
           # belongs on the command line, not as `exclude_re` in mutants.toml —
           # cargo-mutants 27.1.0 silently ignores that config key, exactly as it
           # ignores `test_tool` and `profile`.
+          #
+          # `--test-tool=nextest` means `.config/nextest.toml` applies, and it
+          # is load-bearing here rather than incidental: it kills any single
+          # test that runs past 45s. Without that, a mutant that makes a test
+          # *hang* rather than fail wedges the whole run until cargo-mutants'
+          # own timeout and is reported TIMEOUT, which this workflow's score
+          # counts in neither the numerator nor the denominator. See that file
+          # for the mutant that established it and the measurement behind the
+          # numbers. Do not run this sweep with `--test-tool` unset.
           cargo mutants -p ${{ matrix.crate }} \
             --output . \
             --shard ${{ matrix.shard }} \
@@ -452,6 +476,10 @@ jobs:
             echo "| Missed | ${MISSED} |"
             echo "| Timeout | ${TIMEOUT} |"
             echo "| Unviable | ${UNVIABLE} |"
+            echo ""
+            echo "Score is \`caught / (caught + missed)\`. **Timeouts are in"
+            echo "neither term**, so each one is a mutant whose adequacy this"
+            echo "score does not describe — read the count above, not past it."
             echo ""
 
             if [ "$MISSED" -gt 0 ]; then
@@ -759,6 +787,10 @@ jobs:
             echo "| Timeout | ${TOTAL_TIMEOUT} |"
             echo "| Unviable | ${TOTAL_UNVIABLE} |"
             echo ""
+            echo "Score is \`caught / (caught + missed)\`. **Timeouts are in"
+            echo "neither term**, so each one is a mutant whose adequacy this"
+            echo "score does not describe — read the count above, not past it."
+            echo ""
             tail -n +3 /tmp/summary.md
           } > /tmp/final-summary.md
 
@@ -874,7 +906,32 @@ jobs:
           # Without it, a large rename (e.g. crates/a2a-* -> crates/a2a-protocol-*)
           # looks like thousands of brand-new lines and balloons the run to the
           # entire mutant set, blowing the timeout. We scope to library source.
-          git diff -M "${BASE}...HEAD" -- 'crates/*/src/**/*.rs' > pr-src.diff
+          #
+          # `:(glob)` is load-bearing, not decoration. Without it a pathspec is
+          # matched by fnmatch WITHOUT FNM_PATHNAME, so `*` crosses `/` and the
+          # `**/` in the middle degenerates into "one or more directories" — the
+          # literal slash after it still has to match something. The effect was
+          # that `crates/*/src/**/*.rs` saw only files in a SUBDIRECTORY of
+          # `src/` and was blind to every file sitting directly in
+          # `crates/<crate>/src/`: 41 of 141 tracked sources at 6ebf821,
+          # including rate_limit.rs, serve.rs, builder.rs, method.rs, signing.rs
+          # and all four lib.rs.
+          #
+          # That is not theoretical. Nine of the last 120 commits changed only
+          # such files, so `ADDED` came out 0, `skip` came out true, this job's
+          # mutation step was skipped by its own `if:`, and the summary below
+          # announced "No Rust source files changed in crates/*/src/" — which
+          # was false. Among them: two behavioural fixes to rate_limit.rs
+          # (a9e1235, a116bc5) and e6aa9e1, a feature commit carrying 376 added
+          # source lines that were never mutated. Measured, not deduced: those
+          # three give ADDED = 0 / 0 / 0 under the old pathspec and 57 / 24 /
+          # 376 under this one.
+          #
+          # With `:(glob)`, `**` means "zero or more directories" as readers
+          # already assume, and the pattern matches all 141. Verified with
+          # `git ls-files -- ':(glob)crates/*/src/**/*.rs' | wc -l` = 141,
+          # against 100 for the unprefixed form, with nothing outside `src/`.
+          git diff -M "${BASE}...HEAD" -- ':(glob)crates/*/src/**/*.rs' > pr-src.diff
           ADDED=$(grep -cE '^\+[^+]' pr-src.diff || true)
 
           if [ "${ADDED:-0}" -eq 0 ]; then
@@ -898,8 +955,10 @@ jobs:
           set -o pipefail
           # `--in-diff` restricts mutants to functions whose lines were added or
           # changed in this PR's diff, so renames contribute nothing and only
-          # genuinely edited code is mutated. --timeout matches `cap_timeout`
-          # in mutants.toml (see the lint there for context).
+          # genuinely edited code is mutated. `--timeout 300` was written to
+          # match `cap_timeout` in mutants.toml; since that file is never read
+          # (measured 2026-08-14), this flag is the only per-mutant cap either
+          # job has, and only this job has it. Keep it.
           # `--shard K/N` partitions the in-diff mutant set across the matrix
           # so each runner tests roughly 1/N of the mutants and fits the timeout.
           # `--output .` ⇒ report at ./mutants.out — see the full-sweep job for

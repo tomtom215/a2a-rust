@@ -958,3 +958,296 @@ async fn cors_headers_on_not_found_response() {
         "CORS headers should be on 404 response"
     );
 }
+
+// ── read_body_limited boundary (dispatch/rest/response.rs) ───────────────────
+//
+// Kills `replace > with >=` and `replace > with ==` at
+// `dispatch/rest/response.rs`'s `if upper > max_size as u64`.
+//
+// Same shape as the JSON-RPC pair in jsonrpc_dispatch_coverage_tests.rs, and
+// the same trap: `Limited` rejects an oversized body during the read even when
+// the pre-read `Content-Length` fast path is disabled, so "oversized is
+// rejected" holds under the `==` mutant while the memory bound that fast path
+// exists to enforce is gone. Only the message distinguishes them — the early
+// rejection can name the declared length, the read-time limiter cannot.
+mod rest_body_limit_boundary {
+    use super::{http_request, make_handler};
+    use a2a_protocol_server::dispatch::{DispatchConfig, RestDispatcher};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    const LIMIT: usize = 512;
+
+    async fn start_limited_rest_server() -> SocketAddr {
+        let dispatcher = Arc::new(RestDispatcher::with_config(
+            make_handler(),
+            DispatchConfig::default().with_max_request_body_size(LIMIT),
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let d = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req| {
+                        let d = Arc::clone(&d);
+                        async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// A `message:send` body padded to exactly `len` bytes via `metadata`,
+    /// which `MessageSendParams` accepts. Size is the only variable; the
+    /// payload stays schema-valid so a rejection can only be about length.
+    fn send_body_of_exactly(len: usize) -> String {
+        let prefix = r#"{"message":{"messageId":"m-1","role":"user","parts":[{"kind":"text","text":"hi"}]},"metadata":{"pad":""#;
+        let suffix = r#""}}"#;
+        let overhead = prefix.len() + suffix.len();
+        assert!(
+            len >= overhead,
+            "cannot build a {len}-byte body; the envelope alone is {overhead} bytes"
+        );
+        let out = format!("{prefix}{}{suffix}", "p".repeat(len - overhead));
+        assert_eq!(out.len(), len, "padding arithmetic is off");
+        serde_json::from_str::<serde_json::Value>(&out)
+            .expect("the padded body must stay valid JSON");
+        out
+    }
+
+    /// Kills `>` → `>=`: a body of exactly the cap is within it.
+    #[tokio::test]
+    async fn body_of_exactly_the_limit_is_not_rejected_as_too_large() {
+        let addr = start_limited_rest_server().await;
+        let body = send_body_of_exactly(LIMIT);
+
+        let (_status, text) = http_request(
+            addr,
+            "POST",
+            "/message:send",
+            Some(&body),
+            Some("application/json"),
+        )
+        .await;
+
+        assert!(
+            !text.contains("too large"),
+            "a body of exactly {LIMIT} bytes is at the cap, not over it: {text}"
+        );
+    }
+
+    /// Kills `>` → `==`: the refusal must come from the pre-read check, which
+    /// is the only one that knows the declared size.
+    #[tokio::test]
+    async fn oversized_body_is_refused_before_reading_and_names_the_size() {
+        let addr = start_limited_rest_server().await;
+        let declared = LIMIT * 4;
+        let body = send_body_of_exactly(declared);
+
+        let (_status, text) = http_request(
+            addr,
+            "POST",
+            "/message:send",
+            Some(&body),
+            Some("application/json"),
+        )
+        .await;
+
+        assert!(
+            text.contains("too large"),
+            "a body four times the cap must be rejected: {text}"
+        );
+        assert!(
+            text.contains(&declared.to_string()),
+            "the early Content-Length rejection names the declared size; \
+             without it, `Limited` caught this mid-read and the pre-read fast \
+             path — the actual memory bound — is untested. got: {text}"
+        );
+    }
+}
+
+// ── RestDispatcher guard conditions ─────────────────────────────────────────
+mod rest_dispatch_guards {
+    use super::{http_request, make_handler};
+    use a2a_protocol_server::dispatch::{DispatchConfig, RestDispatcher};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    const QUERY_LIMIT: usize = 64;
+
+    async fn start(config: DispatchConfig) -> SocketAddr {
+        let dispatcher = Arc::new(RestDispatcher::with_config(make_handler(), config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let d = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req| {
+                        let d = Arc::clone(&d);
+                        async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// Kills `replace > with >=` on `query.len() > max_query_string_length`.
+    ///
+    /// A query string of exactly the cap is at the limit, not past it, and
+    /// must be served rather than met with 414.
+    #[tokio::test]
+    async fn query_string_of_exactly_the_limit_is_accepted() {
+        let addr = start(DispatchConfig::default().with_max_query_string_length(QUERY_LIMIT)).await;
+
+        // `?` is not counted in `query`, so the query is exactly QUERY_LIMIT.
+        let key = "pad=";
+        let query = format!("{key}{}", "q".repeat(QUERY_LIMIT - key.len()));
+        assert_eq!(
+            query.len(),
+            QUERY_LIMIT,
+            "probe must sit exactly on the cap"
+        );
+
+        let (status, body) =
+            http_request(addr, "GET", &format!("/tasks?{query}"), None, None).await;
+        assert_ne!(
+            status, 414,
+            "a query of exactly {QUERY_LIMIT} bytes is within the limit: {body}"
+        );
+        assert!(
+            !body.contains("query string too long"),
+            "at-the-limit query must not be refused for length: {body}"
+        );
+    }
+
+    /// Kills `replace || with &&` at the second `||`, and `replace == with !=`
+    /// on the `"PUT"` and `"PATCH"` comparisons, in the Content-Type guard
+    /// `method == "POST" || method == "PUT" || method == "PATCH"`.
+    ///
+    /// Only the POST arm had coverage, which is why the first `==` and first
+    /// `||` were already caught while these three survived.
+    ///
+    /// `&&` binds tighter than `||`, so mutating the second `||` yields
+    /// `POST || (PUT && PATCH)` — a method cannot be both, so the guard
+    /// collapses to POST-only and PUT/PATCH stop being validated entirely.
+    #[tokio::test]
+    async fn content_type_is_validated_on_put_and_patch_too() {
+        let addr = start(DispatchConfig::default()).await;
+
+        for method in ["POST", "PUT", "PATCH"] {
+            let (status, body) = http_request(
+                addr,
+                method,
+                "/message:send",
+                Some("{}"),
+                Some("text/plain"),
+            )
+            .await;
+            assert_eq!(
+                status, 415,
+                "{method} with text/plain must be refused; a body-bearing \
+                 method that skips Content-Type validation accepts anything: {body}"
+            );
+        }
+    }
+
+    /// Kills the inverted side of the same two `==` mutations.
+    ///
+    /// With `method != "PUT"` (or `!= "PATCH"`) the disjunction is true for
+    /// every *other* method, so GET — which carries no body and whose
+    /// Content-Type is irrelevant — starts being rejected with 415. Asserting
+    /// only that PUT/PATCH are validated would leave that half alive.
+    #[tokio::test]
+    async fn content_type_is_not_validated_on_bodyless_methods() {
+        let addr = start(DispatchConfig::default()).await;
+
+        let (status, body) = http_request(addr, "GET", "/tasks", None, Some("text/plain")).await;
+        assert_ne!(
+            status, 415,
+            "GET carries no body, so its Content-Type must not be policed; a \
+             415 here means the method comparison was inverted: {body}"
+        );
+    }
+}
+
+// ── Slash-separated cancel route ────────────────────────────────────────────
+//
+// Kills `delete match arm ("POST", ["tasks", id, "cancel"])`.
+//
+// The REST binding accepts two spellings of cancel: the colon form
+// `/tasks/{id}:cancel` handled around line 227, and the slash form
+// `/tasks/{id}/cancel` at line 255. Every existing test uses the colon form —
+// including `GET /tasks/some-task:cancel` and `POST /tasks/:cancel`, which
+// look like cancel-route coverage and are — so deleting the *slash* arm broke
+// nothing any test observed.
+//
+// This mutant is also a lesson in reading a sweep carefully. It appeared in
+// the 2026-08-13 main sweep, was absent from the branch sweep at 7469fd5, and
+// I recorded that as run-to-run variance. It was not: it was never killed,
+// and the final sweep brought it back. "Absent from one run" is not "caught".
+mod slash_cancel_route {
+    use super::{http_client, http_request, make_send_params, start_rest_server};
+    use a2a_protocol_types::responses::SendMessageResponse;
+    use bytes::Bytes;
+    use http_body_util::{BodyExt, Full};
+
+    #[tokio::test]
+    async fn post_tasks_id_cancel_is_routed() {
+        let (addr, _handle) = start_rest_server().await;
+
+        // A real task, so a 404 can only mean the route missed — cancelling an
+        // unknown id would itself answer 404 and prove nothing.
+        let client = http_client();
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/message:send"))
+            .header("content-type", "application/json")
+            .header("a2a-version", "1.0")
+            .body(Full::new(Bytes::from(
+                serde_json::to_vec(&make_send_params()).expect("params"),
+            )))
+            .expect("request");
+        let resp = client.request(req).await.expect("send");
+        assert_eq!(resp.status(), 200, "seeding a task must succeed");
+        let body = resp.into_body().collect().await.expect("body").to_bytes();
+        let task_id = match serde_json::from_slice::<SendMessageResponse>(&body).expect("parse") {
+            SendMessageResponse::Task(t) => t.id.0,
+            other => panic!("expected a Task, got {other:?}"),
+        };
+
+        let (status, text) = http_request(
+            addr,
+            "POST",
+            &format!("/tasks/{task_id}/cancel"),
+            None,
+            None,
+        )
+        .await;
+
+        assert_ne!(
+            status, 404,
+            "the slash-separated cancel route must be routed; 404 on a task \
+             that exists means the match arm is gone. body: {text}"
+        );
+    }
+}

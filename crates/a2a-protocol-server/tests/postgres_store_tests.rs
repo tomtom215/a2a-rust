@@ -593,6 +593,65 @@ async fn tenant_task_store_isolates_tenants() {
 
 #[tokio::test]
 #[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn tenant_task_insert_if_absent_reports_insertion_and_is_tenant_scoped() {
+    // Kills all three survivors on `result.rows_affected() > 0` in
+    // TenantAwarePostgresTaskStore::insert_if_absent — `> 0` mutated to `< 0`,
+    // `== 0` and `>= 0`.
+    //
+    // `rows_affected()` is a u64, so `< 0` is never true and `>= 0` is always
+    // true: the first collapses the method to "never inserted", the second to
+    // "always inserted", and `== 0` simply inverts it. Every one of the three
+    // is caught the moment both outcomes are asserted on the same key.
+    //
+    // They survived because the tenant-aware store had no insert_if_absent
+    // coverage at all. `task_insert_if_absent` above exercises the *plain*
+    // PostgresTaskStore; `tenant_task_store_isolates_tenants` exercises the
+    // tenant one but only through save/get/list. The method was reachable by
+    // neither.
+    let db = TestDb::create("tenant_insert_if_absent").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant postgres store");
+
+    TenantContext::scope("acme", async {
+        assert!(
+            store
+                .insert_if_absent(&make_task("t1", "ctx1"))
+                .await
+                .expect("first insert"),
+            "a fresh key must report that it was inserted"
+        );
+        assert!(
+            !store
+                .insert_if_absent(&make_task("t1", "ctx1"))
+                .await
+                .expect("duplicate insert"),
+            "a duplicate must report that nothing was inserted; reporting \
+             true would make the method useless as a claim primitive"
+        );
+    })
+    .await;
+
+    // The uniqueness constraint is on (tenant_id, id), so the same task id is
+    // free in another tenant. Asserted here because a store that ignored the
+    // tenant column would still satisfy the two assertions above.
+    TenantContext::scope("globex", async {
+        assert!(
+            store
+                .insert_if_absent(&make_task("t1", "ctx1"))
+                .await
+                .expect("insert under a second tenant"),
+            "task ids are scoped per tenant, so globex must be able to claim \
+             an id acme already holds"
+        );
+    })
+    .await;
+
+    db.drop_db().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
 async fn tenant_push_store_isolates_tenants() {
     let db = TestDb::create("tenant_push").await;
     let store = TenantAwarePostgresPushConfigStore::new(&db.url)

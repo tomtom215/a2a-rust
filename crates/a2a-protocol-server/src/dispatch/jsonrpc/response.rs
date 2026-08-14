@@ -515,4 +515,131 @@ mod unrecognized_param_tests {
             assert!(unrecognized_params(accepted, &params).is_empty());
         }
     }
+
+    // ── error_response_bytes carries ErrorInfo (spec §9.5) ───────────────
+
+    /// Kills `delete !` in `error_response_bytes`'s `if !data.is_null()`.
+    ///
+    /// Inverting it is not cosmetic: for any code with an `a2a_reason` the
+    /// `google.rpc.ErrorInfo` array stops being attached, which §9.5 requires,
+    /// and for codes without one the response gains an explicit `"data": null`.
+    /// Both directions are asserted, because each alone leaves half the
+    /// mutation alive.
+    #[test]
+    fn error_response_attaches_error_info_and_omits_null_data() {
+        use super::error_response_bytes;
+        use crate::error::ServerError;
+
+        // TaskNotFound has an a2a_reason, so ErrorInfo must be present.
+        let bytes = error_response_bytes(
+            Some(serde_json::json!("1")),
+            &ServerError::TaskNotFound(a2a_protocol_types::task::TaskId::new("t-1")),
+        );
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON-RPC");
+        let data = &v["error"]["data"];
+        assert!(
+            data.is_array(),
+            "§9.5 requires the ErrorInfo array on codes that have a reason; got {v}"
+        );
+        assert_eq!(
+            data[0]["@type"], "type.googleapis.com/google.rpc.ErrorInfo",
+            "the payload must be a google.rpc.ErrorInfo: {v}"
+        );
+        assert_eq!(data[0]["reason"], "TASK_NOT_FOUND", "{v}");
+
+        // Internal has no a2a_reason, so `data` is null and must be omitted
+        // entirely rather than serialised as an explicit null.
+        let bytes = error_response_bytes(
+            Some(serde_json::json!("2")),
+            &ServerError::Internal("boom".into()),
+        );
+        let v: serde_json::Value = serde_json::from_slice(&bytes).expect("valid JSON-RPC");
+        assert!(
+            v["error"].get("data").is_none(),
+            "a reasonless code must omit `data`, not send an explicit null: {v}"
+        );
+    }
+
+    // ── warn_unrecognized_params (log-only branch) ───────────────────────
+    //
+    // Two mutants live here — replacing the whole function with `()` and
+    // deleting the `!` in `if !unknown.is_empty()` — and neither changes any
+    // value a caller can observe: the function exists solely to emit a
+    // warning. Asserting on it needs the emitted events, so these tests
+    // install a capturing subscriber. `trace_warn!` compiles to nothing
+    // without the `tracing` feature, hence the gate; the sweep runs
+    // `--all-features`, so they are live there.
+
+    #[cfg(feature = "tracing")]
+    fn capture_logs<F: FnOnce()>(f: F) -> String {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct Buf(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Buf {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().expect("log buffer").extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Buf {
+            type Writer = Self;
+            fn make_writer(&'a self) -> Self::Writer {
+                self.clone()
+            }
+        }
+
+        let buf = Buf(Arc::new(Mutex::new(Vec::new())));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(buf.clone())
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, f);
+        let captured = buf.0.lock().expect("log buffer").clone();
+        String::from_utf8_lossy(&captured).into_owned()
+    }
+
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn unrecognized_params_are_warned_about_by_name() {
+        use super::warn_unrecognized_params;
+
+        let logs = capture_logs(|| {
+            warn_unrecognized_params::<a2a_protocol_types::params::TaskQueryParams>(
+                "GetTask",
+                &json!({"id": "t-1", "histroyLength": 5}),
+            );
+        });
+        assert!(
+            logs.contains("histroyLength"),
+            "the warning must name the unrecognized field so a typo is \
+             findable; silence here means the branch never ran. got: {logs:?}"
+        );
+        assert!(
+            logs.contains("GetTask"),
+            "the warning must name the method: {logs:?}"
+        );
+    }
+
+    #[cfg(feature = "tracing")]
+    #[test]
+    fn fully_recognized_params_warn_about_nothing() {
+        use super::warn_unrecognized_params;
+
+        let logs = capture_logs(|| {
+            warn_unrecognized_params::<a2a_protocol_types::params::TaskQueryParams>(
+                "GetTask",
+                &json!({"id": "t-1", "historyLength": 5}),
+            );
+        });
+        assert!(
+            !logs.contains("does not recognize"),
+            "every field here is accepted, so no forward-compatibility \
+             warning may be emitted; one appearing means the emptiness test \
+             is inverted. got: {logs:?}"
+        );
+    }
 }

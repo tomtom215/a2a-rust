@@ -301,17 +301,22 @@ straightforward: add a test that asserts the specific behavior.
 ### Running Mutation Tests
 
 ```bash
-# Install cargo-mutants (one-time setup)
-cargo install cargo-mutants
+# Install cargo-mutants and cargo-nextest (one-time setup)
+cargo install cargo-mutants cargo-nextest --locked
 
-# Full mutation sweep (all library crates)
-cargo mutants --workspace
+# A live database, or every Postgres mutant survives for want of one
+# rather than for want of a test:
+export A2A_TEST_POSTGRES_URL=postgres://postgres:postgres@localhost:5432/postgres
 
-# Test a specific crate
-cargo mutants -p a2a-protocol-types
+# What CI actually runs, per crate. Reproduce this exactly before concluding
+# anything about a survivor — a narrower invocation measures a smaller
+# feature set and reports survivors that a full one kills.
+cargo mutants -p a2a-protocol-server --test-tool=nextest --profile=mutants \
+  -- --all-features --run-ignored all
 
 # Test a specific file
-cargo mutants --file crates/a2a-protocol-types/src/task.rs
+cargo mutants --file crates/a2a-protocol-types/src/task.rs \
+  --test-tool=nextest -- --all-features
 
 # Dry-run: list all mutants without running tests
 cargo mutants --list --workspace
@@ -319,28 +324,33 @@ cargo mutants --list --workspace
 
 ### Configuration
 
-Mutation testing is configured via `mutants.toml` at the workspace root:
+**There is a `mutants.toml` at the workspace root and cargo-mutants does not
+read it.** Measured 2026-08-14 against cargo-mutants 27.1.0, which discovers
+`.cargo/mutants.toml` rather than a root-level file. Nothing in it — the
+`examine_globs`, the `exclude_globs`, the timeout multiplier and cap — has ever
+applied to a run. Two proofs and the consequences are recorded in
+[Mutation Testing History](../reference/mutation-history.md); the file's own
+header carries them too, and `ROADMAP.md` carries the plan for activating it
+(which changes both the scope and the timeout, so it needs a sweep of its own).
+
+Read that as: **generated protobuf code under `crates/*/src/proto/` is mutated
+like any other source**, and the per-mutant timeout is cargo-mutants' default
+5x the baseline with no cap.
+
+What genuinely configures a sweep is the command line in
+`.github/workflows/mutants.yml`, plus one file that *is* read:
 
 ```toml
-# Which files to mutate
-examine_globs = [
-    "crates/a2a-protocol-types/src/**/*.rs",
-    "crates/a2a-protocol-client/src/**/*.rs",
-    "crates/a2a-protocol-server/src/**/*.rs",
-    "crates/a2a-protocol-sdk/src/**/*.rs",
-]
-
-# Skip unproductive mutations (re-exports, generated code)
-# Note: Display/Debug impls are NOT excluded — we have tests for them.
-exclude_globs = [
-    "crates/*/src/proto/**",   # generated protobuf code — the only exclusion
-]
-
-# Skip functions whose mutations are unproductive (logging, tracing)
-# or semantically unkillable (wildcard catches same value, etc.).
-exclude_re = ["^tracing::", "^log::"]
-# ... plus additional patterns for unkillable mutations (see mutants.toml)
+# .config/nextest.toml — nextest reads this normally.
+[profile.default]
+slow-timeout = { period = "15s", terminate-after = 3 }
 ```
+
+That kills any single test at 45 seconds. It is not a tuning knob: without it, a
+mutant that makes a test *hang* rather than fail wedges the whole run until
+cargo-mutants' own timeout, and is reported `TIMEOUT` — a result the workflow's
+score counts in neither the numerator nor the denominator. The file's comments
+name the mutant that established this and the measurement behind the numbers.
 
 ### CI Integration
 
@@ -359,12 +369,19 @@ exclude_re = ["^tracing::", "^log::"]
 Found 247 mutants to test
  247 caught   ✓     # Test suite detected the mutation
    0 missed   ✗     # ALERT: test gap — add or strengthen tests
+   0 timeout  ?     # No verdict — the suite hung rather than answering
    3 unviable ⊘     # Mutation caused compile error (not a gap)
 ```
 
 - **Caught**: The test suite correctly detected the mutation. Good.
 - **Missed**: A real bug in this location would go undetected. Add tests.
 - **Unviable**: The mutation produced a compile error. Not a test gap.
+- **Timeout**: the run was killed before it finished. Not a pass and not a
+  failure — the mutation score is `caught / (caught + missed)`, so a timeout is
+  in neither term and the score does not describe it at all. Treat a non-zero
+  count as unfinished work, and note that `0 missed` and `0 timeout` are
+  different statements: this project has read one as the other and published
+  the mistake.
 
 **Target: 100% mutation score** (zero missed mutants across all library crates).
 

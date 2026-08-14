@@ -18,7 +18,10 @@ number last moved.
 A conformance score is only meaningful next to the list of things it did not
 ask. This repo has twice shipped a gate that could not fail — the mutation gate
 reporting 100% over reports nobody read, and `exclude_re` entries in
-`mutants.toml` that were silently ignored. A conformance suite has the same
+`mutants.toml` that were silently ignored. (Since 2026-08-14 the second one
+reads worse: the whole file is silently ignored, because cargo-mutants looks for
+it at `.cargo/mutants.toml` and it sits at the repository root.) A conformance
+suite has the same
 failure mode in a nastier form, because *skipping* is a normal, expected
 outcome there: the suite legitimately skips what the agent card does not
 advertise. "0 failures" and "nothing ran" look identical.
@@ -54,6 +57,9 @@ that measured nothing.
 | 2026-08-11 | `c008ab0` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
 | 2026-08-11 | `c008ab0` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
 | 2026-08-11 | `c008ab0` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
+| 2026-08-12 | `6ebf821` | `5996b79` | full | 246 | 0 | 19 | 0 | 88 | 0 |
+| 2026-08-12 | `6ebf821` | `5996b79` | minimal | 181 | 0 | 83 | 1 | 66 | 0 |
+| 2026-08-12 | `6ebf821` | `5996b79` | extension (`-k`) | 2 | 0 | 0 | 263 | 1 | 0 |
 
 The 2026-08-10 rows are the first against post-#103 `main`; the 2026-08-09 rows
 predate it. Every count is identical, which is the point of recording an
@@ -117,7 +123,13 @@ can close; they are enumerated per family in
 `docs/official-tck-findings.md` §16.
 
 MUST requirements carrying a per-transport entry on the full profile, split by
-whether that entry is an actual verdict:
+whether that entry is an actual verdict. **The unit is MUST requirements** —
+`docs/official-tck-findings.md` §1 carries a second per-transport table reading
+`jsonrpc` 95/102, which counts individual test results at every level (the
+report's own `per_transport` block, built by `a2a-tck`'s
+`reporting/aggregator.py:172-187` from `TestResult` objects). The two are not in
+conflict and neither is wrong; they answer different questions from the same
+`compatibility.json`:
 
 | Transport | Graded (`PASS`) | `SKIPPED` | Entries total |
 |---|---:|---:|---:|
@@ -137,6 +149,59 @@ and it inflated each transport by its skips. Split rather than reworded,
 because the totals are still the useful number for "does the suite reach this
 transport at all" and the graded column is the useful one for "what did it
 actually decide". Neither figure changed — only what they are called.
+
+### The 2026-08-12 re-measurement at `6ebf821`
+
+The 2026-08-11 rows were taken at `c008ab0`, which `git rev-list --count
+c008ab0..6ebf821` puts **39 commits** behind `main` — and PR #105 landed in that
+window changing 96 files. Nothing in this page was known to be *wrong*; nothing
+in it was known to still *hold*. That is the reason for this row, and it is the
+only reason a run whose every count is identical is worth recording.
+
+Run locally, mirroring `official-tck.yml` step for step, with all six exit codes
+captured separately rather than through a pipe:
+
+```text
+EXIT_SUITE_FULL=0       EXIT_GATE_FULL=0
+EXIT_SUITE_MINIMAL=0    EXIT_GATE_MINIMAL=0
+EXIT_SUITE_EXTENSION=0  EXIT_GATE_EXTENSION=0
+```
+
+```text
+  MUST compatibility : 100.0%
+  MUST graded        : 88 (floor 88)     full
+  MUST graded        : 66 (floor 66)     minimal
+  MUST graded        : 1                 extension, --require-pass CORE-CAP-004
+```
+
+Every count is unchanged from 2026-08-11 — the **fourth** consecutive identical
+run, now across four a2a-rust commits.
+
+The MUST tables above were recomputed from this run's own
+`reports/compatibility.json`, not carried forward. All of it reproduces
+exactly: 114 MUST entries splitting 88 `PASS` / 5 `SKIPPED` / 21 `NOT TESTED` /
+0 `FAIL`; the five skips being `CORE-CAP-001`, `CORE-CAP-002`, `CORE-CAP-003`,
+`CORE-CAP-004`, `CARD-EXT-002`; and the per-transport split `jsonrpc` 68/5/73,
+`http_json` 66/3/69, `grpc` 52/1/53, `agent_card` 5/0/5.
+
+The 92-of-114 arithmetic was likewise re-derived across all three profiles
+rather than restated, by reading each of the five full-profile skips out of the
+other two profiles' reports:
+
+| Requirement | full | minimal | extension |
+|---|---|---|---|
+| `CORE-CAP-001` | `SKIPPED` | **`PASS`** | `NOT TESTED` |
+| `CORE-CAP-002` | `SKIPPED` | **`PASS`** | `NOT TESTED` |
+| `CORE-CAP-003` | `SKIPPED` | **`PASS`** | `NOT TESTED` |
+| `CORE-CAP-004` | `SKIPPED` | `SKIPPED` | **`PASS`** |
+| `CARD-EXT-002` | `SKIPPED` | `SKIPPED` | `NOT TESTED` |
+
+88 + 3 + 1 = **92 of 114 measurably PASS**, 0 FAILING, `CARD-EXT-002`
+structurally inapplicable, 21 `NOT TESTED` upstream.
+
+`a2a-tck` was re-cloned from floating `main` (W1) and again resolved to
+`5996b79` — the same commit as every row above it, so all four dates are
+directly comparable and no upstream drift has occurred since 2026-08-09.
 
 ## In-repo `a2a-tck` runner
 
@@ -160,6 +225,10 @@ the *target* implementation, never of this SDK — see register entries W5/W6.
 | 2026-08-11 | `tck/sut` | rest | 21/21 | 0 | 1 | 0 | 0 |
 | 2026-08-11 | `tck/sut` | websocket | 21/21 | 0 | 1 | 0 | 0 |
 | 2026-08-11 | `tck/sut` | grpc | 20/20 | 0 | 2 | 0 | 0 |
+| 2026-08-12 | `tck/sut` | jsonrpc | 22/22 | 0 | 0 | 0 | 0 |
+| 2026-08-12 | `tck/sut` | rest | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-12 | `tck/sut` | websocket | 21/21 | 0 | 1 | 0 | 0 |
+| 2026-08-12 | `tck/sut` | grpc | 20/20 | 0 | 2 | 0 | 0 |
 
 The `N/A` column is new on 2026-08-10 and is not cosmetic. Until then
 `jsonrpc_envelope_format` opened with `if binding != "jsonrpc" { return Ok(()) }`,
@@ -178,6 +247,7 @@ them. Requirement texts and IDs are quoted from
 |---|---|---|---:|---:|---:|
 | 2026-08-10 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
 | 2026-08-11 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
+| 2026-08-12 | `tck/sut` | JSONRPC, HTTP+JSON, GRPC, WEBSOCKET | 4/4 | 0 | 0 |
 
 **`4/4` counts requirements, not bindings, and the two are independent.** The
 "Bindings compared" column is copied from the run's own `Comparing N bindings:`
@@ -216,6 +286,7 @@ by one implementation reading one `CallContext`.
 | Date | Target | Bindings | Structural | Enforcement | Exit |
 |---|---|---|---|---|---:|
 | 2026-08-11 | `tck/sut` (`SUT_PROFILE=secured`) | 4 | PASS | **PASS — both halves** | 0 |
+| 2026-08-12 | `tck/sut` (`SUT_PROFILE=secured`) | 4 | PASS | **PASS — both halves** | 0 |
 
 "Both halves" is the load-bearing phrase. The check sweeps twice:
 
@@ -273,10 +344,10 @@ missing row, but it costs the reader the one thing the row exists to give them.
 |---|---|---|---|---|---|
 | W1 | `official-tck.yml:55` (`env: A2A_TCK_REVISION`) | `A2A_TCK_REVISION: main` | every run | Not a waiver but a measurement caveat: the harness **floats**. A green PR can go red on upstream drift, and two rows above are only comparable if the a2a-tck column matches. | n/a — a deliberate trade-off. Pinning is a maintainer decision; see the comment at that line. |
 | W2 | `official-tck.yml:142` | `\|\| true` on the full suite | suite exit status only | The differential gate step, not the suite's exit code, is the verdict. | n/a by design. Backed since 2026-08-09 by `--min-graded 88`, without which a zero-measurement run passed this gate. |
-| W3 | `official-tck.yml:261` (step *Run the suite against the minimal-capability profile*) | `--deselect …TestRestStreaming::test_streaming_content_type` | 1 test, minimal profile only | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | [`a2aproject/a2a-tck#225`](https://github.com/a2aproject/a2a-tck/issues/225) lands. **Verified still OPEN 2026-08-09.** |
-| W4 | `official-tck.yml:314` (step *Run the suite against the required-extension profile*) | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. Guarded by `--require-pass CORE-CAP-004`, so an upstream rename fails loudly instead of selecting nothing. |
-| W5 | `tck.yml:227-228` (matrix `sdk: js-sdk`), applied at `tck.yml:300,306` | `--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest) | js-sdk leg | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | Upstream fixes them. Since 2026-08-09 the runner exits 1 on a skipped test that passes, so this cannot rot silently. **Verified still failing 2026-08-09** against `@a2a-js/sdk` 1.0.0. |
-| W6 | `tck.yml:246-247` (matrix `sdk: java-sdk`), applied at `tck.yml:300,306` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, as for W5. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. |
+| W3 | `official-tck.yml:261` (step *Run the suite against the minimal-capability profile*) | `--deselect …TestRestStreaming::test_streaming_content_type` | 1 test, minimal profile only | Upstream harness defect: the HTTP+JSON client calls `.json()` on a streamed response it closed unread, so any conformant server returning non-2xx to `message:stream` trips `httpx.ResponseNotRead`. Diagnosis and standalone repro in `docs/official-tck-findings.md` §17. The requirement it belongs to, `HTTP_JSON-SSE-001`, is graded `PASS` by the full profile. | [`a2aproject/a2a-tck#225`](https://github.com/a2aproject/a2a-tck/issues/225) lands. **Re-verified still OPEN 2026-08-12**, and its fix PR [`#226`](https://github.com/a2aproject/a2a-tck/pull/226) ("read streamed error body before close so `_extract_error` survives non-2xx") is **OPEN, not merged** — so the deselect cannot be dropped yet. |
+| W4 | `official-tck.yml:314` (step *Run the suite against the required-extension profile*) | `-k "TestCapabilityExtensionRequired"` | scopes run to 2 tests | Required-extension enforcement is per-request (spec §3.3.4); the suite does not send `A2A-Extensions` on ordinary positive requests, so an unscoped run against this card fails 72 checks. Scoping, not waiving — every excluded requirement is graded by the full profile. | [`a2aproject/a2a-tck#193`](https://github.com/a2aproject/a2a-tck/issues/193) lands. **Re-verified still OPEN 2026-08-12.** Guarded by `--require-pass CORE-CAP-004`, so an upstream rename fails loudly instead of selecting nothing. |
+| W5 | `tck.yml:227-228` (matrix `sdk: js-sdk`), applied at `tck.yml:300,306` | `--skip list_tasks_basic,a2a_media_type_accepted` (jsonrpc), `list_tasks_basic` (rest) | js-sdk leg | Documented `@a2a-js/sdk` 1.0.0 defects, not deviations of this SDK. | Upstream fixes them. Since 2026-08-09 the runner exits 1 on a skipped test that passes, so this cannot rot silently. **Verified still failing 2026-08-09** against `@a2a-js/sdk` 1.0.0, and **2026-08-12 against `@a2a-js/sdk` 1.0.1** — the newest release. See "W5 and W6 re-verified against the newest upstream releases" below: a version bump would not remove this waiver. |
+| W6 | `tck.yml:246-247` (matrix `sdk: java-sdk`), applied at `tck.yml:300,306` | `--skip a2a_media_type_accepted` (both bindings) | java-sdk leg | Documented `a2a-java` 1.0.0.CR1 divergence: rejects `application/a2a+json`. Version is pinned exactly in the POM, so the behaviour is stable. | Upstream fixes it. Since 2026-08-09 a skipped test that passes exits 1, as for W5. **Verified still failing 2026-08-10** against `a2a-java` 1.0.0.CR1 — logged `[FAIL] … failed as documented` on both bindings in run `31382900862`; see "Not verified" below. **Re-verified 2026-08-12 against `a2a-java` 1.2.0.Final** — two minor releases past the pinned RC — and it still fails on both bindings. See below. |
 | W7 | `tck.yml:94` (step *a2a-inspector card validation*) | `continue-on-error: true` | `a2a-inspector` card validation | Not a conformance gate. The vendored inspector validator hard-requires a top-level `url` field that the v1.0 `AgentCard` no longer has (§13-14) — a fully compliant card must fail it. | `a2aproject/a2a-inspector` updates to v1.0 cards. |
 | W8 | `itk.yml:101` | `continue-on-error: true` | opt-in `workflow_dispatch` job only | The upstream ITK resolves dependencies from a private Google Artifact Registry that 401s unauthenticated. The deterministic in-repo `itk-traversal-selftest` is the authoritative gate. | A public ITK lockfile exists. |
 | W9 | `tck/conformance-baseline.json` | baselined known failures | — | **Empty (`{}`).** No MUST failure is currently waived. | already clear |
@@ -428,3 +499,64 @@ A green CI job remains weaker evidence than a locally reproduced run for
 anything whose verdict is the job's own exit code. It is *not* weaker for this
 particular claim, because the specific line above is the measurement, and it is
 in the log either way.
+
+### W5 and W6 re-verified against the newest upstream releases — 2026-08-12
+
+The rows above verify W5 and W6 against the versions this repo *pins*. That
+answers "does the documented defect still exist there", but not the question the
+"Removable when" column actually asks, which is "has upstream fixed it". Those
+diverge the moment upstream ships and the pin does not move — and both had.
+
+| Waiver | Pinned | Available upstream when checked |
+|---|---|---|
+| W5 | `@a2a-js/sdk` **1.0.0**, exact, via `itk/agents/js-sdk/package-lock.json` (`^1.0.0` in `package.json`) | **1.0.1**, published 2026-07-28 — *before* the 2026-08-09 verification |
+| W6 | `a2a-java` **1.0.0.CR1** — a release *candidate* — at `itk/agents/java-sdk/pom.xml:28` | **1.0.0.Final, 1.1.0.Final, 1.2.0.Final**; Maven Central `maven-metadata.xml` gives `<release>1.2.0.Final</release>`, `lastUpdated 20260807124045` |
+
+So the ledger's earlier "still failing" rows were true and also, by themselves,
+unable to tell anyone whether the waiver was still *needed*.
+
+**W5 — measured.** Two scratch agents were built from this repo's own
+`itk/agents/js-sdk/index.js`, one on 1.0.0 (control) and one on 1.0.1
+(candidate), and probed with the wire shape `tck/src/tests/helpers.rs` uses.
+Both defects reproduce **identically on 1.0.1**:
+
+```text
+a2a_media_type_accepted   1.0.0: FAIL   1.0.1: FAIL
+  -32005 Unsupported Content-Type "application/a2a+json"; expected
+  application/json.   (CONTENT_TYPE_NOT_SUPPORTED)
+list_tasks_basic          1.0.0: FAIL   1.0.1: FAIL
+  ListTasks -> {"result":{"pageSize":50}} — the `tasks` key is ABSENT
+```
+
+The second confirms the mechanism `tck.yml:261-266` describes, with one detail
+worth stating precisely: the response does not carry an *empty* array, it
+carries **no array at all**, proto3 JSON having omitted the empty repeated
+field. The check fails on "missing `tasks` field", not on a length assertion.
+
+**W6 — measured.** This repo's own `itk/agents/java-sdk` was rebuilt with
+`<a2a.sdk.version>1.2.0.Final</a2a.sdk.version>` and run. The divergence
+survives two minor releases:
+
+```text
+jsonrpc  control (application/json)      PASS — task returned
+jsonrpc  probe   (application/a2a+json)  FAIL — HTTP 415
+rest     control (application/json)      PASS — task returned
+rest     probe   (application/a2a+json)  FAIL — HTTP 415
+  {"error":{"code":415,"status":"INVALID_ARGUMENT",
+            "message":"Incompatible content types",
+            "details":[{"reason":"CONTENT_TYPE_NOT_SUPPORTED", ...}]}}
+```
+
+**Both waivers stand, on stronger evidence than before: bumping either pin
+would not let a single `--skip` be dropped.** That is the useful result — it
+converts "we have not looked" into "we looked and the fix is not upstream yet".
+
+**A probe defect, recorded because it is the failure mode this page exists to
+catch.** The first W5 pass omitted the `a2a-version: 1.0` header that
+`helpers.rs:479-482` sends on every request, and both agents answered
+`VERSION_NOT_SUPPORTED ('0.3')` — which, read carelessly, is two more SDK
+defects. It was a defect in the probe. What caught it was the plain
+`application/json` **control**, which failed when it had no business failing.
+Every probe above therefore carries a control, and the controls are reported
+next to the results rather than assumed: a measurement artifact and a real
+defect are indistinguishable from the failing line alone.

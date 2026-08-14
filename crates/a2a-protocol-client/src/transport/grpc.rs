@@ -13,9 +13,8 @@
 //! [`a2a_protocol_types::proto`] before hitting the wire.
 //!
 //! Releases before 0.7 tunneled JSON inside a protobuf `bytes` envelope on
-//! a non-standard service; that client was removed in 0.7. Servers built
-//! with this workspace can still serve 0.6 clients via their
-//! `grpc-legacy-json` feature.
+//! a non-standard service; that client was removed in 0.7 and the matching
+//! server tunnel in 0.8. The canonical service is the only gRPC surface.
 //!
 //! # Configuration
 //!

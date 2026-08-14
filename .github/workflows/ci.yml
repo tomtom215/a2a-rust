@@ -66,6 +66,22 @@ jobs:
       - name: File lengths (500-line ratchet)
         run: ./scripts/check_file_lengths.sh
 
+      # The per-PR mutation gate scopes its diff with a git pathspec, and on
+      # 2026-08-12 that pathspec was reaching 100 of 141 library sources. A git
+      # pathspec without `:(glob)` is matched by fnmatch without FNM_PATHNAME,
+      # so `crates/*/src/**/*.rs` saw only files in a *subdirectory* of `src/`
+      # and was blind to rate_limit.rs, serve.rs, method.rs, signing.rs and 37
+      # others. Nine of the preceding 120 commits touched only invisible files;
+      # each would have gone green reporting "nothing to mutate".
+      #
+      # Deliberately not a probe in prove_workflow_gates_fail.py. That harness
+      # proves a step can fail on bad *input*, and this step's input was fine —
+      # it asked for the wrong files and said so cheerfully. "Can it fail?" and
+      # "is it pointed at everything it claims?" are different questions, and
+      # only the second catches a pathspec. Fast: two `git ls-files` calls.
+      - name: Mutation gate scope (PR diff pathspec reaches every source)
+        run: ./scripts/check_mutation_scope.sh
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the

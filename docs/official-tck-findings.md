@@ -112,6 +112,14 @@ finite, checkable answer, here it is in one place. Every line was verified
 against a live run and against `a2a-tck`'s own source and issue tracker; the
 per-item evidence is in §15–§17.
 
+**Re-verified 2026-08-12 at `6ebf821` against `a2a-tck@5996b79`.** Every figure
+in this section was recomputed from that run's own `compatibility.json` rather
+than carried forward, and every one reproduces exactly: the 88 / 3 / 1 = 92
+split across the three profiles, the 114 total, `CARD-EXT-002` and the 21
+`NOT TESTED` as the residue, `SHOULD` at 7 `PASS` / 4 `NOT TESTED`, `MAY` at
+4/4, and the per-transport table below. The dated run is recorded in
+[Conformance History](https://github.com/tomtom215/a2a-rust/blob/main/book/src/reference/conformance-history.md).
+
 | MUST requirements | Count | Reachable from this repository? |
 |---|---:|---|
 | `PASS`, `full` profile | 88 | — already passing |
@@ -144,6 +152,17 @@ bindings the ratified spec defines are graded, and none is failing:
 | `jsonrpc` | 95/102 (7 skipped) |
 | `http_json` | 91/96 (5 skipped) |
 | `grpc` | 69/72 (3 skipped) |
+
+**These count individual test results at every requirement level, not MUST
+requirements.** The unit matters, because
+[Conformance History](https://github.com/tomtom215/a2a-rust/blob/main/book/src/reference/conformance-history.md)
+carries a second per-transport table reading `jsonrpc` 68/73, and the two are
+not in conflict — they count different things. This table is the report's own
+`per_transport` block, which `a2a-tck`'s `reporting/aggregator.py:172-187`
+builds by grouping `TestResult` objects by transport; that table aggregates
+`per_requirement[*].transports` restricted to `level == "MUST"`. Quote whichever
+answers the question being asked, and say which one it is. Both reproduce
+exactly from the same `compatibility.json`.
 
 WebSocket is deliberately absent: it is an a2a-rust custom binding under
 spec §12, and the official suite has no mechanism to grade a binding the

@@ -1386,4 +1386,33 @@ mod tests {
         assert!(jwks_body_exceeds_limit(0, 256 * 1024 + 1));
         assert!(jwks_body_exceeds_limit(256 * 1024, 1));
     }
+
+    /// Kills `replace <impl ServerInterceptor for JwtAuthInterceptor>
+    /// ::authenticates -> bool with false`.
+    ///
+    /// Same shape as the API-key case: every existing test drives token
+    /// validation, which `authenticates` does not affect. It is a declaration
+    /// read by `has_authenticator` to decide whether the extended agent card
+    /// may be served (spec §13.3), so `false` makes a properly JWT-guarded
+    /// server refuse the card to everyone, with nothing in the auth path
+    /// looking wrong.
+    #[test]
+    fn jwt_interceptor_declares_that_it_authenticates() {
+        let interceptor = JwtAuthInterceptor::new(base_validator(), Jwks::new());
+        assert!(
+            interceptor.authenticates(),
+            "a JWT auth interceptor must declare itself as one"
+        );
+
+        let mut chain = crate::interceptor::ServerInterceptorChain::new();
+        chain.push(std::sync::Arc::new(JwtAuthInterceptor::new(
+            base_validator(),
+            Jwks::new(),
+        )));
+        assert!(
+            chain.has_authenticator(),
+            "a chain guarded by a JWT interceptor must satisfy the \
+             extended-agent-card authentication requirement"
+        );
+    }
 }

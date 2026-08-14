@@ -15,9 +15,9 @@ use crate::handler::RequestHandler;
 /// gRPC dispatcher that routes A2A requests to a [`RequestHandler`].
 ///
 /// Serves the canonical `lf.a2a.v1.A2AService` (protobuf-native, wire
-/// compatible with the official A2A SDKs). With the `grpc-legacy-json`
-/// feature enabled, [`serve`](Self::serve) additionally registers the
-/// deprecated pre-0.7 JSON-tunnel service on the same listener.
+/// compatible with the official A2A SDKs). That is the only gRPC surface:
+/// the deprecated pre-0.7 JSON-tunnel service, and the `grpc-legacy-json`
+/// feature that gated it, were removed in 0.8.
 ///
 /// Create via [`GrpcDispatcher::new`] and serve with [`GrpcDispatcher::serve`]
 /// or build a tonic service with [`GrpcDispatcher::into_service`].
@@ -105,14 +105,8 @@ impl GrpcDispatcher {
     ///
     /// Returns an [`A2aServiceServer`] (the `lf.a2a.v1.A2AService` binding)
     /// that can be added to a [`tonic::transport::Server`] via `add_service`.
-    /// Note this does **not** include the legacy JSON-tunnel service; with
-    /// the `grpc-legacy-json` feature, add `into_legacy_service` separately
-    /// or use [`serve`](Self::serve), which registers both.
-    ///
-    /// `into_legacy_service` is deliberately plain text, not an intra-doc
-    /// link: it only exists under `grpc-legacy-json`, and a link that some
-    /// feature combinations can't resolve is a broken-link doc-build failure
-    /// under `-D warnings` rather than a dead link readers might click.
+    /// It is the only gRPC service this dispatcher serves; the pre-0.7
+    /// JSON-tunnel companion was removed in 0.8.
     #[must_use]
     pub fn into_service(&self) -> A2aServiceServer<A2aServiceImpl> {
         let inner = A2aServiceImpl {
@@ -124,32 +118,11 @@ impl GrpcDispatcher {
             .max_encoding_message_size(self.config.max_message_size)
     }
 
-    /// Builds the deprecated JSON-tunnel service (`a2a.v1.A2aService`).
-    ///
-    /// Serves the pre-0.7 JSON-in-`bytes` wire format for rolling upgrades
-    /// from 0.6 gRPC clients. Removal is planned for 0.8.
-    #[cfg(feature = "grpc-legacy-json")]
-    #[must_use]
-    pub fn into_legacy_service(
-        &self,
-    ) -> super::LegacyA2aServiceServer<super::LegacyGrpcServiceImpl> {
-        let inner = super::LegacyGrpcServiceImpl {
-            handler: Arc::clone(&self.handler),
-            config: self.config.clone(),
-        };
-        super::LegacyA2aServiceServer::new(inner)
-            .max_decoding_message_size(self.config.max_message_size)
-            .max_encoding_message_size(self.config.max_message_size)
-    }
-
     /// Builds the tonic router with every enabled service registered.
     fn build_router(&self) -> tonic::transport::server::Router {
         let mut server = tonic::transport::Server::builder()
             .concurrency_limit_per_connection(self.config.concurrency_limit);
-        let router = server.add_service(self.into_service());
-        #[cfg(feature = "grpc-legacy-json")]
-        let router = router.add_service(self.into_legacy_service());
-        router
+        server.add_service(self.into_service())
     }
 }
 
