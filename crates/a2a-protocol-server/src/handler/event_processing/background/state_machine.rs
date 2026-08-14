@@ -757,4 +757,244 @@ mod tests {
             "artifact count should not exceed limit"
         );
     }
+
+    // ── Artifact-update branch conditions ───────────────────────────────
+    //
+    // Four mutants survived here in the 2026-08-13 sweep, all comparison
+    // flips in `process_event_bg`'s ArtifactUpdate arm. The existing
+    // `process_event_bg_artifact_update_appends` test sends one non-append
+    // artifact with one part into an empty task — a path on which every one
+    // of the four behaves identically to the original.
+
+    fn artifact_event(
+        task_id: &str,
+        artifact_id: &str,
+        parts: Vec<Part>,
+        append: Option<bool>,
+    ) -> StreamResponse {
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new(task_id),
+            context_id: ContextId::new("ctx-1"),
+            // Built literally rather than via `Artifact::new`, which
+            // debug-asserts non-empty parts — and an empty artifact is
+            // precisely the spec violation the guard under test exists to
+            // reject, so it has to be constructible here.
+            artifact: Artifact {
+                id: ArtifactId::new(artifact_id),
+                parts,
+                ..Artifact::new(ArtifactId::new(artifact_id), vec![Part::text("seed")])
+            },
+            append,
+            last_chunk: None,
+            metadata: None,
+        })
+    }
+
+    async fn run(event: StreamResponse, last_task: &mut Task, limits: &HandlerLimits) {
+        let task_store = InMemoryTaskStore::new();
+        let push_store = InMemoryPushConfigStore::new();
+        task_store.save(last_task).await.expect("seed");
+        process_event_bg(
+            Ok(event),
+            &TaskId::new("t1"),
+            last_task,
+            &task_store,
+            &push_store,
+            None,
+            limits,
+        )
+        .await;
+    }
+
+    /// Kills `replace != with ==` on `update.append != Some(true)`, the guard
+    /// deciding whether an artifact is validated for empty parts.
+    ///
+    /// Inverted, validation runs on appends instead of on fresh artifacts, so
+    /// a spec-violating empty artifact is accepted and a legitimate empty
+    /// append chunk is dropped. Both directions are asserted; either alone
+    /// leaves half the mutation alive.
+    #[tokio::test]
+    async fn empty_parts_are_rejected_only_when_not_appending() {
+        let limits = default_limits();
+
+        // A fresh artifact with no parts violates the spec and must be dropped.
+        let mut task = make_task("t1", TaskState::Working);
+        run(
+            artifact_event("t1", "art-1", vec![], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        assert!(
+            task.artifacts.as_ref().is_none_or(Vec::is_empty),
+            "an empty non-append artifact is a spec violation and must be \
+             dropped, not recorded: {:?}",
+            task.artifacts
+        );
+
+        // An append chunk carrying no new parts is legitimate — it is not
+        // validated, because the artifact it extends already has parts.
+        let mut task = make_task("t1", TaskState::Working);
+        run(
+            artifact_event("t1", "art-1", vec![Part::text("a")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        run(
+            artifact_event("t1", "art-1", vec![], Some(true)),
+            &mut task,
+            &limits,
+        )
+        .await;
+        let arts = task
+            .artifacts
+            .as_ref()
+            .expect("the seeded artifact survives");
+        assert_eq!(
+            arts.len(),
+            1,
+            "an empty append must not remove or duplicate the artifact: {arts:?}"
+        );
+        assert_eq!(arts[0].parts.len(), 1, "parts unchanged by an empty append");
+    }
+
+    /// Kills `replace == with !=` on `update.append == Some(true)`, which
+    /// selects merge-into-existing versus record-as-new.
+    #[tokio::test]
+    async fn append_merges_and_non_append_does_not() {
+        let limits = default_limits();
+        let mut task = make_task("t1", TaskState::Working);
+
+        run(
+            artifact_event("t1", "art-1", vec![Part::text("one")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        run(
+            artifact_event("t1", "art-1", vec![Part::text("two")], Some(true)),
+            &mut task,
+            &limits,
+        )
+        .await;
+
+        let arts = task.artifacts.as_ref().expect("artifacts");
+        assert_eq!(
+            arts.len(),
+            1,
+            "append targets the existing artifact: {arts:?}"
+        );
+        assert_eq!(
+            arts[0].parts.len(),
+            2,
+            "append must accumulate parts; a count of 1 means the update \
+             replaced instead of merging: {arts:?}"
+        );
+    }
+
+    /// Kills `replace == with !=` in the merge target lookup,
+    /// `.find(|a| a.id == update.artifact.id)`.
+    ///
+    /// Needs two artifacts to be observable at all: with one present, `!=`
+    /// finds nothing and `==` finds it, but with a single candidate the
+    /// difference collapses on any test that only counts parts in aggregate.
+    #[tokio::test]
+    async fn append_merges_into_the_matching_artifact_not_another() {
+        let limits = default_limits();
+        let mut task = make_task("t1", TaskState::Working);
+
+        run(
+            artifact_event("t1", "art-1", vec![Part::text("a1")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        run(
+            artifact_event("t1", "art-2", vec![Part::text("b1")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        run(
+            artifact_event("t1", "art-2", vec![Part::text("b2")], Some(true)),
+            &mut task,
+            &limits,
+        )
+        .await;
+
+        let arts = task.artifacts.as_ref().expect("artifacts");
+        let find = |id: &str| {
+            arts.iter()
+                .find(|a| a.id == ArtifactId::new(id))
+                .unwrap_or_else(|| panic!("{id} missing from {arts:?}"))
+        };
+        assert_eq!(
+            find("art-2").parts.len(),
+            2,
+            "the append names art-2 and must land there: {arts:?}"
+        );
+        assert_eq!(
+            find("art-1").parts.len(),
+            1,
+            "art-1 was not the append target and must be untouched; growth \
+             here means the lookup matched on inequality: {arts:?}"
+        );
+    }
+
+    /// Kills `replace == with !=` in the *revert* lookup on the
+    /// parts-cap-exceeded path — a different `find` from the merge one, on a
+    /// branch only reachable by overflowing the cap.
+    #[tokio::test]
+    async fn parts_cap_revert_restores_the_matching_artifact() {
+        let limits = HandlerLimits::default().with_max_parts_per_artifact(2);
+        let mut task = make_task("t1", TaskState::Working);
+
+        run(
+            artifact_event("t1", "art-1", vec![Part::text("a1")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+        run(
+            artifact_event("t1", "art-2", vec![Part::text("b1")], None),
+            &mut task,
+            &limits,
+        )
+        .await;
+
+        // art-2 has 1 part; appending 2 more would reach 3, past the cap of 2,
+        // so the merge is reverted.
+        run(
+            artifact_event(
+                "t1",
+                "art-2",
+                vec![Part::text("b2"), Part::text("b3")],
+                Some(true),
+            ),
+            &mut task,
+            &limits,
+        )
+        .await;
+
+        let arts = task.artifacts.as_ref().expect("artifacts");
+        let find = |id: &str| {
+            arts.iter()
+                .find(|a| a.id == ArtifactId::new(id))
+                .unwrap_or_else(|| panic!("{id} missing from {arts:?}"))
+        };
+        assert_eq!(
+            find("art-2").parts.len(),
+            1,
+            "the over-cap append must be rolled back on the artifact it \
+             targeted: {arts:?}"
+        );
+        assert_eq!(
+            find("art-1").parts.len(),
+            1,
+            "art-1 was never touched, so the revert must not truncate it; a \
+             change here means the revert lookup matched the wrong artifact: \
+             {arts:?}"
+        );
+    }
 }
