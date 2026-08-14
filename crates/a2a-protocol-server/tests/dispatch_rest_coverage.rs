@@ -1075,3 +1075,117 @@ mod rest_body_limit_boundary {
         );
     }
 }
+
+// ── RestDispatcher guard conditions ─────────────────────────────────────────
+mod rest_dispatch_guards {
+    use super::{http_request, make_handler};
+    use a2a_protocol_server::dispatch::{DispatchConfig, RestDispatcher};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    const QUERY_LIMIT: usize = 64;
+
+    async fn start(config: DispatchConfig) -> SocketAddr {
+        let dispatcher = Arc::new(RestDispatcher::with_config(make_handler(), config));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let d = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req| {
+                        let d = Arc::clone(&d);
+                        async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// Kills `replace > with >=` on `query.len() > max_query_string_length`.
+    ///
+    /// A query string of exactly the cap is at the limit, not past it, and
+    /// must be served rather than met with 414.
+    #[tokio::test]
+    async fn query_string_of_exactly_the_limit_is_accepted() {
+        let addr = start(DispatchConfig::default().with_max_query_string_length(QUERY_LIMIT)).await;
+
+        // `?` is not counted in `query`, so the query is exactly QUERY_LIMIT.
+        let key = "pad=";
+        let query = format!("{key}{}", "q".repeat(QUERY_LIMIT - key.len()));
+        assert_eq!(
+            query.len(),
+            QUERY_LIMIT,
+            "probe must sit exactly on the cap"
+        );
+
+        let (status, body) =
+            http_request(addr, "GET", &format!("/tasks?{query}"), None, None).await;
+        assert_ne!(
+            status, 414,
+            "a query of exactly {QUERY_LIMIT} bytes is within the limit: {body}"
+        );
+        assert!(
+            !body.contains("query string too long"),
+            "at-the-limit query must not be refused for length: {body}"
+        );
+    }
+
+    /// Kills `replace || with &&` at the second `||`, and `replace == with !=`
+    /// on the `"PUT"` and `"PATCH"` comparisons, in the Content-Type guard
+    /// `method == "POST" || method == "PUT" || method == "PATCH"`.
+    ///
+    /// Only the POST arm had coverage, which is why the first `==` and first
+    /// `||` were already caught while these three survived.
+    ///
+    /// `&&` binds tighter than `||`, so mutating the second `||` yields
+    /// `POST || (PUT && PATCH)` — a method cannot be both, so the guard
+    /// collapses to POST-only and PUT/PATCH stop being validated entirely.
+    #[tokio::test]
+    async fn content_type_is_validated_on_put_and_patch_too() {
+        let addr = start(DispatchConfig::default()).await;
+
+        for method in ["POST", "PUT", "PATCH"] {
+            let (status, body) = http_request(
+                addr,
+                method,
+                "/message:send",
+                Some("{}"),
+                Some("text/plain"),
+            )
+            .await;
+            assert_eq!(
+                status, 415,
+                "{method} with text/plain must be refused; a body-bearing \
+                 method that skips Content-Type validation accepts anything: {body}"
+            );
+        }
+    }
+
+    /// Kills the inverted side of the same two `==` mutations.
+    ///
+    /// With `method != "PUT"` (or `!= "PATCH"`) the disjunction is true for
+    /// every *other* method, so GET — which carries no body and whose
+    /// Content-Type is irrelevant — starts being rejected with 415. Asserting
+    /// only that PUT/PATCH are validated would leave that half alive.
+    #[tokio::test]
+    async fn content_type_is_not_validated_on_bodyless_methods() {
+        let addr = start(DispatchConfig::default()).await;
+
+        let (status, body) = http_request(addr, "GET", "/tasks", None, Some("text/plain")).await;
+        assert_ne!(
+            status, 415,
+            "GET carries no body, so its Content-Type must not be policed; a \
+             415 here means the method comparison was inverted: {body}"
+        );
+    }
+}

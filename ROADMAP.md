@@ -37,6 +37,32 @@ those 9 had already been killed by tests landed in between and the deletion
 retires none of them. Kept visible rather than quietly corrected: the estimate
 was sound reasoning over a stale number, and the number moved.
 
+### Provably equivalent mutants — the first exemptions this project has needed
+
+ADR 0006 sets the target at zero surviving mutants "with the single
+documented exception" of mutants that no test can kill, and requires that an
+equivalence claim be *proved* rather than asserted. Three came up while
+burning down the 2026-08-13 sweep. They are recorded here rather than skipped
+in source, because the `#[mutants::skip]` attribute needs the `mutants` crate
+as a **runtime** dependency of published crates — a supply-chain decision the
+ADR says must be raised on its own terms, not settled inside a test PR.
+Decision taken 2026-08-14: keep them documented, add no dependency.
+
+| Mutant | Why no test can kill it |
+|---|---|
+| `tenant_config.rs` — `TenantLimits::builder` → `Default::default()` | The body *is* `TenantLimitsBuilder::default()`. In a function returning `TenantLimitsBuilder`, `Default::default()` resolves to `<TenantLimitsBuilder as Default>::default()` — the same call. |
+| `tenant_config.rs` — `PerTenantConfig::builder` → `Default::default()` | Identical argument for `PerTenantConfigBuilder`. |
+| `streaming/sse.rs` — `SseBodyWriter::close` → `()` | The body is `drop(self)` and the receiver is `self` by value. With or without the explicit `drop`, `self` is dropped when the function returns, and nothing follows it. |
+
+Each is an equivalence of *form*, not a gap in the suite: the mutated
+expression compiles to the same observable behaviour, so writing a test
+against it would be writing a test that cannot fail. That is the distinction
+ADR 0006 asks for, and it is why "I could not think of a test" would not have
+been sufficient for any of the three.
+
+**Everything else in the sweep was killable.** Of the 57 survivors measured at
+`7469fd5`, 54 fell to tests; these three are the remainder.
+
 ### Residue left behind deliberately
 
 The two public `write_timeout` setters are gone, but the value is still
