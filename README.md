@@ -318,7 +318,7 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run the test suite (~2,690 tests with --all-features; CI runs sixteen feature combinations)
+# Run the test suite (~2,740 tests with --all-features; CI runs sixteen feature combinations)
 cargo test --workspace --all-features
 
 # Run the end-to-end example
