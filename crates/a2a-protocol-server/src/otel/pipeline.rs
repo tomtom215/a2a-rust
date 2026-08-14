@@ -83,3 +83,113 @@ pub fn init_otlp_pipeline(
 
     Ok(provider)
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::init_otlp_pipeline;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Arc;
+    use tokio::io::AsyncReadExt as _;
+
+    /// Kills `replace init_otlp_pipeline -> Result<..> with Ok(Default::default())`.
+    ///
+    /// The mutant returns a bare `SdkMeterProvider` — no exporter, no reader,
+    /// no resource — and, because the whole body is replaced, never calls
+    /// `set_meter_provider`. Both halves are silent: `init_otlp_pipeline`
+    /// still returns `Ok`, so a caller checking only the `Result` sees
+    /// success, and the global provider quietly stays a no-op. A server
+    /// "instrumented" this way exports nothing for the life of the process.
+    ///
+    /// The default global meter provider being a no-op is exactly why this
+    /// cannot be asserted by recording a metric and looking for it: under both
+    /// the real pipeline and the mutant, recording appears to work. The only
+    /// difference visible from outside is whether bytes leave the process, so
+    /// that is what is asserted — the same approach `examples/incident-response`
+    /// uses for its `OTel` hardening check.
+    ///
+    /// Two distinct assertions, because they rule out different failures. The
+    /// HTTP/2 connection preface proves something dialled the endpoint and
+    /// spoke gRPC; bytes *beyond* the preface prove it actually pushed a
+    /// payload rather than connecting and going quiet.
+    #[tokio::test]
+    async fn pipeline_exports_to_the_configured_endpoint() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind a stand-in collector");
+        let endpoint = format!("http://{}", listener.local_addr().expect("addr"));
+
+        let saw_preface = Arc::new(AtomicBool::new(false));
+        let total_bytes = Arc::new(AtomicUsize::new(0));
+        {
+            let saw_preface = Arc::clone(&saw_preface);
+            let total_bytes = Arc::clone(&total_bytes);
+            tokio::spawn(async move {
+                while let Ok((mut stream, _)) = listener.accept().await {
+                    let saw_preface = Arc::clone(&saw_preface);
+                    let total_bytes = Arc::clone(&total_bytes);
+                    tokio::spawn(async move {
+                        const PREFACE: &[u8] = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+                        let mut seen = Vec::new();
+                        let mut buf = [0_u8; 4096];
+                        while let Ok(n) = stream.read(&mut buf).await {
+                            if n == 0 {
+                                break;
+                            }
+                            seen.extend_from_slice(&buf[..n]);
+                            total_bytes.store(seen.len(), Ordering::SeqCst);
+                            if seen.starts_with(PREFACE) {
+                                saw_preface.store(true, Ordering::SeqCst);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        // `MetricExporter` reads its endpoint from the environment at build
+        // time. Nothing else in this crate's tests reads or writes the
+        // variable, so the process-global write is contained.
+        std::env::set_var("OTEL_EXPORTER_OTLP_ENDPOINT", &endpoint);
+        let provider = init_otlp_pipeline("a2a-pipeline-test").expect("pipeline builds");
+
+        // Record through the *global* meter, not the returned provider: the
+        // mutant skips `set_meter_provider`, so this is the path that
+        // distinguishes them.
+        let meter = opentelemetry::global::meter("a2a-pipeline-test");
+        let counter = meter.u64_counter("a2a_pipeline_probe").build();
+        counter.add(1, &[]);
+        // `force_flush` waits for the export RPC to *complete*, and this
+        // stand-in collector accepts bytes without ever speaking HTTP/2 back —
+        // so awaiting it here would wedge the test rather than fail it, which
+        // is strictly worse (CI reports a timeout naming no assertion). It is
+        // pushed to a blocking task and deliberately not joined: the bytes
+        // reaching the socket are the signal, not the RPC's completion.
+        let flusher = tokio::task::spawn_blocking(move || {
+            let _ = provider.force_flush();
+        });
+
+        // Bounded wait for the connection and payload to land.
+        for _ in 0..100 {
+            if saw_preface.load(Ordering::SeqCst) && total_bytes.load(Ordering::SeqCst) > 24 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        flusher.abort();
+
+        let bytes = total_bytes.load(Ordering::SeqCst);
+        assert!(
+            saw_preface.load(Ordering::SeqCst),
+            "nothing spoke HTTP/2 to {endpoint} — the pipeline built no \
+             exporter, or never became the global meter provider. {bytes} \
+             bytes arrived"
+        );
+        assert!(
+            bytes > 24,
+            "only the HTTP/2 preface reached {endpoint}: the exporter \
+             connected but pushed no payload"
+        );
+    }
+}
