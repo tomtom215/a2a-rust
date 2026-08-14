@@ -448,11 +448,25 @@ jobs:
           # Idempotent: if a release already exists (e.g. created by GitHub
           # Desktop or the web UI when pushing a tag), update it in place
           # instead of failing.
+          #
+          # `--draft=false` is load-bearing, and this is the path that needs it.
+          # Deleting a tag does not delete the release that pointed at it —
+          # GitHub converts that release to a *draft* and re-labels its URL
+          # `releases/tag/untagged-<hash>`. Re-pushing the tag does not undo
+          # that, and `gh release edit` leaves the draft flag alone unless told
+          # otherwise. So the sequence this repository's own annotated-tag gate
+          # pushes you into — validate fails, delete the tag, re-tag with `-a`,
+          # push — lands here with a drafted release, and without this flag the
+          # job would update its title, notes and assets correctly and leave it
+          # invisible. That happened on v0.8.0 (2026-08-14): every step exited
+          # 0, the job printed "GitHub release updated", and the release sat as
+          # a draft until someone published it by hand.
           if gh release view "$TAG" &>/dev/null; then
             echo "::warning::Release ${TAG} already exists — updating it."
             echo "::group::Updating GitHub release ${TAG}"
             gh release edit "$TAG" \
               $PRE_FLAG \
+              --draft=false \
               --title "a2a-rust ${TAG}" \
               --notes-file release_notes.md
 
@@ -476,6 +490,44 @@ jobs:
             echo "::endgroup::"
             echo "::notice::GitHub release created: $RELEASE_URL"
           fi
+
+          # ── Post-condition: the release is visible, and complete ──────────
+          #
+          # `--draft=false` above is an instruction. This is the check behind
+          # it, and the check is the point: the v0.8.0 failure was not a
+          # command that errored, it was a command that succeeded without
+          # accomplishing what this job then announced in its own `::notice::`.
+          # A release nobody can see is not a release. Same reasoning as
+          # `validate` running `git cat-file -t` on the tag rather than
+          # trusting RELEASING.md's documented `-a`.
+          #
+          # The asset count is derived from what was actually uploaded rather
+          # than hard-coded, so adding or removing a publishable crate does not
+          # silently weaken this.
+          EXPECTED_ASSETS=$(ls -1 \
+            release-artifacts/*.crate \
+            release-artifacts/SHA256SUMS \
+            release-artifacts/sbom/*.cdx.json | wc -l)
+
+          RELEASE_STATE=$(gh release view "$TAG" --json isDraft,assets)
+          IS_DRAFT=$(jq -r '.isDraft' <<<"$RELEASE_STATE")
+          ACTUAL_ASSETS=$(jq '.assets | length' <<<"$RELEASE_STATE")
+
+          if [[ "$IS_DRAFT" != "false" ]]; then
+            echo "::error::Release ${TAG} is still a draft — it is not visible to anyone."
+            echo "A tag deleted and re-pushed leaves its release drafted; see the"
+            echo "comment above. Publish it with:"
+            echo "    gh release edit ${TAG} --draft=false"
+            exit 1
+          fi
+
+          if [[ "$ACTUAL_ASSETS" -ne "$EXPECTED_ASSETS" ]]; then
+            echo "::error::Release ${TAG} carries ${ACTUAL_ASSETS} asset(s), expected ${EXPECTED_ASSETS}."
+            gh release view "$TAG" --json assets --jq '.assets[].name'
+            exit 1
+          fi
+
+          echo "::notice::Release ${TAG} is published with ${ACTUAL_ASSETS} asset(s): $RELEASE_URL"
 
           # ── Step summary ──────────────────────────────────────────────────
           {

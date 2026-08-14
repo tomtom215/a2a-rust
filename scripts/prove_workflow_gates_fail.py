@@ -796,6 +796,34 @@ def build_registry() -> dict[str, Probe | Exempt]:
             ),
         ],
     )
+    # Registered when the step gained its post-condition on 2026-08-14. Before
+    # that it could not fail: it ran `gh release edit`, printed
+    # "GitHub release updated" and exited 0 whatever state the release was left
+    # in. v0.8.0 shipped that way — published to crates.io with its GitHub
+    # release sitting as a draft, because deleting and re-pushing a tag drafts
+    # the release and `gh release edit` does not clear the flag.
+    reg["release.yml::github-release::Create or update GitHub release"] = Probe(
+        healthy=_github_release_fixture(),
+        defects=[
+            Defect(
+                "the release is left as a draft (a tag deleted and re-pushed)",
+                _github_release_fixture(is_draft=True),
+                "is still a draft",
+            ),
+            Defect(
+                "assets went missing between upload and publish",
+                _github_release_fixture(assets=3),
+                "expected",
+            ),
+        ],
+        context={
+            "needs.validate.outputs.version": "9.9.9",
+            "needs.validate.outputs.is_prerelease": "false",
+            "github.repository": "tomtom215/a2a-rust",
+            # Consumed only by the stub `gh`, which ignores it.
+            "github.token": "stub-token-not-used",
+        },
+    )
     for name, why in (
         ("Generate CycloneDX SBOMs", "needs cargo-cyclonedx and a full dependency resolve"),
         ("Extract CHANGELOG section for this version", "runs only after a real tag exists in the release job"),
@@ -900,6 +928,67 @@ def repo_version() -> str:
     if not m:
         raise SystemExit("error: cannot read version from a2a-protocol-types/Cargo.toml")
     return m.group(1)
+
+
+def _github_release_fixture(*, is_draft: bool = False, assets: int | None = None) -> Setup:
+    """Artifacts to publish, plus a `gh` that answers with a chosen release state.
+
+    The step under test decides on two things it cannot compute locally: whether
+    the release GitHub now holds is a draft, and how many assets it carries. A
+    stub `gh` is the only way to drive those, and stubbing it is honest here
+    because the gate's logic is entirely on this side of the call — it reads
+    `gh release view --json isDraft,assets` and compares against the files it
+    just uploaded. What the stub cannot prove is that `--draft=false` works;
+    that is `gh`'s contract, not this repository's, and the assertion below is
+    exactly what guards against trusting it.
+
+    `assets=None` means "as many as were uploaded", i.e. the healthy case.
+    """
+
+    def setup(d: Path) -> dict[str, str]:
+        r = d / "r"
+        (r / "release-artifacts" / "sbom").mkdir(parents=True)
+        for crate in (
+            "a2a-protocol-types",
+            "a2a-protocol-client",
+            "a2a-protocol-server",
+            "a2a-protocol-sdk",
+        ):
+            (r / "release-artifacts" / f"{crate}-9.9.9.crate").write_bytes(b"")
+            (r / "release-artifacts" / "sbom" / f"{crate}.cdx.json").write_text("{}")
+        (r / "release-artifacts" / "SHA256SUMS").write_text("")
+        (r / "release_notes.md").write_text("notes\n")
+        uploaded = 4 + 4 + 1
+
+        bin_dir = r / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text(
+            "#!/usr/bin/env bash\n"
+            "# Stub. `release view` with no --json is the existence check, which\n"
+            "# succeeds so the step takes its update branch; edit/upload are no-ops.\n"
+            'if [[ "$1" == "release" && "$2" == "view" && "$*" == *"--json isDraft"* ]]; then\n'
+            '  printf \'{"isDraft":%s,"assets":%s}\\n\' "$FAKE_IS_DRAFT" \\\n'
+            '    "$(python3 -c "import sys;print(str(list(range(int(sys.argv[1])))))" "$FAKE_ASSETS")"\n'
+            "  exit 0\n"
+            "fi\n"
+            'if [[ "$1" == "release" && "$2" == "view" && "$*" == *"--json assets"* ]]; then\n'
+            '  echo "some-asset"; exit 0\n'
+            "fi\n"
+            "exit 0\n"
+        )
+        gh.chmod(0o755)
+
+        return {
+            "__cwd__": str(r),
+            "__env__": {
+                "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                "FAKE_IS_DRAFT": "true" if is_draft else "false",
+                "FAKE_ASSETS": str(uploaded if assets is None else assets),
+            },
+        }
+
+    return setup
 
 
 def _release_fixture(

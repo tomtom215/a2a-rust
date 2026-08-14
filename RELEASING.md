@@ -113,6 +113,40 @@ git push origin vX.Y.Z
 > this project does not have. When the key decision above is made, tightening
 > this check to `git tag -v` is the one-line follow-up.
 
+### 3a. If the tag gate fires: delete, re-tag, and watch for a drafted release
+
+The recovery is the one the workflow's error prints:
+
+```bash
+git tag -d vX.Y.Z
+git push origin :refs/tags/vX.Y.Z
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+**Deleting the tag does not delete the release that pointed at it.** GitHub
+converts that release into a *draft* and re-labels its URL
+`releases/tag/untagged-<hash>`. Re-pushing the tag does not undo that. The
+release then still exists, so the workflow takes its "already exists — updating
+it" branch rather than creating a fresh one.
+
+This bit v0.8.0 on 2026-08-14. The tag was created through the GitHub UI, which
+produced a lightweight tag; validate failed as designed; the tag was deleted and
+re-pushed annotated; the second run then published all four crates to crates.io
+and updated the drafted release's title, notes and nine assets correctly — and
+left it drafted, because `gh release edit` does not clear the draft flag unless
+told to. Every step exited 0 and the job printed `GitHub release updated`. The
+release was invisible until someone published it by hand.
+
+Fixed on both sides, so it should not recur: the edit branch now passes
+`--draft=false`, and the job asserts afterwards that the release is published
+and carries exactly the number of assets that were uploaded, failing if either
+is untrue. If you are ever in this state on an older tag, the manual fix is:
+
+```bash
+gh release edit vX.Y.Z --draft=false
+```
+
 This triggers the release workflow (`.github/workflows/release.yml`) which:
 
 1. **Validates** that all 4 crate versions match the tag and CHANGELOG entry exists
