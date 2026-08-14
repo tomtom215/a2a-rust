@@ -1406,3 +1406,225 @@ mod body_limit_boundary {
         );
     }
 }
+
+// ── Dispatch guard conditions ───────────────────────────────────────────────
+mod dispatch_guards {
+    use super::{http_request, make_dispatcher_with_agent_card, post_jsonrpc, start_server};
+    use a2a_protocol_server::builder::RequestHandlerBuilder;
+    use a2a_protocol_server::dispatch::{DispatchConfig, JsonRpcDispatcher};
+    use bytes::Bytes;
+    use http_body_util::Full;
+    use std::sync::Arc;
+
+    /// Kills `replace && with ||` in the agent-card guard
+    /// (`req.method() == "GET" && req.uri().path() == "/.well-known/…"`).
+    ///
+    /// Existing coverage only ever asked for the card the correct way, which
+    /// both operators satisfy. `||` is caught solely by the cases that must
+    /// *not* serve it: right path with the wrong method, right method with the
+    /// wrong path. Under `||` either one alone is enough to hand out the card.
+    #[tokio::test]
+    async fn agent_card_needs_both_get_and_the_wellknown_path() {
+        let addr = start_server(make_dispatcher_with_agent_card()).await;
+
+        let (status, body, _) =
+            http_request(addr, "GET", "/.well-known/agent-card.json", None, None).await;
+        assert_eq!(status, 200, "the correct request serves the card: {body}");
+        assert!(body.contains("test-agent"), "{body}");
+
+        // Right path, wrong method.
+        let (_status, body, _) = http_request(
+            addr,
+            "POST",
+            "/.well-known/agent-card.json",
+            Some("{}"),
+            Some("application/json"),
+        )
+        .await;
+        assert!(
+            !body.contains("test-agent"),
+            "a POST to the well-known path must not be served the agent card; \
+             it is a JSON-RPC endpoint. got: {body}"
+        );
+
+        // Right method, wrong path.
+        let (_status, body, _) = http_request(addr, "GET", "/not-the-card", None, None).await;
+        assert!(
+            !body.contains("test-agent"),
+            "a GET elsewhere must not be served the agent card: {body}"
+        );
+    }
+
+    const BATCH_LIMIT: usize = 3;
+
+    fn batching_dispatcher() -> Arc<JsonRpcDispatcher> {
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(super::EchoExecutor)
+                .build()
+                .expect("handler"),
+        );
+        Arc::new(JsonRpcDispatcher::with_config(
+            handler,
+            DispatchConfig::default().with_max_batch_size(BATCH_LIMIT),
+        ))
+    }
+
+    fn batch_of(n: usize) -> String {
+        let items: Vec<String> = (0..n)
+            .map(|i| {
+                format!(
+                    r#"{{"jsonrpc":"2.0","id":"{i}","method":"GetTask","params":{{"id":"t-{i}"}}}}"#
+                )
+            })
+            .collect();
+        format!("[{}]", items.join(","))
+    }
+
+    /// Kills `replace > with >=` and `replace > with ==` on the batch-size
+    /// guard. A batch of exactly the limit is at it, not over it — that alone
+    /// kills both, since `>=` and `==` each reject it.
+    #[tokio::test]
+    async fn batch_of_exactly_the_limit_is_accepted() {
+        let addr = start_server(batching_dispatcher()).await;
+        let (_status, body, _) = post_jsonrpc(addr, &batch_of(BATCH_LIMIT)).await;
+        assert!(
+            !body.contains("batch too large"),
+            "a batch of exactly {BATCH_LIMIT} is within the limit: {body}"
+        );
+    }
+
+    /// Kills `replace > with ==`: a batch *past* the limit must still be
+    /// refused. Under `==` only an exactly-at-the-limit batch is caught, so
+    /// every larger one sails through — the opposite of what the guard is for.
+    #[tokio::test]
+    async fn batch_past_the_limit_is_still_rejected() {
+        let addr = start_server(batching_dispatcher()).await;
+        let over = BATCH_LIMIT + 2;
+        let (_status, body, _) = post_jsonrpc(addr, &batch_of(over)).await;
+        assert!(
+            body.contains("batch too large"),
+            "a batch of {over} exceeds the {BATCH_LIMIT} limit and must be \
+             refused; an equality check would let everything above the limit \
+             through. got: {body}"
+        );
+    }
+
+    /// An executor that keeps its task alive long enough to subscribe to.
+    ///
+    /// `EchoExecutor` completes before the subscribe request lands, and
+    /// `on_resubscribe` on a finished task takes the arm's *error* branch —
+    /// which returns JSON, exactly like the fall-through a deleted arm
+    /// produces. The distinguishing behaviour is the SSE stream, and only a
+    /// live task reaches it.
+    struct SlowExecutor;
+
+    impl a2a_protocol_server::executor::AgentExecutor for SlowExecutor {
+        fn execute<'a>(
+            &'a self,
+            ctx: &'a a2a_protocol_server::request_context::RequestContext,
+            queue: &'a dyn a2a_protocol_server::streaming::EventQueueWriter,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async move {
+                queue
+                    .write(a2a_protocol_types::events::StreamResponse::StatusUpdate(
+                        a2a_protocol_types::events::TaskStatusUpdateEvent {
+                            task_id: ctx.task_id.clone(),
+                            context_id: a2a_protocol_types::task::ContextId::new(
+                                ctx.context_id.clone(),
+                            ),
+                            status: a2a_protocol_types::task::TaskStatus::with_timestamp(
+                                a2a_protocol_types::task::TaskState::Working,
+                            ),
+                            metadata: None,
+                        },
+                    ))
+                    .await?;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                Ok(())
+            })
+        }
+    }
+
+    /// Kills `delete match arm "SubscribeToTask"`.
+    ///
+    /// Existing coverage sends `SubscribeToTask` with bad params and asserts an
+    /// error — which is what the fall-through produces too, so the arm could be
+    /// deleted without a red test. What only the arm does is return an SSE
+    /// stream, so that is what this asserts.
+    #[tokio::test]
+    async fn subscribe_to_task_returns_an_sse_stream() {
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(SlowExecutor)
+                .build()
+                .expect("handler"),
+        );
+        let addr = start_server(Arc::new(JsonRpcDispatcher::new(handler))).await;
+
+        // A streaming send returns as soon as the first event is queued, so the
+        // task is still Working when the subscribe below arrives.
+        let (_s, send_body, _h) = post_jsonrpc(
+            addr,
+            r#"{"jsonrpc":"2.0","id":"1","method":"SendStreamingMessage","params":{"message":{"messageId":"m-1","role":"user","parts":[{"kind":"text","text":"hi"}]}}}"#,
+        )
+        .await;
+        let task_id = send_body
+            .split(r#""taskId":""#)
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .or_else(|| {
+                send_body
+                    .split(r#""id":""#)
+                    .nth(1)
+                    .and_then(|rest| rest.split('"').next())
+            })
+            .unwrap_or_else(|| panic!("no task id in SSE body: {send_body}"))
+            .to_owned();
+
+        // Deliberately NOT the shared `post_jsonrpc` helper: it collects the
+        // body, and an SSE stream with keep-alives never ends, so collecting
+        // one hangs until the harness kills it. It did — exit 143. Only the
+        // response head is needed here, so read that and drop the body.
+        let client: hyper_util::client::legacy::Client<
+            hyper_util::client::legacy::connect::HttpConnector,
+            Full<Bytes>,
+        > = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+            .build_http();
+        let req = hyper::Request::builder()
+            .method("POST")
+            .uri(format!("http://{addr}/"))
+            .header("content-type", "application/json")
+            .header("a2a-version", "1.0")
+            .body(Full::new(Bytes::from(format!(
+                r#"{{"jsonrpc":"2.0","id":"2","method":"SubscribeToTask","params":{{"id":"{task_id}"}}}}"#
+            ))))
+            .expect("request");
+
+        // Bounded so a regression fails this test rather than wedging the suite.
+        let resp = tokio::time::timeout(std::time::Duration::from_secs(20), client.request(req))
+            .await
+            .expect("subscribe must answer within 20s")
+            .expect("subscribe");
+        let status = resp.status().as_u16();
+        let ct = resp
+            .headers()
+            .get("content-type")
+            .and_then(|v: &hyper::header::HeaderValue| v.to_str().ok())
+            .unwrap_or_default()
+            .to_owned();
+        drop(resp);
+
+        assert_eq!(status, 200, "subscribe should succeed for a live task");
+        assert!(
+            ct.starts_with("text/event-stream"),
+            "SubscribeToTask must return an SSE stream — that is the whole \
+             point of the arm. A JSON content-type means the arm was removed \
+             and the request fell through to non-streaming dispatch. got: {ct:?}"
+        );
+    }
+}
