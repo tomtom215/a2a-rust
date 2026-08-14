@@ -958,3 +958,120 @@ async fn cors_headers_on_not_found_response() {
         "CORS headers should be on 404 response"
     );
 }
+
+// ── read_body_limited boundary (dispatch/rest/response.rs) ───────────────────
+//
+// Kills `replace > with >=` and `replace > with ==` at
+// `dispatch/rest/response.rs`'s `if upper > max_size as u64`.
+//
+// Same shape as the JSON-RPC pair in jsonrpc_dispatch_coverage_tests.rs, and
+// the same trap: `Limited` rejects an oversized body during the read even when
+// the pre-read `Content-Length` fast path is disabled, so "oversized is
+// rejected" holds under the `==` mutant while the memory bound that fast path
+// exists to enforce is gone. Only the message distinguishes them — the early
+// rejection can name the declared length, the read-time limiter cannot.
+mod rest_body_limit_boundary {
+    use super::{http_request, make_handler};
+    use a2a_protocol_server::dispatch::{DispatchConfig, RestDispatcher};
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    const LIMIT: usize = 512;
+
+    async fn start_limited_rest_server() -> SocketAddr {
+        let dispatcher = Arc::new(RestDispatcher::with_config(
+            make_handler(),
+            DispatchConfig::default().with_max_request_body_size(LIMIT),
+        ));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                let io = hyper_util::rt::TokioIo::new(stream);
+                let d = Arc::clone(&dispatcher);
+                tokio::spawn(async move {
+                    let service = hyper::service::service_fn(move |req| {
+                        let d = Arc::clone(&d);
+                        async move { Ok::<_, std::convert::Infallible>(d.dispatch(req).await) }
+                    });
+                    let _ = hyper_util::server::conn::auto::Builder::new(
+                        hyper_util::rt::TokioExecutor::new(),
+                    )
+                    .serve_connection(io, service)
+                    .await;
+                });
+            }
+        });
+        addr
+    }
+
+    /// A `message:send` body padded to exactly `len` bytes via `metadata`,
+    /// which `MessageSendParams` accepts. Size is the only variable; the
+    /// payload stays schema-valid so a rejection can only be about length.
+    fn send_body_of_exactly(len: usize) -> String {
+        let prefix = r#"{"message":{"messageId":"m-1","role":"user","parts":[{"kind":"text","text":"hi"}]},"metadata":{"pad":""#;
+        let suffix = r#""}}"#;
+        let overhead = prefix.len() + suffix.len();
+        assert!(
+            len >= overhead,
+            "cannot build a {len}-byte body; the envelope alone is {overhead} bytes"
+        );
+        let out = format!("{prefix}{}{suffix}", "p".repeat(len - overhead));
+        assert_eq!(out.len(), len, "padding arithmetic is off");
+        serde_json::from_str::<serde_json::Value>(&out)
+            .expect("the padded body must stay valid JSON");
+        out
+    }
+
+    /// Kills `>` → `>=`: a body of exactly the cap is within it.
+    #[tokio::test]
+    async fn body_of_exactly_the_limit_is_not_rejected_as_too_large() {
+        let addr = start_limited_rest_server().await;
+        let body = send_body_of_exactly(LIMIT);
+
+        let (_status, text) = http_request(
+            addr,
+            "POST",
+            "/message:send",
+            Some(&body),
+            Some("application/json"),
+        )
+        .await;
+
+        assert!(
+            !text.contains("too large"),
+            "a body of exactly {LIMIT} bytes is at the cap, not over it: {text}"
+        );
+    }
+
+    /// Kills `>` → `==`: the refusal must come from the pre-read check, which
+    /// is the only one that knows the declared size.
+    #[tokio::test]
+    async fn oversized_body_is_refused_before_reading_and_names_the_size() {
+        let addr = start_limited_rest_server().await;
+        let declared = LIMIT * 4;
+        let body = send_body_of_exactly(declared);
+
+        let (_status, text) = http_request(
+            addr,
+            "POST",
+            "/message:send",
+            Some(&body),
+            Some("application/json"),
+        )
+        .await;
+
+        assert!(
+            text.contains("too large"),
+            "a body four times the cap must be rejected: {text}"
+        );
+        assert!(
+            text.contains(&declared.to_string()),
+            "the early Content-Length rejection names the declared size; \
+             without it, `Limited` caught this mid-read and the pre-read fast \
+             path — the actual memory bound — is untested. got: {text}"
+        );
+    }
+}

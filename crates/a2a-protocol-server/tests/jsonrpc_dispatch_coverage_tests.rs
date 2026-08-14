@@ -1307,3 +1307,102 @@ async fn subscribe_to_task_error_returns_json_error() {
         );
     }
 }
+
+// ── read_body_limited boundary ──────────────────────────────────────────────
+//
+// Kills `replace > with >=` and `replace > with ==` at
+// `dispatch/jsonrpc/response.rs`'s `if upper > max_size as u64`.
+//
+// The `==` mutant is the subtle one. The `size_hint` check is a fast path that
+// rejects an honest oversized Content-Length before a single byte is read;
+// `Limited` still aborts the same body mid-read if that path is disabled. So a
+// test asserting only "an oversized body is rejected" passes either way, and
+// the memory-amplification protection the fast path exists to provide is gone
+// while every test stays green.
+//
+// The two paths are distinguishable only by their message: the early rejection
+// knows the declared length and prints it, the read-time limiter cannot.
+mod body_limit_boundary {
+    use super::{http_request, start_server};
+    use a2a_protocol_server::dispatch::{DispatchConfig, JsonRpcDispatcher};
+    use std::sync::Arc;
+
+    const LIMIT: usize = 512;
+
+    fn dispatcher_with_limit() -> Arc<JsonRpcDispatcher> {
+        let handler = Arc::new(
+            a2a_protocol_server::builder::RequestHandlerBuilder::new(super::EchoExecutor)
+                .build()
+                .expect("handler"),
+        );
+        Arc::new(JsonRpcDispatcher::with_config(
+            handler,
+            DispatchConfig::default().with_max_request_body_size(LIMIT),
+        ))
+    }
+
+    /// Pads a valid JSON-RPC request out to exactly `len` bytes using a
+    /// string field the method ignores, so size — not validity — is the only
+    /// variable.
+    fn request_of_exactly(len: usize) -> String {
+        // Built by concatenation rather than substitution: the first attempt
+        // used `str::replace` and was off by one, because `r#""pad":""#` is
+        // the seven-character `"pad":"`, not eight. The length assertion
+        // below is what caught it.
+        let prefix = r#"{"jsonrpc":"2.0","id":"1","method":"GetTask","params":{"id":"t","pad":""#;
+        let suffix = r#""}}"#;
+        let overhead = prefix.len() + suffix.len();
+        assert!(
+            len >= overhead,
+            "cannot build a {len}-byte request; the envelope alone is {overhead} bytes"
+        );
+        let out = format!("{prefix}{}{suffix}", "p".repeat(len - overhead));
+        assert_eq!(out.len(), len, "padding arithmetic is off");
+        serde_json::from_str::<serde_json::Value>(&out).expect(
+            "the padded request must stay valid JSON, or the dispatcher would \
+             reject it for parsing rather than for size",
+        );
+        out
+    }
+
+    /// Kills `>` → `>=`: a body of exactly the cap is within it.
+    #[tokio::test]
+    async fn body_of_exactly_the_limit_is_not_rejected_as_too_large() {
+        let addr = start_server(dispatcher_with_limit()).await;
+        let body = request_of_exactly(LIMIT);
+
+        let (_status, text, _headers) =
+            http_request(addr, "POST", "/", Some(&body), Some("application/json")).await;
+
+        assert!(
+            !text.contains("too large"),
+            "a body of exactly {LIMIT} bytes is at the cap, not over it, so it \
+             must not be rejected for size. got: {text}"
+        );
+    }
+
+    /// Kills `>` → `==`: an over-limit body must be refused by the early
+    /// Content-Length check, which is the only one that can name the declared
+    /// size.
+    #[tokio::test]
+    async fn oversized_body_is_refused_before_reading_and_names_the_size() {
+        let addr = start_server(dispatcher_with_limit()).await;
+        let declared = LIMIT * 4;
+        let body = request_of_exactly(declared);
+
+        let (_status, text, _headers) =
+            http_request(addr, "POST", "/", Some(&body), Some("application/json")).await;
+
+        assert!(
+            text.contains("too large"),
+            "a body four times the cap must be rejected: {text}"
+        );
+        assert!(
+            text.contains(&declared.to_string()),
+            "the early Content-Length rejection names the declared size; a \
+             message without it means `Limited` caught this during the read \
+             instead, leaving the pre-read fast path — and the memory bound it \
+             provides — untested. got: {text}"
+        );
+    }
+}
