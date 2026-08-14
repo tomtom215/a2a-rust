@@ -86,6 +86,27 @@ exactly like test gaps in the report.
 **Everything else in the sweep was killable.** Of the 57 survivors measured at
 `7469fd5`, **53 fell to tests**; these four are the remainder.
 
+**Two of those 53 were claimed before they were true, and the confirming sweep
+caught both.** Recorded here because the burn-down's credibility rests on the
+claims being checkable, and these two were not:
+
+* `state_machine.rs:143` was reported killed in `8e3f321`. The test written
+  for it exercised the parts-cap branch, which `return`s at line 112 — the
+  mutant lives in the store-save-failure revert further down, and the test
+  never reached it. It passed, on a different code path. The underlying error
+  was skipping mutation verification for that file and asserting a kill from a
+  green test, which is the one thing this whole exercise shows does not follow.
+* `rest/mod.rs:255` was called run-to-run variance in `11f4456` when it
+  appeared in the `6ebf821` sweep and not the `7469fd5` one. It had never been
+  killed. The REST binding accepts two cancel spellings, and three existing
+  tests exercise the colon form (`/tasks/{id}:cancel`) while the slash form had
+  no coverage at all. A survivor that disappears with no test change is a
+  question, not noise.
+
+Both are fixed in `2607280` and verified (96 mutants, 42 caught, 0 missed).
+The general rule this produced: **a passing test is not evidence that a mutant
+died — only a mutation run is.**
+
 ### Residue left behind deliberately
 
 The two public `write_timeout` setters are gone, but the value is still
