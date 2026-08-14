@@ -37,7 +37,7 @@ those 9 had already been killed by tests landed in between and the deletion
 retires none of them. Kept visible rather than quietly corrected: the estimate
 was sound reasoning over a stale number, and the number moved.
 
-### Provably equivalent mutants — the first exemptions this project has needed
+### Mutants no test can kill — proved, not assumed
 
 ADR 0006 sets the target at zero surviving mutants "with the single
 documented exception" of mutants that no test can kill, and requires that an
@@ -53,15 +53,38 @@ Decision taken 2026-08-14: keep them documented, add no dependency.
 | `tenant_config.rs` — `TenantLimits::builder` → `Default::default()` | The body *is* `TenantLimitsBuilder::default()`. In a function returning `TenantLimitsBuilder`, `Default::default()` resolves to `<TenantLimitsBuilder as Default>::default()` — the same call. |
 | `tenant_config.rs` — `PerTenantConfig::builder` → `Default::default()` | Identical argument for `PerTenantConfigBuilder`. |
 | `streaming/sse.rs` — `SseBodyWriter::close` → `()` | The body is `drop(self)` and the receiver is `self` by value. With or without the explicit `drop`, `self` is dropped when the function returns, and nothing follows it. |
+| `auth/jwt.rs` — `build_jwks_client` → `Default::default()` | Not an equivalence: the mutated variant is `#[cfg(not(feature = "tls-rustls"))]` and the sweep builds `--all-features`, so it is not compiled at all. See below. |
 
-Each is an equivalence of *form*, not a gap in the suite: the mutated
-expression compiles to the same observable behaviour, so writing a test
-against it would be writing a test that cannot fail. That is the distinction
-ADR 0006 asks for, and it is why "I could not think of a test" would not have
-been sufficient for any of the three.
+The first three are equivalences of *form*: the mutated expression compiles to
+the same observable behaviour, so a test written against it could not fail.
+
+**The fourth is a different category, and ADR 0006 does not yet name it.**
+`build_jwks_client` has two `#[cfg]` variants — one for `tls-rustls`, one for
+its absence. cargo-mutants parses the source, sees both, and generates a
+mutant for each; the sweep then builds with `--all-features`, which *enables*
+`tls-rustls`, so the `#[cfg(not(...))]` variant is never compiled. Mutating a
+body that is not in the binary changes nothing, the suite passes, and the
+result is reported as `MISSED` rather than `unviable`. It is not a test gap
+and not a semantic equivalence: it is a mutant in code the build excludes.
+
+Proved in two directions rather than argued:
+
+1. Line 790 at `7469fd5` — the commit the sweep measured — is inside the
+   `#[cfg(not(feature = "tls-rustls"))]` variant. Verified with
+   `git show 7469fd5:crates/a2a-protocol-server/src/auth/jwt.rs`.
+2. The *other* variant's return type does not implement `Default`: a
+   compile probe of `let _: JwksHttpClient = Default::default();` under
+   `--all-features` fails with `the trait bound Client<HttpsConnector<
+   HttpConnector>, Full<Bytes>>: Default is not satisfied`. So a mutant on
+   the TLS variant would be `unviable`, not `MISSED` — the reported one has
+   to be the cfg-excluded variant.
+
+Worth knowing generally: any `#[cfg]`-gated function that is not part of the
+sweep's feature set will produce mutants of this kind, and they will look
+exactly like test gaps in the report.
 
 **Everything else in the sweep was killable.** Of the 57 survivors measured at
-`7469fd5`, 54 fell to tests; these three are the remainder.
+`7469fd5`, **53 fell to tests**; these four are the remainder.
 
 ### Residue left behind deliberately
 
