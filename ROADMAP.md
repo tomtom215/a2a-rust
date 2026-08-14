@@ -86,6 +86,15 @@ exactly like test gaps in the report.
 **Everything else in the sweep was killable.** Of the 57 survivors measured at
 `7469fd5`, **53 fell to tests**; these four are the remainder.
 
+**Confirmed by measurement, not by the claim.** Run
+[31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306) at
+`1d51be0`, full CI configuration, 21/21 shards with `COMPLETED` markers:
+**2262 caught / 4 missed / 1 timeout / 1293 unviable — 99%** (99.82% exact). The
+four `missed.txt` lines across all 21 artifacts are exactly the four above and
+nothing else. Every count was re-derived from the raw artifacts rather than read
+off the summary, and the arithmetic closes: 2262 + 4 + 1 + 1293 = 3560, which is
+the total number of entries in the shards' `mutants.json` files.
+
 **Three of those 53 were claimed before they were true, and the confirming
 sweep caught all three.** Recorded here because the burn-down's credibility
 rests on the claims being checkable, and these were not:
@@ -426,18 +435,31 @@ This is the category most worth clearing before any external review.
   The remaining `TIMEOUT` on `replace EventQueueManager::destroy with ()` is
   pre-existing — recorded by run 31681284244 too, as `manager.rs:403:9`
   against `main`'s line numbering versus `385:9` on the branch, the
-  `with_write_timeout` removal having shifted the file. **Closed 2026-08-14**
-  by the 45s per-test kill in `.config/nextest.toml`; it now reports caught.
-  See the third bullet under "claimed before they were true" above for what it
-  actually was, and why the fix is not a test.
+  `with_write_timeout` removal having shifted the file. It survived a third
+  sweep — run 31814679306 at `1d51be0` reports it as the run's only `TIMEOUT`,
+  in shard 12/12, **a shard that exited 0**, because the workflow fails on
+  `missed` and not on `timeout`. **Closed 2026-08-14** by the 45s per-test kill
+  in `.config/nextest.toml`; it now reports caught. See the third bullet under
+  "claimed before they were true" above for what it actually was, and why the
+  fix is not a test.
 
   **The 57 is measured at `7469fd5` and is already behind.** All nine
   `a2a-protocol-types` survivors it reports — 5 in `error.rs`, 2 in
   `days_from_civil`, 2 in `proto/convert` — are addressed in `df6f023` and
   `05272fa`, which post-date the sweep. The `error.rs` five are confirmed
   dead by a targeted run (70 mutants, 54 caught, 16 unviable, 0 missed); the
-  other four await theirs. **The figure is not 48 until a sweep says so** —
+  other four await theirs. ~~**The figure is not 48 until a sweep says so**~~ —
   the same rule that this file's "116 at most" line broke once already.
+
+  **A sweep has now said so, and it is not 48 either.** Run
+  [31814679306](https://github.com/tomtom215/a2a-rust/actions/runs/31814679306)
+  at `1d51be0`, full CI configuration, 21/21 shards with `COMPLETED` markers:
+  **2262 caught / 4 missed / 1 timeout / 1293 unviable, 99%** (99.82% exact),
+  3560 mutants total. `a2a-protocol-types` and `a2a-protocol-client` are both
+  **100% with zero survivors and zero timeouts** — so the nine types survivors
+  really were dead, but the count was 57 → 4, not 57 → 48. Estimating the
+  endpoint would have been wrong by an order of magnitude in the other
+  direction this time; the rule holds regardless of which way the error runs.
 
   The weekly sweep fails until survivors are killed or explicitly
   justified, which is the intended state, not a problem to suppress. No
