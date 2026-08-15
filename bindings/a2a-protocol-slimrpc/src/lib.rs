@@ -62,6 +62,54 @@
 //! # }
 //! ```
 //!
+//! # Multicast
+//!
+//! One message to several agents, with one outcome per agent — the separate
+//! `spec/v1/slimrpc-multicast.md`. Only `SendMessage` and
+//! `SendStreamingMessage` may be broadcast; task management stays
+//! point-to-point.
+//!
+//! ```no_run
+//! use std::time::Duration;
+//! use a2a_protocol_slimrpc::{SlimName, SlimRpcMulticast};
+//!
+//! # async fn example(
+//! #     app: std::sync::Arc<
+//! #         slim_service::app::App<
+//! #             slim_auth::auth_provider::AuthProvider,
+//! #             slim_auth::auth_provider::AuthVerifier,
+//! #         >,
+//! #     >,
+//! #     params: a2a_protocol_types::params::MessageSendParams,
+//! # ) -> Result<(), Box<dyn std::error::Error>> {
+//! let group = SlimRpcMulticast::from_app(
+//!     app,
+//!     vec![
+//!         SlimName::parse("slim://org/demo/triage")?,
+//!         SlimName::parse("slim://org/demo/classify")?,
+//!     ],
+//! )?
+//! .with_timeout(Duration::from_secs(30));
+//!
+//! let outcome = group.send_message(params, None).await?;
+//! assert_eq!(outcome.len(), 2, "one outcome per invited agent, always");
+//! for (agent, _response) in outcome.succeeded() {
+//!     println!("{agent} answered");
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # Reaching agents through a SLIM node
+//!
+//! The `from_app` constructors above reach only peers sharing the caller's
+//! in-process `Service`. To cross a node — which is what a deployment does —
+//! pass the connection id [`slim_service::service::Service::connect`] returned
+//! to `SlimRpcServer::from_app_with_connection` and
+//! `SlimRpcTransport::from_app_with_connection`. The client-side constructor is
+//! `async` because it announces the caller's own name to the node, without
+//! which nothing can route an agent's reply back.
+//!
 //! # Server
 //!
 //! ```no_run
@@ -93,6 +141,7 @@ pub mod binding;
 pub mod client;
 pub mod codec;
 pub mod error;
+pub mod multicast;
 pub mod server;
 
 pub use binding::{
@@ -101,6 +150,7 @@ pub use binding::{
 };
 pub use client::{SlimRpcTransport, SlimRpcTransportBuilder};
 pub use codec::Pb;
+pub use multicast::{MemberOutcome, MulticastOutcome, SlimRpcMulticast};
 pub use server::{SlimRpcServer, SlimRpcServerBuilder};
 
 /// The A2A method names this binding serves, as they appear on the wire.

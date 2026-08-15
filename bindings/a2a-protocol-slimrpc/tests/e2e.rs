@@ -14,103 +14,18 @@
 //! what makes these tests worth running: a binding that type-checks proves
 //! nothing about whether the two ends agree on the wire.
 
-use std::pin::Pin;
+mod common;
+
 use std::sync::Arc;
 use std::time::Duration;
 
 use a2a_protocol_client::transport::Transport;
 use a2a_protocol_client::ClientError;
-use a2a_protocol_server::streaming::EventQueueWriter;
-use a2a_protocol_server::{AgentExecutor, RequestContext, RequestHandler, RequestHandlerBuilder};
 use a2a_protocol_slimrpc::{method, SlimName, SlimRpcServer, SlimRpcTransport};
-use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_protocol_types::artifact::Artifact;
-use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
-use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
-use a2a_protocol_types::{ErrorCode, TaskQueryParams};
-use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
-use slim_auth::shared_secret::SharedSecret;
-use slim_config::component::id::{Kind, ID};
+use a2a_protocol_types::agent_card::AgentInterface;
+use a2a_protocol_types::events::StreamResponse;
+use a2a_protocol_types::{ErrorCode, TaskQueryParams, TaskState};
 use slim_service::service::Service;
-
-const SECRET: &str = "slimrpc-e2e-shared-secret-0123456789abcdef";
-
-// ── A minimal agent ─────────────────────────────────────────────────────────
-
-/// Emits Working → Artifact → Completed, the smallest executor that exercises
-/// every stream frame kind a task can produce.
-struct EchoExecutor;
-
-impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn std::future::Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("echo", vec![Part::text("Echo: over SLIM")]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
-                .await?;
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
-            Ok(())
-        })
-    }
-}
-
-fn agent_card(name: &SlimName) -> AgentCard {
-    AgentCard {
-        name: "SLIM Echo Agent".into(),
-        url: None,
-        description: "Echo agent reachable over the SLIM fabric".into(),
-        version: "1.0.0".into(),
-        supported_interfaces: vec![name.to_agent_interface()],
-        default_input_modes: vec!["text/plain".into()],
-        default_output_modes: vec!["text/plain".into()],
-        skills: vec![AgentSkill {
-            id: "echo".into(),
-            name: "Echo".into(),
-            description: "Echoes input".into(),
-            tags: vec!["echo".into()],
-            examples: None,
-            input_modes: None,
-            output_modes: None,
-            security_requirements: None,
-        }],
-        capabilities: AgentCapabilities::default()
-            .with_streaming(true)
-            .with_extended_agent_card(true),
-        provider: None,
-        icon_url: None,
-        documentation_url: None,
-        security_schemes: None,
-        security_requirements: None,
-        signatures: None,
-    }
-}
 
 // ── Harness ─────────────────────────────────────────────────────────────────
 
@@ -123,48 +38,21 @@ struct Fabric {
 
 impl Fabric {
     async fn new(test_name: &str) -> Self {
-        let id = ID::new_with_name(Kind::new("slim").unwrap(), test_name).unwrap();
-        let service = Arc::new(Service::new(id));
+        let service = common::service(test_name);
 
         let agent = SlimName::new("org", "e2e", "echo_agent");
         let caller = SlimName::new("org", "e2e", "caller");
 
-        let secret = SharedSecret::new("agent", SECRET).unwrap();
-        let (agent_app, notifications) = service
-            .create_app(
-                &agent.to_proto_name(),
-                AuthProvider::shared_secret(secret.clone()),
-                AuthVerifier::shared_secret(secret),
-            )
-            .unwrap();
-
-        let handler: Arc<RequestHandler> = Arc::new(
-            RequestHandlerBuilder::new(EchoExecutor)
-                .with_agent_card(agent_card(&agent))
-                // The handler refuses to serve an extended card unauthenticated
-                // unless asked to. This fixture has no auth interceptor, so it
-                // opts in explicitly rather than pretending to be authenticated.
-                .allow_unauthenticated_extended_card()
-                .build()
-                .expect("build handler"),
-        );
-
+        let parts = common::app_for(&service, &agent, "agent");
         let server = Arc::new(SlimRpcServer::from_app(
-            (Arc::new(agent_app), notifications),
-            handler,
+            parts,
+            common::handler_for(&agent),
             agent.clone(),
         ));
 
-        let secret = SharedSecret::new("caller", SECRET).unwrap();
-        let (caller_app, _) = service
-            .create_app(
-                &caller.to_proto_name(),
-                AuthProvider::shared_secret(secret.clone()),
-                AuthVerifier::shared_secret(secret),
-            )
-            .unwrap();
+        let (caller_app, _) = common::app_for(&service, &caller, "caller");
 
-        let transport = SlimRpcTransport::from_app(Arc::new(caller_app), agent)
+        let transport = SlimRpcTransport::from_app(caller_app, agent)
             .expect("open a channel to the agent")
             .with_timeout(Duration::from_secs(10));
 
@@ -186,16 +74,6 @@ impl Fabric {
         self.server.shutdown().await;
         let _ = self.service.shutdown().await;
     }
-}
-
-fn send_params(text: &str) -> serde_json::Value {
-    serde_json::json!({
-        "message": {
-            "messageId": "msg-1",
-            "role": "user",
-            "parts": [{ "kind": "text", "text": text }],
-        }
-    })
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -244,7 +122,7 @@ async fn send_message_round_trips_over_the_fabric() {
         .transport
         .send_request(
             method::SEND_MESSAGE,
-            send_params("hello"),
+            common::send_params_json("hello"),
             &Default::default(),
         )
         .await
@@ -284,7 +162,7 @@ async fn get_task_returns_a_task_created_over_the_fabric() {
         .transport
         .send_request(
             method::SEND_MESSAGE,
-            send_params("remember me"),
+            common::send_params_json("remember me"),
             &Default::default(),
         )
         .await
@@ -365,7 +243,7 @@ async fn streaming_send_delivers_events_and_terminates() {
         .transport
         .send_streaming_request(
             method::SEND_STREAMING_MESSAGE,
-            send_params("stream please"),
+            common::send_params_json("stream please"),
             &Default::default(),
         )
         .await

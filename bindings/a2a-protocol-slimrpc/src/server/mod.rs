@@ -151,12 +151,43 @@ impl SlimRpcServer {
     // worse API than the bump.
     #[must_use]
     #[allow(clippy::needless_pass_by_value)]
-    pub fn from_app(
+    pub fn from_app(parts: AppParts, handler: Arc<RequestHandler>, name: SlimName) -> Self {
+        Self::from_app_with_connection(parts, handler, name, None)
+    }
+
+    /// Builds a server that propagates its subscriptions over a specific
+    /// connection to a SLIM node.
+    ///
+    /// Without a connection id, an agent is reachable only by peers sharing its
+    /// in-process [`Service`]. With one — the value
+    /// [`slim_service::service::Service::connect`] returned for the node this
+    /// process dialled — the node learns which names this agent serves and can
+    /// route to it, which is what makes the agent reachable from other
+    /// processes and other hosts.
+    #[must_use]
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn from_app_with_connection(
         (app, notifications): AppParts,
         handler: Arc<RequestHandler>,
         name: SlimName,
+        connection_id: Option<u64>,
     ) -> Self {
-        let mut server = Server::new(app.clone(), app.app_name().clone(), notifications);
+        // `app.app_name()` is the instance-qualified name. SLIM's own name
+        // matching resolves a bare `domain/namespace/service` lookup onto it,
+        // so an agent stays reachable at the address its card advertises —
+        // verified across a node by `tests/remote_node.rs`, not assumed.
+        //
+        // The agent side needs nothing further: `Server::serve` subscribes this
+        // name over `connection_id` itself. The *caller* side is the half that
+        // does need work, because nothing announces a client's own name — see
+        // `SlimRpcTransport::from_app_with_connection`.
+        let mut server = Server::new_with_connection_and_runtime(
+            app.clone(),
+            app.app_name().clone(),
+            connection_id,
+            notifications,
+            None,
+        );
         register_a2a_methods(&mut server, &handler);
         Self {
             inner: Arc::new(server),

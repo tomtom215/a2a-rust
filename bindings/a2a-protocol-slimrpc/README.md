@@ -23,7 +23,8 @@ required for A2A conformance — this exists because the SLIM fabric is where so
 deployments already live.
 
 The binding itself is complete: all eleven methods in the spec's inventory, both
-streaming methods included, verified end-to-end over a real SLIM datapath.
+streaming methods included, plus multicast — verified end-to-end over a real
+SLIM datapath and across a real SLIM node on a socket.
 
 ## Why it is not in the workspace
 
@@ -144,8 +145,46 @@ server.serve().await?;
 ```
 
 `SlimRpcServer::from_app` and `SlimRpcTransport::from_app` take a SLIM app the
-caller already owns — the path for an app attached to a remote fabric node, or
-shared between services.
+caller already owns. Their `*_with_connection` variants additionally take the
+connection id `Service::connect` returned, which is what makes an agent
+reachable **through a SLIM node** rather than only from its own process — see
+the remote-node suite below.
+
+## Multicast
+
+One message, several agents, one outcome each — `spec/v1/slimrpc-multicast.md`.
+Only `SendMessage` and `SendStreamingMessage` may be broadcast; task management
+stays point-to-point, because a task id is meaningful to exactly one agent.
+
+```rust,no_run
+use a2a_protocol_slimrpc::{SlimName, SlimRpcMulticast};
+
+let group = SlimRpcMulticast::from_app(app, vec![
+    SlimName::parse("slim://org/demo/triage")?,
+    SlimName::parse("slim://org/demo/classify")?,
+])?
+.with_timeout(Duration::from_secs(30));
+
+let outcome = group.send_message(params, None).await?;
+for (agent, response) in outcome.succeeded() { /* … */ }
+for (agent, why) in outcome.failed() { /* … */ }
+```
+
+`MulticastOutcome` carries **exactly one outcome per invited agent**, always.
+That is the spec's requirement — *"Clients must wait for outcomes from every
+invited agent"* — and dropping a silent agent from the result would make a
+partial broadcast look like a complete one.
+
+Two failure kinds are kept distinct, because they call for different responses:
+
+| Situation | Reported as | Why it matters |
+|---|---|---|
+| Agent answered with an error, or stayed silent past the timeout | a per-agent `failed()` outcome | isolated; the other agents' answers stand |
+| A member could not be invited at all | `Err` from the whole call | the group is misconfigured; waiting will not fix it |
+
+`stream_message` gives each agent its own `EventStream`, demultiplexed from
+SLIM's interleaved source-tagged frames, so one agent's stream ending does not
+affect another's.
 
 ## Tests
 
@@ -153,24 +192,30 @@ shared between services.
 cargo test
 ```
 
-27 tests: 20 unit, 7 end-to-end. The end-to-end suite is not mocked — one
-in-process SLIM `Service` hosts an agent app and a caller app, and messages
-travel the real SLIM datapath between them. A binding that type-checks proves
-nothing about whether the two ends agree on the wire, so those seven cover
-method registration, a unary round trip, a task fetched back by id, error
-identity surviving the fabric, a streaming send running to its terminal event,
-agent-card advertisement, and an unknown method being reported rather than
-hanging.
+45 tests: 25 unit, 18 end-to-end across three topologies, 2 doc. None of the
+end-to-end ones are mocked.
+
+| Suite | Topology | Covers |
+|---|---|---|
+| `e2e.rs` | one in-process `Service` | method registration, unary round trip, task fetched by id, error identity, streaming to a terminal event, card advertisement, unknown method |
+| `multicast.rs` | group channel, several agents | attribution per agent, a silent agent as a failed outcome, failure isolation, per-agent streams, empty group, uninvitable member |
+| `remote_node.rs` | **three separate services over TCP** | send, get, streaming and error identity routed through a real SLIM node |
+
+`remote_node.rs` is the one that earns the "works in a deployment" claim. The
+agent and the client share no `Service` and no memory; every message crosses a
+loopback socket twice and is routed by a node in between. It found a real bug —
+a client never announces its own name to the node, so nothing could route an
+agent's reply back, and every call failed its session handshake. In-process that
+is invisible, which is exactly why the suite exists.
 
 ## Limitations
 
-- **Multicast is not implemented.** `spec/v1/slimrpc-multicast.md` is a separate
-  document covering group channels, client discovery and response collection.
-  SLIM supports it (`Channel::multicast_*`); this binding does not use it yet.
-- **Remote fabric nodes are untested here.** The `slim://host/...` address form
-  parses and `from_app` accepts an app attached to a node, but every test in
-  this crate runs against an in-process service. Nothing verifies behaviour
-  across a real SLIM node.
 - **Shared-secret identity only in the builders.** `with_shared_secret` is what
   `build()`/`connect()` offer. Anything else — SPIFFE, JWT, mTLS — means
   constructing the `App` yourself and using `from_app`.
+- **One node, loopback, plaintext.** The remote-node suite proves routing across
+  a node process; it does not exercise multi-hop node topologies, TLS between
+  node and app, or a node on another host.
+- **Multicast group inbox is unused.** SLIM lets a member observe other members'
+  responses (`subscribe_group_inbox`); the A2A spec does not ask for it and this
+  binding does not expose it.

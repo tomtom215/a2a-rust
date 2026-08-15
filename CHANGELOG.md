@@ -115,12 +115,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its terminal event, agent-card advertisement, and an unknown method being
   reported rather than hanging.
 
-  Not implemented: multicast (`spec/v1/slimrpc-multicast.md` is a separate
-  document). Not verified: behaviour across a remote SLIM node — every test here
-  runs in-process. Both are stated in the crate's README rather than left to be
-  discovered.
-
   [slimrpc-spec]: https://github.com/a2aproject/experimental-cpb-slimrpc
+
+- **SLIMRPC multicast — one message, several agents, one outcome each.**
+  Implements the separate [`spec/v1/slimrpc-multicast.md`][slimrpc-spec]:
+  `SlimRpcMulticast` opens a SLIM group channel, invites specific agents by
+  name, and broadcasts. Only `SendMessage` and `SendStreamingMessage` may be
+  broadcast — task management stays point-to-point, because a task id is
+  meaningful to exactly one agent.
+
+  `MulticastOutcome` carries **exactly one outcome per invited agent**, which is
+  the spec's requirement (*"Clients must wait for outcomes from every invited
+  agent"*) and the reason multicast is not a `Transport`: `send_request` returns
+  one value, and reducing N attributable answers to one would have to drop
+  either the attribution or the failures.
+
+  Two failure kinds stay distinct because they call for different responses. An
+  agent that errors or stays silent past the timeout is an isolated per-agent
+  outcome and the other agents' answers stand; a member that cannot be *invited*
+  fails the whole call, because the group is misconfigured and waiting will not
+  fix it. That line is the spec's own: *"Only channel creation, agent
+  invitation, or request delivery failures constitute interaction-level
+  failures."* `stream_message` gives each agent its own `EventStream`,
+  demultiplexed from SLIM's interleaved source-tagged frames.
+
+- **Verified across a real SLIM node.** `tests/remote_node.rs` runs three
+  separate SLIM services in one process — an agent, a client, and a node that
+  only routes — connected over loopback TCP. The agent and client share no
+  `Service` and no memory; every message crosses a socket twice and is routed in
+  between. `SlimRpcServer::from_app_with_connection` and
+  `SlimRpcTransport::from_app_with_connection` take the connection id
+  `Service::connect` returns.
+
+  This found a real bug that in-process testing structurally could not: nothing
+  announced a *client's* own name to the node, so while the agent was reachable,
+  no route existed for its reply, and every call failed its session handshake
+  with the caller's own name reported as unroutable. `Channel` sets a route
+  outwards only. The client-side constructor is now `async` and subscribes the
+  caller's name over the connection.
 
 - **`benches/send_latency_breakdown.rs`** — attributes the cost of a blocking
   send across three axes (runtime worker count, executor event count, and a
