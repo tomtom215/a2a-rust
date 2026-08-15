@@ -94,3 +94,7 @@ harness = false
 [[bench]]
 name    = "coordinator_chain_under_fault"
 harness = false
+
+[[bench]]
+name    = "send_latency_breakdown"
+harness = false

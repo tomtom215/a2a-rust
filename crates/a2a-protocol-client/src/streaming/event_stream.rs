@@ -44,6 +44,13 @@ use crate::streaming::sse_parser::SseParser;
 /// A raw byte chunk from the HTTP body reader task.
 pub(crate) type BodyChunk = ClientResult<Bytes>;
 
+/// Buffer depth for [`EventStream::from_event_channel`]'s bridging task.
+///
+/// Only a re-framing hop sits between the caller's channel and the parser, so
+/// this needs to absorb scheduling jitter rather than a real burst; the
+/// caller's own channel is where a transport sizes its backpressure.
+const EVENT_BRIDGE_CAPACITY: usize = 64;
+
 // ── EventStream ───────────────────────────────────────────────────────────────
 
 /// An async stream of [`StreamResponse`] events from an SSE endpoint.
@@ -129,6 +136,68 @@ impl EventStream {
             first_event_timeout: None,
             first_chunk_received: false,
         }
+    }
+
+    /// Creates an [`EventStream`] from a channel of already-decoded events.
+    ///
+    /// This is the constructor an out-of-tree [`crate::transport::Transport`]
+    /// needs. `Transport::send_streaming_request` must return an `EventStream`,
+    /// and every other way to build one is `pub(crate)` — so before this
+    /// existed, a custom transport could implement the unary half of the trait
+    /// and not the streaming half. A binding crate cannot be written against
+    /// half a trait, so this is the piece that makes the extension point whole.
+    ///
+    /// Feed `rx` from a background task that decodes the transport's own frames
+    /// into [`StreamResponse`] values. Sending `Err` delivers that error to the
+    /// consumer and is the right way to report a decode failure mid-stream —
+    /// silently ending the stream would be indistinguishable, to the consumer,
+    /// from the task finishing normally.
+    ///
+    /// The returned stream aborts the bridging task when dropped, exactly as
+    /// the built-in transports' streams do.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let (tx, rx) = tokio::sync::mpsc::channel(64);
+    /// tokio::spawn(async move {
+    ///     while let Some(frame) = my_transport_stream.next().await {
+    ///         if tx.send(frame.map(into_stream_response)).await.is_err() {
+    ///             break; // consumer dropped the stream
+    ///         }
+    ///     }
+    /// });
+    /// Ok(EventStream::from_event_channel(rx))
+    /// ```
+    #[must_use]
+    pub fn from_event_channel(mut rx: mpsc::Receiver<ClientResult<StreamResponse>>) -> Self {
+        let (tx, body_rx) = mpsc::channel::<BodyChunk>(EVENT_BRIDGE_CAPACITY);
+
+        // Re-frame domain events as SSE so they rejoin the one parsing path
+        // every binding shares. The alternative — a second source inside
+        // `next()` — would mean two code paths for terminal-event detection and
+        // error delivery, and only one of them would be exercised by the HTTP
+        // tests.
+        let bridge = tokio::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                let chunk = match event {
+                    Ok(ref ev) => serde_json::to_string(ev).map_or_else(
+                        |e| Err(ClientError::Serialization(e)),
+                        |json| {
+                            Ok(Bytes::from(format!(
+                                "data: {{\"jsonrpc\":\"2.0\",\"id\":null,\"result\":{json}}}\n\n"
+                            )))
+                        },
+                    ),
+                    Err(e) => Err(e),
+                };
+                if tx.send(chunk).await.is_err() {
+                    break;
+                }
+            }
+        });
+
+        Self::with_status(body_rx, bridge.abort_handle(), 200)
     }
 
     /// Creates a new [`EventStream`] with an abort handle and the actual HTTP
@@ -426,6 +495,114 @@ mod tests {
             .await
             .expect("timed out");
         assert!(result.is_none());
+    }
+
+    // ── from_event_channel ───────────────────────────────────────────────
+    //
+    // The constructor an out-of-tree custom transport needs. Without it,
+    // `Transport::send_streaming_request` cannot be implemented outside this
+    // crate at all, so these pin the contract a binding author codes against.
+
+    /// Events sent on the channel come back out of `next()` intact.
+    #[tokio::test]
+    async fn from_event_channel_delivers_events() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::from_event_channel(rx);
+
+        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("task-1"),
+            context_id: a2a_protocol_types::ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Working),
+            metadata: None,
+        });
+        tx.send(Ok(event)).await.expect("send");
+        drop(tx);
+
+        let received = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .expect("a sent event must arrive")
+            .expect("and must not be an error");
+
+        match received {
+            StreamResponse::StatusUpdate(ev) => {
+                assert_eq!(ev.task_id, TaskId::new("task-1"));
+                assert_eq!(ev.status.state, TaskState::Working);
+            }
+            other => panic!("expected a status update, got {other:?}"),
+        }
+    }
+
+    /// An `Err` on the channel reaches the consumer as an error rather than
+    /// ending the stream. A transport that fails to decode a frame mid-stream
+    /// must be able to say so: a silent end is indistinguishable from success.
+    #[tokio::test]
+    async fn from_event_channel_propagates_errors() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::from_event_channel(rx);
+
+        tx.send(Err(ClientError::Transport("frame decode failed".into())))
+            .await
+            .expect("send");
+        drop(tx);
+
+        let received = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .expect("an error must be delivered, not swallowed");
+
+        assert!(
+            matches!(received, Err(ClientError::Transport(ref m)) if m == "frame decode failed"),
+            "the transport's own error must survive the bridge: {received:?}"
+        );
+    }
+
+    /// Closing the channel ends the stream.
+    #[tokio::test]
+    async fn from_event_channel_ends_when_sender_drops() {
+        let (tx, rx) = mpsc::channel::<ClientResult<StreamResponse>>(8);
+        let mut stream = EventStream::from_event_channel(rx);
+        drop(tx);
+
+        let result = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
+
+        assert!(result.is_none(), "a closed channel must end the stream");
+    }
+
+    /// A terminal event ends the stream, exactly as it does for the HTTP
+    /// bindings — the shared SSE path is what guarantees this, and this test is
+    /// what proves the bridge really rejoins it.
+    #[tokio::test]
+    async fn from_event_channel_honours_terminal_events() {
+        let (tx, rx) = mpsc::channel(8);
+        let mut stream = EventStream::from_event_channel(rx);
+
+        tx.send(Ok(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("task-1"),
+            context_id: a2a_protocol_types::ContextId::new("ctx-1"),
+            status: TaskStatus::new(TaskState::Completed),
+            metadata: None,
+        })))
+        .await
+        .expect("send");
+
+        let first = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out")
+            .expect("the terminal event itself is delivered");
+        assert!(first.is_ok());
+
+        // The sender is deliberately still alive: the stream must end because
+        // the event was terminal, not because the channel closed.
+        let next = tokio::time::timeout(TEST_TIMEOUT, stream.next())
+            .await
+            .expect("timed out");
+        assert!(
+            next.is_none(),
+            "a terminal event must end the stream even with the sender alive"
+        );
     }
 
     #[tokio::test]

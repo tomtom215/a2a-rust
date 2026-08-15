@@ -10,6 +10,268 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`message/send` cost 32× more on any server that had handled more than
+  10,000 tasks.** The default `InMemoryTaskStore` caps itself at
+  `max_capacity` (10,000). Once full it is over that cap on *every* subsequent
+  write, and every such write ran a sweep that cloned every `TaskId` in the
+  store into a `Vec`, sorted it, and then removed — normally — a single task.
+  A blocking send performs several saves, so one request paid that O(n log n)
+  sweep several times over.
+
+  It is a cliff, not a slope, and it never recovers: the store stays at
+  capacity for the life of the process. Measured with
+  `cargo run --release -p a2a-benchmarks --example send_probe`, which walks the
+  store across the boundary and reports the median per 1,000 sends:
+
+  | Sends so far | Before | After |
+  |---|---|---|
+  | 10,000 (at the cap) | 65.2 µs | 62.9 µs |
+  | 11,000 (past it) | **2.4 ms** | **67.3 µs** |
+  | 16,000 | **2.0 ms** | **64.3 µs** |
+
+  Two changes fix it. Capacity eviction now walks `order_index` — already
+  sorted oldest-first — and stops as soon as it has enough victims, instead of
+  collecting and sorting the whole store; the search for a terminal task to
+  prefer is bounded by a scan window, so the sweep is O(1) in the store size
+  rather than O(n). And the O(n) TTL pass no longer rides along with it: the
+  two passes are now separately triggered, so the amortized sweep stays
+  amortized instead of running on every write once the store is full.
+
+  End to end over loopback JSON-RPC, `transport/jsonrpc/send/single_message`
+  improves **91%** (2.18 ms → 191 µs, p < 0.05). The control holds: the same
+  run measures `get_task` on a missing id — one round trip that performs no
+  write — unchanged at −0.25% (p = 0.76), confirming the gain is specific to
+  the write path and not machine-wide noise.
+
+  This was previously attributed, in a benchmark comment, to cross-thread task
+  scheduling on 4-core CI runners. That hypothesis is disproved here: running
+  the same send on a single-worker runtime does not close the gap. Scheduling
+  is real but second-order — worth ~50 µs of the remaining 191 µs, and it was
+  entirely masked by the eviction cost.
+
+  The new sweep's fallback path — topping up with in-flight tasks when the scan
+  window holds too little finished work — was correct but untested at its one
+  interesting point. Mutation testing showed it: the first draft sized the
+  top-up as `overflow - terminal.len()`, and changing that `-` to a `+`, which
+  makes the sweep evict *more* than the overflow, broke no assertion. Every
+  capacity test either filled the quota from terminal tasks alone (returning
+  before the top-up ran) or found none at all (where the two operators agree),
+  so the partial-supply case in between went unexercised. It now has a test,
+  and the arithmetic it turned on is gone: the top-up is a second bounded pass
+  over the same window, sharing the first pass's exit condition, which also
+  drops a `Vec` of candidate ids that were usually collected and discarded.
+
+### Changed
+
+- **Expired tasks are now reclaimed only by the TTL sweep's own interval.**
+  Previously an over-capacity write also ran the TTL pass as a side effect, so
+  a full store expired terminal tasks on every write. It now runs every
+  `eviction_interval` writes (default 64), as its configuration always
+  described. `max_capacity` remains a hard cap enforced on every write, so
+  memory is bounded exactly as before; only the promptness of TTL reclamation
+  changes, and only within the interval that already governed it.
+
+### Added
+
+- **`EventStream::from_event_channel` on `a2a-protocol-client`, which is what
+  made an out-of-tree custom transport possible at all.**
+  `Transport::send_streaming_request` must return an `EventStream`, and every
+  constructor for one was `pub(crate)` — so a third-party binding could
+  implement the unary half of the trait and not the streaming half. The trait is
+  `pub`, its parameters are `pub`, its return type is `pub`, and it was still
+  unimplementable outside the crate.
+
+  The new constructor takes a `tokio::sync::mpsc::Receiver` of decoded
+  `StreamResponse` values, so a transport hands over domain events and never
+  has to know that the internal representation is SSE. Sending `Err` delivers
+  that error to the consumer, which is how a transport reports a mid-stream
+  decode failure — ending the stream silently would be indistinguishable, to
+  the consumer, from finishing normally. The returned stream aborts its bridging
+  task on drop, exactly as the built-in transports' streams do.
+
+  Purely additive. Found by building `a2a-protocol-slimrpc` against the
+  extension points rather than by reading them; `docs/rust-sdk-assessment.md`
+  §4.1.1 has the correction to what it previously claimed.
+
+- **`bindings/a2a-protocol-slimrpc` — the SLIMRPC protocol binding.** Carries
+  A2A over the [AGNTCY SLIM](https://github.com/agntcy/slim) fabric per
+  [`a2aproject/experimental-cpb-slimrpc`][slimrpc-spec], advertising
+  `protocolBinding: https://a2a-protocol.org/bindings/experimental-slimrpc/v1`
+  and addressing agents as `slim://[node[:port]/]domain/namespace/service`.
+
+  All eleven methods in the spec's inventory — nine unary, plus
+  `SendStreamingMessage` and `SubscribeToTask` as unary-request /
+  streaming-response. Payloads are the canonical `lf.a2a.v1` protobuf messages
+  (SLIMRPC uses the same service definitions as gRPC), so the wire is
+  byte-compatible with the official Go, Python and Java SDKs. Error identity
+  travels as the spec's `TaskNotFoundError: …` message prefix, because SLIMRPC
+  has no `google.rpc.ErrorInfo` equivalent and a status code alone cannot
+  distinguish `TaskNotCancelableError` from `ExtensionSupportRequiredError`.
+
+  `SlimRpcServer` drives the same `RequestHandler` every other binding drives,
+  so task state, streaming, push, tenancy and authorisation are not
+  reimplemented and an agent behaves identically however it is reached.
+
+  **Deliberately outside the workspace, with its own `Cargo.lock`.**
+  `agntcy-slim-rpc` brings 379 transitive dependencies including `aws-lc-sys`, a
+  native C crypto build; `a2a-protocol-types` has 12. None of that reaches the
+  lockfile, `deny.toml` allow-list or audit surface of the four published
+  crates, and none of them depends on this one.
+
+  27 tests. The seven end-to-end ones are not mocked: one in-process SLIM
+  `Service` hosts an agent app and a caller app and messages cross the real SLIM
+  datapath, covering method registration, a unary round trip, a task fetched
+  back by id, error identity surviving the fabric, a streaming send running to
+  its terminal event, agent-card advertisement, and an unknown method being
+  reported rather than hanging.
+
+  [slimrpc-spec]: https://github.com/a2aproject/experimental-cpb-slimrpc
+
+- **SLIMRPC multicast — one message, several agents, one outcome each.**
+  Implements the separate [`spec/v1/slimrpc-multicast.md`][slimrpc-spec]:
+  `SlimRpcMulticast` opens a SLIM group channel, invites specific agents by
+  name, and broadcasts. Only `SendMessage` and `SendStreamingMessage` may be
+  broadcast — task management stays point-to-point, because a task id is
+  meaningful to exactly one agent.
+
+  `MulticastOutcome` carries **exactly one outcome per invited agent**, which is
+  the spec's requirement (*"Clients must wait for outcomes from every invited
+  agent"*) and the reason multicast is not a `Transport`: `send_request` returns
+  one value, and reducing N attributable answers to one would have to drop
+  either the attribution or the failures.
+
+  Two failure kinds stay distinct because they call for different responses. An
+  agent that errors or stays silent past the timeout is an isolated per-agent
+  outcome and the other agents' answers stand; a member that cannot be *invited*
+  fails the whole call, because the group is misconfigured and waiting will not
+  fix it. That line is the spec's own: *"Only channel creation, agent
+  invitation, or request delivery failures constitute interaction-level
+  failures."* `stream_message` gives each agent its own `EventStream`,
+  demultiplexed from SLIM's interleaved source-tagged frames.
+
+- **Verified across a real SLIM node.** `tests/remote_node.rs` runs three
+  separate SLIM services in one process — an agent, a client, and a node that
+  only routes — connected over loopback TCP. The agent and client share no
+  `Service` and no memory; every message crosses a socket twice and is routed in
+  between. `SlimRpcServer::from_app_with_connection` and
+  `SlimRpcTransport::from_app_with_connection` take the connection id
+  `Service::connect` returns.
+
+  This found a real bug that in-process testing structurally could not: nothing
+  announced a *client's* own name to the node, so while the agent was reachable,
+  no route existed for its reply, and every call failed its session handshake
+  with the caller's own name reported as unroutable. `Channel` sets a route
+  outwards only. The client-side constructor is now `async` and subscribes the
+  caller's name over the connection.
+
+- **SLIMRPC verified across every topology a deployment actually uses**, and
+  identity generalised beyond shared secrets. The previous entry listed these as
+  limitations; they are now covered rather than documented.
+
+  | Suite | Topology | What only this can catch |
+  |---|---|---|
+  | `remote_node_tls.rs` | one node, **verified TLS** | a TLS path that verifies — proven by refusing an untrusted CA |
+  | `remote_node_multihop.rs` | **two peered nodes** | subscriptions crossing a node-to-node link |
+  | `out_of_process.rs` | node in a **separate OS process** | anything relying on shared memory or a shared runtime |
+
+  TLS uses a throwaway CA generated per run rather than committed PEM files, so
+  nothing long-lived is in the repository and no certificate can expire the
+  build. The rejection test is a differential against the same node in the same
+  window — the trusted CA connects, the untrusted one does not — because SLIM
+  retries a failed handshake rather than returning, and a bounded wait alone
+  would only prove slowness.
+
+  Multi-hop needs `ConnType::Peer` between nodes: an `Edge` link carries an
+  attached app's traffic but does not share routing state, so an agent behind a
+  second node stays invisible without it.
+
+  `SlimRpcServerBuilder::with_identity` and the transport's equivalent now take
+  SLIM's own `AuthProvider` / `AuthVerifier`, so JWT, SPIFFE via SPIRE and
+  static tokens all work without this crate enumerating mechanisms and lagging
+  behind SLIM. `with_shared_secret` becomes a convenience over it and is now
+  fallible, since SLIM rejects a secret too short to be a credential. A builder
+  with no identity is a build error: SLIM has no anonymous mode, and a default
+  would quietly stand in for one.
+
+- **SPIFFE and mutual TLS, both verified rather than asserted.** The previous
+  entry listed SPIFFE as "supported but untested" and mutual TLS as absent.
+
+  `spiffe.rs` runs against a **real** `spire-server` and `spire-agent`: the
+  agent attests the test process over the Workload API and issues genuine
+  JWT-SVIDs. A stub would have proven only that the types line up. Three tests —
+  an A2A call carried by SPIFFE identity, the issued SPIFFE ID pinned to the one
+  registered, and a verifier refusing a genuinely-issued SVID minted for a
+  *different audience*. That last one is what gives the first its meaning: a
+  verifier that accepted everything would pass the positive test.
+
+  Two SPIFFE properties surfaced only by running it, both presenting as a
+  session that never completes rather than an authentication error, and both now
+  documented: `SpireIdentityManager` must be built **once and cloned** for
+  provider and verifier (it holds an MLS signature key, so two managers carry
+  two different ones), and each app needs its **own** SPIFFE ID (two apps
+  sharing one cannot complete an MLS handshake). The testbed therefore registers
+  an identity per app and selects between them with `with_target_spiffe_id`.
+
+  `remote_node_mtls.rs` covers mutual TLS: a node that authenticates its apps,
+  not merely itself. Three cases, meaningful only together — a client with a
+  certificate from the node's client CA connects and A2A works; a client with no
+  certificate is refused; a client with a well-formed `ClientAuth` certificate
+  from a *different* CA is refused. The first alone would pass just as happily
+  against a node ignoring client certificates entirely.
+
+  Every negative case is paired with a control that succeeds in the same window,
+  because SLIM retries a failed handshake rather than returning, and "did not
+  connect" on its own can mean the fixture was broken rather than the control
+  working.
+
+  I had previously recorded that running SPIRE needed an agent this environment
+  did not have. That was not checked, and it was wrong — SPIRE runs here fine.
+
+- **SPIFFE trust-domain federation and credential rotation, both against real
+  SPIRE.** The previous entry listed these as limitations.
+
+  `spiffe_federation.rs` runs **two** independent SPIRE deployments. An SVID
+  from an unfederated domain is refused; after a bundle exchange and entries
+  naming each other, the same SVID is accepted — and a full A2A call runs
+  between an agent attested by one organisation's SPIRE and a caller attested by
+  another's. Both halves are needed: acceptance alone would be
+  indistinguishable from a verifier that ignores trust domains, and rejection
+  alone from federation simply being broken.
+
+  Federation surfaced an ordering rule worth knowing: a registration entry
+  naming `-federatesWith` is rejected outright unless that trust domain's bundle
+  is *already* imported. Bundles must be exchanged before entries are created,
+  which is why the testbed now splits `start_with` from `register` rather than
+  doing both in one call — the ordering is visible at the call site instead of
+  being a comment someone can miss.
+
+  `spiffe_rotation.rs` issues 40-second JWT-SVIDs so a rotation happens inside a
+  test rather than half an hour later. Three properties: the manager serves a
+  renewed credential without being asked; the superseded credential stops
+  verifying; and a live A2A agent keeps answering across the rotation —
+  including a stream opened afterwards — without being restarted or handed a new
+  manager. Each test *proves the rotation happened* before asserting anything
+  about it, because a test that merely waited and then succeeded would pass just
+  as happily if nothing had rotated at all.
+
+- **`slim-node` — a standalone SLIM node binary.** Routes and runs nothing
+  itself. Prints `listening on <addr>` once the socket accepts, so a supervisor
+  waits for readiness instead of sleeping; refuses half a TLS configuration
+  rather than silently serving plaintext. It exists so the out-of-process claim
+  is testable, and because bringing up a node otherwise means installing the
+  full AGNTCY SLIM distribution.
+
+- **`benches/send_latency_breakdown.rs`** — attributes the cost of a blocking
+  send across three axes (runtime worker count, executor event count, and a
+  round trip that runs no executor at all), so a future regression in this
+  class is attributable by measurement rather than by inspection.
+- **`benches/examples/send_probe.rs`** — a diagnostic that walks the task
+  store across its capacity boundary and reports send latency per 1,000-send
+  bucket. This is what turned "sends are slow" into "sends are slow past
+  exactly 10,000 tasks".
+
 ## [0.8.0] - 2026-08-13
 
 > [!WARNING]

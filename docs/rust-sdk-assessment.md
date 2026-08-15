@@ -234,6 +234,44 @@ The trigger to reopen properly is unchanged and has **not** fired: SLIMRPC
 being proposed as a spec binding. On the evidence above it is still explicitly
 outside the core specification.
 
+##### Built 2026-08-15 — and one premise above turned out to be wrong
+
+The binding was built: `bindings/a2a-protocol-slimrpc`, all eleven methods,
+verified end to end over a real SLIM datapath. Two of this subsection's claims
+survive intact and one does not.
+
+**What held.** The separate-crate design was right, and by a wider margin than
+the argument above claimed. Measured with `cargo tree`, `agntcy-slim-rpc` alone
+brings **379 transitive dependencies** — including `aws-lc-sys`, a native C
+crypto build — against 12 for `a2a-protocol-types` and 191 for
+`a2a-protocol-server` at all features. The crate therefore sits outside the
+workspace with its own `Cargo.lock`, and none of that graph touches the four
+published crates. Note this retires the *retirement* of the contamination
+argument: the concern was never really about alpha versions, it was about
+dependency mass, and the mass is real whether or not the versions are stable.
+
+**What did not hold.** *"The extension points exist, so a SLIMRPC binding is a
+separate crate built whenever someone wants it"* — with one correction that
+only building it could surface. `Transport` is `pub` and object-safe, exactly
+as re-verified above, but its `send_streaming_request` must return an
+`EventStream`, and **every `EventStream` constructor was `pub(crate)`**. An
+out-of-tree crate could implement the unary half of the trait and not the
+streaming half, which is not a usable binding — two of the eleven methods are
+streaming, and they are the ones that make an agent interactive.
+
+That is a gap no reading of the signatures reveals: `Transport` is public, its
+parameters are public, its return type is public, and the whole thing is still
+unimplementable outside the crate. It took writing a real binding against it to
+find, which is the general lesson worth keeping — *"the extension points exist"*
+was verified by reading declarations, and reading declarations is what missed it.
+
+`a2a-protocol-client` now has `EventStream::from_event_channel`, a public
+constructor taking a channel of decoded `StreamResponse` values. It is the only
+change any of the four crates needed, it is purely additive, and with it the
+extension point is whole. The claim above should now read: a SLIMRPC binding is
+a separate crate, and as of 0.8.1 the SDK actually supports being extended that
+way.
+
 ### 4.2 Persistence, tenancy, and operations
 
 | | `a2a-rs` | `a2a-rust` |

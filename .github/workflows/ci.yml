@@ -384,6 +384,77 @@ jobs:
   # Proven able to fail, 2026-08-11: dropping the `ListTasks` recording from
   # the shared sweep, with every call still succeeding, exits 2 and names all
   # four cells.
+  slimrpc-binding:
+    name: SLIMRPC binding (out-of-workspace)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # `bindings/a2a-protocol-slimrpc` is deliberately not a workspace member —
+    # `agntcy-slim-rpc` brings 379 transitive dependencies including
+    # `aws-lc-sys`, a native C crypto build, and none of that belongs in the
+    # lockfile or audit surface of the four published crates. The cost of that
+    # isolation is that every other job in this file skips it, so it needs a job
+    # of its own or it rots silently while the workspace stays green.
+    #
+    # It exercises the extension points from outside, which is the only thing
+    # that can catch them regressing: `Transport`, `with_custom_transport`,
+    # `RequestHandler`'s `on_*` methods, and `EventStream::from_event_channel`.
+    # Its end-to-end tests run a real SLIM datapath in-process, so no fabric
+    # node or network is needed here.
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          workspaces: bindings/a2a-protocol-slimrpc
+      - name: Format
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Build the slim-node binary
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo build --bin slim-node
+      # Six topologies: in-process, multicast group, one node over TCP, that
+      # node with verified TLS, two peered nodes, and a node in its own OS
+      # process. The last four bind loopback ports and spawn a child process,
+      # so they run single-threaded to keep port reservation and process
+      # readiness deterministic on a shared runner.
+      - name: Test (unit, end-to-end, and doc)
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo test -- --test-threads=1
+
+      # The SPIFFE suite runs against a real spire-server and spire-agent, not
+      # a stub — SPIFFE identity means nothing unless the credential comes from
+      # a real attesting authority. Those tests are #[ignore]d so a contributor
+      # without SPIRE is not blocked, which means CI has to ask for them by
+      # name or they would never run anywhere.
+      #
+      # The testbed panics rather than skipping when the binaries are missing,
+      # so this step cannot silently report coverage it does not have.
+      - name: Install SPIRE
+        run: |
+          set -euo pipefail
+          version=1.11.2
+          curl -fsSL -o /tmp/spire.tar.gz \
+            "https://github.com/spiffe/spire/releases/download/v${version}/spire-${version}-linux-amd64-musl.tar.gz"
+          tar xzf /tmp/spire.tar.gz -C /tmp
+          echo "SPIRE_BIN_DIR=/tmp/spire-${version}/bin" >> "$GITHUB_ENV"
+
+      # Three suites, all against real SPIRE: identity, federation between two
+      # trust domains, and credential rotation. The rotation one waits for
+      # wall-clock expiry of 40-second SVIDs, so it is slow by construction —
+      # that is the cost of testing the failure mode a long-lived deployment
+      # actually hits.
+      - name: Test (SPIFFE, against real SPIRE)
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: |
+          cargo test --test spiffe --test spiffe_federation --test spiffe_rotation \
+            -- --ignored --test-threads=1
+
   example-surface:
     name: Example surface coverage (all methods x all bindings)
     runs-on: ubuntu-latest

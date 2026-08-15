@@ -303,7 +303,7 @@ impl TaskStore for InMemoryTaskStore {
             trace_debug!(task_id = %task.id, state = ?task.status.state, "saving task");
 
             // Insert under write lock, then release immediately.
-            let needs_eviction = {
+            let passes = {
                 let mut store = self.data.write().await;
                 store.insert(task.id.clone(), task, Instant::now());
                 let len = store.len();
@@ -312,8 +312,8 @@ impl TaskStore for InMemoryTaskStore {
             };
 
             // Run eviction outside the write lock to reduce contention.
-            if needs_eviction {
-                self.maybe_evict().await;
+            if passes.any() {
+                self.maybe_evict(passes).await;
             }
 
             Ok(())
@@ -446,7 +446,7 @@ impl TaskStore for InMemoryTaskStore {
     ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
         Box::pin(async move {
             let task = task.clone();
-            let (inserted, needs_eviction) = {
+            let (inserted, passes) = {
                 let mut store = self.data.write().await;
                 if store.entries.contains_key(&task.id) {
                     return Ok(false);
@@ -457,8 +457,8 @@ impl TaskStore for InMemoryTaskStore {
                 (true, self.should_evict(len))
             };
 
-            if needs_eviction {
-                self.maybe_evict().await;
+            if passes.any() {
+                self.maybe_evict(passes).await;
             }
             Ok(inserted)
         })
