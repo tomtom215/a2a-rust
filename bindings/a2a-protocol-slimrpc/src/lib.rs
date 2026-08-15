@@ -117,11 +117,24 @@
 //! # Identity
 //!
 //! The builders take SLIM's own `AuthProvider` and `AuthVerifier` via
-//! `with_identity`, so JWT, SPIFFE via SPIRE, static tokens and shared secrets
+//! `with_identity`, so SPIFFE via SPIRE, JWT, static tokens and shared secrets
 //! all work without this crate enumerating them. `with_shared_secret` is a
 //! convenience over it. There is no default: SLIM has no anonymous mode, so a
 //! builder with no identity is a build error rather than something quietly
 //! standing in for one.
+//!
+//! SPIFFE, JWT and shared secrets are each verified end to end — SPIFFE against
+//! a real `spire-server` and `spire-agent`, not a stub. Two things about SPIFFE
+//! are easy to get wrong and cost real time to diagnose, so they are worth
+//! stating here: build **one** `SpireIdentityManager` and clone it for provider
+//! and verifier (it holds an MLS signature key, and two managers carry two
+//! different ones), and give each app its **own** SPIFFE ID (two apps sharing
+//! an identity cannot complete an MLS handshake). Both failures present as a
+//! session that never completes rather than as an authentication error.
+//!
+//! Mutual TLS between apps and the node is verified too, including that a
+//! client with no certificate, or one from an untrusted CA, is refused. The
+//! crate README carries the full posture table.
 //!
 //! # Server
 //!

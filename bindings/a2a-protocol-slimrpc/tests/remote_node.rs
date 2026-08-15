@@ -62,14 +62,7 @@ struct Fabric {
 
 impl Fabric {
     async fn new(test_name: &str) -> Self {
-        let _ = tracing_subscriber::fmt()
-            // Quiet unless RUST_LOG asks: SLIM's own logs are what made the
-            // routing bug in this suite findable, so the hook stays.
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off")),
-            )
-            .try_init();
+        common::init_tracing();
         let port = common::free_port();
         let endpoint = format!("127.0.0.1:{port}");
 

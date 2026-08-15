@@ -189,15 +189,26 @@ affect another's.
 ## Identity
 
 `with_identity` takes SLIM's own `AuthProvider` and `AuthVerifier`, so every
-mechanism SLIM supports works — JWT, SPIFFE via SPIRE, a static token, or a
-shared secret. Enumerating them in the binding would mean growing a method
-every time SLIM gained one, and silently lagging behind until someone did.
+mechanism SLIM supports works — SPIFFE via SPIRE, JWT, a static token, or a
+shared secret. Enumerating them in the binding would mean growing a method every
+time SLIM gained one, and silently lagging behind until someone noticed.
 
 ```rust,no_run
+// SPIFFE: one manager, cloned. `SpireIdentityManager` is a unified
+// provider + verifier and generates an MLS signature key at build time, so two
+// separately-built managers carry two different keys and their handshake never
+// completes.
+let mut spiffe = SpireIdentityManager::builder()
+    .with_socket_path("/run/spire/agent.sock")
+    .with_target_spiffe_id("spiffe://example.org/a2a/echo_agent")
+    .with_jwt_audiences(vec!["slim".into()])
+    .build()?;
+spiffe.initialize().await?;
+
 let server = SlimRpcServer::builder(handler, name)
     .with_identity(
-        AuthProvider::jwt_signer(signer),
-        AuthVerifier::jwt_verifier(verifier),
+        AuthProvider::spire(spiffe.clone()),
+        AuthVerifier::spire(spiffe),
     )
     .build()?;
 ```
@@ -205,6 +216,36 @@ let server = SlimRpcServer::builder(handler, name)
 `with_shared_secret` is the convenience for the simplest case. There is no
 default: SLIM has no anonymous mode, so a builder with no identity is a build
 error rather than something that quietly stands in for one.
+
+Two things about SPIFFE that cost time to discover and are easy to get wrong:
+
+- **One manager, cloned.** Building two managers alike gives them two different
+  MLS keys. The symptom is a session that never completes, not an
+  authentication error.
+- **Distinct SPIFFE IDs per app.** Two SLIM apps holding the *same* SPIFFE ID
+  cannot complete an MLS handshake. A process hosting several apps registers
+  several entries and selects between them with `with_target_spiffe_id`.
+
+## Security posture
+
+What is proven by a test here, and what is merely available. The distinction is
+the point: "supported" and "verified" are different claims, and only the second
+is evidence.
+
+| Control | Status | Where |
+|---|---|---|
+| Server TLS, client verifies | **verified**, incl. refusing an untrusted CA | `remote_node_tls.rs` |
+| Mutual TLS (client certificates) | **verified**, incl. refusing no-cert and wrong-CA | `remote_node_mtls.rs` |
+| SPIFFE identity via real SPIRE | **verified**, incl. refusing a wrong-audience SVID | `spiffe.rs` |
+| JWT identity | **verified** end-to-end | `e2e.rs` |
+| Shared-secret identity | **verified** end-to-end | every suite |
+| A2A error identity across a node | **verified** | `remote_node.rs` |
+| Static-token identity | supported via `with_identity`, untested | — |
+| SPIFFE X.509 SVIDs for the *node* link | available in SLIM (`TlsSource::Spire`), unused here | — |
+
+Every negative case above is paired with a control that succeeds in the same
+window, because "did not connect" on its own can mean the fixture was broken
+rather than the security control working.
 
 ## Running a node
 
@@ -226,23 +267,30 @@ binding.
 ## Tests
 
 ```
-cargo test
+cargo test                                          # 56 tests
+SPIRE_BIN_DIR=... cargo test -- --ignored           # + 3 against real SPIRE
 ```
 
-53 tests: 25 unit, 25 end-to-end across six topologies, 3 doc. None of the
-end-to-end ones are mocked, and each topology exists because it can fail in a
-way the ones above it cannot.
+59 tests across eight topologies. None are mocked, and each topology exists
+because it can fail in a way the ones above it cannot.
 
 | Suite | Topology | What only this can catch |
 |---|---|---|
 | `e2e.rs` | one in-process `Service` | the eleven methods, error identity, streaming, card advertisement, JWT identity |
 | `multicast.rs` | group channel, several agents | per-agent attribution, a silent agent as a failed outcome, failure isolation, per-agent streams |
 | `remote_node.rs` | three services, one node, TCP | routing that needs real subscription propagation |
-| `remote_node_tls.rs` | same, with **verified TLS** | a TLS path that actually verifies — proven by refusing an untrusted CA |
+| `remote_node_tls.rs` | same, with **verified TLS** | a TLS path that actually verifies |
+| `remote_node_mtls.rs` | same, with **mutual TLS** | a node that authenticates its apps, not just itself |
 | `remote_node_multihop.rs` | **two peered nodes** | subscriptions crossing a node-to-node link |
 | `out_of_process.rs` | node in a **separate OS process** | anything relying on shared memory or a shared runtime |
+| `spiffe.rs` | **real SPIRE** server + agent | workload identity from a real attesting authority |
 
-Two of these found real bugs that the tier above could not have:
+The SPIFFE suite is `#[ignore]`d because it needs `spire-server` and
+`spire-agent` on `PATH` or in `SPIRE_BIN_DIR`; CI installs them and runs
+`--ignored` explicitly. The testbed *panics* rather than skipping when they are
+missing, so it can never quietly report coverage it does not have.
+
+Three of these found real bugs the tier above could not have:
 
 `remote_node.rs` found that a client never announced its own name to the node,
 so nothing could route an agent's reply back and every call failed its session
@@ -252,16 +300,20 @@ handshake. In-process, that is invisible.
 fourth instance component, so every response filed under a name no invited
 member matched. All agents answered; all were reported as timeouts.
 
+`spiffe.rs` found that two apps sharing one SPIFFE ID cannot complete an MLS
+handshake, which is why the testbed registers an identity per app rather than
+one per process.
+
 ## Limitations
 
 - **One machine.** `out_of_process.rs` puts a real OS process boundary between
   the apps and the node, which is the part of "another host" that reproduces on
   a single machine. Actual cross-host behaviour — real network loss, latency,
   MTU, NAT — is not exercised here.
-- **SPIFFE is supported but untested.** `with_identity` accepts
-  `AuthProvider::spire`, and the JWT test demonstrates the same door works for
-  a non-shared-secret mechanism, but running SPIRE needs an agent this test
-  environment does not have. Shared secret and JWT are covered end-to-end.
-- **No mutual TLS.** The node authenticates itself to apps and apps verify it.
-  Client certificates (`with_client_ca_pem` on the server side) are available in
-  SLIM and not configured here.
+- **The SPIFFE trust domain is not federated.** One trust domain, one SPIRE
+  server. Cross-trust-domain federation, and rejecting an SVID from a *different*
+  trust domain, are not exercised.
+- **No credential rotation under load.** SVIDs and certificates are issued once
+  per test with an hour of validity. Nothing here runs long enough to see SPIRE
+  rotate an SVID mid-session, which is the interesting failure mode in a
+  long-lived deployment.

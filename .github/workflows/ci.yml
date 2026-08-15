@@ -427,6 +427,27 @@ jobs:
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo test -- --test-threads=1
 
+      # The SPIFFE suite runs against a real spire-server and spire-agent, not
+      # a stub — SPIFFE identity means nothing unless the credential comes from
+      # a real attesting authority. Those tests are #[ignore]d so a contributor
+      # without SPIRE is not blocked, which means CI has to ask for them by
+      # name or they would never run anywhere.
+      #
+      # The testbed panics rather than skipping when the binaries are missing,
+      # so this step cannot silently report coverage it does not have.
+      - name: Install SPIRE
+        run: |
+          set -euo pipefail
+          version=1.11.2
+          curl -fsSL -o /tmp/spire.tar.gz \
+            "https://github.com/spiffe/spire/releases/download/v${version}/spire-${version}-linux-amd64-musl.tar.gz"
+          tar xzf /tmp/spire.tar.gz -C /tmp
+          echo "SPIRE_BIN_DIR=/tmp/spire-${version}/bin" >> "$GITHUB_ENV"
+
+      - name: Test (SPIFFE, against real SPIRE)
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo test --test spiffe -- --ignored --test-threads=1
+
   example-surface:
     name: Example surface coverage (all methods x all bindings)
     runs-on: ubuntu-latest

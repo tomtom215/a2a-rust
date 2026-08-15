@@ -13,6 +13,7 @@
 
 #![allow(dead_code)] // Each suite uses a different subset.
 
+pub mod spire;
 pub mod tls;
 
 use std::pin::Pin;
@@ -135,6 +136,20 @@ pub fn handler_for(name: &SlimName) -> Arc<RequestHandler> {
             .build()
             .expect("build handler"),
     )
+}
+
+/// Turns on SLIM's own logs when `RUST_LOG` asks, and stays silent otherwise.
+///
+/// Kept because it is what made the routing and session bugs in these suites
+/// findable: the failures showed up in SLIM's tracing long before they were
+/// visible in an assertion message.
+pub fn init_tracing() {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off")),
+        )
+        .try_init();
 }
 
 /// A loopback port nothing else is listening on.

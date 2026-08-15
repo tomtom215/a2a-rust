@@ -183,6 +183,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no identity is a build error: SLIM has no anonymous mode, and a default
   would quietly stand in for one.
 
+- **SPIFFE and mutual TLS, both verified rather than asserted.** The previous
+  entry listed SPIFFE as "supported but untested" and mutual TLS as absent.
+
+  `spiffe.rs` runs against a **real** `spire-server` and `spire-agent`: the
+  agent attests the test process over the Workload API and issues genuine
+  JWT-SVIDs. A stub would have proven only that the types line up. Three tests —
+  an A2A call carried by SPIFFE identity, the issued SPIFFE ID pinned to the one
+  registered, and a verifier refusing a genuinely-issued SVID minted for a
+  *different audience*. That last one is what gives the first its meaning: a
+  verifier that accepted everything would pass the positive test.
+
+  Two SPIFFE properties surfaced only by running it, both presenting as a
+  session that never completes rather than an authentication error, and both now
+  documented: `SpireIdentityManager` must be built **once and cloned** for
+  provider and verifier (it holds an MLS signature key, so two managers carry
+  two different ones), and each app needs its **own** SPIFFE ID (two apps
+  sharing one cannot complete an MLS handshake). The testbed therefore registers
+  an identity per app and selects between them with `with_target_spiffe_id`.
+
+  `remote_node_mtls.rs` covers mutual TLS: a node that authenticates its apps,
+  not merely itself. Three cases, meaningful only together — a client with a
+  certificate from the node's client CA connects and A2A works; a client with no
+  certificate is refused; a client with a well-formed `ClientAuth` certificate
+  from a *different* CA is refused. The first alone would pass just as happily
+  against a node ignoring client certificates entirely.
+
+  Every negative case is paired with a control that succeeds in the same window,
+  because SLIM retries a failed handshake rather than returning, and "did not
+  connect" on its own can mean the fixture was broken rather than the control
+  working.
+
+  I had previously recorded that running SPIRE needed an agent this environment
+  did not have. That was not checked, and it was wrong — SPIRE runs here fine.
+
 - **`slim-node` — a standalone SLIM node binary.** Routes and runs nothing
   itself. Prints `listening on <addr>` once the socket accepts, so a supervisor
   waits for readiness instead of sleeping; refuses half a TLS configuration
