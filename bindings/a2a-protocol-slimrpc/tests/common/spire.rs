@@ -32,6 +32,47 @@ use std::time::{Duration, Instant};
 /// How long to wait for a SPIRE component to become healthy.
 const READY_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// TTLs a testbed issues credentials with.
+///
+/// The default is long enough that nothing rotates mid-test. The rotation suite
+/// asks for short ones so a rotation it can actually observe happens inside a
+/// test rather than half an hour later.
+#[derive(Clone, Copy)]
+pub struct Ttls {
+    /// How long the signing CA lives.
+    pub ca: &'static str,
+    /// How long an X.509 SVID lives.
+    pub x509_svid: &'static str,
+    /// How long a JWT-SVID lives.
+    pub jwt_svid: &'static str,
+}
+
+impl Default for Ttls {
+    fn default() -> Self {
+        Self {
+            ca: "1h",
+            x509_svid: "1h",
+            jwt_svid: "1h",
+        }
+    }
+}
+
+impl Ttls {
+    /// Short enough that a rotation happens while a test is watching.
+    ///
+    /// SPIRE renews a JWT-SVID around half its lifetime, so a 40-second SVID
+    /// rotates in roughly 20 — long enough to capture a token before it and
+    /// observe a different one after, short enough to belong in a test suite.
+    #[must_use]
+    pub const fn short() -> Self {
+        Self {
+            ca: "10m",
+            x509_svid: "1m",
+            jwt_svid: "40s",
+        }
+    }
+}
+
 /// A running SPIRE server + agent, with one workload registered.
 pub struct SpireTestbed {
     server: Child,
@@ -94,6 +135,25 @@ impl SpireTestbed {
     /// of the testbed and must be loud.
     #[must_use]
     pub fn start(name: &str, spiffe_id_paths: &[&str]) -> Self {
+        let mut testbed = Self::start_with(name, Ttls::default());
+        testbed.register(spiffe_id_paths, &[]);
+        testbed
+    }
+
+    /// As [`Self::start`], with explicit TTLs and trust domains to federate
+    /// with.
+    ///
+    /// `federates_with` names the *other* trust domains this testbed's entries
+    /// may be validated by. Naming them at entry-creation time is required:
+    /// exchanging bundles alone does not make an SVID acceptable across a
+    /// domain boundary, which is exactly the property the federation suite
+    /// tests in both directions.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::start`].
+    #[must_use]
+    pub fn start_with(name: &str, ttls: Ttls) -> Self {
         let bin = spire_bin_dir();
         let trust_domain = format!("{name}.test");
         let dir =
@@ -121,8 +181,9 @@ server {{
     trust_domain = "{trust_domain}"
     data_dir = "{data}"
     log_level = "ERROR"
-    ca_ttl = "1h"
-    default_x509_svid_ttl = "1h"
+    ca_ttl = "{ca_ttl}"
+    default_x509_svid_ttl = "{x509_ttl}"
+    default_jwt_svid_ttl = "{jwt_ttl}"
 }}
 plugins {{
     DataStore "sql" {{ plugin_data {{ database_type = "sqlite3" connection_string = "{data}/datastore.sqlite3" }} }}
@@ -132,6 +193,9 @@ plugins {{
 "#,
                 socket = server_socket.display(),
                 data = dir.join("server").display(),
+                ca_ttl = ttls.ca,
+                x509_ttl = ttls.x509_svid,
+                jwt_ttl = ttls.jwt_svid,
             ),
         )
         .expect("write server config");
@@ -216,10 +280,24 @@ plugins {{
             false,
         );
 
-        // ── Register this process as a workload ─────────────────────────────
-        // Attested by uid: every app in this test process shares it, which is
-        // correct — they are one workload as far as SPIRE is concerned, and the
-        // authorization the tests exercise is the JWT audience, not the uid.
+        testbed
+    }
+
+    /// Registers this process as a workload under each of `spiffe_id_paths`.
+    ///
+    /// Separate from `start_with` because ordering is load-bearing: an entry
+    /// naming `-federatesWith` is rejected outright unless that trust domain's
+    /// bundle is *already* imported. So a federated testbed must
+    /// `federate_with` first and register second, and making that two calls at
+    /// the call site is what stops it being got wrong silently.
+    ///
+    /// # Panics
+    ///
+    /// If SPIRE rejects an entry or never propagates it to the agent.
+    pub fn register(&mut self, spiffe_id_paths: &[&str], federates_with: &[&str]) {
+        // Attested by uid: every app in this test process shares it, so several
+        // entries against the same selector is how one process holds several
+        // workload identities — see the type docs.
         let uid = String::from_utf8(
             Command::new("id")
                 .arg("-u")
@@ -228,23 +306,29 @@ plugins {{
                 .stdout,
         )
         .expect("uid is utf-8");
+
         for path in spiffe_id_paths {
-            let id = format!("spiffe://{trust_domain}/{path}");
-            testbed.server_cmd(&[
-                "entry",
-                "create",
-                "-parentID",
-                &format!("spiffe://{trust_domain}/testbed-agent"),
-                "-spiffeID",
-                &id,
-                "-selector",
-                &format!("unix:uid:{}", uid.trim()),
-            ]);
-            testbed.spiffe_ids.push(id);
+            let id = format!("spiffe://{}/{path}", self.trust_domain);
+            let mut args = vec![
+                "entry".to_string(),
+                "create".to_string(),
+                "-parentID".to_string(),
+                format!("spiffe://{}/testbed-agent", self.trust_domain),
+                "-spiffeID".to_string(),
+                id.clone(),
+                "-selector".to_string(),
+                format!("unix:uid:{}", uid.trim()),
+            ];
+            for domain in federates_with {
+                args.push("-federatesWith".to_string());
+                args.push(format!("spiffe://{domain}"));
+            }
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            self.server_cmd(&args);
+            self.spiffe_ids.push(id);
         }
 
-        testbed.await_svids();
-        testbed
+        self.await_svids();
     }
 
     /// Runs a `spire-server` subcommand against this instance's socket.
@@ -322,6 +406,53 @@ plugins {{
         panic!(
             "registration entries {:?} never all reached the agent; last saw: {seen}",
             self.spiffe_ids
+        );
+    }
+
+    /// Teaches this testbed to trust `other`'s trust domain, and vice versa.
+    ///
+    /// Uses SPIRE's manual bundle exchange — `bundle show` on one side, `bundle
+    /// set` on the other — rather than a bundle endpoint. Both are real
+    /// federation; this one needs no second listener, no web PKI, and no
+    /// polling interval to wait out, which makes it the right choice for a
+    /// test that wants to assert about the boundary rather than about SPIRE's
+    /// refresh timing.
+    ///
+    /// # Panics
+    ///
+    /// If either side rejects the other's bundle.
+    pub fn federate_with(&self, other: &Self) {
+        self.import_bundle_from(other);
+        other.import_bundle_from(self);
+    }
+
+    /// Loads `other`'s trust bundle into this testbed's server.
+    fn import_bundle_from(&self, other: &Self) {
+        let bundle = other.server_cmd(&["bundle", "show", "-format", "spiffe"]);
+        let path = self.dir.join(format!("{}-bundle.json", other.trust_domain));
+        std::fs::write(&path, bundle).expect("write federated bundle");
+
+        let out = Command::new(self.bin.join("spire-server"))
+            .args([
+                "bundle",
+                "set",
+                "-format",
+                "spiffe",
+                "-id",
+                &format!("spiffe://{}", other.trust_domain),
+                "-path",
+            ])
+            .arg(&path)
+            .args(["-socketPath"])
+            .arg(&self.server_socket)
+            .output()
+            .expect("run spire-server bundle set");
+        assert!(
+            out.status.success(),
+            "importing {}'s bundle failed: {}{}",
+            other.trust_domain,
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
         );
     }
 

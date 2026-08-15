@@ -217,6 +217,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   I had previously recorded that running SPIRE needed an agent this environment
   did not have. That was not checked, and it was wrong — SPIRE runs here fine.
 
+- **SPIFFE trust-domain federation and credential rotation, both against real
+  SPIRE.** The previous entry listed these as limitations.
+
+  `spiffe_federation.rs` runs **two** independent SPIRE deployments. An SVID
+  from an unfederated domain is refused; after a bundle exchange and entries
+  naming each other, the same SVID is accepted — and a full A2A call runs
+  between an agent attested by one organisation's SPIRE and a caller attested by
+  another's. Both halves are needed: acceptance alone would be
+  indistinguishable from a verifier that ignores trust domains, and rejection
+  alone from federation simply being broken.
+
+  Federation surfaced an ordering rule worth knowing: a registration entry
+  naming `-federatesWith` is rejected outright unless that trust domain's bundle
+  is *already* imported. Bundles must be exchanged before entries are created,
+  which is why the testbed now splits `start_with` from `register` rather than
+  doing both in one call — the ordering is visible at the call site instead of
+  being a comment someone can miss.
+
+  `spiffe_rotation.rs` issues 40-second JWT-SVIDs so a rotation happens inside a
+  test rather than half an hour later. Three properties: the manager serves a
+  renewed credential without being asked; the superseded credential stops
+  verifying; and a live A2A agent keeps answering across the rotation —
+  including a stream opened afterwards — without being restarted or handed a new
+  manager. Each test *proves the rotation happened* before asserting anything
+  about it, because a test that merely waited and then succeeded would pass just
+  as happily if nothing had rotated at all.
+
 - **`slim-node` — a standalone SLIM node binary.** Routes and runs nothing
   itself. Prints `listening on <addr>` once the socket accepts, so a supervisor
   waits for readiness instead of sleeping; refuses half a TLS configuration

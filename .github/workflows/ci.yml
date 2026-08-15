@@ -444,9 +444,16 @@ jobs:
           tar xzf /tmp/spire.tar.gz -C /tmp
           echo "SPIRE_BIN_DIR=/tmp/spire-${version}/bin" >> "$GITHUB_ENV"
 
+      # Three suites, all against real SPIRE: identity, federation between two
+      # trust domains, and credential rotation. The rotation one waits for
+      # wall-clock expiry of 40-second SVIDs, so it is slow by construction —
+      # that is the cost of testing the failure mode a long-lived deployment
+      # actually hits.
       - name: Test (SPIFFE, against real SPIRE)
         working-directory: bindings/a2a-protocol-slimrpc
-        run: cargo test --test spiffe -- --ignored --test-threads=1
+        run: |
+          cargo test --test spiffe --test spiffe_federation --test spiffe_rotation \
+            -- --ignored --test-threads=1
 
   example-surface:
     name: Example surface coverage (all methods x all bindings)

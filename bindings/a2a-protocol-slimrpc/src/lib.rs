@@ -133,8 +133,15 @@
 //! session that never completes rather than as an authentication error.
 //!
 //! Mutual TLS between apps and the node is verified too, including that a
-//! client with no certificate, or one from an untrusted CA, is refused. The
-//! crate README carries the full posture table.
+//! client with no certificate, or one from an untrusted CA, is refused.
+//!
+//! So are the two properties a long-lived, multi-organisation deployment
+//! depends on: a trust domain really is a boundary — an unfederated domain's
+//! SVID is refused, and a federated one's is accepted, including a full A2A
+//! call between agents attested by *different* SPIRE deployments — and an agent
+//! keeps answering after its credential rotates underneath it, while the
+//! superseded credential stops verifying. The crate README carries the full
+//! posture table.
 //!
 //! # Server
 //!

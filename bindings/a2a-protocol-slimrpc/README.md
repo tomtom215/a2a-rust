@@ -237,6 +237,9 @@ is evidence.
 | Server TLS, client verifies | **verified**, incl. refusing an untrusted CA | `remote_node_tls.rs` |
 | Mutual TLS (client certificates) | **verified**, incl. refusing no-cert and wrong-CA | `remote_node_mtls.rs` |
 | SPIFFE identity via real SPIRE | **verified**, incl. refusing a wrong-audience SVID | `spiffe.rs` |
+| SPIFFE trust-domain boundary | **verified** — an unfederated domain's SVID is refused | `spiffe_federation.rs` |
+| SPIFFE federation between domains | **verified**, incl. a cross-domain A2A call | `spiffe_federation.rs` |
+| Credential rotation mid-session | **verified** — agent keeps answering, old SVID stops verifying | `spiffe_rotation.rs` |
 | JWT identity | **verified** end-to-end | `e2e.rs` |
 | Shared-secret identity | **verified** end-to-end | every suite |
 | A2A error identity across a node | **verified** | `remote_node.rs` |
@@ -268,10 +271,10 @@ binding.
 
 ```
 cargo test                                          # 56 tests
-SPIRE_BIN_DIR=... cargo test -- --ignored           # + 3 against real SPIRE
+SPIRE_BIN_DIR=... cargo test -- --ignored           # + 9 against real SPIRE
 ```
 
-59 tests across eight topologies. None are mocked, and each topology exists
+65 tests across ten topologies. None are mocked, and each topology exists
 because it can fail in a way the ones above it cannot.
 
 | Suite | Topology | What only this can catch |
@@ -284,11 +287,15 @@ because it can fail in a way the ones above it cannot.
 | `remote_node_multihop.rs` | **two peered nodes** | subscriptions crossing a node-to-node link |
 | `out_of_process.rs` | node in a **separate OS process** | anything relying on shared memory or a shared runtime |
 | `spiffe.rs` | **real SPIRE** server + agent | workload identity from a real attesting authority |
+| `spiffe_federation.rs` | **two** SPIRE deployments | that a trust domain is a boundary, and that federation crosses it |
+| `spiffe_rotation.rs` | SPIRE with 40-second SVIDs | an agent outliving the credential it started with |
 
-The SPIFFE suite is `#[ignore]`d because it needs `spire-server` and
+The three SPIFFE suites are `#[ignore]`d because they need `spire-server` and
 `spire-agent` on `PATH` or in `SPIRE_BIN_DIR`; CI installs them and runs
 `--ignored` explicitly. The testbed *panics* rather than skipping when they are
 missing, so it can never quietly report coverage it does not have.
+`spiffe_rotation.rs` is slow on purpose — it waits for real wall-clock expiry,
+which is the only way to test what happens after it.
 
 Three of these found real bugs the tier above could not have:
 
@@ -304,16 +311,25 @@ member matched. All agents answered; all were reported as timeouts.
 handshake, which is why the testbed registers an identity per app rather than
 one per process.
 
+`spiffe_federation.rs` found that a registration entry naming `-federatesWith`
+is rejected outright unless that trust domain's bundle is *already* imported —
+so bundles must be exchanged before entries are created, which is why the
+testbed splits `start_with` from `register` instead of doing both at once.
+
 ## Limitations
 
 - **One machine.** `out_of_process.rs` puts a real OS process boundary between
   the apps and the node, which is the part of "another host" that reproduces on
   a single machine. Actual cross-host behaviour — real network loss, latency,
   MTU, NAT — is not exercised here.
-- **The SPIFFE trust domain is not federated.** One trust domain, one SPIRE
-  server. Cross-trust-domain federation, and rejecting an SVID from a *different*
-  trust domain, are not exercised.
-- **No credential rotation under load.** SVIDs and certificates are issued once
-  per test with an hour of validity. Nothing here runs long enough to see SPIRE
-  rotate an SVID mid-session, which is the interesting failure mode in a
-  long-lived deployment.
+- **Federation is by manual bundle exchange, not a bundle endpoint.** SPIRE
+  supports both; `spire-server bundle set` needs no second listener and no
+  refresh interval to wait out, which suits a test. A deployment using the
+  `https_spiffe` or `https_web` bundle-endpoint profiles exercises a code path
+  nothing here touches.
+- **Rotation is tested for JWT-SVIDs, which is what SLIM's app identity uses.**
+  X.509 SVID rotation, and rotation of the *node's* TLS certificate underneath a
+  live connection, are not exercised.
+- **No sustained load.** Rotation is verified against a live agent, but with a
+  handful of calls either side, not traffic. Nothing here would catch a leak or
+  a slow degradation that only appears over hours.
