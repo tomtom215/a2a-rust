@@ -195,33 +195,63 @@ impl InMemoryTaskStore {
     /// stayed there. Reading the index instead makes the common case — the
     /// oldest task has finished — O(overflow · log n) with no sort and no
     /// allocation beyond the victims themselves.
+    ///
+    /// Two passes over the same window rather than one pass into two vectors.
+    /// The second pass runs only when the window did not hold `overflow`
+    /// terminal tasks — the rare case. In the common one the first loop has its
+    /// victims within a handful of entries and returns, never reaching the
+    /// second. Paying a second walk there buys a single allocation of exactly
+    /// the victims, instead of also cloning in-flight ids eagerly on every
+    /// sweep to throw most of them away.
+    ///
+    /// It is also the shape with no arithmetic in it. The one-pass version
+    /// computed `overflow - terminal.len()` to size the top-up, and getting
+    /// that expression wrong evicts *more* than the overflow — a bug the suite
+    /// did not catch, because no test reached the top-up with a partially
+    /// filled `terminal`. Here the same bound is the loop's own exit condition,
+    /// checked identically in both passes; see
+    /// `evict_tops_up_a_partial_supply_of_terminal_tasks`.
     fn capacity_victims(store: &StoreData, overflow: usize) -> Vec<TaskId> {
         let window = EVICTION_SCAN_WINDOW.max(overflow);
-        let mut terminal: Vec<TaskId> = Vec::with_capacity(overflow);
-        let mut still_running: Vec<TaskId> = Vec::with_capacity(overflow);
+        let mut victims: Vec<TaskId> = Vec::with_capacity(overflow);
 
+        // Preferred victims: finished work, oldest first.
         for id in store.order_index.values().take(window) {
-            let is_terminal = store
-                .entries
-                .get(id)
-                .is_some_and(|e| e.task.status.state.is_terminal());
-            if is_terminal {
-                terminal.push(id.clone());
-                if terminal.len() == overflow {
-                    return terminal;
-                }
-            } else if still_running.len() < overflow {
-                still_running.push(id.clone());
+            if victims.len() == overflow {
+                return victims;
+            }
+            if Self::is_terminal(store, id) {
+                victims.push(id.clone());
             }
         }
 
         // Not enough finished work in the window — top up with the oldest
-        // in-flight tasks so the hard cap is enforced anyway. `still_running`
-        // holds only non-terminal ids and `terminal` only terminal ones, so the
-        // two are disjoint by construction and the top-up cannot double-evict.
-        let shortfall = overflow - terminal.len();
-        terminal.extend(still_running.into_iter().take(shortfall));
-        terminal
+        // in-flight tasks so the hard cap is enforced anyway. The two passes
+        // select on opposite sides of `is_terminal`, so nothing can be picked
+        // twice however far the first pass got.
+        for id in store.order_index.values().take(window) {
+            if victims.len() == overflow {
+                break;
+            }
+            if !Self::is_terminal(store, id) {
+                victims.push(id.clone());
+            }
+        }
+
+        victims
+    }
+
+    /// Whether `id` names a task that has reached a terminal state.
+    ///
+    /// An id with no entry counts as non-terminal. [`StoreData::remove`] keeps
+    /// `order_index` and `entries` in step, so a walk of the former cannot
+    /// produce one — and were that ever to break, treating an unknown id as
+    /// still running only makes a sweep less willing to evict it.
+    fn is_terminal(store: &StoreData, id: &TaskId) -> bool {
+        store
+            .entries
+            .get(id)
+            .is_some_and(|e| e.task.status.state.is_terminal())
     }
 }
 
@@ -405,6 +435,46 @@ mod tests {
             ids(&data),
             vec!["t0".to_string(), "t4".to_string()],
             "the oldest in-flight task is spared; the three oldest completed go"
+        );
+    }
+
+    /// Some finished work, but not enough to cover the overflow: the sweep tops
+    /// up with in-flight tasks and still stops at exactly the overflow.
+    ///
+    /// This is the seam between the two passes, and it sits in the gap the
+    /// other capacity tests leave. `evict_removes_exactly_the_overflow_of_
+    /// terminal_tasks` and `evict_prefers_terminal_tasks_over_an_older_in_
+    /// flight_one` both fill the quota from terminal tasks alone and return
+    /// before the top-up runs at all; `evict_falls_back_to_non_terminal_tasks_
+    /// to_enforce_the_cap` reaches the top-up with *nothing* collected, so it
+    /// cannot see how a partial count is carried across. Only a partial supply
+    /// exercises both — and only here can a top-up that mis-sizes itself be
+    /// observed, by evicting a fourth task that should have survived.
+    ///
+    /// Found by mutation testing, not by review: the one-pass implementation
+    /// this replaced computed the top-up as `overflow - terminal.len()`, and
+    /// `cargo-mutants` showed that changing that `-` to `+` broke nothing any
+    /// test asserted.
+    #[test]
+    fn evict_tops_up_a_partial_supply_of_terminal_tasks() {
+        let mut data = store_of(&[
+            TaskState::Working,
+            TaskState::Completed,
+            TaskState::Working,
+            TaskState::Working,
+            TaskState::Working,
+        ]);
+        InMemoryTaskStore::evict(&mut data, &config(Some(2), None, 0), EvictionPasses::all());
+
+        assert_eq!(
+            data.len(),
+            2,
+            "the cap is enforced exactly — three go, not four"
+        );
+        assert_eq!(
+            ids(&data),
+            vec!["t3".to_string(), "t4".to_string()],
+            "the one finished task goes first, then the two oldest in-flight"
         );
     }
 

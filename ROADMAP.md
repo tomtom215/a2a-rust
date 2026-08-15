@@ -243,6 +243,17 @@ verified by reading declarations; the correction is recorded there.
   rather than as an authentication error.
 * **Federation is bundles-before-entries.** An entry naming `-federatesWith` is
   rejected outright unless that trust domain's bundle is already imported.
+* **The new eviction sweep's fallback path passed review and every test, and
+  was still unpinned.** `cargo-mutants` on the PR diff found that sizing the
+  top-up as `overflow - terminal.len()` could become `overflow + terminal.len()`
+  — which over-evicts — without breaking an assertion: the capacity tests either
+  fill the quota from terminal tasks alone and return before the top-up runs, or
+  find none at all, where both operators agree. The partial-supply case between
+  them had no test. Worth generalising: when a function has an early-return fast
+  path and a fallback, the tests tend to cover *each* and not the seam. The
+  remedy taken was the repo's standing one — the top-up is now a second bounded
+  pass sharing the first's exit condition, so the arithmetic is gone rather than
+  excluded, and the seam has its own test.
 
 ### Next, in the order I would take them
 

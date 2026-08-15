@@ -51,6 +51,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is real but second-order — worth ~50 µs of the remaining 191 µs, and it was
   entirely masked by the eviction cost.
 
+  The new sweep's fallback path — topping up with in-flight tasks when the scan
+  window holds too little finished work — was correct but untested at its one
+  interesting point. Mutation testing showed it: the first draft sized the
+  top-up as `overflow - terminal.len()`, and changing that `-` to a `+`, which
+  makes the sweep evict *more* than the overflow, broke no assertion. Every
+  capacity test either filled the quota from terminal tasks alone (returning
+  before the top-up ran) or found none at all (where the two operators agree),
+  so the partial-supply case in between went unexercised. It now has a test,
+  and the arithmetic it turned on is gone: the top-up is a second bounded pass
+  over the same window, sharing the first pass's exit condition, which also
+  drops a `Vec` of candidate ids that were usually collected and discarded.
+
 ### Changed
 
 - **Expired tasks are now reclaimed only by the TTL sweep's own interval.**
