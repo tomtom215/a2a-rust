@@ -176,6 +176,93 @@ the announced list — an unadvertised API break riding along with an advertised
 one is exactly what a deprecation schedule exists to prevent. Left for a later
 release, recorded here so it is a decision rather than an oversight.
 
+## 0.8.x — the SLIMRPC binding and the send-path cliff — **2026-08-15**
+
+Two pieces of work, on `claude/v0.8.0-transport-perf-3wq3w8`. Recorded here in
+the shape a fresh session needs: what is settled, what it cost to learn, and
+what is genuinely next.
+
+### The 1.5 ms `message/send` — cause found, fixed, 91% off
+
+The standing hypothesis was cross-thread scheduling on 4-core runners. It is
+**disproved**: the same send on a single-worker runtime does not close the gap,
+and cutting an executor event changes it by 2%.
+
+The cause was `InMemoryTaskStore`. It caps at `max_capacity` (10,000); once full
+it is over the cap on *every* subsequent write, and each write cloned every
+`TaskId` into a `Vec`, sorted it, and removed one task. A blocking send performs
+several saves, so one request paid that O(n log n) sweep several times.
+
+A cliff, not a slope, and it never recovered — measured with
+`cargo run --release -p a2a-benchmarks --example send_probe`:
+
+| Sends so far | Before | After |
+|---|---|---|
+| 10,000 (at the cap) | 65.2 µs | 62.9 µs |
+| 11,000 (past it) | **2.4 ms** | **67.3 µs** |
+
+`transport/jsonrpc/send/single_message` improves 91% (2.18 ms → 191 µs,
+p < 0.05). Control: `get_task` on a missing id — one round trip, no write — is
+unchanged at −0.25% (p = 0.76). Scheduling turned out to be real but
+second-order, worth ~50 µs of the remaining 191, entirely masked by the
+eviction cost.
+
+### The SLIMRPC binding — `bindings/a2a-protocol-slimrpc`
+
+All eleven spec methods plus multicast, deliberately outside the workspace with
+its own `Cargo.lock` (`agntcy-slim-rpc` brings 379 transitive dependencies
+including `aws-lc-sys`; `a2a-protocol-types` has 12). 65 tests across ten
+topologies — in-process, multicast group, one node over TCP, that node with
+verified TLS, mutual TLS, two peered nodes, a node in its own OS process, and
+three suites against a real SPIRE deployment (identity, federation, rotation).
+The crate README carries a security posture table separating what is *verified
+by a test* from what is merely *available*.
+
+**One change to a published crate was needed**, and it is the finding worth
+carrying forward: `Transport::send_streaming_request` must return an
+`EventStream`, and every `EventStream` constructor was `pub(crate)`. A
+third-party binding could implement the unary half of the trait and not the
+streaming half. The trait is `pub`, its parameters are `pub`, its return type is
+`pub`, and it was still unimplementable from outside.
+`EventStream::from_event_channel` closes that — purely additive.
+`docs/rust-sdk-assessment.md` §4.1.1 previously concluded no change was needed,
+verified by reading declarations; the correction is recorded there.
+
+### Things that cost time, so they need not cost it twice
+
+* **SLIM names carry a fourth instance component** (`org/ns/agent/NULL_COMPONENT`).
+  Keying on the full rendering filed every multicast response under a name no
+  invited member matched: all agents answered, all were reported as timeouts.
+* **A client must announce its own name to the node.** `Channel` sets a route
+  outwards only, so without it nothing can route an agent's reply back and every
+  call fails its session handshake. Invisible in-process.
+* **`SpireIdentityManager` must be built once and cloned** for provider and
+  verifier — it holds an MLS signature key, and two managers carry two different
+  ones. **And each app needs its own SPIFFE ID**: two apps sharing one cannot
+  complete an MLS handshake. Both present as a session that never completes
+  rather than as an authentication error.
+* **Federation is bundles-before-entries.** An entry naming `-federatesWith` is
+  rejected outright unless that trust domain's bundle is already imported.
+
+### Next, in the order I would take them
+
+1. **Soak.** The one thing none of this covers: sustained traffic over hours.
+   It would settle rotation-under-load, RSS and queue growth, and the
+   store-eviction path at steady state in one job — and it is the class of bug
+   the current suite structurally cannot reach, since every test starts from an
+   empty store.
+2. **Split `handler/messaging.rs`** (2,395 lines, still the worst file, still
+   holding the hot path and the destroy/`CleanupGuard` coupling).
+3. **A 30-line `hello-agent`**, and a deployment example. Both ends of the
+   funnel are still missing; the smallest example remains 736 LOC.
+
+Known limits of the SLIMRPC work, stated rather than implied: federation is by
+manual bundle exchange rather than a bundle endpoint; rotation covers JWT-SVIDs
+(what SLIM's app identity uses), not X.509 SVIDs or the node's own TLS
+certificate under a live connection; everything runs on one machine, so real
+network loss, latency and NAT are untested; and static-token identity is
+supported via `with_identity` but has no test.
+
 ## Verification debt
 
 Work where the project's own gates do not yet measure what they claim to.
