@@ -63,6 +63,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`EventStream::from_event_channel` on `a2a-protocol-client`, which is what
+  made an out-of-tree custom transport possible at all.**
+  `Transport::send_streaming_request` must return an `EventStream`, and every
+  constructor for one was `pub(crate)` — so a third-party binding could
+  implement the unary half of the trait and not the streaming half. The trait is
+  `pub`, its parameters are `pub`, its return type is `pub`, and it was still
+  unimplementable outside the crate.
+
+  The new constructor takes a `tokio::sync::mpsc::Receiver` of decoded
+  `StreamResponse` values, so a transport hands over domain events and never
+  has to know that the internal representation is SSE. Sending `Err` delivers
+  that error to the consumer, which is how a transport reports a mid-stream
+  decode failure — ending the stream silently would be indistinguishable, to
+  the consumer, from finishing normally. The returned stream aborts its bridging
+  task on drop, exactly as the built-in transports' streams do.
+
+  Purely additive. Found by building `a2a-protocol-slimrpc` against the
+  extension points rather than by reading them; `docs/rust-sdk-assessment.md`
+  §4.1.1 has the correction to what it previously claimed.
+
+- **`bindings/a2a-protocol-slimrpc` — the SLIMRPC protocol binding.** Carries
+  A2A over the [AGNTCY SLIM](https://github.com/agntcy/slim) fabric per
+  [`a2aproject/experimental-cpb-slimrpc`][slimrpc-spec], advertising
+  `protocolBinding: https://a2a-protocol.org/bindings/experimental-slimrpc/v1`
+  and addressing agents as `slim://[node[:port]/]domain/namespace/service`.
+
+  All eleven methods in the spec's inventory — nine unary, plus
+  `SendStreamingMessage` and `SubscribeToTask` as unary-request /
+  streaming-response. Payloads are the canonical `lf.a2a.v1` protobuf messages
+  (SLIMRPC uses the same service definitions as gRPC), so the wire is
+  byte-compatible with the official Go, Python and Java SDKs. Error identity
+  travels as the spec's `TaskNotFoundError: …` message prefix, because SLIMRPC
+  has no `google.rpc.ErrorInfo` equivalent and a status code alone cannot
+  distinguish `TaskNotCancelableError` from `ExtensionSupportRequiredError`.
+
+  `SlimRpcServer` drives the same `RequestHandler` every other binding drives,
+  so task state, streaming, push, tenancy and authorisation are not
+  reimplemented and an agent behaves identically however it is reached.
+
+  **Deliberately outside the workspace, with its own `Cargo.lock`.**
+  `agntcy-slim-rpc` brings 379 transitive dependencies including `aws-lc-sys`, a
+  native C crypto build; `a2a-protocol-types` has 12. None of that reaches the
+  lockfile, `deny.toml` allow-list or audit surface of the four published
+  crates, and none of them depends on this one.
+
+  27 tests. The seven end-to-end ones are not mocked: one in-process SLIM
+  `Service` hosts an agent app and a caller app and messages cross the real SLIM
+  datapath, covering method registration, a unary round trip, a task fetched
+  back by id, error identity surviving the fabric, a streaming send running to
+  its terminal event, agent-card advertisement, and an unknown method being
+  reported rather than hanging.
+
+  Not implemented: multicast (`spec/v1/slimrpc-multicast.md` is a separate
+  document). Not verified: behaviour across a remote SLIM node — every test here
+  runs in-process. Both are stated in the crate's README rather than left to be
+  discovered.
+
+  [slimrpc-spec]: https://github.com/a2aproject/experimental-cpb-slimrpc
+
 - **`benches/send_latency_breakdown.rs`** — attributes the cost of a blocking
   send across three axes (runtime worker count, executor event count, and a
   round trip that runs no executor at all), so a future regression in this

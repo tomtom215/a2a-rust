@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+# This crate is deliberately NOT a member of the root workspace, and it has its
+# own Cargo.lock. `agntcy-slim-rpc` brings 379 transitive dependencies —
+# including `aws-lc-sys`, a native C crypto build — against 12 for
+# `a2a-protocol-types` and 191 for `a2a-protocol-server` at all features. None
+# of that belongs in the lockfile, the `deny.toml` allow-list, or the audit
+# surface of the four published crates, which do not depend on this one.
+#
+# The dependency arrow points one way: this crate depends on them, through the
+# public extension points (`Transport`, `RequestHandler`, `protocol_binding`).
+# Nothing here required a change to any of them.
+
+[workspace]
+
+[package]
+name        = "a2a-protocol-slimrpc"
+version     = "0.1.0"
+edition     = "2021"
+license     = "Apache-2.0"
+authors     = ["Tom F."]
+repository  = "https://github.com/tomtom215/a2a-rust"
+homepage    = "https://a2a-rust.com"
+description = "SLIMRPC custom protocol binding for the a2a-protocol SDK — A2A over the AGNTCY SLIM fabric"
+keywords    = ["a2a", "agent2agent", "slim", "slimrpc", "agntcy"]
+categories  = ["network-programming", "api-bindings"]
+publish     = false
+
+[dependencies]
+# The A2A SDK. `proto` gives the canonical `lf.a2a.v1` prost types plus lossless
+# conversions to and from the serde domain types — SLIMRPC uses the same
+# protobuf service definitions as gRPC, so the message layer is already done.
+a2a-protocol-types  = { path = "../../crates/a2a-protocol-types", features = ["proto"] }
+a2a-protocol-client = { path = "../../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", default-features = false }
+
+# SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
+# types its constructors take.
+slim-rpc      = { package = "agntcy-slim-rpc",      version = "2.3" }
+slim-auth     = { package = "agntcy-slim-auth",     version = "0.15" }
+slim-datapath = { package = "agntcy-slim-datapath", version = "0.18" }
+slim-service  = { package = "agntcy-slim-service",  version = "0.12" }
+slim-config   = { package = "agntcy-slim-config",   version = "0.16" }
+slim-session  = { package = "agntcy-slim-session",  version = "0.7" }
+
+prost       = "0.14"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures    = "0.3"
+tokio      = { version = "1", features = ["rt", "sync", "macros"] }
+thiserror  = "2"
+
+[dev-dependencies]
+
+tokio       = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
