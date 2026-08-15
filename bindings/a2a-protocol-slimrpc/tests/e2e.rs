@@ -329,3 +329,90 @@ async fn an_unknown_method_is_reported() {
 
     fabric.shutdown().await;
 }
+
+// ── Identity beyond shared secrets ──────────────────────────────────────────
+
+/// The binding works with a JWT identity, not only a shared secret.
+///
+/// `with_identity` takes SLIM's own `AuthProvider`/`AuthVerifier` rather than
+/// enumerating mechanisms, so this test's real subject is that generality: if
+/// JWT works through the same door, so do SPIFFE and static tokens, because
+/// they are the same two types. A binding that only ever ran with
+/// `with_shared_secret` would be claiming that without evidence.
+#[tokio::test]
+async fn a_jwt_identity_carries_an_a2a_call() {
+    use slim_auth::auth_provider::{AuthProvider, AuthVerifier};
+    use slim_auth::builder::JwtBuilder;
+    use slim_auth::jwt::{Algorithm, Key, KeyData, KeyFormat};
+
+    // A symmetric signing key: enough to exercise the JWT path without a PKI.
+    let signing_key = Key {
+        algorithm: Algorithm::HS256,
+        format: KeyFormat::Pem,
+        key: KeyData::Data("a2a-slimrpc-jwt-signing-key-0123456789abcdef".to_string()),
+    };
+    let identity = |subject: &str| {
+        let signer = JwtBuilder::new()
+            .issuer("a2a-slimrpc-tests")
+            .audience(&["slim"])
+            .subject(subject)
+            .private_key(&signing_key)
+            .build()
+            .expect("build a JWT signer");
+        let verifier = JwtBuilder::new()
+            .issuer("a2a-slimrpc-tests")
+            .audience(&["slim"])
+            .public_key(&signing_key)
+            .build()
+            .expect("build a JWT verifier");
+        (
+            AuthProvider::jwt_signer(signer),
+            AuthVerifier::jwt_verifier(verifier),
+        )
+    };
+
+    let service = common::service("jwt-identity");
+    let agent = SlimName::new("org", "jwt", "echo_agent");
+    let caller = SlimName::new("org", "jwt", "caller");
+
+    let (agent_provider, agent_verifier) = identity("echo_agent");
+    let (agent_app, notifications) = service
+        .create_app(&agent.to_proto_name(), agent_provider, agent_verifier)
+        .expect("create the agent app with a JWT identity");
+    let server = Arc::new(SlimRpcServer::from_app(
+        (Arc::new(agent_app), notifications),
+        common::handler_for(&agent),
+        agent.clone(),
+    ));
+
+    let (caller_provider, caller_verifier) = identity("caller");
+    let (caller_app, _) = service
+        .create_app(&caller.to_proto_name(), caller_provider, caller_verifier)
+        .expect("create the caller app with a JWT identity");
+    let transport = SlimRpcTransport::from_app(Arc::new(caller_app), agent)
+        .expect("open a channel")
+        .with_timeout(Duration::from_secs(10));
+
+    let serving = Arc::clone(&server);
+    tokio::spawn(async move {
+        let _ = serving.serve().await;
+    });
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let result = transport
+        .send_request(
+            method::SEND_MESSAGE,
+            common::send_params_json("hello over JWT"),
+            &Default::default(),
+        )
+        .await
+        .expect("a JWT-authenticated send must succeed");
+
+    assert_eq!(
+        common::signature_of(result.get("task").expect("a task")).as_deref(),
+        Some("answered by echo_agent")
+    );
+
+    server.shutdown().await;
+    let _ = service.shutdown().await;
+}

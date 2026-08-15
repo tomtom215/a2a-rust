@@ -51,6 +51,16 @@ pub enum ServerBuildError {
     /// The shared secret was rejected by SLIM.
     #[error("invalid shared secret: {0}")]
     Secret(String),
+    /// No identity was configured.
+    ///
+    /// SLIM has no anonymous mode: an app must be able to prove and check
+    /// identity before it can join the fabric, so this is a build error rather
+    /// than a default that would quietly stand in for one.
+    #[error(
+        "no identity configured; call with_identity (JWT, SPIFFE, static token) \
+         or with_shared_secret"
+    )]
+    NoIdentity,
 }
 
 /// Builds a [`SlimRpcServer`].
@@ -62,25 +72,46 @@ pub enum ServerBuildError {
 pub struct SlimRpcServerBuilder {
     handler: Arc<RequestHandler>,
     name: SlimName,
-    identity: String,
-    secret: String,
+    identity: Option<(AuthProvider, AuthVerifier)>,
 }
 
 impl SlimRpcServerBuilder {
-    /// Sets the shared-secret identity this agent authenticates with.
+    /// Sets how this agent proves and checks identity.
     ///
-    /// SLIM requires an identity provider and verifier; a shared secret is the
-    /// simplest that works. Deployments with a real identity story should build
-    /// their own [`SlimApp`] and use [`SlimRpcServer::from_app`].
+    /// Takes SLIM's own [`AuthProvider`] and [`AuthVerifier`] rather than
+    /// enumerating mechanisms, so every identity SLIM supports works here —
+    /// JWT (`AuthProvider::jwt_signer` / `AuthVerifier::jwt_verifier`), SPIFFE
+    /// via SPIRE (`::spire`), a static token (`::static_token`), or a shared
+    /// secret. A binding that wrapped each one would have to grow a method
+    /// every time SLIM gained a mechanism, and would silently lag behind.
+    ///
+    /// [`Self::with_shared_secret`] is the convenience for the simplest case.
     #[must_use]
+    pub fn with_identity(mut self, provider: AuthProvider, verifier: AuthVerifier) -> Self {
+        self.identity = Some((provider, verifier));
+        self
+    }
+
+    /// Sets a shared-secret identity — the simplest thing that works.
+    ///
+    /// Convenience over [`Self::with_identity`]. Production deployments will
+    /// usually want JWT or SPIFFE instead.
+    ///
+    /// # Errors
+    ///
+    /// [`ServerBuildError::Secret`] if SLIM rejects the secret, which it does
+    /// for one that is too short to be a credential.
     pub fn with_shared_secret(
-        mut self,
+        self,
         identity: impl Into<String>,
         secret: impl Into<String>,
-    ) -> Self {
-        self.identity = identity.into();
-        self.secret = secret.into();
-        self
+    ) -> Result<Self, ServerBuildError> {
+        let shared = SharedSecret::new(&identity.into(), &secret.into())
+            .map_err(|e| ServerBuildError::Secret(e.to_string()))?;
+        Ok(self.with_identity(
+            AuthProvider::shared_secret(shared.clone()),
+            AuthVerifier::shared_secret(shared),
+        ))
     }
 
     /// Creates the SLIM service and app, and registers every A2A method.
@@ -97,28 +128,16 @@ impl SlimRpcServerBuilder {
         .map_err(|e| ServerBuildError::Slim(e.to_string()))?;
         let service = Arc::new(Service::new(id));
 
-        let parts = create_app(&service, &self.name, &self.identity, &self.secret)?;
-        Ok(SlimRpcServer::from_app(parts, self.handler, self.name).with_owned_service(service))
-    }
-}
+        let (provider, verifier) = self.identity.ok_or(ServerBuildError::NoIdentity)?;
+        let (app, notifications) = service
+            .create_app(&self.name.to_proto_name(), provider, verifier)
+            .map_err(|e| ServerBuildError::Slim(e.to_string()))?;
 
-/// Creates a SLIM app for `name`, authenticating with a shared secret.
-fn create_app(
-    service: &Service,
-    name: &SlimName,
-    identity: &str,
-    secret: &str,
-) -> Result<AppParts, ServerBuildError> {
-    let shared =
-        SharedSecret::new(identity, secret).map_err(|e| ServerBuildError::Secret(e.to_string()))?;
-    let (app, notifications) = service
-        .create_app(
-            &name.to_proto_name(),
-            AuthProvider::shared_secret(shared.clone()),
-            AuthVerifier::shared_secret(shared),
+        Ok(
+            SlimRpcServer::from_app((Arc::new(app), notifications), self.handler, self.name)
+                .with_owned_service(service),
         )
-        .map_err(|e| ServerBuildError::Slim(e.to_string()))?;
-    Ok((Arc::new(app), notifications))
+    }
 }
 
 /// An A2A agent served over SLIMRPC.
@@ -137,8 +156,7 @@ impl SlimRpcServer {
         SlimRpcServerBuilder {
             handler,
             name,
-            identity: String::new(),
-            secret: String::new(),
+            identity: None,
         }
     }
 

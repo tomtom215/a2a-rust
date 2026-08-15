@@ -50,18 +50,6 @@ use slim_config::tls::client::TlsClientConfig;
 use slim_config::tls::server::TlsServerConfig;
 use slim_service::service::Service;
 
-/// A loopback port nothing else is listening on.
-///
-/// Bound and released rather than hard-coded, so concurrent test binaries do
-/// not collide on a fixed number.
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .expect("bind an ephemeral port")
-        .local_addr()
-        .expect("local addr")
-        .port()
-}
-
 /// The three services, wired through a node on `endpoint`.
 struct Fabric {
     node: Arc<Service>,
@@ -82,7 +70,7 @@ impl Fabric {
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("off")),
             )
             .try_init();
-        let port = free_port();
+        let port = common::free_port();
         let endpoint = format!("127.0.0.1:{port}");
 
         // ── The node. It runs no agent; it only routes. ──────────────────────

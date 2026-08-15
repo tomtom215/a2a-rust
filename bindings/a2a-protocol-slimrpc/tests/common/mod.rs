@@ -13,6 +13,8 @@
 
 #![allow(dead_code)] // Each suite uses a different subset.
 
+pub mod tls;
+
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -133,6 +135,19 @@ pub fn handler_for(name: &SlimName) -> Arc<RequestHandler> {
             .build()
             .expect("build handler"),
     )
+}
+
+/// A loopback port nothing else is listening on.
+///
+/// Bound and released rather than hard-coded, so concurrent test binaries do
+/// not collide on a fixed number.
+#[must_use]
+pub fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .expect("bind an ephemeral port")
+        .local_addr()
+        .expect("local addr")
+        .port()
 }
 
 /// A SLIM service named for the test that owns it.

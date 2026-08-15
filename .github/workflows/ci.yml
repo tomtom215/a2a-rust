@@ -415,9 +415,17 @@ jobs:
       - name: Clippy
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo clippy --all-targets -- -D warnings
+      - name: Build the slim-node binary
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo build --bin slim-node
+      # Six topologies: in-process, multicast group, one node over TCP, that
+      # node with verified TLS, two peered nodes, and a node in its own OS
+      # process. The last four bind loopback ports and spawn a child process,
+      # so they run single-threaded to keep port reservation and process
+      # readiness deterministic on a shared runner.
       - name: Test (unit, end-to-end, and doc)
         working-directory: bindings/a2a-protocol-slimrpc
-        run: cargo test
+        run: cargo test -- --test-threads=1
 
   example-surface:
     name: Example surface coverage (all methods x all bindings)

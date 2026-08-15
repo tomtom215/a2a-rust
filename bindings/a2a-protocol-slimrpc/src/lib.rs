@@ -51,7 +51,7 @@
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let agent = SlimName::parse("slim://org/demo/echo_agent")?;
 //! let transport = SlimRpcTransport::builder(agent)
-//!     .with_shared_secret("caller", std::env::var("SLIM_SECRET")?)
+//!     .with_shared_secret("caller", std::env::var("SLIM_SECRET")?)?
 //!     .connect()?;
 //!
 //! let client = ClientBuilder::new("slim://org/demo/echo_agent")
@@ -110,6 +110,19 @@
 //! `async` because it announces the caller's own name to the node, without
 //! which nothing can route an agent's reply back.
 //!
+//! Verified across a node in its own OS process, across two peered nodes, and
+//! over TLS the client actually verifies — see the crate README's test table.
+//! The `slim-node` binary in this crate runs a node, if you need one.
+//!
+//! # Identity
+//!
+//! The builders take SLIM's own `AuthProvider` and `AuthVerifier` via
+//! `with_identity`, so JWT, SPIFFE via SPIRE, static tokens and shared secrets
+//! all work without this crate enumerating them. `with_shared_secret` is a
+//! convenience over it. There is no default: SLIM has no anonymous mode, so a
+//! builder with no identity is a build error rather than something quietly
+//! standing in for one.
+//!
 //! # Server
 //!
 //! ```no_run
@@ -121,7 +134,7 @@
 //! # -> Result<(), Box<dyn std::error::Error>> {
 //! let name = SlimName::parse("slim://org/demo/echo_agent")?;
 //! let server = SlimRpcServer::builder(handler, name)
-//!     .with_shared_secret("echo_agent", std::env::var("SLIM_SECRET")?)
+//!     .with_shared_secret("echo_agent", std::env::var("SLIM_SECRET")?)?
 //!     .build()?;
 //!
 //! // Advertise it on the agent card so callers can discover the binding.

@@ -17,13 +17,9 @@
 //! in-tree gRPC transport uses, and it is why both bindings agree on the wire
 //! with the official Go, Python and Java SDKs.
 
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use a2a_protocol_client::transport::Transport;
 use a2a_protocol_client::{ClientError, ClientResult, EventStream};
 use a2a_protocol_types::proto as pb;
 use a2a_protocol_types::StreamResponse;
@@ -35,12 +31,12 @@ use slim_rpc::{Channel, Metadata};
 use slim_service::app::App as SlimApp;
 use slim_service::service::Service;
 
+mod dispatch;
 mod push_config;
 
 use crate::binding::A2A_SERVICE_NAME;
 use crate::codec::Pb;
 use crate::error::rpc_error_to_client_error;
-use crate::method;
 use crate::SlimName;
 
 /// Buffer depth for the task bridging SLIMRPC frames into an [`EventStream`].
@@ -52,6 +48,14 @@ pub enum TransportBuildError {
     /// The SLIM service, identity or app could not be created.
     #[error("could not create the SLIM app: {0}")]
     Slim(String),
+    /// No identity was configured.
+    ///
+    /// SLIM has no anonymous mode; see `ServerBuildError::NoIdentity`.
+    #[error(
+        "no identity configured; call with_identity (JWT, SPIFFE, static token) \
+         or with_shared_secret"
+    )]
+    NoIdentity,
     /// The caller's own name could not be announced to the node.
     #[error("could not announce {name} to the SLIM node: {reason}")]
     Subscribe {
@@ -77,22 +81,39 @@ pub enum TransportBuildError {
 pub struct SlimRpcTransportBuilder {
     remote: SlimName,
     local: SlimName,
-    identity: String,
-    secret: String,
+    identity: Option<(AuthProvider, AuthVerifier)>,
     timeout: Option<Duration>,
 }
 
 impl SlimRpcTransportBuilder {
-    /// Sets the shared-secret identity this client authenticates with.
+    /// Sets how this client proves and checks identity.
+    ///
+    /// Takes SLIM's own [`AuthProvider`] and [`AuthVerifier`], so every
+    /// identity SLIM supports works — JWT, SPIFFE via SPIRE, a static token, or
+    /// a shared secret. See `SlimRpcServerBuilder::with_identity` for why this
+    /// is not a method per mechanism.
     #[must_use]
+    pub fn with_identity(mut self, provider: AuthProvider, verifier: AuthVerifier) -> Self {
+        self.identity = Some((provider, verifier));
+        self
+    }
+
+    /// Sets a shared-secret identity — the simplest thing that works.
+    ///
+    /// # Errors
+    ///
+    /// [`TransportBuildError::Slim`] if SLIM rejects the secret.
     pub fn with_shared_secret(
-        mut self,
+        self,
         identity: impl Into<String>,
         secret: impl Into<String>,
-    ) -> Self {
-        self.identity = identity.into();
-        self.secret = secret.into();
-        self
+    ) -> Result<Self, TransportBuildError> {
+        let shared = SharedSecret::new(&identity.into(), &secret.into())
+            .map_err(|e| TransportBuildError::Slim(e.to_string()))?;
+        Ok(self.with_identity(
+            AuthProvider::shared_secret(shared.clone()),
+            AuthVerifier::shared_secret(shared),
+        ))
     }
 
     /// Sets the local SLIM name this client is addressed as.
@@ -126,14 +147,9 @@ impl SlimRpcTransportBuilder {
         .map_err(|e| TransportBuildError::Slim(e.to_string()))?;
         let service = Arc::new(Service::new(id));
 
-        let shared = SharedSecret::new(&self.identity, &self.secret)
-            .map_err(|e| TransportBuildError::Slim(e.to_string()))?;
+        let (provider, verifier) = self.identity.ok_or(TransportBuildError::NoIdentity)?;
         let (app, _notifications) = service
-            .create_app(
-                &self.local.to_proto_name(),
-                AuthProvider::shared_secret(shared.clone()),
-                AuthVerifier::shared_secret(shared),
-            )
+            .create_app(&self.local.to_proto_name(), provider, verifier)
             .map_err(|e| TransportBuildError::Slim(e.to_string()))?;
 
         let transport = SlimRpcTransport::from_app(Arc::new(app), self.remote)?;
@@ -173,8 +189,7 @@ impl SlimRpcTransport {
         SlimRpcTransportBuilder {
             remote,
             local,
-            identity: String::new(),
-            secret: String::new(),
+            identity: None,
             timeout: None,
         }
     }
@@ -398,100 +413,5 @@ impl SlimRpcTransport {
         });
 
         Ok(EventStream::from_event_channel(rx))
-    }
-}
-
-/// Turns A2A headers into SLIMRPC call metadata.
-///
-/// The mirror of the server's `headers_from`: A2A carries auth, tenancy and
-/// extension activation in headers, and SLIMRPC's session metadata is where
-/// they ride.
-fn metadata_from(extra_headers: &HashMap<String, String>) -> Option<Metadata> {
-    (!extra_headers.is_empty()).then(|| extra_headers.clone())
-}
-
-/// The error for a method this binding does not serve.
-fn unknown_method(method_name: &str, streaming: bool) -> ClientError {
-    let kind = if streaming { "streaming" } else { "unary" };
-    ClientError::Protocol(a2a_protocol_types::A2aError::new(
-        a2a_protocol_types::ErrorCode::MethodNotFound,
-        format!("SLIMRPC binding has no {kind} method {method_name}"),
-    ))
-}
-
-impl Transport for SlimRpcTransport {
-    fn send_request<'a>(
-        &'a self,
-        method_name: &'a str,
-        params: serde_json::Value,
-        extra_headers: &'a HashMap<String, String>,
-    ) -> Pin<Box<dyn Future<Output = ClientResult<serde_json::Value>> + Send + 'a>> {
-        use a2a_protocol_types::params as p;
-
-        let metadata = metadata_from(extra_headers);
-        Box::pin(async move {
-            match method_name {
-                method::SEND_MESSAGE => {
-                    self.unary::<p::MessageSendParams, pb::SendMessageRequest, pb::SendMessageResponse, a2a_protocol_types::responses::SendMessageResponse>(
-                        method_name, params, metadata,
-                    ).await
-                }
-                method::GET_TASK => {
-                    self.unary::<p::TaskQueryParams, pb::GetTaskRequest, pb::Task, a2a_protocol_types::Task>(
-                        method_name, params, metadata,
-                    ).await
-                }
-                method::LIST_TASKS => {
-                    self.unary::<p::ListTasksParams, pb::ListTasksRequest, pb::ListTasksResponse, a2a_protocol_types::responses::TaskListResponse>(
-                        method_name, params, metadata,
-                    ).await
-                }
-                method::CANCEL_TASK => {
-                    self.unary::<p::CancelTaskParams, pb::CancelTaskRequest, pb::Task, a2a_protocol_types::Task>(
-                        method_name, params, metadata,
-                    ).await
-                }
-                method::GET_EXTENDED_AGENT_CARD => {
-                    self.unary::<p::GetExtendedAgentCardParams, pb::GetExtendedAgentCardRequest, pb::AgentCard, a2a_protocol_types::AgentCard>(
-                        method_name, params, metadata,
-                    ).await
-                }
-                // The push-config conversions are infallible in both
-                // directions, so they cannot use the `TryFrom`-based helper.
-                method::CREATE_PUSH_CONFIG => self.create_push_config(params, metadata).await,
-                method::GET_PUSH_CONFIG => self.get_push_config(params, metadata).await,
-                method::LIST_PUSH_CONFIGS => self.list_push_configs(params, metadata).await,
-                method::DELETE_PUSH_CONFIG => self.delete_push_config(params, metadata).await,
-                other => Err(unknown_method(other, false)),
-            }
-        })
-    }
-
-    fn send_streaming_request<'a>(
-        &'a self,
-        method_name: &'a str,
-        params: serde_json::Value,
-        extra_headers: &'a HashMap<String, String>,
-    ) -> Pin<Box<dyn Future<Output = ClientResult<EventStream>> + Send + 'a>> {
-        use a2a_protocol_types::params as p;
-
-        let metadata = metadata_from(extra_headers);
-        Box::pin(async move {
-            match method_name {
-                method::SEND_STREAMING_MESSAGE => self
-                    .streaming::<p::MessageSendParams, pb::SendMessageRequest>(
-                        method_name,
-                        params,
-                        metadata,
-                    ),
-                method::SUBSCRIBE_TO_TASK => self
-                    .streaming::<p::TaskIdParams, pb::SubscribeToTaskRequest>(
-                        method_name,
-                        params,
-                        metadata,
-                    ),
-                other => Err(unknown_method(other, true)),
-            }
-        })
     }
 }

@@ -154,6 +154,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outwards only. The client-side constructor is now `async` and subscribes the
   caller's name over the connection.
 
+- **SLIMRPC verified across every topology a deployment actually uses**, and
+  identity generalised beyond shared secrets. The previous entry listed these as
+  limitations; they are now covered rather than documented.
+
+  | Suite | Topology | What only this can catch |
+  |---|---|---|
+  | `remote_node_tls.rs` | one node, **verified TLS** | a TLS path that verifies — proven by refusing an untrusted CA |
+  | `remote_node_multihop.rs` | **two peered nodes** | subscriptions crossing a node-to-node link |
+  | `out_of_process.rs` | node in a **separate OS process** | anything relying on shared memory or a shared runtime |
+
+  TLS uses a throwaway CA generated per run rather than committed PEM files, so
+  nothing long-lived is in the repository and no certificate can expire the
+  build. The rejection test is a differential against the same node in the same
+  window — the trusted CA connects, the untrusted one does not — because SLIM
+  retries a failed handshake rather than returning, and a bounded wait alone
+  would only prove slowness.
+
+  Multi-hop needs `ConnType::Peer` between nodes: an `Edge` link carries an
+  attached app's traffic but does not share routing state, so an agent behind a
+  second node stays invisible without it.
+
+  `SlimRpcServerBuilder::with_identity` and the transport's equivalent now take
+  SLIM's own `AuthProvider` / `AuthVerifier`, so JWT, SPIFFE via SPIRE and
+  static tokens all work without this crate enumerating mechanisms and lagging
+  behind SLIM. `with_shared_secret` becomes a convenience over it and is now
+  fallible, since SLIM rejects a secret too short to be a credential. A builder
+  with no identity is a build error: SLIM has no anonymous mode, and a default
+  would quietly stand in for one.
+
+- **`slim-node` — a standalone SLIM node binary.** Routes and runs nothing
+  itself. Prints `listening on <addr>` once the socket accepts, so a supervisor
+  waits for readiness instead of sleeping; refuses half a TLS configuration
+  rather than silently serving plaintext. It exists so the out-of-process claim
+  is testable, and because bringing up a node otherwise means installing the
+  full AGNTCY SLIM distribution.
+
 - **`benches/send_latency_breakdown.rs`** — attributes the cost of a blocking
   send across three axes (runtime worker count, executor event count, and a
   round trip that runs no executor at all), so a future regression in this

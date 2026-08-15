@@ -117,7 +117,7 @@ use a2a_protocol_client::ClientBuilder;
 
 let agent = SlimName::parse("slim://org/demo/echo_agent")?;
 let transport = SlimRpcTransport::builder(agent)
-    .with_shared_secret("caller", std::env::var("SLIM_SECRET")?)
+    .with_shared_secret("caller", std::env::var("SLIM_SECRET")?)?
     .connect()?;
 
 let client = ClientBuilder::new("slim://org/demo/echo_agent")
@@ -135,7 +135,7 @@ use a2a_protocol_slimrpc::{SlimName, SlimRpcServer};
 
 let name = SlimName::parse("slim://org/demo/echo_agent")?;
 let server = SlimRpcServer::builder(handler, name)
-    .with_shared_secret("echo_agent", std::env::var("SLIM_SECRET")?)
+    .with_shared_secret("echo_agent", std::env::var("SLIM_SECRET")?)?
     .build()?;
 
 // Advertise it so callers can discover the binding.
@@ -186,36 +186,82 @@ Two failure kinds are kept distinct, because they call for different responses:
 SLIM's interleaved source-tagged frames, so one agent's stream ending does not
 affect another's.
 
+## Identity
+
+`with_identity` takes SLIM's own `AuthProvider` and `AuthVerifier`, so every
+mechanism SLIM supports works — JWT, SPIFFE via SPIRE, a static token, or a
+shared secret. Enumerating them in the binding would mean growing a method
+every time SLIM gained one, and silently lagging behind until someone did.
+
+```rust,no_run
+let server = SlimRpcServer::builder(handler, name)
+    .with_identity(
+        AuthProvider::jwt_signer(signer),
+        AuthVerifier::jwt_verifier(verifier),
+    )
+    .build()?;
+```
+
+`with_shared_secret` is the convenience for the simplest case. There is no
+default: SLIM has no anonymous mode, so a builder with no identity is a build
+error rather than something that quietly stands in for one.
+
+## Running a node
+
+`slim-node` is a standalone SLIM node — it routes and runs nothing itself.
+
+```
+slim-node --listen 127.0.0.1:46357
+slim-node --listen 0.0.0.0:46357 --tls-cert node.pem --tls-key node.key
+```
+
+It prints `listening on <addr>` once the socket is accepting, so a supervisor
+waits for readiness instead of sleeping. Half a TLS configuration (`--tls-cert`
+without `--tls-key`) is refused rather than silently serving plaintext.
+
+Bringing up a node otherwise means installing the full AGNTCY SLIM
+distribution, which is a large ask for someone who only wants to try the
+binding.
+
 ## Tests
 
 ```
 cargo test
 ```
 
-45 tests: 25 unit, 18 end-to-end across three topologies, 2 doc. None of the
-end-to-end ones are mocked.
+53 tests: 25 unit, 25 end-to-end across six topologies, 3 doc. None of the
+end-to-end ones are mocked, and each topology exists because it can fail in a
+way the ones above it cannot.
 
-| Suite | Topology | Covers |
+| Suite | Topology | What only this can catch |
 |---|---|---|
-| `e2e.rs` | one in-process `Service` | method registration, unary round trip, task fetched by id, error identity, streaming to a terminal event, card advertisement, unknown method |
-| `multicast.rs` | group channel, several agents | attribution per agent, a silent agent as a failed outcome, failure isolation, per-agent streams, empty group, uninvitable member |
-| `remote_node.rs` | **three separate services over TCP** | send, get, streaming and error identity routed through a real SLIM node |
+| `e2e.rs` | one in-process `Service` | the eleven methods, error identity, streaming, card advertisement, JWT identity |
+| `multicast.rs` | group channel, several agents | per-agent attribution, a silent agent as a failed outcome, failure isolation, per-agent streams |
+| `remote_node.rs` | three services, one node, TCP | routing that needs real subscription propagation |
+| `remote_node_tls.rs` | same, with **verified TLS** | a TLS path that actually verifies — proven by refusing an untrusted CA |
+| `remote_node_multihop.rs` | **two peered nodes** | subscriptions crossing a node-to-node link |
+| `out_of_process.rs` | node in a **separate OS process** | anything relying on shared memory or a shared runtime |
 
-`remote_node.rs` is the one that earns the "works in a deployment" claim. The
-agent and the client share no `Service` and no memory; every message crosses a
-loopback socket twice and is routed by a node in between. It found a real bug —
-a client never announces its own name to the node, so nothing could route an
-agent's reply back, and every call failed its session handshake. In-process that
-is invisible, which is exactly why the suite exists.
+Two of these found real bugs that the tier above could not have:
+
+`remote_node.rs` found that a client never announced its own name to the node,
+so nothing could route an agent's reply back and every call failed its session
+handshake. In-process, that is invisible.
+
+`multicast.rs` found the response join key was wrong — SLIM names arrive with a
+fourth instance component, so every response filed under a name no invited
+member matched. All agents answered; all were reported as timeouts.
 
 ## Limitations
 
-- **Shared-secret identity only in the builders.** `with_shared_secret` is what
-  `build()`/`connect()` offer. Anything else — SPIFFE, JWT, mTLS — means
-  constructing the `App` yourself and using `from_app`.
-- **One node, loopback, plaintext.** The remote-node suite proves routing across
-  a node process; it does not exercise multi-hop node topologies, TLS between
-  node and app, or a node on another host.
-- **Multicast group inbox is unused.** SLIM lets a member observe other members'
-  responses (`subscribe_group_inbox`); the A2A spec does not ask for it and this
-  binding does not expose it.
+- **One machine.** `out_of_process.rs` puts a real OS process boundary between
+  the apps and the node, which is the part of "another host" that reproduces on
+  a single machine. Actual cross-host behaviour — real network loss, latency,
+  MTU, NAT — is not exercised here.
+- **SPIFFE is supported but untested.** `with_identity` accepts
+  `AuthProvider::spire`, and the JWT test demonstrates the same door works for
+  a non-shared-secret mechanism, but running SPIRE needs an agent this test
+  environment does not have. Shared secret and JWT are covered end-to-end.
+- **No mutual TLS.** The node authenticates itself to apps and apps verify it.
+  Client certificates (`with_client_ca_pem` on the server side) are available in
+  SLIM and not configured here.
