@@ -119,6 +119,31 @@ impl Artifact {
         }
     }
 
+    /// Returns the text of the first text [`Part`], or `None` if this artifact
+    /// carries no text part.
+    ///
+    /// The client-side counterpart to [`Message::text`](crate::message::Message::text):
+    /// reading an agent's textual result is the most common operation once a
+    /// task completes.
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::artifact::Artifact;
+    /// use a2a_protocol_types::message::Part;
+    ///
+    /// let artifact = Artifact::new("result", vec![Part::text("done")]);
+    /// assert_eq!(artifact.text(), Some("done"));
+    /// ```
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        self.parts.iter().find_map(Part::text_content)
+    }
+
+    /// Returns the text of every text [`Part`], in order, skipping non-text
+    /// parts.
+    pub fn texts(&self) -> impl Iterator<Item = &str> {
+        self.parts.iter().filter_map(Part::text_content)
+    }
+
     /// Validates this artifact against A2A spec requirements.
     ///
     /// # Errors
@@ -142,6 +167,42 @@ impl Artifact {
 mod tests {
     use super::*;
     use crate::message::Part;
+
+    #[test]
+    fn text_skips_non_text_parts_but_still_finds_text() {
+        // Negative half: an artifact of only non-text parts has no text.
+        let no_text = Artifact::new("a1", vec![Part::url("https://example.com/f.pdf")]);
+        assert_eq!(no_text.text(), None, "no text part means no text");
+
+        // Positive control: the same leading non-text part, plus text.
+        let with_text = Artifact::new(
+            "a2",
+            vec![Part::url("https://example.com/f.pdf"), Part::text("done")],
+        );
+        assert_eq!(
+            with_text.text(),
+            Some("done"),
+            "a non-text part must be skipped, not end the search"
+        );
+    }
+
+    #[test]
+    fn text_returns_the_first_text_part_and_texts_returns_all() {
+        let artifact = Artifact::new(
+            "a3",
+            vec![
+                Part::text("first"),
+                Part::url("https://example.com/f.pdf"),
+                Part::text("second"),
+            ],
+        );
+
+        assert_eq!(artifact.text(), Some("first"));
+        assert_eq!(
+            artifact.texts().collect::<Vec<_>>(),
+            vec!["first", "second"]
+        );
+    }
 
     #[test]
     fn artifact_roundtrip() {

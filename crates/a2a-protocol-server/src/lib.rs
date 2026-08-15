@@ -95,6 +95,20 @@ pub mod tenant_resolver;
 #[cfg(feature = "otel")]
 pub mod otel;
 
+// ── Macro support ─────────────────────────────────────────────────────────────
+
+/// Re-export of `a2a-protocol-types` for use by exported macros.
+///
+/// [`agent_executor!`](crate::agent_executor) expands to a signature mentioning
+/// `A2aResult`, and a `#[macro_export]`ed macro is expanded in the *caller's*
+/// crate — so it must not name `::a2a_protocol_types`, which the caller has no
+/// reason to depend on directly. Routing through `$crate::__types` means the
+/// macro only requires the crate the caller already used to reach the macro.
+///
+/// Not public API: the path exists for macro expansion and may change.
+#[doc(hidden)]
+pub use a2a_protocol_types as __types;
+
 // ── Flat re-exports ───────────────────────────────────────────────────────────
 
 pub use agent_card::{

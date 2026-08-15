@@ -40,13 +40,12 @@
 //! # `agent_executor!` macro
 //!
 //! Generates the full [`AgentExecutor`](crate::AgentExecutor) impl from plain
-//! `async` bodies:
+//! `async` bodies. The macro names every type it expands to through `$crate`,
+//! so this one import is the whole prerequisite — no `a2a-protocol-types`
+//! dependency, no `Pin`, no `Future`:
 //!
 //! ```rust
 //! use a2a_protocol_server::agent_executor;
-//! use a2a_protocol_server::request_context::RequestContext;
-//! use a2a_protocol_server::streaming::EventQueueWriter;
-//! use a2a_protocol_types::error::A2aResult;
 //!
 //! struct EchoAgent;
 //!
@@ -131,7 +130,7 @@ macro_rules! agent_executor {
             ) -> ::std::pin::Pin<
                 ::std::boxed::Box<
                     dyn ::std::future::Future<
-                            Output = ::a2a_protocol_types::error::A2aResult<()>,
+                            Output = $crate::__types::error::A2aResult<()>,
                         > + ::std::marker::Send
                         + 'a,
                 >,
@@ -154,7 +153,7 @@ macro_rules! agent_executor {
             ) -> ::std::pin::Pin<
                 ::std::boxed::Box<
                     dyn ::std::future::Future<
-                            Output = ::a2a_protocol_types::error::A2aResult<()>,
+                            Output = $crate::__types::error::A2aResult<()>,
                         > + ::std::marker::Send
                         + 'a,
                 >,
@@ -169,7 +168,7 @@ macro_rules! agent_executor {
             ) -> ::std::pin::Pin<
                 ::std::boxed::Box<
                     dyn ::std::future::Future<
-                            Output = ::a2a_protocol_types::error::A2aResult<()>,
+                            Output = $crate::__types::error::A2aResult<()>,
                         > + ::std::marker::Send
                         + 'a,
                 >,

@@ -6,7 +6,8 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [Incident-Response Team](./incident-response.md) | **Start here** — multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
+| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 35 lines, one dependency, no feature flags | None | Beginner |
+| [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
 | [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
 | [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
 | [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
@@ -15,7 +16,7 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 ## Where to Start
 
-- **New to A2A?** Start with the [Echo Agent](./echo-agent.md) — it demonstrates the complete request lifecycle with no external dependencies.
+- **New to A2A?** Start with the [Hello Agent](./hello-agent.md) — the entire agent fits on one screen. Then read the [Echo Agent](./echo-agent.md) for the complete request lifecycle across four bindings.
 
 - **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
 

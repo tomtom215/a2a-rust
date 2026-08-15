@@ -22,67 +22,36 @@ uuid = { version = "1", features = ["v4"] }
 
 ## Step 1: Define Your Executor
 
-The `AgentExecutor` trait is the entry point for all agent logic. Implement it to define what your agent does when it receives a message:
+The `AgentExecutor` trait is the entry point for all agent logic. It defines what your agent does when it receives a message.
 
-```rust
+The trait itself returns `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` — that boxing is what keeps it object-safe, so the handler can hold a `dyn AgentExecutor`. You rarely write it by hand: `agent_executor!` generates the whole impl from a plain `async` block. See [The AgentExecutor Trait](../building-agents/executor.md) for the unabridged form and when you need it.
+
+```rust,ignore
 use a2a_protocol_sdk::prelude::*;
-use a2a_protocol_sdk::server::RequestContext;
-use std::future::Future;
-use std::pin::Pin;
 
 struct CalcExecutor;
 
-impl AgentExecutor for CalcExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Signal that we're working
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            })).await?;
+agent_executor!(CalcExecutor, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
 
-            // Extract the expression from the message
-            let expr = ctx.message.parts.iter()
-                .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.clone()),
-                    _ => None,
-                })
-                .unwrap_or_default();
+    // Signal that we're working
+    emit.status(TaskState::Working).await?;
 
-            // Evaluate (very basic: just handle "a + b")
-            let result = evaluate(&expr);
+    // Extract the expression from the message. `text()` returns the first
+    // text part, skipping any file or URL parts that precede it.
+    let expr = ctx.message.text().unwrap_or_default();
 
-            // Send the result as an artifact
-            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                artifact: Artifact::new(
-                    "result",
-                    vec![Part::text(&result)],
-                ),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            })).await?;
+    // Evaluate (very basic: just handle "a + b")
+    let result = evaluate(expr);
 
-            // Done
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            })).await?;
+    // Send the result as an artifact
+    emit.artifact("result", vec![Part::text(&result)], None, Some(true))
+        .await?;
 
-            Ok(())
-        })
-    }
-}
+    // Done
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
 
 fn evaluate(expr: &str) -> String {
     // Toy parser: "3 + 5", "10 - 2", etc.
@@ -219,13 +188,11 @@ async fn main() {
     match client.send_message(params).await.unwrap() {
         SendMessageResponse::Task(task) => {
             println!("Result: {:?}", task.status.state);
-            if let Some(artifacts) = &task.artifacts {
-                for art in artifacts {
-                    for part in &art.parts {
-                        if let a2a_protocol_types::message::PartContent::Text(text) = &part.content {
-                            println!("Answer: {text}");
-                        }
-                    }
+            for art in task.artifacts.iter().flatten() {
+                // `texts()` yields every text part in order; `text()` would
+                // give just the first.
+                for text in art.texts() {
+                    println!("Answer: {text}");
                 }
             }
         }
@@ -249,6 +216,8 @@ Almost every executor follows this pattern:
 3. **Status → Completed** — Signal that processing is done
 
 For streaming clients, these arrive as individual SSE events. For synchronous clients, the handler collects them into a final `Task` response.
+
+`EventEmitter` exists for exactly this pattern: it caches `task_id` and `context_id` off the `RequestContext` so each of the three steps is one line rather than a seven-field struct literal. Build the `StreamResponse` values yourself only when you need a field `EventEmitter` does not expose — per-event `metadata`, say.
 
 ## Next Steps
 

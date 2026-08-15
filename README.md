@@ -219,6 +219,24 @@ cargo run -p agent-team
 cargo run -p agent-team --features grpc,websocket,axum,sqlite,signing,otel
 ```
 
+### Hello Agent (smallest complete agent)
+
+The whole SDK in one screen — 35 lines, one dependency (`a2a-protocol-sdk`), no
+feature flags. It greets whoever sends it a message:
+
+```bash
+cargo run -p hello-agent
+
+curl -X POST http://127.0.0.1:3000 \
+  -H 'content-type: application/json' -H 'A2A-Version: 1.0' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+        "message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Tom"}]}}}'
+```
+
+It doubles as the regression test for the Quick Start above: it depends on
+exactly what the Quick Start tells you to depend on, so if that snippet stops
+compiling, `cargo build -p hello-agent` fails with it.
+
 ### Echo Agent
 
 A minimal example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:

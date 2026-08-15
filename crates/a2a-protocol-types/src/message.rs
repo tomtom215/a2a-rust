@@ -144,6 +144,48 @@ pub struct Message {
     pub metadata: Option<serde_json::Value>,
 }
 
+impl Message {
+    /// Returns the text of the first text [`Part`], or `None` if this message
+    /// carries no text part.
+    ///
+    /// Reading the caller's text is the most common operation in agent code.
+    /// This is the one-liner form of the `parts.iter().find_map(..)` match over
+    /// [`PartContent::Text`]:
+    ///
+    /// ```rust
+    /// use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part};
+    ///
+    /// let msg = Message {
+    ///     id: MessageId::new("m1"),
+    ///     role: MessageRole::User,
+    ///     parts: vec![Part::url("https://example.com/f.pdf"), Part::text("hello")],
+    ///     task_id: None,
+    ///     context_id: None,
+    ///     reference_task_ids: None,
+    ///     extensions: None,
+    ///     metadata: None,
+    /// };
+    ///
+    /// assert_eq!(msg.text(), Some("hello"));
+    /// ```
+    ///
+    /// Non-text parts are skipped rather than ending the search, so a message
+    /// that leads with a file attachment still yields its text.
+    #[must_use]
+    pub fn text(&self) -> Option<&str> {
+        self.parts.iter().find_map(Part::text_content)
+    }
+
+    /// Returns the text of every text [`Part`], in order, skipping non-text
+    /// parts.
+    ///
+    /// Use this when a message may carry several text parts and [`Message::text`]
+    /// would silently drop all but the first.
+    pub fn texts(&self) -> impl Iterator<Item = &str> {
+        self.parts.iter().filter_map(Part::text_content)
+    }
+}
+
 // ── Part ─────────────────────────────────────────────────────────────────────
 
 /// A content part within a [`Message`] or [`crate::artifact::Artifact`].
@@ -574,6 +616,61 @@ mod tests {
             extensions: None,
             metadata: None,
         }
+    }
+
+    /// Builds a message carrying exactly `parts`.
+    fn message_with(parts: Vec<Part>) -> Message {
+        Message {
+            parts,
+            ..make_message()
+        }
+    }
+
+    #[test]
+    fn text_skips_non_text_parts_but_still_finds_text() {
+        // Negative half: a message of only non-text parts has no text.
+        let no_text = message_with(vec![
+            Part::url("https://example.com/f.pdf"),
+            Part::raw("YmFzZTY0"),
+        ]);
+        assert_eq!(no_text.text(), None, "no text part means no text");
+
+        // Positive control: the same leading non-text parts, plus one text
+        // part, must still yield the text. Without this half, a `text()` that
+        // always returned `None` would pass.
+        let with_text = message_with(vec![
+            Part::url("https://example.com/f.pdf"),
+            Part::raw("YmFzZTY0"),
+            Part::text("hello"),
+        ]);
+        assert_eq!(
+            with_text.text(),
+            Some("hello"),
+            "a non-text part must be skipped, not end the search"
+        );
+    }
+
+    #[test]
+    fn text_returns_the_first_text_part_and_texts_returns_all() {
+        let msg = message_with(vec![
+            Part::text("first"),
+            Part::url("https://example.com/f.pdf"),
+            Part::text("second"),
+        ]);
+
+        // `text()` is the documented drop-in for `find_map` — first wins.
+        assert_eq!(msg.text(), Some("first"));
+
+        // `texts()` is the reason `text()` alone is not enough: it must yield
+        // both text parts, in order, with the non-text part skipped.
+        let all: Vec<&str> = msg.texts().collect();
+        assert_eq!(all, vec!["first", "second"]);
+    }
+
+    #[test]
+    fn text_handles_an_empty_parts_list() {
+        assert_eq!(message_with(vec![]).text(), None);
+        assert_eq!(message_with(vec![]).texts().count(), 0);
     }
 
     #[test]
