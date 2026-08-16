@@ -10,6 +10,7 @@ members = [
     "crates/a2a-protocol-sdk",
     "examples/harness",
     "examples/hello-agent",
+    "examples/deploy-agent",
     "examples/echo-agent",
     "examples/agent-team",
     "examples/multi-lang-team",

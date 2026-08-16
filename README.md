@@ -246,6 +246,22 @@ It doubles as the regression test for the Quick Start above: it depends on
 exactly what the Quick Start tells you to depend on, so if that snippet stops
 compiling, `cargo build -p hello-agent` fails with it.
 
+### Deploy Agent (the other end of the funnel)
+
+```sh
+cargo run -p deploy-agent
+docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
+kubectl apply -f examples/deploy-agent/deployment.yaml
+```
+
+`hello-agent` is the smallest agent that answers A2A; this is the smallest one
+you can ship. Environment configuration, `/healthz` and `/readyz`, `SIGTERM`
+draining, a `0.0.0.0` bind, a two-stage container and a Kubernetes manifest
+whose probes point at those endpoints. Its sharpest test asserts the agent card
+advertises the **public** URL and never leaks the bind address — the deployment
+bug whose only symptom is clients failing to call back. See
+[`examples/deploy-agent`](examples/deploy-agent).
+
 ### Echo Agent
 
 A minimal example demonstrating both JSON-RPC and REST transports with synchronous and streaming modes:
@@ -391,6 +407,17 @@ All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `
 ## Minimum Supported Rust Version
 
 Rust **1.93** or later (stable).
+
+**Policy.** The MSRV is treated as part of the public API: raising it is a
+**minor** version bump, never a patch, and the release notes say so. It is
+raised only when a language or standard-library feature earns it — not
+incidentally, because a transitive dependency moved.
+
+That 1.93 currently sits close to the latest stable is a consequence of this
+project being pre-1.0 and moving quickly, and it is a real adoption cost for
+organisations pinning older toolchains. It is listed as an open question on the
+[roadmap](ROADMAP.md) rather than presented as settled: the right floor for a
+1.0 is probably older than this one, and choosing it is a maintainer's call.
 
 ## Contributing
 

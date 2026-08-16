@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "deploy-agent"
+version     = "0.0.0"
+description = "A deployable A2A agent — config from env, health endpoint, graceful shutdown"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk", features = ["axum"] }
+axum             = { version = "0.8", features = ["json", "query", "tokio", "http1"] }
+tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net", "signal", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }

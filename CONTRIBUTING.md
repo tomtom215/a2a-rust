@@ -181,6 +181,44 @@ the unsafe operation are upheld.
 
 ---
 
+## Working on the SLIMRPC binding
+
+`bindings/a2a-protocol-slimrpc` is **not a workspace member**, so
+`cargo build`, `cargo test` and `cargo clippy` at the repository root do not
+touch it. Work on it from inside its own directory.
+
+Budget for it before you start:
+
+| | |
+|---|---|
+| Transitive dependencies | **379**, against 12 for `a2a-protocol-types` |
+| Native builds | `aws-lc-sys` — needs a C toolchain and `cmake` |
+| Cold build | Several minutes |
+| Disk | Roughly **16 GB** of `target/`, on top of the workspace's own |
+
+That last row is the one that surprises people: a full workspace `target/` plus
+this binding's will exhaust a modest disk, and the failure arrives as
+`No space left on device` in the middle of a link step. `cargo clean` at the
+root frees the larger of the two.
+
+```sh
+cd bindings/a2a-protocol-slimrpc
+cargo test -- --test-threads=1        # single-threaded: binds loopback ports
+cargo clippy --all-targets -- -D warnings
+```
+
+The SPIFFE suites are `#[ignore]`d because they need a real `spire-server` and
+`spire-agent` on `PATH`. CI installs SPIRE and asks for them by name; locally
+they are skipped unless you do the same:
+
+```sh
+cargo test --test spiffe --test spiffe_federation --test spiffe_rotation \
+  -- --ignored --test-threads=1
+```
+
+The isolation is deliberate — see the crate's README — but its cost is real, and
+it is better stated here than discovered halfway through a build.
+
 ## Dependency Policy
 
 Before adding a dependency:

@@ -571,6 +571,52 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "exits 3 rather than reporting agreement when upstream is unreachable"
     )
 
+    # ── docs.yml ─────────────────────────────────────────────────────────────
+    #
+    # The step stages rustdoc under /api/ and then asserts each crate's
+    # index.html landed. That assertion is the gate: without it an empty /api/
+    # deploys green and the 404 is only discovered in production, which is
+    # exactly the failure the step was added to prevent.
+    def _rustdoc_fixture(crates):
+        def setup(d):
+            (d / "book" / "book").mkdir(parents=True, exist_ok=True)
+            # Always present, even when empty: a missing `target/doc` would
+            # trip the `cp` instead of the assertion, and the assertion is what
+            # this probe is here to exercise.
+            (d / "target" / "doc").mkdir(parents=True, exist_ok=True)
+            for crate in crates:
+                out = d / "target" / "doc" / crate
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "index.html").write_text("<!doctype html>", encoding="utf-8")
+            return {}
+
+        return setup
+
+    ALL_DOC_CRATES = [
+        "a2a_protocol_types",
+        "a2a_protocol_client",
+        "a2a_protocol_server",
+        "a2a_protocol_sdk",
+    ]
+    reg["docs.yml::build::Place API documentation under /api/"] = Probe(
+        healthy=_rustdoc_fixture(ALL_DOC_CRATES),
+        defects=[
+            Defect(
+                f"rustdoc produced nothing for {dropped}",
+                _rustdoc_fixture([c for c in ALL_DOC_CRATES if c != dropped]),
+                "rustdoc output missing",
+            )
+            for dropped in ("a2a_protocol_sdk", "a2a_protocol_types")
+        ]
+        + [
+            Defect(
+                "the whole rustdoc build produced no output",
+                _rustdoc_fixture([]),
+                "rustdoc output missing",
+            )
+        ],
+    )
+
     # ── benchmarks.yml ───────────────────────────────────────────────────────
     #
     # The healthy fixture is the measured post-fix curve; the defect is the

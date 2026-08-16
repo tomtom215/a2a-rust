@@ -40,6 +40,7 @@
 
 - [Overview](./examples/overview.md)
 - [Hello Agent](./examples/hello-agent.md)
+- [Deploy Agent](./examples/deploy-agent.md)
 - [Incident-Response Team](./examples/incident-response.md)
 - [Echo Agent](./examples/echo-agent.md)
 - [Agent Team](./examples/agent-team.md)

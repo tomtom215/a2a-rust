@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# A Kubernetes Deployment and Service for deploy-agent.
+#
+# Every field below is here because omitting it breaks something specific; the
+# comments say which. Apply with:
+#   kubectl apply -f examples/deploy-agent/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deploy-agent
+  labels:
+    app: deploy-agent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: deploy-agent
+  template:
+    metadata:
+      labels:
+        app: deploy-agent
+    spec:
+      # Must exceed the longest in-flight stream, or SIGKILL arrives before the
+      # drain finishes and the graceful shutdown in main.rs is decorative.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: agent
+          image: deploy-agent:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: PORT
+              value: "8080"
+            # The externally reachable URL. This is what goes on the agent
+            # card, and it is not derivable from inside the pod — get it wrong
+            # and clients read the card, call the address on it, and fail.
+            - name: AGENT_URL
+              value: "http://deploy-agent.default.svc.cluster.local"
+          # Liveness restarts a wedged process. It points at /healthz, which
+          # checks nothing on purpose: a liveness probe with a dependency turns
+          # that dependency's outage into a restart loop.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          # Readiness gates traffic. Separate endpoint so that when this agent
+          # gains a dependency worth waiting for, only /readyz changes.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deploy-agent
+spec:
+  selector:
+    app: deploy-agent
+  ports:
+    - port: 80
+      targetPort: http
+      name: http
