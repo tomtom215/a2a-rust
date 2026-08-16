@@ -133,6 +133,16 @@ jobs:
       - name: OTel exporter covers every Metrics callback
         run: python3 scripts/check_otel_metrics_coverage.py
 
+      # The packaging `--exclude` list is duplicated across this file,
+      # release.yml and RELEASING.md, with nothing tying it to the workspace.
+      # A new `publish = false` example therefore breaks `cargo package
+      # --workspace` — which runs in the *release* workflow, so the failure
+      # lands at the point where it costs the most. `hello-agent`,
+      # `deploy-agent` and `a2a-book-tests` all joined the workspace without
+      # joining the list.
+      - name: Packaging excludes every unpublishable member
+        run: python3 scripts/check_package_excludes.py
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the
@@ -349,7 +359,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #

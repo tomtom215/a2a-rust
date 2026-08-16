@@ -32,20 +32,25 @@ not-yet-published server cannot be resolved from the index.
 
 ### What this means for a local pre-flight
 
-Only `a2a-protocol-types` can be `cargo package`d before anything is published.
-The other three resolve their `a2a-protocol-*` requirement against the crates.io
-index, which does not yet carry the new version, so they fail with:
+Use `cargo package --workspace`, **not** `cargo package -p <crate>`. The
+workspace form resolves sibling `path + version` dependencies against the local
+crates; the per-crate form resolves them against the crates.io index, which does
+not yet carry the new version, so it fails with:
 
 ```
 failed to select a version for the requirement `a2a-protocol-types = "^0.9.0"`
 candidate versions found which didn't match: 0.8.0, 0.7.0, ...
 ```
 
-That is the ordering constraint doing its job, not a broken manifest. Verify
-what *can* be verified locally — `cargo build --all-features` across the four
-crates, the full test suite, and `cargo package -p a2a-protocol-types` — then
-publish in the order above, letting each crate reach the index before the next.
-`release.yml` already waits for index propagation between steps.
+That is not a broken manifest — it is the per-crate form asking the registry a
+question only the registry can answer after publication. `ci.yml` and
+`release.yml` both use the workspace form for exactly this reason.
+
+Every `publish = false` member must be `--exclude`d, because such crates depend
+on their siblings by bare `path` with no version, and packaging rejects that.
+The list is duplicated across `ci.yml`, `release.yml` and this file, so adding a
+new example silently breaks packaging — which is what
+`scripts/check_package_excludes.py` now prevents.
 
 ## Release checklist
 
@@ -78,7 +83,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging (mirror the exclude list in ci.yml / release.yml exactly)
-cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
 ```
 
 ### 2. Merge to main
