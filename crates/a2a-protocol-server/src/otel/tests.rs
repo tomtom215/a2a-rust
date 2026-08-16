@@ -3,10 +3,22 @@
 
 //! Tests for the OpenTelemetry metrics exporter.
 //!
-//! Split from `mod.rs` to keep the exporter itself readable; these run against
-//! a noop meter, so they prove the instruments exist and accept their labels
-//! but cannot prove a value leaves the process. The guard against this exporter
-//! silently ignoring a callback is `scripts/check_otel_metrics_coverage.py`.
+//! Split from `mod.rs` to keep the exporter itself readable.
+//!
+//! Two layers, because neither alone is sufficient:
+//!
+//! * Noop-meter tests prove the instruments exist and accept the labels the
+//!   call sites pass. They cannot prove a value leaves the process.
+//! * `scripts/check_otel_metrics_coverage.py` proves every `Metrics` callback
+//!   is *present* in the impl, catching the one a defaulted trait method would
+//!   silently swallow. It cannot prove the body does anything.
+//! * Real-meter tests (bottom of this file) collect from a `ManualReader` and
+//!   assert the counter moved.
+//!
+//! The third layer exists because mutation testing showed the first two miss
+//! the same thing: replacing the bodies of `on_persistence_error` and
+//! `on_push_delivery` with `()` left every other test in the workspace green.
+//! A present-but-empty method satisfies a structural check by construction.
 
 use super::super::*;
 use std::time::Duration;
@@ -269,4 +281,143 @@ fn on_connection_pool_stats_records_all_instruments() {
         find_sum_u64(&rm, "a2a.server.pool.closed") > 0,
         "pool.closed counter should be incremented"
     );
+}
+
+// ── Real-meter assertions ────────────────────────────────────────────────────
+//
+// Everything above runs against a noop meter, which cannot tell a callback that
+// records from one that does nothing. `check_otel_metrics_coverage.py` does not
+// close that gap either: it proves the method is *present* in the impl, and a
+// present-but-empty body satisfies it.
+//
+// Mutation testing found exactly that hole — replacing the bodies of
+// `on_persistence_error` and `on_push_delivery` with `()` survived the entire
+// workspace suite. These tests collect from a real `ManualReader` and assert the
+// counter actually moved, which is the only formulation that fails when the
+// body is emptied.
+
+// `AggregatedMetrics`, `MetricData`, `ResourceMetrics`, `ManualReader` and
+// `SdkMeterProvider` all arrive through the `use super::super::*;` glob above.
+use std::sync::Arc;
+
+/// `SdkMeterProvider::with_reader` takes ownership, so the reader is shared
+/// through an `Arc` to stay readable after the provider is built.
+#[derive(Debug, Clone)]
+struct SharedReader(Arc<ManualReader>);
+
+impl opentelemetry_sdk::metrics::reader::MetricReader for SharedReader {
+    fn register_pipeline(&self, pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>) {
+        self.0.register_pipeline(pipeline);
+    }
+    fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.collect(rm)
+    }
+    fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.force_flush()
+    }
+    fn shutdown_with_timeout(&self, timeout: Duration) -> opentelemetry_sdk::error::OTelSdkResult {
+        self.0.shutdown_with_timeout(timeout)
+    }
+    fn temporality(
+        &self,
+        kind: opentelemetry_sdk::metrics::InstrumentKind,
+    ) -> opentelemetry_sdk::metrics::Temporality {
+        self.0.temporality(kind)
+    }
+}
+
+/// Builds an `OtelMetrics` over a real SDK meter, returning the reader so the
+/// caller can collect what was recorded.
+fn recording_otel_metrics() -> (OtelMetrics, Arc<ManualReader>, SdkMeterProvider) {
+    let reader = Arc::new(ManualReader::builder().build());
+    let provider = SdkMeterProvider::builder()
+        .with_reader(SharedReader(Arc::clone(&reader)))
+        .build();
+    let meter = opentelemetry::metrics::MeterProvider::meter(&provider, "a2a-otel-record-test");
+    (OtelMetrics::from_meter(&meter), reader, provider)
+}
+
+/// Total of every u64 sum data point recorded under `name`.
+///
+/// `None` means the instrument never appeared, which is a different failure
+/// from appearing with a zero total and is reported as such by the callers.
+fn sum_for(reader: &ManualReader, name: &str) -> Option<u64> {
+    use opentelemetry_sdk::metrics::reader::MetricReader as _;
+
+    let mut collected = ResourceMetrics::default();
+    reader.collect(&mut collected).expect("collect should work");
+
+    let mut found = None;
+    for scope in collected.scope_metrics() {
+        for metric in scope.metrics() {
+            if metric.name() != name {
+                continue;
+            }
+            let mut total = 0_u64;
+            if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
+                total += sum
+                    .data_points()
+                    .map(opentelemetry_sdk::metrics::data::SumDataPoint::value)
+                    .sum::<u64>();
+            }
+            found = Some(found.unwrap_or(0) + total);
+        }
+    }
+    found
+}
+
+/// `on_persistence_error` must actually increment `a2a.server.persistence_errors`.
+///
+/// This is the SDK's one silent-data-loss path: the streaming reader is a
+/// separate subscriber and receives the event whether or not the store accepted
+/// it, so a dropped persistence error is invisible to the client. An exporter
+/// that accepts the callback and records nothing reproduces exactly the bug the
+/// callback was added to fix.
+#[test]
+fn on_persistence_error_increments_its_counter() {
+    let (metrics, reader, provider) = recording_otel_metrics();
+
+    metrics.on_persistence_error(
+        crate::metrics::persistence_operation::ARTIFACT_APPEND,
+        "internal_error",
+    );
+    metrics.on_persistence_error(
+        crate::metrics::persistence_operation::STATUS_UPDATE,
+        "internal_error",
+    );
+
+    let total = sum_for(&reader, "a2a.server.persistence_errors")
+        .expect("a2a.server.persistence_errors should have been exported");
+    assert_eq!(
+        total, 2,
+        "two persistence errors were reported but the counter totals {total}"
+    );
+
+    let _ = provider.shutdown();
+}
+
+/// `on_push_delivery` must actually increment `a2a.server.push_deliveries`,
+/// once per call, whatever the outcome label.
+#[test]
+fn on_push_delivery_increments_its_counter() {
+    let (metrics, reader, provider) = recording_otel_metrics();
+
+    let outcomes = [
+        crate::metrics::push_outcome::DELIVERED,
+        crate::metrics::push_outcome::FAILED,
+    ];
+    for outcome in outcomes {
+        metrics.on_push_delivery(outcome);
+    }
+
+    let total = sum_for(&reader, "a2a.server.push_deliveries")
+        .expect("a2a.server.push_deliveries should have been exported");
+    assert_eq!(
+        total,
+        outcomes.len() as u64,
+        "{} deliveries were reported but the counter totals {total}",
+        outcomes.len()
+    );
+
+    let _ = provider.shutdown();
 }

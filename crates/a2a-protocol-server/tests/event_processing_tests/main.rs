@@ -13,6 +13,7 @@
 
 mod background_processor;
 mod error_handling;
+mod introspection;
 mod state_transitions;
 mod streaming_mode;
 mod sync_mode;
