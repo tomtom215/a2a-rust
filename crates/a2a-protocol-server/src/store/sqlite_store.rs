@@ -187,10 +187,13 @@ fn to_a2a_error(e: sqlx::Error) -> A2aError {
 /// The `?1` parameter is always a JSON *array* of the appended parts (or a
 /// one-element array holding the pushed artifact), so the statement shape does
 /// not change with the payload and `SQLite` can reuse its prepared plan.
-fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<DeltaStatement>> {
-    /// Above this many parts in one event, rewriting the record wins.
-    const MAX_INLINE_APPEND: usize = 8;
+/// Above this many parts in one event, rewriting the record wins.
+///
+/// At module scope so the boundary tests assert against the same constant the
+/// implementation uses, rather than a copy of its value that could drift.
+const MAX_INLINE_APPEND: usize = 8;
 
+fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<DeltaStatement>> {
     let Some(artifacts) = task.artifacts.as_ref() else {
         return Ok(None);
     };
@@ -576,6 +579,8 @@ impl TaskStore for SqliteTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     async fn make_store() -> SqliteTaskStore {
@@ -593,6 +598,169 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    // ── artifact_delta_sql: which path, not just which result ────────────────
+    //
+    // Every branch below chooses between the incremental statement and `None`,
+    // which tells the caller to fall back to a whole-record `save`. Falling
+    // back is always *correct* — it writes the same bytes, only slower — so a
+    // wrong boundary here is invisible to any test that asserts stored data.
+    // That is exactly what mutation testing found: seven mutants on these
+    // comparisons survived, because the rows they produce are identical.
+    //
+    // These assert the decision itself, which is the only thing that changes.
+
+    /// Builds a task carrying one artifact with `parts` text parts.
+    fn task_with_parts(parts: usize) -> Task {
+        let mut task = make_task("t-delta", "c-delta", TaskState::Working);
+        task.artifacts = Some(vec![Artifact::new(
+            "art",
+            (0..parts)
+                .map(|i| Part::text(format!("p{i}")))
+                .collect::<Vec<_>>(),
+        )]);
+        task
+    }
+
+    /// `count > MAX_INLINE_APPEND` is the batch-size cutoff: at or below it the
+    /// incremental statement wins, above it rewriting the record does.
+    ///
+    /// Pinned on both sides of the boundary *and* at it. `>` mutated to `>=`
+    /// moves the cutoff by one, `==` and `<` invert the whole policy — none of
+    /// which change a single stored byte.
+    #[test]
+    fn append_batch_cutoff_is_exactly_max_inline_append() {
+        // At the cutoff: still incremental.
+        let task = task_with_parts(MAX_INLINE_APPEND);
+        let at = artifact_delta_sql(
+            &task,
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: MAX_INLINE_APPEND,
+            },
+        )
+        .expect("no error");
+        assert!(
+            at.is_some(),
+            "a batch of exactly MAX_INLINE_APPEND must use the incremental path"
+        );
+
+        // One past it: fall back.
+        let task = task_with_parts(MAX_INLINE_APPEND + 1);
+        let over = artifact_delta_sql(
+            &task,
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: MAX_INLINE_APPEND + 1,
+            },
+        )
+        .expect("no error");
+        assert!(
+            over.is_none(),
+            "a batch larger than MAX_INLINE_APPEND must fall back to a full save"
+        );
+
+        // Below it: incremental.
+        let task = task_with_parts(2);
+        let under = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 2 })
+            .expect("no error");
+        assert!(
+            under.is_some(),
+            "a small batch must use the incremental path"
+        );
+    }
+
+    /// `artifact.parts.len() < count` rejects a delta claiming more parts than
+    /// the artifact actually has — the delta does not describe this task, so
+    /// the tail slice would panic or silently copy the wrong parts.
+    ///
+    /// The equal case must be *accepted*: appending an artifact's entire
+    /// contents in one event is the ordinary first delta for a new artifact.
+    /// `<` mutated to `<=` rejects it and quietly disables the fast path for
+    /// every such event.
+    #[test]
+    fn delta_claiming_all_parts_is_accepted_and_overclaiming_is_not() {
+        let task = task_with_parts(3);
+
+        let exact = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 3 })
+            .expect("no error");
+        assert!(
+            exact.is_some(),
+            "a delta covering every part of the artifact must be accepted"
+        );
+
+        let over = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 4 })
+            .expect("no error");
+        assert!(
+            over.is_none(),
+            "a delta claiming more parts than exist must fall back"
+        );
+    }
+
+    /// A zero-part delta describes nothing and must fall back.
+    #[test]
+    fn zero_count_delta_falls_back() {
+        let task = task_with_parts(3);
+        let none = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 0 })
+            .expect("no error");
+        assert!(none.is_none(), "a zero-count delta must fall back");
+    }
+
+    /// `Pushed` is only valid for the artifact that is *last* in the vector:
+    /// the statement appends to the end of the stored array, so pushing at any
+    /// other index would put it in the wrong place.
+    ///
+    /// `index + 1 != artifacts.len()` mutated to `==` inverts the guard, and
+    /// `+` mutated to `*` makes it accept index 0 of a 0-length vector while
+    /// rejecting the genuine last-position case.
+    #[test]
+    fn push_is_accepted_only_at_the_last_position() {
+        let mut task = make_task("t-push", "c-push", TaskState::Working);
+        task.artifacts = Some(vec![
+            Artifact::new("a0", vec![Part::text("x")]),
+            Artifact::new("a1", vec![Part::text("y")]),
+        ]);
+
+        let last = artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 1 }).expect("no error");
+        assert!(
+            last.is_some(),
+            "pushing the artifact that is last in the vector must use the incremental path"
+        );
+
+        let not_last =
+            artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 0 }).expect("no error");
+        assert!(
+            not_last.is_none(),
+            "pushing at any position but the last must fall back"
+        );
+
+        // A single-artifact task: index 0 *is* the last position. This is the
+        // case `index * 1` gets wrong in the opposite direction from `index + 1`.
+        let mut single = make_task("t-one", "c-one", TaskState::Working);
+        single.artifacts = Some(vec![Artifact::new("only", vec![Part::text("z")])]);
+        let only =
+            artifact_delta_sql(&single, ArtifactDelta::Pushed { index: 0 }).expect("no error");
+        assert!(
+            only.is_some(),
+            "the sole artifact is at the last position and must be accepted"
+        );
+    }
+
+    /// No artifacts at all: nothing to append to, so every delta falls back.
+    #[test]
+    fn task_without_artifacts_always_falls_back() {
+        let task = make_task("t-empty", "c-empty", TaskState::Working);
+        assert!(
+            artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+                .expect("no error")
+                .is_none()
+        );
+        assert!(
+            artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 0 })
+                .expect("no error")
+                .is_none()
+        );
     }
 
     #[tokio::test]
