@@ -49,7 +49,7 @@ set -Eeuo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
-OTEL_RS="$REPO_ROOT/crates/a2a-protocol-server/src/observability/otel.rs"
+OTEL_RS="$REPO_ROOT/crates/a2a-protocol-server/src/otel/mod.rs"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-provegates.XXXXXX")
 
 ONLY='.'
