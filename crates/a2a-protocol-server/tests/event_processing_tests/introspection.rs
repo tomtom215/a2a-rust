@@ -130,3 +130,170 @@ async fn one_in_flight_task_is_counted_exactly_once() {
     proceed.notify_one();
     send_handle.await.expect("send handle");
 }
+
+// ── The index the background processor reports for a pushed artifact ─────────
+
+/// A store that records every `ArtifactDelta` it is handed, then delegates.
+///
+/// The background processor computes `artifacts.len() - 1` as the position of
+/// the artifact it just pushed. Getting that wrong is invisible to any test
+/// that reads the stored task: the store's own guard rejects a delta whose
+/// index does not line up, the caller falls back to a whole-record `save`, and
+/// the same bytes land. Mutation testing found both arithmetic mutants at that
+/// line surviving for exactly that reason.
+///
+/// Recording the delta is the only way to see the difference, because the
+/// difference is which path ran, not what was written.
+#[derive(Debug)]
+struct DeltaRecordingStore {
+    inner: InMemoryTaskStore,
+    deltas: Arc<Mutex<Vec<ArtifactDelta>>>,
+}
+
+impl DeltaRecordingStore {
+    fn new(deltas: Arc<Mutex<Vec<ArtifactDelta>>>) -> Self {
+        Self {
+            inner: InMemoryTaskStore::new(),
+            deltas,
+        }
+    }
+}
+
+impl TaskStore for DeltaRecordingStore {
+    fn save<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.save(task)
+    }
+
+    fn get<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+        self.inner.get(id)
+    }
+
+    fn insert_if_absent<'a>(
+        &'a self,
+        task: &'a Task,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+        self.inner.insert_if_absent(task)
+    }
+
+    fn delete<'a>(
+        &'a self,
+        id: &'a TaskId,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.inner.delete(id)
+    }
+
+    fn list<'a>(
+        &'a self,
+        params: &'a ListTasksParams,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+        self.inner.list(params)
+    }
+
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        self.deltas.lock().expect("delta log").push(delta);
+        self.inner.save_artifact_delta(task, delta)
+    }
+}
+
+/// An executor that pushes `count` distinct artifacts, then completes.
+struct PushingExecutor {
+    count: usize,
+}
+
+impl AgentExecutor for PushingExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            for i in 0..self.count {
+                queue
+                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        artifact: Artifact::new(
+                            format!("art-{i}"),
+                            vec![Part::text(format!("chunk {i}"))],
+                        ),
+                        append: None,
+                        last_chunk: Some(true),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+            Ok(())
+        })
+    }
+}
+
+/// Each pushed artifact is reported at its own position, counting from zero.
+///
+/// Three artifacts must produce `Pushed { index: 0 }`, `{ index: 1 }`,
+/// `{ index: 2 }` — the position each one occupies after being appended. An
+/// off-by-one or a different operator produces indices the store will reject,
+/// which costs the fast path without changing a stored byte.
+#[tokio::test]
+async fn pushed_artifacts_are_reported_at_their_own_index() {
+    const COUNT: usize = 3;
+
+    let deltas = Arc::new(Mutex::new(Vec::new()));
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(PushingExecutor { count: COUNT })
+            .with_task_store(DeltaRecordingStore::new(Arc::clone(&deltas)))
+            .build()
+            .expect("build handler"),
+    );
+
+    let result = handler
+        .on_send_message(make_send_params(), true, None)
+        .await
+        .expect("send message");
+    if let SendMessageResult::Stream(mut reader) = result {
+        while let Some(_event) = reader.read().await {}
+    } else {
+        panic!("expected Stream");
+    }
+
+    // The background processor persists after the stream drains; wait for the
+    // terminal state rather than sleeping.
+    for _ in 0..1000 {
+        if deltas.lock().expect("delta log").len() >= COUNT {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let seen = deltas.lock().expect("delta log").clone();
+    let pushed: Vec<usize> = seen
+        .iter()
+        .filter_map(|d| match d {
+            ArtifactDelta::Pushed { index } => Some(*index),
+            ArtifactDelta::AppendedParts { .. } => None,
+        })
+        .collect();
+
+    assert_eq!(
+        pushed,
+        (0..COUNT).collect::<Vec<_>>(),
+        "each pushed artifact must be reported at the position it occupies; got {pushed:?}"
+    );
+}

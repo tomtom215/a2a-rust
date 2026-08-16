@@ -32,7 +32,7 @@ use super::{to_a2a_error, PostgresTaskStore};
 /// Pure and separate from the query so it is testable without a database —
 /// the boundary is invisible to any test that only asserts stored rows, since
 /// falling back writes the very same bytes.
-pub(super) fn append_delta_applies(artifact: &Artifact, count: usize) -> bool {
+pub(super) const fn append_delta_applies(artifact: &Artifact, count: usize) -> bool {
     count != 0 && artifact.parts.len() >= count
 }
 
@@ -42,7 +42,7 @@ pub(super) fn append_delta_applies(artifact: &Artifact, count: usize) -> bool {
 /// correct for the artifact that is last in the in-memory vector; anything else
 /// would land in the wrong position. Same reasoning as
 /// [`append_delta_applies`] for why this is pure.
-pub(super) fn is_last_position(index: usize, artifacts: &[Artifact]) -> bool {
+pub(super) const fn is_last_position(index: usize, artifacts: &[Artifact]) -> bool {
     index + 1 == artifacts.len()
 }
 

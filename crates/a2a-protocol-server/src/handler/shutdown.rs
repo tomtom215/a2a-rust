@@ -195,6 +195,192 @@ mod tests {
             .expect("builder should succeed with defaults")
     }
 
+    // ── The non-graceful warning ─────────────────────────────────────────────
+    //
+    // `if !executor_cleanup_completed { trace_warn!(...) }` has no effect other
+    // than the log line, so deleting the `!` — which makes the warning fire on
+    // *success* instead of failure — changes nothing any other test can see.
+    // Both mutants survived for that reason.
+    //
+    // A warning that fires on the wrong branch is a real defect: the entire
+    // point of reporting shutdown was to make a hung executor visible to an
+    // operator, and a warning on every clean shutdown is worse than none,
+    // because it trains the operator to ignore it. So it is asserted rather
+    // than skipped, the only way it can be: by capturing what was emitted.
+    #[cfg(feature = "tracing")]
+    mod warning {
+        use super::*;
+
+        use std::sync::{Arc, Mutex};
+        use tracing::subscriber::with_default;
+        use tracing::Level;
+        use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+        use tracing_subscriber::Registry;
+
+        /// Records the message of every WARN event.
+        #[derive(Clone, Default)]
+        struct WarnCapture(Arc<Mutex<Vec<String>>>);
+
+        impl<S: tracing::Subscriber> Layer<S> for WarnCapture {
+            fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+                struct Visit(String);
+                impl tracing::field::Visit for Visit {
+                    fn record_debug(
+                        &mut self,
+                        field: &tracing::field::Field,
+                        value: &dyn std::fmt::Debug,
+                    ) {
+                        if field.name() == "message" {
+                            self.0 = format!("{value:?}");
+                        }
+                    }
+                }
+
+                if *event.metadata().level() != Level::WARN {
+                    return;
+                }
+                let mut v = Visit(String::new());
+                event.record(&mut v);
+                self.0.lock().expect("warn log").push(v.0);
+            }
+        }
+
+        /// An executor whose shutdown hook never returns.
+        struct HangingExecutor;
+
+        impl AgentExecutor for HangingExecutor {
+            fn execute<'a>(
+                &'a self,
+                _ctx: &'a RequestContext,
+                _queue: &'a dyn EventQueueWriter,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                Box::pin(async { Ok(()) })
+            }
+
+            fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+                Box::pin(async { std::future::pending::<()>().await })
+            }
+        }
+
+        fn warnings_during<F>(f: F) -> Vec<String>
+        where
+            F: FnOnce(),
+        {
+            let capture = WarnCapture::default();
+            let subscriber = Registry::default().with(capture.clone());
+            with_default(subscriber, f);
+            let out = capture.0.lock().expect("warn log").clone();
+            out
+        }
+
+        fn mentions_cleanup(warnings: &[String]) -> bool {
+            warnings.iter().any(|w| w.contains("executor cleanup"))
+        }
+
+        /// A clean shutdown must emit no cleanup warning.
+        ///
+        /// This is the half that fails when the `!` is deleted.
+        #[test]
+        fn clean_shutdown_warns_about_nothing() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .expect("runtime");
+
+            let warnings = warnings_during(|| {
+                rt.block_on(async {
+                    let handler = make_handler();
+                    let report = handler
+                        .shutdown_with_timeout(Duration::from_millis(50))
+                        .await;
+                    assert!(
+                        report.executor_cleanup_completed,
+                        "the no-op executor's cleanup returns immediately"
+                    );
+                });
+            });
+
+            assert!(
+                !mentions_cleanup(&warnings),
+                "a clean shutdown must not warn about executor cleanup; got {warnings:?}"
+            );
+        }
+
+        /// The same two properties for `shutdown()`, which carries its own
+        /// fixed 10-second cleanup budget rather than taking one.
+        ///
+        /// Time is paused so the budget elapses instantly: with nothing else
+        /// runnable, Tokio advances the clock to the timer deadline. Without
+        /// this the hung case would take ten real seconds, and the `!` at that
+        /// call site would stay unasserted for the sake of a fast suite —
+        /// which is how it came to be unasserted in the first place.
+        #[test]
+        fn fixed_budget_shutdown_warns_only_when_cleanup_hangs() {
+            let rt = || {
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_time()
+                    .start_paused(true)
+                    .build()
+                    .expect("runtime")
+            };
+
+            let clean = warnings_during(|| {
+                rt().block_on(async {
+                    let handler = make_handler();
+                    let report = handler.shutdown().await;
+                    assert!(report.executor_cleanup_completed);
+                });
+            });
+            assert!(
+                !mentions_cleanup(&clean),
+                "a clean shutdown() must not warn about executor cleanup; got {clean:?}"
+            );
+
+            let hung = warnings_during(|| {
+                rt().block_on(async {
+                    let handler = RequestHandlerBuilder::new(HangingExecutor)
+                        .build()
+                        .expect("builder should succeed");
+                    let report = handler.shutdown().await;
+                    assert!(!report.executor_cleanup_completed);
+                });
+            });
+            assert!(
+                mentions_cleanup(&hung),
+                "a hung cleanup under shutdown() must be warned about; got {hung:?}"
+            );
+        }
+
+        /// A shutdown whose executor cleanup times out must say so.
+        #[test]
+        fn hung_cleanup_is_warned_about() {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .expect("runtime");
+
+            let warnings = warnings_during(|| {
+                rt.block_on(async {
+                    let handler = RequestHandlerBuilder::new(HangingExecutor)
+                        .build()
+                        .expect("builder should succeed");
+                    let report = handler
+                        .shutdown_with_timeout(Duration::from_millis(50))
+                        .await;
+                    assert!(
+                        !report.executor_cleanup_completed,
+                        "a hanging cleanup must be reported as incomplete"
+                    );
+                });
+            });
+
+            assert!(
+                mentions_cleanup(&warnings),
+                "a hung executor cleanup must be warned about; got {warnings:?}"
+            );
+        }
+    }
+
     // ── shutdown ───────────────────────────────────────────────────────────
 
     #[tokio::test]
