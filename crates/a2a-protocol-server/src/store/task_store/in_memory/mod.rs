@@ -316,8 +316,16 @@ fn apply_delta(stored: &mut Task, incoming: &Task, delta: ArtifactDelta) -> bool
                 return false;
             };
             // Same artifact, and the appended tail is actually present.
+            //
+            // The length check is stated once, as an equation rather than as an
+            // equation plus a bound: if `stored + count == incoming` holds then
+            // `incoming >= count` follows, so a separate `incoming < count`
+            // clause could never be the one to reject. It was there, and
+            // mutation testing flagged it — every mutant of it survived,
+            // because a redundant condition has no observable behaviour to
+            // change. Removing it is the fix; a guard nothing can falsify is
+            // not a guard.
             if stored_artifact.id != incoming_artifact.id
-                || incoming_artifact.parts.len() < count
                 || stored_artifact.parts.len() + count != incoming_artifact.parts.len()
             {
                 return false;
@@ -1488,6 +1496,123 @@ mod artifact_delta_tests {
             id,
             (0..parts).map(|i| Part::text(format!("p{i}"))).collect(),
         )
+    }
+
+    // ── apply_delta's accept/reject decision ─────────────────────────────────
+    //
+    // The tests above compare a delta-driven store against a `save`-driven one
+    // and require them to agree. That catches a delta which *corrupts*, but not
+    // one which merely *declines*: returning `false` makes the caller fall back
+    // to a full replace, which writes the same bytes. Both stores still agree,
+    // so the assertion holds while the fast path silently stops being used.
+    //
+    // Mutation testing found seven survivors on exactly those guards. These call
+    // `apply_delta` directly and assert the boolean, which is the only thing the
+    // mutants change.
+
+    /// The append guard accepts precisely the well-formed case and rejects each
+    /// way of being ill-formed, one at a time.
+    #[test]
+    fn append_delta_accepts_only_a_well_formed_append() {
+        let base = || task_with("t", Some(vec![artifact("a", 2)]));
+
+        // Well-formed: stored has 2 parts, incoming has 3, count is 1.
+        let mut stored = base();
+        let mut incoming = task_with("t", Some(vec![artifact("a", 3)]));
+        assert!(
+            apply_delta(
+                &mut stored,
+                &incoming,
+                ArtifactDelta::AppendedParts { index: 0, count: 1 }
+            ),
+            "a delta whose arithmetic checks out must be applied, not declined"
+        );
+        assert_eq!(
+            stored.artifacts.as_ref().expect("artifacts")[0].parts.len(),
+            3
+        );
+
+        // Different artifact id at the same index: not the same artifact.
+        let mut stored = base();
+        incoming = task_with("t", Some(vec![artifact("other", 3)]));
+        assert!(
+            !apply_delta(
+                &mut stored,
+                &incoming,
+                ArtifactDelta::AppendedParts { index: 0, count: 1 }
+            ),
+            "a delta for a different artifact id must be declined"
+        );
+
+        // count larger than the incoming artifact holds.
+        let mut stored = base();
+        incoming = task_with("t", Some(vec![artifact("a", 3)]));
+        assert!(
+            !apply_delta(
+                &mut stored,
+                &incoming,
+                ArtifactDelta::AppendedParts { index: 0, count: 4 }
+            ),
+            "a delta claiming more parts than the incoming artifact holds must be declined"
+        );
+
+        // The arithmetic must balance: stored + count == incoming.
+        let mut stored = base();
+        incoming = task_with("t", Some(vec![artifact("a", 5)]));
+        assert!(
+            !apply_delta(
+                &mut stored,
+                &incoming,
+                ArtifactDelta::AppendedParts { index: 0, count: 1 }
+            ),
+            "2 stored + 1 appended is not 5 incoming, so the delta must be declined"
+        );
+
+        // Note what is *not* asserted: `count == incoming.parts.len()`, the
+        // whole-artifact append. Reaching it needs a stored artifact with zero
+        // parts, which `Artifact::new` rejects as invalid per the A2A spec, so
+        // the case cannot arise here. The SQLite and Postgres guards do see it
+        // — they run before anything is stored — and both cover it.
+    }
+
+    /// The push guard accepts only a push landing exactly at the end of what is
+    /// stored, with the incoming vector exactly one longer.
+    #[test]
+    fn push_delta_accepts_only_an_append_at_the_end() {
+        // Well-formed: stored holds 1, incoming holds 2, pushing index 1.
+        let mut stored = task_with("t", Some(vec![artifact("a", 1)]));
+        let incoming = task_with("t", Some(vec![artifact("a", 1), artifact("b", 1)]));
+        assert!(
+            apply_delta(&mut stored, &incoming, ArtifactDelta::Pushed { index: 1 }),
+            "a push landing at the end must be applied"
+        );
+        assert_eq!(stored.artifacts.as_ref().expect("artifacts").len(), 2);
+
+        // Index does not match where the stored vector ends.
+        let mut stored = task_with("t", Some(vec![artifact("a", 1)]));
+        assert!(
+            !apply_delta(&mut stored, &incoming, ArtifactDelta::Pushed { index: 0 }),
+            "a push at an index that is not the stored end must be declined"
+        );
+
+        // Incoming is not exactly one longer than the index.
+        let mut stored = task_with("t", Some(vec![artifact("a", 1)]));
+        let too_long = task_with(
+            "t",
+            Some(vec![artifact("a", 1), artifact("b", 1), artifact("c", 1)]),
+        );
+        assert!(
+            !apply_delta(&mut stored, &too_long, ArtifactDelta::Pushed { index: 1 }),
+            "a push whose incoming vector holds more than index + 1 must be declined"
+        );
+
+        // The first artifact of an empty task is a push at index 0.
+        let mut stored = task_with("t", Some(Vec::new()));
+        let first = task_with("t", Some(vec![artifact("a", 1)]));
+        assert!(
+            apply_delta(&mut stored, &first, ArtifactDelta::Pushed { index: 0 }),
+            "the first artifact is pushed at index 0 and must be applied"
+        );
     }
 
     /// Streams 200 appends into one artifact through both paths and requires
