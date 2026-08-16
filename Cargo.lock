@@ -25,7 +25,10 @@ dependencies = [
 name = "a2a-book-tests"
 version = "0.0.0"
 dependencies = [
+ "a2a-protocol-client",
  "a2a-protocol-sdk",
+ "a2a-protocol-server",
+ "a2a-protocol-types",
  "serde_json",
  "tokio",
  "uuid",

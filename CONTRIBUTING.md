@@ -181,6 +181,47 @@ the unsafe operation are upheld.
 
 ---
 
+## Extending a public trait
+
+`a2a-protocol-server` exposes eleven public traits, and **none of them are
+sealed**. That is deliberate: they are the extension points the architecture
+depends on. `AgentExecutor` is the whole point of the SDK; `TaskStore`,
+`PushConfigStore`, `PushSender`, `TenantResolver` and `AgentCardProducer` let a
+deployment substitute its own infrastructure; `Metrics` lets it substitute its
+own telemetry; `ServerInterceptor` and `Dispatcher` are how middleware and new
+transports attach — `a2a-protocol-slimrpc` exists entirely because those two are
+open. Sealing them would make the out-of-workspace binding impossible.
+
+Open traits carry an obligation, so the rules for changing one are:
+
+**Never add a required method.** It breaks every external implementation at
+compile time. New methods get a default.
+
+**A default is not free — it is a silent no-op in every existing
+implementation.** This is the part that has actually bitten this project.
+`on_persistence_error` and `on_push_delivery` were added to `Metrics` with
+defaults, wired to every call site, and covered by tests — and the bundled
+`OtelMetrics` exporter, written before they existed, inherited the no-ops and
+exported neither. The callbacks appeared to exist and reported nothing. No test
+caught it, because the exporter's tests run against a noop meter, which a no-op
+override satisfies perfectly.
+
+So every new defaulted method needs all three of:
+
+1. **A doc paragraph stating what not overriding it costs.** "Defaults to a
+   no-op" is not enough; say what the implementor loses by taking the default.
+2. **Every implementation *in this repository* updated in the same commit.** A
+   crate that ships both a trait and an implementation of it is asserting that
+   implementation is complete.
+3. **A gate, where one is expressible.** `scripts/check_otel_metrics_coverage.py`
+   is the model: it parses the trait and the bundled exporter and fails when the
+   exporter is missing a callback. Cheap to write, and it catches the next
+   occurrence rather than the last one.
+
+**Changing a method signature is breaking** even with a default, and belongs in
+a major version — or, pre-1.0, a minor with a CHANGELOG entry that says so
+plainly.
+
 ## Working on the SLIMRPC binding
 
 `bindings/a2a-protocol-slimrpc` is **not a workspace member**, so

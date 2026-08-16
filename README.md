@@ -57,7 +57,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc. |
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
-| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues |
+| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues, returning a `ShutdownReport` — a shutdown that force-destroyed live queues or abandoned executor cleanup says so instead of looking clean |
 | **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call |
 
 ### Client
@@ -73,8 +73,8 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats (`otel` feature) |
-| **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, and connection pool statistics |
+| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** (`otel` feature). A CI gate asserts the exporter forwards every `Metrics` callback, so a new one cannot be added and silently not exported |
+| **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, connection pool statistics, background persistence failures, and push-delivery outcomes. The last two are the paths a client cannot observe: a stream delivers its events whether or not the store accepted them |
 | **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
 | **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
 
@@ -82,10 +82,10 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, health endpoints |
+| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, and split liveness (`/health`) / readiness (`/ready`, probes the task store) endpoints |
 | **SSRF protection** | Push webhook URL validation, header injection prevention, SSE memory limits |
 | **CORS support** | `CorsConfig` for browser-based clients with preflight handling |
-| **Executor timeout** | Configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors |
+| **Executor timeout** | Bounded by default (1 hour) so a hung executor cannot pin a task, its queue and its cancellation token forever; tune with `with_executor_timeout()` or opt out explicitly with `without_executor_timeout()` |
 | **Task eviction** | TTL-based eviction, capacity limits, amortized sweeps, cursor-based pagination |
 
 ### Quality
@@ -402,7 +402,9 @@ Against the A2A project's official Technology Compatibility Kit, **92 of 114 MUS
 
 ## Stability
 
-All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes.
+
+The server crate's eleven public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 

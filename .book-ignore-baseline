@@ -18,8 +18,7 @@
 #   crypto build. Adding it to `a2a-book-tests` would drag all of that into
 #   every CI test run to compile three snippets. Those snippets are kept in
 #   step with the crate's own README and its test suite, which do compile.
-# total: 133
-
+# total: 130
 3	book/src/bindings/slimrpc.md
 7	book/src/building-agents/authentication.md
 10	book/src/building-agents/dispatchers.md
@@ -32,7 +31,6 @@
 10	book/src/client/error-handling.md
 5	book/src/client/sending-messages.md
 4	book/src/client/streaming.md
-3	book/src/client/task-management.md
 4	book/src/concepts/agent-cards.md
 4	book/src/concepts/streaming.md
 8	book/src/concepts/tasks-and-messages.md
