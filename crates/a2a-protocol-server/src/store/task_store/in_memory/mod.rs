@@ -38,7 +38,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use tokio::sync::RwLock;
 
-use super::{TaskStore, TaskStoreConfig};
+use super::{ArtifactDelta, TaskStore, TaskStoreConfig};
 
 /// Sort key for the update-order indexes: `(status timestamp in Unix millis,
 /// monotonic write sequence)`.
@@ -292,6 +292,60 @@ impl InMemoryTaskStore {
     }
 }
 
+/// Mutates `stored` so it matches `incoming`, copying only what the delta says
+/// changed. Returns `false` if the delta does not fit `stored`, in which case
+/// `stored` is left untouched and the caller must fall back to a full replace.
+///
+/// Every field outside the artifact vector is cloned unconditionally: they are
+/// small and fixed-size, so there is nothing to gain by being clever, and
+/// cloning them keeps the postcondition — `stored` equals `incoming` — easy to
+/// see rather than easy to get subtly wrong.
+fn apply_delta(stored: &mut Task, incoming: &Task, delta: ArtifactDelta) -> bool {
+    let (Some(stored_artifacts), Some(incoming_artifacts)) =
+        (stored.artifacts.as_mut(), incoming.artifacts.as_ref())
+    else {
+        return false;
+    };
+
+    match delta {
+        ArtifactDelta::AppendedParts { index, count } => {
+            let (Some(stored_artifact), Some(incoming_artifact)) = (
+                stored_artifacts.get_mut(index),
+                incoming_artifacts.get(index),
+            ) else {
+                return false;
+            };
+            // Same artifact, and the appended tail is actually present.
+            if stored_artifact.id != incoming_artifact.id
+                || incoming_artifact.parts.len() < count
+                || stored_artifact.parts.len() + count != incoming_artifact.parts.len()
+            {
+                return false;
+            }
+            let tail = &incoming_artifact.parts[incoming_artifact.parts.len() - count..];
+            stored_artifact.parts.extend_from_slice(tail);
+            // Appends may merge metadata into the artifact as well.
+            stored_artifact
+                .metadata
+                .clone_from(&incoming_artifact.metadata);
+        }
+        ArtifactDelta::Pushed { index } => {
+            // The push must land exactly at the end of what is stored.
+            if index != stored_artifacts.len() || incoming_artifacts.len() != index + 1 {
+                return false;
+            }
+            let Some(pushed) = incoming_artifacts.get(index) else {
+                return false;
+            };
+            stored_artifacts.push(pushed.clone());
+        }
+    }
+
+    stored.status.clone_from(&incoming.status);
+    stored.metadata.clone_from(&incoming.metadata);
+    true
+}
+
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for InMemoryTaskStore {
     fn save<'a>(
@@ -317,6 +371,49 @@ impl TaskStore for InMemoryTaskStore {
             }
 
             Ok(())
+        })
+    }
+
+    /// Applies the delta to the stored task in place, copying only what grew.
+    ///
+    /// `save` clones the whole task, so using it per artifact event makes a
+    /// stream cost quadratic in its own length — see
+    /// [`TaskStore::save_artifact_delta`] for the measurement. Here the work is
+    /// proportional to the appended parts instead of the accumulated ones.
+    ///
+    /// Falls back to `save` whenever the stored record is not the one this
+    /// delta describes: absent, no artifacts, index out of range, a different
+    /// artifact at that index, or fewer parts present than the delta claims
+    /// were appended. Those are all "cannot apply safely", and a whole-record
+    /// replace is always right — a wrong in-place edit would not be.
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let applied = {
+                let mut store = self.data.write().await;
+                let applied = store
+                    .entries
+                    .get_mut(&task.id)
+                    .is_some_and(|entry| apply_delta(&mut entry.task, task, delta));
+                if applied {
+                    if let Some(entry) = store.entries.get_mut(&task.id) {
+                        entry.last_updated = Instant::now();
+                    }
+                }
+                applied
+            };
+
+            if applied {
+                trace_debug!(task_id = %task.id, "applied artifact delta in place");
+                // No new entry, so the store cannot have grown past its bound
+                // and there is nothing for eviction to reconsider.
+                return Ok(());
+            }
+
+            self.save(task).await
         })
     }
 
@@ -1357,5 +1454,196 @@ mod tests {
             "expected a current Unix-millis timestamp, got {now}; a value \
              this large suggests the wrong time unit"
         );
+    }
+}
+
+/// Tests for the incremental artifact path (`save_artifact_delta`).
+///
+/// Every one of these asserts the same postcondition: the store ends up holding
+/// exactly what a full `save` would have left it holding. That is the whole
+/// contract — the delta path exists to be cheaper, never to be different — so
+/// the tests compare against a second store driven by `save` rather than
+/// against hand-written expectations, which could drift into agreeing with a
+/// bug.
+#[cfg(test)]
+mod artifact_delta_tests {
+    use super::*;
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    fn task_with(id: &str, artifacts: Option<Vec<Artifact>>) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts,
+            metadata: None,
+        }
+    }
+
+    fn artifact(id: &str, parts: usize) -> Artifact {
+        Artifact::new(
+            id,
+            (0..parts).map(|i| Part::text(format!("p{i}"))).collect(),
+        )
+    }
+
+    /// Streams 200 appends into one artifact through both paths and requires
+    /// the stores to agree at every step — the LLM token-streaming shape.
+    #[tokio::test]
+    async fn appending_matches_full_save_at_every_step() {
+        let delta_store = InMemoryTaskStore::new();
+        let save_store = InMemoryTaskStore::new();
+
+        let mut task = task_with("t", Some(vec![artifact("a", 1)]));
+        delta_store.save(&task).await.unwrap();
+        save_store.save(&task).await.unwrap();
+
+        for i in 0..200 {
+            let arts = task.artifacts.as_mut().unwrap();
+            arts[0].parts.push(Part::text(format!("chunk{i}")));
+
+            delta_store
+                .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+                .await
+                .unwrap();
+            save_store.save(&task).await.unwrap();
+
+            let id = TaskId::new("t");
+            assert_eq!(
+                delta_store.get(&id).await.unwrap(),
+                save_store.get(&id).await.unwrap(),
+                "diverged after {i} appends"
+            );
+        }
+    }
+
+    /// The distinct-artifact shape: each event pushes a new artifact.
+    #[tokio::test]
+    async fn pushing_matches_full_save_at_every_step() {
+        let delta_store = InMemoryTaskStore::new();
+        let save_store = InMemoryTaskStore::new();
+
+        let mut task = task_with("t", Some(vec![]));
+        delta_store.save(&task).await.unwrap();
+        save_store.save(&task).await.unwrap();
+
+        for i in 0..100 {
+            let arts = task.artifacts.as_mut().unwrap();
+            arts.push(artifact(&format!("a{i}"), 2));
+            let index = arts.len() - 1;
+
+            delta_store
+                .save_artifact_delta(&task, ArtifactDelta::Pushed { index })
+                .await
+                .unwrap();
+            save_store.save(&task).await.unwrap();
+
+            let id = TaskId::new("t");
+            assert_eq!(
+                delta_store.get(&id).await.unwrap(),
+                save_store.get(&id).await.unwrap(),
+                "diverged after {i} pushes"
+            );
+        }
+    }
+
+    /// A delta for a task the store has never seen must still persist it.
+    #[tokio::test]
+    async fn absent_task_falls_back_to_full_save() {
+        let store = InMemoryTaskStore::new();
+        let task = task_with("never-saved", Some(vec![artifact("a", 3)]));
+
+        store
+            .save_artifact_delta(&task, ArtifactDelta::Pushed { index: 0 })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.get(&TaskId::new("never-saved")).await.unwrap(),
+            Some(task)
+        );
+    }
+
+    /// A delta naming an artifact that is not where it claims must not be
+    /// applied blindly; the fallback has to leave the store correct anyway.
+    #[tokio::test]
+    async fn mismatched_index_falls_back_and_stays_correct() {
+        let store = InMemoryTaskStore::new();
+        let mut task = task_with("t", Some(vec![artifact("a", 1)]));
+        store.save(&task).await.unwrap();
+
+        // Grow the artifact, then describe the change as happening somewhere
+        // it did not.
+        task.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text("new"));
+        store
+            .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 7, count: 1 })
+            .await
+            .unwrap();
+
+        assert_eq!(store.get(&TaskId::new("t")).await.unwrap(), Some(task));
+    }
+
+    /// A wrong `count` must be rejected rather than copying the wrong tail.
+    #[tokio::test]
+    async fn wrong_count_falls_back_and_stays_correct() {
+        let store = InMemoryTaskStore::new();
+        let mut task = task_with("t", Some(vec![artifact("a", 2)]));
+        store.save(&task).await.unwrap();
+
+        task.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text("one-more"));
+        // One part was appended; claim three.
+        store
+            .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 3 })
+            .await
+            .unwrap();
+
+        assert_eq!(store.get(&TaskId::new("t")).await.unwrap(), Some(task));
+    }
+
+    /// The delta path must not disturb list ordering, which keys off the
+    /// status timestamp rather than the write.
+    #[tokio::test]
+    async fn delta_preserves_list_position() {
+        let store = InMemoryTaskStore::new();
+        let older = task_with("older", Some(vec![artifact("a", 1)]));
+        let newer = task_with("newer", None);
+        store.save(&older).await.unwrap();
+        store.save(&newer).await.unwrap();
+
+        let before: Vec<_> = store
+            .list(&ListTasksParams::default())
+            .await
+            .unwrap()
+            .tasks
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+
+        let mut grown = older.clone();
+        grown.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text("more"));
+        store
+            .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+            .await
+            .unwrap();
+
+        let after: Vec<_> = store
+            .list(&ListTasksParams::default())
+            .await
+            .unwrap()
+            .tasks
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+
+        assert_eq!(before, after, "appending an artifact reordered the list");
     }
 }

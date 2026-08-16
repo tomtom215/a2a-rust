@@ -13,7 +13,7 @@ use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use crate::handler::limits::HandlerLimits;
 use crate::push::{PushConfigStore, PushSender};
-use crate::store::TaskStore;
+use crate::store::{ArtifactDelta, TaskStore};
 
 use super::push_delivery::deliver_push_bg;
 
@@ -96,7 +96,11 @@ pub(super) async fn process_event_bg(
             // When append=true, merge parts and metadata into the existing
             // artifact with the same ID (Python #735, Java #615).
             if update.append == Some(true) {
-                if let Some(existing) = artifacts.iter_mut().find(|a| a.id == update.artifact.id) {
+                if let Some((index, existing)) = artifacts
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, a)| a.id == update.artifact.id)
+                {
                     // Bound cumulative per-artifact growth: an unbounded stream
                     // of append updates would otherwise grow one artifact's
                     // parts (and the re-serialized task record) without limit.
@@ -116,6 +120,7 @@ pub(super) async fn process_event_bg(
                     let prev_parts_len = existing.parts.len();
                     let prev_metadata = existing.metadata.clone();
 
+                    let appended = update.artifact.parts.len();
                     existing.parts.extend(update.artifact.parts.iter().cloned());
                     // Merge metadata: new values override existing keys.
                     if let Some(ref new_meta) = update.artifact.metadata {
@@ -130,7 +135,16 @@ pub(super) async fn process_event_bg(
                             }
                         }
                     }
-                    if let Err(_e) = task_store.save(last_task).await {
+                    if let Err(_e) = task_store
+                        .save_artifact_delta(
+                            last_task,
+                            ArtifactDelta::AppendedParts {
+                                index,
+                                count: appended,
+                            },
+                        )
+                        .await
+                    {
                         trace_error!(
                             task_id = %task_id,
                             error = %_e,
@@ -163,7 +177,16 @@ pub(super) async fn process_event_bg(
                 return;
             }
             artifacts.push(update.artifact.clone());
-            if let Err(_e) = task_store.save(last_task).await {
+            let pushed_index = artifacts.len() - 1;
+            if let Err(_e) = task_store
+                .save_artifact_delta(
+                    last_task,
+                    ArtifactDelta::Pushed {
+                        index: pushed_index,
+                    },
+                )
+                .await
+            {
                 trace_error!(
                     task_id = %task_id,
                     error = %_e,

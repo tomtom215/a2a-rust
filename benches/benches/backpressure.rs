@@ -34,9 +34,10 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-use a2a_benchmarks::executor::{EchoExecutor, MultiEventExecutor};
+use a2a_benchmarks::executor::{AppendingExecutor, EchoExecutor, MultiEventExecutor};
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
+use a2a_benchmarks::store::DiscardTaskStore;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -166,6 +167,75 @@ fn bench_stream_volume(c: &mut Criterion) {
         }
     }
 
+    group.finish();
+}
+
+// ── Append-into-one-artifact volume scaling ─────────────────────────────────
+
+/// Same server shape as [`start_multi_event_server`], driven by
+/// [`AppendingExecutor`] so every chunk merges into one artifact.
+async fn start_appending_server(chunks: usize, discard_store: bool) -> String {
+    let executor = AppendingExecutor { chunks };
+    let queue_capacity = (chunks + 2).next_power_of_two().max(256) * 2;
+    let builder = RequestHandlerBuilder::new(executor)
+        .with_agent_card(fixtures::agent_card("http://127.0.0.1:0"))
+        .with_event_queue_capacity(queue_capacity);
+    // Swapping in a store that keeps nothing is how the store's share of the
+    // per-event cost gets attributed instead of assumed.
+    let builder = if discard_store {
+        builder.with_task_store(DiscardTaskStore)
+    } else {
+        builder
+    };
+    let handler = Arc::new(builder.build().expect("build handler"));
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .expect("serve");
+    format!("http://{addr}")
+}
+
+/// Streaming cost when every chunk appends into a **single** artifact.
+///
+/// `stream_volume` above measures the distinct-artifact shape. This measures
+/// the shape an LLM-backed agent actually produces — one artifact, N parts —
+/// and it exists because the two were assumed to cost the same and never
+/// compared. Same burst sizes as `stream_volume` so the curves can be read
+/// side by side; the broadcast ring is sized with the same headroom so neither
+/// is measuring event loss.
+fn bench_append_volume(c: &mut Criterion) {
+    let runtime = rt();
+
+    let mut group = c.benchmark_group("backpressure/append_volume");
+    group.measurement_time(std::time::Duration::from_secs(10));
+
+    for &(discard, arm) in &[(false, "task_store"), (true, "discard_store")] {
+        for &chunks in &[1usize, 5, 25, 50, 250, 500] {
+            let total_events = chunks + 2;
+            group.throughput(Throughput::Elements(total_events as u64));
+
+            let url = runtime.block_on(start_appending_server(chunks, discard));
+            let client = ClientBuilder::new(&url).build().expect("build client");
+
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{arm}/{total_events}_events")),
+                &(),
+                |b, ()| {
+                    b.to_async(&runtime).iter(|| async {
+                        let mut stream = client
+                            .stream_message(fixtures::send_params("append-volume"))
+                            .await
+                            .expect("stream");
+                        let mut count = 0u32;
+                        while let Some(event) = stream.next().await {
+                            let _ = event.expect("event");
+                            count += 1;
+                        }
+                        debug_assert!(count > 0, "should receive at least one event");
+                    });
+                },
+            );
+        }
+    }
     group.finish();
 }
 
@@ -320,6 +390,7 @@ fn bench_timer_resolution(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_stream_volume,
+    bench_append_volume,
     bench_slow_consumer,
     bench_concurrent_streams_volume,
     bench_timer_resolution,

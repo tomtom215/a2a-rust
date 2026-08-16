@@ -18,3 +18,4 @@ pub mod executor;
 pub mod fault_transport;
 pub mod fixtures;
 pub mod server;
+pub mod store;

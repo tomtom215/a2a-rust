@@ -180,6 +180,74 @@ impl AgentExecutor for MultiEventExecutor {
     }
 }
 
+// ── AppendingExecutor ───────────────────────────────────────────────────────
+
+/// An executor that streams N chunks into a **single** artifact by appending.
+///
+/// [`MultiEventExecutor`] gives every event a fresh artifact id, so the task
+/// accumulates N distinct artifacts. This one sets `append: Some(true)` and
+/// reuses one id, so the task accumulates one artifact holding N parts. That is
+/// the shape an LLM-backed agent produces when it streams tokens, and it is the
+/// shape the append-merge path in the background event processor was written
+/// for — `existing.parts.extend(...)` against a matching artifact id.
+///
+/// The distinction matters for cost, not just for correctness: the two shapes
+/// grow the same task record at the same rate, so if per-event handling is
+/// linear in the size of the task so far, both curve upward together. Having
+/// both makes that visible instead of leaving it a property of the one shape
+/// that happened to be benchmarked.
+pub struct AppendingExecutor {
+    /// Number of chunks to append into the single artifact.
+    pub chunks: usize,
+}
+
+impl AgentExecutor for AppendingExecutor {
+    fn execute<'a>(
+        &'a self,
+        ctx: &'a RequestContext,
+        queue: &'a dyn EventQueueWriter,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Working),
+                    metadata: None,
+                }))
+                .await?;
+
+            // One artifact id for every chunk — the append-merge path.
+            for i in 0..self.chunks {
+                queue
+                    .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+                        task_id: ctx.task_id.clone(),
+                        context_id: ContextId::new(ctx.context_id.clone()),
+                        artifact: Artifact::new(
+                            "streamed-response",
+                            vec![Part::text(format!("Streaming chunk {i}"))],
+                        ),
+                        append: Some(true),
+                        last_chunk: Some(i == self.chunks - 1),
+                        metadata: None,
+                    }))
+                    .await?;
+            }
+
+            queue
+                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                    task_id: ctx.task_id.clone(),
+                    context_id: ContextId::new(ctx.context_id.clone()),
+                    status: TaskStatus::new(TaskState::Completed),
+                    metadata: None,
+                }))
+                .await?;
+
+            Ok(())
+        })
+    }
+}
+
 // ── FailingExecutor ─────────────────────────────────────────────────────────
 
 /// An executor that always returns an error after emitting a Working status.
