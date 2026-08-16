@@ -1,3 +1,6 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215) -->
+
 # hello-agent
 
 The smallest complete A2A agent: **23 lines of code**, one dependency, one file.
