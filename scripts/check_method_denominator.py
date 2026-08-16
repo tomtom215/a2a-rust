@@ -58,6 +58,25 @@ def die(msg: str, code: int = 2) -> "None":
     raise SystemExit(code)
 
 
+# The eleven A2A methods, used to search prose documents that name methods
+# without a machine-readable inventory. Any name here that the ratified proto
+# does not declare is caught by the proto-vs-repo comparison below, so this
+# list cannot quietly introduce a method that does not exist.
+CANONICAL_METHODS = (
+    "SendMessage",
+    "SendStreamingMessage",
+    "GetTask",
+    "ListTasks",
+    "CancelTask",
+    "SubscribeToTask",
+    "CreateTaskPushNotificationConfig",
+    "GetTaskPushNotificationConfig",
+    "ListTaskPushNotificationConfigs",
+    "DeleteTaskPushNotificationConfig",
+    "GetExtendedAgentCard",
+)
+
+
 def rpcs_from_proto(path: Path) -> set[str]:
     """RPC names inside `service A2AService`.
 
@@ -102,6 +121,31 @@ def methods_from_rust(path: Path) -> set[str]:
 
     # `Self::SendMessage => "SendMessage",`
     names = set(re.findall(r'Self::\w+\s*=>\s*"(\w+)"', src))
+    if not names:
+        die(f"parsed zero method names from {path} — refusing to report agreement")
+    return names
+
+
+def methods_from_slimrpc_spec(path: Path) -> set[str]:
+    """Method names from the vendored SLIMRPC specification.
+
+    This is the document `bindings/a2a-protocol-slimrpc` claims to implement.
+    Until it was vendored the binding was checked against the ratified A2A
+    proto instead — a reasonable proxy, since SLIMRPC carries the same service
+    definitions, but not the artifact the claim actually refers to. Now both
+    are compared, so a divergence between them is itself visible.
+    """
+    try:
+        src = path.read_text(encoding="utf-8")
+    except OSError as e:
+        die(f"cannot read {path}: {e}")
+
+    # The spec names methods in prose, tables and `service`/route fragments
+    # rather than in one machine-readable block, so match the known set instead
+    # of trying to parse a grammar the document does not commit to. That makes
+    # this a check for *absence* — a method the spec stops naming — which is the
+    # direction that matters: it is what would silently shrink the denominator.
+    names = {m for m in CANONICAL_METHODS if re.search(rf"\b{re.escape(m)}\b", src)}
     if not names:
         die(f"parsed zero method names from {path} — refusing to report agreement")
     return names
@@ -167,6 +211,7 @@ def main() -> int:
     ap.add_argument("--rust", type=Path, required=True)
     ap.add_argument("--tck", type=Path, default=None)
     ap.add_argument("--slimrpc", type=Path, default=None)
+    ap.add_argument("--slimrpc-spec", type=Path, default=None)
     args = ap.parse_args()
 
     proto = rpcs_from_proto(args.proto)
@@ -217,6 +262,19 @@ def main() -> int:
     # binding still claim all eleven methods?" — and catches a method silently
     # disappearing from its inventory. It does not establish that any of them
     # behaves correctly on the wire; the binding's own e2e suite does that.
+    if args.slimrpc_spec is None:
+        print("  SLIMRPC spec: NOT CHECKED (no --slimrpc-spec path given)")
+    else:
+        spec = methods_from_slimrpc_spec(args.slimrpc_spec)
+        print(f"  SLIMRPC spec   ({args.slimrpc_spec}): {len(spec)}")
+        absent = sorted(proto - spec)
+        if absent:
+            print(
+                "  MISMATCH: the vendored SLIMRPC spec never names method(s) the "
+                f"ratified proto declares: {absent}"
+            )
+            failed = True
+
     if args.slimrpc is None:
         print("  SLIMRPC binding: NOT CHECKED (no --slimrpc path given)")
     else:

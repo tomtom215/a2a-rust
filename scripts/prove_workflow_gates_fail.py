@@ -560,6 +560,17 @@ def build_registry() -> dict[str, Probe | Exempt]:
         cwd_is_repo=True,
     )
 
+    # Needs a live fetch of the upstream specification to have anything to
+    # compare against, and this harness runs offline by design. Registered so a
+    # rename or deletion is still caught; its own failure path was verified by
+    # hand on 2026-08-16 (a one-character local edit -> exit 1 with the diff,
+    # restored -> exit 0), and unreachable upstream exits 3 rather than
+    # reporting a match it never made.
+    reg["official-tck.yml::official-tck::Vendored SLIMRPC spec still matches upstream"] = Exempt(
+        "requires a live fetch of the upstream spec; verified by hand, and it "
+        "exits 3 rather than reporting agreement when upstream is unreachable"
+    )
+
     # ── benchmarks.yml ───────────────────────────────────────────────────────
     #
     # The healthy fixture is the measured post-fix curve; the defect is the

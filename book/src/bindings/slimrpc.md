@@ -147,6 +147,14 @@ not a disclaimer:
 | Sustained load | Rotation is checked with a handful of calls, not traffic |
 | TCK coverage | The "TCK all bindings" job does not include this binding |
 
+The specification itself is vendored at `spec/slimrpc_v1/`, so the method
+inventory above is checked against the document this binding claims to
+implement rather than against the A2A proto as a stand-in, and
+`scripts/check_slimrpc_spec.sh` fails CI when upstream moves. That closes the
+one claim here that previously could only be verified by opening a browser — it
+does **not** make this binding TCK-conformant, which remains out of reach for
+the reason given above.
+
 ## Further reading
 
 The crate's own [README][readme] goes deeper: the full method inventory, wire

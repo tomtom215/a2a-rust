@@ -123,7 +123,16 @@ jobs:
             --proto proto/a2a_v1/a2a.proto \
             --rust crates/a2a-protocol-types/src/method.rs \
             --slimrpc bindings/a2a-protocol-slimrpc/src/lib.rs \
+            --slimrpc-spec spec/slimrpc_v1/slimrpc.md \
             --tck /tmp/a2a-tck
+
+      # The binding claims to implement the SLIMRPC specification. That claim
+      # referenced a URL until the spec was vendored, so nothing here could
+      # check it and nothing would notice upstream moving. This job already has
+      # network (it clones the upstream TCK), which is why the drift check lives
+      # here rather than in the offline Format job.
+      - name: Vendored SLIMRPC spec still matches upstream
+        run: ./scripts/check_slimrpc_spec.sh
 
       - name: Start the SUT
         run: |
