@@ -40,6 +40,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 |---|---|
 | **A2A v1.0.0 wire types** | The spec's structs, enums, and fields, with serde annotations matched to the wire format |
 | **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
+| **SLIMRPC binding** | A2A over the [AGNTCY SLIM](https://github.com/agntcy/slim) fabric via [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) — all eleven methods plus multicast. Community-contributed binding, **not** part of the ratified v1.0 spec, and outside the TCK conformance claim |
 | **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
 | **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
 | **Agent card discovery** | `/.well-known/agent-card.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
@@ -104,8 +105,16 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | [`a2a-protocol-client`](crates/a2a-protocol-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
 | [`a2a-protocol-server`](crates/a2a-protocol-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
 | [`a2a-protocol-sdk`](crates/a2a-protocol-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
+| [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) | A2A over the AGNTCY SLIM fabric | Your agents already live on SLIM |
 
 `a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other. Use only what you need.
+
+`a2a-protocol-slimrpc` sits outside the workspace with its own lockfile, because
+`agntcy-slim-rpc` brings 379 transitive dependencies (including a native C
+crypto build) against 12 for `a2a-protocol-types`. None of that reaches the four
+crates above, which do not depend on it. It is versioned independently and
+starts at `0.1` — see [the book chapter](https://a2a-rust.com/bindings/slimrpc.html)
+for why, and for the version-coupling rule that independence does *not* remove.
 
 ## Quick Start
 

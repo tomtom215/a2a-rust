@@ -107,6 +107,30 @@ def methods_from_rust(path: Path) -> set[str]:
     return names
 
 
+def methods_from_slimrpc(path: Path) -> set[str]:
+    """Wire names from the SLIMRPC binding's `method` module.
+
+    The binding dispatches on `"{service}/{method}"`, so these constants are the
+    binding's method inventory — the thing a "SLIMRPC serves every A2A method"
+    claim is measured against. They are literal strings rather than a reuse of
+    `a2a_protocol_types::Method`, which is what makes them able to drift.
+    """
+    try:
+        src = path.read_text(encoding="utf-8")
+    except OSError as e:
+        die(f"cannot read {path}: {e}")
+
+    block = re.search(r"^pub mod method \{(.*?)^\}", src, re.S | re.M)
+    if not block:
+        die(f"no `pub mod method` block found in {path}")
+
+    # `pub const SEND_MESSAGE: &str = "SendMessage";`
+    names = set(re.findall(r'pub const \w+:\s*&str\s*=\s*"(\w+)"', block.group(1)))
+    if not names:
+        die(f"parsed zero method names from {path} — refusing to report agreement")
+    return names
+
+
 def methods_from_tck(root: Path) -> set[str]:
     """Method names the official conformance suite refers to.
 
@@ -142,6 +166,7 @@ def main() -> int:
     ap.add_argument("--proto", type=Path, required=True)
     ap.add_argument("--rust", type=Path, required=True)
     ap.add_argument("--tck", type=Path, default=None)
+    ap.add_argument("--slimrpc", type=Path, default=None)
     args = ap.parse_args()
 
     proto = rpcs_from_proto(args.proto)
@@ -180,6 +205,35 @@ def main() -> int:
             print(
                 "  MISMATCH: the official suite names method(s) absent from the "
                 f"ratified proto: {extra_in_tck}"
+            )
+            failed = True
+
+    # The SLIMRPC binding is checked against the same denominator, but it is
+    # explicitly NOT a conformance claim. The official TCK cannot grade this
+    # binding: the TCK deliberately has no dependency on `a2a-protocol-*` (a kit
+    # that imports the implementation it grades shares its misreadings), and no
+    # independent SLIM client exists to write it against. So this arm answers
+    # only the narrower question the TCK's absence leaves open — "does the
+    # binding still claim all eleven methods?" — and catches a method silently
+    # disappearing from its inventory. It does not establish that any of them
+    # behaves correctly on the wire; the binding's own e2e suite does that.
+    if args.slimrpc is None:
+        print("  SLIMRPC binding: NOT CHECKED (no --slimrpc path given)")
+    else:
+        slim = methods_from_slimrpc(args.slimrpc)
+        print(f"  SLIMRPC binding ({args.slimrpc}): {len(slim)}")
+        missing = sorted(proto - slim)
+        extra = sorted(slim - proto)
+        if missing:
+            print(
+                "  MISMATCH: the ratified proto declares method(s) the SLIMRPC "
+                f"binding does not serve: {missing}"
+            )
+            failed = True
+        if extra:
+            print(
+                "  MISMATCH: the SLIMRPC binding names method(s) absent from the "
+                f"ratified proto: {extra}"
             )
             failed = True
 

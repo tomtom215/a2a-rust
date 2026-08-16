@@ -133,9 +133,39 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 All four workspace crates share the same version number and are always released
-together. The example crates (`echo-agent`, `agent-team`, `multi-lang-team`,
-`rig-a2a-agent`, `genai-a2a-agent`) and the `a2a-tck` binary are `publish = false`
-and are never published.
+together. The example crates (`hello-agent`, `echo-agent`, `agent-team`,
+`multi-lang-team`, `rig-a2a-agent`, `genai-a2a-agent`), the `a2a-book-tests`
+crate and the `a2a-tck` binary are `publish = false` and are never published.
+
+### `a2a-protocol-slimrpc` releases separately
+
+The SLIMRPC binding is publishable but is **not** part of the tagged release
+above, and `release.yml` does not touch it. It lives outside the workspace with
+its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
+run from `bindings/a2a-protocol-slimrpc/`.
+
+It is versioned independently and starts at `0.1.0`. Numbering it to match the
+SDK would claim API stability it has not earned and force a bump on every SDK
+release even when nothing in it changed.
+
+Independence covers the numbers, not the schedule, and this is the part that is
+easy to get wrong:
+
+> `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
+> returns an `AgentInterface`, so `a2a-protocol-server` and
+> `a2a-protocol-types` are **public dependencies**. Its requirement on them is
+> therefore a tight `0.8`, not a range — allow two and cargo links both, and
+> callers get `expected RequestHandler, found RequestHandler`.
+
+So **every SDK minor release requires a follow-up release of the binding**:
+
+1. Publish the four SDK crates as normal.
+2. Bump the binding's `a2a-protocol-*` requirements to the new minor.
+3. Bump the binding's own version (minor, since its supported SDK changed).
+4. From `bindings/a2a-protocol-slimrpc/`: `cargo package` then `cargo publish`.
+
+Skipping step 4 leaves the newest binding on crates.io pinned to a superseded
+SDK, which is the failure mode this note exists to prevent.
 
 ## Path to 1.0.0
 

@@ -5,12 +5,22 @@
 # list, fails CI. Every other Rust block in the book is compiled and linked
 # as a doctest by the `a2a-book-tests` crate.
 #
-# These are illustrative fragments that reference types they never import.
-# They are a burn-down list, not an exemption: turning one into a compiling
-# block (hidden `# ` preamble lines work well) and decrementing its count is
-# always a welcome change.
-# total: 130
+# Most entries are illustrative fragments that reference types they never
+# import. They are a burn-down list, not an exemption: turning one into a
+# compiling block (hidden `# ` preamble lines work well) and decrementing
+# its count is always a welcome change.
+#
+# One entry is structural rather than a burn-down item:
+#
+#   book/src/bindings/slimrpc.md — `a2a-protocol-slimrpc` is deliberately
+#   outside the root workspace with its own Cargo.lock, because
+#   `agntcy-slim-rpc` pulls 379 transitive dependencies including a native C
+#   crypto build. Adding it to `a2a-book-tests` would drag all of that into
+#   every CI test run to compile three snippets. Those snippets are kept in
+#   step with the crate's own README and its test suite, which do compile.
+# total: 133
 
+3	book/src/bindings/slimrpc.md
 7	book/src/building-agents/authentication.md
 10	book/src/building-agents/dispatchers.md
 12	book/src/building-agents/executor.md
