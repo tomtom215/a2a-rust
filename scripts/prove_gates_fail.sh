@@ -387,7 +387,7 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         api_reference)    echo "are not defined in crates/" ;;
-        otel_coverage)    echo "not exported by OtelMetrics" ;;
+        otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
