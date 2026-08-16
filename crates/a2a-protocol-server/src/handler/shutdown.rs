@@ -12,6 +12,40 @@ use std::time::Instant;
 
 use super::RequestHandler;
 
+/// What a shutdown actually managed to do.
+///
+/// Returned by [`RequestHandler::shutdown`] and
+/// [`RequestHandler::shutdown_with_timeout`] because both can fail to be
+/// graceful and neither used to say so: the executor's cleanup hook was awaited
+/// with its result discarded, so a hook that hung past the timeout was
+/// indistinguishable from one that finished immediately. A process could report
+/// "drained, exiting" having drained nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "a shutdown that was not graceful is worth reporting; \
+              call .is_graceful() or log the report"]
+pub struct ShutdownReport {
+    /// Event queues still active when the drain deadline passed, and therefore
+    /// destroyed with work possibly still in flight.
+    ///
+    /// Always `0` for [`RequestHandler::shutdown`], which does not wait.
+    pub queues_force_destroyed: usize,
+
+    /// Whether the executor's `on_shutdown` hook returned within the timeout.
+    ///
+    /// `false` means the hook was abandoned, not that it failed — it may still
+    /// be running. Whatever it was releasing (flushing a buffer, closing a
+    /// connection, committing a checkpoint) may not have been released.
+    pub executor_cleanup_completed: bool,
+}
+
+impl ShutdownReport {
+    /// Whether everything the handler waited for actually finished.
+    #[must_use]
+    pub const fn is_graceful(self) -> bool {
+        self.queues_force_destroyed == 0 && self.executor_cleanup_completed
+    }
+}
+
 impl RequestHandler {
     /// Initiates graceful shutdown of the handler.
     ///
@@ -22,7 +56,13 @@ impl RequestHandler {
     /// After calling `shutdown()`, new requests will still be accepted but
     /// in-flight tasks will observe cancellation. The caller should stop
     /// accepting new connections after calling this method.
-    pub async fn shutdown(&self) {
+    ///
+    /// Returns a [`ShutdownReport`] describing whether the executor's cleanup
+    /// hook finished. This method does not wait for queues to drain, so
+    /// `queues_force_destroyed` is always `0` — use
+    /// [`shutdown_with_timeout`](RequestHandler::shutdown_with_timeout) when
+    /// in-flight work should be given a chance to finish.
+    pub async fn shutdown(&self) -> ShutdownReport {
         // Cancel all in-flight tasks.
         {
             let tokens = self.cancellation_tokens.read().await;
@@ -41,7 +81,18 @@ impl RequestHandler {
         }
 
         // Give executor a chance to clean up resources (bounded to avoid hanging).
-        let _ = tokio::time::timeout(Duration::from_secs(10), self.executor.on_shutdown()).await;
+        let executor_cleanup_completed =
+            tokio::time::timeout(Duration::from_secs(10), self.executor.on_shutdown())
+                .await
+                .is_ok();
+        if !executor_cleanup_completed {
+            trace_warn!("executor cleanup did not finish within the shutdown timeout");
+        }
+
+        ShutdownReport {
+            queues_force_destroyed: 0,
+            executor_cleanup_completed,
+        }
     }
 
     /// Initiates graceful shutdown with a timeout.
@@ -49,7 +100,14 @@ impl RequestHandler {
     /// Cancels all in-flight tasks and waits up to `timeout` for event queues
     /// to drain before force-destroying them. This gives executors a chance
     /// to finish writing final events before the queues are torn down.
-    pub async fn shutdown_with_timeout(&self, timeout: Duration) {
+    ///
+    /// Returns a [`ShutdownReport`]: a non-zero `queues_force_destroyed` means
+    /// the deadline passed with work still in flight, and
+    /// `executor_cleanup_completed == false` means the executor's cleanup hook
+    /// was abandoned. Both are invisible from the outside otherwise, which is
+    /// how a rollout can truncate every in-flight stream without anyone
+    /// noticing.
+    pub async fn shutdown_with_timeout(&self, timeout: Duration) -> ShutdownReport {
         // Cancel all in-flight tasks.
         {
             let tokens = self.cancellation_tokens.read().await;
@@ -60,6 +118,7 @@ impl RequestHandler {
 
         // Wait for event queues to drain (executors to finish), with timeout.
         let drain_deadline = tokio::time::Instant::now() + timeout;
+        let mut queues_force_destroyed = 0;
         loop {
             let active = self.event_queue_manager.active_count().await;
             if active == 0 {
@@ -70,6 +129,7 @@ impl RequestHandler {
                     active_queues = active,
                     "shutdown timeout reached, force-destroying remaining queues"
                 );
+                queues_force_destroyed = active;
                 break;
             }
             // Use a short sleep that won't exceed the deadline.
@@ -88,7 +148,17 @@ impl RequestHandler {
 
         // Give executor a chance to clean up resources (bounded by the same timeout
         // to avoid hanging if the executor blocks during cleanup).
-        let _ = tokio::time::timeout(timeout, self.executor.on_shutdown()).await;
+        let executor_cleanup_completed = tokio::time::timeout(timeout, self.executor.on_shutdown())
+            .await
+            .is_ok();
+        if !executor_cleanup_completed {
+            trace_warn!("executor cleanup did not finish within the shutdown timeout");
+        }
+
+        ShutdownReport {
+            queues_force_destroyed,
+            executor_cleanup_completed,
+        }
     }
 }
 
@@ -131,15 +201,15 @@ mod tests {
     async fn shutdown_completes_without_panic() {
         let handler = make_handler();
         // shutdown on a fresh handler with no in-flight tasks should complete cleanly.
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     #[tokio::test]
     async fn shutdown_is_idempotent() {
         let handler = make_handler();
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
         // Calling shutdown a second time should not panic or deadlock.
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     #[tokio::test]
@@ -163,7 +233,7 @@ mod tests {
             "should have 1 token before shutdown"
         );
 
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
 
         assert!(
             handler.cancellation_tokens.read().await.is_empty(),
@@ -177,7 +247,7 @@ mod tests {
     async fn shutdown_with_timeout_completes_within_timeout() {
         let handler = make_handler();
         let start = Instant::now();
-        handler.shutdown_with_timeout(Duration::from_secs(5)).await;
+        let _ = handler.shutdown_with_timeout(Duration::from_secs(5)).await;
         assert!(
             start.elapsed() < Duration::from_secs(5),
             "shutdown with no active queues should complete well before the timeout"
@@ -199,7 +269,7 @@ mod tests {
             );
         }
 
-        handler
+        let _ = handler
             .shutdown_with_timeout(Duration::from_millis(200))
             .await;
 
@@ -226,7 +296,7 @@ mod tests {
             );
         }
 
-        handler
+        let _ = handler
             .shutdown_with_timeout(Duration::from_millis(200))
             .await;
 
@@ -240,7 +310,7 @@ mod tests {
     async fn shutdown_with_zero_timeout_still_completes() {
         let handler = make_handler();
         // A zero-duration timeout should not panic or hang.
-        handler
+        let _ = handler
             .shutdown_with_timeout(Duration::from_millis(0))
             .await;
     }
@@ -272,7 +342,7 @@ mod tests {
         });
 
         let start = Instant::now();
-        handler.shutdown_with_timeout(Duration::from_secs(5)).await;
+        let _ = handler.shutdown_with_timeout(Duration::from_secs(5)).await;
         // The drain loop should have detected the queue was removed and exited
         // well before the 5-second timeout.
         assert!(
@@ -300,9 +370,23 @@ mod tests {
 
         // Use a very short timeout so the drain loop times out.
         let start = Instant::now();
-        handler
+        let report = handler
             .shutdown_with_timeout(Duration::from_millis(100))
             .await;
+
+        // The whole point of the report: a shutdown that force-destroyed live
+        // queues must say so. Before it existed this was indistinguishable
+        // from a clean drain, so a rollout could truncate every in-flight
+        // stream and report success.
+        assert!(
+            report.queues_force_destroyed > 0,
+            "the drain deadline passed with a queue active, so the report must \
+             show it was force-destroyed: {report:?}"
+        );
+        assert!(
+            !report.is_graceful(),
+            "force-destroying a live queue is not a graceful shutdown"
+        );
 
         // Should complete around the timeout duration.
         assert!(

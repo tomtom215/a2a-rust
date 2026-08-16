@@ -111,7 +111,8 @@ use crate::streaming::build_sse_response;
 /// | `DELETE` | `/tasks/:task_id/pushNotificationConfigs/:id` | `DeleteTaskPushNotificationConfig` |
 /// | `GET` | `/extendedAgentCard` | `GetExtendedAgentCard` |
 /// | `GET` | `/.well-known/agent-card.json` | Agent Card Discovery |
-/// | `GET` | `/health` | Health check |
+/// | `GET` | `/health` | Liveness — constant, checks nothing |
+/// | `GET` | `/ready` | Readiness — probes the task store |
 pub struct A2aRouter {
     handler: Arc<RequestHandler>,
     config: super::DispatchConfig,
@@ -165,6 +166,7 @@ impl A2aRouter {
             .route("/.well-known/agent-card.json", get(handle_agent_card))
             // Health check
             .route("/health", get(handle_health))
+            .route("/ready", get(handle_ready))
             .with_state(state)
             .layer(axum::extract::DefaultBodyLimit::max(max_body))
     }
@@ -357,8 +359,45 @@ async fn handle_agent_card(State(state): State<A2aState>) -> axum::response::Res
     )
 }
 
+/// Liveness: is this process able to serve at all?
+///
+/// Deliberately checks nothing. A liveness probe that depends on a downstream
+/// turns that downstream's outage into a restart loop across every replica,
+/// which converts a degraded service into an unavailable one. Use
+/// [`handle_ready`] to gate traffic.
 async fn handle_health() -> axum::response::Response {
     axum::Json(serde_json::json!({"status": "ok"})).into_response()
+}
+
+/// Readiness: should this replica receive traffic right now?
+///
+/// Unlike `/health`, this actually reaches the task store — the one dependency
+/// the handler cannot serve a request without. `/health` alone was the whole
+/// health surface for this SDK's life, so anyone wiring a readiness probe had
+/// only a constant to point it at, and a replica whose database had gone away
+/// kept taking traffic and failing every request.
+///
+/// The probe is a `count()`, which every bundled store answers with a cheap
+/// query — no writes, so a read-only replica or a store at its capacity limit
+/// still reports ready.
+///
+/// Returns `200` with `{"status":"ready"}`, or `503` with
+/// `{"status":"not_ready","reason":"<bounded error label>"}`. The reason is
+/// [`A2aError::metric_label`](a2a_protocol_types::error::A2aError::metric_label)
+/// — a bounded discriminant, never the store's message, which could carry a
+/// connection string.
+async fn handle_ready(State(state): State<A2aState>) -> axum::response::Response {
+    match state.handler.task_store_health().await {
+        Ok(()) => axum::Json(serde_json::json!({"status": "ready"})).into_response(),
+        Err(e) => (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({
+                "status": "not_ready",
+                "reason": e.metric_label(),
+            })),
+        )
+            .into_response(),
+    }
 }
 
 // ── Inner handlers (shared by route handlers and catch-all) ──────────────────
@@ -906,5 +945,135 @@ mod tests {
             super::super::DispatchConfig::default().with_max_request_body_size(8 * 1024 * 1024);
         let router = A2aRouter::with_config(handler, config);
         let _axum_router = router.into_router();
+    }
+}
+
+/// Tests that `/ready` reports the store's reachability, and `/health` does not.
+///
+/// The split is the point. `/health` was this SDK's entire health surface, and
+/// it returns a constant — so a readiness probe wired to it kept sending
+/// traffic to a replica whose store had gone away. These assert the two
+/// endpoints answer *different* questions, because an implementation where
+/// `/ready` also returned a constant would pass any test that only checked the
+/// happy path.
+#[cfg(test)]
+mod readiness_tests {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use a2a_protocol_types::error::{A2aError, A2aResult};
+    use a2a_protocol_types::params::ListTasksParams;
+    use a2a_protocol_types::responses::TaskListResponse;
+    use a2a_protocol_types::task::{Task, TaskId};
+    use axum::http::StatusCode;
+
+    use crate::store::TaskStore;
+
+    use super::*;
+
+    /// A store that cannot be reached — a database that has gone away.
+    struct UnreachableStore;
+
+    impl TaskStore for UnreachableStore {
+        fn save<'a>(
+            &'a self,
+            _task: &'a Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+        fn get<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<Option<Task>>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+        fn list<'a>(
+            &'a self,
+            _p: &'a ListTasksParams,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<TaskListResponse>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+        fn insert_if_absent<'a>(
+            &'a self,
+            _task: &'a Task,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<bool>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+        fn delete<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+        fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
+            Box::pin(async { Err(A2aError::internal("connection refused")) })
+        }
+    }
+
+    fn state_with(store: Option<UnreachableStore>) -> A2aState {
+        struct Noop;
+        crate::agent_executor!(Noop, |_ctx, _q| async { Ok(()) });
+
+        let builder = crate::builder::RequestHandlerBuilder::new(Noop);
+        let builder = match store {
+            Some(s) => builder.with_task_store(s),
+            None => builder,
+        };
+        A2aState {
+            handler: Arc::new(builder.build().expect("build handler")),
+            config: Arc::new(super::super::DispatchConfig::default()),
+        }
+    }
+
+    /// Drives the route handler itself rather than the assembled router: this
+    /// crate has no `tower` dev-dependency, and the handler is where the status
+    /// code and the body shape are decided.
+    async fn read_response(resp: axum::response::Response) -> (StatusCode, String) {
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .expect("body");
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    #[tokio::test]
+    async fn ready_reports_ok_when_the_store_answers() {
+        let (status, body) = read_response(handle_ready(State(state_with(None))).await).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(body.contains("\"ready\""), "unexpected body: {body}");
+    }
+
+    #[tokio::test]
+    async fn ready_reports_503_when_the_store_is_unreachable() {
+        let (status, body) =
+            read_response(handle_ready(State(state_with(Some(UnreachableStore)))).await).await;
+
+        assert_eq!(
+            status,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "an unreachable store must drain traffic from this replica"
+        );
+        assert!(body.contains("not_ready"), "unexpected body: {body}");
+        // The bounded label, not the store's message — which in a real
+        // deployment can name a host or carry a connection string.
+        assert!(body.contains("internal_error"), "unexpected body: {body}");
+        assert!(
+            !body.contains("connection refused"),
+            "the store's message must not be echoed to an unauthenticated probe: {body}"
+        );
+    }
+
+    /// The other half of the split: liveness must *not* follow the store down,
+    /// or one database outage restart-loops every replica.
+    #[tokio::test]
+    async fn health_stays_ok_when_the_store_is_unreachable() {
+        let (status, body) = read_response(handle_health().await).await;
+
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "liveness must not depend on a downstream"
+        );
+        assert!(body.contains("\"ok\""), "unexpected body: {body}");
     }
 }

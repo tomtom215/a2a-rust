@@ -242,7 +242,11 @@ async fn shutdown_cancels_in_flight_tasks() {
     }
 
     // Call shutdown -- should cancel all in-flight tasks.
-    handler.shutdown().await;
+    let report = handler.shutdown().await;
+    assert!(
+        report.is_graceful(),
+        "shutdown was not graceful: {report:?}"
+    );
 
     // After shutdown, the event queues should be destroyed.
     // The reader should see EOF when drained.

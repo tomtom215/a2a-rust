@@ -79,6 +79,76 @@ pub trait Metrics: Send + Sync + 'static {
     ///
     /// Useful for monitoring connection pool health and detecting exhaustion.
     fn on_connection_pool_stats(&self, _stats: &ConnectionPoolStats) {}
+
+    /// Called when the background event processor fails to persist a task.
+    ///
+    /// # Why this is not just a log line
+    ///
+    /// This is the SDK's one path that can lose data without the client
+    /// noticing. The streaming reader is a separate subscriber to the event
+    /// queue, so it receives an event whether or not the store accepted it: a
+    /// caller watching the stream sees the artifact arrive and the task
+    /// complete, while a later `GetTask` returns a task without it.
+    ///
+    /// Until this callback existed, the only report of that was a
+    /// `tracing::error!` — and `tracing` is not a default feature of this
+    /// crate, so a default build lost the record silently. A metrics callback
+    /// is always compiled, so the signal cannot be feature-gated away.
+    ///
+    /// Treat any non-zero rate here as data loss in progress. The usual causes
+    /// are a full disk, an unreachable database, or a store rejecting writes
+    /// under its own capacity limit.
+    ///
+    /// `operation` and `error_kind` are both **bounded, low-cardinality**
+    /// discriminants — `operation` is one of the constants in
+    /// [`persistence_operation`], and `error_kind` comes from
+    /// [`A2aError::metric_label`](a2a_protocol_types::error::A2aError::metric_label).
+    /// Neither carries a task id or a free-form message, so a client cannot
+    /// inflate metric cardinality through them.
+    fn on_persistence_error(&self, _operation: &str, _error_kind: &str) {}
+
+    /// Called after each attempt to deliver a push notification.
+    ///
+    /// `outcome` is one of `delivered`, `failed`, or `timeout`.
+    ///
+    /// Push delivery is outward-facing and asynchronous: nothing in the
+    /// request path observes it, and a webhook that has been refusing every
+    /// delivery for a day looks exactly like one that was never configured.
+    /// As with [`on_persistence_error`](Metrics::on_persistence_error), the
+    /// previous report was a `tracing` macro that a default build compiles
+    /// away.
+    fn on_push_delivery(&self, _outcome: &str) {}
+}
+
+/// Operation labels passed to [`Metrics::on_persistence_error`].
+///
+/// Named constants rather than string literals at the call sites, so the set
+/// stays bounded and greppable — an operator building a dashboard needs to know
+/// every value this can take, and a typo at one call site would otherwise
+/// create a silent second series.
+pub mod persistence_operation {
+    /// Persisting a task status transition.
+    pub const STATUS_UPDATE: &str = "status_update";
+    /// Persisting parts appended to an existing artifact.
+    pub const ARTIFACT_APPEND: &str = "artifact_append";
+    /// Persisting a newly added artifact.
+    pub const ARTIFACT_PUSH: &str = "artifact_push";
+    /// Persisting a whole-task snapshot event.
+    pub const TASK_SNAPSHOT: &str = "task_snapshot";
+    /// Persisting the failed state after an invalid transition was rejected.
+    pub const FAILED_STATE: &str = "failed_state";
+    /// Persisting an agent message appended to the task's history.
+    pub const HISTORY_APPEND: &str = "history_append";
+}
+
+/// Outcome labels passed to [`Metrics::on_push_delivery`].
+pub mod push_outcome {
+    /// The webhook accepted the delivery.
+    pub const DELIVERED: &str = "delivered";
+    /// The webhook was reached and refused it, or the sender errored.
+    pub const FAILED: &str = "failed";
+    /// The delivery did not complete within the configured timeout.
+    pub const TIMEOUT: &str = "timeout";
 }
 
 /// A no-op [`Metrics`] implementation that discards all events.

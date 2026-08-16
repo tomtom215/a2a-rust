@@ -362,9 +362,23 @@ pub(super) async fn graceful_shutdown() -> Check {
 
     let started = std::time::Instant::now();
     match tokio::time::timeout(BUDGET, handler.shutdown()).await {
-        Ok(()) => Check::pass(
+        // Returning in time is necessary but not sufficient: a shutdown that
+        // abandons the executor's cleanup also returns promptly. The report
+        // distinguishes them, which is the whole reason it exists — before it
+        // did, this check passed either way.
+        Ok(report) if report.is_graceful() => Check::pass(
             LABEL,
             format!("completed in {:?} (budget {BUDGET:?})", started.elapsed()),
+        ),
+        Ok(report) => Check::fail(
+            LABEL,
+            format!(
+                "shutdown returned in {:?} but was not graceful: {} queue(s) \
+                 force-destroyed, executor cleanup completed: {}",
+                started.elapsed(),
+                report.queues_force_destroyed,
+                report.executor_cleanup_completed
+            ),
         ),
         Err(_) => Check::fail(
             LABEL,

@@ -39,8 +39,10 @@
 //! manifest whose probes point at the endpoints below.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use a2a_protocol_sdk::prelude::*;
+use axum::http::StatusCode;
 use axum::routing::get;
 use axum::Router;
 
@@ -103,7 +105,7 @@ impl Config {
 /// Returned rather than served so the tests below can drive the same router the
 /// container runs. A test that exercises a separately-assembled router proves
 /// something about the test.
-fn app(config: &Config) -> Result<Router, Box<dyn std::error::Error>> {
+fn app(config: &Config) -> Result<(Router, Arc<RequestHandler>), Box<dyn std::error::Error>> {
     // The card advertises `public_url`, never the bind address — see the field
     // docs on `Config::public_url`, and the test that enforces it.
     let card = AgentCard {
@@ -152,17 +154,31 @@ fn app(config: &Config) -> Result<Router, Box<dyn std::error::Error>> {
             .build()?,
     );
 
-    Ok(A2aRouter::new(handler)
+    // `A2aRouter` already serves `/health` (liveness — a constant) and
+    // `/ready` (readiness — probes the task store). The `*z` aliases below
+    // exist only because that spelling is the convention most Kubernetes
+    // examples use; they forward to the same handlers rather than
+    // reimplementing them, so there is one source of truth for what "ready"
+    // means.
+    let handler_for_ready = Arc::clone(&handler);
+    let handler_for_shutdown = Arc::clone(&handler);
+    let router = A2aRouter::new(handler)
         .into_router()
-        // Liveness: is the process wedged? Deliberately checks nothing —
-        // a liveness probe that depends on a downstream turns that
-        // downstream's outage into a restart loop here.
         .route("/healthz", get(|| async { "ok" }))
-        // Readiness: should traffic be routed here? Same answer today,
-        // separate endpoint on purpose — the moment this agent gains a
-        // dependency worth waiting for, this is where it goes, and the
-        // manifest already points at it.
-        .route("/readyz", get(|| async { "ok" })))
+        .route(
+            "/readyz",
+            get(move || {
+                let handler = Arc::clone(&handler_for_ready);
+                async move {
+                    match handler.task_store_health().await {
+                        Ok(()) => (StatusCode::OK, "ready"),
+                        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "not ready"),
+                    }
+                }
+            }),
+        );
+
+    Ok((router, handler_for_shutdown))
 }
 
 /// Resolves when the platform asks the process to stop.
@@ -203,7 +219,7 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::from_env()?;
-    let router = app(&config)?;
+    let (router, handler) = app(&config)?;
 
     // 0.0.0.0, not 127.0.0.1: a loopback bind works on a laptop and is
     // unreachable from outside the container, which is the single most common
@@ -218,7 +234,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    println!("drained, exiting");
+    // Draining HTTP is only half of it: in-flight agent work lives in the
+    // handler, not in axum. Shut it down explicitly and *report* the outcome —
+    // a shutdown that force-destroyed live queues, or abandoned the executor's
+    // cleanup, otherwise looks exactly like a clean one from outside.
+    let report = handler.shutdown_with_timeout(Duration::from_secs(15)).await;
+    if report.is_graceful() {
+        println!("drained cleanly, exiting");
+    } else {
+        eprintln!(
+            "shutdown was not graceful: {} queue(s) force-destroyed, executor cleanup completed: {}",
+            report.queues_force_destroyed, report.executor_cleanup_completed
+        );
+    }
     Ok(())
 }
 
@@ -234,7 +262,7 @@ mod tests {
             port: 0,
             public_url: "http://agent.example.com".to_string(),
         };
-        let router = app(&config).expect("build router");
+        let (router, _handler) = app(&config).expect("build router");
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
             .await
             .expect("bind");
@@ -294,14 +322,37 @@ mod tests {
         (status, body)
     }
 
+    /// Both probes answer, and they answer *different* questions.
+    ///
+    /// `/healthz` is a constant on purpose — a liveness probe that follows a
+    /// downstream down restart-loops every replica during that downstream's
+    /// outage. `/readyz` reaches the task store, so a replica that cannot
+    /// persist stops taking traffic.
     #[tokio::test]
     async fn liveness_and_readiness_answer() {
         let base = spawn().await;
-        for probe in ["healthz", "readyz"] {
-            let (status, body) = get(&format!("{base}/{probe}")).await;
-            assert_eq!(status, 200, "/{probe} should be 200");
-            assert_eq!(body, "ok", "/{probe} body");
-        }
+
+        let (status, body) = get(&format!("{base}/healthz")).await;
+        assert_eq!(status, 200, "/healthz should be 200");
+        assert_eq!(body, "ok", "/healthz body");
+
+        let (status, body) = get(&format!("{base}/readyz")).await;
+        assert_eq!(status, 200, "/readyz should be 200 with a working store");
+        assert_eq!(body, "ready", "/readyz body");
+    }
+
+    /// The SDK's own endpoints are served too, so a deployment can point its
+    /// probes at either spelling.
+    #[tokio::test]
+    async fn the_sdk_health_and_ready_endpoints_are_served() {
+        let base = spawn().await;
+
+        let (status, _) = get(&format!("{base}/health")).await;
+        assert_eq!(status, 200, "/health should be 200");
+
+        let (status, body) = get(&format!("{base}/ready")).await;
+        assert_eq!(status, 200, "/ready should be 200 with a working store");
+        assert!(body.contains("ready"), "unexpected /ready body: {body}");
     }
 
     /// The card must advertise the *public* URL. Publishing the bind address

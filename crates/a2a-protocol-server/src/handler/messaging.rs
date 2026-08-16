@@ -814,7 +814,7 @@ mod tests {
             "a panicking executor must still release its cancellation token; \
              CleanupGuard::drop is the only path that does so"
         );
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     // ── task history cap ─────────────────────────────────────────────────────
@@ -862,7 +862,7 @@ mod tests {
             Some(MAX_TASK_HISTORY_MESSAGES),
             "an oversized history must be trimmed back to exactly the cap"
         );
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     // ── cancellation-token sweep and context-lock pruning ────────────────────
@@ -931,7 +931,7 @@ mod tests {
             );
         }
         drop(tokens);
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     /// Pins the context-lock pruning *threshold*.
@@ -962,7 +962,7 @@ mod tests {
             3,
             "with a limit of 5, three contexts must all be retained"
         );
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     /// Pins the staleness predicate itself: pruning must reclaim unused locks
@@ -1018,7 +1018,7 @@ mod tests {
         );
         drop(locks);
         drop(live);
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     // ── metadata size limit ──────────────────────────────────────────────────
@@ -2173,7 +2173,7 @@ mod tests {
         }
         // If we get here without panic, the sweep logic ran successfully.
         // Clean up the slow executors.
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     #[tokio::test]
@@ -2229,7 +2229,7 @@ mod tests {
         let _ = handler.on_send_message(params, true, None).await;
 
         // The stale tokens should have been cleaned up.
-        handler.shutdown().await;
+        let _ = handler.shutdown().await;
     }
 
     #[tokio::test]

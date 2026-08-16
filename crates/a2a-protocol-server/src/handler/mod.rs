@@ -22,11 +22,14 @@
 mod capability;
 mod event_processing;
 mod helpers;
+mod introspection;
 mod lifecycle;
 mod limits;
 mod messaging;
 mod push_config;
 mod shutdown;
+
+pub use shutdown::ShutdownReport;
 
 use std::collections::HashMap;
 use std::sync::Arc;

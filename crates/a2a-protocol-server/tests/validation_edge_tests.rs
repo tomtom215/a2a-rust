@@ -466,8 +466,12 @@ async fn shutdown_cancels_in_flight_tasks() {
         }
     }
 
-    // Shutdown should cancel all tasks
-    handler.shutdown().await;
+    // Shutdown should cancel all tasks, and report that it did so cleanly.
+    let report = handler.shutdown().await;
+    assert!(
+        report.is_graceful(),
+        "shutdown was not graceful: {report:?}"
+    );
 
     // Task should complete soon after shutdown
     let result = tokio::time::timeout(Duration::from_secs(2), task_handle).await;
@@ -483,8 +487,17 @@ async fn shutdown_with_timeout() {
             .unwrap(),
     );
 
-    // Shutdown with timeout should return quickly when no tasks
-    handler.shutdown_with_timeout(Duration::from_secs(1)).await;
+    // Shutdown with timeout should return quickly when no tasks, and nothing
+    // should have needed force-destroying.
+    let report = handler.shutdown_with_timeout(Duration::from_secs(1)).await;
+    assert_eq!(
+        report.queues_force_destroyed, 0,
+        "no queues were active, so none should have been force-destroyed"
+    );
+    assert!(
+        report.is_graceful(),
+        "shutdown was not graceful: {report:?}"
+    );
 
     // After shutdown, handler can still accept new requests
     let result = handler

@@ -110,6 +110,41 @@ impl ErrorCode {
         }
     }
 
+    /// A bounded, low-cardinality label for use as a metric attribute.
+    ///
+    /// Distinct from [`a2a_reason`](ErrorCode::a2a_reason), which is `None` for
+    /// standard JSON-RPC codes because the spec has no reason string for them.
+    /// A metric label must exist for *every* code, or the errors a dashboard
+    /// most needs to see — parse failures, internal errors — would be the ones
+    /// missing from it.
+    ///
+    /// Also distinct from [`default_message`](ErrorCode::default_message):
+    /// messages are prose and may be reworded, while these are identifiers a
+    /// dashboard query depends on. Changing one is a breaking change for
+    /// whoever is alerting on it.
+    ///
+    /// The set is closed and small — one label per variant — so it is safe to
+    /// use directly as a metric dimension.
+    #[must_use]
+    pub const fn metric_label(self) -> &'static str {
+        match self {
+            Self::ParseError => "parse_error",
+            Self::InvalidRequest => "invalid_request",
+            Self::MethodNotFound => "method_not_found",
+            Self::InvalidParams => "invalid_params",
+            Self::InternalError => "internal_error",
+            Self::TaskNotFound => "task_not_found",
+            Self::TaskNotCancelable => "task_not_cancelable",
+            Self::PushNotificationNotSupported => "push_notification_not_supported",
+            Self::UnsupportedOperation => "unsupported_operation",
+            Self::ContentTypeNotSupported => "content_type_not_supported",
+            Self::InvalidAgentResponse => "invalid_agent_response",
+            Self::ExtendedAgentCardNotConfigured => "extended_agent_card_not_configured",
+            Self::ExtensionSupportRequired => "extension_support_required",
+            Self::VersionNotSupported => "version_not_supported",
+        }
+    }
+
     /// Resolves an `UPPER_SNAKE_CASE` A2A reason (as carried in
     /// `google.rpc.ErrorInfo.reason`) back to its [`ErrorCode`].
     ///
@@ -236,6 +271,16 @@ pub struct A2aError {
 }
 
 impl A2aError {
+    /// A bounded, low-cardinality label for this error, for metric attributes.
+    ///
+    /// Delegates to [`ErrorCode::metric_label`]. Never the free-form `message`,
+    /// which can carry request-derived text — using that as a metric dimension
+    /// is how a client turns an error into unbounded cardinality.
+    #[must_use]
+    pub const fn metric_label(&self) -> &'static str {
+        self.code.metric_label()
+    }
+
     /// Creates a new `A2aError` with the given code and message.
     #[must_use]
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {

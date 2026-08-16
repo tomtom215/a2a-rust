@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 
 use super::super::RequestHandler;
 
-use state_machine::process_event_bg;
+use state_machine::{process_event_bg, BackgroundDeps};
 
 // ── Background event processor (streaming mode) ─────────────────────────────
 
@@ -48,6 +48,11 @@ impl RequestHandler {
         let push_config_store = Arc::clone(&self.push_config_store);
         let push_sender = self.push_sender.clone();
         let limits = self.limits.clone();
+        // Carried into the spawned task so failures here are reportable. The
+        // trace macros below compile to nothing without the (non-default)
+        // `tracing` feature, which used to make every failure in this task
+        // invisible in a default build.
+        let metrics = Arc::clone(&self.metrics);
 
         // Capture the current tenant context so background store operations
         // are scoped to the correct tenant (task_local doesn't propagate
@@ -84,10 +89,15 @@ impl RequestHandler {
                             "background processor: task missing at start; \
                              re-asserting from the send-path snapshot"
                         );
-                        if let Err(_e) = task_store.save(&initial_task).await {
+                        if let Err(e) = task_store.save(&initial_task).await {
                             trace_error!(
                                 task_id = %task_id,
+                                error = %e,
                                 "background processor: failed to re-assert evicted task"
+                            );
+                            metrics.on_persistence_error(
+                                crate::metrics::persistence_operation::TASK_SNAPSHOT,
+                                e.metric_label(),
                             );
                         }
                         initial_task
@@ -115,10 +125,13 @@ impl RequestHandler {
                                     event,
                                     &task_id,
                                     &mut last_task,
-                                    &*task_store,
-                                    &*push_config_store,
-                                    push_sender.as_deref(),
-                                    &limits,
+                                    BackgroundDeps {
+                                        task_store: &*task_store,
+                                        push_config_store: &*push_config_store,
+                                        push_sender: push_sender.as_deref(),
+                                        limits: &limits,
+                                        metrics: &*metrics,
+                                    },
                                 )
                                 .await;
                             }
@@ -134,10 +147,13 @@ impl RequestHandler {
                                             event,
                                             &task_id,
                                             &mut last_task,
-                                            &*task_store,
-                                            &*push_config_store,
-                                            push_sender.as_deref(),
-                                            &limits,
+                                            BackgroundDeps {
+                                                task_store: &*task_store,
+                                                push_config_store: &*push_config_store,
+                                                push_sender: push_sender.as_deref(),
+                                                limits: &limits,
+                                                metrics: &*metrics,
+                                            },
                                         )
                                         .await;
                                     }
