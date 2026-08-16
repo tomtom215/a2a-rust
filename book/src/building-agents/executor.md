@@ -4,7 +4,7 @@ The `AgentExecutor` trait is the heart of every A2A agent. It defines what happe
 
 ## The Trait
 
-```rust
+```rust,ignore
 pub trait AgentExecutor: Send + Sync + 'static {
     /// Called when a message arrives (SendMessage or SendStreamingMessage).
     fn execute<'a>(
@@ -33,7 +33,7 @@ pub trait AgentExecutor: Send + Sync + 'static {
 
 This signature ensures **object safety** — the trait can be stored as `Arc<dyn AgentExecutor>` and shared across threads. Standard `async fn` in traits would prevent this. The `Box::pin(async move { ... })` wrapper is the idiomatic pattern:
 
-```rust
+```rust,ignore
 impl AgentExecutor for MyAgent {
     fn execute<'a>(
         &'a self,
@@ -56,7 +56,7 @@ The `executor_helpers` module provides shortcuts to reduce boilerplate.
 
 Wraps an async block into the required `Pin<Box<dyn Future>>`:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::executor_helpers::boxed_future;
 
 fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWriter)
@@ -73,7 +73,7 @@ fn execute<'a>(&'a self, ctx: &'a RequestContext, queue: &'a dyn EventQueueWrite
 
 Generates the full `AgentExecutor` impl from a closure-like syntax:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::agent_executor;
 
 struct EchoAgent;
@@ -94,7 +94,7 @@ agent_executor!(CancelableAgent,
 
 Eliminates the repetitive `task_id.clone()` / `context_id.clone()` in every event:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::executor_helpers::EventEmitter;
 
 agent_executor!(MyAgent, |ctx, queue| async {
@@ -136,7 +136,7 @@ The `RequestContext` provides information about the incoming request:
 
 The queue is your channel for sending events back to the client:
 
-```rust
+```rust,ignore
 // Write a status update
 queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
     task_id: ctx.task_id.clone(),
@@ -164,7 +164,7 @@ For **synchronous** clients (`SendMessage`), the handler collects all events and
 
 Most executors follow this structure:
 
-```rust
+```rust,ignore
 Box::pin(async move {
     // 1. Working
     queue.write(StreamResponse::StatusUpdate(/* Working */)).await?;
@@ -184,7 +184,7 @@ Box::pin(async move {
 
 If your executor encounters an error, transition to `Failed` with a descriptive message:
 
-```rust
+```rust,ignore
 Box::pin(async move {
     queue.write(/* Working */).await?;
 
@@ -224,7 +224,7 @@ Box::pin(async move {
 
 When the agent needs clarification:
 
-```rust
+```rust,ignore
 queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
     task_id: ctx.task_id.clone(),
     context_id: ContextId::new(ctx.context_id.clone()),
@@ -250,7 +250,7 @@ The client can then send another message with the same `context_id` to continue 
 
 Override the `cancel` method:
 
-```rust
+```rust,ignore
 fn cancel<'a>(
     &'a self,
     ctx: &'a RequestContext,
@@ -276,7 +276,7 @@ fn cancel<'a>(
 
 Executors can hold state — database connections, model handles, configuration:
 
-```rust
+```rust,ignore
 struct LlmExecutor {
     model: Arc<Model>,
     db: Arc<DatabasePool>,
@@ -305,7 +305,7 @@ Because the trait requires `Send + Sync + 'static`, the executor must be safe to
 
 The builder can set a timeout that kills hung executors:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 RequestHandlerBuilder::new(my_executor)

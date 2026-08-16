@@ -105,7 +105,7 @@ a2a-protocol-client = { version = "0.8", features = ["tls-rustls"] }
 
 Create a simple `main.rs` to verify everything compiles:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
 fn main() {

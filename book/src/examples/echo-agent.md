@@ -46,27 +46,30 @@ A2A_BIND_ADDR=127.0.0.1:8080 cargo run -p echo-agent
 
 ## Key code
 
-The executor is ~30 lines — extract text, emit events:
+The executor is ~20 lines — extract text, emit events:
 
-```rust
-impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            queue.write(StatusUpdate { state: Working }).await?;
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# const SLOW_PREFIX: &str = "slow:";
+struct EchoExecutor;
 
-            let input = extract_text(&ctx.message.parts);
-            queue.write(ArtifactUpdate {
-                artifact: Artifact::new("echo", vec![Part::text(&format!("Echo: {input}"))]),
-                ..
-            }).await?;
+agent_executor!(EchoExecutor, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
 
-            queue.write(StatusUpdate { state: Completed }).await?;
-            Ok(())
-        })
+    let input_text = ctx.message.text().unwrap_or("<no text>");
+
+    // A deliberate pause, so a caller can observe a task that is still
+    // running — otherwise `SubscribeToTask` could only ever be seen refused.
+    if input_text.starts_with(SLOW_PREFIX) {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
-}
+
+    let echo_text = format!("Echo: {input_text}");
+    emit.artifact("echo-artifact", vec![Part::text(&echo_text)], None, Some(true))
+        .await?;
+
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
 ```

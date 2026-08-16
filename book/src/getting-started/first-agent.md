@@ -26,7 +26,7 @@ The `AgentExecutor` trait is the entry point for all agent logic. It defines wha
 
 The trait itself returns `Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>` — that boxing is what keeps it object-safe, so the handler can hold a `dyn AgentExecutor`. You rarely write it by hand: `agent_executor!` generates the whole impl from a plain `async` block. See [The AgentExecutor Trait](../building-agents/executor.md) for the unabridged form and when you need it.
 
-```rust,ignore
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
 struct CalcExecutor;
@@ -82,7 +82,7 @@ fn evaluate(expr: &str) -> String {
 
 The agent card tells clients what your agent can do:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::types::agent_card::*;
 
 fn make_agent_card(url: &str) -> AgentCard {
@@ -130,9 +130,12 @@ fn make_agent_card(url: &str) -> AgentCard {
 
 Build the request handler and start an HTTP server:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 use std::sync::Arc;
+# struct CalcExecutor;
+# agent_executor!(CalcExecutor, |_ctx, _queue| async { Ok(()) });
+# fn make_agent_card(_url: &str) -> AgentCard { unimplemented!() }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -159,7 +162,7 @@ async fn main() -> std::io::Result<()> {
 
 In a separate terminal (or in the same binary), create a client:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_sdk::client::ClientBuilder;
 
@@ -202,7 +205,7 @@ async fn main() {
 ```
 
 Output:
-```
+```text
 Result: Completed
 Answer: 100
 ```

@@ -82,6 +82,37 @@ jobs:
       - name: Mutation gate scope (PR diff pathspec reaches every source)
         run: ./scripts/check_mutation_scope.sh
 
+      # book/src/reference/benchmarks.md is generated: its tables come from
+      # criterion's estimates.json, but its prose was typed into a quoted
+      # heredoc. So the tables regenerated on every bench run and the prose did
+      # not. The page shipped "the ~1.4ms HTTP round-trip dominates" beside a
+      # table reading 189.9 µs, and "reuse saves ~140µs (9%)" where the tables
+      # give 123.5 µs and 39.5% — understating connection reuse by over 4x in
+      # the one document meant to be quoted.
+      #
+      # The generator now interpolates both paragraphs from those same
+      # estimates. This is the ratchet for what that cannot cover: the page is
+      # committed, hand-editable, and regenerated only when someone runs the
+      # benchmarks. It re-derives the quoted values from the committed tables.
+      # Same rule the file-length ratchet opens with — a number nothing
+      # recomputes is a number that decays.
+      - name: Benchmark prose agrees with benchmark tables
+        run: ./scripts/check_benchmark_prose.sh
+
+      # The book carried 158 Rust blocks and nothing compiled any of them.
+      # That is how the README Quick Start came to be broken for three minor
+      # versions: `agent_executor!` was missing from the prelude and the macro
+      # named a crate the snippet's own dependency list did not include, so a
+      # reader copying it got two errors and CI got none.
+      #
+      # `a2a-book-tests` now compiles every non-ignored block as a doctest via
+      # `cargo test --workspace`. This step is the ratchet that stops that
+      # being defeated by marking new blocks `ignore`, and also catches
+      # untagged fences — rustdoc compiles a bare ``` as Rust, which is how 24
+      # ASCII diagrams were being fed to the compiler.
+      - name: Book code blocks (ignore ratchet)
+        run: ./scripts/check_book_code.sh
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the

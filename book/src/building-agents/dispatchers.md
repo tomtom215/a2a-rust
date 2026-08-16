@@ -6,7 +6,7 @@ Dispatchers translate HTTP/gRPC requests into handler calls. a2a-rust provides f
 
 Routes JSON-RPC 2.0 requests to the handler:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::JsonRpcDispatcher;
 use std::sync::Arc;
 
@@ -51,7 +51,7 @@ Both JSON-RPC and REST dispatchers share a `DispatchConfig` for transport-level 
 
 Routes RESTful HTTP requests to the handler:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::RestDispatcher;
 use std::sync::Arc;
 
@@ -81,7 +81,7 @@ Tenant-scoped routes accept two forms — the canonical bare-segment form from
 the spec proto's `google.api.http` additional bindings (what official-SDK
 REST clients send), and this SDK's original explicit prefix:
 
-```
+```text
 # Canonical form
 GET  /acme-corp/tasks
 POST /acme-corp/message:send
@@ -111,7 +111,7 @@ The REST dispatcher includes automatic protections:
 
 Both dispatchers implement the `Dispatcher` trait, so you can use the `serve()` helper to eliminate hyper boilerplate:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::serve::{serve, serve_with_addr};
 
 // Blocking — runs the accept loop on the current task
@@ -126,7 +126,7 @@ println!("Listening on {addr}");
 
 Both dispatchers also expose a `dispatch` method for direct hyper integration:
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 
 async fn start_server(
@@ -170,7 +170,7 @@ Provides bidirectional A2A communication over WebSocket. Enable with the `websoc
 a2a-protocol-server = { version = "0.8", features = ["websocket"] }
 ```
 
-```rust
+```rust,ignore
 use a2a_protocol_server::WebSocketDispatcher;
 use std::sync::Arc;
 
@@ -223,7 +223,7 @@ Routes gRPC requests to the handler via `tonic`. Enable with the `grpc` feature 
 a2a-protocol-server = { version = "0.8", features = ["grpc"] }
 ```
 
-```rust
+```rust,ignore
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
@@ -274,7 +274,7 @@ the only gRPC surface.
 
 For advanced scenarios, use `into_service()` to get a tonic service:
 
-```rust
+```rust,ignore
 let svc = dispatcher.into_service();
 tonic::transport::Server::builder()
     .add_service(svc)
@@ -291,7 +291,7 @@ idiomatic adapter that wraps `RequestHandler` as an `axum::Router`:
 a2a-protocol-server = { version = "0.8", features = ["axum"] }
 ```
 
-```rust
+```rust,ignore
 use a2a_protocol_server::A2aRouter;
 use std::sync::Arc;
 
@@ -312,7 +312,7 @@ axum::serve(listener, app).await?;
 
 The returned `Router` can be merged with other Axum routes and middleware:
 
-```rust
+```rust,ignore
 let app = axum::Router::new()
     .merge(A2aRouter::new(handler).into_router())
     .route("/custom", axum::routing::get(custom_handler));
@@ -328,7 +328,7 @@ Streaming methods return SSE responses. The router delegates entirely to
 
 Serve JSON-RPC and REST on different ports with the same handler:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::serve::serve_with_addr;
 
 let handler = Arc::new(
@@ -349,7 +349,7 @@ let rest_addr = serve_with_addr("127.0.0.1:3001", RestDispatcher::new(handler)).
 
 Both dispatchers support CORS for browser-based clients:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::server::CorsConfig;
 
 // The dispatchers handle OPTIONS preflight automatically.

@@ -10,7 +10,7 @@ Source: [`examples/hello-agent/src/main.rs`](https://github.com/tomtom215/a2a-ru
 
 ## The whole thing
 
-```rust,ignore
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
 /// The agent. It has no state — the greeting depends only on the message.

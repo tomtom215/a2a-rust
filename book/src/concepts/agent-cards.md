@@ -58,7 +58,7 @@ Agent cards are served at `/.well-known/agent-card.json` and contain:
 
 Skills describe discrete capabilities:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::types::agent_card::AgentSkill;
 
 let skill = AgentSkill {
@@ -82,7 +82,7 @@ Skills can override the agent's default input/output modes and declare their own
 
 The `AgentCapabilities` struct advertises what the agent supports:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::AgentCapabilities;
 
 let caps = AgentCapabilities::none()
@@ -111,7 +111,7 @@ let caps = AgentCapabilities::none()
 
 Each interface describes a transport endpoint:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::types::agent_card::AgentInterface;
 
 let interface = AgentInterface {
@@ -131,7 +131,7 @@ When building a client via `ClientBuilder::from_card()`, the `tenant` field from
 An agent can expose a richer card via `GetExtendedAgentCard` for authenticated
 clients. This requires setting `capabilities.extended_agent_card = true`:
 
-```rust
+```rust,ignore
 let capabilities = AgentCapabilities::none()
     .with_extended_agent_card(true);
 ```
@@ -146,7 +146,7 @@ If the capability is declared but no card is configured, the server returns
 
 For agent cards that don't change at runtime:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(my_executor)
@@ -165,7 +165,7 @@ The static handler automatically provides:
 
 For agent cards that change (e.g., based on feature flags, load, or authentication):
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{AgentCardProducer, DynamicAgentCardHandler};
 use a2a_protocol_sdk::types::agent_card::AgentCard;
 
@@ -187,7 +187,7 @@ The dynamic handler calls the producer on every request, computes a fresh ETag, 
 
 For agent cards loaded from a JSON file that may change at runtime:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::HotReloadAgentCardHandler;
 use std::path::Path;
 use std::time::Duration;

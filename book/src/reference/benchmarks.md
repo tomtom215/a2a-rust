@@ -519,17 +519,29 @@ Production deployments expecting >256 events/task should increase
 
 ### Transport payload insensitivity
 
-Transport benchmarks (64B → 16KB) show only ~10% latency increase for a
-256× payload increase, because the ~1.4ms HTTP round-trip dominates. Serde
+Transport benchmarks (64B → 16KB) show a 20.0% latency increase for a
+256× payload increase, because the 189.9 µs HTTP round-trip dominates. Serde
 regressions cannot be detected via transport benchmarks. Use the
 `protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
 for serialization regression detection.
 
 ### Connection reuse impact
 
-Connection reuse saves ~140µs (9%) on loopback. On real networks with TLS,
-savings would be 10-50ms (TLS handshake dominates). Best practice: create one
+Connection reuse saves 123.5 µs (39.5%) on loopback —
+312.5 µs per request when the client is rebuilt each time,
+versus 189.0 µs when it is shared. On real networks with TLS the
+saving is larger still (TLS handshake dominates). Best practice: create one
 `A2aClient` at startup and share via `Arc` across request handlers.
+
+Two consequences worth spelling out, because both have bitten this repo:
+
+- A benchmark that builds a client inside its measured region is measuring
+  client construction, not the thing it names. `production_agent_burst` does
+  exactly this, and its per-agent cost tracks
+  312.5 µs — the rebuild-every-time number — rather than
+  the shared-client one.
+- Quoting this saving as a small percentage understates it by roughly 4×. It is
+  a large fraction of a loopback request, not a rounding error.
 
 ### Deserialization allocation overhead
 

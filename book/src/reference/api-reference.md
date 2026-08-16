@@ -263,7 +263,7 @@ The prelude includes the most commonly used types from all three crates — see 
 
 ## Constructors Cheatsheet
 
-```rust
+```rust,ignore
 // Task status
 TaskStatus::new(TaskState::Working)
 TaskStatus::with_timestamp(TaskState::Completed)

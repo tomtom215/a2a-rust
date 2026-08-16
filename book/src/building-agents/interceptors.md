@@ -6,7 +6,7 @@ Interceptors let you hook into the request/response pipeline on both the client 
 
 Server interceptors run before and after the handler processes a request:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::ServerInterceptor;
 
 struct LoggingInterceptor;
@@ -36,7 +36,7 @@ impl ServerInterceptor for LoggingInterceptor {
 
 ### Adding Interceptors
 
-```rust
+```rust,ignore
 RequestHandlerBuilder::new(my_executor)
     .with_interceptor(AuthInterceptor::new(auth_config))
     .with_interceptor(LoggingInterceptor)
@@ -46,13 +46,13 @@ RequestHandlerBuilder::new(my_executor)
 
 Interceptors execute in the order they're added:
 
-```
+```text
 Request → Auth → Logging → Metrics → Handler → Metrics → Logging → Auth → Response
 ```
 
 ### Example: Authentication
 
-```rust
+```rust,ignore
 struct BearerAuthInterceptor {
     valid_tokens: HashSet<String>,
 }
@@ -82,7 +82,7 @@ impl ServerInterceptor for BearerAuthInterceptor {
 
 Client interceptors modify outgoing requests and incoming responses:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::client::CallInterceptor;
 
 struct RequestIdInterceptor;
@@ -112,7 +112,7 @@ impl CallInterceptor for RequestIdInterceptor {
 
 ### Adding Client Interceptors
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::client::ClientBuilder;
 
 let client = ClientBuilder::new("http://agent.example.com".into())
@@ -128,7 +128,7 @@ let client = ClientBuilder::new("http://agent.example.com".into())
 
 Log method names, durations, and errors:
 
-```rust
+```rust,no_run
 struct LoggingInterceptor;
 // Log: "SendMessage completed in 42ms"
 // Log: "GetTask failed: task not found (15ms)"
@@ -138,7 +138,7 @@ struct LoggingInterceptor;
 
 Track request counts, latencies, error rates:
 
-```rust
+```rust,ignore
 struct MetricsInterceptor {
     counter: Arc<AtomicU64>,
 }
@@ -150,7 +150,7 @@ struct MetricsInterceptor {
 
 The built-in `RateLimitInterceptor` provides per-caller fixed-window rate limiting:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 use std::sync::Arc;
 
@@ -187,7 +187,7 @@ use cases (sliding windows, distributed counters), implement a custom
 
 Both client and server support ordered interceptor chains. The chain is built incrementally:
 
-```rust
+```rust,ignore
 // Each .with_interceptor() call appends to the chain
 builder
     .with_interceptor(first)    // Runs first on request, last on response

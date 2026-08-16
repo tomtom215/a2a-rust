@@ -37,7 +37,7 @@ Rust gives you performance, safety, and correctness without compromise:
 
 a2a-rust is organized as a Cargo workspace with four crates:
 
-```
+```text
 ┌─────────────────────────────────────────────┐
 │  a2a-protocol-sdk                           │
 │  umbrella re-exports + prelude              │

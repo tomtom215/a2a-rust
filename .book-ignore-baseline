@@ -1,0 +1,34 @@
+# Rust code blocks in book/src/ marked `ignore`, and so compiled by nothing.
+#
+# Held by scripts/check_book_code.sh as a shrink-only ratchet: these counts
+# may go down, never up. Adding a new `ignore` block, or a new file to this
+# list, fails CI. Every other Rust block in the book is compiled and linked
+# as a doctest by the `a2a-book-tests` crate.
+#
+# These are illustrative fragments that reference types they never import.
+# They are a burn-down list, not an exemption: turning one into a compiling
+# block (hidden `# ` preamble lines work well) and decrementing its count is
+# always a welcome change.
+# total: 130
+
+7	book/src/building-agents/authentication.md
+10	book/src/building-agents/dispatchers.md
+12	book/src/building-agents/executor.md
+5	book/src/building-agents/handler.md
+8	book/src/building-agents/interceptors.md
+5	book/src/building-agents/push-notifications.md
+9	book/src/building-agents/stores.md
+12	book/src/client/builder.md
+10	book/src/client/error-handling.md
+5	book/src/client/sending-messages.md
+4	book/src/client/streaming.md
+3	book/src/client/task-management.md
+4	book/src/concepts/agent-cards.md
+4	book/src/concepts/streaming.md
+8	book/src/concepts/tasks-and-messages.md
+5	book/src/concepts/transport-layers.md
+9	book/src/deployment/production.md
+3	book/src/deployment/testing.md
+1	book/src/reference/api-reference.md
+1	book/src/reference/mutation-history.md
+5	book/src/reference/pitfalls.md

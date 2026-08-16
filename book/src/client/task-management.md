@@ -6,7 +6,7 @@ Beyond sending messages, the client provides methods for querying, listing, and 
 
 Retrieve a task by ID:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::types::params::TaskQueryParams;
 
 let task = client.get_task(TaskQueryParams {
@@ -30,7 +30,7 @@ if let Some(history) = &task.history {
 
 Query tasks with filtering and pagination:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::types::params::ListTasksParams;
 
 let response = client.list_tasks(ListTasksParams {
@@ -78,7 +78,7 @@ construct it yourself.
 
 Request cancellation of a running task:
 
-```rust
+```rust,ignore
 let task = client.cancel_task("task-abc").await?;
 
 println!("Task state: {:?}", task.status.state);

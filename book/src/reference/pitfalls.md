@@ -16,7 +16,7 @@ Using `#[serde(default)]` on a `Vec<T>` field means the field is present but emp
 
 The A2A spec distinguishes between "omitted" and "empty array" for fields like `history` and `artifacts`, so `Option<Vec<T>>` is the correct choice.
 
-```rust
+```rust,ignore
 // Wrong: field is always present (empty vec if omitted)
 #[serde(default)]
 pub history: Vec<Message>,
@@ -30,7 +30,7 @@ pub history: Option<Vec<Message>>,
 
 Adding `#[non_exhaustive]` to `TaskState`, `ErrorCode`, etc. forces downstream crates to include a wildcard arm. This is intentional for forward compatibility:
 
-```rust
+```rust,ignore
 match task.status.state {
     TaskState::Completed => { /* ... */ }
     TaskState::Failed => { /* ... */ }
@@ -44,7 +44,7 @@ match task.status.state {
 
 Hyper 1.x `Incoming` body is consumed on read. You cannot read the body twice. Buffer it first:
 
-```rust
+```rust,ignore
 use http_body_util::BodyExt;
 
 let bytes = req.into_body().collect().await?.to_bytes();
@@ -61,7 +61,7 @@ let bytes = req.into_body().collect().await?.to_bytes();
 
 `hyper::body::Body::size_hint().upper()` returns `None` when Content-Length is absent. Always check for `None` before comparing against the body size limit:
 
-```rust
+```rust,ignore
 if let Some(upper) = body.size_hint().upper() {
     if upper > MAX_BODY_SIZE {
         return Err(/* payload too large */);
@@ -99,7 +99,7 @@ Push notification `credentials` can contain newlines that inject additional HTTP
 
 Rust does not yet support `async fn` in traits that are used as `dyn Trait`. The `TaskStore`, `AgentExecutor`, and `PushSender` traits use explicit `Pin<Box<dyn Future<Output = ...> + Send + 'a>>` return types:
 
-```rust
+```rust,ignore
 // The pattern for all object-safe async trait methods
 fn my_method<'a>(
     &'a self,

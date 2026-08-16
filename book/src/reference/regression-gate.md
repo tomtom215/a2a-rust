@@ -169,7 +169,7 @@ allocator and cache-layout luck dominate at specific payload sizes.
 Rather than loosening the gate for every benchmark, the workflow can
 pass a targeted override to `check_regression.py`:
 
-```
+```text
 --override 'GLOB=THRESHOLD'
 ```
 
@@ -191,7 +191,7 @@ Some benchmarks aren't just noisier than the 50 % gate — no fixed
 percentage tolerance is a reliable signal for them at all. For those,
 `check_regression.py` also accepts:
 
-```
+```text
 --exclude 'GLOB'
 ```
 

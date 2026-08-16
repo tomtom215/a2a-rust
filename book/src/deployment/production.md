@@ -12,7 +12,7 @@ agents and webhooks work with no extra setup. The **server** does not
 terminate inbound TLS itself; put it behind a reverse proxy (nginx, Caddy,
 cloud load balancer):
 
-```
+```text
 Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
 ```
 
@@ -20,7 +20,7 @@ Client ──HTTPS──→ [nginx/Caddy] ──HTTP──→ [a2a-rust agent]
 
 Configure CORS for browser-based clients:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::server::CorsConfig;
 
 // The dispatchers include CORS handling.
@@ -66,7 +66,7 @@ Prevent hung tasks from consuming resources forever. There is deliberately no
 default (a fixed value would silently fail legitimately long-running agent
 tasks) — set one matched to your workload:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 RequestHandlerBuilder::new(executor)
@@ -80,7 +80,7 @@ Concurrent streaming requests are capped at 1024 by default (each stream
 allocates channels and spawns background tasks). Tune the ceiling to your
 deployment; pass `usize::MAX` to effectively disable it:
 
-```rust
+```rust,ignore
 RequestHandlerBuilder::new(executor)
     .with_max_concurrent_streams(1000)
     .build()
@@ -90,7 +90,7 @@ RequestHandlerBuilder::new(executor)
 
 Prevent unbounded memory growth:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::TaskStoreConfig;
 
 RequestHandlerBuilder::new(executor)
@@ -109,7 +109,7 @@ Use `TaskStore::count()` for monitoring capacity utilization.
 
 Implement `on_shutdown` in your executor for cleanup:
 
-```rust
+```rust,ignore
 fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
     Box::pin(async move {
         self.db_pool.close().await;
@@ -122,7 +122,7 @@ fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
 
 Protect public-facing agents from abuse:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{RateLimitInterceptor, RateLimitConfig};
 
 RequestHandlerBuilder::new(executor)
@@ -147,7 +147,7 @@ reverse proxy or implement a custom `ServerInterceptor`.
 
 When calling remote agents, build clients once and reuse them. Connection reuse is critical for performance — creating a new client per request bypasses HTTP keep-alive and connection pooling, adding ~300-500us of overhead per call:
 
-```rust
+```rust,ignore
 // Build once at startup
 let client = ClientBuilder::new("http://agent.example.com")
     .with_retry_policy(RetryPolicy::default())
@@ -170,7 +170,7 @@ a2a-protocol-server = { version = "0.8", features = ["tracing"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ```
 
-```rust
+```rust,ignore
 use tracing_subscriber::EnvFilter;
 
 tracing_subscriber::fmt()
@@ -188,7 +188,7 @@ Set `RUST_LOG=debug` for verbose output, `RUST_LOG=a2a_protocol_server=debug` fo
 
 Add a health endpoint alongside your A2A dispatchers:
 
-```rust
+```rust,ignore
 // Simple health check handler
 async fn health_check(req: hyper::Request<impl hyper::body::Body>) -> hyper::Response<Full<Bytes>> {
     if req.uri().path() == "/health" {
@@ -223,7 +223,7 @@ a2a-rust works directly with hyper — no middleware framework overhead. Cross-c
 
 Tune the event queue for your workload:
 
-```rust
+```rust,ignore
 // High-throughput: larger queues for tasks producing >250 events/task
 .with_event_queue_capacity(512)
 

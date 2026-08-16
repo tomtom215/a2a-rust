@@ -4,7 +4,7 @@ The `ClientBuilder` creates an `A2aClient` configured for your target agent. It 
 
 ## Basic Client
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::client::ClientBuilder;
 
 let client = ClientBuilder::new("http://agent.example.com")
@@ -14,7 +14,7 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 The builder auto-selects the transport based on the URL. To explicitly choose:
 
-```rust
+```rust,ignore
 // Force JSON-RPC transport
 let client = ClientBuilder::new("http://agent.example.com")
     .with_protocol_binding("JSONRPC")
@@ -32,7 +32,7 @@ let client = ClientBuilder::new("http://agent.example.com")
 
 ### Timeouts
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 let client = ClientBuilder::new(url)
@@ -47,7 +47,7 @@ let client = ClientBuilder::new(url)
 
 Specify which MIME types the client can handle:
 
-```rust
+```rust,ignore
 let client = ClientBuilder::new(url)
     .with_accepted_output_modes(vec![
         "text/plain".into(),
@@ -64,7 +64,7 @@ Default: `["text/plain", "application/json"]`
 
 Control how many historical messages are included in responses:
 
-```rust
+```rust,ignore
 let client = ClientBuilder::new(url)
     .with_history_length(10)  // Include last 10 messages
     .build()
@@ -75,7 +75,7 @@ let client = ClientBuilder::new(url)
 
 Add request/response hooks:
 
-```rust
+```rust,ignore
 let client = ClientBuilder::new(url)
     .with_interceptor(MyAuthInterceptor::new())
     .with_interceptor(LoggingInterceptor)
@@ -87,7 +87,7 @@ let client = ClientBuilder::new(url)
 
 Enable automatic retries on transient failures (connection errors, timeouts, HTTP 429/502/503/504):
 
-```rust
+```rust,ignore
 use a2a_protocol_client::RetryPolicy;
 
 let client = ClientBuilder::new(url)
@@ -112,7 +112,7 @@ let client = ClientBuilder::new(url)
 
 For push notification workflows, return the task immediately without waiting for completion:
 
-```rust
+```rust,ignore
 let client = ClientBuilder::new(url)
     .with_return_immediately(true)
     .build()
@@ -143,7 +143,7 @@ let client = ClientBuilder::new(url)
 a connection pool internally (via hyper), so reuse avoids repeated DNS
 resolution, TCP handshakes, and TLS negotiation on every call.
 
-```rust
+```rust,ignore
 // ✅ Good: build once, reuse across requests
 struct MyOrchestrator {
     analyzer: A2aClient,
@@ -169,7 +169,7 @@ impl MyOrchestrator {
 }
 ```
 
-```rust
+```rust,ignore
 // ❌ Avoid: rebuilding the client on every call
 async fn bad_pattern(url: &str) {
     // This works but wastes resources — connection pool is discarded each time
@@ -184,7 +184,7 @@ async fn bad_pattern(url: &str) {
 
 For gRPC transport, use `GrpcTransport::connect()` with `with_custom_transport()`:
 
-```rust
+```rust,ignore
 use a2a_protocol_client::GrpcTransport;
 
 let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
@@ -195,7 +195,7 @@ let client = ClientBuilder::new("http://agent.example.com:50051")
 
 Configure with `GrpcTransportConfig`:
 
-```rust
+```rust,ignore
 use a2a_protocol_client::transport::grpc::{GrpcTransport, GrpcTransportConfig};
 use std::time::Duration;
 
@@ -213,7 +213,7 @@ let transport = GrpcTransport::connect_with_config(
 
 `A2aClient` is `Send + Sync` and can be shared across tasks via `Arc`:
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 
 let client = Arc::new(

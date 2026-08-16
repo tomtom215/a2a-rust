@@ -67,7 +67,7 @@ All actions are **SHA-pinned** for supply chain security:
 
 The release workflow (`.github/workflows/release.yml`) triggers on version tags:
 
-```
+```text
 vX.Y.Z tag → validate → ci + security → package + publish-dry-run → github-release → publish
 ```
 

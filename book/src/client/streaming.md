@@ -4,7 +4,7 @@ For long-running tasks or when you want real-time progress, use `stream_message`
 
 ## Basic Streaming
 
-```rust
+```rust,ignore
 let mut stream = client
     .stream_message(params)
     .await
@@ -61,7 +61,7 @@ A typical stream delivers events in this order:
 
 Artifacts can be delivered in multiple chunks:
 
-```rust
+```rust,ignore
 Ok(StreamResponse::ArtifactUpdate(ev)) => {
     let is_append = ev.append.unwrap_or(false);
     let is_last = ev.last_chunk.unwrap_or(false);
@@ -86,7 +86,7 @@ Ok(StreamResponse::ArtifactUpdate(ev)) => {
 
 If a stream disconnects, re-subscribe to get the latest state:
 
-```rust
+```rust,ignore
 let mut stream = client
     .subscribe_to_task("task-abc")
     .await?;
@@ -101,7 +101,7 @@ while let Some(event) = stream.next().await {
 
 The client has separate timeouts for stream connections:
 
-```rust
+```rust,ignore
 use std::time::Duration;
 
 let client = ClientBuilder::new(url)

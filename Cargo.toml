@@ -17,6 +17,7 @@ members = [
     "examples/genai-agent",
     "examples/incident-response",
     "benches",
+    "book-tests",
     "tck",
     "tck/sut",
 ]

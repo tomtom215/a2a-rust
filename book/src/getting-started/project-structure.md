@@ -4,7 +4,7 @@ a2a-rust is organized as a Cargo workspace with four crates, each with a clear r
 
 ## Workspace Layout
 
-```
+```text
 a2a-rust/
 ├── Cargo.toml              # Workspace root
 ├── crates/
@@ -181,7 +181,7 @@ a2a-rust/
 
 ## Crate Dependencies
 
-```
+```text
 a2a-protocol-sdk
 ├── a2a-protocol-client
 │   └── a2a-protocol-types
@@ -211,7 +211,7 @@ The dependency graph is intentionally shallow:
 
 The SDK's `prelude` module exports the most commonly used types so you can get started with a single import:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 ```
 

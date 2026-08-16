@@ -289,6 +289,10 @@ injection_for() {
             echo "file_length" ;;
         "./scripts/check_mutation_scope.sh")
             echo "mutation_scope" ;;
+        "./scripts/check_benchmark_prose.sh")
+            echo "benchmark_prose" ;;
+        "./scripts/check_book_code.sh")
+            echo "book_code" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
@@ -373,6 +377,8 @@ expected_marker() {
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
         file_length)      echo "gate_probe_long.rs" ;;
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
+        benchmark_prose)  echo "DRIFT" ;;
+        book_code)        echo "GREW" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
@@ -400,6 +406,38 @@ apply_injection() {
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        book_code)
+            # Append an `ignore`d block: the exact move that would defeat the
+            # book-tests crate, since a block nothing compiles cannot fail.
+            # Injecting an *uncompilable* block instead would prove nothing —
+            # `ignore` means the compiler never sees it, so the ratchet, not
+            # the compiler, is what has to notice.
+            note_touched "book/src/concepts/streaming.md"
+            printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
+                >>book/src/concepts/streaming.md
+            ;;
+        benchmark_prose)
+            # The defect is the historical one, restored verbatim: the
+            # connection-reuse sentence as it shipped from v0.5.0 to v0.8.0,
+            # while the tables beside it said 312.5 µs vs 189.0 µs.
+            #
+            # Injecting into the *prose* rather than the tables is deliberate.
+            # Breaking a table would also break the sentence derived from it,
+            # so the gate would go red without proving it can tell the two
+            # apart — and prose drifting away from correct tables is the
+            # failure that actually happened.
+            note_touched "book/src/reference/benchmarks.md"
+            python3 - <<'PY'
+import pathlib
+p = pathlib.Path("book/src/reference/benchmarks.md")
+s = p.read_text()
+s = s.replace(
+    "Connection reuse saves 123.5 µs (39.5%) on loopback",
+    "Connection reuse saves ~140µs (9%) on loopback",
+)
+p.write_text(s)
+PY
+            ;;
         mutation_scope)
             # The defect is the historical one, restored verbatim: drop the
             # `:(glob)` prefix from the mutation gate's scoping pathspec and it

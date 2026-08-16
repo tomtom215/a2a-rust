@@ -22,6 +22,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "a2a-book-tests"
+version = "0.0.0"
+dependencies = [
+ "a2a-protocol-sdk",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "a2a-example-harness"
 version = "0.0.0"
 dependencies = [
