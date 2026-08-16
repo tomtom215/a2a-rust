@@ -124,6 +124,15 @@ jobs:
       - name: API Quick Reference names still exist
         run: python3 scripts/check_api_reference.py
 
+      # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
+      # forgets is discarded with no compile error and no failing test — the
+      # exporter's own tests run against a noop meter, which a no-op override
+      # satisfies perfectly. That is exactly how `on_persistence_error` and
+      # `on_push_delivery` shipped wired to every call site and exported by
+      # nothing.
+      - name: OTel exporter covers every Metrics callback
+        run: python3 scripts/check_otel_metrics_coverage.py
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the

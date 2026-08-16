@@ -84,6 +84,8 @@ pub struct OtelMetrics {
     pool_idle_gauge: Gauge<u64>,
     pool_created_counter: Counter<u64>,
     pool_closed_counter: Counter<u64>,
+    persistence_error_counter: Counter<u64>,
+    push_delivery_counter: Counter<u64>,
 }
 
 impl std::fmt::Debug for OtelMetrics {
@@ -152,6 +154,8 @@ impl OtelMetrics {
             .with_unit("connection")
             .build();
 
+        let (persistence_error_counter, push_delivery_counter) = Self::failure_instruments(meter);
+
         Self {
             request_counter,
             response_counter,
@@ -162,7 +166,39 @@ impl OtelMetrics {
             pool_idle_gauge,
             pool_created_counter,
             pool_closed_counter,
+            persistence_error_counter,
+            push_delivery_counter,
         }
+    }
+
+    /// The two failure signals the request path cannot see.
+    ///
+    /// Split out so `from_meter` stays readable, and kept together because they
+    /// answer the same question: is this process quietly losing work? Both were
+    /// added to [`Metrics`] with no-op defaults, which meant this exporter — the
+    /// observability path the SDK actually ships — inherited the no-ops and
+    /// dropped them. A callback nobody exports is not observability.
+    fn failure_instruments(meter: &Meter) -> (Counter<u64>, Counter<u64>) {
+        let persistence_error_counter = meter
+            .u64_counter("a2a.server.persistence_errors")
+            .with_description(
+                "Task writes the background processor could not persist. \
+                 Non-zero means data loss: the streaming client already \
+                 received the event.",
+            )
+            .with_unit("error")
+            .build();
+
+        let push_delivery_counter = meter
+            .u64_counter("a2a.server.push_deliveries")
+            .with_description(
+                "Push notification delivery attempts, by outcome \
+                 (delivered / failed / timeout)",
+            )
+            .with_unit("delivery")
+            .build();
+
+        (persistence_error_counter, push_delivery_counter)
     }
 }
 
@@ -199,6 +235,21 @@ impl Metrics for OtelMetrics {
         self.queue_depth_gauge.record(active_queues as u64, &[]);
     }
 
+    fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+        self.persistence_error_counter.add(
+            1,
+            &[
+                KeyValue::new("operation", operation.to_owned()),
+                KeyValue::new("error", error_kind.to_owned()),
+            ],
+        );
+    }
+
+    fn on_push_delivery(&self, outcome: &str) {
+        self.push_delivery_counter
+            .add(1, &[KeyValue::new("outcome", outcome.to_owned())]);
+    }
+
     fn on_connection_pool_stats(&self, stats: &ConnectionPoolStats) {
         self.pool_active_gauge
             .record(u64::from(stats.active_connections), &[]);
@@ -213,243 +264,4 @@ impl Metrics for OtelMetrics {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Creates an `OtelMetrics` backed by a noop meter (no collector needed).
-    fn noop_otel_metrics() -> OtelMetrics {
-        let meter = opentelemetry::global::meter("test");
-        OtelMetrics::from_meter(&meter)
-    }
-
-    #[test]
-    fn from_meter_creates_all_instruments() {
-        let metrics = noop_otel_metrics();
-        let debug = format!("{metrics:?}");
-        assert!(debug.contains("OtelMetrics"));
-    }
-
-    #[test]
-    fn on_request_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_request("message/send");
-        metrics.on_request("tasks/get");
-    }
-
-    #[test]
-    fn on_response_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_response("message/send");
-    }
-
-    #[test]
-    fn on_error_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_error("message/send", "timeout");
-        metrics.on_error("tasks/get", "not_found");
-    }
-
-    #[test]
-    fn on_latency_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_latency("message/send", Duration::from_millis(42));
-        metrics.on_latency("message/send", Duration::from_secs(0));
-    }
-
-    #[test]
-    fn on_queue_depth_change_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_queue_depth_change(0);
-        metrics.on_queue_depth_change(100);
-    }
-
-    #[test]
-    fn on_connection_pool_stats_does_not_panic() {
-        let metrics = noop_otel_metrics();
-        metrics.on_connection_pool_stats(&ConnectionPoolStats {
-            active_connections: 5,
-            idle_connections: 10,
-            total_connections_created: 42,
-            connections_closed: 3,
-        });
-    }
-
-    // ── Observable-effect tests ─────────────────────────────────────────────
-
-    use opentelemetry::metrics::MeterProvider;
-    use opentelemetry_sdk::metrics::data::{
-        AggregatedMetrics, GaugeDataPoint, HistogramDataPoint, MetricData, ResourceMetrics,
-        SumDataPoint,
-    };
-    use opentelemetry_sdk::metrics::reader::MetricReader;
-    use opentelemetry_sdk::metrics::{ManualReader, SdkMeterProvider};
-    use opentelemetry_sdk::Resource;
-
-    struct CloneableReader(std::sync::Arc<ManualReader>);
-
-    impl std::fmt::Debug for CloneableReader {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("CloneableReader")
-        }
-    }
-
-    impl Clone for CloneableReader {
-        fn clone(&self) -> Self {
-            Self(self.0.clone())
-        }
-    }
-
-    impl MetricReader for CloneableReader {
-        fn register_pipeline(
-            &self,
-            pipeline: std::sync::Weak<opentelemetry_sdk::metrics::Pipeline>,
-        ) {
-            self.0.register_pipeline(pipeline);
-        }
-        fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.collect(rm)
-        }
-        fn force_flush(&self) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.force_flush()
-        }
-        fn shutdown_with_timeout(
-            &self,
-            timeout: std::time::Duration,
-        ) -> opentelemetry_sdk::error::OTelSdkResult {
-            self.0.shutdown_with_timeout(timeout)
-        }
-        fn temporality(
-            &self,
-            kind: opentelemetry_sdk::metrics::InstrumentKind,
-        ) -> opentelemetry_sdk::metrics::Temporality {
-            self.0.temporality(kind)
-        }
-    }
-
-    fn metrics_with_reader() -> (OtelMetrics, CloneableReader) {
-        let reader = CloneableReader(std::sync::Arc::new(ManualReader::default()));
-        let provider = SdkMeterProvider::builder()
-            .with_reader(reader.clone())
-            .with_resource(Resource::builder().build())
-            .build();
-        let meter = provider.meter("test");
-        let metrics = OtelMetrics::from_meter(&meter);
-        std::mem::forget(provider);
-        (metrics, reader)
-    }
-
-    fn collect_metrics(reader: &CloneableReader) -> ResourceMetrics {
-        let mut rm = ResourceMetrics::default();
-        reader.collect(&mut rm).expect("collect");
-        rm
-    }
-
-    fn find_sum_u64(rm: &ResourceMetrics, name: &str) -> u64 {
-        for scope in rm.scope_metrics() {
-            for metric in scope.metrics() {
-                if metric.name() == name {
-                    if let AggregatedMetrics::U64(MetricData::Sum(sum)) = metric.data() {
-                        return sum.data_points().map(SumDataPoint::value).sum();
-                    }
-                }
-            }
-        }
-        0
-    }
-
-    #[test]
-    fn on_request_increments_counter() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_request("test/method");
-        let rm = collect_metrics(&reader);
-        assert!(
-            find_sum_u64(&rm, "a2a.server.requests") > 0,
-            "request counter should be incremented"
-        );
-    }
-
-    #[test]
-    fn on_response_increments_counter() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_response("test/method");
-        let rm = collect_metrics(&reader);
-        assert!(
-            find_sum_u64(&rm, "a2a.server.responses") > 0,
-            "response counter should be incremented"
-        );
-    }
-
-    #[test]
-    fn on_error_increments_counter() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_error("test/method", "timeout");
-        let rm = collect_metrics(&reader);
-        assert!(
-            find_sum_u64(&rm, "a2a.server.errors") > 0,
-            "error counter should be incremented"
-        );
-    }
-
-    #[test]
-    fn on_latency_records_histogram() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_latency("test/method", Duration::from_millis(42));
-        let rm = collect_metrics(&reader);
-
-        let mut found = false;
-        for scope in rm.scope_metrics() {
-            for metric in scope.metrics() {
-                if metric.name() == "a2a.server.latency" {
-                    if let AggregatedMetrics::F64(MetricData::Histogram(hist)) = metric.data() {
-                        let count: u64 = hist.data_points().map(HistogramDataPoint::count).sum();
-                        assert!(count > 0, "histogram should have recorded a value");
-                        found = true;
-                    }
-                }
-            }
-        }
-        assert!(found, "latency histogram metric should exist");
-    }
-
-    #[test]
-    fn on_queue_depth_records_gauge() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_queue_depth_change(42);
-        let rm = collect_metrics(&reader);
-
-        let mut found = false;
-        for scope in rm.scope_metrics() {
-            for metric in scope.metrics() {
-                if metric.name() == "a2a.server.queue_depth" {
-                    if let AggregatedMetrics::U64(MetricData::Gauge(gauge)) = metric.data() {
-                        let val: u64 = gauge.data_points().map(GaugeDataPoint::value).sum();
-                        assert_eq!(val, 42, "gauge should record 42");
-                        found = true;
-                    }
-                }
-            }
-        }
-        assert!(found, "queue_depth gauge metric should exist");
-    }
-
-    #[test]
-    fn on_connection_pool_stats_records_all_instruments() {
-        let (metrics, reader) = metrics_with_reader();
-        metrics.on_connection_pool_stats(&ConnectionPoolStats {
-            active_connections: 5,
-            idle_connections: 10,
-            total_connections_created: 42,
-            connections_closed: 3,
-        });
-        let rm = collect_metrics(&reader);
-
-        assert!(
-            find_sum_u64(&rm, "a2a.server.pool.created") > 0,
-            "pool.created counter should be incremented"
-        );
-        assert!(
-            find_sum_u64(&rm, "a2a.server.pool.closed") > 0,
-            "pool.closed counter should be incremented"
-        );
-    }
-}
+mod tests;

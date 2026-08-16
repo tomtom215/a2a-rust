@@ -35,6 +35,39 @@ use crate::tenant_resolver::TenantResolver;
 /// `usize::MAX` to effectively disable the ceiling).
 pub const DEFAULT_MAX_CONCURRENT_STREAMS: usize = 1024;
 
+/// Default ceiling on a single executor run: one hour.
+///
+/// # Why bounded at all
+///
+/// This defaulted to `None` — unbounded — on the argument that any fixed value
+/// would fail legitimately long-running agent tasks. The argument is sound
+/// about short ceilings and wrong about the default: an executor that never
+/// returns pins its task, its event queue and its cancellation token for the
+/// life of the process, and nothing reclaims them. `max_cancellation_tokens`
+/// defaults to 10,000, so enough hung executors eventually stop the handler
+/// accepting work. Unbounded-by-default put the *safe* configuration behind an
+/// action nobody is reminded to take, and made the cost of forgetting a leak
+/// that is invisible until it is a outage.
+///
+/// # Why an hour
+///
+/// Long enough that it cannot plausibly interrupt real work: an interactive or
+/// streaming agent turn is seconds to minutes, and an hour is one to two orders
+/// of magnitude above that. An A2A task genuinely running longer should not be
+/// holding an executor and a stream open for it — that is what push
+/// notifications are for (§7).
+///
+/// Short enough that a hung executor is reclaimed the same day rather than
+/// never.
+///
+/// Set your own with
+/// [`with_executor_timeout`](RequestHandlerBuilder::with_executor_timeout), or
+/// opt out entirely with
+/// [`without_executor_timeout`](RequestHandlerBuilder::without_executor_timeout)
+/// if your deployment really does have unbounded executors and accepts what
+/// that costs.
+pub const DEFAULT_EXECUTOR_TIMEOUT: Duration = Duration::from_secs(3600);
+
 /// Fluent builder for [`RequestHandler`].
 ///
 /// # Required
@@ -54,8 +87,10 @@ pub const DEFAULT_MAX_CONCURRENT_STREAMS: usize = 1024;
 /// - `tenant_config`: defaults to `None` (no per-tenant limits).
 /// - `max_concurrent_streams`: defaults to
 ///   [`DEFAULT_MAX_CONCURRENT_STREAMS`] (1024).
-/// - `executor_timeout`: defaults to `None` (unbounded — **recommended** to
-///   set explicitly; see [`with_executor_timeout`](Self::with_executor_timeout)).
+/// - `executor_timeout`: defaults to [`DEFAULT_EXECUTOR_TIMEOUT`] (1 hour).
+///   Set your own with [`with_executor_timeout`](Self::with_executor_timeout),
+///   or opt out with
+///   [`without_executor_timeout`](Self::without_executor_timeout).
 pub struct RequestHandlerBuilder {
     executor: Arc<dyn AgentExecutor>,
     task_store: Option<Arc<dyn TaskStore>>,
@@ -90,7 +125,7 @@ impl RequestHandlerBuilder {
             push_sender: None,
             interceptors: ServerInterceptorChain::new(),
             agent_card: None,
-            executor_timeout: None,
+            executor_timeout: Some(DEFAULT_EXECUTOR_TIMEOUT),
             event_queue_capacity: None,
             max_event_size: None,
             max_concurrent_streams: None,
@@ -162,15 +197,31 @@ impl RequestHandlerBuilder {
     /// Sets a timeout for executor execution.
     ///
     /// If the executor does not complete within this duration, the task is
-    /// marked as failed with a timeout error.
+    /// marked as failed with a timeout error — which the client sees, so this
+    /// is not a silent outcome.
     ///
-    /// There is deliberately no default: any fixed value would silently mark
-    /// legitimately long-running agent tasks as failed. Production
-    /// deployments should set a timeout matched to their workload so a hung
-    /// executor cannot pin a task (and its stream resources) forever.
+    /// Defaults to [`DEFAULT_EXECUTOR_TIMEOUT`] (1 hour). Match it to the
+    /// slowest work your agent legitimately does; too short a value fails real
+    /// tasks, which is why the default is generous rather than tight.
     #[must_use]
     pub const fn with_executor_timeout(mut self, timeout: Duration) -> Self {
         self.executor_timeout = Some(timeout);
+        self
+    }
+
+    /// Removes the executor timeout entirely.
+    ///
+    /// An executor that never returns then pins its task, its event queue and
+    /// its cancellation token for the life of the process. With
+    /// `max_cancellation_tokens` at its default of 10,000, enough of them stop
+    /// the handler accepting work — and nothing reclaims them in between.
+    ///
+    /// Deliberately a named method rather than `with_executor_timeout(None)`:
+    /// unbounded execution is a position worth stating out loud, and it should
+    /// be greppable in a deployment's source.
+    #[must_use]
+    pub const fn without_executor_timeout(mut self) -> Self {
+        self.executor_timeout = None;
         self
     }
 
