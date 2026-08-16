@@ -560,6 +560,50 @@ def build_registry() -> dict[str, Probe | Exempt]:
         cwd_is_repo=True,
     )
 
+    # ── benchmarks.yml ───────────────────────────────────────────────────────
+    #
+    # The healthy fixture is the measured post-fix curve; the defect is the
+    # measured pre-fix one, both taken from the same machine in one session.
+    # Using real numbers rather than invented ones keeps the probe honest about
+    # what this gate can actually distinguish: 26x against a 3x limit.
+    def _streaming_fixture(medians_us):
+        # Runs from the repo so the checker script resolves, but reads its
+        # measurements from the scratch directory via the step's own env knob —
+        # the real `target/criterion` is never touched.
+        def setup(d):
+            root = d / "criterion"
+            for n, us in medians_us.items():
+                out = root / "backpressure_stream_volume" / f"{n}_events" / "new"
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "estimates.json").write_text(
+                    json.dumps({"median": {"point_estimate": us * 1000}}),
+                    encoding="utf-8",
+                )
+            return {"__cwd__": str(REPO), "__env__": {"CRITERION_DIR": str(root)}}
+
+        return setup
+
+    LINEAR = {7: 363.76, 27: 537.87, 52: 719.43, 252: 1859.7, 502: 3570.3}
+    QUADRATIC = {7: 381.42, 27: 573.58, 52: 931.54, 252: 27431.0, 502: 120570.0}
+    reg["benchmarks.yml::bench::Streaming must stay linear in event count"] = Probe(
+        healthy=_streaming_fixture(LINEAR),
+        defects=[
+            Defect(
+                "per-event cost grows with stream length (the pre-fix quadratic path)",
+                _streaming_fixture(QUADRATIC),
+                "not linear in event count",
+            ),
+            Defect(
+                "benchmarks were never run, so there is nothing to police",
+                lambda d: {
+                    "__cwd__": str(REPO),
+                    "__env__": {"CRITERION_DIR": str(d / "empty")},
+                },
+                "Run the benchmarks first",
+            ),
+        ],
+    )
+
     # ── mutants.yml ──────────────────────────────────────────────────────────
     reg["mutants.yml::mutants-crate::Require a readable mutation report"] = Probe(
         healthy=lambda d: mutants_out(d, caught=10, missed=0),

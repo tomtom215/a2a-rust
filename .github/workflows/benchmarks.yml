@@ -91,6 +91,16 @@ jobs:
       - name: Run backpressure
         run: cargo bench -p a2a-benchmarks --bench backpressure
 
+      # Streaming totals grow with event count no matter how badly the path
+      # scales, so a total that looks plausible hides a quadratic one. This
+      # checks the *shape*: per-event cost may be whatever the runner makes it,
+      # but it may not grow with the length of the stream. The pre-fix data
+      # scores 26x against this 3x limit.
+      - name: Streaming must stay linear in event count
+        run: |
+          python3 scripts/check_streaming_linearity.py \
+            --criterion-dir "${CRITERION_DIR:-target/criterion}"
+
       - name: Run data_volume
         run: cargo bench -p a2a-benchmarks --bench data_volume
 
