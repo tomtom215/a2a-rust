@@ -49,6 +49,7 @@ set -Eeuo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+OTEL_RS="$REPO_ROOT/crates/a2a-protocol-server/src/observability/otel.rs"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-provegates.XXXXXX")
 
 ONLY='.'
@@ -295,6 +296,10 @@ injection_for() {
             echo "book_code" ;;
         *"check_api_reference.py"*)
             echo "api_reference" ;;
+        *"check_otel_metrics_coverage.py"*)
+            echo "otel_coverage" ;;
+        *"check_package_excludes.py"*)
+            echo "package_excludes" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
@@ -382,6 +387,8 @@ expected_marker() {
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
         api_reference)    echo "are not defined in crates/" ;;
+        otel_coverage)    echo "not exported by OtelMetrics" ;;
+        package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
@@ -429,6 +436,27 @@ apply_injection() {
             note_touched "book/src/reference/api-reference.md"
             sed -i 's/`TaskVersion`/`TaskRevision`/' \
                 book/src/reference/api-reference.md
+            ;;
+        otel_coverage)
+            # Delete one callback override from the exporter. This is the
+            # defect verbatim: `on_persistence_error` and `on_push_delivery`
+            # shipped wired to every call site and exported by nothing, because
+            # a `Metrics` method the impl omits silently inherits the trait's
+            # empty default. No compile error, and no failing test either — the
+            # exporter's own tests run against a noop meter, which a no-op
+            # override satisfies perfectly. `perl -0` rather than a heredoc so
+            # this arm stays a one-liner like its neighbours.
+            note_touched "$OTEL_RS"
+            perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        package_excludes)
+            # Drop one `publish = false` member from ci.yml's exclude list.
+            # This is the defect verbatim: `hello-agent`, `deploy-agent` and
+            # `a2a-book-tests` each joined the workspace without joining the
+            # list, and `cargo package --workspace` fails on the first one it
+            # reaches — inside the *release* workflow, after the tag is pushed.
+            note_touched ".github/workflows/ci.yml"
+            sed -i 's/--exclude a2a-book-tests //' .github/workflows/ci.yml
             ;;
         benchmark_prose)
             # The defect is the historical one, restored verbatim: the
