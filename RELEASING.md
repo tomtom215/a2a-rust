@@ -30,6 +30,23 @@ This matches the order used by `.github/workflows/release.yml`. Publishing
 client before server fails: the client's versioned dev-dependency on the
 not-yet-published server cannot be resolved from the index.
 
+### What this means for a local pre-flight
+
+Only `a2a-protocol-types` can be `cargo package`d before anything is published.
+The other three resolve their `a2a-protocol-*` requirement against the crates.io
+index, which does not yet carry the new version, so they fail with:
+
+```
+failed to select a version for the requirement `a2a-protocol-types = "^0.9.0"`
+candidate versions found which didn't match: 0.8.0, 0.7.0, ...
+```
+
+That is the ordering constraint doing its job, not a broken manifest. Verify
+what *can* be verified locally — `cargo build --all-features` across the four
+crates, the full test suite, and `cargo package -p a2a-protocol-types` — then
+publish in the order above, letting each crate reach the index before the next.
+`release.yml` already waits for index propagation between steps.
+
 ## Release checklist
 
 ### 1. Prepare the release
@@ -144,9 +161,9 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently and starts at `0.1.0`. Numbering it to match the
-SDK would claim API stability it has not earned and force a bump on every SDK
-release even when nothing in it changed.
+It is versioned independently — `0.2.0` against the SDK's `0.9.0`. Numbering it
+to match would claim API stability it has not earned and force a bump on every
+SDK release even when nothing in it changed.
 
 Independence covers the numbers, not the schedule, and this is the part that is
 easy to get wrong:

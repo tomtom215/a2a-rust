@@ -10,6 +10,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-16
+
+### Breaking
+
+- **`executor_timeout` now defaults to one hour instead of being unbounded.**
+  An executor that never returns previously pinned its task, its event queue and
+  its cancellation token for the life of the process, and nothing reclaimed
+  them; with `max_cancellation_tokens` at 10,000, enough of them eventually stop
+  the handler accepting work. The old rationale — that any fixed value would
+  fail legitimately long-running tasks — is sound about *short* ceilings and
+  wrong about the default, which put the safe configuration behind an action
+  nobody is reminded to take.
+
+  An hour cannot plausibly interrupt an interactive or streaming agent turn, and
+  a task genuinely running longer should be using push notifications (§7) rather
+  than holding an executor and a stream open. If yours legitimately exceeds it,
+  set `with_executor_timeout()`, or call the new `without_executor_timeout()` to
+  restore unbounded execution explicitly. A task that trips the ceiling fails
+  visibly, as a Failed task with a timeout error.
+
+- **`RequestHandler::shutdown()` and `shutdown_with_timeout()` now return
+  `ShutdownReport`** instead of `()`. The type is `#[must_use]`, so existing
+  callers get a warning rather than an error. Both previously discarded the
+  executor-cleanup timeout with no log and no return value, which made a hung
+  cleanup indistinguishable from a clean drain.
+
+### Added
+
+- **Two `Metrics` callbacks for the failures nothing else reported.**
+  `on_persistence_error` fires when the background processor cannot persist a
+  task — the SDK's one silent-data-loss path, since the streaming reader is a
+  separate subscriber and receives the event whether or not the store accepted
+  it. `on_push_delivery` reports every delivery attempt by outcome. Both were
+  previously visible only through `tracing`, which is not a default feature of
+  `a2a-protocol-server`, so a default build discarded them entirely. Both are
+  exported by the bundled OTLP exporter as `a2a.server.persistence_errors` and
+  `a2a.server.push_deliveries`.
+
+- **`GET /ready`** on the Axum router — a readiness probe that actually reaches
+  the task store, alongside `/health`, which remains a constant on purpose. A
+  liveness probe that follows a downstream down restart-loops every replica
+  during that downstream's outage. Backed by the new
+  `RequestHandler::task_store_health()`.
+
+- **`TaskStore::save_artifact_delta`**, defaulted to `save`, so every existing
+  implementation keeps working. Lets a store persist what changed rather than
+  the whole record. Implemented by all three bundled stores.
+
+- **`ErrorCode::metric_label` / `A2aError::metric_label`** — a bounded,
+  low-cardinality label for every error code, safe to use as a metric dimension.
+
+- **`a2a-protocol-slimrpc` is publishable**, and the SLIMRPC specification is
+  vendored at `spec/slimrpc_v1/` so the binding's method inventory is checked
+  against the document it claims to implement.
+
+- **`examples/deploy-agent`** — the smallest agent you can actually ship:
+  environment configuration, liveness and readiness endpoints, a `SIGTERM`
+  drain, a `0.0.0.0` bind, a two-stage `Dockerfile` and a Kubernetes manifest.
+
+- **`examples/hello-agent`** — 23 lines of code against the umbrella crate
+  alone.
+
+### Fixed
+
+- **Streaming was quadratic in the length of the stream.** The background
+  processor saved the whole task on every artifact event, and the in-memory
+  store deep-clones, so event *i* copied *i* artifacts. A 502-event stream spent
+  43.4 ms against the in-memory store versus 3.2 ms against one that discards
+  everything. `save_artifact_delta` makes it linear: **120.6 ms to 3.6 ms** for
+  the distinct-artifact shape, **43.4 ms to 2.5 ms** for the append shape, with
+  both curves flat.
+
+  The same change on the SQL stores removes the Rust-side serialization of the
+  whole task and its transfer as a bind parameter: SQLite 144.5 ms to 127.6 ms,
+  Postgres 798 ms to 500 ms with per-event cost flat (853/840/1000 µs at 50/250/
+  500 chunks) where `save` grew (874/1183/1597 µs).
+
+- The `Message::text()` helper and the `PartContent` re-exports the README quick
+  start needed. That snippet had not compiled for three minor versions.
+
+### Changed
+
+- Public traits are documented as **unsealed and staying that way**, with the
+  rules for extending them in CONTRIBUTING — including why a defaulted method is
+  not free.
+
+- `handler/messaging.rs` (2,395 lines) split into `messaging/{mod,decisions,
+  tests}.rs`. `send_message_inner` remains ~530 lines and is recorded in
+  `.file-length-baseline` as the outstanding work.
+
+
 ### Fixed
 
 - **`message/send` cost 32× more on any server that had handled more than

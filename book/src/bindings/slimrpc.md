@@ -29,22 +29,22 @@ plus multicast, driving the same `RequestHandler` the HTTP bindings drive.
 
 ```toml
 [dependencies]
-a2a-protocol-slimrpc = "0.1"
-a2a-protocol-server  = "0.8"
+a2a-protocol-slimrpc = "0.2"
+a2a-protocol-server  = "0.9"
 ```
 
 ### Why two version numbers
 
-`a2a-protocol-slimrpc` is versioned independently of the SDK, and starts at
-`0.1` rather than matching the SDK's `0.8`. Numbering it `0.8.0` would claim
-eight minor versions of API stability it has not earned, and would force a bump
+`a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.2`
+while the SDK is at `0.9`. Numbering it to match would claim nine minor
+versions of API stability it has not earned, and would force a bump
 on every SDK release even when nothing here changed.
 
 Independence applies to the *numbers*, not the schedule. `SlimRpcServer::builder`
 takes an `Arc<RequestHandler>` and `agent_interface()` returns an
 `AgentInterface`, so `a2a-protocol-server` and `a2a-protocol-types` are **public
 dependencies**: your `RequestHandler` must come from the same SDK version this
-crate was built against. That is why the requirement is a tight `0.8` and not a
+crate was built against. That is why the requirement is a tight `0.9` and not a
 range — allow two and cargo links both, and you get `expected RequestHandler,
 found RequestHandler`, which is among the least helpful errors in Rust.
 
