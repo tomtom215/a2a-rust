@@ -170,6 +170,27 @@ pub trait TaskStore: Send + Sync + 'static {
     /// worthwhile for any store where applying a delta is cheaper than
     /// rewriting the record.
     ///
+    /// All three stores shipped here override it, and what each one wins
+    /// differs with its storage model:
+    ///
+    /// | Store | Approach | Measured on a 500-chunk stream |
+    /// |---|---|---|
+    /// | [`InMemoryTaskStore`] | Mutates the stored task in place | 43.4 ms to 2.5 ms |
+    /// | `SqliteTaskStore` | `json_set` splices the tail into the document | 144.5 ms to 127.6 ms |
+    /// | `PostgresTaskStore` | `jsonb_set` with `\|\|` array concat | 798 ms to 500 ms |
+    ///
+    /// The in-memory win is the largest because a full `save` there is a deep
+    /// clone and a delta is a `Vec` extend. The SQL stores keep one JSON
+    /// document per row, so they still rewrite the row internally; what the
+    /// delta removes is the Rust-side serialization of the whole task and its
+    /// transfer as a bind parameter. That is enough to flatten Postgres's
+    /// per-event cost — 874, 1183, 1597 µs at 50, 250 and 500 chunks with
+    /// `save`, against 853, 840, 1000 µs with the delta — but not to make
+    /// either SQL store as cheap as memory. Only normalising artifacts into
+    /// their own table would do that, and the same measurements put the
+    /// per-event round trip well above the document-size term, so it would buy
+    /// the smaller half.
+    ///
     /// An override **must** leave the store holding exactly what `save(task)`
     /// would have left it holding. `delta` describes a change already present
     /// in `task`; if an implementation cannot apply it — the record is missing,

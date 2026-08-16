@@ -58,24 +58,27 @@ import sys
 from pathlib import Path
 
 # Groups to police, as (criterion directory, benchmark-id template, event
-# counts). The counts must be ascending and at least four long: three points
-# give one reference and one probe with nothing left over to sanity-check.
-GROUPS: list[tuple[str, str, list[int]]] = [
-    (
-        "backpressure_stream_volume",
-        "{n}_events",
-        [7, 27, 52, 252, 502],
-    ),
-    (
-        "backpressure_append_volume",
-        "task_store_{n}_events",
-        [7, 27, 52, 252, 502],
-    ),
-    (
-        "backpressure_append_volume",
-        "discard_store_{n}_events",
-        [7, 27, 52, 252, 502],
-    ),
+# counts, max ratio). The counts must be ascending and at least four long:
+# three points give one reference and one probe with nothing left over to
+# sanity-check.
+#
+# The per-group ratio exists because backends have legitimately different
+# shapes, and one global threshold would either exempt the strict cases or
+# flake on the loose one. Each value below is justified where it is set;
+# `--max-ratio` overrides all of them for a one-off investigation.
+GROUPS: list[tuple[str, str, list[int], float]] = [
+    # In-memory paths do constant work per event, so anything above noise is a
+    # regression. The pre-fix quadratic version scored 26.
+    ("backpressure_stream_volume", "{n}_events", [7, 27, 52, 252, 502], 3.0),
+    ("backpressure_append_volume", "task_store_{n}_events", [7, 27, 52, 252, 502], 3.0),
+    ("backpressure_append_volume", "discard_store_{n}_events", [7, 27, 52, 252, 502], 3.0),
+    # SQLite stores one JSON document per task and rewrites the row on every
+    # update, so *some* growth with document size is inherent to the schema and
+    # cannot be removed by any delta API — only by normalising artifacts into
+    # their own table, which the measurements say would buy the smaller half of
+    # the cost. Measured at 2.03 after `save_artifact_delta`; 4.0 leaves room
+    # for runner noise while still catching a return to the pre-fix shape.
+    ("backpressure_append_volume", "sqlite_store_{n}_events", [7, 27, 52, 252, 502], 4.0),
 ]
 
 
@@ -106,7 +109,12 @@ def marginal(points: list[tuple[int, float]]) -> list[tuple[int, int, float]]:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--criterion-dir", type=Path, default=Path("target/criterion"))
-    ap.add_argument("--max-ratio", type=float, default=3.0)
+    ap.add_argument(
+        "--max-ratio",
+        type=float,
+        default=None,
+        help="override every group's own limit (for investigation)",
+    )
     args = ap.parse_args()
 
     print("streaming linearity — marginal cost per event must not grow")
@@ -114,7 +122,8 @@ def main() -> int:
     failures: list[str] = []
     checked = 0
 
-    for group, template, counts in GROUPS:
+    for group, template, counts, group_limit in GROUPS:
+        limit = args.max_ratio if args.max_ratio is not None else group_limit
         points: list[tuple[int, float]] = []
         for n in counts:
             ns = median_ns(args.criterion_dir, group, template.format(n=n))
@@ -141,10 +150,10 @@ def main() -> int:
         print(f"    marginal: {detail}")
         print(
             f"    top step {top_lo}->{top_hi} is {ratio:.2f}x the flat reference "
-            f"({reference / 1000:.1f}µs); limit {args.max_ratio}x"
+            f"({reference / 1000:.1f}µs); limit {limit}x"
         )
 
-        if ratio > args.max_ratio:
+        if ratio > limit:
             failures.append(
                 f"{label}: per-event cost at {top_lo}->{top_hi} events is "
                 f"{ratio:.2f}x the {reference / 1000:.1f}µs seen mid-range. "
@@ -168,7 +177,7 @@ def main() -> int:
             print(f"  {f}")
         return 1
 
-    print(f"\nOK — {checked} group(s) flat within {args.max_ratio}x.")
+    print(f"\nOK — {checked} group(s) within their limits.")
     return 0
 
 

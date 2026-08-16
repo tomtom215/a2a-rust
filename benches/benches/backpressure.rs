@@ -38,6 +38,7 @@ use a2a_benchmarks::executor::{AppendingExecutor, EchoExecutor, MultiEventExecut
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
 use a2a_benchmarks::store::DiscardTaskStore;
+use a2a_protocol_server::store::SqliteTaskStore;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -181,18 +182,54 @@ fn bench_stream_volume(c: &mut Criterion) {
 
 /// Same server shape as [`start_multi_event_server`], driven by
 /// [`AppendingExecutor`] so every chunk merges into one artifact.
-async fn start_appending_server(chunks: usize, discard_store: bool) -> String {
+/// Which store the appending server persists into.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StoreKind {
+    /// The default in-memory store.
+    Memory,
+    /// A store that keeps nothing, isolating the store's share of the cost.
+    Discard,
+    /// A real `SQLite` database on disk — the cheapest persistent store, and
+    /// the one whose per-event cost a deployment actually pays.
+    Sqlite,
+}
+
+impl StoreKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Memory => "task_store",
+            Self::Discard => "discard_store",
+            Self::Sqlite => "sqlite_store",
+        }
+    }
+}
+
+async fn start_appending_server(chunks: usize, store: StoreKind) -> String {
     let executor = AppendingExecutor { chunks };
     let queue_capacity = (chunks + 2).next_power_of_two().max(256) * 2;
     let builder = RequestHandlerBuilder::new(executor)
         .with_agent_card(fixtures::agent_card("http://127.0.0.1:0"))
         .with_event_queue_capacity(queue_capacity);
-    // Swapping in a store that keeps nothing is how the store's share of the
-    // per-event cost gets attributed instead of assumed.
-    let builder = if discard_store {
-        builder.with_task_store(DiscardTaskStore)
-    } else {
-        builder
+    // Swapping the store is how its share of the per-event cost gets
+    // attributed instead of assumed.
+    let builder = match store {
+        StoreKind::Memory => builder,
+        StoreKind::Discard => builder.with_task_store(DiscardTaskStore),
+        StoreKind::Sqlite => {
+            // A file, not `:memory:`. An in-memory SQLite database skips the
+            // page cache and WAL behaviour that dominate a real deployment's
+            // per-event cost, so measuring it would answer a question nobody
+            // has. The file lands in the target directory and is left behind
+            // deliberately — criterion re-runs reuse it, and a benchmark that
+            // deletes its own evidence is hard to investigate.
+            let path = std::env::temp_dir().join(format!("a2a-bench-append-{chunks}.sqlite"));
+            let _ = std::fs::remove_file(&path);
+            let url = format!("sqlite://{}", path.display());
+            let store = SqliteTaskStore::new(&url)
+                .await
+                .expect("open sqlite task store");
+            builder.with_task_store(store)
+        }
     };
     let handler = Arc::new(builder.build().expect("build handler"));
     let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
@@ -215,12 +252,13 @@ fn bench_append_volume(c: &mut Criterion) {
     let mut group = c.benchmark_group("backpressure/append_volume");
     group.measurement_time(std::time::Duration::from_secs(10));
 
-    for &(discard, arm) in &[(false, "task_store"), (true, "discard_store")] {
+    for &kind in &[StoreKind::Memory, StoreKind::Discard, StoreKind::Sqlite] {
+        let arm = kind.label();
         for &chunks in &[1usize, 5, 25, 50, 250, 500] {
             let total_events = chunks + 2;
             group.throughput(Throughput::Elements(total_events as u64));
 
-            let url = runtime.block_on(start_appending_server(chunks, discard));
+            let url = runtime.block_on(start_appending_server(chunks, kind));
             let client = ClientBuilder::new(&url).build().expect("build client");
 
             group.bench_with_input(
