@@ -829,6 +829,56 @@ async fn artifact_delta_pushing_matches_full_save() -> A2aResult<()> {
     Ok(())
 }
 
+/// A `Pushed` delta whose index is not the last position must fall back rather
+/// than run the append.
+///
+/// The statement appends to the end of the stored array unconditionally, so
+/// running it for a non-last index puts the artifact in the wrong place — the
+/// one failure mode in this file that *corrupts* rather than merely costing a
+/// fallback.
+///
+/// Asserting it needs a live database: the guard is a plain `if` returning
+/// `Ok(None)`, and with the negation removed it declines the valid case (which
+/// falls back and writes identical bytes, invisibly) while accepting the
+/// invalid one (which does not). Only the second half is observable, and only
+/// against a real row. Mutation testing found it after the guard was extracted
+/// into `is_last_position`, whose own unit tests cover the predicate but not
+/// the branch that consults it.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_push_at_a_non_last_index_falls_back() -> A2aResult<()> {
+    let db = TestDb::create("delta_push_wrong_index").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let mut task = task_with_artifacts("t", Some(vec![artifact("a0", 1)]));
+    store.save(&task).await?;
+
+    // Two artifacts stored; index 0 is no longer the last position.
+    task.artifacts.as_mut().unwrap().push(artifact("a1", 1));
+    store.save(&task).await?;
+
+    // A delta naming index 0 does not describe an append at the end.
+    store
+        .save_artifact_delta(&task, ArtifactDelta::Pushed { index: 0 })
+        .await?;
+
+    let stored = store
+        .get(&TaskId::new("t"))
+        .await?
+        .expect("task should still exist");
+    let artifacts = stored.artifacts.as_ref().expect("artifacts");
+    assert_eq!(
+        artifacts.len(),
+        2,
+        "a mis-indexed push must fall back, not append a duplicate; got {:?}",
+        artifacts.iter().map(|a| &a.id).collect::<Vec<_>>()
+    );
+    assert_eq!(stored, task, "the fallback must persist the task unchanged");
+
+    db.drop_db().await;
+    Ok(())
+}
+
 /// A delta for a row that does not exist must still persist the task, and a
 /// stored document with no artifacts array must take the fallback rather than
 /// be edited in place — that is what the `jsonb_typeof` guards are for.
