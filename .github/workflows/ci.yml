@@ -113,6 +113,17 @@ jobs:
       - name: Book code blocks (ignore ratchet)
         run: ./scripts/check_book_code.sh
 
+      # The API Quick Reference is 299 hand-written lines listing every public
+      # type, trait and function — and nothing generated or checked it, so it
+      # could only get less true with every rename. Same decay class as the
+      # benchmark prose, in the page a reader consults precisely when they do
+      # not know the API well enough to spot a stale name.
+      #
+      # Generated rustdoc now ships at /api/ and answers "what exists"
+      # exhaustively; this keeps the curated overview honest alongside it.
+      - name: API Quick Reference names still exist
+        run: python3 scripts/check_api_reference.py
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the

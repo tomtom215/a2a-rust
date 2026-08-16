@@ -67,4 +67,5 @@
 - [Mutation Testing History](./reference/mutation-history.md)
 - [Conformance History](./reference/conformance-history.md)
 - [API Quick Reference](./reference/api-reference.md)
+- [Generated API Docs](./reference/api-docs.md)
 - [Changelog](./reference/changelog.md)

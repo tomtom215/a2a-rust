@@ -36,6 +36,51 @@ jobs:
       - name: Build book
         run: mdbook build book
 
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # The site carried no API reference at all: `deployment/cicd.md` said to
+      # consider "linking to docs.rs once published", which leaves the book's
+      # hand-written API Quick Reference as the only signature listing on the
+      # site — and nothing regenerates that. rustdoc is generated from the code
+      # on every deploy, so it cannot drift.
+      #
+      # `--no-deps` keeps this to the four published crates rather than every
+      # transitive dependency: dependency docs would multiply build time and
+      # output size for pages nobody visits from here.
+      - name: Build API documentation
+        run: |
+          cargo doc --no-deps --all-features \
+            -p a2a-protocol-types \
+            -p a2a-protocol-client \
+            -p a2a-protocol-server \
+            -p a2a-protocol-sdk
+        env:
+          RUSTDOCFLAGS: "--cfg docsrs -D warnings"
+
+      - name: Place API documentation under /api/
+        run: |
+          set -euo pipefail
+          mkdir -p book/book/api
+          cp -r --no-preserve=mode target/doc/. book/book/api/
+          # rustdoc emits no landing page with `--no-deps`, so /api/ alone
+          # would 404. Redirect it at the umbrella crate.
+          cat > book/book/api/index.html <<'HTML'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>a2a-protocol API documentation</title>
+          <meta http-equiv="refresh" content="0; url=a2a_protocol_sdk/index.html">
+          <link rel="canonical" href="a2a_protocol_sdk/index.html">
+          <p>Redirecting to <a href="a2a_protocol_sdk/index.html">a2a-protocol-sdk</a>.</p>
+          HTML
+          # Fail loudly rather than deploying an empty /api/: a 404 that only
+          # appears in production is exactly what this step exists to prevent.
+          for crate in a2a_protocol_types a2a_protocol_client a2a_protocol_server a2a_protocol_sdk; do
+            test -f "book/book/api/$crate/index.html" \
+              || { echo "rustdoc output missing for $crate"; exit 1; }
+          done
+          echo "API docs staged for 4 crates"
+
       - name: Copy static assets into build output
         # Mirrors everything under `book/static/` into the built site so that
         # crawlable files (robots.txt, sitemap.xml) and vendored assets

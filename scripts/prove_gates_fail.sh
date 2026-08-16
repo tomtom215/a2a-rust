@@ -293,6 +293,8 @@ injection_for() {
             echo "benchmark_prose" ;;
         "./scripts/check_book_code.sh")
             echo "book_code" ;;
+        *"check_api_reference.py"*)
+            echo "api_reference" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
@@ -379,6 +381,7 @@ expected_marker() {
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
+        api_reference)    echo "are not defined in crates/" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
@@ -415,6 +418,17 @@ apply_injection() {
             note_touched "book/src/concepts/streaming.md"
             printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
                 >>book/src/concepts/streaming.md
+            ;;
+        api_reference)
+            # Rename a type on the page and leave the code alone — the exact
+            # decay this gate exists for. A hand-written listing goes stale the
+            # moment something is renamed, and it goes stale silently, in the
+            # page a reader trusts precisely because they do not yet know the
+            # API well enough to catch it. `sed` rather than a heredoc so this
+            # arm stays a one-liner like its neighbours.
+            note_touched "book/src/reference/api-reference.md"
+            sed -i 's/`TaskVersion`/`TaskRevision`/' \
+                book/src/reference/api-reference.md
             ;;
         benchmark_prose)
             # The defect is the historical one, restored verbatim: the
