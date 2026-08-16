@@ -543,6 +543,39 @@ Two consequences worth spelling out, because both have bitten this repo:
 - Quoting this saving as a small percentage understates it by roughly 4×. It is
   a large fraction of a loopback request, not a rounding error.
 
+### What sharing a client is actually worth under concurrency
+
+The bullet above says `production_agent_burst` tracks the rebuild-every-time
+number. That is true, and it invites a wrong inference: that sharing a client
+would move it to the reused figure. It does not, and
+`production/agent_burst_client_sharing` was added to measure the difference
+rather than reason about it. Both arms run the same server, the same three
+operations per agent, and the same burst sizes; only the client's provenance
+changes.
+
+| Burst | Client per agent | Shared `Arc<A2aClient>` | Saved per agent |
+|---|---|---|---|
+| 10 | 368.7 µs | 314.2 µs | 54.5 µs (14.8%) |
+| 50 | 334.1 µs | 273.9 µs | 60.2 µs (18.0%) |
+| 100 | 326.7 µs | 267.6 µs | 59.2 µs (18.1%) |
+
+Sharing wins at every burst size, and the medians' 95% confidence intervals are
+disjoint in all three, so the direction is not noise. But the size of the win is
+about half what the single-request comparison above predicts:
+59.2 µs (18.1%) per agent
+against the 123.5 µs (39.5%) that
+`reused_client` versus `new_client_per_request` would lead you to expect.
+
+The reason is that the two arms differ in two coupled ways, not one. A shared
+client skips per-agent construction *and* per-agent connection setup, but it
+also puts every concurrent agent on one connection pool, and that contention
+gives part of the saving back. The sequential benchmark has no contention to
+pay, which is why its number is the optimistic bound rather than the forecast.
+
+The practical reading: share the client — it is free to do and wins at every
+size measured — but size capacity from the burst figures, not from the
+single-request saving.
+
 ### Deserialization allocation overhead
 
 Deserialization allocates ~3× more than serialization (Task: 1,026 vs 342

@@ -44,7 +44,7 @@ use a2a_benchmarks::executor::{EchoExecutor, MultiEventExecutor};
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
 
-use a2a_protocol_client::ClientBuilder;
+use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::serve::serve_with_addr;
@@ -557,6 +557,125 @@ fn bench_agent_burst(c: &mut Criterion) {
     group.finish();
 }
 
+// ── Controlled A/B: per-agent client vs shared Arc<A2aClient> ────────────
+
+/// The one variable under test in [`bench_agent_burst_client_sharing`].
+#[derive(Clone, Copy)]
+enum ClientSharing {
+    /// A fresh `ClientBuilder::new(&url).build()` inside every spawned agent —
+    /// what `bench_agent_burst` above does.
+    PerAgent,
+    /// One client built before the measured region, shared by `Arc::clone`.
+    Shared,
+}
+
+impl ClientSharing {
+    fn label(self) -> &'static str {
+        match self {
+            Self::PerAgent => "per_agent_client",
+            Self::Shared => "shared_client",
+        }
+    }
+}
+
+/// Answers a question `bench_agent_burst` cannot: how much of its per-agent
+/// cost is the agent's work, and how much is rebuilding a client it could have
+/// shared?
+///
+/// `bench_agent_burst` builds a client inside each spawned task, inside the
+/// measured region. Its per-agent cost tracks `new_client_per_request` rather
+/// than `reused_client`, which is *consistent* with construction dominating —
+/// but consistency is not causation, and two benchmarks differing in many ways
+/// cannot establish it. This one holds everything else fixed: same server, same
+/// three operations per agent, same burst sizes, same concurrency. Only where
+/// the client comes from changes.
+///
+/// The delta is not purely `A2aClient::build`. A shared client also shares one
+/// connection pool, so the arms differ in two coupled ways:
+///
+/// - **Saved:** per-agent client construction *and* per-agent TCP connection
+///   setup, since a fresh client starts with an empty pool.
+/// - **Added:** contention for that one pool across `n` concurrent agents.
+///
+/// Those cannot be separated by swapping a single variable, and pretending
+/// otherwise would be the error this benchmark exists to correct. What the two
+/// arms do measure is the question an application actually faces — *should I
+/// share my client?* — with the pool effect included rather than assumed away.
+/// Whether the saving survives contention at `n = 100` is the interesting part,
+/// and is exactly what a single-`n` measurement would miss.
+fn bench_agent_burst_client_sharing(c: &mut Criterion) {
+    let runtime = rt();
+    let srv = runtime.block_on(server::start_jsonrpc_server(EchoExecutor));
+
+    let mut group = c.benchmark_group("production/agent_burst_client_sharing");
+    group.measurement_time(std::time::Duration::from_secs(15));
+
+    let burst_sizes: &[usize] = &[10, 50, 100];
+
+    for &n in burst_sizes {
+        group.throughput(Throughput::Elements((n * 3) as u64)); // 3 ops per agent
+        group.sample_size(10);
+
+        for sharing in [ClientSharing::PerAgent, ClientSharing::Shared] {
+            let id = BenchmarkId::new(format!("{}/agents", sharing.label()), n);
+
+            group.bench_with_input(id, &n, |b, &n| {
+                let url = srv.url.clone();
+
+                // Built once, outside the measured region — that is the point.
+                // The `PerAgent` arm ignores it and builds its own inside.
+                let shared: Arc<A2aClient> =
+                    Arc::new(ClientBuilder::new(&url).build().expect("build client"));
+
+                b.to_async(&runtime).iter(|| {
+                    let url = url.clone();
+                    let shared = Arc::clone(&shared);
+                    async move {
+                        let mut handles = Vec::with_capacity(n);
+                        for i in 0..n {
+                            let url = url.clone();
+                            let shared = Arc::clone(&shared);
+                            handles.push(tokio::spawn(async move {
+                                let client = match sharing {
+                                    ClientSharing::PerAgent => Arc::new(
+                                        ClientBuilder::new(&url).build().expect("build client"),
+                                    ),
+                                    ClientSharing::Shared => shared,
+                                };
+
+                                // Identical from here down in both arms.
+                                let resp = client
+                                    .send_message(fixtures::send_params(&format!("agent-{i}")))
+                                    .await
+                                    .expect("send");
+                                if let SendMessageResponse::Task(task) = &resp {
+                                    let _ = client
+                                        .get_task(a2a_protocol_types::params::TaskQueryParams {
+                                            tenant: None,
+                                            id: task.id.to_string(),
+                                            history_length: None,
+                                        })
+                                        .await;
+                                }
+                                let _ = client
+                                    .list_tasks(
+                                        a2a_protocol_types::params::ListTasksParams::default(),
+                                    )
+                                    .await;
+                            }));
+                        }
+                        for handle in handles {
+                            handle.await.expect("join");
+                        }
+                    }
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
 // ── Dispatch routing overhead isolation ─────────────────────────────────
 
 fn bench_dispatch_routing(c: &mut Criterion) {
@@ -630,6 +749,7 @@ criterion_group!(
     bench_full_e2e_orchestration,
     bench_push_config_roundtrip,
     bench_agent_burst,
+    bench_agent_burst_client_sharing,
     bench_dispatch_routing,
 );
 criterion_main!(benches);

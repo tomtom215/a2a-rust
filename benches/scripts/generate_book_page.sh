@@ -85,6 +85,33 @@ print(int(d['median']['point_estimate']))
 # visible gaps rather than a confidently wrong sentence.
 
 # Percentage increase from $1 to $2, e.g. "20.0%".
+# Median of $1 divided by the burst size $2, rendered as µs-per-agent. Lets the
+# burst A/B be quoted per agent, which is the only form comparable to the
+# single-request connection-reuse numbers above it.
+derive_per_agent() {
+    local est_file="$1" n="$2"
+    local ns
+    ns="$(extract_median_ns "$est_file")"
+    if [ "$ns" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{$ns / 1000 / $n:.1f} µs')"
+}
+
+# Absolute per-agent saving between two burst arms of size $3, in µs.
+derive_per_agent_saving() {
+    local slow_file="$1" fast_file="$2" n="$3"
+    local slow fast
+    slow="$(extract_median_ns "$slow_file")"
+    fast="$(extract_median_ns "$fast_file")"
+    if [ "$slow" = "0" ] || [ "$fast" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{($slow - $fast) / 1000 / $n:.1f} µs ({(($slow - $fast) / $slow) * 100:.1f}%)')"
+}
+
 derive_pct_increase() {
     local from_file="$1" to_file="$2"
     local from to
@@ -518,6 +545,9 @@ TRANSPORT_64="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/64/new/estim
 TRANSPORT_16K="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/16384/new/estimates.json"
 CONN_NEW="$CRITERION_DIR/realistic_connection/new_client_per_request/new/estimates.json"
 CONN_REUSED="$CRITERION_DIR/realistic_connection/reused_client/new/estimates.json"
+BURST_AB="$CRITERION_DIR/production_agent_burst_client_sharing"
+BURST_PER_AGENT="$BURST_AB/per_agent_client_agents/100/new/estimates.json"
+BURST_SHARED="$BURST_AB/shared_client_agents/100/new/estimates.json"
 
 cat >> "$OUTPUT_FILE" <<SECTION
 ### Transport payload insensitivity
@@ -545,6 +575,39 @@ Two consequences worth spelling out, because both have bitten this repo:
   the shared-client one.
 - Quoting this saving as a small percentage understates it by roughly 4×. It is
   a large fraction of a loopback request, not a rounding error.
+
+### What sharing a client is actually worth under concurrency
+
+The bullet above says \`production_agent_burst\` tracks the rebuild-every-time
+number. That is true, and it invites a wrong inference: that sharing a client
+would move it to the reused figure. It does not, and
+\`production/agent_burst_client_sharing\` was added to measure the difference
+rather than reason about it. Both arms run the same server, the same three
+operations per agent, and the same burst sizes; only the client's provenance
+changes.
+
+| Burst | Client per agent | Shared \`Arc<A2aClient>\` | Saved per agent |
+|---|---|---|---|
+| 10 | $(derive_per_agent "$BURST_AB/per_agent_client_agents/10/new/estimates.json" 10) | $(derive_per_agent "$BURST_AB/shared_client_agents/10/new/estimates.json" 10) | $(derive_per_agent_saving "$BURST_AB/per_agent_client_agents/10/new/estimates.json" "$BURST_AB/shared_client_agents/10/new/estimates.json" 10) |
+| 50 | $(derive_per_agent "$BURST_AB/per_agent_client_agents/50/new/estimates.json" 50) | $(derive_per_agent "$BURST_AB/shared_client_agents/50/new/estimates.json" 50) | $(derive_per_agent_saving "$BURST_AB/per_agent_client_agents/50/new/estimates.json" "$BURST_AB/shared_client_agents/50/new/estimates.json" 50) |
+| 100 | $(derive_per_agent "$BURST_PER_AGENT" 100) | $(derive_per_agent "$BURST_SHARED" 100) | $(derive_per_agent_saving "$BURST_PER_AGENT" "$BURST_SHARED" 100) |
+
+Sharing wins at every burst size, and the medians' 95% confidence intervals are
+disjoint in all three, so the direction is not noise. But the size of the win is
+about half what the single-request comparison above predicts:
+$(derive_per_agent_saving "$BURST_PER_AGENT" "$BURST_SHARED" 100) per agent
+against the $(derive_saving "$CONN_NEW" "$CONN_REUSED") that
+\`reused_client\` versus \`new_client_per_request\` would lead you to expect.
+
+The reason is that the two arms differ in two coupled ways, not one. A shared
+client skips per-agent construction *and* per-agent connection setup, but it
+also puts every concurrent agent on one connection pool, and that contention
+gives part of the saving back. The sequential benchmark has no contention to
+pay, which is why its number is the optimistic bound rather than the forecast.
+
+The practical reading: share the client — it is free to do and wins at every
+size measured — but size capacity from the burst figures, not from the
+single-request saving.
 
 SECTION
 
