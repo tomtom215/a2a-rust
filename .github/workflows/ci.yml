@@ -479,6 +479,31 @@ jobs:
       - name: Build the slim-node binary
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo build --bin slim-node
+
+      # The root `deny.toml` is resolved against the workspace manifest, so
+      # until this step existed the binding's 379 transitive dependencies —
+      # `aws-lc-sys` and its C toolchain among them — were audited by nothing,
+      # in the one crate here that ships a native build to users.
+      #
+      # `--version 0.19.0` is a floor, not a pin for reproducibility's sake:
+      # 0.18.x aborts loading the advisory database on any CVSS 4.0 entry
+      # rather than skipping it, so an older binary reports a clean run it did
+      # not perform.
+      - name: cargo-deny (the binding's own dependency tree)
+        uses: EmbarkStudios/cargo-deny-action@82eb9f621fbc699dd0918f3ea06864c14cc84246 # v2
+        with:
+          command: check
+          manifest-path: bindings/a2a-protocol-slimrpc/Cargo.toml
+          command-arguments: "--config bindings/a2a-protocol-slimrpc/deny.toml"
+
+      # `cargo package --workspace` in the `package` job cannot see this crate
+      # either, so nothing checked that a `publish = true` crate actually
+      # packages. It is excluded from the manifest list on purpose (`exclude`
+      # in its Cargo.toml keeps the test fixtures out of the tarball), which is
+      # exactly the kind of thing that breaks silently between releases.
+      - name: Package validation
+        working-directory: bindings/a2a-protocol-slimrpc
+        run: cargo package --no-verify --allow-dirty
       # Six topologies: in-process, multicast group, one node over TCP, that
       # node with verified TLS, two peered nodes, and a node in its own OS
       # process. The last four bind loopback ports and spawn a child process,
