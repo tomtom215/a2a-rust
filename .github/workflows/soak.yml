@@ -46,8 +46,20 @@ jobs:
   soak:
     name: Sustained load
     runs-on: ubuntu-latest
-    # The nightly run is 30 minutes of load; the rest is build time.
-    timeout-minutes: 60
+    # Two runs of the chosen duration, plus build time.
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: dtolnay/rust-toolchain@master
@@ -78,9 +90,21 @@ jobs:
       # and prints nothing is the same unevidenced claim this job exists to
       # replace, and the numbers in the log are what a reader compares against
       # the last run.
-      - name: Soak
+      - name: Soak (one process, in-memory store)
         env:
           A2A_SOAK_SECS: ${{ steps.duration.outputs.seconds }}
         run: |
           cargo test -p a2a-protocol-server --release --test soak \
             -- --ignored --nocapture
+
+      # The two-replica run answers what the single-process one cannot: whether
+      # the shared rate-limit counter's table stays bounded across many windows,
+      # whether cross-replica reads hold up while both replicas are writing, and
+      # whether latency degrades as the shared tables grow.
+      - name: Soak (two replicas, shared PostgreSQL)
+        env:
+          A2A_SOAK_SECS: ${{ steps.duration.outputs.seconds }}
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          cargo test -p a2a-protocol-server --features postgres --release \
+            --test soak_multi_replica -- --ignored --nocapture

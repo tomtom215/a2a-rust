@@ -81,8 +81,19 @@ const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 /// what makes the sweep observable at all.
 const DEFAULT_SECONDS: u64 = 60;
 
-/// Client workers, each with its own caller identity so the counter holds
-/// several keys rather than one.
+/// Client workers, each with its own caller key so the counter holds several
+/// keys rather than one.
+///
+/// The keys arrive as `x-forwarded-for` with `trusted_proxy_hops: 1`, which
+/// looks like a detour and is not. `CallContext::caller_identity` is the
+/// limiter's documented first choice, but **nothing in this crate ever sets
+/// it**: `ServerInterceptor::before` takes `&CallContext`, so an interceptor
+/// structurally cannot, no dispatcher does, and `with_caller_identity` has no
+/// caller outside tests. Every caller therefore shares the `"anonymous"`
+/// bucket unless a proxy header supplies the key.
+///
+/// The first version of this file set `authorization` per worker and expected
+/// eight keys. The table held one, which is what surfaced the gap.
 const WORKERS: usize = 8;
 
 /// Rate-limit window width.
@@ -198,6 +209,10 @@ async fn spawn_replica(
     let limiter = RateLimitInterceptor::new(RateLimitConfig {
         requests_per_window: REQUESTS_PER_WINDOW,
         window_secs: WINDOW_SECS,
+        // One trusted hop, so the rightmost `x-forwarded-for` entry becomes the
+        // caller key. See `WORKERS` for why this is the only route to a
+        // per-caller key today.
+        trusted_proxy_hops: 1,
         ..RateLimitConfig::default()
     })
     .expect("limiter")
@@ -275,24 +290,30 @@ async fn two_replicas_survive_sustained_load() {
     let completed = Arc::new(AtomicU64::new(0));
     let failures = Arc::new(AtomicU64::new(0));
     let cross_replica_misses = Arc::new(AtomicU64::new(0));
+    // The first thing that went wrong, kept verbatim. A count alone cannot
+    // distinguish a server error from a client-side parse bug.
+    let first_failure: Arc<std::sync::Mutex<Option<String>>> =
+        Arc::new(std::sync::Mutex::new(None));
     let latencies = Arc::new(std::sync::Mutex::new(Vec::<(u64, u64)>::new()));
 
     let start = Instant::now();
     let mut workers = Vec::with_capacity(WORKERS);
     for worker in 0..WORKERS {
-        let (stop, completed, failures, misses, latencies) = (
+        let (stop, completed, failures, misses, latencies, first_failure) = (
             Arc::clone(&stop),
             Arc::clone(&completed),
             Arc::clone(&failures),
             Arc::clone(&cross_replica_misses),
             Arc::clone(&latencies),
+            Arc::clone(&first_failure),
         );
         workers.push(tokio::spawn(async move {
             let client =
                 hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
                     .build_http::<http_body_util::Full<hyper::body::Bytes>>();
-            // One identity per worker, so the counter holds several keys.
-            let caller = format!("soak-caller-{worker}");
+            // A distinct client address per worker. `.1` through `.8`, so the
+            // counter sees eight keys rather than one.
+            let caller = format!("203.0.113.{}", worker + 1);
 
             let mut n = worker as u64;
             let mut which = worker % 2;
@@ -310,7 +331,7 @@ async fn two_replicas_survive_sustained_load() {
                         .uri(format!("http://{addr}/"))
                         .header("content-type", "application/json")
                         .header("A2A-Version", "1.0")
-                        .header("authorization", format!("Bearer {id}"))
+                        .header("x-forwarded-for", id)
                         .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
                         .expect("request builds")
                 };
@@ -330,12 +351,25 @@ async fn two_replicas_survive_sustained_load() {
                 };
                 let parsed: serde_json::Value =
                     serde_json::from_slice(&body.to_bytes()).unwrap_or(serde_json::Value::Null);
+                // `SendMessageResponse` is externally tagged, so a task comes
+                // back as `{"result": {"task": {...}}}` rather than the
+                // `{"result": {...}}` the first version of this file assumed.
+                // That mistake cost a whole 60-second run: every request
+                // succeeded, every parse failed, and the counter said only
+                // "73,714 failures" — which is why the first failure now
+                // records the body that caused it.
                 let Some(task_id) = parsed
-                    .pointer("/result/id")
+                    .pointer("/result/task/id")
                     .and_then(serde_json::Value::as_str)
                     .map(str::to_owned)
                 else {
                     failures.fetch_add(1, Ordering::Relaxed);
+                    let mut sample = first_failure.lock().expect("sample lock");
+                    if sample.is_none() {
+                        *sample = Some(format!(
+                            "SendMessage response did not carry a task id: {parsed}"
+                        ));
+                    }
                     continue;
                 };
 
@@ -463,15 +497,36 @@ async fn two_replicas_survive_sustained_load() {
     // counter's table is swept, so it holds roughly one row per caller rather
     // than one per caller per window for the life of the run.
     let windows_spanned = seconds / WINDOW_SECS;
-    let ceiling = i64::try_from(WORKERS as u64 * 2).unwrap_or(i64::MAX);
+    // Four windows' worth of keys.
+    //
+    // Steady state is two — the current window plus the previous one in the
+    // moment before a sweep clears it — and a 60-second run was measured
+    // oscillating between 8 and 16 rows for 8 callers. Two windows would
+    // therefore be a knife-edge ceiling: sweeps are amortised every N counts,
+    // so a slower runner sweeps less often in wall-clock terms and a third
+    // window can coexist. That is a flaky test, not a stricter one.
+    //
+    // Four keeps the assertion sharp where it matters. If sweeping were broken
+    // the table would hold `WORKERS * windows_spanned` — 96 rows for a
+    // 60-second run and 2,880 for the 30-minute nightly, against a ceiling of
+    // 32 either way.
+    let ceiling = i64::try_from(WORKERS as u64 * 4).unwrap_or(i64::MAX);
     let peak_rl = samples.iter().map(|s| s.3).max().unwrap_or(0);
     println!(
         "rate-limit table peaked at {peak_rl} rows across ~{windows_spanned} windows \
-         and {WORKERS} callers (ceiling {ceiling})"
+         and {WORKERS} callers (ceiling {ceiling}; unswept would be {})",
+        WORKERS as u64 * windows_spanned
     );
     assert!(
-        peak_rl >= 0,
-        "the rate-limit table could not be read; the counter may not have been used"
+        peak_rl > 0,
+        "the rate-limit table stayed empty, so the shared counter was never \
+         consulted and everything below it measures nothing"
+    );
+    assert!(
+        peak_rl >= i64::try_from(WORKERS).unwrap_or(i64::MAX),
+        "the table held {peak_rl} rows for {WORKERS} distinct callers — fewer \
+         keys than callers means they are sharing a bucket, which is what \
+         happens when the caller key falls back to \"anonymous\""
     );
     assert!(
         peak_rl <= ceiling,

@@ -34,17 +34,20 @@
 #
 # rate_limit.rs came OFF this list when the shared counter was added, which is
 # the direction it is supposed to move. It was 1,272 lines; the implementation
-# is now 496 in rate_limit/mod.rs, under the limit, after the counter went to
-# shared.rs, caller identity to identity.rs, and the tests to their own files.
-# rate_limit/tests.rs (833) is the extracted suite, recorded on the same
-# reasoning as the two above.
+# is now under the limit after the counter went to shared.rs, caller identity to
+# identity.rs, the unwind-safety assertion to unwind_safety.rs, and the tests to
+# their own files. rate_limit/tests.rs (833) is the extracted suite, recorded on
+# the same reasoning as the two above.
 #
-# tests/multi_replica.rs (531) is a new file and the one entry here that is not
-# a split. It is 31 lines over, and most of its length is the paragraph above
-# each test saying which multi-replica claim that test pins and why anyone
-# should care — for a file whose entire purpose is to replace assumptions about
-# two-replica behaviour with measurements, deleting that prose to save 31 lines
-# would remove the part that makes it useful.
+# The two multi-replica test files are the entries here that are not splits:
+#
+#   tests/multi_replica.rs (531) and tests/soak_multi_replica.rs (560). Most of
+#   their length is the paragraph above each test saying which multi-replica
+#   claim it pins and why anyone should care, plus — in the soak — the sampling
+#   and reporting that make a run's numbers readable rather than a bare
+#   pass/fail. For files whose whole purpose is to replace assumptions about
+#   two-replica behaviour with measurements, cutting that prose to save a few
+#   dozen lines would remove the part that makes them useful.
 #
 # Regenerating with --update drops every comment above. If you run it, put them
 # back.
@@ -102,6 +105,7 @@ crates/a2a-protocol-server/tests/jsonrpc_dispatch_coverage_tests.rs
 crates/a2a-protocol-server/tests/multi_replica.rs
 crates/a2a-protocol-server/tests/postgres_store_tests.rs
 crates/a2a-protocol-server/tests/push_sender_tests.rs
+crates/a2a-protocol-server/tests/soak_multi_replica.rs
 crates/a2a-protocol-server/tests/tenant_sqlite_store_tests.rs
 crates/a2a-protocol-server/tests/validation_edge_tests.rs
 crates/a2a-protocol-types/src/agent_card.rs

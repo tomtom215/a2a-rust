@@ -134,9 +134,50 @@ Three ways to live with it, in the order most deployments should consider them:
 3. **Push notifications.** Configure a webhook; delivery is driven from the
    replica running the task and does not depend on where the client is.
 
+## Under sustained load
+
+`tests/soak_multi_replica.rs` runs both replicas against one database for as
+long as you ask. A 60-second run on a 4-core machine:
+
+| | |
+|---|---|
+| Request pairs (a `SendMessage` on one replica, a `GetTask` on the other) | 64,642 |
+| Failures | 0 |
+| Cross-replica misses | 0 |
+| Resident growth after warm-up | 19.2 bytes per pair |
+| Rate-limit table, peak | 16 rows for 8 callers across ~12 windows |
+| p95 latency, first quarter → last | 9,333 µs → 9,707 µs (1.04×) |
+
+Three things worth drawing out.
+
+**Cross-replica reads held under load.** Every one of those 64,642 pairs wrote
+on one replica and read on the other, and none missed. The consistency shown
+one-request-at-a-time earlier is not an artifact of a quiet system.
+
+**The shared counter's table stays bounded.** It holds the current window's
+keys plus, briefly, the previous window's — 8 or 16 rows for 8 callers. Without
+the sweep it would have reached 96 in a minute and would keep going for the
+life of the deployment. That is asserted, and the assertion was checked by
+disabling the sweep: 104 rows against a ceiling of 32.
+
+**Latency did not degrade** as the `tasks` table grew past 65,000 rows.
+
+### The `tasks` table grows without bound
+
+Visible in that run: 65,399 rows after 60 seconds, and nothing removes them.
+A2A has no `DeleteTask` and `PostgresTaskStore` has no capacity eviction —
+correctly, because a durable store silently dropping records would be worse
+than one that grows.
+
+The consequence is a retention policy you have to supply yourself. Nothing in
+the SDK does it for you, and until this page there was nothing telling you so.
+A periodic `DELETE FROM tasks WHERE updated_at < now() - interval '30 days'`
+is the usual shape; pick the interval from how long your clients may reasonably
+poll for a task after it finishes.
+
 ## What is still unevidenced
 
-The soak test (`tests/soak.rs`) runs one process. Nothing here measures two
-replicas under sustained load for an extended period, so the numbers above
-describe correctness and per-request cost, not hours of two-replica traffic.
-If you are running this at scale and have measurements, they would be welcome.
+The replicas above are two handlers in one OS process, so nothing here can see
+a defect that needs real process isolation. Both runs are loopback on one
+machine: no real network, no failover, no partition. If you are running this at
+scale and have measurements, they would be welcome.
