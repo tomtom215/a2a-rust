@@ -299,8 +299,11 @@ fn spawn_connection(
         // Unlike `serve`, the outcome is not discarded: a connection that died
         // before serving anything is a fact an operator can act on, and
         // dropping it makes the two cases indistinguishable.
-        if let Err(e) = watcher.watch(conn).await {
-            trace_warn!(error = %e, "connection error");
+        // `_e` because `trace_warn!` compiles to nothing without the `tracing`
+        // feature, which would make a plain `e` an unused binding there. The
+        // repo's convention for a value that only a trace macro reads.
+        if let Err(_e) = watcher.watch(conn).await {
+            trace_warn!(error = %_e, "connection error");
         }
         drop(permit);
     });

@@ -122,7 +122,10 @@ pub use call_context::CallContext;
 pub use dispatch::axum_adapter::A2aRouter;
 #[cfg(feature = "websocket")]
 pub use dispatch::WebSocketDispatcher;
-pub use dispatch::{CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher};
+pub use dispatch::{
+    validate_version_metadata, CorsConfig, DispatchConfig, JsonRpcDispatcher, RestDispatcher,
+    A2A_VERSION_METADATA_KEY,
+};
 #[cfg(feature = "grpc")]
 pub use dispatch::{GrpcConfig, GrpcDispatcher};
 pub use error::{ServerError, ServerResult};
