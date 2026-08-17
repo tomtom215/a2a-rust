@@ -16,6 +16,17 @@
 #   Splitting *that* is the remaining work, and it is a hot-path refactor rather
 #   than a file move, so it is recorded here instead of being done badly under
 #   time pressure.
+#
+# store/sqlite_store.rs became store/sqlite_store/ when the artifact journal
+# was added — the entry is renamed, not new. It went 1,529 -> 714 on the way:
+# the two test modules moved to tests.rs and artifact_delta_tests.rs, and the
+# journal to journal.rs. What is left is the store implementation itself, and
+# splitting `TaskStore`'s methods across files would separate `save` from the
+# `save_artifact_delta` it falls back to, which is the coupling a reader most
+# needs to see in one place.
+#
+# Regenerating with --update drops every comment above. If you run it, put
+# these back.
 benches/benches/advanced_scenarios.rs
 benches/benches/enterprise_scenarios.rs
 benches/benches/production_scenarios.rs
@@ -53,7 +64,7 @@ crates/a2a-protocol-server/src/handler/push_config.rs
 crates/a2a-protocol-server/src/push/config_store.rs
 crates/a2a-protocol-server/src/push/sender.rs
 crates/a2a-protocol-server/src/rate_limit.rs
-crates/a2a-protocol-server/src/store/sqlite_store.rs
+crates/a2a-protocol-server/src/store/sqlite_store/mod.rs
 crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs
 crates/a2a-protocol-server/src/store/tenant/store.rs
 crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs
