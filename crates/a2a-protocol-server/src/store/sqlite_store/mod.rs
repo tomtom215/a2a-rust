@@ -197,7 +197,7 @@ async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<Sqlite
         .await
 }
 
-mod journal;
+pub(super) mod journal;
 
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]

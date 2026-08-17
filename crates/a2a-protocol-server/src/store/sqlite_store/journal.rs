@@ -84,7 +84,7 @@ use a2a_protocol_types::Task;
 /// thing. The foreign key means deleting a task takes its journal with it, and
 /// [`delete_for`] repeats that explicitly for pools built without
 /// `foreign_keys=ON`, which `from_pool` cannot assume of a caller's pool.
-pub(super) const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_artifact_appends (
+pub const CREATE_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS task_artifact_appends (
         task_id  TEXT NOT NULL,
         artifact INTEGER NOT NULL,
         seq      INTEGER NOT NULL,

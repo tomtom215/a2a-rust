@@ -377,3 +377,46 @@ async fn delta_preserves_list_position() {
 
     assert_eq!(before, after, "appending an artifact reordered the list");
 }
+
+/// The schema built by migrations must support an append, not just a save.
+///
+/// There are two ways to build this store's schema — `from_pool`'s inline DDL
+/// and `MigrationRunner` — and the journal shipped in only the first. Every
+/// test here used `new()`, so all of them passed while
+/// `with_migrations()`, the constructor the docs call *recommended for
+/// production*, failed every artifact append with "no such table". CI's
+/// example-surface job caught it; nothing in this crate did.
+#[tokio::test]
+async fn a_migrated_store_can_take_an_artifact_append() {
+    let dir = std::env::temp_dir().join(format!("a2a-migrated-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let url = format!("sqlite://{}/m.db?mode=rwc", dir.display());
+
+    let store = SqliteTaskStore::with_migrations(&url)
+        .await
+        .expect("migrated store");
+
+    let mut task = task_with("t-migrated", Some(vec![artifact("a", 1)]));
+    store.save(&task).await.expect("seed");
+
+    task.artifacts.as_mut().unwrap()[0]
+        .parts
+        .push(Part::text("appended"));
+    store
+        .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+        .await
+        .expect("a migrated schema must carry the journal table");
+
+    let read = store
+        .get(&TaskId::new("t-migrated"))
+        .await
+        .expect("read")
+        .expect("task exists");
+    assert_eq!(
+        read.artifacts.as_ref().unwrap()[0].parts.len(),
+        2,
+        "the appended part must come back"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

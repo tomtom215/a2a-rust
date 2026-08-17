@@ -94,6 +94,18 @@ CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);",
         description: "Add (updated_at, id) index for most-recently-updated-first list ordering",
         sql: "CREATE INDEX IF NOT EXISTS idx_tasks_updated_at ON tasks(updated_at DESC, id DESC);",
     },
+    Migration {
+        version: 5,
+        description: "Add task_artifact_appends: the journal streaming appends are written to",
+        // The same statement `from_pool` runs, taken from the journal module
+        // rather than copied. There are two ways to build the schema — this
+        // runner and `from_pool`'s inline DDL — and a store missing this table
+        // fails every artifact append with "no such table", which is how the
+        // first version of the journal shipped: created in `from_pool`, absent
+        // from the migrations, so the constructor documented as *recommended
+        // for production* was the one that did not work.
+        sql: super::sqlite_store::journal::CREATE_TABLE_SQL,
+    },
 ];
 
 /// Runs schema migrations against a `SQLite` database.
@@ -267,9 +279,29 @@ mod tests {
         let pool = memory_pool().await;
         let runner = MigrationRunner::new(pool.clone());
 
+        // Derived from the list rather than restating it: this test is about
+        // "every builtin migration is applied, in order", and hardcoding the
+        // versions made adding one a failure in five tests that were not about
+        // the new migration at all.
+        let expected: Vec<u32> = BUILTIN_MIGRATIONS.iter().map(|m| m.version).collect();
+        let latest = *expected.last().expect("there is at least one migration");
+
         let applied = runner.run_pending().await.unwrap();
-        assert_eq!(applied, vec![1, 2, 3, 4]);
-        assert_eq!(runner.current_version().await.unwrap(), 4);
+        assert_eq!(applied, expected);
+        assert_eq!(runner.current_version().await.unwrap(), latest);
+
+        // The journal streaming appends are written to must exist here, not
+        // only in `from_pool`'s inline DDL. It shipped in one and not the
+        // other, and the constructor documented as recommended for production
+        // was the one without it.
+        let journal = sqlx::query("PRAGMA table_info(task_artifact_appends)")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert!(
+            !journal.is_empty(),
+            "a migrated schema must carry task_artifact_appends"
+        );
 
         // Verify the tasks table exists with the expected columns.
         let row = sqlx::query("PRAGMA table_info(tasks)")
@@ -291,12 +323,17 @@ mod tests {
         let runner = MigrationRunner::new(pool);
 
         let first = runner.run_pending().await.unwrap();
-        assert_eq!(first, vec![1, 2, 3, 4]);
+        let expected: Vec<u32> = BUILTIN_MIGRATIONS.iter().map(|m| m.version).collect();
+        assert_eq!(first, expected);
 
         let second = runner.run_pending().await.unwrap();
         assert!(second.is_empty());
 
-        assert_eq!(runner.current_version().await.unwrap(), 4);
+        let latest = BUILTIN_MIGRATIONS
+            .last()
+            .expect("there is at least one migration")
+            .version;
+        assert_eq!(runner.current_version().await.unwrap(), latest);
     }
 
     #[tokio::test]
@@ -305,7 +342,7 @@ mod tests {
         let runner = MigrationRunner::new(pool);
 
         let pending = runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), 4);
+        assert_eq!(pending.len(), BUILTIN_MIGRATIONS.len());
         assert_eq!(pending[0].version, 1);
         assert_eq!(pending[1].version, 2);
         assert_eq!(pending[2].version, 3);
@@ -330,17 +367,24 @@ mod tests {
         assert_eq!(applied, vec![1]);
         assert_eq!(runner.current_version().await.unwrap(), 1);
 
-        // Now create a runner with all migrations — V2, V3 and V4 should be pending.
+        // Now create a runner with all migrations — everything after v1 is
+        // pending. Derived from the list so that adding a migration does not
+        // fail a test about partial application.
+        let after_v1: Vec<u32> = BUILTIN_MIGRATIONS
+            .iter()
+            .map(|m| m.version)
+            .filter(|v| *v > 1)
+            .collect();
+        let latest = *after_v1.last().expect("there is more than one migration");
+
         let full_runner = MigrationRunner::new(pool);
         let pending = full_runner.pending_migrations().await.unwrap();
-        assert_eq!(pending.len(), 3);
+        assert_eq!(pending.len(), after_v1.len());
         assert_eq!(pending[0].version, 2);
-        assert_eq!(pending[1].version, 3);
-        assert_eq!(pending[2].version, 4);
 
         let applied = full_runner.run_pending().await.unwrap();
-        assert_eq!(applied, vec![2, 3, 4]);
-        assert_eq!(full_runner.current_version().await.unwrap(), 4);
+        assert_eq!(applied, after_v1);
+        assert_eq!(full_runner.current_version().await.unwrap(), latest);
     }
 
     #[tokio::test]
@@ -356,7 +400,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(rows.len(), 4);
+        assert_eq!(rows.len(), BUILTIN_MIGRATIONS.len());
         assert_eq!(rows[0].get::<i32, _>("version"), 1);
         assert!(!rows[0].get::<String, _>("description").is_empty());
         assert!(!rows[0].get::<String, _>("applied_at").is_empty());
