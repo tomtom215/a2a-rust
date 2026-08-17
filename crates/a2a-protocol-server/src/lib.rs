@@ -139,7 +139,7 @@ pub use push::{
 };
 pub use rate_limit::{RateLimitConfig, RateLimitInterceptor};
 pub use request_context::RequestContext;
-pub use serve::{serve, serve_with_addr, Dispatcher};
+pub use serve::{serve, serve_with_addr, Dispatcher, ServeConfig, ServeReport, Server};
 pub use store::{
     InMemoryTaskStore, TaskStore, TaskStoreConfig, TenantAwareInMemoryTaskStore, TenantContext,
     TenantStoreConfig,

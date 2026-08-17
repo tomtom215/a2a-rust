@@ -57,8 +57,8 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc. |
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
-| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues, returning a `ShutdownReport` — a shutdown that force-destroyed live queues or abandoned executor cleanup says so instead of looking clean |
-| **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call |
+| **Graceful shutdown** | Two layers, both of which report rather than assume. `Server::serve_with_shutdown()` drains in-flight HTTP connections and returns a `ServeReport` naming any it abandoned at the deadline; `RequestHandler::shutdown()` then cancels tokens and destroys queues, returning a `ShutdownReport` that says so if it had to force-destroy a live queue |
+| **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call. `Server::bind()` adds what a deployment needs on top: a shutdown signal, a `max_connections` ceiling, and traced connection errors |
 
 ### Client
 
@@ -113,7 +113,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 `agntcy-slim-rpc` brings 379 transitive dependencies (including a native C
 crypto build) against 12 for `a2a-protocol-types`. None of that reaches the four
 crates above, which do not depend on it. It is versioned independently and
-starts at `0.1` — see [the book chapter](https://a2a-rust.com/bindings/slimrpc.html)
+is at `0.2` — see [the book chapter](https://a2a-rust.com/bindings/slimrpc.html)
 for why, and for the version-coupling rule that independence does *not* remove.
 
 ## Quick Start
@@ -361,7 +361,9 @@ The server uses a 3-layer architecture:
 ## Testing
 
 ```bash
-# Run the test suite (~2,740 tests with --all-features; CI runs sixteen feature combinations)
+# Run the test suite (2,837 passing with --all-features, measured 2026-08-17;
+# 157 more are #[ignore]d behind a live database and run in CI's postgres job.
+# CI runs sixteen feature combinations)
 cargo test --workspace --all-features
 
 # Run the end-to-end example
