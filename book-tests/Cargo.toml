@@ -35,6 +35,10 @@ a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
 a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
     "axum",
     "grpc",
+    # Added with the horizontal-scaling page: it documents `PostgresTaskStore`
+    # and `PostgresRateLimitCounter`, and without the feature those blocks could
+    # only be `ignore`d — which is what this crate exists to stop.
+    "postgres",
     "signing",
     "sqlite",
     "websocket",

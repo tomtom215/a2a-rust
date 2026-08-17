@@ -140,7 +140,9 @@ pub use push::{
     HttpPushSender, InMemoryPushConfigStore, PushConfigStore, PushRetryPolicy, PushSender,
     TenantAwareInMemoryPushConfigStore,
 };
-pub use rate_limit::{RateLimitConfig, RateLimitInterceptor};
+#[cfg(feature = "postgres")]
+pub use rate_limit::PostgresRateLimitCounter;
+pub use rate_limit::{RateLimitConfig, RateLimitCounter, RateLimitInterceptor};
 pub use request_context::RequestContext;
 pub use serve::{serve, serve_with_addr, Dispatcher, ServeConfig, ServeReport, Server};
 pub use store::{

@@ -286,6 +286,21 @@ jobs:
       - name: Test (postgres integration, live database)
         run: cargo test -p a2a-protocol-server --features postgres --test postgres_store_tests -- --ignored
 
+      # Two handlers over one database: which A2A operations cross replicas and
+      # which do not. It runs here because it needs the same live PostgreSQL,
+      # and it matters because "two replicas behind a load balancer" is the
+      # first architecture anyone deploying this reaches for — and the answers
+      # were previously inference from reading the code rather than a run.
+      #
+      # `--test-threads=1` because each test creates and drops a scratch
+      # database, and the rate-limit tests count admissions against a shared
+      # counter — sharing a database between two of them at once would make
+      # each test's counts depend on the other's.
+      - name: Test (multi-replica behaviour, live database)
+        run: |
+          cargo test -p a2a-protocol-server --features postgres \
+            --test multi_replica -- --ignored --test-threads=1
+
   # ── Nightly CI ──────────────────────────────────────────────────────────
   nightly:
     name: Nightly (informational)

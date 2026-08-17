@@ -113,6 +113,7 @@ pub mod page_deployment_dogfooding_tests {}
 pub mod page_deployment_dogfooding {}
 
 #[doc = include_str!("../../book/src/deployment/production.md")]
+#[doc = include_str!("../../book/src/deployment/horizontal-scaling.md")]
 pub mod page_deployment_production {}
 
 #[doc = include_str!("../../book/src/deployment/testing.md")]
