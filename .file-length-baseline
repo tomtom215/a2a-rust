@@ -17,16 +17,23 @@
 #   than a file move, so it is recorded here instead of being done badly under
 #   time pressure.
 #
-# store/sqlite_store.rs became store/sqlite_store/ when the artifact journal
-# was added — the entry is renamed, not new. It went 1,529 -> 714 on the way:
-# the two test modules moved to tests.rs and artifact_delta_tests.rs, and the
-# journal to journal.rs. What is left is the store implementation itself, and
-# splitting `TaskStore`'s methods across files would separate `save` from the
-# `save_artifact_delta` it falls back to, which is the coupling a reader most
-# needs to see in one place.
+# store/sqlite_store.rs became store/sqlite_store/ when the artifact journal was
+# added — those entries are renamed, not new:
 #
-# Regenerating with --update drops every comment above. If you run it, put
-# these back.
+#   sqlite_store/mod.rs is 714, down from 1,529, after the two test modules and
+#   the journal moved to their own files. What is left is the store itself, and
+#   splitting `TaskStore`'s methods across files would separate `save` from the
+#   `save_artifact_delta` that falls back to it — the coupling a reader most
+#   needs to see in one place.
+#
+#   sqlite_store/tests.rs is 721, and is here for the same reason
+#   messaging/tests.rs is: the content did not grow, it moved out of a file
+#   already recorded. It is long because what it pins is broad — schema, CRUD,
+#   listing, pagination, filters and concurrency, each against real SQLite —
+#   and splitting it by feature would scatter the fixtures they share.
+#
+# Regenerating with --update drops every comment above. If you run it, put them
+# back.
 benches/benches/advanced_scenarios.rs
 benches/benches/enterprise_scenarios.rs
 benches/benches/production_scenarios.rs
@@ -65,6 +72,7 @@ crates/a2a-protocol-server/src/push/config_store.rs
 crates/a2a-protocol-server/src/push/sender.rs
 crates/a2a-protocol-server/src/rate_limit.rs
 crates/a2a-protocol-server/src/store/sqlite_store/mod.rs
+crates/a2a-protocol-server/src/store/sqlite_store/tests.rs
 crates/a2a-protocol-server/src/store/task_store/in_memory/mod.rs
 crates/a2a-protocol-server/src/store/tenant/store.rs
 crates/a2a-protocol-server/src/store/tenant_sqlite_store.rs
