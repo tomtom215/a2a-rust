@@ -516,6 +516,14 @@ jobs:
       # packages. It is excluded from the manifest list on purpose (`exclude`
       # in its Cargo.toml keeps the test fixtures out of the tarball), which is
       # exactly the kind of thing that breaks silently between releases.
+      #
+      # `--no-verify` is required rather than convenient. The binding depends on
+      # the workspace crates as `version = "0.9", path = "../.."`, and packaging
+      # strips the path — so the verification build resolves `a2a-protocol-server`
+      # from crates.io, i.e. the *last released* version. Any API added in the
+      # same change as the binding that uses it would fail verification until
+      # that release ships. Building the binding against the local server is
+      # what the Build and Test steps above already do.
       - name: Package validation
         working-directory: bindings/a2a-protocol-slimrpc
         run: cargo package --no-verify --allow-dirty

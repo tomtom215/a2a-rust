@@ -45,7 +45,12 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use a2a_protocol_types::error::{A2aError, A2aResult};
+// `A2aError` is constructed only by the `postgres` module below, so importing
+// it unconditionally is an unused import without that feature — a break that an
+// `--all-features` build cannot see, which is how it reached CI.
+#[cfg(feature = "postgres")]
+use a2a_protocol_types::error::A2aError;
+use a2a_protocol_types::error::A2aResult;
 
 /// A request counter every replica shares.
 ///

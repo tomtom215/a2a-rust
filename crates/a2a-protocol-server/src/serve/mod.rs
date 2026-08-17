@@ -49,7 +49,10 @@ use hyper::body::Incoming;
 
 mod graceful;
 
-pub use graceful::{ServeConfig, ServeReport, Server, DEFAULT_DRAIN_TIMEOUT};
+pub use graceful::{
+    ServeConfig, ServeReport, Server, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT,
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

@@ -157,9 +157,9 @@ pub const A2A_VERSION_METADATA_KEY: &str = "a2a-version";
 
 /// Validates the A2A version carried in a binding's request metadata.
 ///
-/// The counterpart of [`validate_version_header`] for bindings that carry
-/// service parameters in a string map rather than in HTTP headers, and the
-/// supported way for a binding **outside this crate** to enforce §3.6.2 —
+/// The counterpart of this crate's private header validator, for bindings that
+/// carry service parameters in a string map rather than in HTTP headers, and
+/// the supported way for a binding **outside this crate** to enforce §3.6.2 —
 /// which the built-in bindings do through private helpers this makes public.
 /// Without it an out-of-tree binding can send a version but cannot check one,
 /// and would have to reimplement the comparison and hope it stays in step.

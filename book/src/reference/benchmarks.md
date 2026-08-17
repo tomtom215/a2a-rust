@@ -551,7 +551,7 @@ for serialization regression detection.
 
 ### Connection reuse impact
 
-Connection reuse saves 143.6 µs (40.5%) on loopback —
+Connection reuse saves 143.5 µs (40.5%) on loopback —
 354.5 µs per request when the client is rebuilt each time,
 versus 211.0 µs when it is shared. On real networks with TLS the
 saving is larger still (TLS handshake dominates). Best practice: create one
@@ -587,7 +587,7 @@ Sharing wins at every burst size, and the medians' 95% confidence intervals are
 disjoint in all three, so the direction is not noise. But the size of the win is
 about half what the single-request comparison above predicts:
 45.5 µs (12.6%) per agent
-against the 143.6 µs (40.5%) that
+against the 143.5 µs (40.5%) that
 `reused_client` versus `new_client_per_request` would lead you to expect.
 
 The reason is that the two arms differ in two coupled ways, not one. A shared

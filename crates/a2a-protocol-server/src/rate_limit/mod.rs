@@ -89,6 +89,7 @@ use crate::interceptor::ServerInterceptor;
 
 mod identity;
 mod shared;
+mod unwind_safety;
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
 pub use shared::RateLimitCounter;
