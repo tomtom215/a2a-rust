@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "a2a-book-tests"
+version     = "0.0.0"
+description = "Compiles the mdbook's Rust code blocks as doctests"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[lib]
+# Nothing to build — this crate exists only to carry doctests. `test = false`
+# would also disable the doctests, so only the (empty) unit-test harness is off.
+doctest = true
+
+[dependencies]
+# All features, because the book documents feature-gated surfaces too. A block
+# that compiles only under `websocket` is still a block a reader will copy.
+a2a-protocol-sdk = { path = "../crates/a2a-protocol-sdk", features = [
+    "axum",
+    "grpc",
+    "signing",
+    "sqlite",
+    "websocket",
+] }
+
+# The sibling crates by their own names. The book shows
+# `use a2a_protocol_client::RetryPolicy;` because that is what a reader writes;
+# reaching them only through the umbrella re-export would compile a different
+# import than the page teaches.
+a2a-protocol-client = { path = "../crates/a2a-protocol-client" }
+a2a-protocol-server = { path = "../crates/a2a-protocol-server", features = [
+    "axum",
+    "grpc",
+    "signing",
+    "sqlite",
+    "websocket",
+] }
+a2a-protocol-types  = { path = "../crates/a2a-protocol-types" }
+
+# Crates the book's examples use alongside the SDK. A doctest that says
+# `#[tokio::main]` needs tokio to be a real dependency here, or the block fails
+# for a reason that has nothing to do with the SDK.
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }
+uuid       = { workspace = true }

@@ -22,6 +22,7 @@
 - [The AgentExecutor Trait](./building-agents/executor.md)
 - [Request Handler & Builder](./building-agents/handler.md)
 - [Dispatchers (JSON-RPC, REST, WebSocket, Axum & gRPC)](./building-agents/dispatchers.md)
+- [SLIMRPC over AGNTCY SLIM](./bindings/slimrpc.md)
 - [Push Notifications](./building-agents/push-notifications.md)
 - [Interceptors & Middleware](./building-agents/interceptors.md)
 - [Authentication](./building-agents/authentication.md)
@@ -38,6 +39,8 @@
 # Examples
 
 - [Overview](./examples/overview.md)
+- [Hello Agent](./examples/hello-agent.md)
+- [Deploy Agent](./examples/deploy-agent.md)
 - [Incident-Response Team](./examples/incident-response.md)
 - [Echo Agent](./examples/echo-agent.md)
 - [Agent Team](./examples/agent-team.md)
@@ -65,4 +68,5 @@
 - [Mutation Testing History](./reference/mutation-history.md)
 - [Conformance History](./reference/conformance-history.md)
 - [API Quick Reference](./reference/api-reference.md)
+- [Generated API Docs](./reference/api-docs.md)
 - [Changelog](./reference/changelog.md)

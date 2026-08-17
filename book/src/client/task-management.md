@@ -6,7 +6,32 @@ Beyond sending messages, the client provides methods for querying, listing, and 
 
 Retrieve a task by ID:
 
-```rust
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_types::message::{MessageId, MessageRole};
+# use std::sync::Arc;
+# use std::time::Duration;
+# async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+# let url = "http://agent.example.com";
+# let message = Message {
+#     id: MessageId::new("m1"),
+#     role: MessageRole::User,
+#     parts: vec![Part::text("hi")],
+#     task_id: None,
+#     context_id: None,
+#     reference_task_ids: None,
+#     extensions: None,
+#     metadata: None,
+# };
+# let params = MessageSendParams {
+#     tenant: None,
+#     message,
+#     configuration: None,
+#     metadata: None,
+# };
+# let (params1, params2) = (params.clone(), params.clone());
+# let client = ClientBuilder::new(url).build()?;
+# let task_id = "task-abc";
 use a2a_protocol_sdk::types::params::TaskQueryParams;
 
 let task = client.get_task(TaskQueryParams {
@@ -24,13 +49,40 @@ if let Some(artifacts) = &task.artifacts {
 if let Some(history) = &task.history {
     println!("Messages: {}", history.len());
 }
+# Ok(())
+# }
 ```
 
 ## List Tasks
 
 Query tasks with filtering and pagination:
 
-```rust
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_types::message::{MessageId, MessageRole};
+# use std::sync::Arc;
+# use std::time::Duration;
+# async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+# let url = "http://agent.example.com";
+# let message = Message {
+#     id: MessageId::new("m1"),
+#     role: MessageRole::User,
+#     parts: vec![Part::text("hi")],
+#     task_id: None,
+#     context_id: None,
+#     reference_task_ids: None,
+#     extensions: None,
+#     metadata: None,
+# };
+# let params = MessageSendParams {
+#     tenant: None,
+#     message,
+#     configuration: None,
+#     metadata: None,
+# };
+# let (params1, params2) = (params.clone(), params.clone());
+# let client = ClientBuilder::new(url).build()?;
+# let task_id = "task-abc";
 use a2a_protocol_sdk::types::params::ListTasksParams;
 
 let response = client.list_tasks(ListTasksParams {
@@ -55,6 +107,8 @@ if !response.next_page_token.is_empty() {
         ..Default::default()
     }).await?;
 }
+# Ok(())
+# }
 ```
 
 Tasks are returned **most-recently-updated first** (spec §3.1.4): the first
@@ -78,11 +132,38 @@ construct it yourself.
 
 Request cancellation of a running task:
 
-```rust
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_types::message::{MessageId, MessageRole};
+# use std::sync::Arc;
+# use std::time::Duration;
+# async fn doc() -> Result<(), Box<dyn std::error::Error>> {
+# let url = "http://agent.example.com";
+# let message = Message {
+#     id: MessageId::new("m1"),
+#     role: MessageRole::User,
+#     parts: vec![Part::text("hi")],
+#     task_id: None,
+#     context_id: None,
+#     reference_task_ids: None,
+#     extensions: None,
+#     metadata: None,
+# };
+# let params = MessageSendParams {
+#     tenant: None,
+#     message,
+#     configuration: None,
+#     metadata: None,
+# };
+# let (params1, params2) = (params.clone(), params.clone());
+# let client = ClientBuilder::new(url).build()?;
+# let task_id = "task-abc";
 let task = client.cancel_task("task-abc").await?;
 
 println!("Task state: {:?}", task.status.state);
 // → Canceled (if the agent supports cancellation)
+# Ok(())
+# }
 ```
 
 Cancellation is cooperative — the agent's executor must implement the `cancel` method. If the agent doesn't support cancellation, you'll get an error response.

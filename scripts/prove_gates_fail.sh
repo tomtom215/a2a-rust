@@ -49,6 +49,7 @@ set -Eeuo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+OTEL_RS="$REPO_ROOT/crates/a2a-protocol-server/src/otel/mod.rs"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-provegates.XXXXXX")
 
 ONLY='.'
@@ -289,6 +290,16 @@ injection_for() {
             echo "file_length" ;;
         "./scripts/check_mutation_scope.sh")
             echo "mutation_scope" ;;
+        "./scripts/check_benchmark_prose.sh")
+            echo "benchmark_prose" ;;
+        "./scripts/check_book_code.sh")
+            echo "book_code" ;;
+        *"check_api_reference.py"*)
+            echo "api_reference" ;;
+        *"check_otel_metrics_coverage.py"*)
+            echo "otel_coverage" ;;
+        *"check_package_excludes.py"*)
+            echo "package_excludes" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"--test postgres_store_tests"*)
@@ -373,6 +384,11 @@ expected_marker() {
         proto)            echo "DRIFT    tck/proto/a2a_v1/a2a.proto" ;;
         file_length)      echo "gate_probe_long.rs" ;;
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
+        benchmark_prose)  echo "DRIFT" ;;
+        book_code)        echo "GREW" ;;
+        api_reference)    echo "are not defined in crates/" ;;
+        otel_coverage)    echo "the bundled exporter drops" ;;
+        package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
@@ -400,6 +416,70 @@ apply_injection() {
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        book_code)
+            # Append an `ignore`d block: the exact move that would defeat the
+            # book-tests crate, since a block nothing compiles cannot fail.
+            # Injecting an *uncompilable* block instead would prove nothing —
+            # `ignore` means the compiler never sees it, so the ratchet, not
+            # the compiler, is what has to notice.
+            note_touched "book/src/concepts/streaming.md"
+            printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
+                >>book/src/concepts/streaming.md
+            ;;
+        api_reference)
+            # Rename a type on the page and leave the code alone — the exact
+            # decay this gate exists for. A hand-written listing goes stale the
+            # moment something is renamed, and it goes stale silently, in the
+            # page a reader trusts precisely because they do not yet know the
+            # API well enough to catch it. `sed` rather than a heredoc so this
+            # arm stays a one-liner like its neighbours.
+            note_touched "book/src/reference/api-reference.md"
+            sed -i 's/`TaskVersion`/`TaskRevision`/' \
+                book/src/reference/api-reference.md
+            ;;
+        otel_coverage)
+            # Delete one callback override from the exporter. This is the
+            # defect verbatim: `on_persistence_error` and `on_push_delivery`
+            # shipped wired to every call site and exported by nothing, because
+            # a `Metrics` method the impl omits silently inherits the trait's
+            # empty default. No compile error, and no failing test either — the
+            # exporter's own tests run against a noop meter, which a no-op
+            # override satisfies perfectly. `perl -0` rather than a heredoc so
+            # this arm stays a one-liner like its neighbours.
+            note_touched "$OTEL_RS"
+            perl -0pi -e 's/\n    fn on_push_delivery\(.*?\n    \}\n/\n/s' "$OTEL_RS"
+            ;;
+        package_excludes)
+            # Drop one `publish = false` member from ci.yml's exclude list.
+            # This is the defect verbatim: `hello-agent`, `deploy-agent` and
+            # `a2a-book-tests` each joined the workspace without joining the
+            # list, and `cargo package --workspace` fails on the first one it
+            # reaches — inside the *release* workflow, after the tag is pushed.
+            note_touched ".github/workflows/ci.yml"
+            sed -i 's/--exclude a2a-book-tests //' .github/workflows/ci.yml
+            ;;
+        benchmark_prose)
+            # The defect is the historical one, restored verbatim: the
+            # connection-reuse sentence as it shipped from v0.5.0 to v0.8.0,
+            # while the tables beside it said 312.5 µs vs 189.0 µs.
+            #
+            # Injecting into the *prose* rather than the tables is deliberate.
+            # Breaking a table would also break the sentence derived from it,
+            # so the gate would go red without proving it can tell the two
+            # apart — and prose drifting away from correct tables is the
+            # failure that actually happened.
+            note_touched "book/src/reference/benchmarks.md"
+            python3 - <<'PY'
+import pathlib
+p = pathlib.Path("book/src/reference/benchmarks.md")
+s = p.read_text()
+s = s.replace(
+    "Connection reuse saves 123.5 µs (39.5%) on loopback",
+    "Connection reuse saves ~140µs (9%) on loopback",
+)
+p.write_text(s)
+PY
+            ;;
         mutation_scope)
             # The defect is the historical one, restored verbatim: drop the
             # `:(glob)` prefix from the mutation gate's scoping pathspec and it

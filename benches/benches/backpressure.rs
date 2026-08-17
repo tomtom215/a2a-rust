@@ -34,9 +34,11 @@ use std::sync::Arc;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
-use a2a_benchmarks::executor::{EchoExecutor, MultiEventExecutor};
+use a2a_benchmarks::executor::{AppendingExecutor, EchoExecutor, MultiEventExecutor};
 use a2a_benchmarks::fixtures;
 use a2a_benchmarks::server;
+use a2a_benchmarks::store::DiscardTaskStore;
+use a2a_protocol_server::store::SqliteTaskStore;
 
 use a2a_protocol_client::ClientBuilder;
 use a2a_protocol_server::builder::RequestHandlerBuilder;
@@ -95,27 +97,34 @@ fn bench_stream_volume(c: &mut Criterion) {
     // the 3-101 event range shows an inverted scaling curve because CI
     // scheduler variance exceeds the per-event overhead.
     //
-    // KNOWN SCALING BEHAVIOR: per-event cost inflects as volume grows.
-    //   3→52 events:  ~4µs/event marginal cost (fast path)
-    //   52→252 events: ~46µs/event (12× jump — broadcast buffer pressure)
+    // SCALING: linear in event count. Marginal cost is roughly 6-10µs/event
+    // and flat from 7 events to 502.
     //
-    // The historical "252→502 events: ~193µs/event" figure is NOT comparable
-    // to current runs and has been removed. It was measured with the default
-    // 256-slot broadcast ring, which 502 events overflow: the reader lagged
-    // and the stream ended in a `streamLagged` error, so that configuration
-    // was partly measuring event loss rather than streaming cost. (It also
-    // panicked outright once the client could decode the lag error instead of
-    // failing to parse the malformed frame the server used to emit.)
-    // `start_multi_event_server` now sizes the ring above the event count.
+    // It was not always. This benchmark used to curve upward hard — marginal
+    // cost ran 10µs/event up to 52 events, then 133, then 373 — and the
+    // explanation recorded here was that the cost was "inherent" to SSE frame
+    // serialization and HTTP chunked encoding, and so "NOT a regression". That
+    // was wrong, and wrong in a way worth keeping a note about, because the
+    // shape of the data contradicted it: per-event serialization is constant
+    // work and cannot make the *marginal* cost of an event grow 20× with the
+    // number of events before it.
     //
-    // The inflection is caused by the broadcast channel's default capacity
-    // (64 events). At >64 in-flight events, the producer outpaces the SSE
-    // consumer, triggering `Lagged(n)` recovery in the broadcast receiver.
-    // The per-event cost at 502 events is NOT a regression — it reflects
-    // the inherent cost of SSE frame serialization + HTTP chunked encoding
-    // under sustained high-volume conditions. Production deployments with
-    // >100 events/task should increase `EventQueueManager::with_capacity()`
-    // to match their expected peak event volume.
+    // Two rounds of blaming the broadcast ring came first. The 502-event case
+    // really did overflow the default 256-slot ring and shed events, so
+    // `start_multi_event_server` now sizes the ring with headroom — and the
+    // curve did not move, which should have settled it and did not.
+    //
+    // The actual cause was the task store. `process_event_bg` saved the whole
+    // task on every artifact event, and `InMemoryTaskStore::save` deep-clones,
+    // so event i copied i artifacts. Swapping in a store that keeps nothing
+    // (`DiscardTaskStore`) isolated it: at 502 events, 43.4ms with the store
+    // against 3.2ms without. `TaskStore::save_artifact_delta` now persists what
+    // changed rather than the whole record, and the curve is flat.
+    //
+    // The lesson this comment exists to carry: an explanation that does not
+    // predict the shape of the measurement is a guess, and writing it down
+    // next to the number makes it look settled. Attribute by removing the
+    // suspect component and re-measuring.
     let event_configs: &[(usize, &str)] = &[
         (1, "3_events"),     // EchoExecutor baseline
         (5, "7_events"),     // Working + 5 artifacts + Completed
@@ -166,6 +175,112 @@ fn bench_stream_volume(c: &mut Criterion) {
         }
     }
 
+    group.finish();
+}
+
+// ── Append-into-one-artifact volume scaling ─────────────────────────────────
+
+/// Same server shape as [`start_multi_event_server`], driven by
+/// [`AppendingExecutor`] so every chunk merges into one artifact.
+/// Which store the appending server persists into.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StoreKind {
+    /// The default in-memory store.
+    Memory,
+    /// A store that keeps nothing, isolating the store's share of the cost.
+    Discard,
+    /// A real `SQLite` database on disk — the cheapest persistent store, and
+    /// the one whose per-event cost a deployment actually pays.
+    Sqlite,
+}
+
+impl StoreKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Memory => "task_store",
+            Self::Discard => "discard_store",
+            Self::Sqlite => "sqlite_store",
+        }
+    }
+}
+
+async fn start_appending_server(chunks: usize, store: StoreKind) -> String {
+    let executor = AppendingExecutor { chunks };
+    let queue_capacity = (chunks + 2).next_power_of_two().max(256) * 2;
+    let builder = RequestHandlerBuilder::new(executor)
+        .with_agent_card(fixtures::agent_card("http://127.0.0.1:0"))
+        .with_event_queue_capacity(queue_capacity);
+    // Swapping the store is how its share of the per-event cost gets
+    // attributed instead of assumed.
+    let builder = match store {
+        StoreKind::Memory => builder,
+        StoreKind::Discard => builder.with_task_store(DiscardTaskStore),
+        StoreKind::Sqlite => {
+            // A file, not `:memory:`. An in-memory SQLite database skips the
+            // page cache and WAL behaviour that dominate a real deployment's
+            // per-event cost, so measuring it would answer a question nobody
+            // has. The file lands in the target directory and is left behind
+            // deliberately — criterion re-runs reuse it, and a benchmark that
+            // deletes its own evidence is hard to investigate.
+            let path = std::env::temp_dir().join(format!("a2a-bench-append-{chunks}.sqlite"));
+            let _ = std::fs::remove_file(&path);
+            let url = format!("sqlite://{}", path.display());
+            let store = SqliteTaskStore::new(&url)
+                .await
+                .expect("open sqlite task store");
+            builder.with_task_store(store)
+        }
+    };
+    let handler = Arc::new(builder.build().expect("build handler"));
+    let addr = serve_with_addr("127.0.0.1:0", JsonRpcDispatcher::new(handler))
+        .await
+        .expect("serve");
+    format!("http://{addr}")
+}
+
+/// Streaming cost when every chunk appends into a **single** artifact.
+///
+/// `stream_volume` above measures the distinct-artifact shape. This measures
+/// the shape an LLM-backed agent actually produces — one artifact, N parts —
+/// and it exists because the two were assumed to cost the same and never
+/// compared. Same burst sizes as `stream_volume` so the curves can be read
+/// side by side; the broadcast ring is sized with the same headroom so neither
+/// is measuring event loss.
+fn bench_append_volume(c: &mut Criterion) {
+    let runtime = rt();
+
+    let mut group = c.benchmark_group("backpressure/append_volume");
+    group.measurement_time(std::time::Duration::from_secs(10));
+
+    for &kind in &[StoreKind::Memory, StoreKind::Discard, StoreKind::Sqlite] {
+        let arm = kind.label();
+        for &chunks in &[1usize, 5, 25, 50, 250, 500] {
+            let total_events = chunks + 2;
+            group.throughput(Throughput::Elements(total_events as u64));
+
+            let url = runtime.block_on(start_appending_server(chunks, kind));
+            let client = ClientBuilder::new(&url).build().expect("build client");
+
+            group.bench_with_input(
+                BenchmarkId::from_parameter(format!("{arm}/{total_events}_events")),
+                &(),
+                |b, ()| {
+                    b.to_async(&runtime).iter(|| async {
+                        let mut stream = client
+                            .stream_message(fixtures::send_params("append-volume"))
+                            .await
+                            .expect("stream");
+                        let mut count = 0u32;
+                        while let Some(event) = stream.next().await {
+                            let _ = event.expect("event");
+                            count += 1;
+                        }
+                        debug_assert!(count > 0, "should receive at least one event");
+                    });
+                },
+            );
+        }
+    }
     group.finish();
 }
 
@@ -320,6 +435,7 @@ fn bench_timer_resolution(c: &mut Criterion) {
 criterion_group!(
     benches,
     bench_stream_volume,
+    bench_append_volume,
     bench_slow_consumer,
     bench_concurrent_streams_volume,
     bench_timer_resolution,

@@ -110,6 +110,41 @@ impl ErrorCode {
         }
     }
 
+    /// A bounded, low-cardinality label for use as a metric attribute.
+    ///
+    /// Distinct from [`a2a_reason`](ErrorCode::a2a_reason), which is `None` for
+    /// standard JSON-RPC codes because the spec has no reason string for them.
+    /// A metric label must exist for *every* code, or the errors a dashboard
+    /// most needs to see — parse failures, internal errors — would be the ones
+    /// missing from it.
+    ///
+    /// Also distinct from [`default_message`](ErrorCode::default_message):
+    /// messages are prose and may be reworded, while these are identifiers a
+    /// dashboard query depends on. Changing one is a breaking change for
+    /// whoever is alerting on it.
+    ///
+    /// The set is closed and small — one label per variant — so it is safe to
+    /// use directly as a metric dimension.
+    #[must_use]
+    pub const fn metric_label(self) -> &'static str {
+        match self {
+            Self::ParseError => "parse_error",
+            Self::InvalidRequest => "invalid_request",
+            Self::MethodNotFound => "method_not_found",
+            Self::InvalidParams => "invalid_params",
+            Self::InternalError => "internal_error",
+            Self::TaskNotFound => "task_not_found",
+            Self::TaskNotCancelable => "task_not_cancelable",
+            Self::PushNotificationNotSupported => "push_notification_not_supported",
+            Self::UnsupportedOperation => "unsupported_operation",
+            Self::ContentTypeNotSupported => "content_type_not_supported",
+            Self::InvalidAgentResponse => "invalid_agent_response",
+            Self::ExtendedAgentCardNotConfigured => "extended_agent_card_not_configured",
+            Self::ExtensionSupportRequired => "extension_support_required",
+            Self::VersionNotSupported => "version_not_supported",
+        }
+    }
+
     /// Resolves an `UPPER_SNAKE_CASE` A2A reason (as carried in
     /// `google.rpc.ErrorInfo.reason`) back to its [`ErrorCode`].
     ///
@@ -236,6 +271,16 @@ pub struct A2aError {
 }
 
 impl A2aError {
+    /// A bounded, low-cardinality label for this error, for metric attributes.
+    ///
+    /// Delegates to [`ErrorCode::metric_label`]. Never the free-form `message`,
+    /// which can carry request-derived text — using that as a metric dimension
+    /// is how a client turns an error into unbounded cardinality.
+    #[must_use]
+    pub const fn metric_label(&self) -> &'static str {
+        self.code.metric_label()
+    }
+
     /// Creates a new `A2aError` with the given code and message.
     #[must_use]
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
@@ -1111,5 +1156,106 @@ mod tests {
         let typed = A2aError::new(ErrorCode::TaskNotFound, "gone");
         assert!(!typed.is_stream_lagged());
         assert_eq!(typed.dropped_event_count(), None);
+    }
+
+    /// Every variant's metric label, pinned by value.
+    ///
+    /// These are identifiers a dashboard query depends on, not prose: renaming
+    /// one silently breaks whoever is alerting on it, and nothing else in the
+    /// suite reads them. Mutation testing found that gap — replacing the whole
+    /// function with `""` survived every other test in the workspace.
+    ///
+    /// Listed exhaustively rather than derived from the same `match`, so this
+    /// is an independent statement of the contract and not a restatement of
+    /// the implementation.
+    #[test]
+    fn metric_label_is_pinned_for_every_variant() {
+        let expected = [
+            (ErrorCode::ParseError, "parse_error"),
+            (ErrorCode::InvalidRequest, "invalid_request"),
+            (ErrorCode::MethodNotFound, "method_not_found"),
+            (ErrorCode::InvalidParams, "invalid_params"),
+            (ErrorCode::InternalError, "internal_error"),
+            (ErrorCode::TaskNotFound, "task_not_found"),
+            (ErrorCode::TaskNotCancelable, "task_not_cancelable"),
+            (
+                ErrorCode::PushNotificationNotSupported,
+                "push_notification_not_supported",
+            ),
+            (ErrorCode::UnsupportedOperation, "unsupported_operation"),
+            (
+                ErrorCode::ContentTypeNotSupported,
+                "content_type_not_supported",
+            ),
+            (ErrorCode::InvalidAgentResponse, "invalid_agent_response"),
+            (
+                ErrorCode::ExtendedAgentCardNotConfigured,
+                "extended_agent_card_not_configured",
+            ),
+            (
+                ErrorCode::ExtensionSupportRequired,
+                "extension_support_required",
+            ),
+            (ErrorCode::VersionNotSupported, "version_not_supported"),
+        ];
+
+        for (code, label) in expected {
+            assert_eq!(code.metric_label(), label, "wrong label for {code:?}");
+        }
+    }
+
+    /// The labels are usable as a metric dimension: non-empty, distinct, and
+    /// drawn from a closed alphabet.
+    ///
+    /// Distinctness is the property that matters most — two variants sharing a
+    /// label silently merges two failure modes into one series, which is worse
+    /// than having no metric at all because it looks like it works.
+    #[test]
+    fn metric_labels_are_distinct_and_bounded() {
+        let codes = [
+            ErrorCode::ParseError,
+            ErrorCode::InvalidRequest,
+            ErrorCode::MethodNotFound,
+            ErrorCode::InvalidParams,
+            ErrorCode::InternalError,
+            ErrorCode::TaskNotFound,
+            ErrorCode::TaskNotCancelable,
+            ErrorCode::PushNotificationNotSupported,
+            ErrorCode::UnsupportedOperation,
+            ErrorCode::ContentTypeNotSupported,
+            ErrorCode::InvalidAgentResponse,
+            ErrorCode::ExtendedAgentCardNotConfigured,
+            ErrorCode::ExtensionSupportRequired,
+            ErrorCode::VersionNotSupported,
+        ];
+
+        let mut seen = std::collections::BTreeSet::new();
+        for code in codes {
+            let label = code.metric_label();
+            assert!(!label.is_empty(), "{code:?} has an empty metric label");
+            assert!(
+                label.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
+                "{code:?} label {label:?} is not lower_snake_case"
+            );
+            assert!(seen.insert(label), "duplicate metric label {label:?}");
+        }
+        assert_eq!(seen.len(), codes.len());
+    }
+
+    /// `A2aError::metric_label` must be its code's label and nothing else.
+    ///
+    /// The delegation is the whole point: the free-form `message` can carry
+    /// request-derived text, and using that as a metric dimension is how a
+    /// client turns an error into unbounded cardinality.
+    #[test]
+    fn a2a_error_metric_label_delegates_to_its_code() {
+        let err = A2aError::new(ErrorCode::TaskNotFound, "no such task: <client text>");
+        assert_eq!(err.metric_label(), "task_not_found");
+        assert_eq!(err.metric_label(), err.code.metric_label());
+
+        // The label must not leak the message, whatever the message says.
+        let noisy = A2aError::new(ErrorCode::InternalError, "user-id=42 secret=hunter2");
+        assert_eq!(noisy.metric_label(), "internal_error");
+        assert!(!noisy.metric_label().contains("hunter2"));
     }
 }

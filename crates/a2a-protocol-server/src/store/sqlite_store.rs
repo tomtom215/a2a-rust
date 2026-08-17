@@ -18,6 +18,7 @@
 //! # }
 //! ```
 
+use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -27,7 +28,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
 
-use super::task_store::TaskStore;
+use super::task_store::{ArtifactDelta, TaskStore};
 
 /// SQLite-backed [`TaskStore`].
 ///
@@ -163,6 +164,135 @@ fn to_a2a_error(e: sqlx::Error) -> A2aError {
     A2aError::internal(format!("sqlite error: {e}"))
 }
 
+/// Builds the `UPDATE` that splices an artifact delta into the stored JSON,
+/// plus the single JSON payload it binds.
+///
+/// Returns `Ok(None)` when the delta cannot be applied exactly, in which case
+/// the caller must fall back to a whole-record `save`. Every refusal below is a
+/// case where an in-place edit could produce a document that differs from the
+/// task it was given, and a store that is quietly wrong is worse than one that
+/// is slower:
+///
+/// - **No artifacts on the task.** There is no array to append into, so the
+///   delta does not describe this task.
+/// - **The index is out of range**, or `Pushed` does not name the last
+///   position. The delta describes a different shape than the task has.
+/// - **Fewer parts present than `count` claims** were appended. Splicing the
+///   wrong tail would corrupt the record silently.
+/// - **More than `MAX_INLINE_APPEND` parts at once.** Each appended part
+///   needs its own `json_set` path, so the statement grows with the batch;
+///   past a small bound a single `save` is both simpler and cheaper. Streaming
+///   agents append one part per event, so this is the rare path.
+///
+/// The `?1` parameter is always a JSON *array* of the appended parts (or a
+/// one-element array holding the pushed artifact), so the statement shape does
+/// not change with the payload and `SQLite` can reuse its prepared plan.
+/// Above this many parts in one event, rewriting the record wins.
+///
+/// At module scope so the boundary tests assert against the same constant the
+/// implementation uses, rather than a copy of its value that could drift.
+const MAX_INLINE_APPEND: usize = 8;
+
+fn artifact_delta_sql(task: &Task, delta: ArtifactDelta) -> A2aResult<Option<DeltaStatement>> {
+    let Some(artifacts) = task.artifacts.as_ref() else {
+        return Ok(None);
+    };
+
+    match delta {
+        ArtifactDelta::AppendedParts { index, count } => {
+            if count == 0 || count > MAX_INLINE_APPEND {
+                return Ok(None);
+            }
+            let Some(artifact) = artifacts.get(index) else {
+                return Ok(None);
+            };
+            if artifact.parts.len() < count {
+                return Ok(None);
+            }
+            let tail = &artifact.parts[artifact.parts.len() - count..];
+            let payload = serde_json::to_string(tail)
+                .map_err(|e| A2aError::internal(format!("failed to serialize parts: {e}")))?;
+
+            if count == 1 {
+                // The overwhelmingly common case: one part per event. The path
+                // is assembled by SQLite from a bound parameter, so the SQL
+                // text is constant and its prepared plan is reused across every
+                // event of every stream. An earlier version interpolated the
+                // index into the SQL, which made the text unique per artifact
+                // index and measurably *slower* than a plain `save` on small
+                // documents — 8.4% at 3 events, where the saved serialization
+                // is worth less than the preparation it cost.
+                return Ok(Some(DeltaStatement {
+                    sql: APPEND_ONE_PART_SQL,
+                    payload,
+                    index: Some(index),
+                }));
+            }
+
+            // Rare: several parts in one event. Each needs its own `[#]`
+            // append, so the statement text varies with the batch size.
+            let exprs = (0..count)
+                .map(|i| format!("'$.artifacts[{index}].parts[#]', json_extract(?1, '$[{i}]')"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(Some(DeltaStatement {
+                sql: Cow::Owned(format!(
+                    "UPDATE tasks SET data = json_set(data, {exprs}) \
+                     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'"
+                )),
+                payload,
+                index: None,
+            }))
+        }
+        ArtifactDelta::Pushed { index } => {
+            if index + 1 != artifacts.len() {
+                return Ok(None);
+            }
+            let Some(artifact) = artifacts.get(index) else {
+                return Ok(None);
+            };
+            let payload = serde_json::to_string(std::slice::from_ref(artifact))
+                .map_err(|e| A2aError::internal(format!("failed to serialize artifact: {e}")))?;
+            Ok(Some(DeltaStatement {
+                sql: PUSH_ARTIFACT_SQL,
+                payload,
+                index: None,
+            }))
+        }
+    }
+}
+
+/// A prepared artifact-delta update: the statement, its JSON payload, and the
+/// artifact index when the statement takes one as a bound parameter.
+struct DeltaStatement {
+    sql: Cow<'static, str>,
+    payload: String,
+    index: Option<usize>,
+}
+
+/// Append one part to the artifact at a bound index.
+///
+/// `json_set`'s path argument is an ordinary text expression, so concatenating
+/// the bound index into it keeps the *statement* constant while the path
+/// varies. `[#]` is `SQLite`'s one-past-the-end subscript, which is what makes
+/// this an append rather than an overwrite.
+///
+/// The `json_type(...) = 'array'` guard is what makes the fallback correct
+/// rather than merely likely: a stored document with no artifacts array — a
+/// task saved before it produced any — does not match, the statement reports
+/// zero rows affected, and the caller rewrites the record whole.
+const APPEND_ONE_PART_SQL: Cow<'static, str> = Cow::Borrowed(
+    "UPDATE tasks SET data = json_set(data, '$.artifacts[' || ?3 || '].parts[#]', \
+     json_extract(?1, '$[0]')) \
+     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'",
+);
+
+/// Append a whole artifact at the end of the array.
+const PUSH_ARTIFACT_SQL: Cow<'static, str> = Cow::Borrowed(
+    "UPDATE tasks SET data = json_set(data, '$.artifacts[#]', json_extract(?1, '$[0]')) \
+     WHERE id = ?2 AND json_type(data, '$.artifacts') = 'array'",
+);
+
 #[allow(clippy::manual_async_fn)]
 impl TaskStore for SqliteTaskStore {
     fn save<'a>(
@@ -197,6 +327,70 @@ impl TaskStore for SqliteTaskStore {
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;
+
+            Ok(())
+        })
+    }
+
+    /// Appends into the stored JSON document instead of rewriting it.
+    ///
+    /// `save` serializes the whole task in Rust and ships it as a bind
+    /// parameter, so a streaming agent pays for every artifact it has already
+    /// persisted on every subsequent event. This sends only what changed and
+    /// lets `SQLite` splice it into the document with `json_set`.
+    ///
+    /// # What this does and does not remove
+    ///
+    /// Removed: the Rust-side `serde_json::to_string` of the whole task, and
+    /// the transfer of the whole document as a parameter. Both scale with the
+    /// stream so far.
+    ///
+    /// Not removed: `SQLite` still parses and rewrites the row internally, so
+    /// the statement remains linear in document size. A blob-per-task schema
+    /// cannot avoid that; only a normalized artifacts table could, and the
+    /// measurement in `benches/benches/backpressure.rs` says that is not where
+    /// this store's time goes — the per-event round trip dominates by roughly
+    /// 3:1 at 502 events. Doing the larger surgery for the smaller term would
+    /// be the wrong trade, and it is recorded here rather than left implied.
+    ///
+    /// `updated_at` is deliberately untouched: it carries the *status*
+    /// timestamp that orders `list` (§3.1.4), and appending an artifact does
+    /// not change a task's status. This matches `InMemoryTaskStore`, which
+    /// keeps the task's list position across an append.
+    ///
+    /// Falls back to `save` whenever the delta cannot be applied exactly.
+    /// The refused cases, and why each one is refused, are documented on the
+    /// private statement builder this calls.
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let Some(stmt) = artifact_delta_sql(task, delta)? else {
+                return self.save(task).await;
+            };
+
+            let mut query = sqlx::query(stmt.sql.as_ref())
+                .bind(&stmt.payload)
+                .bind(task.id.0.as_str());
+            // Bound rather than interpolated, so the statement text — and the
+            // plan SQLite caches for it — is the same for every artifact index.
+            if let Some(index) = stmt.index {
+                query = query.bind(i64::try_from(index).unwrap_or(i64::MAX));
+            }
+
+            let affected = query
+                .execute(&self.pool)
+                .await
+                .map_err(to_a2a_error)?
+                .rows_affected();
+
+            // No row matched, so the task is not stored yet and the append had
+            // nothing to append to. `save` is what makes it exist.
+            if affected == 0 {
+                return self.save(task).await;
+            }
 
             Ok(())
         })
@@ -385,6 +579,8 @@ impl TaskStore for SqliteTaskStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
     use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
 
     async fn make_store() -> SqliteTaskStore {
@@ -402,6 +598,169 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    // ── artifact_delta_sql: which path, not just which result ────────────────
+    //
+    // Every branch below chooses between the incremental statement and `None`,
+    // which tells the caller to fall back to a whole-record `save`. Falling
+    // back is always *correct* — it writes the same bytes, only slower — so a
+    // wrong boundary here is invisible to any test that asserts stored data.
+    // That is exactly what mutation testing found: seven mutants on these
+    // comparisons survived, because the rows they produce are identical.
+    //
+    // These assert the decision itself, which is the only thing that changes.
+
+    /// Builds a task carrying one artifact with `parts` text parts.
+    fn task_with_parts(parts: usize) -> Task {
+        let mut task = make_task("t-delta", "c-delta", TaskState::Working);
+        task.artifacts = Some(vec![Artifact::new(
+            "art",
+            (0..parts)
+                .map(|i| Part::text(format!("p{i}")))
+                .collect::<Vec<_>>(),
+        )]);
+        task
+    }
+
+    /// `count > MAX_INLINE_APPEND` is the batch-size cutoff: at or below it the
+    /// incremental statement wins, above it rewriting the record does.
+    ///
+    /// Pinned on both sides of the boundary *and* at it. `>` mutated to `>=`
+    /// moves the cutoff by one, `==` and `<` invert the whole policy — none of
+    /// which change a single stored byte.
+    #[test]
+    fn append_batch_cutoff_is_exactly_max_inline_append() {
+        // At the cutoff: still incremental.
+        let task = task_with_parts(MAX_INLINE_APPEND);
+        let at = artifact_delta_sql(
+            &task,
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: MAX_INLINE_APPEND,
+            },
+        )
+        .expect("no error");
+        assert!(
+            at.is_some(),
+            "a batch of exactly MAX_INLINE_APPEND must use the incremental path"
+        );
+
+        // One past it: fall back.
+        let task = task_with_parts(MAX_INLINE_APPEND + 1);
+        let over = artifact_delta_sql(
+            &task,
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: MAX_INLINE_APPEND + 1,
+            },
+        )
+        .expect("no error");
+        assert!(
+            over.is_none(),
+            "a batch larger than MAX_INLINE_APPEND must fall back to a full save"
+        );
+
+        // Below it: incremental.
+        let task = task_with_parts(2);
+        let under = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 2 })
+            .expect("no error");
+        assert!(
+            under.is_some(),
+            "a small batch must use the incremental path"
+        );
+    }
+
+    /// `artifact.parts.len() < count` rejects a delta claiming more parts than
+    /// the artifact actually has — the delta does not describe this task, so
+    /// the tail slice would panic or silently copy the wrong parts.
+    ///
+    /// The equal case must be *accepted*: appending an artifact's entire
+    /// contents in one event is the ordinary first delta for a new artifact.
+    /// `<` mutated to `<=` rejects it and quietly disables the fast path for
+    /// every such event.
+    #[test]
+    fn delta_claiming_all_parts_is_accepted_and_overclaiming_is_not() {
+        let task = task_with_parts(3);
+
+        let exact = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 3 })
+            .expect("no error");
+        assert!(
+            exact.is_some(),
+            "a delta covering every part of the artifact must be accepted"
+        );
+
+        let over = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 4 })
+            .expect("no error");
+        assert!(
+            over.is_none(),
+            "a delta claiming more parts than exist must fall back"
+        );
+    }
+
+    /// A zero-part delta describes nothing and must fall back.
+    #[test]
+    fn zero_count_delta_falls_back() {
+        let task = task_with_parts(3);
+        let none = artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 0 })
+            .expect("no error");
+        assert!(none.is_none(), "a zero-count delta must fall back");
+    }
+
+    /// `Pushed` is only valid for the artifact that is *last* in the vector:
+    /// the statement appends to the end of the stored array, so pushing at any
+    /// other index would put it in the wrong place.
+    ///
+    /// `index + 1 != artifacts.len()` mutated to `==` inverts the guard, and
+    /// `+` mutated to `*` makes it accept index 0 of a 0-length vector while
+    /// rejecting the genuine last-position case.
+    #[test]
+    fn push_is_accepted_only_at_the_last_position() {
+        let mut task = make_task("t-push", "c-push", TaskState::Working);
+        task.artifacts = Some(vec![
+            Artifact::new("a0", vec![Part::text("x")]),
+            Artifact::new("a1", vec![Part::text("y")]),
+        ]);
+
+        let last = artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 1 }).expect("no error");
+        assert!(
+            last.is_some(),
+            "pushing the artifact that is last in the vector must use the incremental path"
+        );
+
+        let not_last =
+            artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 0 }).expect("no error");
+        assert!(
+            not_last.is_none(),
+            "pushing at any position but the last must fall back"
+        );
+
+        // A single-artifact task: index 0 *is* the last position. This is the
+        // case `index * 1` gets wrong in the opposite direction from `index + 1`.
+        let mut single = make_task("t-one", "c-one", TaskState::Working);
+        single.artifacts = Some(vec![Artifact::new("only", vec![Part::text("z")])]);
+        let only =
+            artifact_delta_sql(&single, ArtifactDelta::Pushed { index: 0 }).expect("no error");
+        assert!(
+            only.is_some(),
+            "the sole artifact is at the last position and must be accepted"
+        );
+    }
+
+    /// No artifacts at all: nothing to append to, so every delta falls back.
+    #[test]
+    fn task_without_artifacts_always_falls_back() {
+        let task = make_task("t-empty", "c-empty", TaskState::Working);
+        assert!(
+            artifact_delta_sql(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+                .expect("no error")
+                .is_none()
+        );
+        assert!(
+            artifact_delta_sql(&task, ArtifactDelta::Pushed { index: 0 })
+                .expect("no error")
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -931,5 +1290,240 @@ mod tests {
             response.next_page_token.is_empty(),
             "no pagination token for empty results"
         );
+    }
+}
+
+/// Tests for the incremental artifact path against a real `SQLite` database.
+///
+/// Same contract as the in-memory store's: the delta path must leave the
+/// database holding exactly what `save` would have. These compare against a
+/// second store driven by `save`, rather than against hand-written
+/// expectations that could drift into agreeing with a bug — and they run
+/// against real `SQLite`, because the whole implementation is one SQL statement
+/// and a hand-rolled `json_set` path is precisely the thing a mock would not
+/// evaluate.
+#[cfg(test)]
+mod artifact_delta_tests {
+    use super::*;
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+
+    async fn stores() -> (SqliteTaskStore, SqliteTaskStore) {
+        (
+            SqliteTaskStore::new("sqlite::memory:")
+                .await
+                .expect("delta"),
+            SqliteTaskStore::new("sqlite::memory:").await.expect("save"),
+        )
+    }
+
+    fn task_with(id: &str, artifacts: Option<Vec<Artifact>>) -> Task {
+        Task {
+            id: TaskId::new(id),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts,
+            metadata: None,
+        }
+    }
+
+    fn artifact(id: &str, parts: usize) -> Artifact {
+        Artifact::new(
+            id,
+            (0..parts).map(|i| Part::text(format!("p{i}"))).collect(),
+        )
+    }
+
+    /// The token-streaming shape: 120 single-part appends into one artifact,
+    /// compared against a whole-record save after every single one.
+    #[tokio::test]
+    async fn appending_matches_full_save_at_every_step() {
+        let (delta_store, save_store) = stores().await;
+        let mut task = task_with("t", Some(vec![artifact("a", 1)]));
+        delta_store.save(&task).await.unwrap();
+        save_store.save(&task).await.unwrap();
+
+        for i in 0..120 {
+            task.artifacts.as_mut().unwrap()[0]
+                .parts
+                .push(Part::text(format!("chunk{i}")));
+
+            delta_store
+                .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+                .await
+                .unwrap();
+            save_store.save(&task).await.unwrap();
+
+            let id = TaskId::new("t");
+            assert_eq!(
+                delta_store.get(&id).await.unwrap(),
+                save_store.get(&id).await.unwrap(),
+                "diverged after {i} appends"
+            );
+        }
+    }
+
+    /// Several parts in one event still land, and in order — `[#]` appends, so
+    /// a reversed payload would show up here and nowhere else.
+    #[tokio::test]
+    async fn multi_part_append_preserves_order() {
+        let (store, _) = stores().await;
+        let mut task = task_with("t", Some(vec![artifact("a", 1)]));
+        store.save(&task).await.unwrap();
+
+        let added = vec![
+            Part::text("first"),
+            Part::text("second"),
+            Part::text("third"),
+        ];
+        task.artifacts.as_mut().unwrap()[0]
+            .parts
+            .extend(added.clone());
+        store
+            .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 3 })
+            .await
+            .unwrap();
+
+        assert_eq!(store.get(&TaskId::new("t")).await.unwrap(), Some(task));
+    }
+
+    /// The distinct-artifact shape.
+    #[tokio::test]
+    async fn pushing_matches_full_save_at_every_step() {
+        let (delta_store, save_store) = stores().await;
+        let mut task = task_with("t", Some(vec![]));
+        delta_store.save(&task).await.unwrap();
+        save_store.save(&task).await.unwrap();
+
+        for i in 0..60 {
+            task.artifacts
+                .as_mut()
+                .unwrap()
+                .push(artifact(&format!("a{i}"), 2));
+            let index = task.artifacts.as_ref().unwrap().len() - 1;
+
+            delta_store
+                .save_artifact_delta(&task, ArtifactDelta::Pushed { index })
+                .await
+                .unwrap();
+            save_store.save(&task).await.unwrap();
+
+            let id = TaskId::new("t");
+            assert_eq!(
+                delta_store.get(&id).await.unwrap(),
+                save_store.get(&id).await.unwrap(),
+                "diverged after {i} pushes"
+            );
+        }
+    }
+
+    /// A delta for a row that does not exist must still persist the task.
+    #[tokio::test]
+    async fn absent_row_falls_back_to_full_save() {
+        let (store, _) = stores().await;
+        let task = task_with("never-saved", Some(vec![artifact("a", 3)]));
+
+        store
+            .save_artifact_delta(&task, ArtifactDelta::Pushed { index: 0 })
+            .await
+            .unwrap();
+
+        assert_eq!(
+            store.get(&TaskId::new("never-saved")).await.unwrap(),
+            Some(task)
+        );
+    }
+
+    /// A stored record whose document has no artifacts array is the case the
+    /// `json_type(...) = 'array'` guard exists for: the row must not be edited
+    /// in place, and the fallback must leave it correct anyway.
+    #[tokio::test]
+    async fn stored_task_without_artifacts_falls_back() {
+        let (store, _) = stores().await;
+        let mut task = task_with("t", None);
+        store.save(&task).await.unwrap();
+
+        task.artifacts = Some(vec![artifact("a", 2)]);
+        store
+            .save_artifact_delta(&task, ArtifactDelta::Pushed { index: 0 })
+            .await
+            .unwrap();
+
+        assert_eq!(store.get(&TaskId::new("t")).await.unwrap(), Some(task));
+    }
+
+    /// Deltas that do not reconcile with the task must be refused rather than
+    /// spliced, and the fallback must leave the row correct.
+    #[tokio::test]
+    async fn inconsistent_deltas_fall_back_and_stay_correct() {
+        for delta in [
+            ArtifactDelta::AppendedParts { index: 9, count: 1 }, // index out of range
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: 99,
+            }, // more parts than exist
+            ArtifactDelta::AppendedParts { index: 0, count: 0 }, // nothing appended
+            ArtifactDelta::Pushed { index: 7 },                  // not the last position
+        ] {
+            let (store, _) = stores().await;
+            let mut task = task_with("t", Some(vec![artifact("a", 1)]));
+            store.save(&task).await.unwrap();
+
+            task.artifacts.as_mut().unwrap()[0]
+                .parts
+                .push(Part::text("added"));
+            store.save_artifact_delta(&task, delta).await.unwrap();
+
+            assert_eq!(
+                store.get(&TaskId::new("t")).await.unwrap(),
+                Some(task),
+                "wrong result after refusing {delta:?}"
+            );
+        }
+    }
+
+    /// Appending must not reorder `list`: `updated_at` carries the *status*
+    /// timestamp (§3.1.4), and an artifact append does not change status. The
+    /// in-memory store preserves list position across an append; this asserts
+    /// `SQLite` does too, since a divergence between backends here would be
+    /// invisible until someone paginated.
+    #[tokio::test]
+    async fn delta_preserves_list_position() {
+        let (store, _) = stores().await;
+        let older = task_with("older", Some(vec![artifact("a", 1)]));
+        store.save(&older).await.unwrap();
+        let newer = task_with("newer", None);
+        store.save(&newer).await.unwrap();
+
+        let before: Vec<_> = store
+            .list(&ListTasksParams::default())
+            .await
+            .unwrap()
+            .tasks
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+
+        let mut grown = older.clone();
+        grown.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text("more"));
+        store
+            .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+            .await
+            .unwrap();
+
+        let after: Vec<_> = store
+            .list(&ListTasksParams::default())
+            .await
+            .unwrap()
+            .tasks
+            .iter()
+            .map(|t| t.id.clone())
+            .collect();
+
+        assert_eq!(before, after, "appending an artifact reordered the list");
     }
 }

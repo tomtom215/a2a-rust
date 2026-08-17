@@ -16,7 +16,7 @@
 
 [package]
 name        = "a2a-protocol-slimrpc"
-version     = "0.1.0"
+version     = "0.2.0"
 edition     = "2021"
 license     = "Apache-2.0"
 authors     = ["Tom F."]
@@ -25,15 +25,37 @@ homepage    = "https://a2a-rust.com"
 description = "SLIMRPC custom protocol binding for the a2a-protocol SDK — A2A over the AGNTCY SLIM fabric"
 keywords    = ["a2a", "agent2agent", "slim", "slimrpc", "agntcy"]
 categories  = ["network-programming", "api-bindings"]
-publish     = false
+# Versioned independently of the four SDK crates, and deliberately so.
+#
+# This crate's public API is new. Numbering it 0.8.0 to match the SDK would
+# claim eight minor versions of accumulated stability it has not earned, and
+# would then bump on every SDK release even when nothing here changed, making
+# its changelog useless. Independence also decouples the cadence: a fix here
+# ships without waiting for an SDK release, which matters precisely because
+# this binding exists to be adopted by third parties.
+#
+# What independence does NOT buy, and the reason the SDK requirement below is a
+# tight `0.9` rather than a range: `a2a-protocol-server` and
+# `a2a-protocol-types` are *public* dependencies. `SlimRpcServer::builder`
+# takes `Arc<RequestHandler>` and `agent_interface()` returns an
+# `AgentInterface`, so a caller must be using the same SDK version this crate
+# compiled against. Allow two and cargo will happily link both, and the caller
+# gets "expected RequestHandler, found RequestHandler". So every SDK minor bump
+# requires a release here; only the version *numbers* are independent, not the
+# release schedule.
+publish = true
 
 [dependencies]
 # The A2A SDK. `proto` gives the canonical `lf.a2a.v1` prost types plus lossless
 # conversions to and from the serde domain types — SLIMRPC uses the same
 # protobuf service definitions as gRPC, so the message layer is already done.
-a2a-protocol-types  = { path = "../../crates/a2a-protocol-types", features = ["proto"] }
-a2a-protocol-client = { path = "../../crates/a2a-protocol-client", default-features = false }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", default-features = false }
+#
+# `version` alongside `path` is what makes this publishable: cargo uses the path
+# for local development and rewrites it to the version requirement in the
+# packaged manifest.
+a2a-protocol-types  = { version = "0.9", path = "../../crates/a2a-protocol-types", features = ["proto"] }
+a2a-protocol-client = { version = "0.9", path = "../../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-server = { version = "0.9", path = "../../crates/a2a-protocol-server", default-features = false }
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.

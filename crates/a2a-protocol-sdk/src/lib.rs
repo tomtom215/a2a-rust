@@ -54,20 +54,29 @@ pub mod server {
 /// types for building agents and clients:
 ///
 /// - **Wire types**: `Task`, `TaskState`, `TaskStatus`, `Message`, `Part`,
-///   `MessageRole`, `Artifact`, `StreamResponse`, `AgentCard`, `AgentInterface`
+///   `PartContent`, `FileContent`, `MessageRole`, `Artifact`, `StreamResponse`,
+///   `AgentCard`, `AgentInterface`
 /// - **ID newtypes**: `TaskId`, `ContextId`, `MessageId`, `ArtifactId`
 /// - **Params**: `MessageSendParams`, `TaskQueryParams`, `ListTasksParams`
 /// - **Responses**: `SendMessageResponse`, `TaskListResponse`
 /// - **Client**: `A2aClient`, `ClientBuilder`, `EventStream`
 /// - **Server**: `AgentExecutor`, `RequestHandler`, `RequestHandlerBuilder`,
 ///   `RequestContext`, `EventQueueWriter`, `JsonRpcDispatcher`, `RestDispatcher`
+/// - **Executor ergonomics**: `agent_executor!`, `boxed_future`, `EventEmitter`
 /// - **Errors**: `A2aError`, `A2aResult`, `ClientError`, `ServerError`
+///
+/// # Reading the caller's text
+///
+/// [`Message::text`](a2a_protocol_types::Message::text) returns the first text
+/// part, so the common case needs no `PartContent` match at all. `PartContent`
+/// is in the prelude for the cases that do — inspecting file, URL, or
+/// structured-data parts.
 pub mod prelude {
     // ── Wire types ───────────────────────────────────────────────────────
     pub use a2a_protocol_types::{
         AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Artifact, ArtifactId, ContextId,
-        ListTasksParams, Message, MessageId, MessageRole, MessageSendParams, Part,
-        SendMessageResponse, StreamResponse, Task, TaskArtifactUpdateEvent, TaskId,
+        FileContent, ListTasksParams, Message, MessageId, MessageRole, MessageSendParams, Part,
+        PartContent, SendMessageResponse, StreamResponse, Task, TaskArtifactUpdateEvent, TaskId,
         TaskListResponse, TaskQueryParams, TaskState, TaskStatus, TaskStatusUpdateEvent,
     };
 
@@ -82,11 +91,16 @@ pub mod prelude {
 
     // ── Server ───────────────────────────────────────────────────────────
     pub use a2a_protocol_server::{
-        serve, serve_with_addr, AgentExecutor, ApiKeyAuthInterceptor, BearerTokenAuthInterceptor,
-        Dispatcher, EventEmitter, EventQueueWriter, JsonRpcDispatcher, RateLimitConfig,
-        RateLimitInterceptor, RequestContext, RequestHandler, RequestHandlerBuilder,
-        RestDispatcher, ServerError, ServerResult,
+        boxed_future, serve, serve_with_addr, AgentExecutor, ApiKeyAuthInterceptor,
+        BearerTokenAuthInterceptor, Dispatcher, EventEmitter, EventQueueWriter, JsonRpcDispatcher,
+        RateLimitConfig, RateLimitInterceptor, RequestContext, RequestHandler,
+        RequestHandlerBuilder, RestDispatcher, ServerError, ServerResult,
     };
+
+    // `agent_executor!` generates the whole `AgentExecutor` impl, so it is the
+    // shortest path from "I have a struct" to "I have an agent". It is
+    // `#[macro_export]`ed, hence the crate-root path.
+    pub use a2a_protocol_server::agent_executor;
 
     // ── Axum integration (feature-gated) ────────────────────────────────
     #[cfg(feature = "axum")]

@@ -82,6 +82,67 @@ jobs:
       - name: Mutation gate scope (PR diff pathspec reaches every source)
         run: ./scripts/check_mutation_scope.sh
 
+      # book/src/reference/benchmarks.md is generated: its tables come from
+      # criterion's estimates.json, but its prose was typed into a quoted
+      # heredoc. So the tables regenerated on every bench run and the prose did
+      # not. The page shipped "the ~1.4ms HTTP round-trip dominates" beside a
+      # table reading 189.9 µs, and "reuse saves ~140µs (9%)" where the tables
+      # give 123.5 µs and 39.5% — understating connection reuse by over 4x in
+      # the one document meant to be quoted.
+      #
+      # The generator now interpolates both paragraphs from those same
+      # estimates. This is the ratchet for what that cannot cover: the page is
+      # committed, hand-editable, and regenerated only when someone runs the
+      # benchmarks. It re-derives the quoted values from the committed tables.
+      # Same rule the file-length ratchet opens with — a number nothing
+      # recomputes is a number that decays.
+      - name: Benchmark prose agrees with benchmark tables
+        run: ./scripts/check_benchmark_prose.sh
+
+      # The book carried 158 Rust blocks and nothing compiled any of them.
+      # That is how the README Quick Start came to be broken for three minor
+      # versions: `agent_executor!` was missing from the prelude and the macro
+      # named a crate the snippet's own dependency list did not include, so a
+      # reader copying it got two errors and CI got none.
+      #
+      # `a2a-book-tests` now compiles every non-ignored block as a doctest via
+      # `cargo test --workspace`. This step is the ratchet that stops that
+      # being defeated by marking new blocks `ignore`, and also catches
+      # untagged fences — rustdoc compiles a bare ``` as Rust, which is how 24
+      # ASCII diagrams were being fed to the compiler.
+      - name: Book code blocks (ignore ratchet)
+        run: ./scripts/check_book_code.sh
+
+      # The API Quick Reference is 299 hand-written lines listing every public
+      # type, trait and function — and nothing generated or checked it, so it
+      # could only get less true with every rename. Same decay class as the
+      # benchmark prose, in the page a reader consults precisely when they do
+      # not know the API well enough to spot a stale name.
+      #
+      # Generated rustdoc now ships at /api/ and answers "what exists"
+      # exhaustively; this keeps the curated overview honest alongside it.
+      - name: API Quick Reference names still exist
+        run: python3 scripts/check_api_reference.py
+
+      # `Metrics` callbacks default to no-ops, so one the bundled OTLP exporter
+      # forgets is discarded with no compile error and no failing test — the
+      # exporter's own tests run against a noop meter, which a no-op override
+      # satisfies perfectly. That is exactly how `on_persistence_error` and
+      # `on_push_delivery` shipped wired to every call site and exported by
+      # nothing.
+      - name: OTel exporter covers every Metrics callback
+        run: python3 scripts/check_otel_metrics_coverage.py
+
+      # The packaging `--exclude` list is duplicated across this file,
+      # release.yml and RELEASING.md, with nothing tying it to the workspace.
+      # A new `publish = false` example therefore breaks `cargo package
+      # --workspace` — which runs in the *release* workflow, so the failure
+      # lands at the point where it costs the most. `hello-agent`,
+      # `deploy-agent` and `a2a-book-tests` all joined the workspace without
+      # joining the list.
+      - name: Packaging excludes every unpublishable member
+        run: python3 scripts/check_package_excludes.py
+
       # `scripts/prove_gates_fail.sh` proves the gates in *this* file can fail,
       # but it is a 20-minute source-injection sweep and cannot run on a PR.
       # This is its fast sibling: it proves the verdict-bearing steps in the
@@ -298,7 +359,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       - name: Package all publishable crates
-        run: cargo package --workspace --exclude a2a-example-harness --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+        run: cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
 
   # ── SDK dogfood (examples/agent-team) ────────────────────────────────────
   #

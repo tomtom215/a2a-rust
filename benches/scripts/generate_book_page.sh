@@ -71,6 +71,79 @@ print(int(d['median']['point_estimate']))
 " 2>/dev/null || echo "0"
 }
 
+# ── Helpers: derive prose numbers from the same estimates as the tables ───
+#
+# Prose that quotes a measurement has to be computed, not typed. Between v0.5.0
+# and v0.8.0 this page carried "the ~1.4ms HTTP round-trip dominates" and
+# "connection reuse saves ~140µs (9%)" while the tables directly above them had
+# moved to 189.9 µs and a 39.5% saving — the tables regenerated on every run and
+# the prose did not. Same disease the file-length ratchet was built to cure: a
+# number nothing recomputes is a number that decays.
+#
+# Every helper below degrades to "—" (or an empty delta) when its estimates.json
+# is missing, matching extract_median, so a partial bench run yields a page with
+# visible gaps rather than a confidently wrong sentence.
+
+# Percentage increase from $1 to $2, e.g. "20.0%".
+# Median of $1 divided by the burst size $2, rendered as µs-per-agent. Lets the
+# burst A/B be quoted per agent, which is the only form comparable to the
+# single-request connection-reuse numbers above it.
+derive_per_agent() {
+    local est_file="$1" n="$2"
+    local ns
+    ns="$(extract_median_ns "$est_file")"
+    if [ "$ns" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{$ns / 1000 / $n:.1f} µs')"
+}
+
+# Absolute per-agent saving between two burst arms of size $3, in µs.
+derive_per_agent_saving() {
+    local slow_file="$1" fast_file="$2" n="$3"
+    local slow fast
+    slow="$(extract_median_ns "$slow_file")"
+    fast="$(extract_median_ns "$fast_file")"
+    if [ "$slow" = "0" ] || [ "$fast" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{($slow - $fast) / 1000 / $n:.1f} µs ({(($slow - $fast) / $slow) * 100:.1f}%)')"
+}
+
+derive_pct_increase() {
+    local from_file="$1" to_file="$2"
+    local from to
+    from="$(extract_median_ns "$from_file")"
+    to="$(extract_median_ns "$to_file")"
+    if [ "$from" = "0" ] || [ "$to" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "print(f'{(($to - $from) / $from) * 100:.1f}%')"
+}
+
+# Absolute saving going from $1 (slow path) to $2 (fast path), rendered as
+# "123.5 µs (39.5%)". The percentage is of the slow path, so it reads as
+# "reuse removes this share of the cost".
+derive_saving() {
+    local slow_file="$1" fast_file="$2"
+    local slow fast
+    slow="$(extract_median_ns "$slow_file")"
+    fast="$(extract_median_ns "$fast_file")"
+    if [ "$slow" = "0" ] || [ "$fast" = "0" ]; then
+        echo "—"
+        return
+    fi
+    python3 -c "
+saved = $slow - $fast
+pct = (saved / $slow) * 100
+unit = f'{saved / 1_000:.1f} µs' if saved >= 1_000 else f'{saved:.0f} ns'
+print(f'{unit} ({pct:.1f}%)')
+"
+}
+
 # ── Helper: emit a results table for all matching criterion directories ───
 
 # Arguments: $1 = glob pattern prefix (matched against top-level criterion dirs)
@@ -462,20 +535,83 @@ v0.5.0, pushing the inflection from ~52 events to ~252 events:
 Production deployments expecting >256 events/task should increase
 `EventQueueManager::with_capacity()` to match their peak volume.
 
+FOOTER
+
+# These two sections quote measurements, so they are computed from the same
+# estimates.json files the tables above are built from. Do not fold them back
+# into a quoted heredoc — that is what let them drift for three minor versions.
+
+TRANSPORT_64="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/64/new/estimates.json"
+TRANSPORT_16K="$CRITERION_DIR/transport_payload_scaling/jsonrpc_send/16384/new/estimates.json"
+CONN_NEW="$CRITERION_DIR/realistic_connection/new_client_per_request/new/estimates.json"
+CONN_REUSED="$CRITERION_DIR/realistic_connection/reused_client/new/estimates.json"
+BURST_AB="$CRITERION_DIR/production_agent_burst_client_sharing"
+BURST_PER_AGENT="$BURST_AB/per_agent_client_agents/100/new/estimates.json"
+BURST_SHARED="$BURST_AB/shared_client_agents/100/new/estimates.json"
+
+cat >> "$OUTPUT_FILE" <<SECTION
 ### Transport payload insensitivity
 
-Transport benchmarks (64B → 16KB) show only ~10% latency increase for a
-256× payload increase, because the ~1.4ms HTTP round-trip dominates. Serde
+Transport benchmarks (64B → 16KB) show a $(derive_pct_increase "$TRANSPORT_64" "$TRANSPORT_16K") latency increase for a
+256× payload increase, because the $(extract_median "$TRANSPORT_64") HTTP round-trip dominates. Serde
 regressions cannot be detected via transport benchmarks. Use the
-`protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
+\`protocol/payload_scaling\` isolation benchmarks (64B → 1MB, pure serde)
 for serialization regression detection.
 
 ### Connection reuse impact
 
-Connection reuse saves ~140µs (9%) on loopback. On real networks with TLS,
-savings would be 10-50ms (TLS handshake dominates). Best practice: create one
-`A2aClient` at startup and share via `Arc` across request handlers.
+Connection reuse saves $(derive_saving "$CONN_NEW" "$CONN_REUSED") on loopback —
+$(extract_median "$CONN_NEW") per request when the client is rebuilt each time,
+versus $(extract_median "$CONN_REUSED") when it is shared. On real networks with TLS the
+saving is larger still (TLS handshake dominates). Best practice: create one
+\`A2aClient\` at startup and share via \`Arc\` across request handlers.
 
+Two consequences worth spelling out, because both have bitten this repo:
+
+- A benchmark that builds a client inside its measured region is measuring
+  client construction, not the thing it names. \`production_agent_burst\` does
+  exactly this, and its per-agent cost tracks
+  $(extract_median "$CONN_NEW") — the rebuild-every-time number — rather than
+  the shared-client one.
+- Quoting this saving as a small percentage understates it by roughly 4×. It is
+  a large fraction of a loopback request, not a rounding error.
+
+### What sharing a client is actually worth under concurrency
+
+The bullet above says \`production_agent_burst\` tracks the rebuild-every-time
+number. That is true, and it invites a wrong inference: that sharing a client
+would move it to the reused figure. It does not, and
+\`production/agent_burst_client_sharing\` was added to measure the difference
+rather than reason about it. Both arms run the same server, the same three
+operations per agent, and the same burst sizes; only the client's provenance
+changes.
+
+| Burst | Client per agent | Shared \`Arc<A2aClient>\` | Saved per agent |
+|---|---|---|---|
+| 10 | $(derive_per_agent "$BURST_AB/per_agent_client_agents/10/new/estimates.json" 10) | $(derive_per_agent "$BURST_AB/shared_client_agents/10/new/estimates.json" 10) | $(derive_per_agent_saving "$BURST_AB/per_agent_client_agents/10/new/estimates.json" "$BURST_AB/shared_client_agents/10/new/estimates.json" 10) |
+| 50 | $(derive_per_agent "$BURST_AB/per_agent_client_agents/50/new/estimates.json" 50) | $(derive_per_agent "$BURST_AB/shared_client_agents/50/new/estimates.json" 50) | $(derive_per_agent_saving "$BURST_AB/per_agent_client_agents/50/new/estimates.json" "$BURST_AB/shared_client_agents/50/new/estimates.json" 50) |
+| 100 | $(derive_per_agent "$BURST_PER_AGENT" 100) | $(derive_per_agent "$BURST_SHARED" 100) | $(derive_per_agent_saving "$BURST_PER_AGENT" "$BURST_SHARED" 100) |
+
+Sharing wins at every burst size, and the medians' 95% confidence intervals are
+disjoint in all three, so the direction is not noise. But the size of the win is
+about half what the single-request comparison above predicts:
+$(derive_per_agent_saving "$BURST_PER_AGENT" "$BURST_SHARED" 100) per agent
+against the $(derive_saving "$CONN_NEW" "$CONN_REUSED") that
+\`reused_client\` versus \`new_client_per_request\` would lead you to expect.
+
+The reason is that the two arms differ in two coupled ways, not one. A shared
+client skips per-agent construction *and* per-agent connection setup, but it
+also puts every concurrent agent on one connection pool, and that contention
+gives part of the saving back. The sequential benchmark has no contention to
+pay, which is why its number is the optimistic bound rather than the forecast.
+
+The practical reading: share the client — it is free to do and wins at every
+size measured — but size capacity from the burst figures, not from the
+single-request saving.
+
+SECTION
+
+cat >> "$OUTPUT_FILE" <<'FOOTER'
 ### Deserialization allocation overhead
 
 Deserialization allocates ~3× more than serialization (Task: 1,026 vs 342

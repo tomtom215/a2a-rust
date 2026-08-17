@@ -18,7 +18,7 @@ OAuth-ecosystem dependencies (see [ADR 0010](../reference/adrs.md)).
 For a fixed set of accepted credentials, `ApiKeyAuthInterceptor` and
 `BearerTokenAuthInterceptor` compare in constant time and need no feature flag:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::{BearerTokenAuthInterceptor, RequestHandlerBuilder};
 
 let handler = RequestHandlerBuilder::new(my_executor)
@@ -45,7 +45,7 @@ a2a-protocol-server = { version = "0.8", features = ["auth-jwt"] }
 **Validate tokens from an OIDC issuer** (discovers the issuer's JWKS, caches it,
 and refetches on key rotation):
 
-```rust
+```rust,ignore
 use a2a_protocol_server::auth::jwt::{JwtAuthInterceptor, JwtValidator};
 
 let validator = JwtValidator::new()
@@ -59,7 +59,7 @@ let interceptor =
 **Static keys** — supply a `Jwks` directly (from a JWKS JSON document or key by
 key), or a shared secret for HS256:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::auth::jwt::{Jwks, JwtAuthInterceptor, JwtValidator};
 
 // RS256/ES256 from a JWKS document:
@@ -99,7 +99,7 @@ the agent; these interceptors are the self-contained, defense-in-depth option.
 
 ### A token you already have
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use a2a_protocol_client::{BearerAuthInterceptor, ClientBuilder, StaticTokenProvider};
 
@@ -119,7 +119,7 @@ token rotations.
 refreshes it shortly before expiry, and collapses concurrent refreshes into a
 single request:
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use a2a_protocol_client::{BearerAuthInterceptor, ClientBuilder, OAuth2ClientCredentials};
 
@@ -140,7 +140,7 @@ let client = ClientBuilder::new("https://agent.example.com")
 **From the agent card** — an agent that advertises an OAuth2 client-credentials
 scheme carries its token endpoint:
 
-```rust
+```rust,ignore
 let provider = OAuth2ClientCredentials::from_agent_card(
     &card, "my-oauth-scheme", "client-id", "client-secret",
 )?;
@@ -148,7 +148,7 @@ let provider = OAuth2ClientCredentials::from_agent_card(
 
 **From an OIDC issuer** — discovers the `token_endpoint`:
 
-```rust
+```rust,ignore
 let provider = OAuth2ClientCredentials::from_oidc_issuer(
     "https://login.example.com", "client-id", "client-secret",
 ).await?;

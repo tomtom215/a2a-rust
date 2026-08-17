@@ -25,7 +25,7 @@ Dogfooding operates at the highest level of the testing pyramid. It catches the 
 
 ## The Agent Team Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     E2E Test Harness                        │
 │          (81 base / 94 all features, ~6000ms)               │
@@ -112,7 +112,7 @@ The agent team exercises **45+ distinct SDK features** in a single run:
 
 ## Modular Example Structure
 
-```
+```text
 examples/agent-team/src/
 ├── main.rs                      # Thin orchestrator (~470 lines)
 ├── executors/
@@ -168,7 +168,7 @@ cargo run -p agent-team --features "websocket,grpc,axum,sqlite,signing,otel,trac
 
 Expected output:
 
-```
+```text
 ╔══════════════════════════════════════════════════════════════╗
 ║     A2A Agent Team — Full SDK Dogfood & E2E Test Suite       ║
 ╚══════════════════════════════════════════════════════════════╝

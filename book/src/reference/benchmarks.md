@@ -519,17 +519,62 @@ Production deployments expecting >256 events/task should increase
 
 ### Transport payload insensitivity
 
-Transport benchmarks (64B → 16KB) show only ~10% latency increase for a
-256× payload increase, because the ~1.4ms HTTP round-trip dominates. Serde
+Transport benchmarks (64B → 16KB) show a 20.0% latency increase for a
+256× payload increase, because the 189.9 µs HTTP round-trip dominates. Serde
 regressions cannot be detected via transport benchmarks. Use the
 `protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
 for serialization regression detection.
 
 ### Connection reuse impact
 
-Connection reuse saves ~140µs (9%) on loopback. On real networks with TLS,
-savings would be 10-50ms (TLS handshake dominates). Best practice: create one
+Connection reuse saves 123.5 µs (39.5%) on loopback —
+312.5 µs per request when the client is rebuilt each time,
+versus 189.0 µs when it is shared. On real networks with TLS the
+saving is larger still (TLS handshake dominates). Best practice: create one
 `A2aClient` at startup and share via `Arc` across request handlers.
+
+Two consequences worth spelling out, because both have bitten this repo:
+
+- A benchmark that builds a client inside its measured region is measuring
+  client construction, not the thing it names. `production_agent_burst` does
+  exactly this, and its per-agent cost tracks
+  312.5 µs — the rebuild-every-time number — rather than
+  the shared-client one.
+- Quoting this saving as a small percentage understates it by roughly 4×. It is
+  a large fraction of a loopback request, not a rounding error.
+
+### What sharing a client is actually worth under concurrency
+
+The bullet above says `production_agent_burst` tracks the rebuild-every-time
+number. That is true, and it invites a wrong inference: that sharing a client
+would move it to the reused figure. It does not, and
+`production/agent_burst_client_sharing` was added to measure the difference
+rather than reason about it. Both arms run the same server, the same three
+operations per agent, and the same burst sizes; only the client's provenance
+changes.
+
+| Burst | Client per agent | Shared `Arc<A2aClient>` | Saved per agent |
+|---|---|---|---|
+| 10 | 368.7 µs | 314.2 µs | 54.5 µs (14.8%) |
+| 50 | 334.1 µs | 273.9 µs | 60.2 µs (18.0%) |
+| 100 | 326.7 µs | 267.6 µs | 59.2 µs (18.1%) |
+
+Sharing wins at every burst size, and the medians' 95% confidence intervals are
+disjoint in all three, so the direction is not noise. But the size of the win is
+about half what the single-request comparison above predicts:
+59.2 µs (18.1%) per agent
+against the 123.5 µs (39.5%) that
+`reused_client` versus `new_client_per_request` would lead you to expect.
+
+The reason is that the two arms differ in two coupled ways, not one. A shared
+client skips per-agent construction *and* per-agent connection setup, but it
+also puts every concurrent agent on one connection pool, and that contention
+gives part of the saving back. The sequential benchmark has no contention to
+pay, which is why its number is the optimistic bound rather than the forecast.
+
+The practical reading: share the client — it is free to do and wins at every
+size measured — but size capacity from the burst figures, not from the
+single-request saving.
 
 ### Deserialization allocation overhead
 

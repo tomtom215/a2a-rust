@@ -560,6 +560,107 @@ def build_registry() -> dict[str, Probe | Exempt]:
         cwd_is_repo=True,
     )
 
+    # Needs a live fetch of the upstream specification to have anything to
+    # compare against, and this harness runs offline by design. Registered so a
+    # rename or deletion is still caught; its own failure path was verified by
+    # hand on 2026-08-16 (a one-character local edit -> exit 1 with the diff,
+    # restored -> exit 0), and unreachable upstream exits 3 rather than
+    # reporting a match it never made.
+    reg["official-tck.yml::official-tck::Vendored SLIMRPC spec still matches upstream"] = Exempt(
+        "requires a live fetch of the upstream spec; verified by hand, and it "
+        "exits 3 rather than reporting agreement when upstream is unreachable"
+    )
+
+    # ── docs.yml ─────────────────────────────────────────────────────────────
+    #
+    # The step stages rustdoc under /api/ and then asserts each crate's
+    # index.html landed. That assertion is the gate: without it an empty /api/
+    # deploys green and the 404 is only discovered in production, which is
+    # exactly the failure the step was added to prevent.
+    def _rustdoc_fixture(crates):
+        def setup(d):
+            (d / "book" / "book").mkdir(parents=True, exist_ok=True)
+            # Always present, even when empty: a missing `target/doc` would
+            # trip the `cp` instead of the assertion, and the assertion is what
+            # this probe is here to exercise.
+            (d / "target" / "doc").mkdir(parents=True, exist_ok=True)
+            for crate in crates:
+                out = d / "target" / "doc" / crate
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "index.html").write_text("<!doctype html>", encoding="utf-8")
+            return {}
+
+        return setup
+
+    ALL_DOC_CRATES = [
+        "a2a_protocol_types",
+        "a2a_protocol_client",
+        "a2a_protocol_server",
+        "a2a_protocol_sdk",
+    ]
+    reg["docs.yml::build::Place API documentation under /api/"] = Probe(
+        healthy=_rustdoc_fixture(ALL_DOC_CRATES),
+        defects=[
+            Defect(
+                f"rustdoc produced nothing for {dropped}",
+                _rustdoc_fixture([c for c in ALL_DOC_CRATES if c != dropped]),
+                "rustdoc output missing",
+            )
+            for dropped in ("a2a_protocol_sdk", "a2a_protocol_types")
+        ]
+        + [
+            Defect(
+                "the whole rustdoc build produced no output",
+                _rustdoc_fixture([]),
+                "rustdoc output missing",
+            )
+        ],
+    )
+
+    # ── benchmarks.yml ───────────────────────────────────────────────────────
+    #
+    # The healthy fixture is the measured post-fix curve; the defect is the
+    # measured pre-fix one, both taken from the same machine in one session.
+    # Using real numbers rather than invented ones keeps the probe honest about
+    # what this gate can actually distinguish: 26x against a 3x limit.
+    def _streaming_fixture(medians_us):
+        # Runs from the repo so the checker script resolves, but reads its
+        # measurements from the scratch directory via the step's own env knob —
+        # the real `target/criterion` is never touched.
+        def setup(d):
+            root = d / "criterion"
+            for n, us in medians_us.items():
+                out = root / "backpressure_stream_volume" / f"{n}_events" / "new"
+                out.mkdir(parents=True, exist_ok=True)
+                (out / "estimates.json").write_text(
+                    json.dumps({"median": {"point_estimate": us * 1000}}),
+                    encoding="utf-8",
+                )
+            return {"__cwd__": str(REPO), "__env__": {"CRITERION_DIR": str(root)}}
+
+        return setup
+
+    LINEAR = {7: 363.76, 27: 537.87, 52: 719.43, 252: 1859.7, 502: 3570.3}
+    QUADRATIC = {7: 381.42, 27: 573.58, 52: 931.54, 252: 27431.0, 502: 120570.0}
+    reg["benchmarks.yml::bench::Streaming must stay linear in event count"] = Probe(
+        healthy=_streaming_fixture(LINEAR),
+        defects=[
+            Defect(
+                "per-event cost grows with stream length (the pre-fix quadratic path)",
+                _streaming_fixture(QUADRATIC),
+                "not linear in event count",
+            ),
+            Defect(
+                "benchmarks were never run, so there is nothing to police",
+                lambda d: {
+                    "__cwd__": str(REPO),
+                    "__env__": {"CRITERION_DIR": str(d / "empty")},
+                },
+                "Run the benchmarks first",
+            ),
+        ],
+    )
+
     # ── mutants.yml ──────────────────────────────────────────────────────────
     reg["mutants.yml::mutants-crate::Require a readable mutation report"] = Probe(
         healthy=lambda d: mutants_out(d, caught=10, missed=0),

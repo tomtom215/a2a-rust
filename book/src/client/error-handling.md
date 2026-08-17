@@ -6,7 +6,7 @@ a2a-rust uses a layered error model: protocol-level errors (`A2aError`), client 
 
 Protocol errors defined by the A2A spec:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::types::error::{A2aError, ErrorCode};
 
 // Common error codes
@@ -22,7 +22,7 @@ ErrorCode::UnsupportedOperation // Operation invalid for current state
 
 ### Handling Protocol Errors
 
-```rust
+```rust,ignore
 match client.get_task(params).await {
     Ok(task) => println!("Got task: {}", task.id),
     Err(e) => {
@@ -36,7 +36,7 @@ match client.get_task(params).await {
 
 The client wraps transport and protocol errors:
 
-```rust
+```rust,ignore
 match client.send_message(params).await {
     Ok(response) => { /* handle response */ }
     Err(e) => {
@@ -50,7 +50,7 @@ match client.send_message(params).await {
 
 ### Timeout Errors
 
-```rust
+```rust,ignore
 // Per-request timeout
 let client = ClientBuilder::new(url)
     .with_timeout(Duration::from_secs(5))
@@ -68,7 +68,7 @@ match client.send_message(params).await {
 
 ### Connection Errors
 
-```rust
+```rust,ignore
 // Connection timeout
 let client = ClientBuilder::new(url)
     .with_connection_timeout(Duration::from_secs(2))
@@ -79,7 +79,7 @@ let client = ClientBuilder::new(url)
 
 Use `RetryPolicy` to automatically retry transient errors:
 
-```rust
+```rust,ignore
 use a2a_protocol_client::RetryPolicy;
 
 let client = ClientBuilder::new(url)
@@ -89,7 +89,7 @@ let client = ClientBuilder::new(url)
 
 You can check if an error is retryable programmatically:
 
-```rust
+```rust,ignore
 match client.send_message(params).await {
     Err(e) if e.is_retryable() => println!("Transient error: {e}"),
     Err(e) => println!("Permanent error: {e}"),
@@ -105,7 +105,7 @@ Retry backoff uses full jitter (0.5–1.0× randomization) to prevent thundering
 
 When building an agent, the `ServerError` type covers handler-level failures:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::server::ServerError;
 
 // Server errors are returned by RequestHandlerBuilder::build()
@@ -118,7 +118,7 @@ use a2a_protocol_sdk::server::ServerError;
 
 a2a-rust never panics on caller input or I/O failure — every fallible operation returns `Result`. (The only `expect` calls in the libraries assert internal invariants, such as propagating lock poisoning, that callers cannot trigger.) Follow the same pattern in your executors:
 
-```rust
+```rust,ignore
 // Good: return an error
 return Err(A2aError::internal("processing failed"));
 
@@ -130,7 +130,7 @@ panic!("processing failed");
 
 In your `AgentExecutor`, catch errors and report them as status updates:
 
-```rust
+```rust,ignore
 Box::pin(async move {
     queue.write(/* Working */).await?;
 
@@ -171,7 +171,7 @@ Box::pin(async move {
 
 For streaming, handle errors per-event:
 
-```rust
+```rust,ignore
 while let Some(event) = stream.next().await {
     match event {
         Ok(ev) => { /* process event */ }

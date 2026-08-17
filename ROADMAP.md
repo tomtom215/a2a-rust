@@ -264,8 +264,16 @@ verified by reading declarations; the correction is recorded there.
    empty store.
 2. **Split `handler/messaging.rs`** (2,395 lines, still the worst file, still
    holding the hot path and the destroy/`CleanupGuard` coupling).
-3. **A 30-line `hello-agent`**, and a deployment example. Both ends of the
-   funnel are still missing; the smallest example remains 736 LOC.
+3. **~~A 30-line `hello-agent`, and a deployment example.~~ Done 2026-08-16** —
+   both ends of the funnel existed only as a gap: the smallest example was
+   736 LOC and nothing showed how to ship one. `examples/hello-agent` is now
+   23 lines of code against the umbrella crate alone, and
+   `examples/deploy-agent` carries the four things a container platform
+   requires — env configuration, `/healthz` and `/readyz`, `SIGTERM` drain, and
+   a `0.0.0.0` bind — plus a two-stage `Dockerfile` and a Kubernetes manifest
+   whose probes point at those endpoints. Its sharpest test asserts the agent
+   card advertises the *public* URL and never leaks the bind address, which is
+   the deployment bug whose only symptom is clients failing to call back.
 
 Known limits of the SLIMRPC work, stated rather than implied: federation is by
 manual bundle exchange rather than a bundle endpoint; rotation covers JWT-SVIDs

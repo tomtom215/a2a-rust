@@ -144,6 +144,96 @@ pub trait TaskStore: Send + Sync + 'static {
     fn count<'a>(&'a self) -> Pin<Box<dyn Future<Output = A2aResult<u64>> + Send + 'a>> {
         Box::pin(async { Ok(0) })
     }
+
+    /// Persists an artifact change that has **already been applied** to `task`.
+    ///
+    /// # Why this exists
+    ///
+    /// A streaming agent emits one artifact event per chunk, and the obvious
+    /// implementation persists each one with [`save`](TaskStore::save) — which
+    /// hands the store the whole task. The task grows with every chunk, so the
+    /// cost of one event is proportional to the number of events before it, and
+    /// the cost of a stream is quadratic in its length. Measured on the
+    /// `backpressure/append_volume` benchmark, a 502-event stream spent 43.4 ms
+    /// against the in-memory store versus 3.2 ms against a store that discards
+    /// everything: **13.5× of that stream was re-persisting artifacts already
+    /// persisted.**
+    ///
+    /// `delta` says exactly what changed, so a store that can update a record
+    /// in place does work proportional to the change rather than to the record.
+    ///
+    /// # Implementing this
+    ///
+    /// The default replaces the whole record via `save`, which is always
+    /// correct — every existing implementation keeps working unchanged, and a
+    /// store with no incremental update path should keep it. Overriding is
+    /// worthwhile for any store where applying a delta is cheaper than
+    /// rewriting the record.
+    ///
+    /// All three stores shipped here override it, and what each one wins
+    /// differs with its storage model:
+    ///
+    /// | Store | Approach | Measured on a 500-chunk stream |
+    /// |---|---|---|
+    /// | [`InMemoryTaskStore`] | Mutates the stored task in place | 43.4 ms to 2.5 ms |
+    /// | `SqliteTaskStore` | `json_set` splices the tail into the document | 144.5 ms to 127.6 ms |
+    /// | `PostgresTaskStore` | `jsonb_set` with `\|\|` array concat | 798 ms to 500 ms |
+    ///
+    /// The in-memory win is the largest because a full `save` there is a deep
+    /// clone and a delta is a `Vec` extend. The SQL stores keep one JSON
+    /// document per row, so they still rewrite the row internally; what the
+    /// delta removes is the Rust-side serialization of the whole task and its
+    /// transfer as a bind parameter. That is enough to flatten Postgres's
+    /// per-event cost — 874, 1183, 1597 µs at 50, 250 and 500 chunks with
+    /// `save`, against 853, 840, 1000 µs with the delta — but not to make
+    /// either SQL store as cheap as memory. Only normalising artifacts into
+    /// their own table would do that, and the same measurements put the
+    /// per-event round trip well above the document-size term, so it would buy
+    /// the smaller half.
+    ///
+    /// An override **must** leave the store holding exactly what `save(task)`
+    /// would have left it holding. `delta` describes a change already present
+    /// in `task`; if an implementation cannot apply it — the record is missing,
+    /// or its shape does not match — it must fall back to `save(task)` rather
+    /// than persist a divergent record.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if the store operation fails.
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        let _ = delta;
+        self.save(task)
+    }
+}
+
+/// What changed in a task's artifacts, for [`TaskStore::save_artifact_delta`].
+///
+/// Indexes refer to positions in the task's `artifacts` vector as it stands
+/// *after* the change, so a store can locate the affected artifact without
+/// searching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtifactDelta {
+    /// `count` parts were appended to the end of the artifact at `index`.
+    ///
+    /// Every part before the last `count` is untouched, so a store holding the
+    /// previous version only needs to copy the tail.
+    AppendedParts {
+        /// Position of the artifact that grew.
+        index: usize,
+        /// How many parts were appended.
+        count: usize,
+    },
+    /// A new artifact was pushed at `index`, which is the last position.
+    ///
+    /// Every artifact before it is untouched.
+    Pushed {
+        /// Position of the newly added artifact.
+        index: usize,
+    },
 }
 
 /// Tests for the default `count` implementation on `TaskStore`.

@@ -25,6 +25,7 @@ use a2a_protocol_server::push::{
     PostgresPushConfigStore, PushConfigStore, TenantAwarePostgresPushConfigStore,
 };
 use a2a_protocol_server::store::tenant::TenantContext;
+use a2a_protocol_server::store::ArtifactDelta;
 use a2a_protocol_server::store::{
     PgMigrationRunner, PostgresTaskStore, TaskStore, TenantAwarePostgresTaskStore,
 };
@@ -694,4 +695,301 @@ async fn tenant_push_store_isolates_tenants() {
     .await;
 
     db.drop_db().await;
+}
+
+// ── Incremental artifact persistence (`save_artifact_delta`) ─────────────────
+//
+// Same contract as the in-memory and SQLite stores: the delta path must leave
+// the database holding exactly what `save` would have. These compare against a
+// second store driven by `save`, rather than against hand-written
+// expectations that could drift into agreeing with a bug.
+//
+// Run against real PostgreSQL rather than a mock, because the implementation
+// *is* a `jsonb_set` expression — the one thing a mock would not evaluate.
+
+use a2a_protocol_types::artifact::Artifact;
+use a2a_protocol_types::message::Part;
+
+fn artifact(id: &str, parts: usize) -> Artifact {
+    Artifact::new(
+        id,
+        (0..parts).map(|i| Part::text(format!("p{i}"))).collect(),
+    )
+}
+
+fn task_with_artifacts(id: &str, artifacts: Option<Vec<Artifact>>) -> Task {
+    let mut task = make_task(id, "ctx");
+    task.artifacts = artifacts;
+    task
+}
+
+/// The token-streaming shape: 80 single-part appends into one artifact,
+/// compared against a whole-record save after every one.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_appending_matches_full_save() -> A2aResult<()> {
+    let db = TestDb::create("delta_append").await;
+    let delta_store = PostgresTaskStore::new(&db.url).await.expect("delta store");
+    let save_db = TestDb::create("delta_append_ref").await;
+    let save_store = PostgresTaskStore::new(&save_db.url)
+        .await
+        .expect("save store");
+
+    let mut task = task_with_artifacts("t", Some(vec![artifact("a", 1)]));
+    delta_store.save(&task).await?;
+    save_store.save(&task).await?;
+
+    for i in 0..80 {
+        task.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text(format!("chunk{i}")));
+
+        delta_store
+            .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+            .await?;
+        save_store.save(&task).await?;
+
+        let id = TaskId::new("t");
+        assert_eq!(
+            delta_store.get(&id).await?,
+            save_store.get(&id).await?,
+            "diverged after {i} appends"
+        );
+    }
+
+    db.drop_db().await;
+    save_db.drop_db().await;
+    Ok(())
+}
+
+/// Several parts in one event land together and in order. Postgres does this
+/// with a single `||` concat, unlike SQLite's one-path-per-part, so ordering
+/// is worth asserting on its own.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_multi_part_append_preserves_order() -> A2aResult<()> {
+    let db = TestDb::create("delta_multi").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let mut task = task_with_artifacts("t", Some(vec![artifact("a", 1)]));
+    store.save(&task).await?;
+
+    task.artifacts.as_mut().unwrap()[0].parts.extend(vec![
+        Part::text("first"),
+        Part::text("second"),
+        Part::text("third"),
+    ]);
+    store
+        .save_artifact_delta(&task, ArtifactDelta::AppendedParts { index: 0, count: 3 })
+        .await?;
+
+    assert_eq!(store.get(&TaskId::new("t")).await?, Some(task));
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// The distinct-artifact shape.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_pushing_matches_full_save() -> A2aResult<()> {
+    let db = TestDb::create("delta_push").await;
+    let delta_store = PostgresTaskStore::new(&db.url).await.expect("delta store");
+    let save_db = TestDb::create("delta_push_ref").await;
+    let save_store = PostgresTaskStore::new(&save_db.url)
+        .await
+        .expect("save store");
+
+    let mut task = task_with_artifacts("t", Some(vec![]));
+    delta_store.save(&task).await?;
+    save_store.save(&task).await?;
+
+    for i in 0..40 {
+        task.artifacts
+            .as_mut()
+            .unwrap()
+            .push(artifact(&format!("a{i}"), 2));
+        let index = task.artifacts.as_ref().unwrap().len() - 1;
+
+        delta_store
+            .save_artifact_delta(&task, ArtifactDelta::Pushed { index })
+            .await?;
+        save_store.save(&task).await?;
+
+        let id = TaskId::new("t");
+        assert_eq!(
+            delta_store.get(&id).await?,
+            save_store.get(&id).await?,
+            "diverged after {i} pushes"
+        );
+    }
+
+    db.drop_db().await;
+    save_db.drop_db().await;
+    Ok(())
+}
+
+/// A `Pushed` delta whose index is not the last position must fall back rather
+/// than run the append.
+///
+/// The statement appends to the end of the stored array unconditionally, so
+/// running it for a non-last index puts the artifact in the wrong place — the
+/// one failure mode in this file that *corrupts* rather than merely costing a
+/// fallback.
+///
+/// Asserting it needs a live database: the guard is a plain `if` returning
+/// `Ok(None)`, and with the negation removed it declines the valid case (which
+/// falls back and writes identical bytes, invisibly) while accepting the
+/// invalid one (which does not). Only the second half is observable, and only
+/// against a real row. Mutation testing found it after the guard was extracted
+/// into `is_last_position`, whose own unit tests cover the predicate but not
+/// the branch that consults it.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_push_at_a_non_last_index_falls_back() -> A2aResult<()> {
+    let db = TestDb::create("delta_push_wrong_index").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let mut task = task_with_artifacts("t", Some(vec![artifact("a0", 1)]));
+    store.save(&task).await?;
+
+    // Two artifacts stored; index 0 is no longer the last position.
+    task.artifacts.as_mut().unwrap().push(artifact("a1", 1));
+    store.save(&task).await?;
+
+    // A delta naming index 0 does not describe an append at the end.
+    store
+        .save_artifact_delta(&task, ArtifactDelta::Pushed { index: 0 })
+        .await?;
+
+    let stored = store
+        .get(&TaskId::new("t"))
+        .await?
+        .expect("task should still exist");
+    let artifacts = stored.artifacts.as_ref().expect("artifacts");
+    assert_eq!(
+        artifacts.len(),
+        2,
+        "a mis-indexed push must fall back, not append a duplicate; got {:?}",
+        artifacts.iter().map(|a| &a.id).collect::<Vec<_>>()
+    );
+    assert_eq!(stored, task, "the fallback must persist the task unchanged");
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// A delta for a row that does not exist must still persist the task, and a
+/// stored document with no artifacts array must take the fallback rather than
+/// be edited in place — that is what the `jsonb_typeof` guards are for.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_falls_back_when_the_row_is_not_ready() -> A2aResult<()> {
+    let db = TestDb::create("delta_absent").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    // Never saved.
+    let fresh = task_with_artifacts("never-saved", Some(vec![artifact("a", 3)]));
+    store
+        .save_artifact_delta(&fresh, ArtifactDelta::Pushed { index: 0 })
+        .await?;
+    assert_eq!(
+        store.get(&TaskId::new("never-saved")).await?,
+        Some(fresh),
+        "an absent row must still be persisted"
+    );
+
+    // Stored without artifacts, then given an artifact delta.
+    let mut later = task_with_artifacts("no-artifacts", None);
+    store.save(&later).await?;
+    later.artifacts = Some(vec![artifact("a", 2)]);
+    store
+        .save_artifact_delta(&later, ArtifactDelta::Pushed { index: 0 })
+        .await?;
+    assert_eq!(
+        store.get(&TaskId::new("no-artifacts")).await?,
+        Some(later),
+        "a document with no artifacts array must take the fallback"
+    );
+
+    db.drop_db().await;
+    Ok(())
+}
+
+/// Deltas that do not reconcile with the task must be refused rather than
+/// spliced, and the fallback must leave the row correct anyway.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_inconsistent_deltas_fall_back() -> A2aResult<()> {
+    for (label, delta) in [
+        (
+            "index out of range",
+            ArtifactDelta::AppendedParts { index: 9, count: 1 },
+        ),
+        (
+            "more parts than exist",
+            ArtifactDelta::AppendedParts {
+                index: 0,
+                count: 99,
+            },
+        ),
+        (
+            "nothing appended",
+            ArtifactDelta::AppendedParts { index: 0, count: 0 },
+        ),
+        ("not the last position", ArtifactDelta::Pushed { index: 7 }),
+    ] {
+        let db = TestDb::create("delta_bad").await;
+        let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+        let mut task = task_with_artifacts("t", Some(vec![artifact("a", 1)]));
+        store.save(&task).await?;
+        task.artifacts.as_mut().unwrap()[0]
+            .parts
+            .push(Part::text("added"));
+        store.save_artifact_delta(&task, delta).await?;
+
+        assert_eq!(
+            store.get(&TaskId::new("t")).await?,
+            Some(task),
+            "wrong result after refusing: {label}"
+        );
+        db.drop_db().await;
+    }
+    Ok(())
+}
+
+/// Appending must not reorder `list`: `updated_at` carries the *status*
+/// timestamp (§3.1.4), and appending an artifact does not change status. All
+/// three stores must agree on this — a divergence would be invisible until
+/// someone paginated.
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn artifact_delta_preserves_list_position() -> A2aResult<()> {
+    let db = TestDb::create("delta_order").await;
+    let store = PostgresTaskStore::new(&db.url).await.expect("store");
+
+    let older = task_with_artifacts("older", Some(vec![artifact("a", 1)]));
+    store.save(&older).await?;
+    let newer = task_with_artifacts("newer", None);
+    store.save(&newer).await?;
+
+    let ids = |r: a2a_protocol_types::responses::TaskListResponse| {
+        r.tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>()
+    };
+    let before = ids(store.list(&ListTasksParams::default()).await?);
+
+    let mut grown = older.clone();
+    grown.artifacts.as_mut().unwrap()[0]
+        .parts
+        .push(Part::text("more"));
+    store
+        .save_artifact_delta(&grown, ArtifactDelta::AppendedParts { index: 0, count: 1 })
+        .await?;
+
+    let after = ids(store.list(&ListTasksParams::default()).await?);
+    assert_eq!(before, after, "appending an artifact reordered the list");
+
+    db.drop_db().await;
+    Ok(())
 }

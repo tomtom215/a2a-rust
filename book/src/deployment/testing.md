@@ -6,7 +6,7 @@ a2a-rust makes it easy to test agents at multiple levels: unit testing executors
 
 Test your executor logic directly by creating a `RequestContext` and mock `EventQueueWriter`:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::prelude::*;
 use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
 use tokio_util::sync::CancellationToken;
@@ -57,7 +57,7 @@ async fn test_calculator_executor() {
 
 Test the full stack by starting a real server and using a client:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{RequestHandlerBuilder, JsonRpcDispatcher};
 use a2a_protocol_sdk::client::ClientBuilder;
 use std::sync::Arc;
@@ -134,7 +134,7 @@ async fn start_test_server(
 
 Run the same tests against both JSON-RPC and REST:
 
-```rust
+```rust,ignore
 #[tokio::test]
 async fn test_jsonrpc_transport() {
     let addr = start_jsonrpc_server().await;
@@ -158,7 +158,7 @@ async fn run_test_suite(client: &A2aClient) {
 
 ## Testing Streaming
 
-```rust
+```rust,no_run
 #[tokio::test]
 async fn test_streaming() {
     let addr = start_server().await;
@@ -180,7 +180,7 @@ async fn test_streaming() {
 
 Verify JSON serialization matches the A2A spec:
 
-```rust
+```rust,no_run
 #[test]
 fn task_state_wire_format() {
     let status = TaskStatus::new(TaskState::Completed);
@@ -365,7 +365,7 @@ name the mutant that established this and the measurement behind the numbers.
 
 ### Interpreting Results
 
-```
+```text
 Found 247 mutants to test
  247 caught   ✓     # Test suite detected the mutation
    0 missed   ✗     # ALERT: test gap — add or strengthen tests
@@ -390,7 +390,7 @@ Found 247 mutants to test
 When a mutant survives, `cargo mutants` prints the exact source location and
 mutation. For example:
 
-```
+```text
 MISSED: crates/a2a-protocol-types/src/task.rs:42: replace TaskState::is_terminal -> bool with false
 ```
 

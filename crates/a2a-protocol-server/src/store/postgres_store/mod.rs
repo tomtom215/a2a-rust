@@ -18,6 +18,8 @@
 //! # }
 //! ```
 
+mod artifact_delta;
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -27,7 +29,7 @@ use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
-use super::task_store::TaskStore;
+use super::task_store::{ArtifactDelta, TaskStore};
 
 /// `PostgreSQL`-backed [`TaskStore`].
 ///
@@ -147,7 +149,7 @@ async fn pg_pool_with_size(url: &str, max_connections: u32) -> Result<PgPool, sq
 
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]
-fn to_a2a_error(e: sqlx::Error) -> A2aError {
+pub(super) fn to_a2a_error(e: sqlx::Error) -> A2aError {
     A2aError::internal(format!("postgres error: {e}"))
 }
 
@@ -185,6 +187,76 @@ impl TaskStore for PostgresTaskStore {
             .execute(&self.pool)
             .await
             .map_err(to_a2a_error)?;
+
+            Ok(())
+        })
+    }
+
+    /// Appends into the stored `JSONB` document instead of rewriting it.
+    ///
+    /// `save` serializes the whole task in Rust and ships it as a bind
+    /// parameter, so a streaming agent re-sends every artifact it has already
+    /// persisted on every subsequent event. This sends only what changed and
+    /// lets `PostgreSQL` splice it in with `jsonb_set`.
+    ///
+    /// Unlike the `SQLite` implementation, which needs one path expression per
+    /// appended part, `jsonb`'s `||` concatenates two arrays — so any number of
+    /// parts lands in a single statement with constant SQL text.
+    ///
+    /// # What this does and does not remove
+    ///
+    /// Removed: the Rust-side `serde_json::to_value` of the whole task and the
+    /// transfer of the whole document. Both scale with the stream so far.
+    ///
+    /// Not removed: `PostgreSQL` still rewrites the row. An `UPDATE` writes a
+    /// new tuple version under MVCC, and a `JSONB` document past the TOAST
+    /// threshold is rewritten out of line, so the statement stays linear in
+    /// document size. Only a normalized artifacts table could avoid that, and
+    /// the measurement in `benches/benches/backpressure.rs` puts the per-event
+    /// round trip well above the document-size term — so that surgery would buy
+    /// the smaller half. Recorded here rather than left implied.
+    ///
+    /// `updated_at` is deliberately untouched: it carries the *status*
+    /// timestamp that orders `list` (§3.1.4), and appending an artifact does
+    /// not change a task's status. Both other stores behave the same way, and a
+    /// divergence here would be invisible until someone paginated.
+    ///
+    /// Falls back to `save` when the delta cannot be applied exactly: no
+    /// artifacts on the task, an index out of range, a `Pushed` that does not
+    /// name the last position, fewer parts present than claimed, or a stored
+    /// row whose document has no matching array. A store that is quietly wrong
+    /// is worse than one that is slower.
+    fn save_artifact_delta<'a>(
+        &'a self,
+        task: &'a Task,
+        delta: ArtifactDelta,
+    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+        Box::pin(async move {
+            let Some(artifacts) = task.artifacts.as_ref() else {
+                return self.save(task).await;
+            };
+
+            let affected = match delta {
+                ArtifactDelta::AppendedParts { index, count } => {
+                    match self.append_parts(task, artifacts, index, count).await? {
+                        Some(rows) => rows,
+                        None => return self.save(task).await,
+                    }
+                }
+                ArtifactDelta::Pushed { index } => {
+                    match self.push_artifact(task, artifacts, index).await? {
+                        Some(rows) => rows,
+                        None => return self.save(task).await,
+                    }
+                }
+            };
+
+            // Nothing matched: the row is absent, or its document is not the
+            // shape this delta describes. Either way `save` is what makes the
+            // store hold the task it was given.
+            if affected == 0 {
+                return self.save(task).await;
+            }
 
             Ok(())
         })

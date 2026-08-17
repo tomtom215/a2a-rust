@@ -12,10 +12,37 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::{Task, TaskId, TaskState, TaskStatus};
 
 use crate::handler::limits::HandlerLimits;
+use crate::metrics::persistence_operation;
 use crate::push::{PushConfigStore, PushSender};
-use crate::store::TaskStore;
+use crate::store::{ArtifactDelta, TaskStore};
 
 use super::push_delivery::deliver_push_bg;
+
+/// The collaborators the background event processor writes through.
+///
+/// Bundled rather than passed individually because there are five of them and
+/// they travel together everywhere: the alternative is an eight-argument
+/// function whose call sites are a wall of positional references, where
+/// swapping two `&dyn` parameters of different traits is the kind of mistake
+/// the compiler catches but a reviewer does not.
+#[derive(Clone, Copy)]
+pub(super) struct BackgroundDeps<'a> {
+    /// Where task state is persisted.
+    pub task_store: &'a dyn TaskStore,
+    /// Where push notification configs are read from.
+    pub push_config_store: &'a dyn PushConfigStore,
+    /// The push sender, if the handler was built with one.
+    pub push_sender: Option<&'a dyn PushSender>,
+    /// Bounds on artifact growth, push fan-out and delivery timeouts.
+    pub limits: &'a HandlerLimits,
+    /// Where failures in this task are reported.
+    ///
+    /// Carried explicitly because the `trace_*` macros beside every failure
+    /// here compile to nothing without the (non-default) `tracing` feature. A
+    /// metrics callback is always compiled, so a store that has stopped
+    /// accepting writes cannot fail silently in a default build.
+    pub metrics: &'a dyn crate::metrics::Metrics,
+}
 
 /// Processes a single streaming event: validates state transitions, updates the
 /// task store, and triggers push delivery.
@@ -32,11 +59,15 @@ pub(super) async fn process_event_bg(
     event: a2a_protocol_types::error::A2aResult<StreamResponse>,
     task_id: &TaskId,
     last_task: &mut Task,
-    task_store: &dyn TaskStore,
-    push_config_store: &dyn PushConfigStore,
-    push_sender: Option<&dyn PushSender>,
-    limits: &HandlerLimits,
+    deps: BackgroundDeps<'_>,
 ) {
+    let BackgroundDeps {
+        task_store,
+        push_config_store,
+        push_sender,
+        limits,
+        metrics,
+    } = deps;
     match event {
         Ok(ref stream_resp @ StreamResponse::StatusUpdate(ref update)) => {
             let current = last_task.status.state;
@@ -52,11 +83,15 @@ pub(super) async fn process_event_bg(
                     "invalid state transition rejected (background); marking task as failed"
                 );
                 last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-                if let Err(_e) = task_store.save(last_task).await {
+                if let Err(e) = task_store.save(last_task).await {
                     trace_error!(
                         task_id = %task_id,
-                        error = %_e,
+                        error = %e,
                         "background processor: failed to persist failed state after invalid transition"
+                    );
+                    metrics.on_persistence_error(
+                        persistence_operation::FAILED_STATE,
+                        e.metric_label(),
                     );
                 }
                 return;
@@ -68,17 +103,27 @@ pub(super) async fn process_event_bg(
                 message: update.status.message.clone(),
                 timestamp: update.status.timestamp.clone(),
             };
-            if let Err(_e) = task_store.save(last_task).await {
+            if let Err(e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
-                    error = %_e,
+                    error = %e,
                     "background processor: task store save failed for status update; reverting in-memory state"
                 );
+                metrics
+                    .on_persistence_error(persistence_operation::STATUS_UPDATE, e.metric_label());
                 // Revert in-memory state to stay consistent with the store.
                 last_task.status = prev_status;
                 return;
             }
-            deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
+            deliver_push_bg(
+                task_id,
+                stream_resp,
+                push_config_store,
+                push_sender,
+                limits,
+                metrics,
+            )
+            .await;
         }
         Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
             // Validate artifact has at least one part per A2A spec (unless appending).
@@ -96,7 +141,11 @@ pub(super) async fn process_event_bg(
             // When append=true, merge parts and metadata into the existing
             // artifact with the same ID (Python #735, Java #615).
             if update.append == Some(true) {
-                if let Some(existing) = artifacts.iter_mut().find(|a| a.id == update.artifact.id) {
+                if let Some((index, existing)) = artifacts
+                    .iter_mut()
+                    .enumerate()
+                    .find(|(_, a)| a.id == update.artifact.id)
+                {
                     // Bound cumulative per-artifact growth: an unbounded stream
                     // of append updates would otherwise grow one artifact's
                     // parts (and the re-serialized task record) without limit.
@@ -116,6 +165,7 @@ pub(super) async fn process_event_bg(
                     let prev_parts_len = existing.parts.len();
                     let prev_metadata = existing.metadata.clone();
 
+                    let appended = update.artifact.parts.len();
                     existing.parts.extend(update.artifact.parts.iter().cloned());
                     // Merge metadata: new values override existing keys.
                     if let Some(ref new_meta) = update.artifact.metadata {
@@ -130,11 +180,24 @@ pub(super) async fn process_event_bg(
                             }
                         }
                     }
-                    if let Err(_e) = task_store.save(last_task).await {
+                    if let Err(e) = task_store
+                        .save_artifact_delta(
+                            last_task,
+                            ArtifactDelta::AppendedParts {
+                                index,
+                                count: appended,
+                            },
+                        )
+                        .await
+                    {
                         trace_error!(
                             task_id = %task_id,
-                            error = %_e,
+                            error = %e,
                             "background processor: task store save failed for artifact append; reverting"
+                        );
+                        metrics.on_persistence_error(
+                            persistence_operation::ARTIFACT_APPEND,
+                            e.metric_label(),
                         );
                         // Revert: truncate parts back and restore metadata.
                         if let Some(existing) = last_task
@@ -147,8 +210,15 @@ pub(super) async fn process_event_bg(
                         }
                         return;
                     }
-                    deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits)
-                        .await;
+                    deliver_push_bg(
+                        task_id,
+                        stream_resp,
+                        push_config_store,
+                        push_sender,
+                        limits,
+                        metrics,
+                    )
+                    .await;
                     return;
                 }
                 // Artifact ID not found — fall through to push as new artifact.
@@ -163,29 +233,50 @@ pub(super) async fn process_event_bg(
                 return;
             }
             artifacts.push(update.artifact.clone());
-            if let Err(_e) = task_store.save(last_task).await {
+            let pushed_index = artifacts.len() - 1;
+            if let Err(e) = task_store
+                .save_artifact_delta(
+                    last_task,
+                    ArtifactDelta::Pushed {
+                        index: pushed_index,
+                    },
+                )
+                .await
+            {
                 trace_error!(
                     task_id = %task_id,
-                    error = %_e,
+                    error = %e,
                     "background processor: task store save failed for artifact update; reverting"
                 );
+                metrics
+                    .on_persistence_error(persistence_operation::ARTIFACT_PUSH, e.metric_label());
                 // Revert: remove the artifact we just pushed.
                 if let Some(ref mut arts) = last_task.artifacts {
                     arts.pop();
                 }
                 return;
             }
-            deliver_push_bg(task_id, stream_resp, push_config_store, push_sender, limits).await;
+            deliver_push_bg(
+                task_id,
+                stream_resp,
+                push_config_store,
+                push_sender,
+                limits,
+                metrics,
+            )
+            .await;
         }
         Ok(StreamResponse::Task(task)) => {
             let prev = last_task.clone();
             *last_task = task;
-            if let Err(_e) = task_store.save(last_task).await {
+            if let Err(e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
-                    error = %_e,
+                    error = %e,
                     "background processor: task store save failed for task snapshot; reverting"
                 );
+                metrics
+                    .on_persistence_error(persistence_operation::TASK_SNAPSHOT, e.metric_label());
                 *last_task = prev;
             }
         }
@@ -204,23 +295,30 @@ pub(super) async fn process_event_bg(
                 .len()
                 .saturating_sub(crate::handler::messaging::MAX_TASK_HISTORY_MESSAGES);
             history.drain(..excess);
-            if let Err(_e) = task_store.save(last_task).await {
+            if let Err(e) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
+                    error = %e,
                     "background processor: task store save failed for agent message"
                 );
+                metrics
+                    .on_persistence_error(persistence_operation::HISTORY_APPEND, e.metric_label());
             }
         }
         Ok(_) => {}
         Err(_e) => {
             let prev_status = last_task.status.clone();
             last_task.status = TaskStatus::with_timestamp(TaskState::Failed);
-            if let Err(_save_err) = task_store.save(last_task).await {
+            if let Err(save_err) = task_store.save(last_task).await {
                 trace_error!(
                     task_id = %task_id,
                     original_error = %_e,
-                    save_error = %_save_err,
+                    save_error = %save_err,
                     "background processor: task store save failed for error state; reverting"
+                );
+                metrics.on_persistence_error(
+                    persistence_operation::FAILED_STATE,
+                    save_err.metric_label(),
                 );
                 last_task.status = prev_status;
             }
@@ -308,10 +406,13 @@ mod tests {
             Ok(StreamResponse::Message(msg)),
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -340,10 +441,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -371,10 +475,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -400,10 +507,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -437,10 +547,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -468,10 +581,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -558,10 +674,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -591,10 +710,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -624,10 +746,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -656,10 +781,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -694,10 +822,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -731,10 +862,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &limits,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &limits,
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
         assert_eq!(last_task.artifacts.as_ref().unwrap().len(), 1);
@@ -745,10 +879,13 @@ mod tests {
             event,
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &limits,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &limits,
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
         assert_eq!(
@@ -798,10 +935,13 @@ mod tests {
             Ok(event),
             &TaskId::new("t1"),
             last_task,
-            &task_store,
-            &push_store,
-            None,
-            limits,
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits,
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
     }
@@ -1044,10 +1184,13 @@ mod tests {
             )),
             &task_id,
             &mut last_task,
-            &task_store,
-            &push_store,
-            None,
-            &default_limits(),
+            BackgroundDeps {
+                task_store: &task_store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &default_limits(),
+                metrics: &crate::metrics::NoopMetrics,
+            },
         )
         .await;
 
@@ -1068,6 +1211,219 @@ mod tests {
             1,
             "art-1 was never appended to, so the revert must not truncate it: \
              {arts:?}"
+        );
+    }
+}
+
+/// Tests that failures in this task are *reportable*, not merely logged.
+///
+/// Every failure here previously reported through a `trace_*` macro, which
+/// expands to nothing without the `tracing` feature — and this crate has no
+/// default features, so a default build discarded all of it. These assert the
+/// metrics callback fires instead, because that one is always compiled.
+///
+/// The store-failure case is the SDK's one silent-data-loss path: the streaming
+/// reader is a separate subscriber to the event queue, so the caller sees the
+/// event regardless of whether the store accepted it.
+#[cfg(test)]
+mod failure_reporting_tests {
+    use std::sync::Mutex;
+
+    use a2a_protocol_types::artifact::Artifact;
+    use a2a_protocol_types::error::A2aError;
+    use a2a_protocol_types::events::{TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
+    use a2a_protocol_types::message::Part;
+    use a2a_protocol_types::task::ContextId;
+
+    use crate::metrics::Metrics;
+    use crate::push::InMemoryPushConfigStore;
+    use crate::store::InMemoryTaskStore;
+
+    use super::*;
+
+    /// Records every persistence error reported to it.
+    #[derive(Default)]
+    struct RecordingMetrics {
+        persistence_errors: Mutex<Vec<(String, String)>>,
+    }
+
+    impl Metrics for RecordingMetrics {
+        fn on_persistence_error(&self, operation: &str, error_kind: &str) {
+            self.persistence_errors
+                .lock()
+                .expect("lock")
+                .push((operation.to_owned(), error_kind.to_owned()));
+        }
+    }
+
+    /// A store that accepts nothing — a full disk, or a database that has gone
+    /// away.
+    struct AlwaysFailingStore;
+
+    impl TaskStore for AlwaysFailingStore {
+        fn save<'a>(
+            &'a self,
+            _task: &'a Task,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Err(A2aError::internal("disk full")) })
+        }
+
+        fn get<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<Option<Task>>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(None) })
+        }
+
+        fn list<'a>(
+            &'a self,
+            _params: &'a a2a_protocol_types::params::ListTasksParams,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = a2a_protocol_types::error::A2aResult<
+                            a2a_protocol_types::responses::TaskListResponse,
+                        >,
+                    > + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(a2a_protocol_types::responses::TaskListResponse::new(vec![])) })
+        }
+
+        fn insert_if_absent<'a>(
+            &'a self,
+            _task: &'a Task,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<bool>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(true) })
+        }
+
+        fn delete<'a>(
+            &'a self,
+            _id: &'a TaskId,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    fn working_task() -> Task {
+        Task {
+            id: TaskId::new("t1"),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Working),
+            history: None,
+            artifacts: None,
+            metadata: None,
+        }
+    }
+
+    async fn drive(event: StreamResponse, store: &dyn TaskStore) -> RecordingMetrics {
+        let metrics = RecordingMetrics::default();
+        let push_store = InMemoryPushConfigStore::new();
+        let limits = HandlerLimits::default();
+        let mut task = working_task();
+        process_event_bg(
+            Ok(event),
+            &TaskId::new("t1"),
+            &mut task,
+            BackgroundDeps {
+                task_store: store,
+                push_config_store: &push_store,
+                push_sender: None,
+                limits: &limits,
+                metrics: &metrics,
+            },
+        )
+        .await;
+        metrics
+    }
+
+    fn artifact_event() -> StreamResponse {
+        StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
+            task_id: TaskId::new("t1"),
+            context_id: ContextId::new("ctx"),
+            artifact: Artifact::new("a", vec![Part::text("chunk")]),
+            append: Some(false),
+            last_chunk: Some(true),
+            metadata: None,
+        })
+    }
+
+    fn completed_event() -> StreamResponse {
+        StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+            task_id: TaskId::new("t1"),
+            context_id: ContextId::new("ctx"),
+            status: TaskStatus::new(TaskState::Completed),
+            metadata: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn a_failing_store_reports_the_artifact_it_could_not_persist() {
+        let metrics = drive(artifact_event(), &AlwaysFailingStore).await;
+        let errors = metrics.persistence_errors.lock().expect("lock").clone();
+
+        assert_eq!(
+            errors.as_slice(),
+            [(
+                crate::metrics::persistence_operation::ARTIFACT_PUSH.to_owned(),
+                "internal_error".to_owned()
+            )],
+            "a dropped artifact must be reportable, not only traceable"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failing_store_reports_the_status_it_could_not_persist() {
+        let metrics = drive(completed_event(), &AlwaysFailingStore).await;
+        let errors = metrics.persistence_errors.lock().expect("lock").clone();
+
+        assert_eq!(
+            errors.as_slice(),
+            [(
+                crate::metrics::persistence_operation::STATUS_UPDATE.to_owned(),
+                "internal_error".to_owned()
+            )]
+        );
+    }
+
+    /// The counterpart that keeps the assertions above honest: a store that
+    /// works must report nothing, or the tests would pass against an
+    /// implementation that reported on every event.
+    #[tokio::test]
+    async fn a_working_store_reports_nothing() {
+        let store = InMemoryTaskStore::new();
+        store.save(&working_task()).await.expect("seed");
+        let metrics = drive(artifact_event(), &store).await;
+
+        let empty = metrics.persistence_errors.lock().expect("lock").is_empty();
+        assert!(
+            empty,
+            "a successful save must not report a persistence error"
         );
     }
 }

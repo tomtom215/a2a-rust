@@ -109,10 +109,30 @@ jobs:
       # than being scored as agreement.
       - name: Cross-check the method denominator (proto vs upstream TCK vs this repo)
         run: |
+          # `--slimrpc` holds the SLIMRPC binding's own method inventory to the
+          # same denominator. It is deliberately NOT a conformance claim: the
+          # official TCK cannot grade that binding, because the TCK has no
+          # dependency on `a2a-protocol-*` by design (a kit that imports the
+          # implementation it grades shares its misreadings) and no independent
+          # SLIM client exists to write one against. This arm answers only the
+          # narrower question that leaves open — whether the binding still
+          # claims all eleven methods — so a method quietly vanishing from its
+          # inventory fails here rather than going unnoticed. Behaviour on the
+          # wire is the binding's own e2e suite's job.
           python3 scripts/check_method_denominator.py \
             --proto proto/a2a_v1/a2a.proto \
             --rust crates/a2a-protocol-types/src/method.rs \
+            --slimrpc bindings/a2a-protocol-slimrpc/src/lib.rs \
+            --slimrpc-spec spec/slimrpc_v1/slimrpc.md \
             --tck /tmp/a2a-tck
+
+      # The binding claims to implement the SLIMRPC specification. That claim
+      # referenced a URL until the spec was vendored, so nothing here could
+      # check it and nothing would notice upstream moving. This job already has
+      # network (it clones the upstream TCK), which is why the drift check lives
+      # here rather than in the offline Format job.
+      - name: Vendored SLIMRPC spec still matches upstream
+        run: ./scripts/check_slimrpc_spec.sh
 
       - name: Start the SUT
         run: |

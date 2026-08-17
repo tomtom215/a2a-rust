@@ -6,7 +6,7 @@ A2A uses **Server-Sent Events (SSE)** for real-time streaming. This enables agen
 
 When a client calls `SendStreamingMessage`, the server holds the HTTP connection open and sends events as they occur:
 
-```
+```text
 HTTP/1.1 200 OK
 Content-Type: text/event-stream
 
@@ -104,7 +104,7 @@ A direct message response (for simple request/reply patterns):
 
 In your `AgentExecutor`, write events to the queue:
 
-```rust
+```rust,ignore
 impl AgentExecutor for MyExecutor {
     fn execute<'a>(
         &'a self,
@@ -166,7 +166,7 @@ With broadcast channels, writes never block — if a reader is too slow, it rece
 
 Configure these via the builder:
 
-```rust
+```rust,ignore
 RequestHandlerBuilder::new(executor)
     .with_event_queue_capacity(512)  // increase above 256 default for high-volume streams
     .with_max_event_size(8 * 1024 * 1024)  // 8 MiB
@@ -178,7 +178,7 @@ RequestHandlerBuilder::new(executor)
 
 Use `stream_message` to receive events:
 
-```rust
+```rust,ignore
 let mut stream = client
     .stream_message(params)
     .await
@@ -222,7 +222,7 @@ The SSE parser includes safety limits:
 
 If a stream disconnects, re-subscribe to an existing task:
 
-```rust
+```rust,ignore
 let mut stream = client
     .subscribe_to_task("task-abc")
     .await

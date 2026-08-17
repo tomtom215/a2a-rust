@@ -32,7 +32,7 @@ The [release workflow](https://github.com/tomtom215/a2a-rust/blob/main/.github/w
 
 ### Publish Order
 
-```
+```text
 a2a-protocol-types → a2a-protocol-server → a2a-protocol-client → a2a-protocol-sdk
 ```
 

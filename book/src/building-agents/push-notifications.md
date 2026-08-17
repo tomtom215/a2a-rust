@@ -4,7 +4,7 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 
 ## How Push Notifications Work
 
-```
+```text
   Client              Agent Server          Client Webhook
      │                      │                      │
      │  CreatePushConfig    │                      │
@@ -36,7 +36,7 @@ Push notifications let agents deliver results asynchronously via webhooks. Inste
 
 Enable push by providing a `PushSender`:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{RequestHandlerBuilder, HttpPushSender};
 
 let handler = RequestHandlerBuilder::new(my_executor)
@@ -64,7 +64,7 @@ The built-in `HttpPushSender` includes:
 
 Register a push notification configuration:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::types::push::TaskPushNotificationConfig;
 
 let config = TaskPushNotificationConfig::new(
@@ -78,7 +78,7 @@ println!("Config ID: {:?}", saved.id);
 
 ### Managing Push Configs
 
-```rust
+```rust,ignore
 // List all configs for a task
 let configs = client.list_push_configs(ListPushConfigsParams {
     tenant: None,
@@ -98,7 +98,7 @@ client.delete_push_config("task-abc", "config-123").await?;
 
 Push configs support authentication for the webhook endpoint:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::types::push::{TaskPushNotificationConfig, AuthenticationInfo};
 
 let mut config = TaskPushNotificationConfig::new("task-abc", "https://webhook.example.com");
@@ -115,7 +115,7 @@ The server includes these credentials in the `Authorization` header when POSTing
 
 Implement the `PushSender` trait for custom delivery:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::PushSender;
 
 struct SqsPushSender {
@@ -141,7 +141,7 @@ impl PushSender for SqsPushSender {
 
 The default `InMemoryPushConfigStore` stores configs in memory with per-task limits. For production, implement `PushConfigStore`:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::PushConfigStore;
 
 struct DynamoDbPushConfigStore { /* ... */ }

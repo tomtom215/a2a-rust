@@ -6,7 +6,7 @@ The most common operation: send a message to an agent and get a response.
 
 `send_message` sends a message and waits for the task to complete:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::prelude::*;
 
 let params = MessageSendParams {
@@ -32,7 +32,7 @@ let response = client.send_message(params).await?;
 
 `SendMessageResponse` is an enum with two variants:
 
-```rust
+```rust,ignore
 match response {
     SendMessageResponse::Task(task) => {
         println!("Task ID: {}", task.id);
@@ -60,7 +60,7 @@ match response {
 
 Customize the send with `SendMessageConfiguration`:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::types::params::SendMessageConfiguration;
 
 let params = MessageSendParams {
@@ -80,7 +80,7 @@ let params = MessageSendParams {
 
 To continue a conversation, include the `context_id` from a previous task:
 
-```rust
+```rust,ignore
 let first_response = client.send_message(MessageSendParams {
     message: Message {
         id: MessageId::new(uuid::Uuid::new_v4().to_string()),
@@ -137,7 +137,7 @@ let follow_up = client.send_message(MessageSendParams {
 
 Send messages with multiple content types:
 
-```rust
+```rust,ignore
 let message = Message {
     id: MessageId::new(uuid::Uuid::new_v4().to_string()),
     role: MessageRole::User,

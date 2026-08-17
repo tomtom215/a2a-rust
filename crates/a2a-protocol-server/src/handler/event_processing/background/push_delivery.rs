@@ -12,19 +12,28 @@ use a2a_protocol_types::events::StreamResponse;
 use a2a_protocol_types::task::TaskId;
 
 use crate::handler::limits::HandlerLimits;
+use crate::metrics::{push_outcome, Metrics};
 use crate::push::{PushConfigStore, PushSender};
 
 /// Delivers push notifications for a streaming event to all configured endpoints.
 ///
-/// Silently swallows errors from the push config store and logs warnings for
-/// delivery failures/timeouts — background push delivery must never block or
-/// crash the event processing loop.
+/// Swallows errors from the push config store and does not propagate delivery
+/// failures — background push delivery must never block or crash the event
+/// processing loop.
+///
+/// Every outcome is reported to [`Metrics::on_push_delivery`]. That matters
+/// more here than the trace lines beside it: push delivery is outward-facing
+/// and asynchronous, nothing in the request path observes it, and the trace
+/// macros compile to nothing without the (non-default) `tracing` feature. A
+/// webhook refusing every delivery for a day used to look exactly like one
+/// that was never configured.
 pub(super) async fn deliver_push_bg(
     task_id: &TaskId,
     event: &StreamResponse,
     push_config_store: &dyn PushConfigStore,
     push_sender: Option<&dyn PushSender>,
     limits: &HandlerLimits,
+    metrics: &dyn Metrics,
 ) {
     let Some(sender) = push_sender else {
         return;
@@ -93,6 +102,7 @@ pub(super) async fn deliver_push_bg(
                     error = %_err,
                     "push notification delivery failed (background)"
                 );
+                metrics.on_push_delivery(push_outcome::FAILED);
             }
             Err(_) => {
                 trace_warn!(
@@ -100,8 +110,9 @@ pub(super) async fn deliver_push_bg(
                     url = %config.url,
                     "push notification delivery timed out (background)"
                 );
+                metrics.on_push_delivery(push_outcome::TIMEOUT);
             }
-            Ok(Ok(())) => {}
+            Ok(Ok(())) => metrics.on_push_delivery(push_outcome::DELIVERED),
         }
     }
 }
@@ -198,7 +209,15 @@ mod tests {
         let task_id = TaskId::new("t1");
         let event = make_status_event("t1", TaskState::Working);
 
-        deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
+        deliver_push_bg(
+            &task_id,
+            &event,
+            &store,
+            None,
+            &default_limits(),
+            &crate::metrics::NoopMetrics,
+        )
+        .await;
     }
 
     #[tokio::test]
@@ -207,7 +226,15 @@ mod tests {
         let task_id = TaskId::new("t1");
         let event = make_status_event("t1", TaskState::Working);
 
-        deliver_push_bg(&task_id, &event, &store, None, &default_limits()).await;
+        deliver_push_bg(
+            &task_id,
+            &event,
+            &store,
+            None,
+            &default_limits(),
+            &crate::metrics::NoopMetrics,
+        )
+        .await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -261,7 +288,15 @@ mod tests {
         };
         let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(3));
 
-        deliver_push_bg(&task_id, &event, &store, Some(&sender), &limits).await;
+        deliver_push_bg(
+            &task_id,
+            &event,
+            &store,
+            Some(&sender),
+            &limits,
+            &crate::metrics::NoopMetrics,
+        )
+        .await;
 
         // With 30s total cap and 2s per send (bounded by 3s timeout), not all 50 should fire.
         let count = send_count.load(Ordering::Relaxed);
@@ -314,7 +349,15 @@ mod tests {
         let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(5));
 
         // Should complete without panic, even though sender returns Err.
-        deliver_push_bg(&task_id, &event, &store, Some(&sender), &limits).await;
+        deliver_push_bg(
+            &task_id,
+            &event,
+            &store,
+            Some(&sender),
+            &limits,
+            &crate::metrics::NoopMetrics,
+        )
+        .await;
     }
 
     /// Covers lines 78-83: the `Err(_)` (timeout) branch where the push sender
@@ -360,6 +403,14 @@ mod tests {
         let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_millis(50));
 
         // Should complete without panic, hitting the timeout branch.
-        deliver_push_bg(&task_id, &event, &store, Some(&sender), &limits).await;
+        deliver_push_bg(
+            &task_id,
+            &event,
+            &store,
+            Some(&sender),
+            &limits,
+            &crate::metrics::NoopMetrics,
+        )
+        .await;
     }
 }

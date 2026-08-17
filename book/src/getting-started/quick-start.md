@@ -1,20 +1,87 @@
 # Quick Start
 
-This guide gets you running the built-in echo agent example in under 5 minutes. The example demonstrates the full A2A stack: agent executor, dual-transport server, and client — all in a single binary.
+Two examples, in order. `hello-agent` is the whole SDK in one screen — start there. `echo-agent` is the full tour: every A2A method over every binding.
 
-## Running the Echo Agent
-
-Clone the repository and run the example:
+## The Smallest Agent
 
 ```bash
 git clone https://github.com/tomtom215/a2a-rust.git
 cd a2a-rust
+cargo run -p hello-agent
+```
+
+It listens on `http://127.0.0.1:3000`. Send it a message:
+
+```bash
+curl -X POST http://127.0.0.1:3000 \
+  -H 'content-type: application/json' \
+  -H 'A2A-Version: 1.0' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+        "message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Tom"}]}}}'
+```
+
+```json
+{"jsonrpc":"2.0","id":1,"result":{"task":{
+  "artifacts":[{"artifactId":"greeting","parts":[{"text":"Hello, Tom!"}]}],
+  "status":{"state":"TASK_STATE_COMPLETED"}}}}
+```
+
+The `A2A-Version: 1.0` header is required — the server refuses requests that
+omit it with `VERSION_NOT_SUPPORTED`, rather than guessing which spec revision
+you meant.
+
+That is the entire agent, from `examples/hello-agent/src/main.rs`:
+
+```rust,no_run
+use a2a_protocol_sdk::prelude::*;
+
+struct HelloAgent;
+
+agent_executor!(HelloAgent, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
+
+    let who = ctx.message.text().unwrap_or("world");
+    emit.artifact("greeting", vec![Part::text(format!("Hello, {who}!"))], None, Some(true))
+        .await?;
+
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
+
+#[tokio::main]
+async fn main() -> std::io::Result<()> {
+    let handler = std::sync::Arc::new(
+        RequestHandlerBuilder::new(HelloAgent).build().expect("build handler"),
+    );
+    serve("127.0.0.1:3000", JsonRpcDispatcher::new(handler)).await
+}
+```
+
+Three things carry the weight:
+
+- **`agent_executor!`** writes the `AgentExecutor` impl for you. The trait
+  returns `Pin<Box<dyn Future>>` for object safety; the macro hides that.
+- **`EventEmitter`** caches `task_id` and `context_id` off the context, turning
+  each event into a one-liner instead of a struct literal.
+- **`ctx.message.text()`** returns the first text part, skipping any file or
+  URL parts before it. No `PartContent` match needed for the common case.
+
+`a2a-protocol-sdk` is the example's only dependency — everything above comes
+from `prelude::*`.
+
+## Running the Echo Agent
+
+`echo-agent` goes the other direction: it serves all four bindings, drives all
+eleven methods over each, and prints the resulting coverage matrix.
+
+```bash
 cargo run -p echo-agent
 ```
 
 You'll see output like (ports are randomly assigned):
 
-```
+```text
 === A2A Echo Agent Example ===
 
 JSON-RPC server listening on http://127.0.0.1:<port>
@@ -68,62 +135,32 @@ The example exercised all major protocol operations:
 
 ## The Code in Brief
 
-The echo agent's core executor is straightforward. Here's the key part:
+The echo executor is the hello agent plus one wrinkle — a deliberate pause, so
+a caller can observe a task that is still running (`examples/echo-agent/src/agent.rs`):
 
-```rust
-use a2a_protocol_sdk::prelude::*;
-use std::future::Future;
-use std::pin::Pin;
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# const SLOW_PREFIX: &str = "slow:";
+# struct EchoExecutor;
+agent_executor!(EchoExecutor, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
 
-struct EchoExecutor;
+    let input_text = ctx.message.text().unwrap_or("<no text>");
 
-impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // 1. Transition to Working
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Working),
-                metadata: None,
-            })).await?;
-
-            // 2. Extract text from incoming message
-            let input = ctx.message.parts.iter()
-                .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.as_str()),
-                    _ => None,
-                })
-                .unwrap_or("<no text>");
-
-            // 3. Echo back as an artifact
-            queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                artifact: Artifact::new("echo-artifact", vec![Part::text(
-                    &format!("Echo: {input}")
-                )]),
-                append: None,
-                last_chunk: Some(true),
-                metadata: None,
-            })).await?;
-
-            // 4. Transition to Completed
-            queue.write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                task_id: ctx.task_id.clone(),
-                context_id: ContextId::new(ctx.context_id.clone()),
-                status: TaskStatus::new(TaskState::Completed),
-                metadata: None,
-            })).await?;
-
-            Ok(())
-        })
+    // Without a slow path, every echo task is terminal by the time its id is
+    // known, and `SubscribeToTask` could only ever be observed being refused.
+    if input_text.starts_with(SLOW_PREFIX) {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
-}
+
+    let echo_text = format!("Echo: {input_text}");
+    emit.artifact("echo-artifact", vec![Part::text(&echo_text)], None, Some(true))
+        .await?;
+
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
 ```
 
 The pattern is always: write status updates and artifacts to the event queue, then return `Ok(())`.

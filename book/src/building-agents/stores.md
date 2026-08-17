@@ -6,7 +6,7 @@ a2a-rust uses pluggable storage backends for tasks and push notification configs
 
 The `TaskStore` trait defines how tasks are persisted:
 
-```rust
+```rust,ignore
 pub trait TaskStore: Send + Sync + 'static {
     fn save<'a>(&'a self, task: &'a Task)
         -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>>;
@@ -33,7 +33,7 @@ pub trait TaskStore: Send + Sync + 'static {
 
 The default implementation with optional TTL and capacity limits:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::server::{InMemoryTaskStore, TaskStoreConfig};
 use std::time::Duration;
 
@@ -73,7 +73,7 @@ Enable the `sqlite` feature for a production-ready persistent store:
 a2a-protocol-server = { version = "0.8", features = ["sqlite"] }
 ```
 
-```rust
+```rust,ignore
 use a2a_protocol_server::store::SqliteTaskStore;
 
 let store = SqliteTaskStore::new("sqlite:tasks.db").await?;
@@ -96,7 +96,7 @@ Features:
 
 For multi-tenant deployments, use `TenantAwareInMemoryTaskStore` which provides full tenant isolation using `tokio::task_local!`:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::store::{TenantAwareInMemoryTaskStore, TenantContext};
 use std::sync::Arc;
 
@@ -130,7 +130,7 @@ The `TenantContext::scope()` pattern uses `tokio::task_local!` to thread the ten
 
 For persistent multi-tenant storage, enable the `sqlite` feature:
 
-```rust
+```rust,ignore
 use a2a_protocol_server::store::TenantAwareSqliteTaskStore;
 
 let store = TenantAwareSqliteTaskStore::new("sqlite:tasks.db").await?;
@@ -147,7 +147,7 @@ PostgreSQL-backed stores ship with the crate — `PostgresTaskStore`,
 migration runner — and are exercised against a live PostgreSQL 16 service
 in CI (`postgres_store_tests.rs`):
 
-```rust
+```rust,ignore
 use a2a_protocol_server::store::PostgresTaskStore;
 
 let store = PostgresTaskStore::with_migrations("postgres://user:pass@localhost/a2a").await?;
@@ -158,7 +158,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 
 ### Custom Implementation
 
-```rust
+```rust,ignore
 struct DynamoDbTaskStore {
     pool: sqlx::PgPool,
 }
@@ -186,7 +186,7 @@ impl TaskStore for DynamoDbTaskStore {
 
 The `PushConfigStore` trait manages push notification configurations:
 
-```rust
+```rust,ignore
 pub trait PushConfigStore: Send + Sync + 'static {
     fn set<'a>(&'a self, config: TaskPushNotificationConfig)
         -> Pin<Box<dyn Future<Output = A2aResult<TaskPushNotificationConfig>> + Send + 'a>>;
@@ -215,7 +215,7 @@ pub trait PushConfigStore: Send + Sync + 'static {
 
 The default implementation stores configs in a `HashMap` with a secondary index for efficient per-task counting:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::server::InMemoryPushConfigStore;
 
 let store = InMemoryPushConfigStore::new();
@@ -229,7 +229,7 @@ Features:
 
 ## Wiring Custom Stores
 
-```rust
+```rust,ignore
 let handler = RequestHandlerBuilder::new(executor)
     .with_task_store(DynamoDbTaskStore::new(client.clone()))
     .with_push_config_store(PostgresPushConfigStore::new(pool))
@@ -275,7 +275,7 @@ empty page rather than scanning from the top.
 
 Both traits require `Send + Sync`. Use connection pools, not single connections:
 
-```rust
+```rust,ignore
 // Good
 struct MyStore { pool: sqlx::PgPool }
 

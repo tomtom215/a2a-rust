@@ -13,6 +13,7 @@
 
 mod background_processor;
 mod error_handling;
+mod introspection;
 mod state_transitions;
 mod streaming_mode;
 mod sync_mode;
@@ -35,7 +36,7 @@ use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::handler::SendMessageResult;
 use a2a_protocol_server::push::PushSender;
 use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::store::{InMemoryTaskStore, TaskStore};
+use a2a_protocol_server::store::{ArtifactDelta, InMemoryTaskStore, TaskStore};
 use a2a_protocol_server::streaming::{EventQueueReader, EventQueueWriter};
 
 use tokio::sync::Notify;

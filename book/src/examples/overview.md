@@ -6,7 +6,8 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 | Example | Description | External deps | Difficulty |
 |---------|-------------|--------------|------------|
-| [Incident-Response Team](./incident-response.md) | **Start here** — multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
+| [Hello Agent](./hello-agent.md) | **Smallest complete agent** — 35 lines, one dependency, no feature flags | None | Beginner |
+| [Incident-Response Team](./incident-response.md) | Multi-turn input-required, delegation, streaming, cancellation | None (optional local model) |
 | [Echo Agent](./echo-agent.md) | Minimal echo agent with JSON-RPC + REST servers and 6 client demos | None | Beginner |
 | [Agent Team](./agent-team.md) | 4-agent team with 81+ E2E tests exercising every SDK feature | None | Advanced |
 | [Genai Agent](./genai-agent.md) | LLM-powered agent using genai (OpenAI, Anthropic, Gemini, Ollama, etc.) | API key | Intermediate |
@@ -15,7 +16,7 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 ## Where to Start
 
-- **New to A2A?** Start with the [Echo Agent](./echo-agent.md) — it demonstrates the complete request lifecycle with no external dependencies.
+- **New to A2A?** Start with the [Hello Agent](./hello-agent.md) — the entire agent fits on one screen. Then read the [Echo Agent](./echo-agent.md) for the complete request lifecycle across four bindings.
 
 - **Evaluating the SDK?** Run the [Agent Team](./agent-team.md) — it exercises every SDK feature with 81+ automated tests and prints a pass/fail report.
 
@@ -27,26 +28,33 @@ The `examples/` directory contains standalone binary crates that demonstrate rea
 
 All examples follow the same three-step integration pattern:
 
-```rust
-// 1. Implement AgentExecutor
-struct MyExecutor;
-impl AgentExecutor for MyExecutor {
-    fn execute(&self, ctx: &RequestContext, queue: &dyn EventQueueWriter) -> ... {
-        queue.write(StatusUpdate { state: Working }).await?;
-        // ... do work ...
-        queue.write(ArtifactUpdate { artifact }).await?;
-        queue.write(StatusUpdate { state: Completed }).await?;
-    }
-}
+```rust,no_run
+use a2a_protocol_sdk::prelude::*;
+use std::sync::Arc;
 
+// 1. Implement AgentExecutor. The macro writes the impl; the trait's real
+//    signature returns Pin<Box<dyn Future>> to stay object-safe.
+struct MyExecutor;
+
+agent_executor!(MyExecutor, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
+    // ... do work ...
+    emit.artifact("result", vec![Part::text("done")], None, Some(true)).await?;
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
+
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 // 2. Build a handler
-let handler = RequestHandlerBuilder::new(MyExecutor)
-    .with_agent_card(card)
-    .build()?;
+let handler = Arc::new(RequestHandlerBuilder::new(MyExecutor).build()?);
 
 // 3. Serve via any dispatcher
 let dispatcher = JsonRpcDispatcher::new(handler);
 // or: RestDispatcher, A2aRouter (Axum), gRPC
+# let _ = dispatcher;
+# Ok(())
+# }
 ```
 
 For details on each step, see [The AgentExecutor Trait](../building-agents/executor.md), [Request Handler & Builder](../building-agents/handler.md), and [Dispatchers](../building-agents/dispatchers.md).

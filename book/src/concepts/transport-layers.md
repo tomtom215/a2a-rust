@@ -123,7 +123,7 @@ a2a-protocol-client = { version = "0.8", features = ["websocket"] }
 
 ### Server
 
-```rust
+```rust,ignore
 use a2a_protocol_server::{WebSocketDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 
@@ -146,7 +146,7 @@ dispatcher.serve("0.0.0.0:3002").await?;
 
 ### Client
 
-```rust
+```rust,ignore
 use a2a_protocol_client::WebSocketTransport;
 
 let transport = WebSocketTransport::connect("ws://agent.example.com:3002").await?;
@@ -175,7 +175,7 @@ a2a-protocol-client = { version = "0.8", features = ["grpc"] }
 
 ### Server
 
-```rust
+```rust,ignore
 use a2a_protocol_server::{GrpcDispatcher, GrpcConfig};
 use std::sync::Arc;
 
@@ -190,7 +190,7 @@ dispatcher.serve("0.0.0.0:50051").await?;
 
 ### Client
 
-```rust
+```rust,ignore
 use a2a_protocol_client::GrpcTransport;
 
 let transport = GrpcTransport::connect("http://agent.example.com:50051").await?;
@@ -230,7 +230,7 @@ JSON-RPC and REST use SSE for streaming. WebSocket uses native text frames. gRPC
 
 The server can serve both transports simultaneously on different ports:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::{JsonRpcDispatcher, RestDispatcher, RequestHandlerBuilder};
 use std::sync::Arc;
 

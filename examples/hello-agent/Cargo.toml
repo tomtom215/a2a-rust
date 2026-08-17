@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+
+[package]
+name        = "hello-agent"
+version     = "0.0.0"
+description = "The smallest complete A2A agent — one file, no feature flags"
+publish     = false
+
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+
+[dependencies]
+# The umbrella crate only. This example exists to prove the prelude is
+# sufficient on its own: if `hello-agent` ever needs a second dependency or a
+# fully-qualified path to say hello, the prelude has a gap.
+a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk" }
+tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net"] }
+
+[dev-dependencies]
+a2a-protocol-sdk = { path = "../../crates/a2a-protocol-sdk" }
+tokio            = { workspace = true, features = ["rt-multi-thread", "macros", "net", "time"] }

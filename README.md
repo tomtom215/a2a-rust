@@ -40,6 +40,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 |---|---|
 | **A2A v1.0.0 wire types** | The spec's structs, enums, and fields, with serde annotations matched to the wire format |
 | **Quad transport** | JSON-RPC 2.0, REST, WebSocket (`websocket`), and gRPC (`grpc`) — client and server |
+| **SLIMRPC binding** | A2A over the [AGNTCY SLIM](https://github.com/agntcy/slim) fabric via [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) — all eleven methods plus multicast. Community-contributed binding, **not** part of the ratified v1.0 spec, and outside the TCK conformance claim |
 | **SSE streaming** | Real-time `SendStreamingMessage` / `SubscribeToTask` with broadcast multi-subscriber event streams |
 | **Push notifications** | Pluggable `PushSender` trait with HTTP webhook implementation |
 | **Agent card discovery** | `/.well-known/agent-card.json` serving + client-side resolution; hot-reload via file polling or SIGHUP |
@@ -56,7 +57,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | **Interceptors** | Client `CallInterceptor` + server `ServerInterceptor` chains for auth, logging, etc. |
 | **State validation** | `TaskState::can_transition_to()` enforces valid state machine transitions |
 | **Rate limiting** | Built-in `RateLimitInterceptor` with fixed-window per-caller limiting |
-| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues |
+| **Graceful shutdown** | `RequestHandler::shutdown()` cancels all tokens and destroys queues, returning a `ShutdownReport` — a shutdown that force-destroyed live queues or abandoned executor cleanup says so instead of looking clean |
 | **Server startup** | `serve()` / `serve_with_addr()` reduce ~25-line hyper boilerplate to one call |
 
 ### Client
@@ -72,8 +73,8 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats (`otel` feature) |
-| **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, and connection pool statistics |
+| **OpenTelemetry** | Native OTLP metrics export — request counts, latency histograms, error rates, queue depth, pool stats, **persistence failures and push-delivery outcomes** (`otel` feature). A CI gate asserts the exporter forwards every `Metrics` callback, so a new one cannot be added and silently not exported |
+| **Metrics trait** | Pluggable callbacks for requests, responses, errors, latency, connection pool statistics, background persistence failures, and push-delivery outcomes. The last two are the paths a client cannot observe: a stream delivers its events whether or not the store accepted them |
 | **Tracing** | Structured logging via `tracing` crate, zero cost when disabled |
 | **Request ID propagation** | `CallContext::request_id` auto-extracted from `X-Request-ID` header |
 
@@ -81,10 +82,10 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 | | |
 |---|---|
-| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, health endpoints |
+| **Request hardening** | Body size limits, Content-Type validation, path traversal protection, query length limits, and split liveness (`/health`) / readiness (`/ready`, probes the task store) endpoints |
 | **SSRF protection** | Push webhook URL validation, header injection prevention, SSE memory limits |
 | **CORS support** | `CorsConfig` for browser-based clients with preflight handling |
-| **Executor timeout** | Configurable via `RequestHandlerBuilder::with_executor_timeout()` to kill hung executors |
+| **Executor timeout** | Bounded by default (1 hour) so a hung executor cannot pin a task, its queue and its cancellation token forever; tune with `with_executor_timeout()` or opt out explicitly with `without_executor_timeout()` |
 | **Task eviction** | TTL-based eviction, capacity limits, amortized sweeps, cursor-based pagination |
 
 ### Quality
@@ -104,8 +105,16 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 | [`a2a-protocol-client`](crates/a2a-protocol-client) | HTTP client for A2A requests | Building an orchestrator, gateway, or test harness |
 | [`a2a-protocol-server`](crates/a2a-protocol-server) | Server framework for A2A agents | Building an agent that handles A2A requests |
 | [`a2a-protocol-sdk`](crates/a2a-protocol-sdk) | Umbrella re-export + prelude | Quick-start / full-stack usage |
+| [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) | A2A over the AGNTCY SLIM fabric | Your agents already live on SLIM |
 
 `a2a-protocol-client` and `a2a-protocol-server` are **siblings** — neither depends on the other. Use only what you need.
+
+`a2a-protocol-slimrpc` sits outside the workspace with its own lockfile, because
+`agntcy-slim-rpc` brings 379 transitive dependencies (including a native C
+crypto build) against 12 for `a2a-protocol-types`. None of that reaches the four
+crates above, which do not depend on it. It is versioned independently and
+starts at `0.1` — see [the book chapter](https://a2a-rust.com/bindings/slimrpc.html)
+for why, and for the version-coupling rule that independence does *not* remove.
 
 ## Quick Start
 
@@ -113,7 +122,7 @@ The A2A protocol was originally developed by Google and [donated to the Linux Fo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.8"
+a2a-protocol-sdk = "0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -218,6 +227,40 @@ cargo run -p agent-team
 # With all optional features
 cargo run -p agent-team --features grpc,websocket,axum,sqlite,signing,otel
 ```
+
+### Hello Agent (smallest complete agent)
+
+The whole SDK in one screen — 35 lines, one dependency (`a2a-protocol-sdk`), no
+feature flags. It greets whoever sends it a message:
+
+```bash
+cargo run -p hello-agent
+
+curl -X POST http://127.0.0.1:3000 \
+  -H 'content-type: application/json' -H 'A2A-Version: 1.0' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{
+        "message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"Tom"}]}}}'
+```
+
+It doubles as the regression test for the Quick Start above: it depends on
+exactly what the Quick Start tells you to depend on, so if that snippet stops
+compiling, `cargo build -p hello-agent` fails with it.
+
+### Deploy Agent (the other end of the funnel)
+
+```sh
+cargo run -p deploy-agent
+docker build -f examples/deploy-agent/Dockerfile -t deploy-agent .
+kubectl apply -f examples/deploy-agent/deployment.yaml
+```
+
+`hello-agent` is the smallest agent that answers A2A; this is the smallest one
+you can ship. Environment configuration, `/healthz` and `/readyz`, `SIGTERM`
+draining, a `0.0.0.0` bind, a two-stage container and a Kubernetes manifest
+whose probes point at those endpoints. Its sharpest test asserts the agent card
+advertises the **public** URL and never leaks the bind address — the deployment
+bug whose only symptom is clients failing to call back. See
+[`examples/deploy-agent`](examples/deploy-agent).
 
 ### Echo Agent
 
@@ -359,11 +402,24 @@ Against the A2A project's official Technology Compatibility Kit, **92 of 114 MUS
 
 ## Stability
 
-All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes. Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
+All crates follow [Semantic Versioning 2.0.0](https://semver.org/). During the `0.x` series, minor versions may include breaking changes as the API stabilizes.
+
+The server crate's eleven public traits — `AgentExecutor`, `TaskStore`, `PushConfigStore`, `PushSender`, `ServerInterceptor`, `TenantResolver`, `Metrics`, `Dispatcher`, `AgentCardProducer`, and the two event-queue traits — are **unsealed and will stay that way**: they are the extension points a deployment substitutes its own infrastructure into, and the out-of-workspace [`a2a-protocol-slimrpc`](bindings/a2a-protocol-slimrpc) binding exists only because they are open. New trait methods are always added with defaults so external implementations keep compiling; the rules maintainers follow when doing so — including why a defaulted method is *not* free — are in [CONTRIBUTING.md](CONTRIBUTING.md#extending-a-public-trait). Protocol enums and key structs that can grow with the A2A specification are marked `#[non_exhaustive]` to allow forward-compatible additions in patch releases; the two deliberate exceptions are closed sets fixed by their underlying standards (`ApiKeyLocation` — OpenAPI's header/query/cookie — and `JsonRpcResponse` — JSON-RPC 2.0's result/error), which stay exhaustive so consumers can match them completely.
 
 ## Minimum Supported Rust Version
 
 Rust **1.93** or later (stable).
+
+**Policy.** The MSRV is treated as part of the public API: raising it is a
+**minor** version bump, never a patch, and the release notes say so. It is
+raised only when a language or standard-library feature earns it — not
+incidentally, because a transitive dependency moved.
+
+That 1.93 currently sits close to the latest stable is a consequence of this
+project being pre-1.0 and moving quickly, and it is a real adoption cost for
+organisations pinning older toolchains. It is listed as an open question on the
+[roadmap](ROADMAP.md) rather than presented as settled: the right floor for a
+1.0 is probably older than this one, and choosing it is a maintainer's call.
 
 ## Contributing
 

@@ -29,7 +29,7 @@ pub mod postgres_store;
 #[cfg(feature = "postgres")]
 pub mod tenant_postgres_store;
 
-pub use task_store::{InMemoryTaskStore, TaskStore, TaskStoreConfig};
+pub use task_store::{ArtifactDelta, InMemoryTaskStore, TaskStore, TaskStoreConfig};
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 
 /// Normalizes a status timestamp to the `SQLite` `updated_at` column shape,

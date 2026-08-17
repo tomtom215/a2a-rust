@@ -3,19 +3,12 @@
 
 //! The echo executor and the agent card it is served behind.
 
-use std::future::Future;
-use std::pin::Pin;
-
 use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
-use a2a_protocol_types::artifact::Artifact;
-use a2a_protocol_types::error::A2aResult;
-use a2a_protocol_types::events::{StreamResponse, TaskArtifactUpdateEvent, TaskStatusUpdateEvent};
 use a2a_protocol_types::message::Part;
-use a2a_protocol_types::task::{ContextId, TaskState, TaskStatus};
+use a2a_protocol_types::task::TaskState;
 
-use a2a_protocol_server::executor::AgentExecutor;
-use a2a_protocol_server::request_context::RequestContext;
-use a2a_protocol_server::streaming::EventQueueWriter;
+use a2a_protocol_server::agent_executor;
+use a2a_protocol_server::executor_helpers::EventEmitter;
 
 /// Message-text prefix that makes the executor pause mid-task.
 ///
@@ -28,71 +21,34 @@ pub const SLOW_PREFIX: &str = "slow:";
 /// back as an artifact, going through Working → Completed status transitions.
 pub struct EchoExecutor;
 
-impl AgentExecutor for EchoExecutor {
-    fn execute<'a>(
-        &'a self,
-        ctx: &'a RequestContext,
-        queue: &'a dyn EventQueueWriter,
-    ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-        Box::pin(async move {
-            // Transition to Working.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Working),
-                    metadata: None,
-                }))
-                .await?;
+agent_executor!(EchoExecutor, |ctx, queue| async {
+    let emit = EventEmitter::new(ctx, queue);
+    emit.status(TaskState::Working).await?;
 
-            // Extract text from the incoming message.
-            let input_text = ctx
-                .message
-                .parts
-                .iter()
-                .find_map(|p| match &p.content {
-                    a2a_protocol_types::message::PartContent::Text(text) => Some(text.as_str()),
-                    _ => None,
-                })
-                .unwrap_or("<no text>");
+    let input_text = ctx.message.text().unwrap_or("<no text>");
 
-            // A deliberately slow turn, so a caller can observe a task that is
-            // still running. Without one, every echo task is terminal by the
-            // time its id is known, and `SubscribeToTask` can only ever be
-            // observed being *refused* (spec: re-attaching to a terminal task
-            // is `UnsupportedOperation`). The demo needs the success path too,
-            // and a success path nothing can reach is not covered.
-            if input_text.starts_with(SLOW_PREFIX) {
-                tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-            }
-
-            // Echo back as an artifact.
-            let echo_text = format!("Echo: {input_text}");
-            queue
-                .write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    artifact: Artifact::new("echo-artifact", vec![Part::text(&echo_text)]),
-                    append: None,
-                    last_chunk: Some(true),
-                    metadata: None,
-                }))
-                .await?;
-
-            // Transition to Completed.
-            queue
-                .write(StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-                    task_id: ctx.task_id.clone(),
-                    context_id: ContextId::new(ctx.context_id.clone()),
-                    status: TaskStatus::new(TaskState::Completed),
-                    metadata: None,
-                }))
-                .await?;
-
-            Ok(())
-        })
+    // A deliberately slow turn, so a caller can observe a task that is
+    // still running. Without one, every echo task is terminal by the
+    // time its id is known, and `SubscribeToTask` can only ever be
+    // observed being *refused* (spec: re-attaching to a terminal task
+    // is `UnsupportedOperation`). The demo needs the success path too,
+    // and a success path nothing can reach is not covered.
+    if input_text.starts_with(SLOW_PREFIX) {
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
     }
-}
+
+    let echo_text = format!("Echo: {input_text}");
+    emit.artifact(
+        "echo-artifact",
+        vec![Part::text(&echo_text)],
+        None,
+        Some(true),
+    )
+    .await?;
+
+    emit.status(TaskState::Completed).await?;
+    Ok(())
+});
 
 /// Where each binding is listening. Built before the handler so the card names
 /// real addresses rather than placeholders.

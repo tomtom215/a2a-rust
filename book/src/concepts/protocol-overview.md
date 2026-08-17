@@ -6,7 +6,7 @@ The Agent2Agent (A2A) protocol defines how AI agents discover each other, exchan
 
 An A2A interaction follows this flow:
 
-```
+```text
   Client Agent                Agent (Server)
        │                           │
        │  1. GET /.well-known/agent-card.json │
@@ -36,7 +36,7 @@ An A2A interaction follows this flow:
 
 A **Task** is the central unit of work. When a client sends a message, the server creates a task that progresses through well-defined states:
 
-```
+```text
                       ┌───────────┐
               ┌───────│ Submitted │──────────┐
               │       └─────┬─────┘          │
@@ -103,7 +103,7 @@ A2A supports two communication styles:
 
 The client sends a message and blocks until the task is complete:
 
-```
+```text
   Client                        Server
      │                             │
      │  SendMessage                │
@@ -119,7 +119,7 @@ The client sends a message and blocks until the task is complete:
 
 The client sends a message and receives events in real time via SSE:
 
-```
+```text
   Client                        Server
      │                             │
      │  SendStreamingMessage       │

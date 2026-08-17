@@ -8,7 +8,7 @@ A **Task** represents a unit of work. Every `SendMessage` call creates one.
 
 ### Task Structure
 
-```rust
+```rust,ignore
 pub struct Task {
     pub id: TaskId,                          // Server-assigned unique ID
     pub context_id: ContextId,               // Conversation thread ID
@@ -38,7 +38,7 @@ Tasks follow a state machine with validated transitions:
 
 Not all state transitions are allowed. The library enforces these rules:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::TaskState;
 
 // Check if a transition is valid
@@ -71,7 +71,7 @@ Tasks in terminal states enforce strict invariants:
 
 The status combines a state with an optional message and timestamp:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::{TaskStatus, TaskState};
 
 // Without timestamp
@@ -101,7 +101,7 @@ On the wire, task states use SCREAMING_SNAKE_CASE with a `TASK_STATE_` prefix:
 
 A **Message** is a structured payload exchanged between client and agent:
 
-```rust
+```rust,ignore
 pub struct Message {
     pub id: MessageId,                           // Unique message ID
     pub role: MessageRole,                       // User or Agent
@@ -123,7 +123,7 @@ pub struct Message {
 
 ### Creating Messages
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
 let message = Message {
@@ -144,7 +144,7 @@ Parts are the content units within messages and artifacts. Four types are suppor
 
 ### Text
 
-```rust
+```rust,ignore
 let part = Part::text("Hello, agent!");
 ```
 
@@ -152,7 +152,7 @@ Wire format: `{"text": "Hello, agent!"}`
 
 ### Raw (inline bytes)
 
-```rust
+```rust,ignore
 // Inline bytes (base64-encoded)
 let part = Part::raw(base64_encoded_string);
 ```
@@ -161,7 +161,7 @@ Wire format: `{"raw": "aGVsbG8=", "filename": "doc.bin", "mediaType": "applicati
 
 ### Url (URI reference)
 
-```rust
+```rust,ignore
 // URI reference
 let part = Part::url("https://example.com/document.pdf");
 ```
@@ -170,7 +170,7 @@ Wire format: `{"url": "https://example.com/document.pdf"}`
 
 ### Structured Data
 
-```rust
+```rust,ignore
 let part = Part::data(serde_json::json!({
     "table": [
         {"name": "Alice", "score": 95},
@@ -196,7 +196,7 @@ Any part can carry optional metadata:
 
 Artifacts are results produced by an agent, delivered as part of a task:
 
-```rust
+```rust,ignore
 pub struct Artifact {
     pub id: ArtifactId,
     pub name: Option<String>,
@@ -209,7 +209,7 @@ pub struct Artifact {
 
 Create and validate an artifact:
 
-```rust
+```rust,no_run
 use a2a_protocol_sdk::prelude::*;
 
 let artifact = Artifact::new(
@@ -224,7 +224,7 @@ artifact.validate().expect("artifact should be valid");
 
 Artifacts can be delivered incrementally during streaming:
 
-```rust
+```rust,ignore
 // First chunk
 queue.write(StreamResponse::ArtifactUpdate(TaskArtifactUpdateEvent {
     task_id: ctx.task_id.clone(),

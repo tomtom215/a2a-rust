@@ -1,6 +1,15 @@
 # API Quick Reference
 
-A condensed overview of all public types, traits, and functions across the a2a-rust crates.
+A condensed overview of the public types, traits, and functions across the
+a2a-rust crates.
+
+This page is a **curated selection**, kept short enough to scan. For the
+exhaustive, always-current listing — every item, every signature, generated
+from the code on each deploy — see the [generated API documentation](/api/).
+
+Every name below is checked against the crates by
+`scripts/check_api_reference.py` in CI, so a type that gets renamed cannot leave
+a stale entry here.
 
 ## Wire Types (`a2a-protocol-types`)
 
@@ -263,7 +272,7 @@ The prelude includes the most commonly used types from all three crates — see 
 
 ## Constructors Cheatsheet
 
-```rust
+```rust,ignore
 // Task status
 TaskStatus::new(TaskState::Working)
 TaskStatus::with_timestamp(TaskState::Completed)

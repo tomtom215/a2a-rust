@@ -30,6 +30,28 @@ This matches the order used by `.github/workflows/release.yml`. Publishing
 client before server fails: the client's versioned dev-dependency on the
 not-yet-published server cannot be resolved from the index.
 
+### What this means for a local pre-flight
+
+Use `cargo package --workspace`, **not** `cargo package -p <crate>`. The
+workspace form resolves sibling `path + version` dependencies against the local
+crates; the per-crate form resolves them against the crates.io index, which does
+not yet carry the new version, so it fails with:
+
+```
+failed to select a version for the requirement `a2a-protocol-types = "^0.9.0"`
+candidate versions found which didn't match: 0.8.0, 0.7.0, ...
+```
+
+That is not a broken manifest — it is the per-crate form asking the registry a
+question only the registry can answer after publication. `ci.yml` and
+`release.yml` both use the workspace form for exactly this reason.
+
+Every `publish = false` member must be `--exclude`d, because such crates depend
+on their siblings by bare `path` with no version, and packaging rejects that.
+The list is duplicated across `ci.yml`, `release.yml` and this file, so adding a
+new example silently breaks packaging — which is what
+`scripts/check_package_excludes.py` now prevents.
+
 ## Release checklist
 
 ### 1. Prepare the release
@@ -61,7 +83,7 @@ cargo test --workspace --all-features
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
 # Verify packaging (mirror the exclude list in ci.yml / release.yml exactly)
-cargo package --workspace --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
+cargo package --workspace --exclude a2a-example-harness --exclude hello-agent --exclude deploy-agent --exclude a2a-book-tests --exclude echo-agent --exclude agent-team --exclude multi-lang-team --exclude rig-a2a-agent --exclude genai-a2a-agent --exclude incident-response --exclude a2a-tck --exclude a2a-tck-sut --exclude a2a-benchmarks
 ```
 
 ### 2. Merge to main
@@ -133,9 +155,39 @@ This triggers the release workflow (`.github/workflows/release.yml`) which:
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 All four workspace crates share the same version number and are always released
-together. The example crates (`echo-agent`, `agent-team`, `multi-lang-team`,
-`rig-a2a-agent`, `genai-a2a-agent`) and the `a2a-tck` binary are `publish = false`
-and are never published.
+together. The example crates (`hello-agent`, `echo-agent`, `agent-team`,
+`multi-lang-team`, `rig-a2a-agent`, `genai-a2a-agent`), the `a2a-book-tests`
+crate and the `a2a-tck` binary are `publish = false` and are never published.
+
+### `a2a-protocol-slimrpc` releases separately
+
+The SLIMRPC binding is publishable but is **not** part of the tagged release
+above, and `release.yml` does not touch it. It lives outside the workspace with
+its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
+run from `bindings/a2a-protocol-slimrpc/`.
+
+It is versioned independently — `0.2.0` against the SDK's `0.9.0`. Numbering it
+to match would claim API stability it has not earned and force a bump on every
+SDK release even when nothing in it changed.
+
+Independence covers the numbers, not the schedule, and this is the part that is
+easy to get wrong:
+
+> `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
+> returns an `AgentInterface`, so `a2a-protocol-server` and
+> `a2a-protocol-types` are **public dependencies**. Its requirement on them is
+> therefore a tight `0.8`, not a range — allow two and cargo links both, and
+> callers get `expected RequestHandler, found RequestHandler`.
+
+So **every SDK minor release requires a follow-up release of the binding**:
+
+1. Publish the four SDK crates as normal.
+2. Bump the binding's `a2a-protocol-*` requirements to the new minor.
+3. Bump the binding's own version (minor, since its supported SDK changed).
+4. From `bindings/a2a-protocol-slimrpc/`: `cargo package` then `cargo publish`.
+
+Skipping step 4 leaves the newest binding on crates.io pinned to a superseded
+SDK, which is the failure mode this note exists to prevent.
 
 ## Path to 1.0.0
 

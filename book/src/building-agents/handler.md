@@ -6,7 +6,7 @@ The `RequestHandler` is the central orchestrator that connects your executor to 
 
 ### Minimal Setup
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 
 let handler = RequestHandlerBuilder::new(MyExecutor)
@@ -24,7 +24,7 @@ This gives you sensible defaults:
 
 ### Full Configuration
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::RequestHandlerBuilder;
 use std::time::Duration;
 
@@ -116,7 +116,7 @@ The `HandlerLimits` struct configures per-handler bounds:
 
 The handler is wrapped in `Arc` for sharing between dispatchers:
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 
 let handler = Arc::new(
@@ -136,7 +136,7 @@ This means JSON-RPC and REST clients share the same task store, push configs, an
 
 The default `InMemoryTaskStore` supports TTL and capacity limits:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::TaskStoreConfig;
 use std::time::Duration;
 
@@ -157,7 +157,7 @@ When capacity is exceeded, the oldest tasks are evicted. When TTL expires, tasks
 
 For production use, implement the `TaskStore` trait for your database:
 
-```rust
+```rust,ignore
 use a2a_protocol_sdk::server::TaskStore;
 
 struct DynamoDbTaskStore { /* ... */ }

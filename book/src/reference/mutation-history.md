@@ -385,7 +385,7 @@ deleting it would pay that sort on every write sitting exactly at capacity.
 That argument was correct, and the fix respects it: the guard is **kept**, and
 only its spelling changes.
 
-```rust
+```rust,ignore
 let overflow = store.len().saturating_sub(max);
 if overflow != 0 { /* collect, sort, evict */ }
 ```

@@ -186,6 +186,21 @@ pub use codec::Pb;
 pub use multicast::{MemberOutcome, MulticastOutcome, SlimRpcMulticast};
 pub use server::{SlimRpcServer, SlimRpcServerBuilder};
 
+// ── Public dependencies, re-exported ─────────────────────────────────────────
+//
+// `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
+// returns an `AgentInterface`, so both are part of *this* crate's public API,
+// not merely implementation detail. A caller who reaches them through their own
+// `a2a-protocol-server` dependency can end up with a different version of the
+// same type — cargo links both, and the error reads "expected RequestHandler,
+// found RequestHandler", which is among the least helpful messages in Rust.
+//
+// Re-exporting them means `use a2a_protocol_slimrpc::{RequestHandler, ...}`
+// cannot pick the wrong one. Callers who want the whole SDK surface should
+// still depend on it directly, matching the version requirement in Cargo.toml.
+pub use a2a_protocol_server::{AgentExecutor, RequestHandler, RequestHandlerBuilder};
+pub use a2a_protocol_types::agent_card::AgentInterface;
+
 /// The A2A method names this binding serves, as they appear on the wire.
 ///
 /// Dispatch is on `"{service}/{method}"`, so these strings are load-bearing:

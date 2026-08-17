@@ -10,70 +10,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+## [0.9.0] - 2026-08-16
 
-- **`message/send` cost 32× more on any server that had handled more than
-  10,000 tasks.** The default `InMemoryTaskStore` caps itself at
-  `max_capacity` (10,000). Once full it is over that cap on *every* subsequent
-  write, and every such write ran a sweep that cloned every `TaskId` in the
-  store into a `Vec`, sorted it, and then removed — normally — a single task.
-  A blocking send performs several saves, so one request paid that O(n log n)
-  sweep several times over.
+### Breaking
 
-  It is a cliff, not a slope, and it never recovers: the store stays at
-  capacity for the life of the process. Measured with
-  `cargo run --release -p a2a-benchmarks --example send_probe`, which walks the
-  store across the boundary and reports the median per 1,000 sends:
+- **`executor_timeout` now defaults to one hour instead of being unbounded.**
+  An executor that never returns previously pinned its task, its event queue and
+  its cancellation token for the life of the process, and nothing reclaimed
+  them; with `max_cancellation_tokens` at 10,000, enough of them eventually stop
+  the handler accepting work. The old rationale — that any fixed value would
+  fail legitimately long-running tasks — is sound about *short* ceilings and
+  wrong about the default, which put the safe configuration behind an action
+  nobody is reminded to take.
 
-  | Sends so far | Before | After |
-  |---|---|---|
-  | 10,000 (at the cap) | 65.2 µs | 62.9 µs |
-  | 11,000 (past it) | **2.4 ms** | **67.3 µs** |
-  | 16,000 | **2.0 ms** | **64.3 µs** |
+  An hour cannot plausibly interrupt an interactive or streaming agent turn, and
+  a task genuinely running longer should be using push notifications (§7) rather
+  than holding an executor and a stream open. If yours legitimately exceeds it,
+  set `with_executor_timeout()`, or call the new `without_executor_timeout()` to
+  restore unbounded execution explicitly. A task that trips the ceiling fails
+  visibly, as a Failed task with a timeout error.
 
-  Two changes fix it. Capacity eviction now walks `order_index` — already
-  sorted oldest-first — and stops as soon as it has enough victims, instead of
-  collecting and sorting the whole store; the search for a terminal task to
-  prefer is bounded by a scan window, so the sweep is O(1) in the store size
-  rather than O(n). And the O(n) TTL pass no longer rides along with it: the
-  two passes are now separately triggered, so the amortized sweep stays
-  amortized instead of running on every write once the store is full.
-
-  End to end over loopback JSON-RPC, `transport/jsonrpc/send/single_message`
-  improves **91%** (2.18 ms → 191 µs, p < 0.05). The control holds: the same
-  run measures `get_task` on a missing id — one round trip that performs no
-  write — unchanged at −0.25% (p = 0.76), confirming the gain is specific to
-  the write path and not machine-wide noise.
-
-  This was previously attributed, in a benchmark comment, to cross-thread task
-  scheduling on 4-core CI runners. That hypothesis is disproved here: running
-  the same send on a single-worker runtime does not close the gap. Scheduling
-  is real but second-order — worth ~50 µs of the remaining 191 µs, and it was
-  entirely masked by the eviction cost.
-
-  The new sweep's fallback path — topping up with in-flight tasks when the scan
-  window holds too little finished work — was correct but untested at its one
-  interesting point. Mutation testing showed it: the first draft sized the
-  top-up as `overflow - terminal.len()`, and changing that `-` to a `+`, which
-  makes the sweep evict *more* than the overflow, broke no assertion. Every
-  capacity test either filled the quota from terminal tasks alone (returning
-  before the top-up ran) or found none at all (where the two operators agree),
-  so the partial-supply case in between went unexercised. It now has a test,
-  and the arithmetic it turned on is gone: the top-up is a second bounded pass
-  over the same window, sharing the first pass's exit condition, which also
-  drops a `Vec` of candidate ids that were usually collected and discarded.
-
-### Changed
-
-- **Expired tasks are now reclaimed only by the TTL sweep's own interval.**
-  Previously an over-capacity write also ran the TTL pass as a side effect, so
-  a full store expired terminal tasks on every write. It now runs every
-  `eviction_interval` writes (default 64), as its configuration always
-  described. `max_capacity` remains a hard cap enforced on every write, so
-  memory is bounded exactly as before; only the promptness of TTL reclamation
-  changes, and only within the interval that already governed it.
+- **`RequestHandler::shutdown()` and `shutdown_with_timeout()` now return
+  `ShutdownReport`** instead of `()`. The type is `#[must_use]`, so existing
+  callers get a warning rather than an error. Both previously discarded the
+  executor-cleanup timeout with no log and no return value, which made a hung
+  cleanup indistinguishable from a clean drain.
 
 ### Added
+
+- **Two `Metrics` callbacks for the failures nothing else reported.**
+  `on_persistence_error` fires when the background processor cannot persist a
+  task — the SDK's one silent-data-loss path, since the streaming reader is a
+  separate subscriber and receives the event whether or not the store accepted
+  it. `on_push_delivery` reports every delivery attempt by outcome. Both were
+  previously visible only through `tracing`, which is not a default feature of
+  `a2a-protocol-server`, so a default build discarded them entirely. Both are
+  exported by the bundled OTLP exporter as `a2a.server.persistence_errors` and
+  `a2a.server.push_deliveries`.
+
+- **`GET /ready`** on the Axum router — a readiness probe that actually reaches
+  the task store, alongside `/health`, which remains a constant on purpose. A
+  liveness probe that follows a downstream down restart-loops every replica
+  during that downstream's outage. Backed by the new
+  `RequestHandler::task_store_health()`.
+
+- **`TaskStore::save_artifact_delta`**, defaulted to `save`, so every existing
+  implementation keeps working. Lets a store persist what changed rather than
+  the whole record. Implemented by all three bundled stores.
+
+- **`ErrorCode::metric_label` / `A2aError::metric_label`** — a bounded,
+  low-cardinality label for every error code, safe to use as a metric dimension.
+
+- **`a2a-protocol-slimrpc` is publishable**, and the SLIMRPC specification is
+  vendored at `spec/slimrpc_v1/` so the binding's method inventory is checked
+  against the document it claims to implement.
+
+- **`examples/deploy-agent`** — the smallest agent you can actually ship:
+  environment configuration, liveness and readiness endpoints, a `SIGTERM`
+  drain, a `0.0.0.0` bind, a two-stage `Dockerfile` and a Kubernetes manifest.
+
+- **`examples/hello-agent`** — 23 lines of code against the umbrella crate
+  alone.
+
 
 - **`EventStream::from_event_channel` on `a2a-protocol-client`, which is what
   made an out-of-tree custom transport possible at all.**
@@ -271,6 +269,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   store across its capacity boundary and reports send latency per 1,000-send
   bucket. This is what turned "sends are slow" into "sends are slow past
   exactly 10,000 tasks".
+
+### Changed
+
+- Public traits are documented as **unsealed and staying that way**, with the
+  rules for extending them in CONTRIBUTING — including why a defaulted method is
+  not free.
+
+- `handler/messaging.rs` (2,395 lines) split into `messaging/{mod,decisions,
+  tests}.rs`. `send_message_inner` remains ~530 lines and is recorded in
+  `.file-length-baseline` as the outstanding work.
+
+
+
+- **Expired tasks are now reclaimed only by the TTL sweep's own interval.**
+  Previously an over-capacity write also ran the TTL pass as a side effect, so
+  a full store expired terminal tasks on every write. It now runs every
+  `eviction_interval` writes (default 64), as its configuration always
+  described. `max_capacity` remains a hard cap enforced on every write, so
+  memory is bounded exactly as before; only the promptness of TTL reclamation
+  changes, and only within the interval that already governed it.
+
+### Fixed
+
+- **Streaming was quadratic in the length of the stream.** The background
+  processor saved the whole task on every artifact event, and the in-memory
+  store deep-clones, so event *i* copied *i* artifacts. A 502-event stream spent
+  43.4 ms against the in-memory store versus 3.2 ms against one that discards
+  everything. `save_artifact_delta` makes it linear: **120.6 ms to 3.6 ms** for
+  the distinct-artifact shape, **43.4 ms to 2.5 ms** for the append shape, with
+  both curves flat.
+
+  The same change on the SQL stores removes the Rust-side serialization of the
+  whole task and its transfer as a bind parameter: SQLite 144.5 ms to 127.6 ms,
+  Postgres 798 ms to 500 ms with per-event cost flat (853/840/1000 µs at 50/250/
+  500 chunks) where `save` grew (874/1183/1597 µs).
+
+- The `Message::text()` helper and the `PartContent` re-exports the README quick
+  start needed. That snippet had not compiled for three minor versions.
+
+
+- **`message/send` cost 32× more on any server that had handled more than
+  10,000 tasks.** The default `InMemoryTaskStore` caps itself at
+  `max_capacity` (10,000). Once full it is over that cap on *every* subsequent
+  write, and every such write ran a sweep that cloned every `TaskId` in the
+  store into a `Vec`, sorted it, and then removed — normally — a single task.
+  A blocking send performs several saves, so one request paid that O(n log n)
+  sweep several times over.
+
+  It is a cliff, not a slope, and it never recovers: the store stays at
+  capacity for the life of the process. Measured with
+  `cargo run --release -p a2a-benchmarks --example send_probe`, which walks the
+  store across the boundary and reports the median per 1,000 sends:
+
+  | Sends so far | Before | After |
+  |---|---|---|
+  | 10,000 (at the cap) | 65.2 µs | 62.9 µs |
+  | 11,000 (past it) | **2.4 ms** | **67.3 µs** |
+  | 16,000 | **2.0 ms** | **64.3 µs** |
+
+  Two changes fix it. Capacity eviction now walks `order_index` — already
+  sorted oldest-first — and stops as soon as it has enough victims, instead of
+  collecting and sorting the whole store; the search for a terminal task to
+  prefer is bounded by a scan window, so the sweep is O(1) in the store size
+  rather than O(n). And the O(n) TTL pass no longer rides along with it: the
+  two passes are now separately triggered, so the amortized sweep stays
+  amortized instead of running on every write once the store is full.
+
+  End to end over loopback JSON-RPC, `transport/jsonrpc/send/single_message`
+  improves **91%** (2.18 ms → 191 µs, p < 0.05). The control holds: the same
+  run measures `get_task` on a missing id — one round trip that performs no
+  write — unchanged at −0.25% (p = 0.76), confirming the gain is specific to
+  the write path and not machine-wide noise.
+
+  This was previously attributed, in a benchmark comment, to cross-thread task
+  scheduling on 4-core CI runners. That hypothesis is disproved here: running
+  the same send on a single-worker runtime does not close the gap. Scheduling
+  is real but second-order — worth ~50 µs of the remaining 191 µs, and it was
+  entirely masked by the eviction cost.
+
+  The new sweep's fallback path — topping up with in-flight tasks when the scan
+  window holds too little finished work — was correct but untested at its one
+  interesting point. Mutation testing showed it: the first draft sized the
+  top-up as `overflow - terminal.len()`, and changing that `-` to a `+`, which
+  makes the sweep evict *more* than the overflow, broke no assertion. Every
+  capacity test either filled the quota from terminal tasks alone (returning
+  before the top-up ran) or found none at all (where the two operators agree),
+  so the partial-supply case in between went unexercised. It now has a test,
+  and the arithmetic it turned on is gone: the top-up is a second bounded pass
+  over the same window, sharing the first pass's exit condition, which also
+  drops a `Vec` of candidate ids that were usually collected and discarded.
+
 
 ## [0.8.0] - 2026-08-13
 

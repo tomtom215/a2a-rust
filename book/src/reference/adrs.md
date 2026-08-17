@@ -52,7 +52,7 @@ Key design decisions for a2a-rust, documented as ADRs. Each record captures the 
 
 **Decision:** Three-layer architecture:
 
-```
+```text
 Dispatcher (transport) → RequestHandler (protocol) → AgentExecutor (user logic)
 ```
 
