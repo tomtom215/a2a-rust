@@ -16,11 +16,13 @@
 
 use super::*;
 
+use crate::DispatchConfig;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Empty, Full};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use std::pin::Pin;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 /// Answers after `delay`, so a request can still be in flight when
 /// shutdown is signalled.
@@ -73,6 +75,128 @@ fn default_config_is_unbounded_with_a_finite_drain() {
         !c.drain_timeout.is_zero(),
         "a zero default would make every shutdown report abandoned connections"
     );
+    // Both timeouts default to on. Unlike max_connections, leaving these off
+    // is not a neutral choice a deployment might have wanted — it is what let a
+    // slowloris hold a task forever.
+    assert_eq!(c.header_read_timeout, Some(DEFAULT_HEADER_READ_TIMEOUT));
+    assert_eq!(c.idle_timeout, Some(DEFAULT_IDLE_TIMEOUT));
+    assert!(
+        DEFAULT_IDLE_TIMEOUT > DispatchConfig::default().sse_keep_alive_interval,
+        "the idle window must outlast the SSE keep-alive that is meant to hold \
+         a quiet stream open, or streaming subscribers get dropped by default"
+    );
+}
+
+/// The slowloris. A peer opens a connection, sends a partial request line, and
+/// then dribbles nothing — the classic way to exhaust a server's tasks for the
+/// price of a socket.
+///
+/// This is an end-to-end test against a real listener rather than a unit test
+/// of the wrapper, because the defect it guards was not in any one component:
+/// hyper *has* a 30-second header timeout and defaults it on, and this server
+/// silently disabled it by never installing a `Timer`. Every piece was
+/// correct; the assembly was not. Only a test that speaks to the socket can
+/// tell the difference.
+#[tokio::test]
+async fn a_peer_that_never_finishes_its_headers_is_disconnected() {
+    // Long enough that "closed immediately for some other reason" and "closed
+    // by the timeout" are distinguishable in the elapsed time.
+    const HEADER_TIMEOUT: Duration = Duration::from_millis(700);
+
+    let dispatcher = SlowDispatcher::new(Duration::ZERO);
+    let server = Server::bind("127.0.0.1:0")
+        .await
+        .expect("bind")
+        .with_config(
+            ServeConfig::new()
+                .with_header_read_timeout(Some(HEADER_TIMEOUT))
+                // Off, so a pass here can only be the header timeout.
+                .with_idle_timeout(None),
+        );
+    let addr = server.local_addr().expect("addr");
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let serving = tokio::spawn(async move {
+        server
+            .serve_with_shutdown(dispatcher, async {
+                rx.await.ok();
+            })
+            .await
+    });
+
+    // Send a request line and one header, then stop — never the blank line
+    // that ends the header block.
+    let mut sock = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    sock.write_all(b"GET / HTTP/1.1\r\nHost: localhost\r\n")
+        .await
+        .expect("partial headers");
+
+    // Read to EOF with a ceiling well above the timeout: without one, an
+    // unenforced timeout hangs the suite instead of failing it.
+    let started = std::time::Instant::now();
+    let mut sink = Vec::new();
+    let closed = tokio::time::timeout(Duration::from_secs(10), sock.read_to_end(&mut sink)).await;
+    let elapsed = started.elapsed();
+
+    assert!(
+        closed.is_ok(),
+        "the server held a half-sent request open for 10s; the header-read \
+         timeout is not being applied"
+    );
+
+    // The half of this that matters, and the half the first version of this
+    // test was missing. "The connection closed" is not the property — a
+    // connection dropped by a panicking task closes too, which is exactly what
+    // happened while `with_idle_timeout(None)` was a `Duration::MAX` sentinel:
+    // `Instant::now() + Duration::MAX` overflowed, the task died, the peer saw
+    // a reset in 94ms, and the test passed while enforcing nothing. Asserting
+    // the connection survived nearly to the deadline is what separates being
+    // timed out from being dropped.
+    assert!(
+        elapsed >= HEADER_TIMEOUT.mul_f32(0.5),
+        "closed after {elapsed:?}, far sooner than the {HEADER_TIMEOUT:?} \
+         timeout — something dropped the connection rather than timing it out"
+    );
+
+    tx.send(()).ok();
+    serving.await.expect("join");
+}
+
+/// The disabled path, pinned because it is the one that panicked. A server
+/// configured without an idle timeout must serve ordinary traffic, not die on
+/// the first byte.
+#[tokio::test]
+async fn timeouts_can_be_turned_off_without_breaking_the_connection() {
+    let dispatcher = SlowDispatcher::new(Duration::ZERO);
+    let server = Server::bind("127.0.0.1:0")
+        .await
+        .expect("bind")
+        .with_config(
+            ServeConfig::new()
+                .with_idle_timeout(None)
+                .with_header_read_timeout(None),
+        );
+    let addr = server.local_addr().expect("addr");
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let serving = tokio::spawn(async move {
+        server
+            .serve_with_shutdown(dispatcher, async {
+                rx.await.ok();
+            })
+            .await
+    });
+
+    let client = Client::builder(TokioExecutor::new()).build_http::<Empty<Bytes>>();
+    let response = client
+        .get(format!("http://{addr}/").parse().expect("uri"))
+        .await
+        .expect("a server with both timeouts disabled must still answer");
+
+    assert!(response.status().is_success());
+
+    tx.send(()).ok();
+    serving.await.expect("join");
 }
 
 #[tokio::test]

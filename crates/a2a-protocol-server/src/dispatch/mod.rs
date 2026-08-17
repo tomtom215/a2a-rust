@@ -165,7 +165,9 @@ pub const A2A_VERSION_METADATA_KEY: &str = "a2a-version";
 /// and would have to reimplement the comparison and hope it stays in step.
 ///
 /// Key lookup is case-insensitive. Any `1.x` is accepted and patch segments
-/// are ignored, per §3.6.
+/// are ignored, per §3.6. The map is generic over its hasher so a binding that
+/// keeps metadata in something other than the default `RandomState` — most
+/// transport crates do — can pass it without rebuilding the map.
 ///
 /// `require` decides what an absent or empty value means, and the two answers
 /// are both defensible, which is why it is the caller's to make. §3.6.2 says a
@@ -194,8 +196,8 @@ pub const A2A_VERSION_METADATA_KEY: &str = "a2a-version";
 /// ```
 ///
 /// [`A2aError::version_not_supported`]: a2a_protocol_types::error::A2aError::version_not_supported
-pub fn validate_version_metadata(
-    metadata: &std::collections::HashMap<String, String>,
+pub fn validate_version_metadata<S: std::hash::BuildHasher>(
+    metadata: &std::collections::HashMap<String, String, S>,
     require: bool,
 ) -> Result<(), a2a_protocol_types::error::A2aError> {
     let value = metadata

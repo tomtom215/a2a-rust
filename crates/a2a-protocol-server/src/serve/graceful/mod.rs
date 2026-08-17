@@ -19,17 +19,36 @@
 //! whole subject is shipping — had to reach for the Axum adapter to get
 //! `with_graceful_shutdown`, because the SDK's own entry point could not drain.
 //!
-//! [`Server`] closes that. It also bounds two things `serve` leaves unbounded,
-//! because both are only visible once a real deployment is behind it:
+//! [`Server`] closes that. It also bounds four things `serve` leaves unbounded,
+//! all of which are only visible once a real deployment is behind it:
 //!
 //! * **Concurrent connections.** `serve` spawns a task per accepted socket with
 //!   no ceiling. [`ServeConfig::max_connections`] holds the permit *before*
 //!   accepting, so excess load waits in the kernel's backlog — where it belongs
 //!   — rather than as unbounded tasks.
+//! * **Time to send headers.** A peer dribbling request headers a byte at a
+//!   time held a task for as long as it liked. This is the part that reads as
+//!   a missing feature and is really a misassembly: hyper *has* this timeout
+//!   and defaults it to 30 seconds, but honours it only when a
+//!   [`Timer`](hyper::rt::Timer) is installed, and no server here installed
+//!   one. Every component was correct and the composition was not, which is
+//!   why the test for it speaks to a socket rather than to a type. See
+//!   [`ServeConfig::header_read_timeout`].
+//! * **Time spent doing nothing.** What the header timeout cannot cover: a
+//!   peer that sent headers promptly and then stopped mid-body, or one that
+//!   finished a request and held the connection open in silence. Hyper has no
+//!   answer for this because "idle" is a policy question, so
+//!   [`ServeConfig::idle_timeout`] answers it at the socket, counting traffic
+//!   in *either* direction so a streaming SSE response is not mistaken for a
+//!   dead one.
 //! * **Connection outcomes.** `serve` discards the result of
 //!   `serve_connection` entirely (`let _ = …`), so a connection that failed to
 //!   negotiate and one that served a thousand requests are indistinguishable.
 //!   Here the error is traced.
+//!
+//! The two timeouts default to *on*, which is a deliberate difference from
+//! `max_connections`: a deployment might genuinely want no connection ceiling,
+//! but nobody wants a slowloris to be free.
 //!
 //! # Example
 //!
@@ -85,6 +104,9 @@ use tokio::sync::Semaphore;
 
 use super::{pause_after_accept_error, Dispatcher};
 
+mod idle;
+use idle::IdleTimeout;
+
 /// How long to wait for in-flight connections once shutdown is signalled.
 ///
 /// Fifteen seconds is the same order as a Kubernetes
@@ -93,6 +115,28 @@ use super::{pause_after_accept_error, Dispatcher};
 /// that follows this one. A deployment that streams long responses should raise
 /// it; one behind a proxy that already drains should lower it.
 pub const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// How long a peer may take to send a complete set of request headers.
+///
+/// Thirty seconds is hyper's own default for this, kept rather than re-chosen.
+/// What changes here is that it now *applies*. Hyper honours the setting only
+/// when a [`Timer`](hyper::rt::Timer) is installed on the connection builder,
+/// and neither this server nor [`serve`](super::serve) installed one — so the
+/// default was inert. Hyper says so at warn level when it drops it, in a log
+/// line nobody was reading.
+pub const DEFAULT_HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a connection may sit with no bytes moving in either direction.
+///
+/// Seventy-five seconds matches nginx's `keepalive_timeout`, which is what most
+/// clients and proxies in front of this server are already tuned against.
+///
+/// It must stay comfortably above
+/// [`DispatchConfig::sse_keep_alive_interval`](crate::DispatchConfig::sse_keep_alive_interval)
+/// (30 seconds by default), because those keep-alive comments are what make a
+/// quiet SSE stream look busy to this timer. Lowering one without the other is
+/// how a streaming deployment starts dropping idle subscribers.
+pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// Limits applied to a [`Server`].
 #[derive(Debug, Clone)]
@@ -111,6 +155,21 @@ pub struct ServeConfig {
     /// How long to wait for watched connections to finish after shutdown is
     /// signalled, before giving up and reporting them abandoned.
     pub drain_timeout: Duration,
+
+    /// How long a peer may take to send complete request headers. `None`
+    /// disables the check.
+    ///
+    /// This is the slowloris defence: a connection dribbling headers a byte at
+    /// a time is refused instead of holding a task indefinitely.
+    pub header_read_timeout: Option<Duration>,
+
+    /// How long a connection may go with no traffic in either direction before
+    /// it is closed. `None` disables the check.
+    ///
+    /// Covers what the header timeout cannot: a peer that sent its headers
+    /// promptly and then stopped mid-body, or one that finished a request and
+    /// kept the connection open doing nothing.
+    pub idle_timeout: Option<Duration>,
 }
 
 impl Default for ServeConfig {
@@ -118,12 +177,20 @@ impl Default for ServeConfig {
         Self {
             max_connections: None,
             drain_timeout: DEFAULT_DRAIN_TIMEOUT,
+            header_read_timeout: Some(DEFAULT_HEADER_READ_TIMEOUT),
+            idle_timeout: Some(DEFAULT_IDLE_TIMEOUT),
         }
     }
 }
 
 impl ServeConfig {
-    /// The defaults: unbounded connections, [`DEFAULT_DRAIN_TIMEOUT`].
+    /// The defaults: unbounded connections, [`DEFAULT_DRAIN_TIMEOUT`],
+    /// [`DEFAULT_HEADER_READ_TIMEOUT`] and [`DEFAULT_IDLE_TIMEOUT`].
+    ///
+    /// Both timeouts default to *on*. An unbounded connection is the kind of
+    /// default that only looks harmless until someone points a slowloris at it,
+    /// and this constructor is new enough to have no callers relying on the
+    /// permissive behaviour.
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -145,6 +212,28 @@ impl ServeConfig {
     #[must_use]
     pub const fn with_drain_timeout(mut self, timeout: Duration) -> Self {
         self.drain_timeout = timeout;
+        self
+    }
+
+    /// Sets how long a peer may take to send complete request headers.
+    ///
+    /// `None` disables it. Do that only behind a proxy that already enforces
+    /// one — this is the check that makes a slowloris cost the attacker
+    /// something.
+    #[must_use]
+    pub const fn with_header_read_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.header_read_timeout = timeout;
+        self
+    }
+
+    /// Sets how long a connection may go with no traffic before it is closed.
+    ///
+    /// `None` disables it. Raise it rather than disabling it if a deployment
+    /// streams responses with long quiet stretches, and keep it above the SSE
+    /// keep-alive interval — see [`DEFAULT_IDLE_TIMEOUT`].
+    #[must_use]
+    pub const fn with_idle_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.idle_timeout = timeout;
         self
     }
 }
@@ -259,7 +348,13 @@ impl Server {
                 }
             };
             accepted.fetch_add(1, Ordering::Relaxed);
-            spawn_connection(stream, Arc::clone(&dispatcher), graceful.watcher(), permit);
+            spawn_connection(
+                stream,
+                Arc::clone(&dispatcher),
+                graceful.watcher(),
+                permit,
+                &config,
+            );
         }
 
         drain(
@@ -281,10 +376,15 @@ fn spawn_connection(
     dispatcher: Arc<impl Dispatcher>,
     watcher: hyper_util::server::graceful::Watcher,
     permit: tokio::sync::OwnedSemaphorePermit,
+    config: &ServeConfig,
 ) {
     // Disable Nagle so small SSE frames are not held for a delayed ACK.
     let _ = stream.set_nodelay(true);
-    let io = hyper_util::rt::TokioIo::new(stream);
+    // The idle timer wraps the socket *below* hyper, so it sees the bytes
+    // rather than the requests: a peer that stops mid-body never reaches a
+    // service call, and a layer above hyper would never hear about it.
+    let io = hyper_util::rt::TokioIo::new(IdleTimeout::new(stream, config.idle_timeout));
+    let header_read_timeout = config.header_read_timeout;
 
     tokio::spawn(async move {
         let service = hyper::service::service_fn(move |req| {
@@ -293,8 +393,18 @@ fn spawn_connection(
         });
         // The builder is bound rather than chained: `serve_connection` borrows
         // it, and the connection future outlives the statement.
-        let builder =
+        let mut builder =
             hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+        // Installing the timer is what makes `header_read_timeout` real. Hyper
+        // defaults it to 30s but silently drops it without one — `Time::check`
+        // logs "has default, but no timer set" and returns `None` — so every
+        // server built this way, including `serve`, has been running with no
+        // header timeout at all while appearing to have hyper's.
+        builder
+            .http1()
+            .timer(hyper_util::rt::TokioTimer::new())
+            .header_read_timeout(header_read_timeout);
+        builder.http2().timer(hyper_util::rt::TokioTimer::new());
         let conn = builder.serve_connection(io, service);
         // Unlike `serve`, the outcome is not discarded: a connection that died
         // before serving anything is a fact an operator can act on, and
