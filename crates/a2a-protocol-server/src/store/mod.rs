@@ -5,6 +5,7 @@
 
 //! Task storage backend.
 
+pub mod retention;
 pub mod task_store;
 pub mod tenant;
 
@@ -29,6 +30,7 @@ pub mod postgres_store;
 #[cfg(feature = "postgres")]
 pub mod tenant_postgres_store;
 
+pub use retention::{terminal_states, PurgeReport, RetentionPolicy};
 pub use task_store::{ArtifactDelta, InMemoryTaskStore, TaskStore, TaskStoreConfig};
 pub use tenant::{TenantAwareInMemoryTaskStore, TenantContext, TenantStoreConfig};
 

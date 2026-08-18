@@ -27,12 +27,13 @@ use a2a_protocol_server::push::{
 use a2a_protocol_server::store::tenant::TenantContext;
 use a2a_protocol_server::store::ArtifactDelta;
 use a2a_protocol_server::store::{
-    PgMigrationRunner, PostgresTaskStore, TaskStore, TenantAwarePostgresTaskStore,
+    PgMigrationRunner, PostgresTaskStore, RetentionPolicy, TaskStore, TenantAwarePostgresTaskStore,
 };
 use a2a_protocol_types::error::A2aResult;
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::push::TaskPushNotificationConfig;
 use a2a_protocol_types::task::{ContextId, Task, TaskId, TaskState, TaskStatus};
+use std::time::Duration;
 
 const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 
@@ -989,6 +990,151 @@ async fn artifact_delta_preserves_list_position() -> A2aResult<()> {
 
     let after = ids(store.list(&ListTasksParams::default()).await?);
     assert_eq!(before, after, "appending an artifact reordered the list");
+
+    db.drop_db().await;
+    Ok(())
+}
+
+// ── Retention ────────────────────────────────────────────────────────────────
+//
+// Age is written directly rather than waited for: the policy is measured in
+// days, and a test that sleeps for one is a test nobody runs. `updated_at` is
+// the column the sweep reads, so setting it is setting the thing under test.
+
+/// Backdates every row in `table` for `tenant`, or all rows when `tenant` is
+/// `None`.
+async fn backdate(url: &str, table: &str, seconds: i64, tenant: Option<&str>) {
+    let pool = sqlx::PgPool::connect(url).await.expect("connect");
+    let sql = match tenant {
+        Some(_) => format!(
+            "UPDATE {table} SET updated_at = now() - ($1 || ' seconds')::interval \
+              WHERE tenant_id = $2"
+        ),
+        None => format!("UPDATE {table} SET updated_at = now() - ($1 || ' seconds')::interval"),
+    };
+    let mut q = sqlx::query(&sql).bind(seconds.to_string());
+    if let Some(t) = tenant {
+        q = q.bind(t);
+    }
+    q.execute(&pool).await.expect("backdate");
+    pool.close().await;
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn retention_deletes_only_aged_terminal_tasks() -> A2aResult<()> {
+    let db = TestDb::create("retention_basic").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    for (id, state) in [
+        ("done-old", TaskState::Completed),
+        ("failed-old", TaskState::Failed),
+        ("working-old", TaskState::Working),
+        ("input-old", TaskState::InputRequired),
+    ] {
+        let mut t = make_task(id, "ctx");
+        t.status = TaskStatus::new(state);
+        store.save(&t).await?;
+    }
+    let mut fresh = make_task("done-new", "ctx");
+    fresh.status = TaskStatus::new(TaskState::Completed);
+    backdate(&db.url, "tasks", 7_200, None).await;
+    store.save(&fresh).await?; // saved after the backdate, so it stays young
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+
+    assert_eq!(report.tasks_deleted, 2, "the two aged terminal tasks");
+    assert!(report.complete);
+    assert_eq!(
+        report.journal_orphans_deleted, 0,
+        "PostgreSQL has no journal table"
+    );
+    assert!(store.get(&TaskId("done-old".into())).await?.is_none());
+    assert!(store.get(&TaskId("failed-old".into())).await?.is_none());
+    assert!(
+        store.get(&TaskId("working-old".into())).await?.is_some(),
+        "a Working task is never eligible, however old"
+    );
+    assert!(
+        store.get(&TaskId("input-old".into())).await?.is_some(),
+        "an InputRequired task is a workflow waiting on a human, not a leak"
+    );
+    assert!(store.get(&TaskId("done-new".into())).await?.is_some());
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn retention_batches_and_reports_an_incomplete_sweep() -> A2aResult<()> {
+    let db = TestDb::create("retention_batch").await;
+    let store = PostgresTaskStore::with_migrations(&db.url)
+        .await
+        .expect("open postgres store");
+
+    for i in 0..5 {
+        let mut t = make_task(&format!("t{i}"), "ctx");
+        t.status = TaskStatus::new(TaskState::Completed);
+        store.save(&t).await?;
+    }
+    backdate(&db.url, "tasks", 7_200, None).await;
+
+    let policy = RetentionPolicy::new(Duration::from_secs(3_600))
+        .with_batch_size(2)
+        .with_max_batches(2);
+    let first = store.purge_expired(&policy).await.expect("purge");
+    assert_eq!(first.batches, 2);
+    assert_eq!(first.tasks_deleted, 4);
+    assert!(
+        !first.complete,
+        "a bounded sweep must say it ran out of budget rather than leave the \
+         caller to infer it from a count"
+    );
+
+    let second = store.purge_expired(&policy).await.expect("purge");
+    assert_eq!(second.tasks_deleted, 1);
+    assert!(second.complete);
+
+    db.drop_db().await;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a live PostgreSQL server (set A2A_TEST_POSTGRES_URL)"]
+async fn retention_does_not_cross_tenants() -> A2aResult<()> {
+    let db = TestDb::create("retention_tenant").await;
+    let store = TenantAwarePostgresTaskStore::new(&db.url)
+        .await
+        .expect("open tenant store");
+
+    for tenant in ["acme", "globex"] {
+        let mut t = make_task("shared-id", "ctx");
+        t.status = TaskStatus::new(TaskState::Completed);
+        TenantContext::scope(tenant, async { store.save(&t).await }).await?;
+    }
+    backdate(&db.url, "tenant_tasks", 7_200, Some("acme")).await;
+
+    let report = store
+        .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+        .await
+        .expect("purge");
+    assert_eq!(report.tasks_deleted, 1, "only acme's copy was old enough");
+
+    let globex = TenantContext::scope("globex", async {
+        store.get(&TaskId("shared-id".into())).await
+    })
+    .await?;
+    assert!(
+        globex.is_some(),
+        "tenant_tasks is keyed on (tenant_id, id): deleting by id alone would \
+         have taken every tenant's task of the same name"
+    );
 
     db.drop_db().await;
     Ok(())

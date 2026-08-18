@@ -126,6 +126,38 @@ impl TenantAwareSqliteTaskStore {
 
         Ok(Self { pool })
     }
+
+    /// Deletes terminal tasks that have outlived `policy`.
+    ///
+    /// Nothing calls this for you. A persistent store keeps every task until
+    /// an operator says otherwise — see [`retention`](crate::store::retention)
+    /// for why that is the default and why the in-memory store does the
+    /// opposite — so this is the hook for whatever already schedules work: a
+    /// cron entry, a Kubernetes `CronJob`, a `tokio` interval in your own
+    /// binary.
+    ///
+    /// Only `Completed`, `Failed`, `Canceled` and `Rejected` tasks are
+    /// eligible. A task still `Working`, or parked in `InputRequired` waiting
+    /// on a human, is never deleted however old it is.
+    ///
+    /// Safe to run from several replicas at once: each batch is a single
+    /// `DELETE` whose subquery picks the rows, so two sweeps racing delete
+    /// disjoint sets rather than colliding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a delete fails. A sweep that fails partway has
+    /// still committed its earlier batches; the counts in the returned report
+    /// are lost in that case, but the deletions are not undone and the next
+    /// sweep simply continues.
+    pub async fn purge_expired(
+        &self,
+        policy: &super::retention::RetentionPolicy,
+    ) -> A2aResult<super::retention::PurgeReport> {
+        super::retention::sqlite::purge(&self.pool, "tenant_tasks", None, policy)
+            .await
+            .map_err(|e| to_a2a_error(&e))
+    }
 }
 
 /// Creates a `SqlitePool` with production-ready defaults (WAL, `busy_timeout`, etc.).
@@ -392,6 +424,70 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    /// The reason the sweep deletes by `rowid` and not by `id`.
+    ///
+    /// `tenant_tasks` is keyed on `(tenant_id, id)`, so the same task id can
+    /// exist under every tenant. A `DELETE ... WHERE id IN (...)` reads
+    /// correctly and would have taken one tenant's expired task *and everyone
+    /// else's task of the same name* — the worst shape of bug this store can
+    /// have, silent cross-tenant data loss, triggered only once two tenants
+    /// happen to pick the same id.
+    #[tokio::test]
+    async fn purging_one_tenant_leaves_the_same_id_under_another() {
+        use crate::store::retention::RetentionPolicy;
+        use std::time::Duration;
+
+        let store = make_store().await;
+        for tenant in ["acme", "globex"] {
+            TenantContext::scope(tenant, async {
+                store
+                    .save(&make_task("shared-id", "ctx", TaskState::Completed))
+                    .await
+                    .unwrap();
+            })
+            .await;
+        }
+
+        // Age only acme's copy.
+        sqlx::query(
+            "UPDATE tenant_tasks \
+                SET updated_at = strftime('%Y-%m-%d %H:%M:%f','now','-7200 seconds') \
+              WHERE tenant_id = 'acme'",
+        )
+        .execute(&store.pool)
+        .await
+        .expect("backdate");
+
+        let report = store
+            .purge_expired(&RetentionPolicy::new(Duration::from_secs(3_600)))
+            .await
+            .expect("purge");
+        assert_eq!(report.tasks_deleted, 1, "only acme's copy was old enough");
+
+        TenantContext::scope("globex", async {
+            assert!(
+                store
+                    .get(&TaskId::new("shared-id"))
+                    .await
+                    .unwrap()
+                    .is_some(),
+                "globex must still have its own task of the same id"
+            );
+        })
+        .await;
+        TenantContext::scope("acme", async {
+            assert!(
+                store
+                    .get(&TaskId::new("shared-id"))
+                    .await
+                    .unwrap()
+                    .is_none(),
+                "acme's expired copy should be gone"
+            );
+        })
+        .await;
     }
 
     #[tokio::test]
