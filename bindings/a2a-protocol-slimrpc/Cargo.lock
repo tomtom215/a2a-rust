@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "a2a-protocol-types",
  "base64 0.22.1",
@@ -19,7 +19,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "a2a-protocol-types",
  "bytes",
@@ -35,7 +35,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-slimrpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "a2a-protocol-client",
  "a2a-protocol-server",
@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64 0.22.1",
  "prost",
@@ -1755,9 +1755,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.15"
+version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
+checksum = "a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27"
 dependencies = [
  "atomic-waker",
  "bytes",

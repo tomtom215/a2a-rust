@@ -28,6 +28,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Metadata about the current server-side method call.
 ///
@@ -38,8 +39,21 @@ pub struct CallContext {
     /// The JSON-RPC method name (e.g. `"message/send"`).
     method: String,
 
-    /// Optional caller identity extracted from authentication headers.
-    caller_identity: Option<String>,
+    /// Who the caller is, once authentication has established it.
+    ///
+    /// A `OnceLock` rather than an `Option` because of who needs to write it.
+    /// [`ServerInterceptor::before`](crate::ServerInterceptor::before) takes
+    /// `&CallContext`, so an authentication interceptor — the one component
+    /// that actually knows the caller — could not set this at all. The field
+    /// was documented as "set by authentication interceptors" and no
+    /// interceptor could, no dispatcher did, and every rate-limited caller
+    /// therefore shared the `"anonymous"` bucket.
+    ///
+    /// Write-once rather than a `Mutex<Option<_>>` because identity is
+    /// established once. Two interceptors disagreeing about who the caller is
+    /// would be a misconfiguration, and this makes the first answer stick
+    /// instead of letting the last one silently win.
+    caller_identity: OnceLock<String>,
 
     /// Extension URIs active for this request.
     extensions: Vec<String>,
@@ -60,10 +74,39 @@ impl CallContext {
         &self.method
     }
 
-    /// Returns the optional caller identity.
+    /// Returns the caller identity, once something has established one.
     #[must_use]
     pub fn caller_identity(&self) -> Option<&str> {
-        self.caller_identity.as_deref()
+        self.caller_identity.get().map(String::as_str)
+    }
+
+    /// Records who the caller is, if nothing has yet.
+    ///
+    /// Returns `true` when this call set the identity and `false` when one was
+    /// already present — in which case the existing identity stands and the
+    /// argument is dropped.
+    ///
+    /// Takes `&self` deliberately: the caller is established by an
+    /// authentication interceptor, and
+    /// [`ServerInterceptor::before`](crate::ServerInterceptor::before) receives
+    /// a shared reference. Anything that needs `&mut` here is unreachable from
+    /// the place that has the answer.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use a2a_protocol_server::CallContext;
+    ///
+    /// let ctx = CallContext::new("SendMessage");
+    /// assert!(ctx.set_caller_identity("user@example.com"));
+    /// assert_eq!(ctx.caller_identity(), Some("user@example.com"));
+    ///
+    /// // A second interceptor does not get to overwrite it.
+    /// assert!(!ctx.set_caller_identity("someone-else"));
+    /// assert_eq!(ctx.caller_identity(), Some("user@example.com"));
+    /// ```
+    pub fn set_caller_identity(&self, identity: impl Into<String>) -> bool {
+        self.caller_identity.set(identity.into()).is_ok()
     }
 
     /// Returns the active extension URIs.
@@ -91,17 +134,20 @@ impl CallContext {
     pub fn new(method: impl Into<String>) -> Self {
         Self {
             method: method.into(),
-            caller_identity: None,
+            caller_identity: OnceLock::new(),
             extensions: Vec::new(),
             request_id: None,
             http_headers: HashMap::new(),
         }
     }
 
-    /// Sets the caller identity.
+    /// Sets the caller identity at construction.
+    ///
+    /// For a caller building a context directly. An interceptor holding
+    /// `&CallContext` wants [`set_caller_identity`](Self::set_caller_identity).
     #[must_use]
-    pub fn with_caller_identity(mut self, identity: String) -> Self {
-        self.caller_identity = Some(identity);
+    pub fn with_caller_identity(self, identity: String) -> Self {
+        let _ = self.caller_identity.set(identity);
         self
     }
 

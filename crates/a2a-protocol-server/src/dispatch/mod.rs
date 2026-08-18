@@ -144,6 +144,69 @@ impl DispatchConfig {
     }
 }
 
+/// The service parameter naming the A2A protocol version, spelled the way a
+/// non-HTTP binding carries it.
+///
+/// A2A §3.6.2 defines the parameter and §10.2 says each binding transmits it in
+/// whatever its own metadata mechanism is: an `A2A-Version` HTTP header for
+/// JSON-RPC and REST, a gRPC metadata entry, SLIMRPC session metadata. HTTP
+/// header names are case-insensitive and gRPC requires lowercase, so this is
+/// the lowercase spelling and [`validate_version_metadata`] matches keys
+/// without regard to case.
+pub const A2A_VERSION_METADATA_KEY: &str = "a2a-version";
+
+/// Validates the A2A version carried in a binding's request metadata.
+///
+/// The counterpart of this crate's private header validator, for bindings that
+/// carry service parameters in a string map rather than in HTTP headers, and
+/// the supported way for a binding **outside this crate** to enforce §3.6.2 —
+/// which the built-in bindings do through private helpers this makes public.
+/// Without it an out-of-tree binding can send a version but cannot check one,
+/// and would have to reimplement the comparison and hope it stays in step.
+///
+/// Key lookup is case-insensitive. Any `1.x` is accepted and patch segments
+/// are ignored, per §3.6. The map is generic over its hasher so a binding that
+/// keeps metadata in something other than the default `RandomState` — most
+/// transport crates do — can pass it without rebuilding the map.
+///
+/// `require` decides what an absent or empty value means, and the two answers
+/// are both defensible, which is why it is the caller's to make. §3.6.2 says a
+/// missing value MUST be read as protocol 0.3 — a version this server does not
+/// implement — so `true` rejects it, matching the reference Python SDK and this
+/// crate's own HTTP default. `false` accepts it, which is what the gRPC binding
+/// does for clients predating the parameter.
+///
+/// # Errors
+///
+/// [`A2aError::version_not_supported`] when the version is one this server does
+/// not implement, or is absent while `require` is set.
+///
+/// # Example
+///
+/// ```rust
+/// use a2a_protocol_server::dispatch::validate_version_metadata;
+/// use std::collections::HashMap;
+///
+/// let mut metadata = HashMap::new();
+/// metadata.insert("A2A-Version".to_string(), "1.0".to_string());
+/// assert!(validate_version_metadata(&metadata, true).is_ok());
+///
+/// // Absent, and the caller requires it: rejected as 0.3 per §3.6.2.
+/// assert!(validate_version_metadata(&HashMap::new(), true).is_err());
+/// ```
+///
+/// [`A2aError::version_not_supported`]: a2a_protocol_types::error::A2aError::version_not_supported
+pub fn validate_version_metadata<S: std::hash::BuildHasher>(
+    metadata: &std::collections::HashMap<String, String, S>,
+    require: bool,
+) -> Result<(), a2a_protocol_types::error::A2aError> {
+    let value = metadata
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(A2A_VERSION_METADATA_KEY))
+        .map(|(_, v)| v.as_str());
+    validate_version_header(value, require)
+}
+
 /// Validates an `A2A-Version` header value per spec §3.6.2.
 ///
 /// `value` is the raw header value (`None` when the header is absent).
@@ -256,5 +319,80 @@ mod tests {
         assert!(debug.contains("sse_keep_alive_interval"));
         assert!(debug.contains("sse_channel_capacity"));
         assert!(debug.contains("max_batch_size"));
+    }
+
+    // ── validate_version_metadata: the out-of-crate binding extension point ──
+
+    #[test]
+    fn version_metadata_matches_key_case_insensitively() {
+        // Bindings spell this differently — HTTP headers arrive in whatever
+        // case the peer sent, gRPC lowercases, SLIMRPC passes through what the
+        // caller set. All four spellings are the same parameter.
+        for key in ["a2a-version", "A2A-Version", "A2A-VERSION", "a2a-Version"] {
+            let mut md = std::collections::HashMap::new();
+            md.insert(key.to_string(), "1.0".to_string());
+            assert!(
+                validate_version_metadata(&md, true).is_ok(),
+                "key spelling {key} should be recognised"
+            );
+        }
+    }
+
+    #[test]
+    fn version_metadata_rejects_unsupported_version() {
+        let mut md = std::collections::HashMap::new();
+        md.insert("a2a-version".to_string(), "0.3".to_string());
+        let err = validate_version_metadata(&md, true).expect_err("0.3 is not supported");
+        assert!(
+            err.message.contains("0.3"),
+            "the error should name the version it rejected, got: {}",
+            err.message
+        );
+    }
+
+    #[test]
+    fn version_metadata_accepts_any_1x_including_patch() {
+        for v in ["1.0", "1.4", "1.0.2", " 1.0 "] {
+            let mut md = std::collections::HashMap::new();
+            md.insert("a2a-version".to_string(), v.to_string());
+            assert!(
+                validate_version_metadata(&md, true).is_ok(),
+                "{v} is a 1.x version and should be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn version_metadata_absent_follows_the_require_flag() {
+        let empty = std::collections::HashMap::new();
+        assert!(
+            validate_version_metadata(&empty, false).is_ok(),
+            "require=false is the gRPC posture: absent means a legacy client, accept it"
+        );
+        assert!(
+            validate_version_metadata(&empty, true).is_err(),
+            "require=true is the HTTP posture: absent means 0.3 per 3.6.2, reject it"
+        );
+    }
+
+    #[test]
+    fn version_metadata_treats_empty_value_as_absent() {
+        // A binding that sets the key but leaves it blank has told us nothing,
+        // and 3.6.2 reads "no value" as 0.3 regardless of how it got that way.
+        let mut md = std::collections::HashMap::new();
+        md.insert("a2a-version".to_string(), "   ".to_string());
+        assert!(validate_version_metadata(&md, true).is_err());
+        assert!(validate_version_metadata(&md, false).is_ok());
+    }
+
+    #[test]
+    fn version_metadata_ignores_unrelated_keys() {
+        let mut md = std::collections::HashMap::new();
+        md.insert("authorization".to_string(), "Bearer x".to_string());
+        md.insert("x-tenant-id".to_string(), "acme".to_string());
+        assert!(
+            validate_version_metadata(&md, false).is_ok(),
+            "no version key present, and require=false accepts that"
+        );
     }
 }

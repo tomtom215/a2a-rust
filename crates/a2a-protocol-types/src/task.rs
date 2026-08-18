@@ -232,6 +232,30 @@ pub enum TaskState {
 }
 
 impl TaskState {
+    /// Every variant, in declaration order.
+    ///
+    /// `TaskState` is `#[non_exhaustive]`, so no downstream crate can write an
+    /// exhaustive `match` over it. Code that must consider *every* state — the
+    /// store retention sweep, which may delete terminal tasks and must never
+    /// delete anything else — therefore had no way to notice a variant being
+    /// added, and would have quietly kept treating a new terminal state as
+    /// non-terminal forever.
+    ///
+    /// `all_lists_every_variant` below is the guard: an exhaustive match in
+    /// this crate, where exhaustiveness is enforceable, indexed against this
+    /// array.
+    pub const ALL: [Self; 9] = [
+        Self::Unspecified,
+        Self::Submitted,
+        Self::Working,
+        Self::InputRequired,
+        Self::AuthRequired,
+        Self::Completed,
+        Self::Failed,
+        Self::Canceled,
+        Self::Rejected,
+    ];
+
     /// Returns `true` if this state is a terminal (final) state.
     ///
     /// Terminal states: `Completed`, `Failed`, `Canceled`, `Rejected`.
@@ -576,6 +600,38 @@ mod tests {
     }
 
     // ── is_terminal exhaustive ────────────────────────────────────────────
+
+    #[test]
+    fn all_lists_every_variant() {
+        // Exhaustive: adding a variant stops this compiling until it is given
+        // an index. The array below is then sized by `ALL`, so giving the new
+        // variant an index *without* adding it to `ALL` panics here instead of
+        // narrowing the set silently.
+        const fn index(state: TaskState) -> usize {
+            match state {
+                TaskState::Unspecified => 0,
+                TaskState::Submitted => 1,
+                TaskState::Working => 2,
+                TaskState::InputRequired => 3,
+                TaskState::AuthRequired => 4,
+                TaskState::Completed => 5,
+                TaskState::Failed => 6,
+                TaskState::Canceled => 7,
+                TaskState::Rejected => 8,
+            }
+        }
+        let mut seen = [false; TaskState::ALL.len()];
+        for state in TaskState::ALL {
+            let i = index(state);
+            assert!(!seen[i], "{state} appears in ALL twice");
+            seen[i] = true;
+        }
+        assert!(
+            seen.iter().all(|&b| b),
+            "TaskState::ALL is missing a variant; retention would treat it as \
+             non-terminal forever"
+        );
+    }
 
     #[test]
     fn is_terminal_all_variants() {

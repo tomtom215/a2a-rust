@@ -43,11 +43,27 @@ pub const SLIMRPC_PROTOCOL_BINDING: &str =
 /// SDKs already call.
 pub const A2A_SERVICE_NAME: &str = "lf.a2a.v1.A2AService";
 
-/// The URL scheme a SLIM address uses.
+/// The URL scheme a SLIM address uses, and the one [`SlimName`] writes back.
 pub const SLIM_URL_SCHEME: &str = "slim://";
 
-/// The A2A protocol version this binding carries, for `AgentInterface`.
+/// The alternate scheme spelling seen in the wild.
+///
+/// The official `a2a-slimrpc` crate accepts it alongside `slim://`, and a card
+/// naming the binding rather than the fabric is a reasonable thing for someone
+/// to have written. Parsed, never emitted.
+pub const SLIMRPC_URL_SCHEME: &str = "slimrpc://";
+
+/// The A2A protocol version this binding carries, for `AgentInterface` and for
+/// the `a2a-version` service parameter on every call.
 pub const A2A_PROTOCOL_VERSION: &str = "1.0";
+
+/// The metadata key carrying the A2A version, re-exported rather than spelled
+/// again.
+///
+/// Taking it from `a2a-protocol-server` keeps the name the client sends and the
+/// name the server looks for provably identical — a local `const` with the same
+/// text would compile just as well and drift silently.
+pub use a2a_protocol_server::A2A_VERSION_METADATA_KEY;
 
 /// A SLIM address: an optional fabric node to attach to, plus the three-part
 /// name of the agent to reach.
@@ -67,8 +83,13 @@ pub struct SlimName {
 /// Why a `slim://` address could not be parsed.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SlimNameError {
-    /// The string did not start with `slim://`.
-    #[error("not a SLIM address (expected a `slim://` scheme): {0}")]
+    /// The string carried a URL scheme, and it was not one this binding serves.
+    ///
+    /// A bare name is *not* this error — the spec writes names without a scheme
+    /// (§2.1) and so does the official crate, so a scheme is optional. What is
+    /// rejected is a scheme that says the address belongs to some other
+    /// transport, because dialling it over SLIM would reach the wrong agent.
+    #[error("not a SLIM address (expected `slim://`, `slimrpc://`, or a bare name): {0}")]
     NotSlimScheme(String),
     /// The address did not carry exactly three name components.
     #[error(
@@ -108,21 +129,44 @@ impl SlimName {
         self
     }
 
-    /// Parses a `slim://` address.
+    /// Parses a SLIM address, with or without a scheme.
     ///
-    /// Three components after the scheme is a bare name; four means the first
-    /// is the fabric node to attach to. Anything else is an error — guessing
-    /// which of two components was meant to be the domain would silently route
-    /// to the wrong agent, and a misroute is worse than a rejection.
+    /// Three components is a bare name; four means the first is the fabric node
+    /// to attach to. Anything else is an error — guessing which of two
+    /// components was meant to be the domain would silently route to the wrong
+    /// agent, and a misroute is worse than a rejection.
+    ///
+    /// # Accepted spellings
+    ///
+    /// `slim://domain/ns/service`, `slimrpc://domain/ns/service`, and bare
+    /// `domain/ns/service` all name the same agent. The scheme is optional
+    /// because the binding spec's own §2.1 introduces SLIM Names *without* one
+    /// (`mydomain/demo/echo_agent`) and the official `a2a-slimrpc` crate
+    /// accepts all three; requiring `slim://` meant rejecting a card that crate
+    /// had written. [`Display`](fmt::Display) always writes `slim://` back, so
+    /// round-tripping normalises rather than preserving whichever form arrived.
+    ///
+    /// A scheme belonging to some *other* transport is still rejected: an
+    /// `http://` URL in a SLIMRPC interface is a mistake worth reporting, not a
+    /// name to strip a prefix off.
     ///
     /// # Errors
     ///
-    /// [`SlimNameError`] if the scheme is missing, a component is empty, or
-    /// the component count is neither three nor four.
+    /// [`SlimNameError`] if the address carries a foreign scheme, a component
+    /// is empty, or the component count is neither three nor four.
     pub fn parse(url: &str) -> Result<Self, SlimNameError> {
-        let rest = url
-            .strip_prefix(SLIM_URL_SCHEME)
-            .ok_or_else(|| SlimNameError::NotSlimScheme(url.to_string()))?;
+        let rest = if let Some(rest) = url.strip_prefix(SLIM_URL_SCHEME) {
+            rest
+        } else if let Some(rest) = url.strip_prefix(SLIMRPC_URL_SCHEME) {
+            rest
+        } else if url.contains("://") {
+            // Some other transport's URL. Falling through to the bare-name path
+            // would split it on `/` and report an empty component, which
+            // describes the symptom rather than the mistake.
+            return Err(SlimNameError::NotSlimScheme(url.to_string()));
+        } else {
+            url
+        };
 
         let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
         if parts.iter().any(|p| p.is_empty()) {
@@ -228,9 +272,9 @@ mod tests {
         }
     }
 
-    /// The bare three-component form from the spec's own example.
+    /// The three-component form with the canonical scheme.
     #[test]
-    fn parses_a_bare_three_component_name() {
+    fn parses_a_three_component_name() {
         let name = SlimName::parse("slim://domain/demo/echo_agent").expect("must parse");
 
         assert_eq!(name.node, None);
@@ -285,6 +329,76 @@ mod tests {
             SlimName::parse("https://agent.example.com/a2a"),
             Err(SlimNameError::NotSlimScheme(_))
         ));
+    }
+
+    // ── Scheme tolerance: the spec writes names three different ways ────────
+
+    /// §2.1 of the binding spec introduces SLIM Names with no scheme at all
+    /// (`mydomain/demo/echo_agent`), and the official `a2a-slimrpc` crate
+    /// accepts that form. Rejecting it meant rejecting a card that crate wrote.
+    #[test]
+    fn parses_the_bare_form_the_spec_uses() {
+        let name = SlimName::parse("mydomain/demo/echo_agent").expect("bare names are valid");
+
+        assert_eq!(name.node, None);
+        assert_eq!(name.components(), ["mydomain", "demo", "echo_agent"]);
+    }
+
+    /// The bare form carries a fabric node in the same position the scheme'd
+    /// form does — dropping the scheme must not change how components are read.
+    #[test]
+    fn parses_a_bare_name_carrying_a_fabric_node() {
+        let name = SlimName::parse("slim.example.com:46357/org/prod/scheduler")
+            .expect("bare four-component names are valid");
+
+        assert_eq!(name.node.as_deref(), Some("slim.example.com:46357"));
+        assert_eq!(name.components(), ["org", "prod", "scheduler"]);
+    }
+
+    /// The alternate scheme the official crate also accepts.
+    #[test]
+    fn parses_the_slimrpc_scheme() {
+        let name = SlimName::parse("slimrpc://domain/demo/echo_agent").expect("must parse");
+
+        assert_eq!(name.components(), ["domain", "demo", "echo_agent"]);
+    }
+
+    /// All three spellings must name the same agent, or accepting the extra
+    /// two would have introduced three subtly different addresses instead of
+    /// one address with three spellings.
+    #[test]
+    fn every_accepted_spelling_names_the_same_agent() {
+        let canonical = SlimName::parse("slim://domain/demo/echo_agent").expect("must parse");
+
+        for spelling in ["slimrpc://domain/demo/echo_agent", "domain/demo/echo_agent"] {
+            let parsed = SlimName::parse(spelling).expect("must parse");
+            assert_eq!(
+                parsed, canonical,
+                "{spelling} must resolve to the same name"
+            );
+            assert_eq!(
+                parsed.to_string(),
+                "slim://domain/demo/echo_agent",
+                "Display normalises every spelling onto the canonical scheme"
+            );
+        }
+    }
+
+    /// A foreign scheme must report *that*, not the empty component splitting
+    /// it on `/` would produce. The error a reader sees decides whether they
+    /// fix the card or go hunting for a parser bug.
+    #[test]
+    fn a_foreign_scheme_reports_the_scheme_not_a_split_artifact() {
+        for url in [
+            "https://agent.example.com/a2a",
+            "grpc://agent.example.com:443",
+            "http://a/b/c",
+        ] {
+            assert!(
+                matches!(SlimName::parse(url), Err(SlimNameError::NotSlimScheme(_))),
+                "{url} carries a foreign scheme and must be refused as one"
+            );
+        }
     }
 
     /// Empty components would produce an unroutable name.

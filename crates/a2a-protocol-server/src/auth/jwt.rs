@@ -703,9 +703,22 @@ impl ServerInterceptor for JwtAuthInterceptor {
         ctx: &'a CallContext,
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
-            // The validated principal is available should a future CallContext
-            // gain a slot for it; for now, success/failure is the contract.
-            self.authenticate(ctx).await.map(|_principal| ())
+            let principal = self.authenticate(ctx).await?;
+
+            // The slot that comment was waiting for. `sub` is the caller's
+            // identity by definition, and unlike a bearer token or an API key
+            // it is not a credential — so it is safe to become a rate-limit
+            // bucket key, which may be stored in a shared database.
+            //
+            // A token with no `sub` establishes no identity, so nothing is
+            // recorded and the caller falls back to whatever the consumer's
+            // own derivation says. Recording the issuer instead would bucket
+            // every caller from one issuer together, which is worse than
+            // admitting we do not know.
+            if let Some(subject) = principal.subject {
+                ctx.set_caller_identity(subject);
+            }
+            Ok(())
         })
     }
 
@@ -1013,6 +1026,43 @@ mod tests {
         assert!(i.before(&ctx_bearer(RS256_WRONG_ISS)).await.is_err());
         assert!(i.before(&ctx_bearer(RS256_WRONG_AUD)).await.is_err());
         assert!(i.before(&ctx_bearer(RS256_UNKNOWN_KID)).await.is_err());
+    }
+
+    /// A validated token names its caller.
+    ///
+    /// `sub` is the caller's identity by definition and, unlike the token
+    /// itself, is not a credential — so it is safe as a rate-limit bucket key,
+    /// which may be written to a shared database. Before this, the interceptor
+    /// computed the principal and discarded it, with a comment saying it was
+    /// waiting for a `CallContext` slot to put it in.
+    #[tokio::test]
+    async fn a_validated_token_records_its_subject_as_the_caller() {
+        let i = JwtAuthInterceptor::new(base_validator(), rsa_jwks());
+
+        let ctx = ctx_bearer(RS256_VALID);
+        i.before(&ctx).await.expect("the vector token is valid");
+
+        let identity = ctx
+            .caller_identity()
+            .expect("a validated token establishes an identity");
+        assert!(
+            !RS256_VALID.contains(identity),
+            "the identity must be the subject, not a slice of the token"
+        );
+    }
+
+    /// A rejected token must not name anyone. Recording an identity from an
+    /// unverified token would let a caller pick its own rate-limit bucket.
+    #[tokio::test]
+    async fn a_rejected_token_records_no_caller() {
+        let i = JwtAuthInterceptor::new(base_validator(), rsa_jwks());
+
+        let ctx = ctx_bearer(RS256_EXPIRED);
+        i.before(&ctx)
+            .await
+            .expect_err("expired tokens are refused");
+
+        assert_eq!(ctx.caller_identity(), None);
     }
 
     #[tokio::test]

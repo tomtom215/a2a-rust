@@ -47,6 +47,13 @@ use bytes::Bytes;
 use http_body_util::combinators::BoxBody;
 use hyper::body::Incoming;
 
+mod graceful;
+
+pub use graceful::{
+    ServeConfig, ServeReport, Server, DEFAULT_DRAIN_TIMEOUT, DEFAULT_HEADER_READ_TIMEOUT,
+    DEFAULT_IDLE_TIMEOUT,
+};
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /// The HTTP response type returned by dispatchers.

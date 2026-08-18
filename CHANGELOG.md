@@ -10,6 +10,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Task retention for the persistent stores.** `purge_expired` on
+  `SqliteTaskStore`, `PostgresTaskStore` and their tenant-aware variants deletes
+  terminal tasks older than a [`RetentionPolicy`], in batches, and returns a
+  `PurgeReport` describing what it did. **Nothing is deleted unless you call
+  it.** The in-memory store has always forgotten tasks after an hour and the
+  persistent stores kept them forever; the divergence between the two was the
+  defect, not the growth, and neither behaviour was written down. Growth is
+  modest either way — measured at 826 B/row on PostgreSQL and 781 B/row on
+  SQLite, so under a GiB per million tasks. Retention is deliberately not wired
+  to a timer inside the store: a sweep that fires on its own fires during your
+  traffic peak, and the store does not know when that is. Call it from whatever
+  already schedules work.
+
+- **Deployment-wide rate limiting.** `RateLimitInterceptor::with_shared_counter`
+  accepts any `RateLimitCounter`, so N replicas enforce one limit rather than N
+  copies of it. `PostgresRateLimitCounter` is the bundled implementation.
+
+- **A server that can be stopped without cutting live calls.** `Server`,
+  `ServeConfig` and `serve_with_shutdown` bind a listener, serve until a
+  shutdown signal, and drain in-flight requests within a deadline, returning a
+  `ServeReport`.
+
+- **Connection-level timeouts**, so a slowloris costs the attacker something:
+  `ServeConfig` bounds header-read time, idle time and shutdown drain
+  (`with_header_read_timeout`, `with_idle_timeout`, `with_drain_timeout`) and
+  caps concurrent connections (`with_max_connections`).
+
+- **`set_caller_identity` / `with_caller_identity`** on the rate-limit
+  interceptor, so a per-caller limit is keyed by the caller.
+
+- **`TaskState::ALL`** — the nine protocol states as an array, for exhaustive
+  iteration over a `#[non_exhaustive]` enum.
+
+### Fixed
+
+- **Per-caller rate limiting was not per-caller.** `caller_identity` existed on
+  the interceptor and no code path ever set it, so every caller shared a single
+  bucket and one noisy client could exhaust the limit for everyone. The identity
+  is now settable and is set from the authenticated principal.
+
+- **The SQLite artifact journal was created only by `from_pool`**, so a store
+  opened through the migration path lacked the table the incremental artifact
+  writer depends on.
+
+- **SLIMRPC did not transmit or check the protocol version**, and leaked
+  internal transport metadata into the A2A header map that applications see.
+
+### Performance
+
+- **Streaming artifact appends no longer pay for the stream so far.** SQLite
+  journals appended artifact parts instead of rewriting the whole task on every
+  delta.
+
+### Security
+
+- **RUSTSEC-2026-0258** — h2 raised to 0.4.16, without the dependency downgrade
+  the advisory's own suggested fix would have pulled in.
+
+
 ## [0.9.0] - 2026-08-16
 
 ### Breaking

@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# cargo-deny configuration for the SLIMRPC binding.
+# Run from this directory: cargo deny check
+#
+# ---------------------------------------------------------------------------
+# Why this file exists at all
+# ---------------------------------------------------------------------------
+#
+# `bindings/a2a-protocol-slimrpc` is deliberately outside the workspace, and
+# the root `deny.toml` is resolved against the workspace manifest — so until
+# this file existed, the binding's 379 transitive dependencies were audited by
+# nothing. That is the wrong place for a gap: the binding is `publish = true`,
+# so those dependencies reach users, and they include `aws-lc-sys`, a native C
+# crypto build. The four workspace crates were gated and the one shipping a C
+# compiler was not.
+#
+# The isolation itself is right — none of that tree belongs in the lockfile or
+# audit surface of the published four. Isolation from the *lockfile* was never
+# meant to be isolation from the *audit*.
+#
+# ---------------------------------------------------------------------------
+# How this differs from the root policy, and why
+# ---------------------------------------------------------------------------
+#
+# Everything that bears on security is as strict here as at the root, or
+# stricter: advisories deny, yanked crates deny, unknown registries and git
+# sources deny, and the license allowlist is the root's.
+#
+# The one deliberate relaxation is `multiple-versions`, and the reason is that
+# the root's justification for "deny" does not transfer. There, a reviewed skip
+# list is honest because the duplicates arise in trees this project chooses and
+# could in principle act on. Here the entire graph below `agntcy-slim-rpc` is
+# someone else's: this repo cannot upgrade `der`, cannot align `syn`, and gains
+# nothing by going red when AGNTCY bumps a transitive pin. A skip list of 14
+# entries maintained against a tree we do not own is not a reviewed exemption,
+# it is a changelog we would be obliged to keep. Duplicate versions are a
+# binary-size concern; the security concerns are the ones set to deny above.
+#
+# Measured 2026-08-17 with cargo-deny 0.19.0 against the committed Cargo.lock:
+# advisories **ok** — no known vulnerability in any of the 379. Licenses: one
+# addition to the root allowlist, `MIT-0`, noted below. Sources: ok. Bans:
+# 14 crates duplicated (base64, block-buffer, const-oid, cpufeatures,
+# crypto-common, der, digest, foldhash, num-bigint, reqwest, shlex, spin, syn,
+# untrusted), all inside the SLIM tree.
+#
+# Note for reproducing this locally: cargo-deny **0.19.0 or newer** is
+# required. 0.18.x aborts loading the advisory database on any CVSS 4.0 entry
+# ("unsupported CVSS version: 4.0"), which is a hard error, not a skipped
+# advisory — an older binary reports nothing and looks like it passed.
+
+[graph]
+all-features        = false
+no-default-features = false
+
+# ---------------------------------------------------------------------------
+# License policy — the root allowlist, plus one
+# ---------------------------------------------------------------------------
+[licenses]
+confidence-threshold = 0.8
+
+allow = [
+    "Apache-2.0",
+    "MIT",
+    # MIT No Attribution: MIT with the attribution requirement removed, so it
+    # is strictly more permissive than a license already on this list. Reaches
+    # the graph through `borrow-or-share`, a `fluent-uri` dependency. This is
+    # the only license in the SLIM tree the root policy did not already allow.
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+# ---------------------------------------------------------------------------
+# Security advisories — the reason this file was written
+# ---------------------------------------------------------------------------
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked  = "deny"
+# No active ignores. The graph was clean when this file was added, so the list
+# starts empty and any entry added later is a real exception with a real date
+# rather than something inherited.
+ignore  = []
+
+# ---------------------------------------------------------------------------
+# Banned crates
+# ---------------------------------------------------------------------------
+[bans]
+# See the header: "warn" here is a considered difference from the root's
+# "deny", not the unreviewed default the root comment warns about.
+multiple-versions = "warn"
+wildcards         = "warn"
+
+# The root bans `reqwest` to keep its 30-plus transitive dependencies out of
+# the published crates, allowing it only under the two example agents that
+# genuinely need an HTTP client. That ban is not repeated here, and repeating
+# it would be theatre: `reqwest` arrives twice in this graph, 0.12 under the
+# SLIM stack and 0.13 under `opentelemetry-otlp`, neither of which this repo
+# selects. The reason the root gives — avoiding a large transitive tree — is
+# already moot in a crate that took 379 dependencies to exist.
+deny = []
+
+# ---------------------------------------------------------------------------
+# Source policy — crates.io only, same as the root
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git      = "deny"
+
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -49,6 +49,12 @@ set -Eeuo pipefail
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+
+# The ci.yml parser and the job/step lists, shared with scripts/preflight.sh
+# instead of restated here. The comment this replaces said keeping the two
+# copies identical "is the point" — which is better served by there being one.
+# shellcheck source=lib/ci_gates.sh
+. "$REPO_ROOT/scripts/lib/ci_gates.sh"
 OTEL_RS="$REPO_ROOT/crates/a2a-protocol-server/src/otel/mod.rs"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-provegates.XXXXXX")
 
@@ -62,10 +68,22 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Same job set and parser as scripts/preflight.sh, deliberately: a gate this
-# script has never heard of is the exact defect preflight's `require_known_jobs`
-# exists to catch, one level further in.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
+
+
+# Every SKIP_STEPS alternative must still name a step that exists. An exemption
+# for a step that has been renamed or deleted is an exemption that silently
+# covers nothing, which is the same defect as an unlisted gate — this file has
+# now had that shape three times (test-postgres and package unknown to
+# preflight, slimrpc-binding unknown to both, deny and semver listed but empty).
+# A folded block scalar (`run: >`) joins its lines with spaces; a literal one
+# (`run: |`) keeps the newlines. `gates_for_jobs` treats both alike, so for `>`
+# it would emit a *different command than CI runs*: YAML reads
+# `run: >` / `echo one` / `two` as `echo one two`, and this parser would make
+# `two` a command of its own. ci.yml uses only `|` today, so this refuses
+# rather than implementing a fold nobody needs. A gate that runs the wrong
+# command is worse than one that is missing, and refusing means a folded block
+# cannot be introduced without someone deciding what it should mean.
+
 
 # Each command carries the environment its ci.yml step runs under — the job's
 # `env:` block then the step's, so a step-level value wins. Same parser as
@@ -79,53 +97,6 @@ GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|examp
 # finishes its five acts and then parks on Ctrl+C waiting for a human. Neither
 # was visible before: only the injected run happened, and it exits before
 # reaching the park.
-gates_for_jobs() {
-    awk -v want="$1" '
-        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
-        # Emits the pending step, if it belongs to a wanted job.
-        function flush(   pair) {
-            # TAB-separated: the injection lookup matches the bare command,
-            # while execution needs the env prefixed. Joining them into one
-            # string would make every `"cargo run -p ..."*` pattern in
-            # `gate_kind_for` miss, and every gate would report as unregistered.
-            if (cmd != "") printf "%s\t%s\n", job_env step_env, cmd
-            cmd = ""; step_env = ""; env_indent = -1
-        }
-        # A job header (2-space key) ends the previous job and its env.
-        /^  [a-z0-9_-]+:[[:space:]]*$/ {
-            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
-        }
-        # A new list item ends the previous step.
-        /^[[:space:]]*-[[:space:]]/ { flush() }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            flush()
-            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
-            next
-        }
-        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
-        # indent is recorded so only its own keys are read, and anything
-        # shallower closes it.
-        /^    env:[[:space:]]*$/  { env_indent = 4; next }
-        /^        env:[[:space:]]*$/ { env_indent = 8; next }
-        env_indent > 0 {
-            indent = match($0, /[^ ]/) - 1
-            if (indent <= env_indent) { env_indent = -1 }
-            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
-                line = $0
-                sub(/^[[:space:]]+/, "", line)
-                key = line; sub(/:.*$/, "", key)
-                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
-                sub(/[[:space:]]+$/, "", val)
-                gsub(/^"|"$/, "", val)
-                gsub(/^'\''|'\''$/, "", val)
-                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
-                else step_env = step_env key "=" shquote(val) " "
-                next
-            }
-        }
-        END { flush() }
-    ' "$CI_YML"
-}
 
 # ── Injections ───────────────────────────────────────────────────────────────
 #
@@ -258,6 +229,19 @@ inject_clippy_lint_always() {
     } >>"$file"
 }
 
+# A failing test that only an `--ignored` selection runs, in a named test
+# file. `#[tokio::test]` because every suite these target is async.
+inject_ignored_test() {
+    local file="$1" where="$2"
+    note_touched "$file"
+    {
+        printf '\n#[tokio::test]\n#[ignore = "gate probe"]\n'
+        printf 'async fn gate_probe_must_fail() {\n'
+        printf '    panic!("gate probe: injected failure in %s");\n' "$where"
+        printf '}\n'
+    } >>"$file"
+}
+
 inject_failing_test_always() {
     local file="$1" suffix="$2"
     note_touched "$file"
@@ -275,15 +259,50 @@ TYPES_LIB=crates/a2a-protocol-types/src/lib.rs
 CLIENT_LIB=crates/a2a-protocol-client/src/lib.rs
 SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
 
+# The SLIMRPC binding is a separate cargo project with its own lockfile, so its
+# gates are reached by the `cd` the parser now emits and its defects have to be
+# injected into its own sources — a probe in crates/ is invisible to a build
+# rooted in bindings/.
+SLIMRPC_DIR=bindings/a2a-protocol-slimrpc
+SLIMRPC_LIB=$SLIMRPC_DIR/src/lib.rs
+SLIMRPC_BIN=$SLIMRPC_DIR/src/bin/slim_node.rs
+SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
+SLIMRPC_SPIFFE=$SLIMRPC_DIR/tests/spiffe.rs
+MULTI_REPLICA=crates/a2a-protocol-server/tests/multi_replica.rs
+
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
 # `--features postgres --test postgres_store_tests` cannot be captured by the
 # plain `--features postgres` entry.
 injection_for() {
-    local cmd="$1"
+    local cmd="$1" prefix="${2-}"
+    # Routed on the working directory first, because several of the binding's
+    # commands are within a word of a workspace one: its clippy gate is `cargo
+    # clippy --all-targets -- -D warnings` and the workspace one is the same
+    # plus `--workspace`. Matching on command text alone would eventually send
+    # a bindings/ gate an injection written for crates/, and the gate would
+    # report UNPROVEN while being perfectly capable of failing. The directory
+    # is the thing that actually tells them apart.
+    case "$prefix" in
+        *"cd $SLIMRPC_DIR "*)
+            case "$cmd" in
+                # Before the generic `cargo test` arm: this gate runs only
+                # `--ignored` tests in three named test files, so a panicking
+                # unit test in lib.rs would never be selected and the gate
+                # would pass with the defect sitting in the tree.
+                *"--test spiffe"*) echo "spiffe_ignored:$SLIMRPC_SPIFFE" ;;
+                "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
+                "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
+                "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
+                "cargo package"*) echo "package_manifest:$SLIMRPC_TOML" ;;
+                "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
+                *)                echo "" ;;
+            esac
+            return ;;
+    esac
     case "$cmd" in
         "cargo fmt --all -- --check")
-            echo "fmt" ;;
+            echo "fmt:$TYPES_LIB" ;;
         "./scripts/check_proto_copies.sh")
             echo "proto" ;;
         "./scripts/check_file_lengths.sh")
@@ -302,8 +321,12 @@ injection_for() {
             echo "package_excludes" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
+        *"check_block_scalars.py"*)
+            echo "block_scalars:scripts/lib/ci_gates.sh" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
+        *"--test multi_replica"*)
+            echo "ignored_suite:$MULTI_REPLICA:the multi-replica suite" ;;
         "cargo doc"*)
             echo "doc" ;;
         "cargo package"*)
@@ -390,12 +413,17 @@ expected_marker() {
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
+        block_scalars)    echo "MISMATCH" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
+        package_manifest) echo "NO_SUCH_README.md" ;;
+        build_bin)        echo "GateProbeNoSuchType" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
         postgres_ignored) echo "gate probe: injected failure in the ignored postgres suite" ;;
+        ignored_suite)    echo "gate probe: injected failure in ${1##*:}" ;;
+        spiffe_ignored)   echo "gate probe: injected failure in the SPIFFE suite" ;;
         clippy|clippy_always) echo "deref_addrof" ;;
         test|test_always) echo "gate probe: injected failure" ;;
         *)                echo "__no_marker_defined__" ;;
@@ -408,8 +436,41 @@ apply_injection() {
     local rest=${spec#*:}
     case "$kind" in
         fmt)
-            note_touched "$TYPES_LIB"
-            printf '\n#[allow(dead_code)]\nfn   gate_probe_fmt(  )->u8{1}\n' >>"$TYPES_LIB" ;;
+            note_touched "$rest"
+            printf '\n#[allow(dead_code)]\nfn   gate_probe_fmt(  )->u8{1}\n' >>"$rest" ;;
+        # `cargo build` denies nothing, so a lint probe would compile and the
+        # gate would go green. It takes a genuine compile error, and one in the
+        # binary target rather than the library: `--bin slim-node` is what the
+        # step names.
+        build_bin)
+            note_touched "$rest"
+            {
+                printf '\n#[allow(dead_code)]\n'
+                printf 'fn gate_probe_build() {\n'
+                printf '    let _x: GateProbeNoSuchType = unimplemented!();\n'
+                printf '}\n'
+            } >>"$rest" ;;
+        # The binding packages with `--allow-dirty`, so unlike the workspace
+        # `package` gate above this needs no clone — the manifest is edited in
+        # place and restored from HEAD like every other injection. It has no
+        # `readme` key of its own, so one is inserted rather than repointed;
+        # inserting where one already exists is the TOML duplicate-key mistake
+        # that arm documents.
+        package_manifest)
+            note_touched "$rest"
+            python3 - "$rest" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+if re.search(r'(?m)^readme\s*=', s):
+    sys.exit("manifest already declares `readme`; repoint it instead of inserting")
+s, n = re.subn(r'(?m)^(name\s*=\s*"a2a-protocol-slimrpc"\s*)$',
+               r'\1\nreadme = "NO_SUCH_README.md"', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one `name` key to anchor to; found %d" % n)
+p.write_text(s)
+PY
+            ;;
         proto)
             note_touched "tck/proto/a2a_v1/a2a.proto"
             printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;
@@ -655,6 +716,22 @@ PY
             git -C "$PACKAGE_CLONE/repo" -c user.name=probe -c user.email=probe@invalid \
                 commit -q -am "probe: dangling readme reference"
             INJECT_WORKDIR="$PACKAGE_CLONE/repo" ;;
+        # Break folding itself, not the checker: this gate exists to notice a
+        # parser regression, so the defect has to be one. Widening the fold
+        # separator to two spaces is invisible to every other gate and turns
+        # every folded case in the comparison red.
+        block_scalars)
+            note_touched "$rest"
+            python3 - "$rest" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s, n = re.subn(r'out = out " " L', 'out = out "  " L', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one fold-space assignment; found %d" % n)
+p.write_text(s)
+PY
+            ;;
         postgres_ignored)
             # This gate runs only `#[ignore]`d tests in one file, so the
             # defect has to be an ignored test in that file. A failure
@@ -666,6 +743,18 @@ PY
                 printf '    panic!("gate probe: injected failure in the ignored postgres suite");\n'
                 printf '}\n'
             } >>crates/a2a-protocol-server/tests/postgres_store_tests.rs ;;
+        # Both of these gates select tests by file *and* by `--ignored`, so the
+        # probe has to be an ignored test in one of the files they name. The
+        # always-compiled probe every other test gate uses would be filtered
+        # out before it ran, and the gate would go green with the defect in
+        # place — proving nothing, in the script whose whole purpose is
+        # noticing that.
+        ignored_suite)
+            local file=${rest%%:*}
+            local where=${rest#*:}
+            inject_ignored_test "$file" "$where" ;;
+        spiffe_ignored)
+            inject_ignored_test "$rest" "the SPIFFE suite" ;;
         clippy)
             local file=${rest%%:*}
             local feature=${rest#*:}
@@ -688,6 +777,7 @@ PY
 
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
+require_known_skips
 mapfile -t ALL_GATES < <(gates_for_jobs "$GATE_JOBS")
 
 if [ "${#ALL_GATES[@]}" -eq 0 ]; then
@@ -698,7 +788,7 @@ fi
 unregistered=()
 for entry in "${ALL_GATES[@]}"; do
     cmd=${entry#*$'\t'}
-    spec=$(injection_for "$cmd")
+    spec=$(injection_for "$cmd" "${entry%%$'\t'*}")
     if [ -z "$spec" ]; then
         unregistered+=("$cmd")
     fi
@@ -721,7 +811,7 @@ if [ "$LIST_ONLY" -eq 1 ]; then
     printf 'Gate / injection pairing (%d gates):\n\n' "${#ALL_GATES[@]}"
     for entry in "${ALL_GATES[@]}"; do
         cmd=${entry#*$'\t'}
-        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
+        printf '  %-12s %s\n' "[$(injection_for "$cmd" "${entry%%$'\t'*}" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
     done
     exit 0
 fi
@@ -812,7 +902,7 @@ for entry in "${ALL_GATES[@]}"; do
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
-    spec=$(injection_for "$cmd")
+    spec=$(injection_for "$cmd" "${entry%%$'\t'*}")
     printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$full"
     printf '        injection: %s\n' "$spec"
 

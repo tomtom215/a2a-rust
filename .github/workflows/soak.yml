@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
+#
+# Soak: sustained load against a real server, long enough for a leak to show.
+#
+# Nothing in this repository measured anything longer than a benchmark before
+# this. Criterion answers "how fast is one call"; it cannot answer "does this
+# survive an afternoon", which is the question "production ready" implies
+# someone has asked.
+#
+# Two durations, on the same shape as the fuzz workflow: a short run on every
+# PR, so a change that leaks per request is caught while it is still one
+# change, and a long nightly run, because some regressions only become visible
+# once the allocator has settled and the store has cycled through its capacity
+# several times.
+
+name: Soak
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly at 02:23 UTC — before the fuzz sweep at 03:41 and the ITK at
+    # 04:17, so the three do not contend for runners.
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Soak duration in seconds'
+        required: false
+        default: '600'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  soak:
+    name: Sustained load
+    runs-on: ubuntu-latest
+    # Two runs of the chosen duration, plus build time.
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      # Duration by trigger: 60s on a PR keeps the signal without making every
+      # PR wait, 1800s nightly is where a slow leak actually shows, and
+      # workflow_dispatch takes whatever was asked for.
+      - name: Choose duration
+        id: duration
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            schedule)          seconds=1800 ;;
+            workflow_dispatch) seconds="${{ github.event.inputs.seconds }}" ;;
+            *)                 seconds=60 ;;
+          esac
+          echo "seconds=${seconds}" >> "$GITHUB_OUTPUT"
+          echo "soaking for ${seconds}s"
+
+      # Release, because a debug build is slow enough that the load generator
+      # becomes the bottleneck and the server is never pushed hard enough to
+      # leak measurably in the time available.
+      #
+      # `--nocapture` because the sample table is the point. A soak that passes
+      # and prints nothing is the same unevidenced claim this job exists to
+      # replace, and the numbers in the log are what a reader compares against
+      # the last run.
+      - name: Soak (one process, in-memory store)
+        env:
+          A2A_SOAK_SECS: ${{ steps.duration.outputs.seconds }}
+        run: |
+          cargo test -p a2a-protocol-server --release --test soak \
+            -- --ignored --nocapture
+
+      # The two-replica run answers what the single-process one cannot: whether
+      # the shared rate-limit counter's table stays bounded across many windows,
+      # whether cross-replica reads hold up while both replicas are writing, and
+      # whether latency degrades as the shared tables grow.
+      - name: Soak (two replicas, shared PostgreSQL)
+        env:
+          A2A_SOAK_SECS: ${{ steps.duration.outputs.seconds }}
+          A2A_TEST_POSTGRES_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: |
+          cargo test -p a2a-protocol-server --features postgres --release \
+            --test soak_multi_replica -- --ignored --nocapture

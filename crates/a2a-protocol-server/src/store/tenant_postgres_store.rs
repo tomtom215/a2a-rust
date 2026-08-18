@@ -108,6 +108,38 @@ impl TenantAwarePostgresTaskStore {
 
         Ok(Self { pool })
     }
+
+    /// Deletes terminal tasks that have outlived `policy`.
+    ///
+    /// Nothing calls this for you. A persistent store keeps every task until
+    /// an operator says otherwise — see [`retention`](crate::store::retention)
+    /// for why that is the default and why the in-memory store does the
+    /// opposite — so this is the hook for whatever already schedules work: a
+    /// cron entry, a Kubernetes `CronJob`, a `tokio` interval in your own
+    /// binary.
+    ///
+    /// Only `Completed`, `Failed`, `Canceled` and `Rejected` tasks are
+    /// eligible. A task still `Working`, or parked in `InputRequired` waiting
+    /// on a human, is never deleted however old it is.
+    ///
+    /// Safe to run from several replicas at once: each batch is a single
+    /// `DELETE` whose subquery picks the rows, so two sweeps racing delete
+    /// disjoint sets rather than colliding.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a delete fails. A sweep that fails partway has
+    /// still committed its earlier batches; the counts in the returned report
+    /// are lost in that case, but the deletions are not undone and the next
+    /// sweep simply continues.
+    pub async fn purge_expired(
+        &self,
+        policy: &super::retention::RetentionPolicy,
+    ) -> A2aResult<super::retention::PurgeReport> {
+        super::retention::postgres::purge(&self.pool, "tenant_tasks", policy)
+            .await
+            .map_err(|e| to_a2a_error(&e))
+    }
 }
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {

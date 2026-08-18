@@ -492,6 +492,18 @@ scripts/preflight.sh --full   # every gate ci.yml runs
 scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 ```
 
+`--full` means it: it includes the gates with external prerequisites, and those
+fail without them rather than being quietly skipped. A live PostgreSQL at
+`A2A_TEST_POSTGRES_URL` for the two postgres suites, and `spire-server` /
+`spire-agent` on `PATH` with `SPIRE_BIN_DIR` set for the SPIFFE suites — the
+same thing CI stands up as a service and an install step. The default tier
+needs neither.
+
+One step is deliberately not run locally: `Install SPIRE` hands its download
+path to the next step through `$GITHUB_ENV`, which is inter-step state only
+GitHub implements. `preflight.sh` names it on every run rather than omitting it
+silently; see `SKIP_STEPS` in that script.
+
 Every gate runs even after one fails, so a single run tells you everything that
 is broken rather than only the first thing.
 
@@ -554,6 +566,14 @@ goes red *citing that defect*, and restores the tree. Feature-gated
 injections go inside code compiled only under that feature, so
 `cargo test --features sqlite` failing on always-compiled code cannot pass
 for the sqlite gate.
+
+"Every gate" means every gate with a `run:` line. The `deny` and `semver` jobs
+are a marketplace action and nothing else, so there is no command to copy and
+neither script can reach them; they are listed in `NON_GATE_JOBS` with that
+reason rather than in `GATE_JOBS`, where they sat until 2026-08-18 contributing
+nothing while being counted as covered. `require_nonempty_gate_jobs` in
+`preflight.sh` now refuses to run if a job in `GATE_JOBS` yields no gate, so
+that particular way of overstating coverage cannot come back quietly.
 
 ```bash
 scripts/prove_gates_fail.sh --list      # the gate/injection pairing

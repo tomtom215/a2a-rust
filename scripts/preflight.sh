@@ -37,6 +37,13 @@ set -Eeuo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+
+# The ci.yml parser, the job/step classification lists, and the guards that
+# keep them honest. Shared with scripts/prove_gates_fail.sh rather than copied
+# into it: the two carried byte-identical parsers kept in step by a comment
+# until 2026-08-18, and a convention that has to be remembered is not a guard.
+# shellcheck source=lib/ci_gates.sh
+. "$REPO_ROOT/scripts/lib/ci_gates.sh"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-preflight.XXXXXX")
 
 TIER=default
@@ -55,7 +62,7 @@ FAIL_FAST=0
 # job, not whatever CI runs that happens to start with `cargo`.
 #
 # Steps whose `run:` is a block scalar are still invisible here; that is what
-# `warn_on_block_scalars` reports.
+# `note_skipped_steps` reports.
 #
 # Each command is prefixed with the environment CI gives it — the job's `env:`
 # block and then the step's, so a step-level value wins. Until 2026-08-11 only
@@ -66,73 +73,33 @@ FAIL_FAST=0
 # `A2A_TEST_POSTGRES_URL` and `INCIDENT_REQUIRE_ALL`, and without those the
 # local run exercised strictly less than CI while reporting PASS. A local gate
 # that does not reproduce the CI gate is worse than no local gate.
-gates_for_jobs() {
-    awk -v want="$1" '
-        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
-        # Emits the pending step, if it belongs to a wanted job.
-        function flush(   pair) {
-            if (cmd != "") print job_env step_env cmd
-            cmd = ""; step_env = ""; env_indent = -1
-        }
-        # A job header (2-space key) ends the previous job and its env.
-        /^  [a-z0-9_-]+:[[:space:]]*$/ {
-            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
-        }
-        # A new list item ends the previous step.
-        /^[[:space:]]*-[[:space:]]/ { flush() }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            flush()
-            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
-            next
-        }
-        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
-        # indent is recorded so only its own keys are read, and anything
-        # shallower closes it.
-        /^    env:[[:space:]]*$/  { env_indent = 4; next }
-        /^        env:[[:space:]]*$/ { env_indent = 8; next }
-        env_indent > 0 {
-            indent = match($0, /[^ ]/) - 1
-            if (indent <= env_indent) { env_indent = -1 }
-            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
-                line = $0
-                sub(/^[[:space:]]+/, "", line)
-                key = line; sub(/:.*$/, "", key)
-                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
-                sub(/[[:space:]]+$/, "", val)
-                gsub(/^"|"$/, "", val)
-                gsub(/^'\''|'\''$/, "", val)
-                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
-                else step_env = step_env key "=" shquote(val) " "
-                next
-            }
-        }
-        END { flush() }
-    ' "$CI_YML"
-}
 
 # Block-scalar steps (`run: |`) are invisible to the parser above. If one shows
 # up in a gate job, say so rather than quietly under-covering.
-warn_on_block_scalars() {
-    local found
-    found=$(awk -v want="$1" '
-        /^  [a-z0-9_-]+:[[:space:]]*$/ { job = $1; sub(/:$/, "", job); next }
-        /^[[:space:]]+run:[[:space:]]*\|/ { if (job ~ want) print job }
-    ' "$CI_YML" | sort -u)
-    if [ -n "$found" ]; then
-        printf 'preflight: note — multi-line run: blocks exist in job(s): %s\n' \
-            "$(echo "$found" | tr '\n' ' ')" >&2
-        printf '           this script does not replicate them; CI still will.\n' >&2
-    fi
+note_skipped_steps() {
+    if [ -z "$SKIP_STEPS" ]; then return; fi
+    printf 'preflight: note — step(s) exempted from local running: %s\n' \
+        "$(printf '%s' "$SKIP_STEPS" | tr -d '^$()' | tr '|' ',')" >&2
+    printf '           see SKIP_STEPS in this script for why; CI still runs them.\n' >&2
 }
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
 
-# Jobs deliberately outside the local gate set, each with a reason. This list
-# is not decoration: `require_known_jobs` below fails if ci.yml grows a job
-# that appears in neither this list nor GATE_JOBS.
-#
-#   nightly — needs a nightly toolchain this script does not install.
-NON_GATE_JOBS='^(nightly)$'
+
+
+# Every SKIP_STEPS alternative must still name a step that exists. An exemption
+# for a step that has been renamed or deleted is an exemption that silently
+# covers nothing, which is the same defect as an unlisted gate — this file has
+# now had that shape three times (test-postgres and package unknown to
+# preflight, slimrpc-binding unknown to both, deny and semver listed but empty).
+# A folded block scalar (`run: >`) joins its lines with spaces; a literal one
+# (`run: |`) keeps the newlines. `gates_for_jobs` treats both alike, so for `>`
+# it would emit a *different command than CI runs*: YAML reads
+# `run: >` / `echo one` / `two` as `echo one two`, and this parser would make
+# `two` a command of its own. ci.yml uses only `|` today, so this refuses
+# rather than implementing a fold nobody needs. A gate that runs the wrong
+# command is worse than one that is missing, and refusing means a folded block
+# cannot be introduced without someone deciding what it should mean.
+
 
 # Bidirectional drift guard.
 #
@@ -175,8 +142,39 @@ EOF
     fi
 }
 
+# The other half of `require_known_jobs`. That one asserts every ci.yml job is
+# *classified*; this asserts the classification is true — that a job filed under
+# GATE_JOBS actually yields a gate to run. `deny` and `semver` sat in GATE_JOBS
+# and yielded none, because `gates_for_jobs` reads `run:` steps and both jobs
+# are pure `uses:`. Listing a job you cannot run is the same defect as not
+# listing it, minus the error message, and it is the more dangerous of the two:
+# `require_known_jobs` prints a refusal, this one printed a green.
+require_nonempty_gate_jobs() {
+    local job empty=""
+    for job in $(printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' ' '); do
+        if [ -z "$(gates_for_jobs "^${job}\$")" ]; then
+            empty="$empty $job"
+        fi
+    done
+    if [ -n "$empty" ]; then
+        cat >&2 <<EOF
+preflight: GATE_JOBS names job(s) that contribute no gate.
+
+  Listed as gates, but no runnable step was extracted from them:
+$(printf '      %s\n' $empty)
+
+  A job whose steps are all \`uses:\` (a marketplace action) has no \`run:\`
+  line to copy, so it is filed as a gate and then silently skipped. Move it to
+  NON_GATE_JOBS with a reason, or teach the parser to reach its steps.
+EOF
+        exit 2
+    fi
+}
+
 require_known_jobs
-ALL_GATES=$(gates_for_jobs "$GATE_JOBS")
+require_nonempty_gate_jobs
+require_known_skips
+ALL_GATES=$(gates_for_jobs "$GATE_JOBS" | sed $'s/\t//')
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.
 # Matching the commands but not the environment is not parity — CI sets
@@ -331,9 +329,17 @@ while [ $# -gt 0 ]; do
         --full)      TIER=full ;;
         --fail-fast) FAIL_FAST=1 ;;
         --list)
-            warn_on_block_scalars "$GATE_JOBS"
-            printf 'CI gate commands in %s (jobs: fmt, clippy, test, doc):\n\n' \
-                "${CI_YML#"$REPO_ROOT"/}"
+            note_skipped_steps
+            # Derived from GATE_JOBS, not restated. The literal that stood
+            # here read "fmt, clippy, test, doc" and had not mentioned
+            # test-postgres, package, dogfood or example-surface since they
+            # were added — the header under-reported this script's own
+            # coverage by half, in the output a reader consults to find out
+            # what it covers.
+            printf 'CI gate commands in %s (jobs: %s):\n\n' \
+                "${CI_YML#"$REPO_ROOT"/}" \
+                "$(printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' ' ' \
+                    | sed 's/  */, /g')"
             printf '%s\n' "$ALL_GATES" | sed 's/^/  /'
             printf '\nTiers:\n'
             printf '  --fmt      %s command(s)\n'  "$(tier_fmt | grep -c . || true)"
@@ -358,7 +364,7 @@ if [ ! -f "$CI_YML" ]; then
     exit 2
 fi
 
-warn_on_block_scalars "$GATE_JOBS"
+note_skipped_steps
 apply_ci_env
 
 printf '\033[1mpreflight: %s tier\033[0m  (logs in %s)\n' "$TIER" "$LOG_DIR"
