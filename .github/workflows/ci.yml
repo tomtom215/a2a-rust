@@ -168,7 +168,13 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # One platform's failure must not cancel the other five. A macOS-only flake
+    # cancelled every other leg of this matrix once, and the cancelled logs —
+    # each cut off mid-run — read exactly like a hang somewhere else entirely.
+    # A red matrix should say which cells are red, not hide five to save a
+    # runner-minute. Same reason fuzz, mutants and tck already set it.
     strategy:
+      fail-fast: false
       matrix:
         rust: [stable, "1.93"]
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -212,7 +218,13 @@ jobs:
   test:
     name: Test (${{ matrix.rust }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # One platform's failure must not cancel the other five. A macOS-only flake
+    # cancelled every other leg of this matrix once, and the cancelled logs —
+    # each cut off mid-run — read exactly like a hang somewhere else entirely.
+    # A red matrix should say which cells are red, not hide five to save a
+    # runner-minute. Same reason fuzz, mutants and tck already set it.
     strategy:
+      fail-fast: false
       matrix:
         rust: [stable, "1.93"]
         os: [ubuntu-latest, macos-latest, windows-latest]
