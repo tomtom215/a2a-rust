@@ -555,6 +555,14 @@ injections go inside code compiled only under that feature, so
 `cargo test --features sqlite` failing on always-compiled code cannot pass
 for the sqlite gate.
 
+"Every gate" means every gate with a `run:` line. The `deny` and `semver` jobs
+are a marketplace action and nothing else, so there is no command to copy and
+neither script can reach them; they are listed in `NON_GATE_JOBS` with that
+reason rather than in `GATE_JOBS`, where they sat until 2026-08-18 contributing
+nothing while being counted as covered. `require_nonempty_gate_jobs` in
+`preflight.sh` now refuses to run if a job in `GATE_JOBS` yields no gate, so
+that particular way of overstating coverage cannot come back quietly.
+
 ```bash
 scripts/prove_gates_fail.sh --list      # the gate/injection pairing
 scripts/prove_gates_fail.sh --only fmt  # one gate
