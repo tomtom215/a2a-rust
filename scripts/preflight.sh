@@ -71,17 +71,36 @@ gates_for_jobs() {
         function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
         # Emits the pending step, if it belongs to a wanted job.
         function flush(   pair) {
-            if (cmd != "") print job_env step_env cmd
-            cmd = ""; step_env = ""; env_indent = -1
+            if (cmd != "") print wd_prefix job_env step_env cmd
+            cmd = ""; step_env = ""; wd_prefix = ""; env_indent = -1
         }
         # A job header (2-space key) ends the previous job and its env.
         /^  [a-z0-9_-]+:[[:space:]]*$/ {
-            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
+            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1
+            pending_wd = ""; next
         }
         # A new list item ends the previous step.
-        /^[[:space:]]*-[[:space:]]/ { flush() }
+        /^[[:space:]]*-[[:space:]]/ { flush(); pending_wd = "" }
+        # `working-directory:` appears *before* `run:` inside a step, and the
+        # flush the run rule performs would clear it, so it is held here and
+        # consumed there. Without this, commands from the out-of-workspace
+        # binding are emitted bare and run from the repo root: `cargo fmt
+        # --check`, `cargo clippy` and `cargo test` would check the workspace a
+        # second time, never touch the binding, and report that as coverage of
+        # it. No apostrophes in this block: the awk program is single-quoted,
+        # and one closes it.
+        /^[[:space:]]+working-directory:[[:space:]]*[^[:space:]]/ {
+            line = $0
+            sub(/^[[:space:]]+working-directory:[[:space:]]*/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            pending_wd = line
+            next
+        }
         /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
             flush()
+            if (pending_wd != "") { wd_prefix = "cd " pending_wd " && " }
+            pending_wd = ""
             if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
             next
         }
@@ -125,7 +144,7 @@ warn_on_block_scalars() {
     fi
 }
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
 
 # Jobs deliberately outside the local gate set, each with a reason. This list
 # is not decoration: `require_known_jobs` below fails if ci.yml grows a job
@@ -141,16 +160,7 @@ GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface)$
 #   promises preflight runs it. Restating their commands here instead would
 #   break the rule the environment block below opens with — copy what CI runs,
 #   never a local paraphrase of it that can drift.
-#
-#   slimrpc-binding — an out-of-workspace cargo project, reached by
-#   `working-directory:` on every one of its `run:` steps. This parser does not
-#   model `working-directory`, so listing it as a gate would run `cargo fmt
-#   --check`, `cargo clippy` and `cargo test` from the repo root: the workspace
-#   checked a second time, the binding not at all, and the result reported as
-#   the binding's coverage. Teaching the parser `working-directory` (and giving
-#   prove_gates_fail.sh injections that reach that tree) is the fix; until then
-#   CI is the only thing checking that crate.
-NON_GATE_JOBS='^(nightly|deny|semver|slimrpc-binding)$'
+NON_GATE_JOBS='^(nightly|deny|semver)$'
 
 # Bidirectional drift guard.
 #

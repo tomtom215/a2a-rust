@@ -65,13 +65,12 @@ done
 # Same job set and parser as scripts/preflight.sh, deliberately: a gate this
 # script has never heard of is the exact defect preflight's `require_known_jobs`
 # exists to catch, one level further in.
-# `deny`, `semver` and `slimrpc-binding` are absent for the reasons
-# scripts/preflight.sh records against NON_GATE_JOBS: the first two are
-# `uses:`-only jobs with no command to copy, and the third runs in an
-# out-of-workspace project this parser cannot reach. Keeping the two lists
+# `deny` and `semver` are absent for the reason scripts/preflight.sh records
+# against NON_GATE_JOBS: both are `uses:`-only jobs whose whole body is a
+# marketplace action, so there is no command to copy. Keeping the two lists
 # identical is the point — a job this script has never heard of is the defect
 # `require_known_jobs` exists to catch.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
 
 # Each command carries the environment its ci.yml step runs under — the job's
 # `env:` block then the step's, so a step-level value wins. Same parser as
@@ -94,17 +93,36 @@ gates_for_jobs() {
             # while execution needs the env prefixed. Joining them into one
             # string would make every `"cargo run -p ..."*` pattern in
             # `gate_kind_for` miss, and every gate would report as unregistered.
-            if (cmd != "") printf "%s\t%s\n", job_env step_env, cmd
-            cmd = ""; step_env = ""; env_indent = -1
+            if (cmd != "") printf "%s\t%s\n", wd_prefix job_env step_env, cmd
+            cmd = ""; step_env = ""; wd_prefix = ""; env_indent = -1
         }
         # A job header (2-space key) ends the previous job and its env.
         /^  [a-z0-9_-]+:[[:space:]]*$/ {
-            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1; next
+            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1
+            pending_wd = ""; next
         }
         # A new list item ends the previous step.
-        /^[[:space:]]*-[[:space:]]/ { flush() }
+        /^[[:space:]]*-[[:space:]]/ { flush(); pending_wd = "" }
+        # `working-directory:` appears *before* `run:` inside a step, and the
+        # flush the run rule performs would clear it, so it is held here and
+        # consumed there. Without this, commands from the out-of-workspace
+        # binding are emitted bare and run from the repo root: `cargo fmt
+        # --check`, `cargo clippy` and `cargo test` would check the workspace a
+        # second time, never touch the binding, and report that as coverage of
+        # it. No apostrophes in this block: the awk program is single-quoted,
+        # and one closes it.
+        /^[[:space:]]+working-directory:[[:space:]]*[^[:space:]]/ {
+            line = $0
+            sub(/^[[:space:]]+working-directory:[[:space:]]*/, "", line)
+            sub(/[[:space:]]+$/, "", line)
+            gsub(/^"|"$/, "", line)
+            pending_wd = line
+            next
+        }
         /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
             flush()
+            if (pending_wd != "") { wd_prefix = "cd " pending_wd " && " }
+            pending_wd = ""
             if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
             next
         }
@@ -281,15 +299,43 @@ TYPES_LIB=crates/a2a-protocol-types/src/lib.rs
 CLIENT_LIB=crates/a2a-protocol-client/src/lib.rs
 SERVER_LIB=crates/a2a-protocol-server/src/lib.rs
 
+# The SLIMRPC binding is a separate cargo project with its own lockfile, so its
+# gates are reached by the `cd` the parser now emits and its defects have to be
+# injected into its own sources — a probe in crates/ is invisible to a build
+# rooted in bindings/.
+SLIMRPC_DIR=bindings/a2a-protocol-slimrpc
+SLIMRPC_LIB=$SLIMRPC_DIR/src/lib.rs
+SLIMRPC_BIN=$SLIMRPC_DIR/src/bin/slim_node.rs
+SLIMRPC_TOML=$SLIMRPC_DIR/Cargo.toml
+
 # Maps a gate command to the injection that must break it. Matched by
 # substring against the full command, longest match wins, so
 # `--features postgres --test postgres_store_tests` cannot be captured by the
 # plain `--features postgres` entry.
 injection_for() {
-    local cmd="$1"
+    local cmd="$1" prefix="${2-}"
+    # Routed on the working directory first, because several of the binding's
+    # commands are within a word of a workspace one: its clippy gate is `cargo
+    # clippy --all-targets -- -D warnings` and the workspace one is the same
+    # plus `--workspace`. Matching on command text alone would eventually send
+    # a bindings/ gate an injection written for crates/, and the gate would
+    # report UNPROVEN while being perfectly capable of failing. The directory
+    # is the thing that actually tells them apart.
+    case "$prefix" in
+        *"cd $SLIMRPC_DIR "*)
+            case "$cmd" in
+                "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
+                "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
+                "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
+                "cargo package"*) echo "package_manifest:$SLIMRPC_TOML" ;;
+                "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
+                *)                echo "" ;;
+            esac
+            return ;;
+    esac
     case "$cmd" in
         "cargo fmt --all -- --check")
-            echo "fmt" ;;
+            echo "fmt:$TYPES_LIB" ;;
         "./scripts/check_proto_copies.sh")
             echo "proto" ;;
         "./scripts/check_file_lengths.sh")
@@ -398,6 +444,8 @@ expected_marker() {
         workflow_gates)   echo "UNPROVEN" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
+        package_manifest) echo "NO_SUCH_README.md" ;;
+        build_bin)        echo "GateProbeNoSuchType" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
         example_hardening) echo "partitions leak" ;;
@@ -414,8 +462,41 @@ apply_injection() {
     local rest=${spec#*:}
     case "$kind" in
         fmt)
-            note_touched "$TYPES_LIB"
-            printf '\n#[allow(dead_code)]\nfn   gate_probe_fmt(  )->u8{1}\n' >>"$TYPES_LIB" ;;
+            note_touched "$rest"
+            printf '\n#[allow(dead_code)]\nfn   gate_probe_fmt(  )->u8{1}\n' >>"$rest" ;;
+        # `cargo build` denies nothing, so a lint probe would compile and the
+        # gate would go green. It takes a genuine compile error, and one in the
+        # binary target rather than the library: `--bin slim-node` is what the
+        # step names.
+        build_bin)
+            note_touched "$rest"
+            {
+                printf '\n#[allow(dead_code)]\n'
+                printf 'fn gate_probe_build() {\n'
+                printf '    let _x: GateProbeNoSuchType = unimplemented!();\n'
+                printf '}\n'
+            } >>"$rest" ;;
+        # The binding packages with `--allow-dirty`, so unlike the workspace
+        # `package` gate above this needs no clone — the manifest is edited in
+        # place and restored from HEAD like every other injection. It has no
+        # `readme` key of its own, so one is inserted rather than repointed;
+        # inserting where one already exists is the TOML duplicate-key mistake
+        # that arm documents.
+        package_manifest)
+            note_touched "$rest"
+            python3 - "$rest" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+if re.search(r'(?m)^readme\s*=', s):
+    sys.exit("manifest already declares `readme`; repoint it instead of inserting")
+s, n = re.subn(r'(?m)^(name\s*=\s*"a2a-protocol-slimrpc"\s*)$',
+               r'\1\nreadme = "NO_SUCH_README.md"', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one `name` key to anchor to; found %d" % n)
+p.write_text(s)
+PY
+            ;;
         proto)
             note_touched "tck/proto/a2a_v1/a2a.proto"
             printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;
@@ -704,7 +785,7 @@ fi
 unregistered=()
 for entry in "${ALL_GATES[@]}"; do
     cmd=${entry#*$'\t'}
-    spec=$(injection_for "$cmd")
+    spec=$(injection_for "$cmd" "${entry%%$'\t'*}")
     if [ -z "$spec" ]; then
         unregistered+=("$cmd")
     fi
@@ -727,7 +808,7 @@ if [ "$LIST_ONLY" -eq 1 ]; then
     printf 'Gate / injection pairing (%d gates):\n\n' "${#ALL_GATES[@]}"
     for entry in "${ALL_GATES[@]}"; do
         cmd=${entry#*$'\t'}
-        printf '  %-12s %s\n' "[$(injection_for "$cmd" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
+        printf '  %-12s %s\n' "[$(injection_for "$cmd" "${entry%%$'\t'*}" | cut -d: -f1)]" "${entry%%$'\t'*}${cmd}"
     done
     exit 0
 fi
@@ -818,7 +899,7 @@ for entry in "${ALL_GATES[@]}"; do
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
-    spec=$(injection_for "$cmd")
+    spec=$(injection_for "$cmd" "${entry%%$'\t'*}")
     printf '\n\033[1m[%d/%d] %s\033[0m\n' "$idx" "${#ALL_GATES[@]}" "$full"
     printf '        injection: %s\n' "$spec"
 
