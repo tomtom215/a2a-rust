@@ -72,7 +72,8 @@ use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 use a2a_protocol_server::serve::{ServeConfig, Server};
 use a2a_protocol_server::store::PostgresTaskStore;
 use a2a_protocol_server::{
-    PostgresRateLimitCounter, RateLimitConfig, RateLimitInterceptor, RequestHandlerBuilder,
+    ApiKeyAuthInterceptor, PostgresRateLimitCounter, RateLimitConfig, RateLimitInterceptor,
+    RequestHandlerBuilder,
 };
 
 const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
@@ -81,19 +82,17 @@ const URL_ENV: &str = "A2A_TEST_POSTGRES_URL";
 /// what makes the sweep observable at all.
 const DEFAULT_SECONDS: u64 = 60;
 
-/// Client workers, each with its own caller key so the counter holds several
-/// keys rather than one.
+/// Client workers, each authenticating as a different caller so the counter
+/// holds several keys rather than one.
 ///
-/// The keys arrive as `x-forwarded-for` with `trusted_proxy_hops: 1`, which
-/// looks like a detour and is not. `CallContext::caller_identity` is the
-/// limiter's documented first choice, but **nothing in this crate ever sets
-/// it**: `ServerInterceptor::before` takes `&CallContext`, so an interceptor
-/// structurally cannot, no dispatcher does, and `with_caller_identity` has no
-/// caller outside tests. Every caller therefore shares the `"anonymous"`
-/// bucket unless a proxy header supplies the key.
+/// Each worker presents its own labelled API key, and the label becomes
+/// `CallContext::caller_identity` — the limiter's documented first choice.
 ///
-/// The first version of this file set `authorization` per worker and expected
-/// eight keys. The table held one, which is what surfaced the gap.
+/// An earlier version of this file could not do that. Nothing set
+/// `caller_identity` at all, so every worker shared the `"anonymous"` bucket
+/// and the file reached for `x-forwarded-for` with `trusted_proxy_hops: 1`
+/// instead. That workaround is what surfaced the gap: the run expected eight
+/// keys in the counter table and found one.
 const WORKERS: usize = 8;
 
 /// Rate-limit window width.
@@ -209,18 +208,22 @@ async fn spawn_replica(
     let limiter = RateLimitInterceptor::new(RateLimitConfig {
         requests_per_window: REQUESTS_PER_WINDOW,
         window_secs: WINDOW_SECS,
-        // One trusted hop, so the rightmost `x-forwarded-for` entry becomes the
-        // caller key. See `WORKERS` for why this is the only route to a
-        // per-caller key today.
-        trusted_proxy_hops: 1,
         ..RateLimitConfig::default()
     })
     .expect("limiter")
     .with_shared_counter(counter);
 
+    // Authentication first, then the limiter: the chain runs interceptors in
+    // registration order over one `CallContext`, so a limiter registered first
+    // would read the identity before anything had set it and bucket every
+    // caller together — silently, which is the whole reason this soak counts
+    // the keys in the table rather than trusting the configuration.
     let handler = Arc::new(
         RequestHandlerBuilder::new(WorkingExec)
             .with_task_store(store)
+            .with_interceptor(ApiKeyAuthInterceptor::with_labelled_keys(
+                (0..WORKERS).map(|w| (format!("soak-key-{w}"), format!("caller-{w}"))),
+            ))
             .with_interceptor(limiter)
             .build()
             .expect("handler builds"),
@@ -311,9 +314,9 @@ async fn two_replicas_survive_sustained_load() {
             let client =
                 hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
                     .build_http::<http_body_util::Full<hyper::body::Bytes>>();
-            // A distinct client address per worker. `.1` through `.8`, so the
-            // counter sees eight keys rather than one.
-            let caller = format!("203.0.113.{}", worker + 1);
+            // This worker's own credential. The server maps it to
+            // `caller-{worker}`, which is what the counter buckets on.
+            let caller = format!("soak-key-{worker}");
 
             let mut n = worker as u64;
             let mut which = worker % 2;
@@ -331,7 +334,7 @@ async fn two_replicas_survive_sustained_load() {
                         .uri(format!("http://{addr}/"))
                         .header("content-type", "application/json")
                         .header("A2A-Version", "1.0")
-                        .header("x-forwarded-for", id)
+                        .header("x-api-key", id)
                         .body(http_body_util::Full::new(hyper::body::Bytes::from(body)))
                         .expect("request builds")
                 };

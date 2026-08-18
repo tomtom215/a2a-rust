@@ -43,7 +43,6 @@
 //!     .unwrap();
 //! ```
 
-use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -85,16 +84,56 @@ pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-/// Returns `true` when `candidate` constant-time-equals any allowed value.
+/// A credential the server accepts, and the identity it belongs to.
 ///
-/// Every allowed value is examined (no early return on the first match) so
-/// the number of comparisons does not depend on which key matched.
-fn any_constant_time_match(candidate: &[u8], allowed: &HashSet<Vec<u8>>) -> bool {
-    let mut matched = false;
-    for value in allowed {
-        matched |= constant_time_eq(candidate, value);
+/// The label is what reaches [`CallContext::set_caller_identity`]. It is
+/// separate from the credential on purpose: the credential is a secret, and a
+/// caller key can end up in a shared rate-limit table, a log line or a metric.
+/// Using the credential itself as the identity would put it in all three.
+type LabelledCredential = (Vec<u8>, Option<String>);
+
+/// What a presented credential turned out to be.
+///
+/// Three outcomes, not two: "no credential matched" and "a credential matched
+/// but nobody named it" lead to different behaviour — the first is a rejection,
+/// the second is a successful authentication that establishes no identity.
+/// A named enum rather than `Option<Option<&str>>`, which said the same thing
+/// and read as a puzzle.
+#[derive(Debug, PartialEq, Eq)]
+enum CredentialMatch<'a> {
+    /// Nothing in the allow list matched.
+    NoMatch,
+    /// Matched, but that credential carries no label — the caller is
+    /// authenticated and anonymous.
+    Unnamed,
+    /// Matched, and this is the caller it belongs to.
+    Named(&'a str),
+}
+
+/// Finds which allowed credential `candidate` matches, and who it belongs to.
+///
+/// Every entry is examined — no early return on the first match — so the number
+/// of comparisons does not depend on which credential matched. The index is
+/// then selected with arithmetic rather than an `if` for the same reason: a
+/// plain `if hit { label = .. }` would reintroduce the data-dependent branch
+/// that examining every entry exists to avoid. This replaced a boolean-only
+/// matcher with the same posture.
+fn labelled_constant_time_match<'a>(
+    candidate: &[u8],
+    allowed: &'a [LabelledCredential],
+) -> CredentialMatch<'a> {
+    let mut selected = usize::MAX;
+    for (index, (value, _)) in allowed.iter().enumerate() {
+        let hit = constant_time_eq(candidate, value);
+        // All ones when this entry matched, all zeros otherwise.
+        let mask = 0_usize.wrapping_sub(usize::from(hit));
+        selected = (selected & !mask) | (index & mask);
     }
-    matched
+    match allowed.get(selected) {
+        None => CredentialMatch::NoMatch,
+        Some((_, None)) => CredentialMatch::Unnamed,
+        Some((_, Some(label))) => CredentialMatch::Named(label),
+    }
 }
 
 // ── ApiKeyAuthInterceptor ─────────────────────────────────────────────────────
@@ -106,7 +145,7 @@ fn any_constant_time_match(candidate: &[u8], allowed: &HashSet<Vec<u8>>) -> bool
 /// [`with_header`](Self::with_header).
 pub struct ApiKeyAuthInterceptor {
     header_name: String,
-    allowed: HashSet<Vec<u8>>,
+    allowed: Vec<LabelledCredential>,
 }
 
 impl ApiKeyAuthInterceptor {
@@ -120,7 +159,50 @@ impl ApiKeyAuthInterceptor {
     {
         Self {
             header_name: "x-api-key".to_owned(),
-            allowed: keys.into_iter().map(|k| k.into().into_bytes()).collect(),
+            allowed: keys
+                .into_iter()
+                .map(|k| (k.into().into_bytes(), None))
+                .collect(),
+        }
+    }
+
+    /// Creates an interceptor whose keys each name the caller they belong to.
+    ///
+    /// The label becomes [`CallContext::caller_identity`], which is what
+    /// [`RateLimitInterceptor`](crate::RateLimitInterceptor) keys a budget on.
+    /// Without labels every holder of a valid key shares the `"anonymous"`
+    /// bucket, so one noisy client spends everyone's budget — per-caller rate
+    /// limiting that is not per-caller.
+    ///
+    /// The label is deliberately *not* derived from the key. A caller key is
+    /// written to a rate-limit table that may be shared across replicas, and
+    /// can reach logs and metrics; a credential should be in none of those.
+    /// Naming the callers keeps the secret out of all of them.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use a2a_protocol_server::ApiKeyAuthInterceptor;
+    ///
+    /// let auth = ApiKeyAuthInterceptor::with_labelled_keys([
+    ///     ("key-for-acme", "acme"),
+    ///     ("key-for-globex", "globex"),
+    /// ]);
+    /// # let _ = auth;
+    /// ```
+    #[must_use]
+    pub fn with_labelled_keys<I, K, L>(entries: I) -> Self
+    where
+        I: IntoIterator<Item = (K, L)>,
+        K: Into<String>,
+        L: Into<String>,
+    {
+        Self {
+            header_name: "x-api-key".to_owned(),
+            allowed: entries
+                .into_iter()
+                .map(|(k, label)| (k.into().into_bytes(), Some(label.into())))
+                .collect(),
         }
     }
 
@@ -151,10 +233,13 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
                 .http_headers()
                 .get(&self.header_name)
                 .ok_or_else(auth_rejected)?;
-            if any_constant_time_match(key.as_bytes(), &self.allowed) {
-                Ok(())
-            } else {
-                Err(auth_rejected())
+            match labelled_constant_time_match(key.as_bytes(), &self.allowed) {
+                CredentialMatch::NoMatch => Err(auth_rejected()),
+                CredentialMatch::Unnamed => Ok(()),
+                CredentialMatch::Named(identity) => {
+                    ctx.set_caller_identity(identity);
+                    Ok(())
+                }
             }
         })
     }
@@ -179,7 +264,7 @@ impl ServerInterceptor for ApiKeyAuthInterceptor {
 /// For tokens that are *validated* rather than *enumerated* (signed JWTs), use
 /// `JwtAuthInterceptor` (the `auth-jwt` feature).
 pub struct BearerTokenAuthInterceptor {
-    allowed: HashSet<Vec<u8>>,
+    allowed: Vec<LabelledCredential>,
 }
 
 impl BearerTokenAuthInterceptor {
@@ -191,7 +276,29 @@ impl BearerTokenAuthInterceptor {
         S: Into<String>,
     {
         Self {
-            allowed: tokens.into_iter().map(|t| t.into().into_bytes()).collect(),
+            allowed: tokens
+                .into_iter()
+                .map(|t| (t.into().into_bytes(), None))
+                .collect(),
+        }
+    }
+
+    /// Creates an interceptor whose tokens each name the caller they belong to.
+    ///
+    /// See [`ApiKeyAuthInterceptor::with_labelled_keys`] for why the label is
+    /// separate from the credential rather than derived from it.
+    #[must_use]
+    pub fn with_labelled_tokens<I, T, L>(entries: I) -> Self
+    where
+        I: IntoIterator<Item = (T, L)>,
+        T: Into<String>,
+        L: Into<String>,
+    {
+        Self {
+            allowed: entries
+                .into_iter()
+                .map(|(t, label)| (t.into().into_bytes(), Some(label.into())))
+                .collect(),
         }
     }
 }
@@ -230,10 +337,13 @@ impl ServerInterceptor for BearerTokenAuthInterceptor {
                 .get("authorization")
                 .ok_or_else(auth_rejected)?;
             let token = extract_bearer(header).ok_or_else(auth_rejected)?;
-            if any_constant_time_match(token.as_bytes(), &self.allowed) {
-                Ok(())
-            } else {
-                Err(auth_rejected())
+            match labelled_constant_time_match(token.as_bytes(), &self.allowed) {
+                CredentialMatch::NoMatch => Err(auth_rejected()),
+                CredentialMatch::Unnamed => Ok(()),
+                CredentialMatch::Named(identity) => {
+                    ctx.set_caller_identity(identity);
+                    Ok(())
+                }
             }
         })
     }
@@ -271,152 +381,6 @@ pub type SharedPrincipal = Arc<AuthenticatedPrincipal>;
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn ctx_with(header: &str, value: &str) -> CallContext {
-        CallContext::new("message/send").with_http_header(header, value)
-    }
-
-    // -- constant_time_eq -----------------------------------------------------
-
-    #[test]
-    fn constant_time_eq_matches_and_rejects() {
-        assert!(constant_time_eq(b"abc", b"abc"));
-        assert!(!constant_time_eq(b"abc", b"abd"));
-        assert!(!constant_time_eq(b"abc", b"ab"));
-        assert!(constant_time_eq(b"", b""));
-    }
-
-    // -- extract_bearer -------------------------------------------------------
-
-    #[test]
-    fn extract_bearer_variants() {
-        assert_eq!(extract_bearer("Bearer tok"), Some("tok"));
-        assert_eq!(extract_bearer("bearer tok"), Some("tok"));
-        assert_eq!(extract_bearer("BEARER   tok  "), Some("tok"));
-        assert_eq!(extract_bearer("Basic tok"), None);
-        assert_eq!(extract_bearer("Bearer "), None);
-        assert_eq!(extract_bearer("Bearer"), None);
-        assert_eq!(extract_bearer(""), None);
-    }
-
-    // -- ApiKeyAuthInterceptor ------------------------------------------------
-
-    #[tokio::test]
-    async fn api_key_accepts_allowed_and_rejects_others() {
-        let i = ApiKeyAuthInterceptor::new(["key-1", "key-2"]);
-
-        assert!(i.before(&ctx_with("x-api-key", "key-1")).await.is_ok());
-        assert!(i.before(&ctx_with("x-api-key", "key-2")).await.is_ok());
-        assert!(i.before(&ctx_with("x-api-key", "nope")).await.is_err());
-        // Missing header → rejected.
-        assert!(i.before(&CallContext::new("m")).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn api_key_custom_header() {
-        let i = ApiKeyAuthInterceptor::new(["k"]).with_header("X-Company-Key");
-        assert!(i.before(&ctx_with("x-company-key", "k")).await.is_ok());
-        // Default header is not consulted when a custom one is set.
-        assert!(i.before(&ctx_with("x-api-key", "k")).await.is_err());
-    }
-
-    // -- BearerTokenAuthInterceptor -------------------------------------------
-
-    #[tokio::test]
-    async fn bearer_accepts_allowed_and_rejects_others() {
-        let i = BearerTokenAuthInterceptor::new(["tok-a", "tok-b"]);
-
-        assert!(i
-            .before(&ctx_with("authorization", "Bearer tok-a"))
-            .await
-            .is_ok());
-        assert!(i
-            .before(&ctx_with("authorization", "bearer tok-b"))
-            .await
-            .is_ok());
-        assert!(i
-            .before(&ctx_with("authorization", "Bearer wrong"))
-            .await
-            .is_err());
-        assert!(i
-            .before(&ctx_with("authorization", "Basic tok-a"))
-            .await
-            .is_err());
-        assert!(i.before(&CallContext::new("m")).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn rejection_message_is_generic() {
-        // The error must not leak whether the header was missing vs wrong.
-        let i = BearerTokenAuthInterceptor::new(["tok"]);
-        let missing = i.before(&CallContext::new("m")).await.unwrap_err();
-        let wrong = i
-            .before(&ctx_with("authorization", "Bearer nope"))
-            .await
-            .unwrap_err();
-        assert_eq!(missing.message, wrong.message);
-        assert_eq!(missing.message, "authentication required");
-    }
-
-    #[test]
-    fn debug_impls_render_type_and_redact_secrets() {
-        // Debug must render the type name (a stubbed-out impl that writes
-        // nothing would be a silent regression) and must never leak the raw
-        // API keys or bearer tokens.
-        let api = ApiKeyAuthInterceptor::new(["super-secret-api-key"]).with_header("X-Company-Key");
-        let api_dbg = format!("{api:?}");
-        assert!(
-            api_dbg.contains("ApiKeyAuthInterceptor"),
-            "ApiKey Debug: {api_dbg}"
-        );
-        assert!(
-            api_dbg.contains("x-company-key"),
-            "header name is shown (lowercased)"
-        );
-        assert!(
-            !api_dbg.contains("super-secret-api-key"),
-            "raw API keys must never appear in Debug output"
-        );
-
-        let bearer = BearerTokenAuthInterceptor::new(["super-secret-bearer-token"]);
-        let bearer_dbg = format!("{bearer:?}");
-        assert!(
-            bearer_dbg.contains("BearerTokenAuthInterceptor"),
-            "Bearer Debug: {bearer_dbg}"
-        );
-        assert!(
-            !bearer_dbg.contains("super-secret-bearer-token"),
-            "raw bearer tokens must never appear in Debug output"
-        );
-    }
-
-    /// Kills `replace <impl ServerInterceptor for ApiKeyAuthInterceptor>
-    /// ::authenticates -> bool with false`.
-    ///
-    /// The existing tests here all check that the interceptor *rejects* bad
-    /// keys and *accepts* good ones — behaviour that is identical either way,
-    /// because `authenticates` is a declaration, not an enforcement. It is
-    /// what `has_authenticator` consults before the extended agent card is
-    /// served (spec §13.3). Returning `false`, a correctly-configured API-key
-    /// chain reports no authenticator and the card is refused to everyone —
-    /// the failure is a lockout rather than a leak, but it is still silent.
-    #[test]
-    fn api_key_interceptor_declares_that_it_authenticates() {
-        let interceptor = ApiKeyAuthInterceptor::new(["k1"]);
-        assert!(
-            interceptor.authenticates(),
-            "an auth interceptor must declare itself as one, or a chain \
-             containing only it reports no authenticator"
-        );
-
-        let mut chain = crate::interceptor::ServerInterceptorChain::new();
-        chain.push(std::sync::Arc::new(ApiKeyAuthInterceptor::new(["k1"])));
-        assert!(
-            chain.has_authenticator(),
-            "a chain guarded by an API-key interceptor must satisfy the \
-             extended-agent-card authentication requirement"
-        );
-    }
-}
+mod identity_tests;
+#[cfg(test)]
+mod tests;

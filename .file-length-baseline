@@ -32,12 +32,17 @@
 #   listing, pagination, filters and concurrency, each against real SQLite —
 #   and splitting it by feature would scatter the fixtures they share.
 #
-# rate_limit.rs came OFF this list when the shared counter was added, which is
-# the direction it is supposed to move. It was 1,272 lines; the implementation
-# is now under the limit after the counter went to shared.rs, caller identity to
-# identity.rs, the unwind-safety assertion to unwind_safety.rs, and the tests to
-# their own files. rate_limit/tests.rs (833) is the extracted suite, recorded on
-# the same reasoning as the two above.
+# rate_limit.rs came OFF this list when the shared counter was added, and stayed
+# off when caller identity was fixed — the direction it is supposed to move. It
+# was 1,272 lines; the implementation is 462 after the counter went to shared.rs,
+# caller-key derivation to identity.rs, the config to config.rs, the
+# unwind-safety assertion to unwind_safety.rs, and the tests to their own files.
+# rate_limit/tests.rs (833) is the extracted suite, recorded on the same
+# reasoning as the two above.
+#
+# auth/mod.rs likewise stayed off it: the identity work took it to 732 and the
+# two test modules moved to auth/tests.rs and auth/identity_tests.rs, leaving
+# 386.
 #
 # The two multi-replica test files are the entries here that are not splits:
 #

@@ -76,6 +76,28 @@ let limiter = RateLimitInterceptor::new(RateLimitConfig {
 
 Every replica now increments the same row, and the limit is the deployment's.
 
+### Give each caller its own key
+
+A shared counter makes the limit global. It does not make it *per caller* —
+that depends on `CallContext::caller_identity`, and only an authentication
+interceptor can supply one:
+
+- `JwtAuthInterceptor` records the validated `sub` automatically.
+- `ApiKeyAuthInterceptor::with_labelled_keys` and
+  `BearerTokenAuthInterceptor::with_labelled_tokens` record a label you choose.
+
+The label is separate from the credential on purpose. A caller key reaches the
+rate-limit table your replicas share, and can reach logs and metrics; a bearer
+token or API key belongs in none of those.
+
+**Register authentication before the limiter.** The chain runs interceptors in
+registration order over one context, so a limiter registered first reads an
+identity nothing has set yet and buckets every caller together. Nothing rejects
+that ordering — it just quietly stops being per-caller.
+
+Without any of this every caller falls back to a shared `"anonymous"` bucket,
+so the limit still holds but one noisy client spends everyone's budget.
+
 ### What it costs
 
 A round trip on every request, and the figures are not small — loopback,

@@ -47,6 +47,20 @@
 //!
 //! 1. [`CallContext::caller_identity`] — set by an authentication interceptor.
 //!    This is the recommended source: it cannot be forged by the client.
+//!
+//!    **Register the authentication interceptor before this one.** The chain
+//!    runs interceptors in registration order over one [`CallContext`], so a
+//!    limiter registered first reads an identity nothing has set yet and
+//!    buckets every caller together. Nothing rejects that ordering; it just
+//!    stops being per-caller.
+//!
+//!    [`JwtAuthInterceptor`](crate::auth::jwt::JwtAuthInterceptor) records the
+//!    validated `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)
+//!    and [`BearerTokenAuthInterceptor`](crate::BearerTokenAuthInterceptor)
+//!    record a label when built with `with_labelled_keys` /
+//!    `with_labelled_tokens`. The credential is never the key: caller keys
+//!    reach a shared rate-limit table, logs and metrics, and a secret belongs
+//!    in none of those.
 //! 2. The client IP from `x-forwarded-for`, **only** when
 //!    [`RateLimitConfig::trusted_proxy_hops`] is non-zero. The header is
 //!    client-controlled, so by default (`trusted_proxy_hops == 0`) it is
@@ -87,64 +101,14 @@ use crate::call_context::CallContext;
 use crate::error::{ServerError, ServerResult};
 use crate::interceptor::ServerInterceptor;
 
+mod config;
 mod identity;
 mod shared;
 mod unwind_safety;
+pub use config::{RateLimitConfig, DEFAULT_MAX_BUCKETS};
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
 pub use shared::RateLimitCounter;
-
-/// Configuration for [`RateLimitInterceptor`].
-#[derive(Debug, Clone)]
-pub struct RateLimitConfig {
-    /// Maximum number of requests allowed per window per caller key.
-    ///
-    /// Must be non-zero.
-    pub requests_per_window: u64,
-
-    /// Window duration in seconds.
-    ///
-    /// Must be non-zero.
-    pub window_secs: u64,
-
-    /// Number of trusted reverse-proxy hops in front of this server.
-    ///
-    /// `0` (the default) means `x-forwarded-for` is **not trusted** and is
-    /// ignored when deriving the caller key: the header is client-controlled,
-    /// so trusting it without a proxy that overwrites or appends to it lets
-    /// any caller evade the limit by forging a fresh address per request.
-    ///
-    /// Set to `n` when exactly `n` trusted proxies sit between the client and
-    /// this server, each appending the address of its immediate peer to
-    /// `x-forwarded-for`. The client address is then the `n`-th entry from
-    /// the *right* of the header; anything further left is client-supplied
-    /// and remains untrusted. If the header has fewer than `n` entries, the
-    /// request did not traverse the expected proxy chain and the caller falls
-    /// back to the shared `"anonymous"` key.
-    pub trusted_proxy_hops: usize,
-
-    /// Maximum number of caller buckets tracked at once.
-    ///
-    /// Bounds the limiter's memory. When the map is full, stale buckets from
-    /// previous windows are evicted first; if none can be freed, requests
-    /// from callers without an existing bucket are rejected (fail-closed).
-    /// Must be non-zero.
-    pub max_buckets: usize,
-}
-
-/// Default cap on the number of tracked caller buckets.
-pub const DEFAULT_MAX_BUCKETS: usize = 10_000;
-
-impl Default for RateLimitConfig {
-    fn default() -> Self {
-        Self {
-            requests_per_window: 100,
-            window_secs: 60,
-            trusted_proxy_hops: 0,
-            max_buckets: DEFAULT_MAX_BUCKETS,
-        }
-    }
-}
 
 /// Per-caller rate limit state.
 struct CallerBucket {
@@ -160,7 +124,8 @@ struct CallerBucket {
 /// When the limit is exceeded, rejects the request with an A2A error.
 ///
 /// Caller keys are derived in this order:
-/// 1. [`CallContext::caller_identity`] (set by auth interceptors)
+/// 1. [`CallContext::caller_identity`] (set by auth interceptors — register
+///    them *before* this interceptor, or it runs first and sees none)
 /// 2. Client IP from `x-forwarded-for`, only when
 ///    [`RateLimitConfig::trusted_proxy_hops`] is non-zero
 /// 3. `"anonymous"` fallback (shared bucket)
