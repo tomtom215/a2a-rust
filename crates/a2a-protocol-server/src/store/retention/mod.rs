@@ -27,7 +27,7 @@
 //!
 //! # Using it
 //!
-//! [`purge_expired`](super::SqliteTaskStore::purge_expired) deletes terminal
+//! `purge_expired` on each persistent store deletes terminal
 //! tasks older than [`RetentionPolicy::terminal_max_age`], in batches, and
 //! reports what it did. Call it from whatever already schedules work —
 //! a cron, a Kubernetes `CronJob`, a `tokio::spawn` loop. It is deliberately
@@ -35,14 +35,24 @@
 //! sweep that fires during your traffic peak, and the store does not know when
 //! that is.
 //!
+//! The example is gated on `sqlite` because the type it needs is: this crate
+//! has no default features, so a doctest naming `SqliteTaskStore`
+//! unconditionally fails to compile in every build that does not ask for a
+//! backend — which is most of the CI matrix.
+//!
 //! ```no_run
-//! # use a2a_protocol_server::store::{RetentionPolicy, SqliteTaskStore};
-//! # use std::time::Duration;
-//! # async fn example(store: &SqliteTaskStore) -> Result<(), Box<dyn std::error::Error>> {
-//! let policy = RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600));
-//! let report = store.purge_expired(&policy).await?;
-//! println!("purged {} task(s)", report.tasks_deleted);
-//! # Ok(())
+//! # #[cfg(feature = "sqlite")]
+//! # mod example {
+//! use a2a_protocol_server::store::{RetentionPolicy, SqliteTaskStore};
+//! use a2a_protocol_types::error::A2aResult;
+//! use std::time::Duration;
+//!
+//! pub async fn sweep(store: &SqliteTaskStore) -> A2aResult<()> {
+//!     let policy = RetentionPolicy::new(Duration::from_secs(30 * 24 * 3600));
+//!     let report = store.purge_expired(&policy).await?;
+//!     println!("purged {} task(s)", report.tasks_deleted);
+//!     Ok(())
+//! }
 //! # }
 //! ```
 //!
@@ -64,21 +74,31 @@ use std::time::Duration;
 
 use a2a_protocol_types::task::TaskState;
 
-/// The states a purge is allowed to delete, derived from
-/// [`TaskState::is_terminal`] over [`TaskState::ALL`].
+/// The states a purge is allowed to delete.
 ///
-/// Not a hand-written list: `TaskState` is `#[non_exhaustive]`, so this crate
-/// cannot match over it exhaustively, and a literal array here would keep
-/// compiling — and keep looking right — after a new terminal state was added
-/// that it did not mention. `ALL` carries that guard in the crate that can
-/// enforce it.
+/// Listed here rather than derived from `TaskState::ALL`, and that is a
+/// packaging constraint rather than a preference. `cargo package` verifies the
+/// server tarball against `a2a-protocol-types` **from crates.io** — the path
+/// dependency is stripped, and the published 0.9.0 has no `ALL` — so
+/// referencing it from library code fails the packaging gate on every PR until
+/// a version bump makes the local copy the only candidate.
+///
+/// The guard therefore lives in the test below, which *does* see the local
+/// crate: `cargo package` builds the library and not the tests, so a
+/// `#[cfg(test)]` reference to `TaskState::ALL` costs nothing at packaging
+/// time and still fails the moment this list stops agreeing with
+/// [`TaskState::is_terminal`] across every variant the protocol defines.
+const TERMINAL_STATES: [TaskState; 4] = [
+    TaskState::Completed,
+    TaskState::Failed,
+    TaskState::Canceled,
+    TaskState::Rejected,
+];
+
+/// The states a purge is allowed to delete.
 #[must_use]
 pub fn terminal_states() -> Vec<TaskState> {
-    TaskState::ALL
-        .iter()
-        .copied()
-        .filter(|state| state.is_terminal())
-        .collect()
+    TERMINAL_STATES.to_vec()
 }
 
 /// How long terminal tasks are kept, and how aggressively they are removed.
@@ -190,11 +210,11 @@ mod tests {
 
     #[test]
     fn terminal_states_matches_is_terminal_for_every_variant() {
-        // The set is derived, so this checks the derivation rather than a
-        // hand-copied list: every state the protocol defines is purgeable
-        // exactly when it is terminal. `TaskState::ALL` is what makes "every
-        // state" a claim this can actually make — see its guard in
-        // a2a-protocol-types.
+        // `TaskState::ALL` is only reachable here, in test code compiled
+        // against the workspace copy of a2a-protocol-types. That is the point:
+        // it gives this crate an enumeration of a `#[non_exhaustive]` foreign
+        // enum without the library depending on an API the published version
+        // does not have yet.
         let purgeable = terminal_states();
         for state in TaskState::ALL {
             assert_eq!(
@@ -203,7 +223,12 @@ mod tests {
                 "{state} must be purgeable exactly when it is terminal"
             );
         }
-        assert_eq!(purgeable.len(), 4, "Completed, Failed, Canceled, Rejected");
+        assert_eq!(
+            purgeable.len(),
+            TaskState::ALL.iter().filter(|s| s.is_terminal()).count(),
+            "TERMINAL_STATES has drifted from is_terminal(); a new terminal \
+             state would otherwise never be purged"
+        );
     }
 
     #[test]
