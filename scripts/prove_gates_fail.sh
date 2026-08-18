@@ -65,7 +65,13 @@ done
 # Same job set and parser as scripts/preflight.sh, deliberately: a gate this
 # script has never heard of is the exact defect preflight's `require_known_jobs`
 # exists to catch, one level further in.
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
+# `deny`, `semver` and `slimrpc-binding` are absent for the reasons
+# scripts/preflight.sh records against NON_GATE_JOBS: the first two are
+# `uses:`-only jobs with no command to copy, and the third runs in an
+# out-of-workspace project this parser cannot reach. Keeping the two lists
+# identical is the point — a job this script has never heard of is the defect
+# `require_known_jobs` exists to catch.
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface)$'
 
 # Each command carries the environment its ci.yml step runs under — the job's
 # `env:` block then the step's, so a step-level value wins. Same parser as

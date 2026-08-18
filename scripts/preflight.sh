@@ -125,14 +125,32 @@ warn_on_block_scalars() {
     fi
 }
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|deny|semver|package|dogfood|example-surface)$'
+GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface)$'
 
 # Jobs deliberately outside the local gate set, each with a reason. This list
 # is not decoration: `require_known_jobs` below fails if ci.yml grows a job
 # that appears in neither this list nor GATE_JOBS.
 #
 #   nightly — needs a nightly toolchain this script does not install.
-NON_GATE_JOBS='^(nightly)$'
+#
+#   deny, semver — the entire body of each is a marketplace action
+#   (`cargo-deny-action`, `cargo-semver-checks-action`), so there is no `run:`
+#   line for this script to copy. Both were listed in GATE_JOBS until
+#   2026-08-18 and contributed nothing: `gates_for_jobs` reads `run:` steps, so
+#   a `uses:`-only job yields zero gates while sitting in the list whose comment
+#   promises preflight runs it. Restating their commands here instead would
+#   break the rule the environment block below opens with — copy what CI runs,
+#   never a local paraphrase of it that can drift.
+#
+#   slimrpc-binding — an out-of-workspace cargo project, reached by
+#   `working-directory:` on every one of its `run:` steps. This parser does not
+#   model `working-directory`, so listing it as a gate would run `cargo fmt
+#   --check`, `cargo clippy` and `cargo test` from the repo root: the workspace
+#   checked a second time, the binding not at all, and the result reported as
+#   the binding's coverage. Teaching the parser `working-directory` (and giving
+#   prove_gates_fail.sh injections that reach that tree) is the fix; until then
+#   CI is the only thing checking that crate.
+NON_GATE_JOBS='^(nightly|deny|semver|slimrpc-binding)$'
 
 # Bidirectional drift guard.
 #
@@ -175,7 +193,37 @@ EOF
     fi
 }
 
+# The other half of `require_known_jobs`. That one asserts every ci.yml job is
+# *classified*; this asserts the classification is true — that a job filed under
+# GATE_JOBS actually yields a gate to run. `deny` and `semver` sat in GATE_JOBS
+# and yielded none, because `gates_for_jobs` reads `run:` steps and both jobs
+# are pure `uses:`. Listing a job you cannot run is the same defect as not
+# listing it, minus the error message, and it is the more dangerous of the two:
+# `require_known_jobs` prints a refusal, this one printed a green.
+require_nonempty_gate_jobs() {
+    local job empty=""
+    for job in $(printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' ' '); do
+        if [ -z "$(gates_for_jobs "^${job}\$")" ]; then
+            empty="$empty $job"
+        fi
+    done
+    if [ -n "$empty" ]; then
+        cat >&2 <<EOF
+preflight: GATE_JOBS names job(s) that contribute no gate.
+
+  Listed as gates, but no runnable step was extracted from them:
+$(printf '      %s\n' $empty)
+
+  A job whose steps are all \`uses:\` (a marketplace action) has no \`run:\`
+  line to copy, so it is filed as a gate and then silently skipped. Move it to
+  NON_GATE_JOBS with a reason, or teach the parser to reach its steps.
+EOF
+        exit 2
+    fi
+}
+
 require_known_jobs
+require_nonempty_gate_jobs
 ALL_GATES=$(gates_for_jobs "$GATE_JOBS")
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.
@@ -332,8 +380,16 @@ while [ $# -gt 0 ]; do
         --fail-fast) FAIL_FAST=1 ;;
         --list)
             warn_on_block_scalars "$GATE_JOBS"
-            printf 'CI gate commands in %s (jobs: fmt, clippy, test, doc):\n\n' \
-                "${CI_YML#"$REPO_ROOT"/}"
+            # Derived from GATE_JOBS, not restated. The literal that stood
+            # here read "fmt, clippy, test, doc" and had not mentioned
+            # test-postgres, package, dogfood or example-surface since they
+            # were added — the header under-reported this script's own
+            # coverage by half, in the output a reader consults to find out
+            # what it covers.
+            printf 'CI gate commands in %s (jobs: %s):\n\n' \
+                "${CI_YML#"$REPO_ROOT"/}" \
+                "$(printf '%s' "$GATE_JOBS" | tr -d '^$()' | tr '|' ' ' \
+                    | sed 's/  */, /g')"
             printf '%s\n' "$ALL_GATES" | sed 's/^/  /'
             printf '\nTiers:\n'
             printf '  --fmt      %s command(s)\n'  "$(tier_fmt | grep -c . || true)"

@@ -354,9 +354,35 @@ jobs:
   # ── Semver compatibility ─────────────────────────────────────────────────
   #
   # From 0.7.0 onward, catch accidental breaking changes to the public API of
-  # the three published crates against the last release on crates.io. On a
-  # 0.x baseline a MINOR bump is allowed to break, so this reports rather than
-  # hard-fails until the first 1.0 — but it makes every break visible in review.
+  # the three published crates against the last release on crates.io.
+  #
+  # This job BLOCKS. Until 2026-08-18 the comment here said the opposite — that
+  # it "reports rather than hard-fails until the first 1.0" — and a second note
+  # repeated it beside `feature-group`, a key that selects features and has
+  # nothing to do with blocking. Nothing implemented the claim: there is no
+  # `continue-on-error` in this job, so every break has been a hard failure for
+  # as long as the comment has denied it.
+  #
+  # The comment was corrected rather than made true, because its premise does
+  # not survive being run. cargo-semver-checks already applies Cargo's 0.x rule
+  # itself. Measured with cargo-semver-checks 0.50.0 against a2a-protocol-types
+  # on 2026-08-18, `utc_now_iso8601` renamed as the injected break:
+  #
+  #   version unchanged, no break     exit 0    no semver update required
+  #   version unchanged, break        exit 100  semver requires new major version
+  #   0.9.0 -> 0.10.0, same break     exit 0    "(major change)", 254 checks skipped
+  #
+  # A 0.x release that breaks on purpose therefore passes the moment its minor
+  # component is bumped — what the old comment wanted `continue-on-error` to buy
+  # is already there, and buying it again would cost the rest. What remains is
+  # the case where the API breaks and the version does not cover it, which is
+  # the one worth blocking and the likely one here: crates/*/Cargo.toml reads
+  # 0.9.0 and crates.io has 0.9.0, so between releases the baseline is the
+  # version being developed against.
+  #
+  # Scope worth knowing rather than assuming: `feature-group: default-features`
+  # checks the default surface only, so a break behind `signing`, `grpc`,
+  # `postgres` or any other optional feature is outside what this can see.
   semver:
     name: cargo-semver-checks
     runs-on: ubuntu-latest
@@ -368,7 +394,6 @@ jobs:
         uses: obi1kenobi/cargo-semver-checks-action@5b298c9520f7096a4683c0bd981a7ac5a7e249ae # v2.8
         with:
           package: a2a-protocol-types, a2a-protocol-client, a2a-protocol-server
-          # 0.x: report breaks in the PR without blocking merge until 1.0.
           feature-group: default-features
 
   # ── Package validation ──────────────────────────────────────────────────
