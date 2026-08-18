@@ -91,6 +91,26 @@ SKIP_STEPS='^(Install SPIRE)$'
 # covers nothing, which is the same defect as an unlisted gate — this file has
 # now had that shape three times (test-postgres and package unknown to
 # preflight, slimrpc-binding unknown to both, deny and semver listed but empty).
+# A folded block scalar (`run: >`) joins its lines with spaces; a literal one
+# (`run: |`) keeps the newlines. `gates_for_jobs` treats both alike, so for `>`
+# it would emit a *different command than CI runs*: YAML reads
+# `run: >` / `echo one` / `two` as `echo one two`, and this parser would make
+# `two` a command of its own. ci.yml uses only `|` today, so this refuses
+# rather than implementing a fold nobody needs. A gate that runs the wrong
+# command is worse than one that is missing, and refusing means a folded block
+# cannot be introduced without someone deciding what it should mean.
+require_no_folded_blocks() {
+    local found
+    found=$(grep -nE '^[[:space:]]+run:[[:space:]]*>' "$CI_YML" || true)
+    if [ -n "$found" ]; then
+        printf '%s: ci.yml has folded block scalar(s), which this parser does not fold:\n' \
+            "${0##*/}" >&2
+        printf '%s\n' "$found" | sed 's/^/      /' >&2
+        printf '  Rewrite the step as `run: |`, or teach gates_for_jobs to fold.\n' >&2
+        exit 2
+    fi
+}
+
 require_known_skips() {
     local pat missing="" names
     names=$(awk '
@@ -938,6 +958,7 @@ PY
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
 require_known_skips
+require_no_folded_blocks
 mapfile -t ALL_GATES < <(gates_for_jobs "$GATE_JOBS")
 
 if [ "${#ALL_GATES[@]}" -eq 0 ]; then

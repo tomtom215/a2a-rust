@@ -492,6 +492,18 @@ scripts/preflight.sh --full   # every gate ci.yml runs
 scripts/preflight.sh --list   # the gate inventory, and what each tier covers
 ```
 
+`--full` means it: it includes the gates with external prerequisites, and those
+fail without them rather than being quietly skipped. A live PostgreSQL at
+`A2A_TEST_POSTGRES_URL` for the two postgres suites, and `spire-server` /
+`spire-agent` on `PATH` with `SPIRE_BIN_DIR` set for the SPIFFE suites — the
+same thing CI stands up as a service and an install step. The default tier
+needs neither.
+
+One step is deliberately not run locally: `Install SPIRE` hands its download
+path to the next step through `$GITHUB_ENV`, which is inter-step state only
+GitHub implements. `preflight.sh` names it on every run rather than omitting it
+silently; see `SKIP_STEPS` in that script.
+
 Every gate runs even after one fails, so a single run tells you everything that
 is broken rather than only the first thing.
 
