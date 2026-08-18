@@ -135,6 +135,12 @@ impl RetentionPolicy {
 
     /// The batch size actually used, never zero — a zero-size batch would
     /// delete nothing forever while reporting progress.
+    // Feature-gated because its only callers are the two backends. Without
+    // either, `-D warnings` makes it dead code -- and RUSTFLAGS applies to
+    // this crate even when it is built as a dependency of something else,
+    // which is why a policy type with no backend compiled broke fifteen CI
+    // jobs that never mention retention.
+    #[cfg(any(feature = "sqlite", feature = "postgres"))]
     #[must_use]
     pub(crate) const fn effective_batch_size(&self) -> u32 {
         if self.batch_size == 0 {
@@ -173,6 +179,7 @@ pub struct PurgeReport {
 /// column holds whatever `to_string()` produced at write time, and a purge
 /// filtering on a hand-copied spelling would match nothing while looking
 /// correct.
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub(crate) fn terminal_state_labels() -> Vec<String> {
     terminal_states().iter().map(TaskState::to_string).collect()
 }
@@ -200,6 +207,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "sqlite", feature = "postgres"))]
     fn labels_are_the_stored_spellings() {
         let labels = terminal_state_labels();
         assert!(labels.contains(&"TASK_STATE_COMPLETED".to_string()));
@@ -212,6 +220,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(feature = "sqlite", feature = "postgres"))]
     fn zero_batch_size_cannot_stall_a_sweep() {
         let policy = RetentionPolicy::new(Duration::from_secs(1)).with_batch_size(0);
         assert_eq!(
