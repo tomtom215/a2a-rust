@@ -164,6 +164,22 @@ jobs:
       - name: Workflow verdict gates can fail
         run: python3 -m pip install --quiet pyyaml && ./scripts/prove_workflow_gates_fail.py
 
+      # `scripts/lib/ci_gates.sh` parses this file into the gate list that
+      # preflight.sh and prove_gates_fail.sh run, using its own block-scalar
+      # reader written in awk — because both scripts must work with nothing
+      # installed but coreutils. That is a second implementation of a fiddly
+      # corner of YAML, and it drifted twice while being written: first
+      # treating `>` exactly like `|` (so a folded block became one command per
+      # line instead of one command), then getting folding right everywhere
+      # except beside a more-indented line. Neither was visible by reading it.
+      #
+      # This compares it against PyYAML on the shapes that tell them apart. A
+      # block those two read differently is a local gate running a different
+      # command than CI runs, which is the one thing those scripts exist to
+      # rule out.
+      - name: Block scalars parse as YAML says
+        run: python3 scripts/check_block_scalars.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})

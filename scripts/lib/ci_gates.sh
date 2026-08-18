@@ -49,11 +49,54 @@ gates_for_jobs() {
         }
         # Ends a pending block scalar, leaving it as the step command so the
         # next flush() emits it.
-        function end_block() {
+        # k newlines, for folded blocks where empty lines are not folded away.
+        function nl(k,   s) { s = ""; while (k-- > 0) s = s "\n"; return s }
+        # YAML folded-scalar (`>`) semantics, which are not "join with spaces":
+        #   * a break between two ordinary lines folds to one space;
+        #   * empty lines are NOT folded — k empty lines between content
+        #     become k newlines, and the fold-space is dropped;
+        #   * a *more-indented* line (one that still starts with a space after
+        #     the block indent is removed) is kept literally, and the breaks
+        #     on either side of it stay newlines rather than becoming spaces.
+        # The third rule is the one worth stating: without it a folded block
+        # containing an indented continuation silently loses its structure.
+        function fold_lines(   i, L, kind, prevkind, pend, out, more) {
+            out = ""; pend = 0; prevkind = ""
+            for (i = 0; i < nblines; i++) {
+                L = blines[i]
+                if (L ~ /^[ \t]*$/) { pend++; continue }
+                kind = (substr(L, 1, 1) == " ") ? "MORE" : "NORM"
+                more = (prevkind == "MORE" || kind == "MORE")
+                if (prevkind == "")        out = nl(pend) L
+                # A break next to a more-indented line is never folded, so it
+                # survives *in addition to* the newline each empty line
+                # contributes: one blank line before an indented continuation
+                # gives two newlines, not one. Measured against PyYAML, which
+                # is the only reason this line is not `nl(pend)`.
+                else if (more)             out = out nl(pend + 1) L
+                else if (pend > 0)         out = out nl(pend) L
+                else                       out = out " " L
+                pend = 0
+                prevkind = kind
+            }
+            return out
+        }
+        function end_block(   i, out) {
             if (!in_block) return
             in_block = 0
-            sub(/\n+$/, "", body)
-            if (job ~ want && body != "") cmd = "bash -e -c " ansi_c(body)
+            if (block_folded) out = fold_lines()
+            else {
+                out = ""
+                for (i = 0; i < nblines; i++) out = out (i ? "\n" : "") blines[i]
+            }
+            # Trailing newlines are dropped whatever the chomping indicator
+            # says. `|`, `|-` and `|+` differ only in how many line breaks end
+            # the scalar, and a trailing newline cannot change what a shell
+            # command does — so chomping is parsed (below) but deliberately not
+            # acted on, rather than being silently mishandled.
+            sub(/\n+$/, "", out)
+            nblines = 0
+            if (job ~ want && out != "") cmd = "bash -e -c " ansi_c(out)
         }
         # Emits the pending step, if it belongs to a wanted job.
         function flush(   pair) {
@@ -80,13 +123,14 @@ gates_for_jobs() {
         # 0. A harness that runs the block under a stricter shell than CI does
         # is not reproducing the gate, it is inventing a different one.
         in_block {
-            if ($0 ~ /^[[:space:]]*$/) { body = body "\n"; next }
+            if ($0 ~ /^[[:space:]]*$/) { blines[nblines++] = ""; next }
             ind = match($0, /[^ ]/) - 1
+            # The block indent comes from the first non-empty line, unless the
+            # header carried an explicit indentation indicator (`>2`), which
+            # exists precisely for a first line that is itself more indented.
             if (block_indent < 0) block_indent = ind
             if (ind >= block_indent) {
-                if (nbody > 0) body = body "\n"
-                body = body substr($0, block_indent + 1)
-                nbody++
+                blines[nblines++] = substr($0, block_indent + 1)
                 next
             }
             # Dedented: the block is over. No `next` — this same line is a new
@@ -140,7 +184,16 @@ gates_for_jobs() {
             flush()
             if (pending_wd != "") { wd_prefix = "cd " pending_wd " && " }
             pending_wd = ""
-            in_block = 1; block_indent = -1; body = ""; nbody = 0
+            hdr = $0
+            sub(/^[[:space:]]+run:[[:space:]]*/, "", hdr)
+            block_folded = (substr(hdr, 1, 1) == ">")
+            ind_digits = substr(hdr, 2)
+            gsub(/[^0-9]/, "", ind_digits)
+            in_block = 1; nblines = 0
+            if (ind_digits != "")
+                block_indent = (match($0, /[^ ]/) - 1) + int(ind_digits)
+            else
+                block_indent = -1
             next
         }
         # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
@@ -201,14 +254,3 @@ require_known_skips() {
     fi
 }
 
-require_no_folded_blocks() {
-    local found
-    found=$(grep -nE '^[[:space:]]+run:[[:space:]]*>' "$CI_YML" || true)
-    if [ -n "$found" ]; then
-        printf '%s: ci.yml has folded block scalar(s), which this parser does not fold:\n' \
-            "${0##*/}" >&2
-        printf '%s\n' "$found" | sed 's/^/      /' >&2
-        printf '  Rewrite the step as `run: |`, or teach gates_for_jobs to fold.\n' >&2
-        exit 2
-    fi
-}

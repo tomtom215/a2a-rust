@@ -321,6 +321,8 @@ injection_for() {
             echo "package_excludes" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
+        *"check_block_scalars.py"*)
+            echo "block_scalars:scripts/lib/ci_gates.sh" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -411,6 +413,7 @@ expected_marker() {
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
+        block_scalars)    echo "MISMATCH" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -713,6 +716,22 @@ PY
             git -C "$PACKAGE_CLONE/repo" -c user.name=probe -c user.email=probe@invalid \
                 commit -q -am "probe: dangling readme reference"
             INJECT_WORKDIR="$PACKAGE_CLONE/repo" ;;
+        # Break folding itself, not the checker: this gate exists to notice a
+        # parser regression, so the defect has to be one. Widening the fold
+        # separator to two spaces is invisible to every other gate and turns
+        # every folded case in the comparison red.
+        block_scalars)
+            note_touched "$rest"
+            python3 - "$rest" <<'PY'
+import re, sys, pathlib
+p = pathlib.Path(sys.argv[1])
+s = p.read_text()
+s, n = re.subn(r'out = out " " L', 'out = out "  " L', s, count=1)
+if n != 1:
+    sys.exit("expected exactly one fold-space assignment; found %d" % n)
+p.write_text(s)
+PY
+            ;;
         postgres_ignored)
             # This gate runs only `#[ignore]`d tests in one file, so the
             # defect has to be an ignored test in that file. A failure
@@ -759,7 +778,6 @@ PY
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
 require_known_skips
-require_no_folded_blocks
 mapfile -t ALL_GATES < <(gates_for_jobs "$GATE_JOBS")
 
 if [ "${#ALL_GATES[@]}" -eq 0 ]; then

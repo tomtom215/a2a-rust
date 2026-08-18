@@ -174,7 +174,6 @@ EOF
 require_known_jobs
 require_nonempty_gate_jobs
 require_known_skips
-require_no_folded_blocks
 ALL_GATES=$(gates_for_jobs "$GATE_JOBS" | sed $'s/\t//')
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.
