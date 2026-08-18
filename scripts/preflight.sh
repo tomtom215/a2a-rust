@@ -37,6 +37,13 @@ set -Eeuo pipefail
 
 REPO_ROOT=$(git rev-parse --show-toplevel)
 CI_YML="$REPO_ROOT/.github/workflows/ci.yml"
+
+# The ci.yml parser, the job/step classification lists, and the guards that
+# keep them honest. Shared with scripts/prove_gates_fail.sh rather than copied
+# into it: the two carried byte-identical parsers kept in step by a comment
+# until 2026-08-18, and a convention that has to be remembered is not a guard.
+# shellcheck source=lib/ci_gates.sh
+. "$REPO_ROOT/scripts/lib/ci_gates.sh"
 LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-preflight.XXXXXX")
 
 TIER=default
@@ -66,142 +73,6 @@ FAIL_FAST=0
 # `A2A_TEST_POSTGRES_URL` and `INCIDENT_REQUIRE_ALL`, and without those the
 # local run exercised strictly less than CI while reporting PASS. A local gate
 # that does not reproduce the CI gate is worse than no local gate.
-gates_for_jobs() {
-    awk -v want="$1" -v skip="$SKIP_STEPS" '
-        function shquote(s,   out) { out = s; gsub(/'\''/, "'\''\\'\'''\''", out); return "'\''" out "'\''" }
-        # Encodes a block body as a single-line ANSI-C quoted string. Built a
-        # character at a time rather than with gsub: the replacement text of
-        # gsub has its own backslash rules on top of the string literal, and
-        # the two layers together turned one backslash into six on the first
-        # attempt. \047 is a single quote, which also keeps this program free
-        # of the quote that would end it.
-        function ansi_c(s,   i, c, out) {
-            out = ""
-            for (i = 1; i <= length(s); i++) {
-                c = substr(s, i, 1)
-                if (c == "\\")        out = out "\\\\"
-                else if (c == "\047") out = out "\\\047"
-                else if (c == "\n")   out = out "\\n"
-                else                  out = out c
-            }
-            return "$\047" out "\047"
-        }
-        # Ends a pending block scalar, leaving it as the step command so the
-        # next flush() emits it.
-        function end_block() {
-            if (!in_block) return
-            in_block = 0
-            sub(/\n+$/, "", body)
-            if (job ~ want && body != "") cmd = "bash -e -c " ansi_c(body)
-        }
-        # Emits the pending step, if it belongs to a wanted job.
-        function flush(   pair) {
-            if (cmd != "" && !(skip != "" && step_name ~ skip))
-                print wd_prefix job_env step_env cmd
-            cmd = ""; step_env = ""; wd_prefix = ""; env_indent = -1
-        }
-        # ── Block scalars: `run: |`, `|-`, `>`, `>-` ─────────────────────
-        #
-        # Held until something dedents, then emitted as one `bash -e -c
-        # $\047...\047` command. One physical line because every consumer of this
-        # function is line-oriented, and ANSI-C quoting so the newlines survive
-        # as newlines: flattening them into `;` would turn a backslash
-        # continuation into two broken commands, and an `if` into a syntax
-        # error.
-        #
-        # `bash -e`, and deliberately not `-eo pipefail`. That is the shell
-        # GitHub gives a `run:` step on Linux, and the gap between the two is
-        # exactly how the official-TCK gate came to print REGRESSION and exit
-        # 0. A harness that runs the block under a stricter shell than CI does
-        # is not reproducing the gate, it is inventing a different one.
-        in_block {
-            if ($0 ~ /^[[:space:]]*$/) { body = body "\n"; next }
-            ind = match($0, /[^ ]/) - 1
-            if (block_indent < 0) block_indent = ind
-            if (ind >= block_indent) {
-                if (nbody > 0) body = body "\n"
-                body = body substr($0, block_indent + 1)
-                nbody++
-                next
-            }
-            # Dedented: the block is over. No `next` — this same line is a new
-            # step or a new job and the rules below have to see it.
-            end_block()
-        }
-        # A job header (2-space key) ends the previous job and its env.
-        /^  [a-z0-9_-]+:[[:space:]]*$/ {
-            flush(); job = $1; sub(/:$/, "", job); job_env = ""; env_indent = -1
-            pending_wd = ""; next
-        }
-        # A new list item ends the previous step.
-        /^[[:space:]]*-[[:space:]]/ {
-            flush()
-            pending_wd = ""
-            # flush() first, then rename: the step being emitted is the one
-            # that just ended, not the one this line starts.
-            step_name = ""
-            if ($0 ~ /^[[:space:]]*-[[:space:]]+name:[[:space:]]*/) {
-                line = $0
-                sub(/^[[:space:]]*-[[:space:]]+name:[[:space:]]*/, "", line)
-                sub(/[[:space:]]+$/, "", line)
-                gsub(/^"|"$/, "", line)
-                step_name = line
-            }
-        }
-        # `working-directory:` appears *before* `run:` inside a step, and the
-        # flush the run rule performs would clear it, so it is held here and
-        # consumed there. Without this, commands from the out-of-workspace
-        # binding are emitted bare and run from the repo root: `cargo fmt
-        # --check`, `cargo clippy` and `cargo test` would check the workspace a
-        # second time, never touch the binding, and report that as coverage of
-        # it. No apostrophes in this block: the awk program is single-quoted,
-        # and one closes it.
-        /^[[:space:]]+working-directory:[[:space:]]*[^[:space:]]/ {
-            line = $0
-            sub(/^[[:space:]]+working-directory:[[:space:]]*/, "", line)
-            sub(/[[:space:]]+$/, "", line)
-            gsub(/^"|"$/, "", line)
-            pending_wd = line
-            next
-        }
-        /^[[:space:]]+run:[[:space:]]*[^|>[:space:]]/ {
-            flush()
-            if (pending_wd != "") { wd_prefix = "cd " pending_wd " && " }
-            pending_wd = ""
-            if (job ~ want) { line = $0; sub(/^[[:space:]]+run:[[:space:]]*/, "", line); cmd = line }
-            next
-        }
-        /^[[:space:]]+run:[[:space:]]*[|>]/ {
-            flush()
-            if (pending_wd != "") { wd_prefix = "cd " pending_wd " && " }
-            pending_wd = ""
-            in_block = 1; block_indent = -1; body = ""; nbody = 0
-            next
-        }
-        # `env:` at 4 spaces is the job block; at 8 it belongs to the step. The
-        # indent is recorded so only its own keys are read, and anything
-        # shallower closes it.
-        /^    env:[[:space:]]*$/  { env_indent = 4; next }
-        /^        env:[[:space:]]*$/ { env_indent = 8; next }
-        env_indent > 0 {
-            indent = match($0, /[^ ]/) - 1
-            if (indent <= env_indent) { env_indent = -1 }
-            else if ($0 ~ /^[[:space:]]+[A-Za-z_][A-Za-z0-9_]*:/) {
-                line = $0
-                sub(/^[[:space:]]+/, "", line)
-                key = line; sub(/:.*$/, "", key)
-                val = line; sub(/^[^:]*:[[:space:]]*/, "", val)
-                sub(/[[:space:]]+$/, "", val)
-                gsub(/^"|"$/, "", val)
-                gsub(/^'\''|'\''$/, "", val)
-                if (env_indent == 4) job_env = job_env key "=" shquote(val) " "
-                else step_env = step_env key "=" shquote(val) " "
-                next
-            }
-        }
-        END { end_block(); flush() }
-    ' "$CI_YML"
-}
 
 # Block-scalar steps (`run: |`) are invisible to the parser above. If one shows
 # up in a gate job, say so rather than quietly under-covering.
@@ -212,37 +83,8 @@ note_skipped_steps() {
     printf '           see SKIP_STEPS in this script for why; CI still runs them.\n' >&2
 }
 
-GATE_JOBS='^(fmt|clippy|test|test-postgres|doc|package|dogfood|example-surface|slimrpc-binding)$'
 
-# Jobs deliberately outside the local gate set, each with a reason. This list
-# is not decoration: `require_known_jobs` below fails if ci.yml grows a job
-# that appears in neither this list nor GATE_JOBS.
-#
-#   nightly — needs a nightly toolchain this script does not install.
-#
-#   deny, semver — the entire body of each is a marketplace action
-#   (`cargo-deny-action`, `cargo-semver-checks-action`), so there is no `run:`
-#   line for this script to copy. Both were listed in GATE_JOBS until
-#   2026-08-18 and contributed nothing: `gates_for_jobs` reads `run:` steps, so
-#   a `uses:`-only job yields zero gates while sitting in the list whose comment
-#   promises preflight runs it. Restating their commands here instead would
-#   break the rule the environment block below opens with — copy what CI runs,
-#   never a local paraphrase of it that can drift.
-NON_GATE_JOBS='^(nightly|deny|semver)$'
 
-# Steps deliberately not run locally, matched on step name, each with a reason.
-# Same discipline as NON_GATE_JOBS: an exemption is a line with a reason beside
-# it, never a silent omission, and `require_known_skips` fails if one stops
-# matching any step.
-#
-#   Install SPIRE — setup, not a verdict. It downloads a release tarball and
-#   hands the path to the *next* step through `$GITHUB_ENV`, which is
-#   inter-step state only GitHub implements. Run on its own it has nothing to
-#   assert, and under its own `set -u` nothing to append to. The step it feeds
-#   is the SPIFFE suite, which IS listed as a gate: it needs SPIRE on the
-#   machine and `SPIRE_BIN_DIR` exported, the same prerequisite shape as the
-#   postgres gates needing a database.
-SKIP_STEPS='^(Install SPIRE)$'
 
 # Every SKIP_STEPS alternative must still name a step that exists. An exemption
 # for a step that has been renamed or deleted is an exemption that silently
@@ -257,50 +99,7 @@ SKIP_STEPS='^(Install SPIRE)$'
 # rather than implementing a fold nobody needs. A gate that runs the wrong
 # command is worse than one that is missing, and refusing means a folded block
 # cannot be introduced without someone deciding what it should mean.
-require_no_folded_blocks() {
-    local found
-    found=$(grep -nE '^[[:space:]]+run:[[:space:]]*>' "$CI_YML" || true)
-    if [ -n "$found" ]; then
-        printf '%s: ci.yml has folded block scalar(s), which this parser does not fold:\n' \
-            "${0##*/}" >&2
-        printf '%s\n' "$found" | sed 's/^/      /' >&2
-        printf '  Rewrite the step as `run: |`, or teach gates_for_jobs to fold.\n' >&2
-        exit 2
-    fi
-}
 
-require_known_skips() {
-    local pat missing="" names
-    names=$(awk '
-        /^[[:space:]]*-[[:space:]]+name:[[:space:]]*/ {
-            line = $0
-            sub(/^[[:space:]]*-[[:space:]]+name:[[:space:]]*/, "", line)
-            sub(/[[:space:]]+$/, "", line)
-            gsub(/^"|"$/, "", line)
-            print line
-        }' "$CI_YML")
-    # `while read`, not `for pat in $(...)`: step names contain spaces, and
-    # word-splitting turned the single exemption "Install SPIRE" into two
-    # patterns that matched nothing. The guard refused to run, correctly but
-    # for entirely the wrong reason.
-    while IFS= read -r pat; do
-        [ -n "$pat" ] || continue
-        if ! printf '%s\n' "$names" | grep -Fxq -- "$pat"; then
-            missing="$missing$pat"$'\n'
-        fi
-    # `printf '%s\n'`, with the newline. Without it the final alternative has
-    # no line terminator, `read` returns non-zero on it, and the loop body
-    # never runs for the last pattern — which, with a single exemption, meant
-    # this guard executed and checked nothing at all. Found by giving it a
-    # deliberately stale pattern and watching it pass.
-    done < <(printf '%s\n' "$SKIP_STEPS" | tr -d '^$()' | tr '|' '\n')
-    if [ -n "$missing" ]; then
-        printf '%s: SKIP_STEPS names step(s) that ci.yml no longer has:\n' "${0##*/}" >&2
-        printf '%s' "$missing" | sed 's/^/      /' >&2
-        printf '  Remove the exemption, or correct it to the new step name.\n' >&2
-        exit 2
-    fi
-}
 
 # Bidirectional drift guard.
 #
@@ -376,7 +175,7 @@ require_known_jobs
 require_nonempty_gate_jobs
 require_known_skips
 require_no_folded_blocks
-ALL_GATES=$(gates_for_jobs "$GATE_JOBS")
+ALL_GATES=$(gates_for_jobs "$GATE_JOBS" | sed $'s/\t//')
 
 # Same reasoning as the gate list: copy CI's environment rather than restate it.
 # Matching the commands but not the environment is not parity — CI sets
