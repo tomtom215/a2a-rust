@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 # Shared ci.yml gate extraction. Sourced by scripts/preflight.sh and
 # scripts/prove_gates_fail.sh; not executable on its own.
 #

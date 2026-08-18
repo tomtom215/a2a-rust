@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 """Assert scripts/lib/ci_gates.sh reads YAML block scalars the way YAML does.
 
 `gates_for_jobs` has its own block-scalar reader, in awk, because the scripts
