@@ -53,6 +53,34 @@ use crate::transport::Transport;
 /// | `initial_backoff` | 500 ms |
 /// | `max_backoff` | 30 s |
 /// | `backoff_multiplier` | 2.0 |
+///
+/// # What a call can cost, which is not the request timeout
+///
+/// `ClientConfig::request_timeout` is per *attempt* — its own doc says
+/// "per-request" — and a retrying call makes several. The wall-clock a caller
+/// should budget for is:
+///
+/// ```text
+/// (max_retries + 1) × request_timeout   +   the backoffs between them
+/// ```
+///
+/// At the shipped defaults, with the default 30-second `request_timeout`:
+/// four attempts of 30s plus backoffs of 0.5s, 1s and 2s — about **124
+/// seconds** for one `send_request` on a client configured with "timeout: 30
+/// seconds". A server sending `Retry-After` can lengthen each gap up to
+/// `max_backoff`, so the same policy against a rate-limiting server is four
+/// attempts plus up to 90 seconds of waiting.
+///
+/// Nothing here is wrong — the two knobs mean what they say — but the product
+/// of them is what a caller actually waits for, and multiplying it out is not
+/// something anyone does while reading a builder. Wrap the call in
+/// `tokio::time::timeout` if you need a real ceiling; this type does not
+/// provide one.
+///
+/// (The push path states the same arithmetic through
+/// `PushSender::max_delivery_duration`, which exists because the server needed
+/// to *budget* against it. A client has no equivalent because nothing else in
+/// the process needs the number — only the person calling does.)
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
     /// Maximum number of retry attempts (not counting the initial attempt).
@@ -716,6 +744,73 @@ mod tests {
     use std::sync::Arc;
 
     use crate::streaming::EventStream;
+
+    /// The backoff half of the wall-clock formula on [`RetryPolicy`] is what
+    /// the code actually does.
+    ///
+    /// That doc tells a caller to budget
+    /// `(max_retries + 1) × request_timeout + the backoffs between them`, and
+    /// quotes ~124 seconds at the shipped defaults for a client configured
+    /// with "timeout: 30 seconds". A number in prose is a number nothing
+    /// checks, so this pins the part `RetryTransport` owns: the gaps.
+    ///
+    /// Virtual time, not wall-clock — `tokio::time::pause` makes the assertion
+    /// exact instead of approximately-under-some-slack, and keeps a test that
+    /// asserts seconds running in microseconds.
+    ///
+    /// The request-timeout half is deliberately not asserted here: it belongs
+    /// to the inner transport, and this mock returns instantly so the elapsed
+    /// time *is* the backoff sum.
+    #[tokio::test(start_paused = true)]
+    async fn the_documented_backoff_arithmetic_is_what_it_does() {
+        let inner = FailNTransport::new(usize::MAX, serde_json::json!(null));
+        let calls = Arc::clone(&inner.call_count);
+        let retry = RetryTransport::new(
+            Box::new(inner),
+            RetryPolicy {
+                max_retries: 3,
+                initial_backoff: Duration::from_millis(500),
+                max_backoff: Duration::from_secs(30),
+                // 1.0, so the expected sum does not depend on the jitter that
+                // `initial_backoff` alone would be subject to under growth.
+                backoff_multiplier: 1.0,
+            },
+        );
+
+        let started = tokio::time::Instant::now();
+        // `GetTask`, because a non-idempotent method is not retried at all —
+        // which is the subject of its own tests, and would make this one
+        // measure a single attempt.
+        let result = retry
+            .send_request("GetTask", serde_json::json!({}), &HashMap::new())
+            .await;
+        let elapsed = started.elapsed();
+
+        assert!(
+            result.is_err(),
+            "every attempt fails, so the call must fail"
+        );
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            4,
+            "max_retries 3 must mean 4 attempts — the formula's (max_retries + 1)"
+        );
+
+        // Three gaps of 500ms under *full* jitter — `jittered` returns a
+        // duration in `[backoff/2, backoff)` — so the sum lies in
+        // [750ms, 1500ms). Asserting the band rather than a point is the
+        // honest form: the jitter is deliberate anti-thundering-herd, and a
+        // test demanding exactly 1.5s would be asserting its absence.
+        //
+        // The band was written as ±25% first, from a glance at `apply_jitter`
+        // rather than at `jittered` above it. Full jitter halves the floor,
+        // and a band that cannot be violated is a test that passes for no
+        // reason.
+        assert!(
+            elapsed >= Duration::from_millis(750) && elapsed < Duration::from_millis(1_500),
+            "three fully-jittered 500ms gaps must total in [750ms, 1500ms), got {elapsed:?}"
+        );
+    }
 
     /// A transport that fails N times with a retryable error, then succeeds.
     struct FailNTransport {
