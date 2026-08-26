@@ -35,7 +35,7 @@ categories  = ["network-programming", "api-bindings"]
 # this binding exists to be adopted by third parties.
 #
 # What independence does NOT buy, and the reason the SDK requirement below is a
-# tight `0.10` rather than a range: `a2a-protocol-server` and
+# tight `0.9` rather than a range: `a2a-protocol-server` and
 # `a2a-protocol-types` are *public* dependencies. `SlimRpcServer::builder`
 # takes `Arc<RequestHandler>` and `agent_interface()` returns an
 # `AgentInterface`, so a caller must be using the same SDK version this crate
@@ -53,9 +53,9 @@ publish = true
 # `version` alongside `path` is what makes this publishable: cargo uses the path
 # for local development and rewrites it to the version requirement in the
 # packaged manifest.
-a2a-protocol-types  = { version = "0.10", path = "../../crates/a2a-protocol-types", features = ["proto"] }
-a2a-protocol-client = { version = "0.10", path = "../../crates/a2a-protocol-client", default-features = false }
-a2a-protocol-server = { version = "0.10", path = "../../crates/a2a-protocol-server", default-features = false }
+a2a-protocol-types  = { version = "0.9", path = "../../crates/a2a-protocol-types", features = ["proto"] }
+a2a-protocol-client = { version = "0.9", path = "../../crates/a2a-protocol-client", default-features = false }
+a2a-protocol-server = { version = "0.9", path = "../../crates/a2a-protocol-server", default-features = false }
 
 # SLIM. `slim_rpc` is the RPC layer; the others supply the App/Service/Name
 # types its constructors take.

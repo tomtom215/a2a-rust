@@ -166,7 +166,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — `0.2.0` against the SDK's `0.10.0`. Numbering it
+It is versioned independently — `0.2.0` against the SDK's `0.9.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 

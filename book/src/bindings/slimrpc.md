@@ -30,13 +30,13 @@ plus multicast, driving the same `RequestHandler` the HTTP bindings drive.
 ```toml
 [dependencies]
 a2a-protocol-slimrpc = "0.2"
-a2a-protocol-server  = "0.10"
+a2a-protocol-server  = "0.9"
 ```
 
 ### Why two version numbers
 
 `a2a-protocol-slimrpc` is versioned independently of the SDK — it is at `0.2`
-while the SDK is at `0.10`. Numbering it to match would claim ten minor
+while the SDK is at `0.9`. Numbering it to match would claim nine minor
 versions of API stability it has not earned, and would force a bump
 on every SDK release even when nothing here changed.
 
