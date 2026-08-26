@@ -18,6 +18,14 @@
 #   2. This ratchet, which stops the first mechanism being defeated by simply
 #      marking new blocks `ignore`.
 #
+# Mechanism 1's page list is written by hand, and until 2026-08-26 nothing
+# checked it. A page nobody remembered to register was not compiled and not
+# reported — the ratchet below would still pass, because a page with no
+# `ignore`d blocks is indistinguishable from a page that is being compiled.
+# Four pages were in that state. None of them happened to carry a live Rust
+# block, so nothing was broken; that was luck, not a guard. The registration
+# check below closes it, with one documented exclusion.
+#
 # Semantics match `check_file_lengths.sh` deliberately: the baseline must equal
 # reality exactly. A count that grew is a failure (write a compiling block, or
 # argue for the exemption in review). A count that shrank is also a failure,
@@ -33,8 +41,9 @@
 #   ./scripts/check_book_code.sh
 #
 # Exit codes:
-#   0  baseline matches reality
-#   1  drift (ignore count changed, or an untagged block appeared)
+#   0  baseline matches reality, and every page is registered for compilation
+#   1  drift (ignore count changed, an untagged block appeared, or a page is
+#      not registered in book-tests/src/lib.rs)
 
 set -euo pipefail
 
@@ -48,6 +57,13 @@ import sys
 
 BASELINE = pathlib.Path(".book-ignore-baseline")
 BOOK = pathlib.Path("book/src")
+LIB = pathlib.Path("book-tests/src/lib.rs")
+
+# Pages deliberately not compiled, each with the reason. Anything else missing
+# from `book-tests/src/lib.rs` is an omission, not a decision.
+NOT_REGISTERED = {
+    "SUMMARY.md": "mdBook's table of contents — a list of links, not a page",
+}
 
 if not BASELINE.exists():
     print("check_book_code: .book-ignore-baseline is missing", file=sys.stderr)
@@ -90,7 +106,37 @@ for path, have in actual.items():
         added.append(f"{path}: {have} ignored block(s), not in the baseline")
 removed = [p for p in expected if p not in actual]
 
+# ── Every page must be compiled by something ─────────────────────────────────
+unregistered = []
+if not LIB.exists():
+    unregistered.append(f"{LIB} is missing; nothing compiles the book's Rust")
+else:
+    registered = set(re.findall(r'include_str!\("\.\./\.\./book/src/([^"]+)"\)',
+                                LIB.read_text(encoding="utf-8")))
+    for page in sorted(str(q.relative_to(BOOK)) for q in BOOK.rglob("*.md")):
+        if page in registered or page in NOT_REGISTERED:
+            continue
+        unregistered.append(page)
+    # An exclusion for a page that no longer exists reads as a live decision
+    # while excluding nothing — the same failure the baseline's `shrank` arm
+    # exists for.
+    on_disk = {str(q.relative_to(BOOK)) for q in BOOK.rglob("*.md")}
+    for page in sorted(NOT_REGISTERED):
+        if page not in on_disk:
+            unregistered.append(f"{page} is excluded but no longer exists")
+
 failed = False
+
+if unregistered:
+    failed = True
+    print("check_book_code: book pages that nothing compiles")
+    for u in unregistered:
+        print(f"  UNREGISTERED  {u}")
+    print("  Add `#[doc = include_str!(\"../../book/src/<page>\")]` to")
+    print("  book-tests/src/lib.rs, or record the page in NOT_REGISTERED here")
+    print("  with the reason. An unregistered page's Rust is never compiled,")
+    print("  and nothing else would have said so.")
+    print()
 
 if untagged:
     failed = True

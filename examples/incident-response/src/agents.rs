@@ -180,11 +180,10 @@ impl TriageExecutor {
 }
 
 impl AgentExecutor for TriageExecutor {
-    /// Cancellation is cooperative in A2A: the default implementation
-    /// reports tasks as not cancelable, and executors opt in by overriding
-    /// `cancel` to release whatever the task holds. Triage holds parked
-    /// alerts, so cancel drops them; the server then records the Canceled
-    /// state.
+    /// Cancellation is cooperative in A2A. The SDK's default `cancel` already
+    /// cancels — it emits the terminal `Canceled` status — so overriding is
+    /// not how an executor opts in; it is how one *releases what the task
+    /// holds*. Triage holds parked alerts, so cancel drops them.
     fn cancel<'a>(
         &'a self,
         ctx: &'a RequestContext,

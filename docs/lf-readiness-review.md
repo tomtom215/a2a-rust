@@ -156,8 +156,8 @@ makes, and it is a materially stronger position than the document was stating.
    ten tags) are superseded. It carries its date, which is defensible, but a
    reviewer handed it today will read stale numbers. It needs a supersession
    note pointing at the manifest.
-7. **Four book chapters named in B10 are absent** from `SUMMARY.md`:
-   troubleshooting, observability, multi-tenancy, security.
+7. **Seven examples still have no tests.** `harness` at 920 lines is the next
+   one worth doing, because the other examples depend on it.
 
 ## 5. What this review did not examine
 

@@ -55,6 +55,10 @@
     - [Bugs Found & Fixed](./deployment/dogfooding-bugs.md)
     - [Test Coverage Matrix](./deployment/dogfooding-tests.md)
 - [Production Hardening](./deployment/production.md)
+- [Security](./deployment/security.md)
+- [Multi-Tenancy](./deployment/multi-tenancy.md)
+- [Observability](./deployment/observability.md)
+- [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
 

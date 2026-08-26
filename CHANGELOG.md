@@ -522,6 +522,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime library code**, with `build.rs` reported separately. Adding one now
   fails the build until the baseline is updated deliberately.
 
+- **`AgentExecutor::cancel`'s documentation described behaviour it stopped
+  having in 0.7.** The rustdoc said "the default implementation returns an error
+  indicating the task is not cancelable. Override this to support task
+  cancellation." The default has cancelled since 0.7 — it emits the terminal
+  `Canceled` status — and the inline comment beside it says the refusing default
+  was removed precisely because it left `Working` tasks uncancelable out of the
+  box. A reader of docs.rs would have believed the opposite of what the code
+  does, and would have written an override to get behaviour they already had.
+
+- **Four book chapters, and a gate that could not see whether they compiled.**
+  `deployment/{troubleshooting,observability,multi-tenancy,security}.md` close
+  B10. Separately: `a2a-book-tests` registers pages by hand, and nothing checked
+  the list — an unregistered page's Rust was never compiled and nothing said so,
+  because a page with no `ignore`d blocks looks exactly like a page being
+  compiled. Four pages were already unregistered. `check_book_code.sh` now fails
+  on an unregistered page, and on an exclusion whose page no longer exists.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite
