@@ -294,6 +294,36 @@ let bound = dispatcher.serve_with_listener(listener)?;
 | `concurrency_limit` | `usize` | 256 | Maximum concurrent gRPC requests per connection |
 | `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
 
+### Bounding an idle gRPC connection
+
+`GrpcConfig` bounds message size and per-connection concurrency. Neither bounds
+a connection that simply exists: measured, 400 TCP connections opened and left
+silent were all accepted, and the oldest was still alive twelve seconds later.
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+# use std::sync::Arc;
+# use std::time::Duration;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
+let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
+    .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
+    .with_max_connection_age(Duration::from_secs(600));
+# }
+```
+
+Both are opt-in. HTTP/2 keepalive PINGs an idle connection and closes it if the
+peer does not answer — and a conformant client's HTTP/2 stack answers without
+the application being involved, so this closes peers that are **unresponsive**,
+not peers that are merely quiet. A streaming RPC waiting for its next event is
+left alone. `with_max_connection_age` is the different question: it bounds a
+peer that answers perfectly and never leaves, which is what makes a fleet
+behind a load balancer drift into imbalance. tonic sends GOAWAY and drains
+in-flight RPCs, so it is a reconnect rather than a failure.
+
 ### Protocol
 
 All 11 A2A methods are served on the canonical `lf.a2a.v1.A2AService` with

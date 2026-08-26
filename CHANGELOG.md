@@ -56,6 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `A2A_VERSION`. This repository contained 122 `AgentCard { .. }` literals when
   the constructors were written.
 
+- **Connection bounds for `GrpcDispatcher`:** `with_http2_keepalive` and
+  `with_max_connection_age`, both opt-in. `GrpcConfig` bounded message size and
+  per-connection concurrency and nothing bounded a connection that simply
+  exists: measured, 400 TCP connections opened against the dispatcher and left
+  silent were all accepted, none refused, and the oldest was still alive twelve
+  seconds later. HTTP/2 keepalive is the gRPC-native answer and distinguishes a
+  peer that has stopped answering from one that is merely quiet, because a
+  conformant client's HTTP/2 stack answers a PING without the application being
+  involved — so a streaming RPC waiting for its next event is left alone. They
+  live on the dispatcher rather than on `GrpcConfig` because that type has
+  public fields and no `#[non_exhaustive]`, so adding a field to it would break
+  every struct-literal construction.
+
 - **Connection bounds for `WebSocketDispatcher`:** `with_max_connections` and
   `with_idle_timeout`. The handshake timeout — documented in that module as the
   slowloris defence — covers only the part before the upgrade completes;

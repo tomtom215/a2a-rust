@@ -7,6 +7,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::native::A2aServiceImpl;
 use super::{A2aServiceServer, GrpcConfig};
@@ -24,13 +25,67 @@ use crate::handler::RequestHandler;
 pub struct GrpcDispatcher {
     handler: Arc<RequestHandler>,
     config: GrpcConfig,
+    keepalive: Option<(Duration, Duration)>,
+    max_connection_age: Option<Duration>,
 }
 
 impl GrpcDispatcher {
     /// Creates a new gRPC dispatcher wrapping the given handler.
     #[must_use]
     pub const fn new(handler: Arc<RequestHandler>, config: GrpcConfig) -> Self {
-        Self { handler, config }
+        Self {
+            handler,
+            config,
+            keepalive: None,
+            max_connection_age: None,
+        }
+    }
+
+    /// Sends an HTTP/2 PING every `interval` on an idle connection and closes
+    /// it if no answer arrives within `timeout`. Default: **off**.
+    ///
+    /// [`GrpcConfig`] bounds message size and per-connection concurrency, and
+    /// nothing bounded a connection that is simply *there*. MEASURED
+    /// 2026-08-19: 400 TCP connections opened against this dispatcher and left
+    /// silent were all accepted and all still alive twelve seconds later. The
+    /// ceiling is the process's file-descriptor table — the same measurement,
+    /// and the same shape, as the WebSocket dispatcher before
+    /// [`with_idle_timeout`](crate::dispatch::websocket::WebSocketDispatcher::with_idle_timeout).
+    ///
+    /// HTTP/2 keepalive is the gRPC-native answer to it, and it is *better*
+    /// than a plain idle timeout for the same reason the WebSocket knob pings:
+    /// a conformant client's HTTP/2 stack answers a PING without the
+    /// application being involved, so this closes peers that are
+    /// **unresponsive** rather than peers that are merely quiet. A streaming
+    /// RPC that is waiting for its next event is quiet and healthy, and this
+    /// leaves it alone.
+    ///
+    /// Off by default, matching this workspace's other connection knobs: a
+    /// deployment may have clients that are configured to object to PINGs, and
+    /// choosing an interval for someone is choosing their traffic profile.
+    /// `(Duration::from_secs(30), Duration::from_secs(10))` is a conventional
+    /// starting point.
+    #[must_use]
+    pub const fn with_http2_keepalive(mut self, interval: Duration, timeout: Duration) -> Self {
+        self.keepalive = Some((interval, timeout));
+        self
+    }
+
+    /// Closes a connection once it has been open for `age`, letting the client
+    /// reconnect. Default: **off**.
+    ///
+    /// Distinct from [`with_http2_keepalive`](Self::with_http2_keepalive),
+    /// which detects a peer that has stopped answering. This one bounds a peer
+    /// that answers perfectly and simply never leaves — which is what makes a
+    /// fleet behind a load balancer drift into imbalance, since a gRPC client
+    /// pins one connection and keeps it.
+    ///
+    /// tonic sends GOAWAY and drains in-flight RPCs rather than cutting them,
+    /// so this is a reconnect rather than a failure.
+    #[must_use]
+    pub const fn with_max_connection_age(mut self, age: Duration) -> Self {
+        self.max_connection_age = Some(age);
+        self
     }
 
     /// Starts a gRPC server on the given address.
@@ -122,6 +177,14 @@ impl GrpcDispatcher {
     fn build_router(&self) -> tonic::transport::server::Router {
         let mut server = tonic::transport::Server::builder()
             .concurrency_limit_per_connection(self.config.concurrency_limit);
+        if let Some((interval, timeout)) = self.keepalive {
+            server = server
+                .http2_keepalive_interval(Some(interval))
+                .http2_keepalive_timeout(Some(timeout));
+        }
+        if let Some(age) = self.max_connection_age {
+            server = server.max_connection_age(age);
+        }
         server.add_service(self.into_service())
     }
 }
@@ -131,6 +194,8 @@ impl std::fmt::Debug for GrpcDispatcher {
         f.debug_struct("GrpcDispatcher")
             .field("handler", &"RequestHandler { .. }")
             .field("config", &self.config)
+            .field("keepalive", &self.keepalive)
+            .field("max_connection_age", &self.max_connection_age)
             .finish()
     }
 }
@@ -138,6 +203,64 @@ impl std::fmt::Debug for GrpcDispatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── Connection-level bounds ──────────────────────────────────────────
+    //
+    // `GrpcConfig` bounds message size and per-connection concurrency, and
+    // until 2026-08-19 nothing bounded a connection that simply exists.
+    // MEASURED then: 400 TCP connections opened against this dispatcher and
+    // left silent were all accepted, none refused, and the oldest was still
+    // alive twelve seconds later. Same shape as the WebSocket dispatcher's
+    // missing post-handshake bounds, one binding over.
+
+    /// The defaults are off, and both knobs record what they were asked for.
+    ///
+    /// Asserted on the fields rather than behaviourally. tonic owns the actual
+    /// PING timing, so a behavioural test here would be testing tonic; what
+    /// this dispatcher is responsible for is recording the operator's choice
+    /// and *not* inventing one. See the note at the `build_router` call for
+    /// what this does not cover. A default that nothing asserts is a
+    /// default that changes by accident — and defaulting a keepalive on would
+    /// start sending PINGs to every existing deployment's clients.
+    #[test]
+    fn connection_knobs_are_off_by_default_and_carry_what_they_are_given() {
+        use crate::agent_executor;
+        use crate::RequestHandlerBuilder;
+        use std::sync::Arc;
+        struct DummyExec;
+        agent_executor!(DummyExec, |_ctx, _queue| async { Ok(()) });
+        let handler = Arc::new(RequestHandlerBuilder::new(DummyExec).build().unwrap());
+
+        let default = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default());
+        assert!(
+            default.keepalive.is_none(),
+            "HTTP/2 keepalive must be opt-in: enabling it by default would start \
+             pinging the clients of every deployment that upgrades"
+        );
+        assert!(
+            default.max_connection_age.is_none(),
+            "and so must connection ageing, which forces reconnects"
+        );
+
+        let tuned = GrpcDispatcher::new(handler, GrpcConfig::default())
+            .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
+            .with_max_connection_age(Duration::from_secs(600));
+        assert_eq!(
+            tuned.keepalive,
+            Some((Duration::from_secs(30), Duration::from_secs(10)))
+        );
+        assert_eq!(tuned.max_connection_age, Some(Duration::from_secs(600)));
+
+        // Build the router with them set. This catches a tonic rename or a
+        // signature change, at compile time — it does **not** catch the
+        // passthrough being dropped, because tonic exposes no way to read a
+        // `Router`'s keepalive back. Verified by mutation: deleting the two
+        // `http2_keepalive_*` calls leaves this test green. Covering that would
+        // need a client that deliberately stops answering PINGs, which is a
+        // raw HTTP/2 exercise rather than a dispatcher one; recorded here
+        // rather than implied by a passing test.
+        let _router = tuned.build_router();
+    }
 
     #[test]
     fn grpc_dispatcher_debug_does_not_panic() {
