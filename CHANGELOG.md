@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction, and the rest is chained `with_*` in the style
   `AgentCapabilities` already used. `AgentInterface::jsonrpc/grpc/rest` spell
   the spec's own binding names and default `protocol_version` to
-  `A2A_VERSION`. This repository contained 125 `AgentCard { .. }` literals when
+  `A2A_VERSION`. This repository contained 122 `AgentCard { .. }` literals when
   the constructors were written.
 
 - **`push_outcome::SKIPPED`**, reported once per push-notification config the

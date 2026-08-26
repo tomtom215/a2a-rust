@@ -16,7 +16,7 @@
 //! `signatures` were and writing `None` six times.
 //!
 //! It was not a hypothetical cost. Measured 2026-08-19, this repository
-//! contained **125** `AgentCard { .. }` literals: the project paid the tax
+//! contained **122** `AgentCard { .. }` literals: the project paid the tax
 //! more than anyone.
 //!
 //! # Shape
