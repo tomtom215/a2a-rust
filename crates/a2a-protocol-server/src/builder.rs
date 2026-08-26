@@ -288,9 +288,14 @@ impl RequestHandlerBuilder {
     /// Sets a tenant resolver for multi-tenant deployments.
     ///
     /// The resolver extracts a tenant identifier from each incoming request's
-    /// [`CallContext`](crate::CallContext). When combined with
-    /// [`with_tenant_config`](Self::with_tenant_config), this enables per-tenant
-    /// resource limits and configuration.
+    /// [`CallContext`](crate::CallContext). That identifier is what partitions
+    /// the tenant-aware stores, so setting a resolver is what makes data
+    /// isolation real.
+    ///
+    /// It does **not** switch on per-tenant resource limits. Pairing it with
+    /// [`with_tenant_config`](Self::with_tenant_config) gives you a resolved
+    /// [`TenantLimits`](crate::TenantLimits) to read; enforcing it is yours.
+    /// See [`tenant_config`](crate::tenant_config).
     ///
     /// Defaults to `None` (single-tenant mode).
     #[must_use]
@@ -334,14 +339,17 @@ impl RequestHandlerBuilder {
         self
     }
 
-    /// Sets per-tenant configuration for multi-tenant deployments.
+    /// Stores per-tenant limit declarations on the handler.
     ///
-    /// [`PerTenantConfig`] allows differentiated service levels (timeouts,
-    /// capacity limits, rate limits) per tenant. Pair with
-    /// [`with_tenant_resolver`](Self::with_tenant_resolver) to extract the
-    /// tenant identity from incoming requests.
+    /// [`PerTenantConfig`] is a lookup table, and this stores it — **it does
+    /// not switch on differentiated service levels.** Nothing in the request
+    /// path reads the limits; see [`tenant_config`](crate::tenant_config) for
+    /// what is and is not enforced, and for how to apply them yourself. Pair
+    /// with [`with_tenant_resolver`](Self::with_tenant_resolver) to identify
+    /// the tenant whose limits to look up.
     ///
-    /// Defaults to `None` (uniform limits for all callers).
+    /// Defaults to `None`. Note that setting it changes nothing about how
+    /// requests are served — limits are uniform either way.
     #[must_use]
     pub fn with_tenant_config(mut self, config: PerTenantConfig) -> Self {
         self.tenant_config = Some(config);

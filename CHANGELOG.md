@@ -362,6 +362,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`PerTenantConfig` and `TenantLimits` now document that nothing enforces
+  them** (`a2a-protocol-server`). All five per-tenant limits are stored,
+  resolvable through `PerTenantConfig::get`, and read by no code in the request
+  path — verified by enumerating every mention of the type outside its own
+  module: an import, a field, the `tenant_config()` accessor, a `Debug` line, a
+  builder field and its setter, and otherwise tests. `executor_timeout` and
+  `event_queue_capacity` share their names with live process-wide fields on the
+  handler and its builder, which is what made them look wired; those fields are
+  not these fields.
+
+  The module header previously advised operators to *"set per-tenant
+  `max_concurrent_tasks` so that the sum across active tenants stays within the
+  process-wide caps if noisy-neighbor isolation matters"* — advice to rely on a
+  field nothing reads. Enforcing all five is a feature with open design
+  questions (B22 in `docs/v0.9.0-post-release-review.md`); enforcing some of
+  them would leave live knobs beside inert ones, which is the defect shape
+  itself. So the behaviour is unchanged and the documentation is now exactly
+  true: the module states what it stores and resolves, each field names what
+  would enforce it, and the two builder setters no longer claim to enable
+  per-tenant limits. **Data isolation is unaffected** — it runs through the
+  tenant-aware stores' partitioning, not through any limit here.
+
 - **`ClientConfig::max_response_size` now states what it reaches.** It governs
   every transport `ClientBuilder` constructs (JSON-RPC and REST directly; gRPC
   and WebSocket as their `max_message_size`) and not a transport supplied to
