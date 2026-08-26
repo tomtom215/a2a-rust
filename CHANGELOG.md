@@ -127,6 +127,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server-wide lock on every create, which is a throughput decision rather than
   a bug fix, and is recorded as backlog B20.
 
+  Worth knowing who this bit: `InMemoryPushConfigStore` has its *own* per-task
+  cap, default 100, enforced atomically under its own lock, and the builder
+  never passes `HandlerLimits` to it. At the shipped defaults both are 100 and
+  the store's correct check masked the handler's racy one — so the defect
+  appeared for an operator who *lowered* `max_push_configs_per_task`, and for
+  every SQL-backed deployment at any setting, since those stores do not
+  self-enforce and the handler's check is the only one there is.
+
 - **`with_stream_connect_timeout` did nothing on the gRPC transport.**
   `ClientBuilder` carries three timeouts and `build_grpc` passed two, dropping
   the third; the gRPC transport then bounded a stream's first event on the

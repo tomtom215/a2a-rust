@@ -72,6 +72,23 @@ check_free_disk() {
     avail_gb=$(( avail_kb / 1024 / 1024 ))
     [ "$avail_gb" -ge "$advise" ] && return 0
 
+    # How much of target/ is incremental-compile state, which is reclaimable
+    # without losing a single compiled artifact CI would keep.
+    #
+    # Worth naming a number for: on 2026-08-19 a 21 GB target/ here was 16 GB
+    # incremental. "Free space: cargo clean" was the advice, and `cargo clean`
+    # costs a full rebuild — when deleting one directory would have freed three
+    # quarters of it. CI never accumulates this because each job starts cold;
+    # a machine that runs preflight repeatedly does.
+    #
+    # `du` over the whole tree would be the slow path made slower, so this only
+    # measures the incremental directories, which is the reclaimable part.
+    local incr_kb incr_note=""
+    incr_kb=$(du -sk "$where"/*/incremental 2>/dev/null | awk '{t += $1} END {print t+0}')
+    if [ "${incr_kb:-0}" -gt $(( 1024 * 1024 )) ]; then
+        incr_note="      rm -rf ${where}/*/incremental   # $(( incr_kb / 1024 / 1024 )) GB here right now, no rebuild of anything CI keeps"
+    fi
+
     if [ "$avail_gb" -lt "$floor" ]; then
         cat >&2 <<EOF
 
@@ -82,7 +99,7 @@ preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier cannot finish under
   measured. Free space:
 
       cargo clean                       # one fingerprint instead of two
-      rm -rf target/debug/incremental   # cheaper, often enough
+${incr_note:-      rm -rf ${where}/*/incremental   # cheaper, often enough}
 
   Or run it anyway:
 
@@ -101,7 +118,10 @@ preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier usually wants ${adv
   fingerprint, so a tree also built without them keeps two sets of artifacts:
   measured, that reached 29 GB and then ENOSPC. \`cargo clean\` if this run dies
   in an unexpected place.
-
+${incr_note:+
+  Cheaper first:
+$incr_note
+}
 EOF
 }
 
