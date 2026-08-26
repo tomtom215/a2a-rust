@@ -180,6 +180,20 @@ jobs:
       - name: Block scalars parse as YAML says
         run: python3 scripts/check_block_scalars.py
 
+      # A guard flag claimed with `compare_exchange(false, true, ..)` and
+      # released by a `store(false, ..)` at the end of the function is released
+      # on exactly the paths somebody thought of. Dropping the future — a
+      # `select!`, a client hanging up, a `JoinHandle::abort` — runs none of
+      # them, and the flag stays claimed for the life of the process.
+      #
+      # That is not hypothetical here. `InMemoryTaskStore::maybe_evict` had
+      # exactly this shape, and because both of that store's memory bounds ran
+      # through the flag, one cancelled sweep left the default store with no
+      # memory ceiling at all. Measured 2026-08-19; see Addendum 8 of
+      # docs/v0.9.0-post-release-review.md.
+      - name: Guard flags are released by Drop
+        run: python3 scripts/check_cancellation_release.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})

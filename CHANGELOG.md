@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`push_outcome::SKIPPED`**, reported once per push-notification config the
   per-event delivery budget never reaches.
 
+- **A CI gate for the cancellation class:**
+  `scripts/check_cancellation_release.py`. A file that claims a guard slot with
+  `compare_exchange(false, true, ..)` must contain an `impl Drop` that releases
+  one. Three of this release's defects were that shape — state claimed on one
+  path and released on another, with an `.await` in between, so dropping the
+  future runs neither — and all three were found by a person reading code.
+  `clippy::await_holding_lock` covers the inverse case; nothing covered this
+  one.
+
 ### Fixed
 
 - **One slow multicast consumer stalled every other member's stream**
