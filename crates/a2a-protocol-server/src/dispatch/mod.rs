@@ -44,7 +44,14 @@ pub struct DispatchConfig {
     pub max_request_body_size: usize,
     /// Timeout for reading the full request body. Default: 30 seconds.
     pub body_read_timeout: std::time::Duration,
-    /// Maximum query string length (REST only). Default: 4096.
+    /// Maximum query string length. Default: 4096.
+    ///
+    /// Honoured by [`RestDispatcher`], which
+    /// checks it before parsing. **Not** by the Axum router, which serves the
+    /// same REST routes but hands query parsing to Axum's `Query` extractor —
+    /// so "REST only", as this line used to read, named the binding when it
+    /// meant the type. What bounds a query string there is the HTTP server's
+    /// own header limits, not this number.
     pub max_query_string_length: usize,
     /// SSE keep-alive interval. Default: 30 seconds.
     ///
