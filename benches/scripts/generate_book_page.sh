@@ -56,6 +56,43 @@ else:
 " 2>/dev/null || echo "—"
 }
 
+# Extracts the median point estimate as nanoseconds, quantised to exactly the
+# precision `extract_median` prints into the tables.
+#
+# Prose derived from full-precision estimates and tables printed to four
+# significant figures do not have to agree, and on 2026-08-18 they did not:
+# `generate_book_page.sh` wrote "22.9%" and "128.6 µs" from the raw estimates
+# while `check_benchmark_prose.sh`, which re-derives from the committed table,
+# computed 22.8% and 128.7 µs from 196.5/241.4 and 323.0/194.3. Both were
+# arithmetically right. The gate was red on `main` at 4ddb7ab, and its own
+# remedy — "regenerate the page" — could not clear it, because a regenerate
+# reproduced the full-precision answer every time.
+#
+# Rounding the inputs first makes prose and tables agree by construction, which
+# is the property the checker is entitled to assume. It costs a tenth of a
+# percent of precision in a sentence that is quoting a four-significant-figure
+# table anyway.
+extract_median_ns_as_tabled() {
+    local est_file="$1"
+    if [ ! -f "$est_file" ]; then
+        echo "0"
+        return
+    fi
+    python3 -c "
+import json
+with open('$est_file') as f:
+    d = json.load(f)
+ns = d['median']['point_estimate']
+# Mirrors extract_median's unit selection and precision, exactly.
+if ns >= 1_000_000:
+    print(int(round(round(ns / 1_000_000, 2) * 1_000_000)))
+elif ns >= 1_000:
+    print(int(round(round(ns / 1_000, 1) * 1_000)))
+else:
+    print(int(round(ns)))
+" 2>/dev/null || echo "0"
+}
+
 # Extracts the median point estimate as raw nanoseconds.
 extract_median_ns() {
     local est_file="$1"
@@ -115,8 +152,10 @@ derive_per_agent_saving() {
 derive_pct_increase() {
     local from_file="$1" to_file="$2"
     local from to
-    from="$(extract_median_ns "$from_file")"
-    to="$(extract_median_ns "$to_file")"
+    # Quantised: this figure is checked against the rounded table. See
+    # extract_median_ns_as_tabled.
+    from="$(extract_median_ns_as_tabled "$from_file")"
+    to="$(extract_median_ns_as_tabled "$to_file")"
     if [ "$from" = "0" ] || [ "$to" = "0" ]; then
         echo "—"
         return
@@ -130,8 +169,10 @@ derive_pct_increase() {
 derive_saving() {
     local slow_file="$1" fast_file="$2"
     local slow fast
-    slow="$(extract_median_ns "$slow_file")"
-    fast="$(extract_median_ns "$fast_file")"
+    # Quantised: this figure is checked against the rounded table. See
+    # extract_median_ns_as_tabled.
+    slow="$(extract_median_ns_as_tabled "$slow_file")"
+    fast="$(extract_median_ns_as_tabled "$fast_file")"
     if [ "$slow" = "0" ] || [ "$fast" = "0" ]; then
         echo "—"
         return

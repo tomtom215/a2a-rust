@@ -642,6 +642,25 @@ def build_registry() -> dict[str, Probe | Exempt]:
 
     LINEAR = {7: 363.76, 27: 537.87, 52: 719.43, 252: 1859.7, 502: 3570.3}
     QUADRATIC = {7: 381.42, 27: 573.58, 52: 931.54, 252: 27431.0, 502: 120570.0}
+    # Added to benchmarks.yml on 2026-08-19, because a `GITHUB_TOKEN` push does
+    # not trigger `ci.yml` and so the one job that writes benchmarks.md was the
+    # one job never checking it. It is exempt here rather than probed for the
+    # reason this file's header gives for excluding ci.yml wholesale:
+    # `scripts/prove_gates_fail.sh` already proves this exact script can fail,
+    # from its ci.yml call site, and two harnesses claiming one gate is how one
+    # of them rots unnoticed.
+    #
+    # Registered rather than left alone because it is not auto-selected: the
+    # step body is a bare script invocation with no literal `exit`, so
+    # EXPLICIT_FAIL does not match it and it would otherwise be invisible to
+    # this harness — silently uncovered, which is the state this file exists to
+    # make impossible.
+    reg["benchmarks.yml::bench::Generated page agrees with itself"] = Exempt(
+        "scripts/prove_gates_fail.sh already proves check_benchmark_prose.sh "
+        "can fail, from its ci.yml call site; a second proof of one script is "
+        "the duplicate ownership this harness's header rules out"
+    )
+
     reg["benchmarks.yml::bench::Streaming must stay linear in event count"] = Probe(
         healthy=_streaming_fixture(LINEAR),
         defects=[

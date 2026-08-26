@@ -543,7 +543,7 @@ Production deployments expecting >256 events/task should increase
 
 ### Transport payload insensitivity
 
-Transport benchmarks (64B → 16KB) show a 22.9% latency increase for a
+Transport benchmarks (64B → 16KB) show a 22.8% latency increase for a
 256× payload increase, because the 196.5 µs HTTP round-trip dominates. Serde
 regressions cannot be detected via transport benchmarks. Use the
 `protocol/payload_scaling` isolation benchmarks (64B → 1MB, pure serde)
@@ -551,7 +551,7 @@ for serialization regression detection.
 
 ### Connection reuse impact
 
-Connection reuse saves 128.6 µs (39.8%) on loopback —
+Connection reuse saves 128.7 µs (39.8%) on loopback —
 323.0 µs per request when the client is rebuilt each time,
 versus 194.3 µs when it is shared. On real networks with TLS the
 saving is larger still (TLS handshake dominates). Best practice: create one
@@ -587,7 +587,7 @@ Sharing wins at every burst size, and the medians' 95% confidence intervals are
 disjoint in all three, so the direction is not noise. But the size of the win is
 about half what the single-request comparison above predicts:
 55.2 µs (17.8%) per agent
-against the 128.6 µs (39.8%) that
+against the 128.7 µs (39.8%) that
 `reused_client` versus `new_client_per_request` would lead you to expect.
 
 The reason is that the two arms differ in two coupled ways, not one. A shared
