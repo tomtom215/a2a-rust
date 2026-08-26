@@ -162,6 +162,13 @@ report_external_prerequisites() {
 # that is what it is for — and the gate genuinely does fail in CI on a dirty
 # tree, so skipping it would be the silent-skip failure this file argues
 # against.
+#
+# What it cannot do: a precheck speaks once, at second 0. A `--full` run takes
+# most of an hour, and editing during one puts the tree back into exactly the
+# state this warns about, silently, long after the warning. That happened twice
+# on 2026-08-19 — both times an uncommitted doc comment, both times reported 39
+# gates in as a `package` failure. If you edit while a run is going, commit
+# before it reaches `package`, or read that failure as your own.
 report_dirty_worktree() {
     # `cargo package` is a `--full`-only gate, and a precheck that fires on a
     # tier which cannot hit the problem is noise — the same argument
