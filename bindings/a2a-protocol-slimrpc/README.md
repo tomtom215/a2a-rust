@@ -22,9 +22,44 @@ v1.0 specification contains no occurrence of "slim" or "agntcy". Nothing here is
 required for A2A conformance — this exists because the SLIM fabric is where some
 deployments already live.
 
-The binding itself is complete: all eleven methods in the spec's inventory, both
-streaming methods included, plus multicast — verified end-to-end over a real
-SLIM datapath and across a real SLIM node on a socket.
+The binding itself is complete **against the specification on upstream's
+`main`**: all eleven methods in that inventory, both streaming methods included,
+plus multicast — verified end-to-end over a real SLIM datapath and across a real
+SLIM node on a socket. Upstream also develops specifications on branches that
+`main` has not merged; the next section says which, and what this crate does
+about them.
+
+## Relationship to the official `a2a-slimrpc` crate
+
+There are two Rust implementations of this binding. This one, and
+[`a2a-slimrpc`](https://crates.io/crates/a2a-slimrpc) in
+[`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs) — the A2A project's
+own. Both implement all eleven A2A methods, and both pin the same four SLIM
+crates. **Neither is a superset of the other**, which is the part worth knowing
+before you choose:
+
+| | this crate | official `a2a-slimrpc` |
+|---|---|---|
+| Eleven A2A methods | yes | yes |
+| Multicast (`spec/v1/slimrpc-multicast.md`, on upstream `main`) | **yes** | no |
+| Collaborate (`spec/v1/slimrpc-collaborative-channel.md`, on an unmerged upstream branch) | **no** | yes |
+| Channel moderator (`spec/v1/slimrpc-channel-moderator.md`, unmerged branch) | no | no |
+
+Multicast and Collaborate are different operations, not two names for one. This
+crate's multicast fans a single request out to N agents and returns per-agent
+outcomes to the originating client. Collaborate is many-to-many: members of a
+channel see each other's traffic, attributed by a `slim-src` metadata key. A
+deployment that needs channel semantics is not served by multicast, and vice
+versa.
+
+Collaborate is not implemented here because its specification has not been
+merged upstream. That is a judgement about a moving target rather than a
+statement that it does not matter — the tracking item is B24 in
+`docs/v0.9.0-post-release-review.md`, and `scripts/check_slimrpc_spec.sh` fails
+CI if upstream gains a specification nobody here has triaged.
+
+Verified 2026-08-26 by reading both sources and all upstream branch tips, not by
+comparing feature lists.
 
 ## Why it is not in the workspace
 

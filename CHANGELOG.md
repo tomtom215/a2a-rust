@@ -485,6 +485,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The SLIMRPC binding now states where it diverges from the official
+  `a2a-slimrpc` crate**, in its README, the book chapter and
+  `spec/slimrpc_v1/README.md`. Both implement all eleven A2A methods, but
+  neither is a superset of the other: this crate implements the multicast
+  specification on upstream `main` and the official one does not; the official
+  one implements Collaborate, whose specification is on an unmerged upstream
+  branch, and this one does not. The two are different operations rather than
+  two names for one, so "which is more complete" is the wrong question — the
+  docs now say so with a comparison table instead of leaving a reader to infer
+  it. Tracked as B24.
+
 - **`PerTenantConfig` and `TenantLimits` now document that nothing enforces
   them** (`a2a-protocol-server`). All five per-tenant limits are stored,
   resolvable through `PerTenantConfig::get`, and read by no code in the request

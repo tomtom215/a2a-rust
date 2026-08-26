@@ -22,8 +22,26 @@ this one.
 
 It exists because the SLIM fabric is where some deployments already are.
 
-The binding itself is complete: all eleven A2A methods, both streaming methods,
-plus multicast, driving the same `RequestHandler` the HTTP bindings drive.
+The binding itself is complete against upstream's `main`: all eleven A2A
+methods, both streaming methods, plus multicast, driving the same
+`RequestHandler` the HTTP bindings drive.
+
+## There are two Rust implementations, and neither contains the other
+
+The A2A project ships its own — [`a2a-slimrpc`](https://crates.io/crates/a2a-slimrpc)
+in [`a2aproject/a2a-rs`](https://github.com/a2aproject/a2a-rs). Both implement
+all eleven A2A methods and pin the same SLIM crates. They diverge in both
+directions:
+
+| | this crate | official `a2a-slimrpc` |
+|---|---|---|
+| Multicast — one request to N agents, per-agent outcomes back to the caller | **yes** | no |
+| Collaborate — many-to-many channel, members see each other's traffic, attributed by `slim-src` | **no** | yes |
+
+Multicast's specification is on upstream `main`. Collaborate's is on a branch
+`main` has not merged, which is why it is not implemented here; the tracking
+item is B24 in the post-release review. Pick on which of the two shapes your
+deployment needs, not on which crate looks more complete — neither is.
 
 ## Installation
 
