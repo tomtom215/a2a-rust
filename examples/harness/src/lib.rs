@@ -91,6 +91,53 @@ pub enum Excuse {
     NotApplicable(&'static str),
 }
 
+/// How one cell of the grid reads.
+///
+/// Private — the report's shape is not this crate's API. It exists so the
+/// classification happens exactly once and both the printed grid and the
+/// summary counts come from the same walk. They did not before, and the
+/// summary could print a total larger than the number of cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cell {
+    /// Driven successfully over this binding.
+    Exercised,
+    /// Excused, with a reason that prints.
+    NotApplicable,
+    /// Should have run and did not.
+    Missing,
+}
+
+impl Cell {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Exercised => "ok",
+            Self::NotApplicable => "n/a",
+            Self::Missing => "MISSING",
+        }
+    }
+}
+
+/// Counts a classified grid: `(exercised, not applicable, missing)`.
+///
+/// The one place the summary's numbers come from. `report` prints from this
+/// and does no counting of its own, so the printed grid and the printed
+/// summary cannot disagree — they are the same data. Taking the numbers from
+/// `exercised.len()` and `excused.len()` instead, as this once did, let a
+/// single cell be counted in both and print "45 ... of 44 cells".
+fn tally(grid: &[(Method, Binding, Cell)]) -> (usize, usize, Vec<(Method, Binding)>) {
+    let mut done = 0;
+    let mut not_applicable = 0;
+    let mut missing = Vec::new();
+    for (m, b, cell) in grid {
+        match cell {
+            Cell::Exercised => done += 1,
+            Cell::NotApplicable => not_applicable += 1,
+            Cell::Missing => missing.push((*m, *b)),
+        }
+    }
+    (done, not_applicable, missing)
+}
+
 /// Records what ran.
 pub struct Matrix {
     exercised: BTreeSet<(String, Binding)>,
@@ -128,8 +175,14 @@ impl Matrix {
     /// An excused cell must print its reason rather than vanish: the day a
     /// binding genuinely cannot serve a method, the alternative is deleting
     /// the row, and a deleted row is indistinguishable from coverage.
+    /// Excusing the same cell twice keeps the first reason and adds nothing.
+    /// `record` has always deduplicated (it is a set); this did not, so a
+    /// repeated excuse printed the cell twice under "Not applicable" and
+    /// counted it twice in the summary.
     pub fn excuse(&mut self, method: Method, binding: Binding, why: Excuse) {
-        self.excused.push((method, binding, why));
+        if self.is_excused(method, binding).is_none() {
+            self.excused.push((method, binding, why));
+        }
     }
 
     fn is_excused(&self, method: Method, binding: Binding) -> Option<Excuse> {
@@ -142,6 +195,29 @@ impl Matrix {
     fn was_exercised(&self, method: Method, binding: Binding) -> bool {
         self.exercised
             .contains(&(method.wire_name().to_owned(), binding))
+    }
+
+    /// Every cell, classified exactly once, in row-major order.
+    ///
+    /// The three classes partition the grid, so counting them can never come
+    /// to more than `Method::ALL.len() * Binding::ALL.len()` — which taking
+    /// the counts from `exercised.len()` and `excused.len()` could, because a
+    /// cell can be in both collections.
+    fn grid(&self) -> Vec<(Method, Binding, Cell)> {
+        let mut out = Vec::with_capacity(Method::ALL.len() * Binding::ALL.len());
+        for m in Method::ALL {
+            for b in Binding::ALL {
+                let cell = if self.was_exercised(*m, *b) {
+                    Cell::Exercised
+                } else if self.is_excused(*m, *b).is_some() {
+                    Cell::NotApplicable
+                } else {
+                    Cell::Missing
+                };
+                out.push((*m, *b, cell));
+            }
+        }
+        out
     }
 
     /// Prints the grid and returns the cells that should have run but did not.
@@ -162,35 +238,39 @@ impl Matrix {
         }
         println!();
 
-        let mut missing = Vec::new();
-        for m in Method::ALL {
-            print!("{:<width$}", m.wire_name(), width = width);
-            for b in Binding::ALL {
-                let cell = if self.was_exercised(*m, *b) {
-                    "ok"
-                } else if self.is_excused(*m, *b).is_some() {
-                    "n/a"
-                } else {
-                    missing.push((*m, *b));
-                    "MISSING"
-                };
-                print!(" {cell:^11}");
+        // One classification, printed and counted. `tally` is the only place
+        // the summary's numbers come from, so they cannot disagree with the
+        // grid above them.
+        let grid = self.grid();
+        let (done, not_applicable, missing) = tally(&grid);
+
+        for row in grid.chunks(Binding::ALL.len()) {
+            print!("{:<width$}", row[0].0.wire_name(), width = width);
+            for (_, _, cell) in row {
+                print!(" {:^11}", cell.label());
             }
             println!();
         }
 
-        if !self.excused.is_empty() {
+        // Only the excuses that are actually in effect. An excuse for a cell
+        // that was then exercised is moot, and printing it under "Not
+        // applicable" while the grid shows `ok` for the same cell is the kind
+        // of contradiction this module exists to stop.
+        let in_effect: Vec<_> = self
+            .excused
+            .iter()
+            .filter(|(m, b, _)| !self.was_exercised(*m, *b))
+            .collect();
+        if !in_effect.is_empty() {
             println!("\nNot applicable, with reasons:");
-            for (m, b, Excuse::NotApplicable(why)) in &self.excused {
+            for (m, b, Excuse::NotApplicable(why)) in in_effect {
                 println!("  {} over {} — {why}", m.wire_name(), b.label());
             }
         }
 
         let total = Method::ALL.len() * Binding::ALL.len();
-        let excused = self.excused.len();
-        let done = self.exercised.len();
         println!(
-            "\n{done} exercised, {excused} not applicable, {} missing, of {total} cells",
+            "\n{done} exercised, {not_applicable} not applicable, {} missing, of {total} cells",
             missing.len()
         );
         println!(
@@ -209,53 +289,7 @@ impl Matrix {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Binding, Excuse, Matrix};
-    use a2a_protocol_types::method::Method;
-
-    /// An empty matrix must report every cell missing. If it reported zero
-    /// missing, a demo that made no calls at all would exit 0 — the exact
-    /// failure this module exists to prevent.
-    #[test]
-    fn an_empty_matrix_is_not_complete() {
-        let m = Matrix::new();
-        let missing = m.report();
-        assert_eq!(missing.len(), Method::ALL.len() * Binding::ALL.len());
-    }
-
-    #[test]
-    fn recorded_cells_stop_being_missing() {
-        let mut m = Matrix::new();
-        m.record(Method::GetTask, Binding::JsonRpc);
-        let missing = m.report();
-        assert!(!missing.contains(&(Method::GetTask, Binding::JsonRpc)));
-        assert!(missing.contains(&(Method::GetTask, Binding::Grpc)));
-    }
-
-    /// An excuse must remove the cell from `missing` *and* stay visible. A
-    /// silent excuse is indistinguishable from coverage.
-    #[test]
-    fn excused_cells_are_not_missing_but_are_still_listed() {
-        let mut m = Matrix::new();
-        m.excuse(
-            Method::SubscribeToTask,
-            Binding::Grpc,
-            Excuse::NotApplicable("test"),
-        );
-        let missing = m.report();
-        assert!(!missing.contains(&(Method::SubscribeToTask, Binding::Grpc)));
-        assert_eq!(m.excused.len(), 1);
-    }
-
-    /// Recording the same cell twice must not inflate the count.
-    #[test]
-    fn recording_is_idempotent() {
-        let mut m = Matrix::new();
-        m.record(Method::CancelTask, Binding::HttpJson);
-        m.record(Method::CancelTask, Binding::HttpJson);
-        assert_eq!(m.exercised.len(), 1);
-    }
-}
+mod tests;
 
 pub mod counter;
 pub mod sweep;

@@ -32,6 +32,9 @@ const STREAM_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(
 /// Cap on events read from one stream, so a chatty agent cannot stall the run.
 const MAX_STREAM_EVENTS: usize = 50;
 
+#[cfg(test)]
+mod tests;
+
 /// Builds a single-text-part send.
 pub fn make_send_params(text: &str) -> MessageSendParams {
     MessageSendParams {

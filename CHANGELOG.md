@@ -539,6 +539,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled. Four pages were already unregistered. `check_book_code.sh` now fails
   on an unregistered page, and on an exclusion whose page no longer exists.
 
+- **The example coverage matrix could print a total larger than the grid.**
+  `a2a-example-harness` scores which A2A methods ran over which bindings, and
+  its summary took "exercised" from one collection and "not applicable" from
+  another — two collections a single cell can be in at once. A cell that was
+  both excused and then exercised, or excused twice, was counted twice, so the
+  line read `1 exercised, 1 not applicable, 43 missing, of 44 cells`. Both
+  numbers now come from one classification of the grid, so the three buckets
+  partition it by construction; `excuse` deduplicates as `record` always has;
+  and an excuse for a cell that was then exercised no longer prints under "Not
+  applicable" while the grid shows it as `ok`.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

@@ -29,6 +29,9 @@ pub struct CounterOutcome {
     pub failures: Vec<String>,
 }
 
+#[cfg(test)]
+mod tests;
+
 fn code_of(e: &ClientError) -> Option<ErrorCode> {
     match e {
         ClientError::Protocol(p) => Some(p.code),

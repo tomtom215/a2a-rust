@@ -133,24 +133,38 @@ makes, and it is a materially stronger position than the document was stating.
    `SECURITY.md`, which directs reporters to GitHub Security Advisories instead.
 5. **Example test coverage is the hole, not example count.** Measured:
 
-   | example | LOC | files with tests |
+   **This table was wrong when first published, and it understated the
+   project.** It counted test *files*, so an example whose tests live in an
+   inline `#[cfg(test)]` module read as having none — which was true of four
+   of them. Re-measured by counting `#[test]`/`#[tokio::test]` functions:
+
+   | example | LOC | tests |
    |---|---:|---:|
-   | ~~`incident-response`~~ | 3,498 | **21 tests, added 2026-08-26** |
-   | `harness` | 920 | 0 |
-   | `echo-agent` | 692 | 0 |
-   | `multi-lang-team` | 679 | 0 |
-   | `rig-agent` | 647 | 0 |
-   | `genai-agent` | 632 | 0 |
-   | `deploy-agent` | 416 | 0 |
-   | `hello-agent` | 142 | 0 |
-   | `agent-team` | 8,911 | 16 |
+   | ~~`incident-response`~~ | 3,998 | **21** — added 2026-08-26 |
+   | ~~`harness`~~ | 1,374 | **19** — 4 existing, 15 added 2026-08-26 |
+   | `deploy-agent` | 416 | 5 |
+   | `hello-agent` | 142 | 3 |
+   | `echo-agent` | 692 | 2 |
+   | `agent-team` | 8,911 | 2 — but see below |
+   | `genai-agent` | 632 | **0** |
+   | `multi-lang-team` | 679 | **0** |
+   | `rig-agent` | 647 | **0** |
+
+   `agent-team`'s 2 is misleading in the other direction: its 16 files under
+   `src/tests/` are a dogfooding suite that runs as a *program*, driven by
+   `ci.yml`'s `dogfood` job, not by `cargo test`. It is exercised in CI; it
+   simply does not report through the test harness.
 
    `incident-response` was the one a reviewer would name, and now has 21 tests
    covering all three executors — the pause, the question, the held alert, its
    release on cancel, and the deterministic log search — running offline in
-   0.1s under `cargo test --workspace`. The seven remaining examples are
-   untested; `harness` at 920 lines is the next one worth doing, because the
-   other examples depend on it.
+   0.1s. `harness` follows, because it is the crate that decides whether the
+   other examples may claim they covered everything; testing it surfaced a
+   summary line that could print a total larger than the grid.
+
+   Three examples remain genuinely untested: `genai-agent`, `multi-lang-team`
+   and `rig-agent`. All three are thin wrappers around an external model
+   provider, which is why they were left last.
 6. **`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
    Foundation / A2A project technical leadership"** whose figures (608 commits,
    ten tags) are superseded. It carries its date, which is defensible, but a
