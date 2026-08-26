@@ -41,6 +41,40 @@ pub struct HandlerLimits {
     /// Bounds how long the handler waits for a single push notification delivery
     /// to complete, preventing one slow webhook from blocking all subsequent
     /// deliveries.
+    ///
+    /// # This is a total, and the sender's retries have to fit inside it
+    ///
+    /// The bound covers the whole [`PushSender::send`] call, retries included —
+    /// not one HTTP request. A sender whose own schedule is longer never
+    /// finishes it, and the attempts it advertises simply do not happen.
+    ///
+    /// **The shipped defaults contradict each other.** `HttpPushSender::new()`
+    /// is three attempts at a 30-second request timeout with `[1s, 2s]`
+    /// backoff — 93 seconds — against this 5-second bound. Measured
+    /// 2026-08-19 against a real socket: **one of the three attempts reaches
+    /// the webhook, and the bound fires at 5.001s.** So `max_attempts` and
+    /// `backoff` are, at the defaults, configuration that cannot take effect.
+    ///
+    /// The two numbers pull in opposite directions and neither is obviously
+    /// wrong. Raising this bound to fit the retries makes the 30-second
+    /// per-event budget in `deliver_push_bg` reachable by a single config,
+    /// which is the amplification ceiling that budget exists to hold.
+    /// Shrinking the sender's schedule to fit gives real webhooks less time
+    /// than a slow one legitimately needs. Choosing between them is a
+    /// deployment decision, so this documents the arithmetic rather than
+    /// picking:
+    ///
+    /// ```text
+    /// attempts_that_run == 1 + how many whole (request_timeout + backoff)
+    ///                          cycles fit in push_delivery_timeout
+    /// ```
+    ///
+    /// A sender that reports [`PushSender::max_delivery_duration`] gets the
+    /// truncation counted rather than mistaken for a slow endpoint — see
+    /// [`push_outcome::TIMEOUT_TRUNCATED`](crate::metrics::push_outcome::TIMEOUT_TRUNCATED).
+    ///
+    /// [`PushSender::send`]: crate::push::PushSender::send
+    /// [`PushSender::max_delivery_duration`]: crate::push::PushSender::max_delivery_duration
     pub push_delivery_timeout: Duration,
     /// Maximum number of artifacts per task. Default: 1000.
     ///

@@ -22,7 +22,10 @@ categories             = ["network-programming", "web-programming", "api-binding
 ## client (reaching agents) and the bundled push sender (delivering webhooks)
 ## must speak TLS out of the box. Opt out with `default-features = false`.
 default = ["tls-rustls"]
-## Enable agent card signing.
+## Make `a2a_protocol_types::signing` available across the three crates.
+##
+## Signing and verification are primitives you call, not behaviour the server or
+## client performs on your behalf — see those crates' own `signing` entries.
 signing = ["a2a-protocol-types/signing", "a2a-protocol-server/signing", "a2a-protocol-client/signing"]
 ## Enable structured logging via the `tracing` crate.
 tracing = ["a2a-protocol-client/tracing", "a2a-protocol-server/tracing"]

@@ -124,6 +124,19 @@ jobs:
       - name: Generate benchmark dashboard
         run: ./benches/scripts/generate_dashboard.sh
 
+      # ci.yml runs this too — but not on the commit this job is about to make.
+      # Pushes authenticated with GITHUB_TOKEN do not trigger workflow runs, by
+      # design, so every "chore: update benchmark results" commit lands on main
+      # without CI. Measured 2026-08-19: main's HEAD was 4ddb7ab, one such
+      # commit, and `check_benchmark_prose.sh` exited 1 against it while the
+      # newest ci.yml run on main was the PR #111 merge two commits earlier.
+      #
+      # The gate belongs here as well as in ci.yml: this is the job that writes
+      # the file, so this is the job that can still stop a bad one from
+      # reaching main.
+      - name: Generated page agrees with itself
+        run: ./scripts/check_benchmark_prose.sh
+
       - name: Commit benchmark results to book
         run: |
           git config user.name "github-actions[bot]"

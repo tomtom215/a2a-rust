@@ -172,6 +172,52 @@ impl A2aRouter {
     }
 }
 
+// ── Body extraction ──────────────────────────────────────────────────────────
+
+/// A request body read under [`DispatchConfig::body_read_timeout`].
+///
+/// Axum's `Bytes` extractor reads to completion with no deadline, so this
+/// router honoured `max_request_body_size` (via `DefaultBodyLimit` below) and
+/// ignored the timeout beside it — one of two body bounds, on a config whose
+/// own example sets both together and which scopes a field explicitly when it
+/// is limited (`max_query_string_length` says "REST only"; this one said
+/// nothing).
+///
+/// MEASURED 2026-08-19 with `body_read_timeout(1s)`, announcing a 1000-byte
+/// body and sending 8 of them:
+///
+/// | binding | outcome |
+/// |---|---|
+/// | `JsonRpcDispatcher` | replied at 1.002s |
+/// | this router | nothing after 12s |
+///
+/// A slowloris body is the thing the knob is for, and it is the one shape a
+/// size cap cannot catch: the bytes never arrive, so the cap is never reached.
+pub(super) struct TimedBody(pub(super) Bytes);
+
+impl axum::extract::FromRequest<A2aState> for TimedBody {
+    type Rejection = axum::response::Response;
+
+    async fn from_request(
+        req: axum::extract::Request,
+        state: &A2aState,
+    ) -> Result<Self, Self::Rejection> {
+        let deadline = state.config.body_read_timeout;
+        match tokio::time::timeout(deadline, Bytes::from_request(req, state)).await {
+            Ok(Ok(bytes)) => Ok(Self(bytes)),
+            // A body that exceeded `DefaultBodyLimit`, or a broken stream:
+            // axum's own rejection already says which, and says it better than
+            // a re-wrap would.
+            Ok(Err(rejection)) => Err(rejection.into_response()),
+            Err(_) => Err((
+                axum::http::StatusCode::REQUEST_TIMEOUT,
+                format!("request body not fully received within {deadline:?}"),
+            )
+                .into_response()),
+        }
+    }
+}
+
 // ── Shared state ─────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -254,7 +300,7 @@ async fn handle_tasks_catchall(
     method: axum::http::Method,
     Path(rest): Path<String>,
     headers: axum::http::HeaderMap,
-    body: Bytes,
+    TimedBody(body): TimedBody,
 ) -> axum::response::Response {
     let hdrs = extract_headers(&headers);
     let segments: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
@@ -304,7 +350,7 @@ async fn handle_tasks_catchall(
 async fn handle_send_message(
     State(state): State<A2aState>,
     headers: axum::http::HeaderMap,
-    body: Bytes,
+    TimedBody(body): TimedBody,
 ) -> axum::response::Response {
     handle_send_inner(&state, false, &headers, body).await
 }
@@ -312,7 +358,7 @@ async fn handle_send_message(
 async fn handle_stream_message(
     State(state): State<A2aState>,
     headers: axum::http::HeaderMap,
-    body: Bytes,
+    TimedBody(body): TimedBody,
 ) -> axum::response::Response {
     handle_send_inner(&state, true, &headers, body).await
 }
@@ -622,7 +668,7 @@ mod tests {
             axum::http::Method::from_bytes(method.as_bytes()).unwrap(),
             Path(rest.to_owned()),
             axum::http::HeaderMap::new(),
-            Bytes::new(),
+            TimedBody(Bytes::new()),
         )
         .await;
         response.status()

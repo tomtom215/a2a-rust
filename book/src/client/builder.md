@@ -124,8 +124,9 @@ let client = ClientBuilder::new(url)
 | Method | Default | Description |
 |--------|---------|-------------|
 | `new(url)` | — | Base URL of the agent (required) |
-| `from_card(&AgentCard)` | — | Build from an agent card (auto-selects URL, transport, and tenant) |
-| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"` |
+| `from_card(&AgentCard)` | — | Build from an agent card, preferring `ClientConfig`'s default binding order (`["JSONRPC"]`), falling back to the card's first interface |
+| `from_card_preferring(&AgentCard, &[String])` | — | Same, with your own binding order. The first preference the card offers wins; matching is case-insensitive |
+| `with_protocol_binding(str)` | Auto-detect | Force transport: `"JSONRPC"`, `"REST"`, or `"GRPC"`. On a builder made from a card, moves the endpoint and tenant to that binding's interface too |
 | `with_custom_transport(impl Transport)` | None | Use a custom transport (e.g., `GrpcTransport`) |
 | `with_timeout(Duration)` | 30s | Per-request timeout |
 | `with_connection_timeout(Duration)` | 10s | TCP connection timeout |

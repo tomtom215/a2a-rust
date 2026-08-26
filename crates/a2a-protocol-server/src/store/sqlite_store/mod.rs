@@ -56,9 +56,24 @@ use super::task_store::{ArtifactDelta, TaskStore};
 #[derive(Debug, Clone)]
 pub struct SqliteTaskStore {
     pool: SqlitePool,
+    /// Largest page `list` will return. See
+    /// [`with_max_page_size`](SqliteTaskStore::with_max_page_size).
+    max_page_size: u32,
 }
 
 impl SqliteTaskStore {
+    /// Caps the page size `list` returns, however large a page is asked for.
+    ///
+    /// Defaults to [`DEFAULT_MAX_PAGE_SIZE`], which explains why this store
+    /// needs its own knob rather than reading [`TaskStoreConfig`].
+    ///
+    /// [`TaskStoreConfig`]: crate::store::TaskStoreConfig
+    /// [`DEFAULT_MAX_PAGE_SIZE`]: crate::store::DEFAULT_MAX_PAGE_SIZE
+    #[must_use]
+    pub const fn with_max_page_size(mut self, max: u32) -> Self {
+        self.max_page_size = max;
+        self
+    }
     /// Opens (or creates) a `SQLite` database and initializes the schema.
     ///
     /// # Errors
@@ -84,7 +99,10 @@ impl SqliteTaskStore {
         let runner = super::migration::MigrationRunner::new(pool.clone());
         runner.run_pending().await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+        })
     }
 
     /// Creates a store from an existing connection pool.
@@ -137,7 +155,10 @@ impl SqliteTaskStore {
         .execute(&pool)
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+        })
     }
 
     /// Writes journal rows for an append, falling back to a whole-task write
@@ -584,7 +605,7 @@ impl TaskStore for SqliteTaskStore {
 
             let page_size = match params.page_size {
                 Some(0) | None => 50_u32,
-                Some(n) => n.min(1000),
+                Some(n) => n.min(self.max_page_size),
             };
 
             // Fetch one extra to detect next page. LIMIT is a parameterized

@@ -119,16 +119,27 @@ impl Default for InMemoryCredentialsStore {
 }
 
 impl fmt::Debug for InMemoryCredentialsStore {
+    /// Never panics, unlike the accessors below.
+    ///
+    /// Those propagate lock poisoning deliberately, and that is right for
+    /// them: a credentials lookup that quietly returns `None` is a silent auth
+    /// downgrade. It is wrong here. Formatting is what runs *while* somebody
+    /// is diagnosing the first failure, frequently from a logging path, and a
+    /// `Debug` that panics replaces the diagnosis with a second failure — in a
+    /// release build of this workspace (`panic = "abort"`), with a process
+    /// abort.
+    ///
+    /// Poisoning is reported rather than recovered from: a count read out of a
+    /// map some writer panicked inside is not a fact worth printing as though
+    /// it were one.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Don't expose credential values in debug output.
-        let count = self
-            .inner
-            .read()
-            .expect("credentials store lock poisoned")
-            .len();
-        f.debug_struct("InMemoryCredentialsStore")
-            .field("sessions", &count)
-            .finish()
+        let mut out = f.debug_struct("InMemoryCredentialsStore");
+        match self.inner.read() {
+            Ok(guard) => out.field("sessions", &guard.len()),
+            Err(_) => out.field("sessions", &"<lock poisoned>"),
+        }
+        .finish()
     }
 }
 
@@ -248,6 +259,40 @@ impl CallInterceptor for AuthInterceptor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Debug` must not panic on a poisoned lock.
+    ///
+    /// The accessors propagate poisoning on purpose — a credentials lookup
+    /// that quietly returns `None` is a silent auth downgrade. `Debug` is the
+    /// opposite case: it runs while somebody is diagnosing the first failure,
+    /// often from a logging path, and panicking there replaces the diagnosis
+    /// with a second failure. Under this workspace's release
+    /// `panic = "abort"`, with a process abort.
+    #[test]
+    fn debug_reports_a_poisoned_lock_instead_of_panicking() {
+        let store = std::sync::Arc::new(InMemoryCredentialsStore::new());
+        store.set(SessionId::new("s1"), "bearer", "tok".into());
+
+        let poisoner = std::sync::Arc::clone(&store);
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.inner.write().expect("uncontended");
+            panic!("poison the lock");
+        }));
+        std::panic::set_hook(hook);
+        assert!(outcome.is_err(), "the closure must actually have panicked");
+        assert!(store.inner.is_poisoned(), "and poisoned the lock");
+
+        let rendered =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| format!("{store:?}")))
+                .expect("Debug must not panic on a poisoned lock");
+        assert!(
+            rendered.contains("poisoned"),
+            "and must say so rather than printing a count read out of a map a \
+             writer panicked inside: {rendered}"
+        );
+    }
 
     #[test]
     fn credentials_store_set_get_remove() {

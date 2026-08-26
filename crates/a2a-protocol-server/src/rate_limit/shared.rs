@@ -70,8 +70,8 @@ use a2a_protocol_types::error::A2aResult;
 ///
 /// Keys are caller identities and are attacker-influenced (an authenticated
 /// subject, or a client address). Treat them as untrusted input:
-/// [`PostgresRateLimitCounter`] binds them as parameters rather than
-/// interpolating them.
+/// `PostgresRateLimitCounter` (the `postgres` feature) binds them as
+/// parameters rather than interpolating them.
 ///
 /// # Errors
 ///
@@ -94,7 +94,8 @@ pub trait RateLimitCounter: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// [`A2aError`] when the backing store cannot be reached or the count
+    /// [`A2aError`](a2a_protocol_types::error::A2aError) when the backing
+    /// store cannot be reached or the count
     /// cannot be established.
     fn count<'a>(
         &'a self,

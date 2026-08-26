@@ -137,8 +137,16 @@ revert_all() {
         fi
         TOUCHED=()
     fi
-    rm -f crates/a2a-protocol-types/src/gate_probe_long.rs
-    git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_long.rs 2>/dev/null || true
+    # Files an injection *creates*. `git checkout HEAD --` above cannot remove
+    # these — there is nothing in HEAD to restore them to — so each one an
+    # injection adds has to be named here. Registering the second of them was
+    # forgotten on 2026-08-19 and the run's own post-check caught it, which is
+    # what that check is for.
+    for probe in gate_probe_long gate_probe_slot; do
+        rm -f "crates/a2a-protocol-types/src/$probe.rs"
+        git rm -q --cached --ignore-unmatch "crates/a2a-protocol-types/src/$probe.rs" \
+            2>/dev/null || true
+    done
     if [ -n "$PACKAGE_CLONE" ]; then
         rm -rf "$PACKAGE_CLONE"
         PACKAGE_CLONE=""
@@ -323,6 +331,10 @@ injection_for() {
             echo "workflow_gates" ;;
         *"check_block_scalars.py"*)
             echo "block_scalars:scripts/lib/ci_gates.sh" ;;
+        *"check_cancellation_release.py"*)
+            echo "cancellation_release" ;;
+        *"check_doc_escapes.py"*)
+            echo "doc_escapes" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -414,6 +426,8 @@ expected_marker() {
         package_excludes) echo "not excluded" ;;
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
+        cancellation_release) echo "no \`Drop\` that releases it" ;;
+        doc_escapes)      echo "containing a literal" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -477,6 +491,41 @@ PY
         file_length)
             python3 -c "open('crates/a2a-protocol-types/src/gate_probe_long.rs','w').write('// gate probe\n'*600)"
             git add -N crates/a2a-protocol-types/src/gate_probe_long.rs >/dev/null 2>&1 || true ;;
+        # A claimed guard slot in a file with no `Drop` releasing it. Written to
+        # a fresh file rather than appended to a real one so the injection is
+        # unambiguous: the checker is file-scoped, and appending to a module
+        # that already has a `Drop` would inject nothing.
+        cancellation_release)
+            python3 - <<'PROBE'
+open("crates/a2a-protocol-types/src/gate_probe_slot.rs", "w").write(
+    """// gate probe
+async fn probe(f: &std::sync::atomic::AtomicBool) {
+    if f.compare_exchange(
+        false,
+        true,
+        std::sync::atomic::Ordering::AcqRel,
+        std::sync::atomic::Ordering::Relaxed,
+    )
+    .is_err()
+    {
+        return;
+    }
+    // The cancellation point the checker is looking for, and the release on
+    // the wrong side of it.
+    tokio::task::yield_now().await;
+    f.store(false, std::sync::atomic::Ordering::Release);
+}
+"""
+)
+PROBE
+            git add -N crates/a2a-protocol-types/src/gate_probe_slot.rs >/dev/null 2>&1 || true ;;
+        doc_escapes)
+            # The exact shape that shipped: a doc comment built as one string,
+            # with its line breaks left as the two characters `\` and `n`.
+            note_touched "crates/a2a-protocol-types/src/lib.rs"
+            printf '\n/// gate probe.\\n/// second line that is not one.\n#[allow(dead_code)]\npub struct GateProbeDocEscape;\n' \
+                >>crates/a2a-protocol-types/src/lib.rs
+            ;;
         book_code)
             # Append an `ignore`d block: the exact move that would defeat the
             # book-tests crate, since a block nothing compiles cannot fail.

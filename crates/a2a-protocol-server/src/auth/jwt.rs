@@ -793,6 +793,25 @@ use hyper_util::client::legacy::connect::HttpConnector;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 
+/// Total budget for one JWKS or OIDC-discovery fetch — headers **and** body.
+///
+/// One deadline for the whole call. Until 2026-08-19 the 30 seconds bounded
+/// `client.request` alone and the body accumulation loop had no deadline at
+/// all: a size cap and nothing else. Measured against a socket that answered
+/// its headers immediately and then wrote one byte every 300ms — comfortably
+/// under the size cap, so the cap never fired — `from_oidc_issuer` was **still
+/// running after 45 seconds**.
+///
+/// The size cap bounds memory. It does not bound time, and an endpoint that
+/// wants to hold this open simply stays under it.
+///
+/// This is reachable from the request path, which is what makes it more than a
+/// slow startup: a `kid` that misses the cache forces one JWKS refetch inside
+/// token validation (see the rotation retry in `validate`), so a hung or
+/// hostile identity provider stops being an authentication problem and becomes
+/// an availability one.
+const JWKS_FETCH_BUDGET: Duration = Duration::from_secs(30);
+
 #[cfg(not(feature = "tls-rustls"))]
 type JwksHttpClient = Client<HttpConnector, Full<Bytes>>;
 #[cfg(feature = "tls-rustls")]
@@ -835,7 +854,11 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
         .body(Full::new(Bytes::new()))
         .map_err(|e| A2aError::internal(format!("{what} request build failed: {e}")))?;
 
-    let resp = tokio::time::timeout(Duration::from_secs(30), client.request(req))
+    // One deadline for the whole fetch — headers *and* body. See
+    // JWKS_FETCH_BUDGET for why that is not two.
+    let deadline = tokio::time::Instant::now() + JWKS_FETCH_BUDGET;
+
+    let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| A2aError::internal(format!("{what} request timed out")))?
         .map_err(|e| A2aError::internal(format!("{what} request failed: {e}")))?;
@@ -847,20 +870,27 @@ async fn http_get_json(client: &JwksHttpClient, url: &str, what: &str) -> A2aRes
         )));
     }
 
-    // Bound the body: a JWKS/discovery doc is small; refuse a hostile giant.
-    let mut collected: Vec<u8> = Vec::new();
+    // Bound the body in size *and* in time. The size cap alone is what a
+    // dripping server walks straight past.
     let mut body = resp.into_body();
-    while let Some(frame) = body.frame().await {
-        let frame =
-            frame.map_err(|e| A2aError::internal(format!("{what} body read failed: {e}")))?;
-        if let Some(chunk) = frame.data_ref() {
-            if jwks_body_exceeds_limit(collected.len(), chunk.len()) {
-                return Err(A2aError::internal(format!("{what} response too large")));
+    let accumulate = async {
+        let mut collected: Vec<u8> = Vec::new();
+        while let Some(frame) = body.frame().await {
+            let frame =
+                frame.map_err(|e| A2aError::internal(format!("{what} body read failed: {e}")))?;
+            if let Some(chunk) = frame.data_ref() {
+                if jwks_body_exceeds_limit(collected.len(), chunk.len()) {
+                    return Err(A2aError::internal(format!("{what} response too large")));
+                }
+                collected.extend_from_slice(chunk);
             }
-            collected.extend_from_slice(chunk);
         }
-    }
-    Ok(collected)
+        Ok(collected)
+    };
+
+    tokio::time::timeout_at(deadline, accumulate)
+        .await
+        .map_err(|_| A2aError::internal(format!("{what} body read timed out")))?
 }
 
 /// Fetches `{issuer}/.well-known/openid-configuration` and returns `jwks_uri`.

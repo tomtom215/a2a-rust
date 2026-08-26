@@ -47,11 +47,26 @@ pub const DEFAULT_QUEUE_CAPACITY: usize = 256;
 /// Default maximum event size in bytes (16 MiB).
 pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
 
-/// Default write timeout for event queue sends (5 seconds).
+/// Default deadline for handing one event to the background persistence
+/// processor (5 seconds).
 ///
-/// Retained for API compatibility. Broadcast sends are non-blocking, so
-/// this value is not actively used for backpressure. It may be used by
-/// future queue implementations.
+/// This bounds the *persistence* send, not the broadcast one. Broadcast sends
+/// really are non-blocking — a lagging SSE consumer is dropped events, never a
+/// stalled writer — and reasoning only about that channel is why this constant
+/// was plumbed through four layers and applied by nothing until 2026-08-19.
+/// The persistence channel is a bounded `mpsc`, and `send` on a full bounded
+/// `mpsc` waits for a free slot with no deadline of its own. With the
+/// background processor stalled (a webhook absorbing up to
+/// [`HandlerLimits::push_delivery_timeout`] per config, or a slow store),
+/// [`EventQueueWriter::write`] blocked forever once the channel filled —
+/// measured at 1,024 events, still blocked eight seconds later.
+///
+/// Exceeding this deadline is reported to the executor as an error rather than
+/// dropped: an event that cannot reach the persistence processor is task state
+/// that will not be stored, and failing the task says so where silently
+/// discarding it would leave the store disagreeing with what the agent did.
+///
+/// [`HandlerLimits::push_delivery_timeout`]: crate::handler::HandlerLimits::push_delivery_timeout
 pub const DEFAULT_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
@@ -133,8 +148,25 @@ pub fn new_in_memory_queue_with_options(
 ///
 /// Returns `(writer, sse_reader, persistence_rx)`. The writer sends every
 /// event to BOTH the broadcast channel (for SSE fan-out) and the mpsc
-/// channel (for the background persistence processor). The mpsc channel
-/// is not affected by slow SSE consumers and will never lose events.
+/// channel (for the background persistence processor). The mpsc channel is
+/// not affected by slow SSE consumers — that is what it is for, and it is
+/// what "lagged" means on the broadcast side.
+///
+/// # It is not a delivery guarantee
+///
+/// This paragraph said "will never lose events" until 2026-08-19. It is a
+/// bounded channel with two ways not to deliver, and knowing which one you are
+/// looking at is the whole difference between an operator restarting a
+/// processor and one chasing a phantom:
+///
+/// * **Full past the write deadline** — `write` returns an error naming the
+///   stalled processor. The caller is producing state that will not be
+///   persisted and only the caller can decide to stop.
+/// * **Closed** — the event is dropped and `write` returns `Ok`. Deliberate:
+///   the processor is gone, and the stream can still serve live subscribers.
+///   It is reported only by a `trace_warn!`, which compiles to nothing without
+///   the non-default `tracing` feature, so on a default build this loss is
+///   silent. Backlog **B18**.
 #[must_use]
 pub fn new_in_memory_queue_with_persistence(
     capacity: usize,
@@ -147,7 +179,9 @@ pub fn new_in_memory_queue_with_persistence(
 ) {
     let (tx, rx) = broadcast::channel(capacity);
     // Use a large bounded mpsc channel for persistence — the background
-    // processor is fast and must never miss events. The capacity is much
+    // processor is fast, and the capacity is sized so that it does not have
+    // to be. "must never miss events" is what this comment used to say; see
+    // the doc above for the two cases in which it does. The capacity is much
     // larger than the broadcast channel to provide ample headroom.
     let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
     (

@@ -152,6 +152,18 @@ struct Inner {
     channel: Channel,
     endpoint: String,
     config: GrpcTransportConfig,
+    /// Bound on the wait for a stream's *first* event.
+    ///
+    /// Held here rather than on [`GrpcTransportConfig`] because that type is a
+    /// plain `pub struct` with public fields: adding one would break every
+    /// struct-literal construction of it. The same reason
+    /// `GrpcDispatcher`'s connection knobs live on the dispatcher rather than
+    /// on the server's `GrpcConfig`.
+    ///
+    /// `None` means "use `config.timeout`", which is what this transport did
+    /// unconditionally before 2026-08-19 — see
+    /// [`GrpcTransport::with_stream_connect_timeout`].
+    stream_connect_timeout: Option<Duration>,
 }
 
 impl GrpcTransport {
@@ -191,8 +203,50 @@ impl GrpcTransport {
                 channel,
                 endpoint: endpoint_str,
                 config,
+                stream_connect_timeout: None,
             }),
         })
+    }
+
+    /// Bounds the wait for a stream's **first** event, separately from
+    /// [`GrpcTransportConfig::timeout`].
+    ///
+    /// `ClientBuilder` has carried a `with_stream_connect_timeout` knob since
+    /// long before this method, documented as "per-request timeout for
+    /// establishing the SSE stream", and the sync `build()` path even refuses a
+    /// zero value for it. The gRPC path never received it: `build_grpc` passed
+    /// `request_timeout` and `connection_timeout` and dropped the third, and
+    /// this transport then bounded its first event on `config.timeout`. Both
+    /// default to 30 seconds, which is why nothing caught it — the knob only
+    /// does nothing once you set it to something.
+    ///
+    /// Unset means `config.timeout`, so a caller constructing this transport
+    /// directly sees no change.
+    #[must_use]
+    pub fn with_stream_connect_timeout(mut self, timeout: Duration) -> Self {
+        // `Arc::make_mut` needs `Inner: Clone`, and `Channel` is cheap to
+        // clone but `Inner` is not `Clone`. This runs once at construction,
+        // before the transport is shared, so rebuilding it is the honest move.
+        let inner = Arc::new(Inner {
+            channel: self.inner.channel.clone(),
+            endpoint: self.inner.endpoint.clone(),
+            config: self.inner.config.clone(),
+            stream_connect_timeout: Some(timeout),
+        });
+        self.inner = inner;
+        self
+    }
+
+    /// The bound applied to a stream's first event.
+    ///
+    /// Extracted so the *choice of knob* is testable. That choice is what
+    /// regressed: bounding the first event on the unary request timeout is
+    /// indistinguishable from bounding it correctly whenever the two are
+    /// equal, which they are by default.
+    fn first_event_bound(&self) -> Duration {
+        self.inner
+            .stream_connect_timeout
+            .unwrap_or(self.inner.config.timeout)
     }
 
     /// Returns the endpoint URL this transport targets.
@@ -523,7 +577,7 @@ impl GrpcTransport {
         // forever. The bound lifts after the first frame.
         Ok(
             EventStream::with_status(rx, task_handle.abort_handle(), 200)
-                .with_first_event_timeout(self.inner.config.timeout),
+                .with_first_event_timeout(self.first_event_bound()),
         )
     }
 }
@@ -1063,9 +1117,49 @@ mod tests {
                 channel,
                 endpoint: endpoint_str.clone(),
                 config: GrpcTransportConfig::default(),
+                stream_connect_timeout: None,
             }),
         };
         assert_eq!(transport.endpoint(), endpoint_str);
+    }
+
+    /// The first-event bound follows `stream_connect_timeout` when one is set,
+    /// and falls back to the unary `timeout` when it is not.
+    ///
+    /// This asserts the *choice of knob*, which is the thing that was wrong.
+    /// Before 2026-08-19 the bound was `config.timeout` unconditionally, and
+    /// nothing caught it because `ClientBuilder` defaults both timeouts to 30
+    /// seconds — the wrong knob and the right knob hold the same value until a
+    /// caller changes one, which is exactly when they would want it to work.
+    #[tokio::test]
+    async fn the_first_event_bound_follows_stream_connect_timeout_when_set() {
+        let endpoint = "http://example.com:1234".to_string();
+        let mk = || {
+            let channel = tonic::transport::Channel::from_shared(endpoint.clone())
+                .expect("valid endpoint")
+                .connect_lazy();
+            GrpcTransport {
+                inner: Arc::new(Inner {
+                    channel,
+                    endpoint: endpoint.clone(),
+                    config: GrpcTransportConfig::default().with_timeout(Duration::from_secs(30)),
+                    stream_connect_timeout: None,
+                }),
+            }
+        };
+
+        assert_eq!(
+            mk().first_event_bound(),
+            Duration::from_secs(30),
+            "unset must fall back to the unary timeout, so a caller who \
+             constructs this transport directly sees no change"
+        );
+        assert_eq!(
+            mk().with_stream_connect_timeout(Duration::from_secs(3))
+                .first_event_bound(),
+            Duration::from_secs(3),
+            "and a set stream_connect_timeout must win over the unary timeout"
+        );
     }
 
     #[tokio::test]
@@ -1081,6 +1175,7 @@ mod tests {
                     channel: ch,
                     endpoint: s,
                     config: GrpcTransportConfig::default(),
+                    stream_connect_timeout: None,
                 }),
             }
         };

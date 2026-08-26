@@ -24,11 +24,34 @@ use super::context::TenantContext;
 /// Configuration for [`TenantAwareInMemoryTaskStore`].
 #[derive(Debug, Clone)]
 pub struct TenantStoreConfig {
-    /// Per-tenant store configuration.
+    /// Store configuration for every tenant without an override set via
+    /// [`TenantAwareInMemoryTaskStore::with_tenant_override`].
     pub per_tenant: TaskStoreConfig,
 
-    /// Maximum number of tenants allowed. Prevents unbounded memory growth
-    /// from tenant enumeration attacks. Default: 1000.
+    /// Maximum number of tenants allowed. Default: 1000.
+    ///
+    /// # What it prevents, and what it converts the problem into
+    ///
+    /// It bounds memory against tenant enumeration — that much was already
+    /// written here. What was not: a tenant id is whatever the handler's
+    /// tenant resolution produced, and every bundled
+    /// [`TenantResolver`](crate::TenantResolver) reads client-controlled input
+    /// (see [that module's](crate::tenant_resolver) security section). So
+    /// a caller who can send N distinct tenant ids creates N partitions, and
+    /// once this cap is reached **every new tenant is refused, including
+    /// legitimate ones**. The memory bound holds; availability for new tenants
+    /// is what pays for it.
+    ///
+    /// [`prune_empty_tenants`](TenantAwareInMemoryTaskStore::prune_empty_tenants)
+    /// is the reclamation path, and it is not automatic — nothing calls it —
+    /// and it only removes partitions whose task count is **zero**. A
+    /// partition created by a `save` holds a task until that task is evicted,
+    /// so at the shipped one-hour TTL a burst of 1,000 junk tenant ids locks
+    /// out new tenants for an hour even with pruning scheduled.
+    ///
+    /// The mitigation is the same precondition the resolvers state: the tenant
+    /// id must come from something authenticated, not from a header a client
+    /// chose. Raise this only alongside that.
     pub max_tenants: usize,
 }
 
@@ -81,6 +104,14 @@ impl Default for TenantStoreConfig {
 pub struct TenantAwareInMemoryTaskStore {
     stores: RwLock<HashMap<String, Arc<InMemoryTaskStore>>>,
     config: TenantStoreConfig,
+    /// Per-tenant store configuration, overriding `config.per_tenant`.
+    ///
+    /// A private field on this struct rather than a public one on
+    /// [`TenantStoreConfig`], and the reason is worth stating: that config is
+    /// exhaustively constructible through its public fields, so adding one
+    /// breaks every struct literal downstream. This struct's fields are
+    /// already private, so it can grow without breaking anything.
+    overrides: HashMap<String, TaskStoreConfig>,
 }
 
 impl Default for TenantAwareInMemoryTaskStore {
@@ -96,6 +127,7 @@ impl TenantAwareInMemoryTaskStore {
         Self {
             stores: RwLock::new(HashMap::new()),
             config: TenantStoreConfig::default(),
+            overrides: HashMap::new(),
         }
     }
 
@@ -105,7 +137,46 @@ impl TenantAwareInMemoryTaskStore {
         Self {
             stores: RwLock::new(HashMap::new()),
             config,
+            overrides: HashMap::new(),
         }
+    }
+
+    /// Gives `tenant` its own [`TaskStoreConfig`], overriding
+    /// [`TenantStoreConfig::per_tenant`] for that tenant alone.
+    ///
+    /// This is the per-tenant store bound that
+    /// `TenantLimits::max_stored_tasks` claimed to be and could not: that field
+    /// sits on [`PerTenantConfig`](crate::PerTenantConfig), which the handler
+    /// holds and a store never sees. Here the store owns the map and reads it
+    /// as it creates the partition.
+    ///
+    /// Every field of `TaskStoreConfig` is overridden, not just capacity — a
+    /// tenant can be given its own TTL, eviction interval and page cap too. The
+    /// override replaces the whole config rather than merging, so build it from
+    /// `per_tenant` with `..` if you mean to change one field:
+    ///
+    /// ```rust
+    /// use a2a_protocol_server::{TaskStoreConfig, TenantAwareInMemoryTaskStore};
+    ///
+    /// let store = TenantAwareInMemoryTaskStore::new().with_tenant_override(
+    ///     "small-fry",
+    ///     TaskStoreConfig {
+    ///         max_capacity: Some(100),
+    ///         ..TaskStoreConfig::default()
+    ///     },
+    /// );
+    /// ```
+    ///
+    /// A partition is created on a tenant's first use, so an override for a
+    /// tenant that already has one applies only to a store built afterwards.
+    #[must_use]
+    pub fn with_tenant_override(
+        mut self,
+        tenant: impl Into<String>,
+        config: TaskStoreConfig,
+    ) -> Self {
+        self.overrides.insert(tenant.into(), config);
+        self
     }
 
     /// Returns the store for the current tenant, creating it if needed.
@@ -135,7 +206,10 @@ impl TenantAwareInMemoryTaskStore {
         }
 
         let store = Arc::new(InMemoryTaskStore::with_config(
-            self.config.per_tenant.clone(),
+            self.overrides
+                .get(&tenant)
+                .unwrap_or(&self.config.per_tenant)
+                .clone(),
         ));
         stores.insert(tenant, Arc::clone(&store));
         drop(stores);
@@ -170,7 +244,16 @@ impl TenantAwareInMemoryTaskStore {
 
     /// Removes empty tenant partitions to reclaim memory.
     ///
-    /// A partition is considered empty when its task count is zero.
+    /// A partition is considered empty when its task count is zero, so this
+    /// reclaims a slot only once every task in that partition is gone —
+    /// evicted by TTL, by capacity, or deleted. It is the only way a
+    /// [`max_tenants`](TenantStoreConfig::max_tenants) slot is ever given
+    /// back, and nothing calls it for you: schedule it alongside
+    /// [`run_eviction_all`](Self::run_eviction_all), which is what makes
+    /// partitions empty in the first place.
+    ///
+    /// Calling it will not relieve a store that is at its cap because of live
+    /// tasks; see `max_tenants` for why that matters.
     pub async fn prune_empty_tenants(&self) {
         let mut stores = self.stores.write().await;
         let mut empty_tenants = Vec::new();
@@ -268,6 +351,112 @@ mod tests {
             artifacts: None,
             metadata: None,
         }
+    }
+
+    // ── per-tenant bounds reach the per-tenant stores ────────────────────
+    //
+    // This store names none of `TaskStoreConfig`'s bounds; it holds one
+    // `InMemoryTaskStore` per tenant and forwards to it, so every bound is
+    // honoured by delegation. That is correct, and it is also invisible —
+    // reading this file shows a `list` that caps nothing. What makes the cap
+    // real is that `per_tenant` is handed to each store at construction, and
+    // nothing tested that it was. A refactor that built the per-tenant store
+    // with `InMemoryTaskStore::new()` would drop every configured bound back
+    // to its default and no test here would notice.
+
+    #[tokio::test]
+    async fn per_tenant_page_size_cap_reaches_the_delegate() {
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig {
+                max_page_size: 2,
+                ..TaskStoreConfig::default()
+            },
+            max_tenants: 10,
+        });
+
+        TenantContext::scope("capped", async {
+            for i in 0..5 {
+                store
+                    .save(&make_task(&format!("t{i}"), TaskState::Submitted))
+                    .await
+                    .expect("save");
+            }
+
+            let listed = store
+                .list(&ListTasksParams {
+                    page_size: Some(100),
+                    ..Default::default()
+                })
+                .await
+                .expect("list");
+
+            assert_eq!(
+                listed.tasks.len(),
+                2,
+                "the caller asked for 100; per_tenant.max_page_size is 2. \
+                 A delegate built with the default config would return 5"
+            );
+        })
+        .await;
+    }
+
+    /// The per-tenant store bound that `TenantLimits::max_stored_tasks` claimed
+    /// to be, in the one place that can enforce it.
+    ///
+    /// That field sat on `PerTenantConfig`, which the handler holds and a store
+    /// never sees, so nothing read it. Here the store owns the map and picks
+    /// the config as it creates the partition.
+    #[tokio::test]
+    async fn an_override_gives_that_tenant_its_own_store_config() {
+        async fn saved_then_listed(
+            store: &TenantAwareInMemoryTaskStore,
+            tenant: &'static str,
+        ) -> usize {
+            TenantContext::scope(tenant, async {
+                for i in 0..5 {
+                    store
+                        .save(&make_task(&format!("{tenant}-{i}"), TaskState::Submitted))
+                        .await
+                        .expect("save");
+                }
+                store
+                    .list(&ListTasksParams {
+                        page_size: Some(100),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("list")
+                    .tasks
+                    .len()
+            })
+            .await
+        }
+
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig {
+                max_page_size: 50,
+                ..TaskStoreConfig::default()
+            },
+            max_tenants: 10,
+        })
+        .with_tenant_override(
+            "small",
+            TaskStoreConfig {
+                max_page_size: 1,
+                ..TaskStoreConfig::default()
+            },
+        );
+
+        assert_eq!(
+            saved_then_listed(&store, "small").await,
+            1,
+            "the override caps this tenant's page size at 1"
+        );
+        assert_eq!(
+            saved_then_listed(&store, "ordinary").await,
+            5,
+            "a tenant with no override keeps per_tenant's cap of 50"
+        );
     }
 
     // ── TenantContext ────────────────────────────────────────────────────
@@ -471,6 +660,76 @@ mod tests {
     }
 
     // ── tenant_count and max_tenants ─────────────────────────────────────
+
+    /// Reaching `max_tenants` refuses *new* tenants, and `prune_empty_tenants`
+    /// does not get the slots back while the tasks are alive.
+    ///
+    /// Both halves matter, and only the first was written down. The cap's doc
+    /// said it "prevents unbounded memory growth from tenant enumeration
+    /// attacks", which is true and stops one step short: tenant ids come from
+    /// resolvers that all read client-controlled input, so an enumerator does
+    /// not get memory — it gets a lockout of every tenant that arrives
+    /// afterwards, for as long as its junk partitions hold a task.
+    #[tokio::test]
+    async fn a_full_tenant_table_refuses_new_tenants_and_pruning_does_not_help() {
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig::default(),
+            max_tenants: 2,
+        });
+
+        for junk in ["junk-1", "junk-2"] {
+            TenantContext::scope(junk, async {
+                store
+                    .save(&make_task("t", TaskState::Working))
+                    .await
+                    .expect("a fresh tenant partition is created on demand");
+            })
+            .await;
+        }
+        assert_eq!(store.tenant_count().await, 2, "the table is full");
+
+        let refused = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(
+            refused.is_err(),
+            "a new tenant must be refused once the cap is reached"
+        );
+
+        // The documented reclamation path, run exactly as an operator would.
+        store.prune_empty_tenants().await;
+        assert_eq!(
+            store.tenant_count().await,
+            2,
+            "pruning reclaims nothing while the junk partitions hold live tasks"
+        );
+
+        let still_refused = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(
+            still_refused.is_err(),
+            "so the lockout outlives the pruning that is supposed to end it"
+        );
+
+        // And it does end, once the partitions are actually empty.
+        for junk in ["junk-1", "junk-2"] {
+            TenantContext::scope(junk, async {
+                store.delete(&TaskId::new("t")).await.expect("delete");
+            })
+            .await;
+        }
+        store.prune_empty_tenants().await;
+        assert_eq!(store.tenant_count().await, 0, "now the slots come back");
+
+        let admitted = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(admitted.is_ok(), "and the legitimate tenant gets in");
+    }
 
     #[tokio::test]
     async fn tenant_count_reflects_active_tenants() {

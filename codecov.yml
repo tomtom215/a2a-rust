@@ -35,13 +35,44 @@ ignore:
   # these files would always report 0% here and are excluded from the
   # dashboard rather than from testing.
   #
-  # These five were previously listed as bare paths, and Codecov did not
-  # apply them. Verified 2026-08-06 against Codecov's own API for `615d01f8`:
-  # all five appear in the report (0.00%-8.06%), while every `tck/` file is
-  # correctly absent. Their 793 lines sat in the public denominator, which is
-  # the whole 93.62%-vs-95.75% gap between the badge and local measurement.
-  # The three patterns that *do* work here all contain a glob token, so these
-  # now carry one too; each basename is unique in the tree.
+  # ── This exclusion does not work, and has never worked ──────────────────
+  #
+  # The note that used to stand here said: "These five were previously listed
+  # as bare paths, and Codecov did not apply them. Verified 2026-08-06 against
+  # Codecov's own API for `615d01f8`: all five appear in the report
+  # (0.00%-8.06%) ... The three patterns that *do* work here all contain a glob
+  # token, so these now carry one too."
+  #
+  # The "before" was measured. The "after" was not, and the fix did not take.
+  # Measured 2026-08-19 against the same API: all five are still in the report,
+  # and `postgres_config_store.rs` is still at exactly the 8.06% that note
+  # quotes. The diagnosis was a correlation — the three working patterns are
+  # root-anchored directory prefixes, and adding `**/` to a deep file path did
+  # not make it behave like one.
+  #
+  # What it costs, measured the same day by summing every leaf in the report
+  # (the 138 leaves sum exactly to the repository totals, so the report *is*
+  # the denominator — nothing is being excluded from it):
+  #
+  #   seven PostgreSQL files   957 of 35,287 counted lines
+  #                            881 of 2,096 missed lines — 42% of every
+  #                            uncovered line in the repository
+  #   badge with them          94.06%
+  #   badge without them       96.46%
+  #
+  # Two of the seven were never listed at all (`store/postgres_store/
+  # artifact_delta.rs`, `store/retention/postgres.rs`), and `store/
+  # postgres_store.rs` became `store/postgres_store/mod.rs`, so the pattern
+  # naming the old path now matches nothing even if the shape were right.
+  #
+  # The patterns below are deliberately left as they are. Codecov accepts them
+  # — `POST https://codecov.io/validate` compiles them without complaint — so
+  # validation proves nothing here, and swapping in a shape that cannot be
+  # checked from a workstation is how the last attempt got recorded as a fix.
+  # `scripts/check_codecov_ignores.py` is the instrument: it fails today, and
+  # the next shape to be tried should be tried under it, against a real upload.
+  # Until then the badge is 94.06% and the honest figure is 96.46%; quote the
+  # first and say what is in it.
   - "**/store/postgres_store.rs"
   - "**/store/tenant_postgres_store.rs"
   - "**/store/pg_migration.rs"

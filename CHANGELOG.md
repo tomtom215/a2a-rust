@@ -10,7 +10,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **`TenantLimits::max_stored_tasks`** (`a2a-protocol-server`). It named a cap
+  on stored tasks and nothing ever read it, for a structural reason: it sits on
+  `PerTenantConfig`, which the handler holds, and a store is constructed
+  independently and handed to the builder — a store never sees one. The working
+  equivalent is the new `TenantAwareInMemoryTaskStore::with_tenant_override`,
+  which gives a named tenant its own `TaskStoreConfig` and so its own
+  `max_capacity`.
+
+  Deprecated rather than removed: removing a public field is a semver break, and
+  this crate's version is bumped as step 1 of a release (`RELEASING.md`), not
+  mid-branch. The deprecation carries the whole point anyway — every use site
+  now gets a compiler warning naming the replacement, which is louder than the
+  silence the field had before.
+
 ### Added
+
+- **`TenantAwareInMemoryTaskStore::with_tenant_override`** — gives a named
+  tenant its own `TaskStoreConfig`, so `max_capacity`, `task_ttl`,
+  `eviction_interval` and `max_page_size` can all differ by tenant. It lives on
+  the store rather than on `TenantStoreConfig` because that config is
+  exhaustively constructible through its public fields, so adding one would
+  break every downstream struct literal.
+
 
 - **Task retention for the persistent stores.** `purge_expired` on
   `SqliteTaskStore`, `PostgresTaskStore` and their tenant-aware variants deletes
@@ -45,7 +69,363 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`TaskState::ALL`** — the nine protocol states as an array, for exhaustive
   iteration over a `#[non_exhaustive]` enum.
 
+- **Constructors for `AgentCard`, `AgentInterface` and `AgentSkill`.** Building
+  a card required a struct literal naming all fifteen fields — no `new`, no
+  builder, no `Default` — which is the first thing anyone has to do with this
+  SDK. `AgentCard::new(name, version, interface)` takes exactly what
+  `AgentCard::validate` requires, so a constructed card is valid by
+  construction, and the rest is chained `with_*` in the style
+  `AgentCapabilities` already used. `AgentInterface::jsonrpc/grpc/rest` spell
+  the spec's own binding names and default `protocol_version` to
+  `A2A_VERSION`. This repository contained 122 `AgentCard { .. }` literals when
+  the constructors were written.
+
+- **Connection bounds for `GrpcDispatcher`:** `with_http2_keepalive` and
+  `with_max_connection_age`, both opt-in. `GrpcConfig` bounded message size and
+  per-connection concurrency and nothing bounded a connection that simply
+  exists: measured, 400 TCP connections opened against the dispatcher and left
+  silent were all accepted, none refused, and the oldest was still alive twelve
+  seconds later. HTTP/2 keepalive is the gRPC-native answer and distinguishes a
+  peer that has stopped answering from one that is merely quiet, because a
+  conformant client's HTTP/2 stack answers a PING without the application being
+  involved — so a streaming RPC waiting for its next event is left alone. They
+  live on the dispatcher rather than on `GrpcConfig` because that type has
+  public fields and no `#[non_exhaustive]`, so adding a field to it would break
+  every struct-literal construction.
+
+- **Connection bounds for `WebSocketDispatcher`:** `with_max_connections` and
+  `with_idle_timeout`. The handshake timeout — documented in that module as the
+  slowloris defence — covers only the part before the upgrade completes;
+  nothing bounded a peer that completed the handshake and then went quiet.
+  Measured: 400 idle handshaken connections accepted and held with none
+  refused, and a connection idle for 12 seconds still being served, because the
+  read loop awaited the next frame with no bound and the accept loop spawned a
+  task per socket with no ceiling. Both default to **off**, so nothing changes
+  unless you ask. `max_connections` takes its permit before `accept()`, so
+  excess load waits in the kernel's listen backlog rather than as unbounded
+  tasks. `idle_timeout` counts traffic in *both* directions and sends a
+  WebSocket Ping at the halfway mark, which conformant clients answer
+  automatically — so it closes peers that are unresponsive rather than peers
+  that are merely quiet. That distinction is why it is opt-in and why it is
+  safe to opt in: an A2A subscription may legitimately be silent for hours.
+
+- **`push_outcome::SKIPPED`**, reported once per push-notification config the
+  per-event delivery budget never reaches.
+
+- **A CI gate for the cancellation class:**
+  `scripts/check_cancellation_release.py`. A file that claims a guard slot with
+  `compare_exchange(false, true, ..)` must contain an `impl Drop` that releases
+  one. Three of this release's defects were that shape — state claimed on one
+  path and released on another, with an `.await` in between, so dropping the
+  future runs neither — and all three were found by a person reading code.
+  `clippy::await_holding_lock` covers the inverse case; nothing covered this
+  one.
+
 ### Fixed
+
+- **A push-backoff test failed on runner speed rather than on behaviour**
+  (`a2a-protocol-server`). `backoff_is_paid_between_attempts_but_not_after_the_last`
+  asserted total elapsed in `[1800ms, 2800ms)` around three real loopback round
+  trips, so its 800ms of headroom above the correct 2000ms had to absorb every
+  scrap of per-request overhead. Measured on a Windows CI runner: **2954ms for
+  a correct run**, failing by 154ms.
+
+  It now asserts the gaps *between* request arrivals and the gap from the last
+  arrival to `send()` returning. Each spans one round trip instead of three, so
+  overhead cannot accumulate into the margin — and the assertions say what the
+  test is named for: the second gap must differ from the first (1500ms, not
+  500ms), and nothing beyond a response round trip may follow the final
+  attempt. Its mutation coverage is unchanged and its messages are sharper: a
+  trailing backoff now reports "1.501256836s elapsed between the last request
+  arriving and send() returning" instead of a total that could mean anything.
+
+- **`PerTenantConfig` now enforces the limits it declares** (B22). All five
+  `TenantLimits` fields were stored, resolvable, and read by nothing in the
+  request path, under a module header that advised operators to set
+  `max_concurrent_tasks` for noisy-neighbour isolation. Four are now enforced
+  and the fifth is deprecated in favour of a store-level equivalent (see
+  Deprecated, above):
+
+  | Limit | Where | On exceeding |
+  |---|---|---|
+  | `max_concurrent_tasks` | per-tenant semaphore; permit taken before any side effect and held for the executor's life | `ServerError::Overloaded` |
+  | `executor_timeout` | resolved before the executor is spawned | the task fails |
+  | `event_queue_capacity` | at queue creation | the stream buffer is that deep |
+  | `rate_limit_rps` | `RateLimitInterceptor`, via the new `with_tenant_config` | the request is refused |
+
+  The permit is taken *before* the queue, the task row and the cancellation
+  token exist, so a refused request leaves nothing behind — rejecting later
+  would make the limit cost the tenant the resources it protects. A tenant at
+  its limit is refused rather than queued: queueing converts a declared bound
+  into unbounded latency and unbounded memory.
+
+  Three of the four the handler applies on its own. `rate_limit_rps` is opt-in
+  and needs the same config handed to
+  `RateLimitInterceptor::with_tenant_config`, because a request is counted in
+  an interceptor rather than in the handler. It counts against a bucket keyed
+  by tenant *in addition to* the per-caller bucket, so a tenant's allowance is
+  not multiplied by its number of callers — and the unit is converted rather
+  than reinterpreted: the per-window allowance is `rate_limit_rps ×
+  window_secs`, because the field is documented in requests per second and
+  `requests_per_window` is not.
+
+  What made this enforceable at all was measuring where the tenant is visible.
+  `TenantContext` is a `tokio::task_local!`, and a probe recording it at two
+  points of one `SendMessage` saw `"acme"` in the interceptor chain and `""` in
+  the spawned executor. So an interceptor can resolve a tenant, and anything
+  the executor needs must be resolved before the spawn and moved in — which is
+  where the timeout and the permit are now taken.
+
+- **The WebSocket client's connect had no deadline.** `connect_async_with_config`
+  was awaited bare, so `WebSocketTransport::connect*` could wait indefinitely on
+  a server that completed the TCP handshake and then never answered the HTTP
+  upgrade — the connection is established, so no OS timeout applies. Measured
+  against a listener that accepts and holds the socket open in silence: still
+  pending at 3 seconds, with no deadline to reach. Every sibling transport
+  already bounded this (JSON-RPC and REST via `ClientConfig::connection_timeout`,
+  gRPC via `GrpcTransportConfig::connect_timeout`), and
+  `connection_timeout`'s own documentation names the hazard. `WebSocketTransportConfig`
+  now carries `connect_timeout`, defaulting to the same 10 seconds and applied
+  around the whole handshake — TCP, TLS, and upgrade. Reverting the fix does not
+  fail the new test; it hangs the suite, killed at 120 s having never returned.
+
+- **`ClientConfig::preferred_bindings` selected nothing.** The field documented
+  an ordered client preference — *"the client tries each in order, selecting the
+  first one supported by the target agent's card"* — and no code read it.
+  `ClientBuilder::from_card` took `supported_interfaces.first()`, which is the
+  **agent's** first choice, the inverse of the preference the field describes;
+  the builder consulted a different, singular field with almost the same name.
+  A caller who ranked `GRPC` and met a card advertising `[JSONRPC, GRPC]`
+  silently got JSONRPC. `from_card` now honours the default preference list, and
+  the new `ClientBuilder::from_card_preferring(card, preferences)` takes an
+  explicit one. Matching is ASCII-case-insensitive, because the spec's binding
+  names are upper-case and cards written by hand are not always. The resulting
+  config records the preference that was applied rather than the default.
+
+- **`with_protocol_binding` moved the binding and left the endpoint behind.** An
+  agent card gives each binding its own URL, so the two are a pair. Measured
+  against a card advertising JSONRPC at `:1111` and GRPC at `:2222`,
+  `from_card(card).with_protocol_binding("GRPC")` produced binding `GRPC` at
+  endpoint `:1111` — a client that would speak gRPC to the JSON-RPC port, with
+  no error anywhere. A builder created from a card now retains that card's
+  interfaces and moves the endpoint and tenant with the binding. Builders made
+  with `ClientBuilder::new` are unaffected, which is every
+  `with_protocol_binding` call site in this repository and its book.
+
+- **One slow multicast consumer stalled every other member's stream**
+  (`a2a-protocol-slimrpc`). `stream_message` gave each invited agent its own
+  bounded channel — under a comment saying "a slow or silent agent cannot hold
+  up another's events" — and then awaited `send` on those channels from a single
+  shared loop. The split handles a *silent* agent, which produces no frames; it
+  does nothing for a *slow consumer*, whose full channel parks the one loop
+  every member's frames arrive through. Measured with two agents emitting 300
+  events each and one consumer never polled: the live member's stream reached
+  151 events in 25 seconds and never resumed. It now reaches 300 in 220 ms. The
+  send is non-blocking, and a member that falls behind is handed an error naming
+  how many events it missed rather than a stream with a silent hole in it —
+  the same contract the SSE fan-out already has through broadcast's `Lagged`.
+
+- **The Axum router ignored `body_read_timeout`.** `DispatchConfig` carries two
+  body bounds; this router honoured `max_request_body_size` — wired in
+  deliberately, with a comment explaining that Axum's `Bytes` extractor would
+  otherwise fall back to its own `DefaultBodyLimit` and make the knob a no-op —
+  and never applied the timeout sitting beside it. Measured with
+  `body_read_timeout(1s)`, announcing a 1000-byte body and sending 8:
+  `JsonRpcDispatcher` answered at 1.002 s and the Axum router had said nothing
+  after 12 seconds. A slowloris body is what the knob is for, and the one shape
+  a size cap cannot catch — the bytes never arrive, so the cap is never
+  reached. A `TimedBody` extractor now reads the body under the configured
+  deadline and answers `408 Request Timeout`; measured at 1.002 s.
+
+- **`TaskStoreConfig::max_page_size` did nothing on any SQL store.** The four
+  SQL stores hold a connection pool and no config, and each carried its own
+  hardcoded `n.min(1000)` — the same number `TaskStoreConfig` uses as its
+  default, so the configurable bound and the hardcoded one agreed by
+  coincidence. Measured with the cap set to 10 against 60 stored tasks and a
+  client asking for 100: `InMemoryTaskStore` returned 10 and `SqliteTaskStore`
+  returned all 60. The book documented the field as capping `list` generally,
+  under Design Considerations rather than under any one store. Each SQL store
+  now takes `with_max_page_size`, all five sites default to the new
+  `DEFAULT_MAX_PAGE_SIZE`, and the book says which config applies to which
+  store. Third instance of one shape: a configurable bound whose default equals
+  the hardcoded fallback, inert until the person who cares tightens it.
+
+- **Concurrent creates walked straight through the per-task push-config cap.**
+  `max_push_configs_per_task` is enforced by reading the task's configs,
+  deciding, then storing — two `.await` points apart, with nothing held across
+  them. Every concurrent caller read a count under the cap and every one of
+  them stored. Measured against a cap of 5 with 32 concurrent creates, three
+  runs stored 12, 17 and **32** — the last being all of them, a documented
+  ceiling doing nothing at all. Unlike the task store's transient overshoot
+  this was permanent: nothing re-checks a stored config. The sequence now holds
+  a per-task lock, reusing the same bounded facility `SendMessage` already used
+  against the identical race on `context_id`; the same three runs now store
+  exactly 5. The *global* cap remains approximate across distinct tasks
+  (measured 10, 5, 5 against a cap of 5) — making it exact means one
+  server-wide lock on every create, which is a throughput decision rather than
+  a bug fix, and is recorded as backlog B20.
+
+  Worth knowing who this bit: `InMemoryPushConfigStore` has its *own* per-task
+  cap, default 100, enforced atomically under its own lock, and the builder
+  never passes `HandlerLimits` to it. At the shipped defaults both are 100 and
+  the store's correct check masked the handler's racy one — so the defect
+  appeared for an operator who *lowered* `max_push_configs_per_task`, and for
+  every SQL-backed deployment at any setting, since those stores do not
+  self-enforce and the handler's check is the only one there is.
+
+- **`with_stream_connect_timeout` did nothing on the gRPC transport.**
+  `ClientBuilder` carries three timeouts and `build_grpc` passed two, dropping
+  the third; the gRPC transport then bounded a stream's first event on the
+  *unary request* timeout instead. Both default to 30 seconds, so the knob only
+  failed once you set it — and the sync `build()` path even rejects a zero
+  value for it while `build_grpc` silently accepted one. `build_grpc` now
+  validates and passes it, and the transport gained
+  `with_stream_connect_timeout` (on the transport rather than on
+  `GrpcTransportConfig`, whose public fields make adding one a breaking
+  change). REST and JSON-RPC were already correct; the WebSocket transport has
+  no such knob and consistently uses its own.
+
+- **A hot-reload SIGHUP watcher could abort the process, minutes after
+  startup.** `spawn_signal_watcher` registered its handler *inside* the spawned
+  task, and `tokio::signal::unix::signal` panics — it does not return an error
+  — when the runtime has no signal driver, which is what a hand-built runtime
+  without `enable_all()` gives you. The panic therefore arrived after the
+  function had returned a `JoinHandle`: nothing for the caller to see coming,
+  nothing to catch, and under this workspace's release `panic = "abort"` a
+  process abort rather than one lost feature. Registration now happens
+  synchronously in `spawn_signal_watcher`, so the failure lands in the caller's
+  own startup path where it is deterministic — and the `# Panics` section is now
+  attached to the function that actually panics. The loop also stops discarding
+  the `Option` from `recv()`, which was a latent hot loop: `None` means no
+  further signals can arrive, and it answered by asking again immediately,
+  forever.
+
+- **`InMemoryCredentialsStore`'s `Debug` panicked on a poisoned lock.**
+  Formatting runs while somebody is diagnosing the first failure, often from a
+  logging path, so a panicking `Debug` replaces the diagnosis with a second
+  failure — and a process abort in release. It now reports `<lock poisoned>`.
+  The accessors on the same type still propagate poisoning, deliberately: a
+  credentials lookup that quietly returns `None` is a silent auth downgrade,
+  which is worse than a panic. Different answers for different call sites, both
+  now written down.
+
+- **`HotReloadAgentCardHandler` turned one panic into permanent failure.** Both
+  accessors `expect`ed on their `RwLock`, and poisoning is sticky, so a single
+  panic anywhere under the write lock made `current()` — the function that
+  answers `GetAgentCard` — panic from then on, and abort the process in release.
+  Both now recover from poisoning, which is correct rather than merely
+  convenient here: the only write is a whole-value assignment of an
+  already-constructed `AgentCard`, so no reader can observe a half-updated one.
+
+- **`max_tenants` was documented by the half of its effect that is
+  comfortable.** "Prevents unbounded memory growth from tenant enumeration
+  attacks" is true and stops one step short: tenant ids come from resolvers
+  that all read client-controlled input, so an enumerator does not get memory —
+  it gets a lockout of every tenant that arrives afterwards. The reclamation
+  path, `prune_empty_tenants`, is not automatic and only removes partitions
+  whose task count is zero, so at the shipped one-hour TTL a burst of 1,000
+  junk tenant ids locks out new tenants for an hour even with pruning
+  scheduled. Both methods now document that, with a test pinning it.
+
+- **`InMemoryTaskStore`'s documentation described a design it does not have.**
+  It said eviction "runs as a background task" and that "writers are not
+  blocked during the O(n) cleanup". There is no `spawn`: the sweep is awaited
+  inside `save` and holds the write lock for its whole duration, so the write
+  that triggers it pays for it and every concurrent writer waits. Measured at
+  50,000 terminal tasks with `eviction_interval` 1000, the quietest of 1,000
+  consecutive saves took 3.99 µs and the one that swept took 4.54 ms — about
+  1,100×. The behaviour is reasonable and unchanged; what was wrong is that the
+  paragraph an operator reads to size a latency budget named the two properties
+  that would have made the number not matter. Corrected with the measurements
+  and a note that `eviction_interval` is a tail-latency knob. The observable
+  half — `save` never returns with the store over capacity — now has a test.
+
+- **A cancelled WebSocket request leaked its entry in the client's pending
+  map, and so did an abandoned stream.** The map is keyed by JSON-RPC request
+  ID, has no capacity bound, and lives as long as the connection. An entry was
+  removed on exactly three paths — a routed response, the explicit timeout
+  branch, and connection teardown — and a caller whose future is *dropped*
+  takes none of them; neither does a consumer that walks away from a stream the
+  server never fed, because all three streaming removals need a frame to
+  arrive. Measured: five cancelled requests left five entries, five abandoned
+  streams left five more, each pinning a channel sender. Registration moved to
+  the caller and both ends are now owned by a `Drop` guard, which travels with
+  the `EventStream` for the streaming case. A `select!` racing a request against
+  a shutdown signal is an ordinary way to write a client, so on a long-lived
+  connection this was unbounded growth on the request path.
+
+- **The event queue's `write_timeout` was never applied.** `DEFAULT_WRITE_TIMEOUT`
+  is public, `new_in_memory_queue_with_options` takes it, `EventQueueManager`
+  prints it in `Debug` — and the field was `#[allow(dead_code)]`. The
+  persistence channel is a bounded `mpsc` whose `send` waits with no deadline of
+  its own, so a stalled background processor parked the executor indefinitely:
+  measured, `write` blocked after 1,024 events and was still blocked eight
+  seconds later, with no metric and no trace. The deadline is now enforced and a
+  full channel returns an error naming the cause. A *closed* channel is still
+  not an error. The surrounding documentation, which said this channel "will
+  never lose events" / "will never lag" / that the processor "must never miss
+  events", now says what it does: full past the deadline is an error naming the
+  stalled processor, closed drops the event and returns `Ok`, and the second is
+  reported only by a `trace_warn!` that compiles to nothing without the
+  non-default `tracing` feature.
+
+- **Push-notification configs the delivery budget never reached were invisible.**
+  At the shipped defaults — 100 configs per task, a 5-second per-delivery
+  timeout, a 30-second per-event budget — a webhook estate that is timing out
+  receives 6 of 100 and the other 94 were reported by a single `trace_warn!`,
+  which compiles to nothing without the non-default `tracing` feature. Each
+  skipped config now increments `push_outcome::SKIPPED`. The `Semaphore::new(16)`
+  built per event, described in a comment as a cap on concurrent deliveries that
+  the sequential loop never performed, has been removed.
+
+- **`shutdown_with_timeout(t)` could take `2t`.** The drain phase ran to
+  `now + t` and the executor's cleanup hook was then given a *fresh* full `t`.
+  Measured: `shutdown_with_timeout(30s)` took 60 seconds. The number an operator
+  puts here is the number they put in `terminationGracePeriodSeconds`, so
+  overrunning it means `SIGKILL` part-way through the cleanup graceful shutdown
+  exists to perform. The two phases now share one deadline.
+
+- **The push retry policy could not run at the shipped defaults.**
+  `HttpPushSender::new()` schedules three attempts at a 30-second request
+  timeout with `[1s, 2s]` backoff — 93 seconds — inside a
+  `push_delivery_timeout` that defaults to 5. Measured against a real socket:
+  one attempt of three reaches the webhook. The defaults are unchanged, because
+  choosing between them is a deployment decision; what is new is
+  `PushSender::max_delivery_duration()` (a defaulted trait method) and
+  `push_outcome::TIMEOUT_TRUNCATED`, so a truncated schedule is counted rather
+  than mistaken for a slow endpoint, and the arithmetic is documented on
+  `HandlerLimits::push_delivery_timeout`.
+
+- **Agent-card discovery applied its 30-second timeout twice.** The request and
+  the body read each had their own, so a server that stalled on headers and then
+  drip-fed the body held the caller for both: measured at **55 seconds** against
+  a documented 30. One deadline now covers the whole fetch.
+
+- **The JWKS and OIDC-discovery body read had no deadline at all.** The
+  30-second budget bounded the request; the body was bounded by a size cap,
+  which bounds memory and not time. A server dripping one byte every 300ms held
+  the fetch open indefinitely — measured still running at 45 seconds. This sits
+  on the request path, because a `kid` that misses the cache forces a JWKS
+  refetch inside token validation.
+
+- **`codecov.yml`'s PostgreSQL exclusion has never applied.** All five listed
+  paths are still in the coverage denominator, together with two never listed:
+  957 lines and 881 of 2,096 missed lines — 42% of every uncovered line in the
+  repository. Reported coverage is 94.06%; without them it is 96.46%. The
+  patterns are deliberately unchanged (Codecov *accepts* them, so validation
+  proves nothing); `scripts/check_codecov_ignores.py` is the check that will
+  settle the next attempt.
+
+- **Four broken rustdoc intra-doc links** in `rate_limit/` that resolved only
+  under workspace feature unification, so `cargo doc -p a2a-protocol-server`
+  emitted four warnings while CI's `cargo doc --workspace` emitted none.
+
+- **`signing` feature descriptions overstated what they enable.** Neither
+  `a2a-protocol-client` nor `a2a-protocol-server` contains any
+  `#[cfg(feature = "signing")]` code; both forward the types-crate feature so
+  you can call `sign_agent_card` / `verify_agent_card` yourself. The client's
+  read "Enable agent card signing verification", which claimed an integration
+  that does not exist.
 
 - **Per-caller rate limiting was not per-caller.** `caller_identity` existed on
   the interceptor and no code path ever set it, so every caller shared a single
@@ -70,6 +450,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RUSTSEC-2026-0258** — h2 raised to 0.4.16, without the dependency downgrade
   the advisory's own suggested fix would have pulled in.
 
+### Changed
+
+- **`PerTenantConfig` and `TenantLimits` now document that nothing enforces
+  them** (`a2a-protocol-server`). All five per-tenant limits are stored,
+  resolvable through `PerTenantConfig::get`, and read by no code in the request
+  path — verified by enumerating every mention of the type outside its own
+  module: an import, a field, the `tenant_config()` accessor, a `Debug` line, a
+  builder field and its setter, and otherwise tests. `executor_timeout` and
+  `event_queue_capacity` share their names with live process-wide fields on the
+  handler and its builder, which is what made them look wired; those fields are
+  not these fields.
+
+  The module header previously advised operators to *"set per-tenant
+  `max_concurrent_tasks` so that the sum across active tenants stays within the
+  process-wide caps if noisy-neighbor isolation matters"* — advice to rely on a
+  field nothing reads. Enforcing all five is a feature with open design
+  questions (B22 in `docs/v0.9.0-post-release-review.md`); enforcing some of
+  them would leave live knobs beside inert ones, which is the defect shape
+  itself. So the behaviour is unchanged and the documentation is now exactly
+  true: the module states what it stores and resolves, each field names what
+  would enforce it, and the two builder setters no longer claim to enable
+  per-tenant limits. **Data isolation is unaffected** — it runs through the
+  tenant-aware stores' partitioning, not through any limit here.
+
+- **`ClientConfig::max_response_size` now states what it reaches.** It governs
+  every transport `ClientBuilder` constructs — JSON-RPC and REST directly, gRPC
+  as its `max_message_size` — and not a transport supplied to
+  `with_custom_transport`. Two shipped transports are in the latter position.
+
+  `WebSocketTransport` is the nearer one, and the more misleading:
+  `WebSocketTransportConfig::max_message_size` defaults to the *same constant*
+  as `max_response_size`, and its doc said it was "the same response-size
+  ceiling the HTTP and gRPC transports apply" — true of the default, and
+  reading as though the two were connected. They are not. Tightening
+  `max_response_size` to 1 MiB and connecting over WebSocket still admits
+  32 MiB. Both ends now say so, and point at the setting that works.
+
+  `SlimRpcTransport` is the other, and its real bound was traced through the
+  stack rather than assumed:
+  the binding's codec, `slim_rpc` 2.3 and `agntcy-slim-datapath` 0.18 all set
+  none, so what applies is tonic 0.14's default — **4 MiB on receive**, eight
+  times tighter than the 32 MiB documented here, and unbounded on send. Neither
+  is settable from this repository; both are now written down where a reader
+  hits them.
 
 ## [0.9.0] - 2026-08-16
 

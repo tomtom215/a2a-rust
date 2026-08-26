@@ -49,11 +49,11 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
 use uuid::Uuid;
@@ -74,11 +74,80 @@ enum PendingRequest {
     Streaming(mpsc::Sender<crate::streaming::event_stream::BodyChunk>),
 }
 
+/// Requests awaiting a response, keyed by JSON-RPC request ID.
+///
+/// A **`std`** mutex, not a Tokio one, and deliberately so: [`PendingGuard`]
+/// removes an entry from `Drop`, which cannot await. Nothing here holds the
+/// guard across an `.await` — and because a `std::sync::MutexGuard` is `!Send`,
+/// the compiler rejects any future that tries, so that is checked rather than
+/// asserted. Every critical section is one `HashMap` insert, remove, or drain.
+type PendingMap = Mutex<HashMap<String, PendingRequest>>;
+
+/// Locks the pending map, recovering from poisoning.
+///
+/// A panic while the map was locked cannot leave a `HashMap` half-updated, so
+/// wedging the transport for the life of the connection would be the worse
+/// outcome of the two.
+fn lock_pending(
+    pending: &PendingMap,
+) -> std::sync::MutexGuard<'_, HashMap<String, PendingRequest>> {
+    pending
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Owns one request's entry in the pending map and removes it on drop.
+///
+/// # Why this exists
+///
+/// The entry used to be removed on exactly three paths: a routed response, the
+/// explicit timeout branch in [`WebSocketTransport::execute_request`], and
+/// connection teardown. A caller whose future is simply **dropped** takes none
+/// of them — a `select!` losing a race, a shutdown, an HTTP handler whose own
+/// client went away — and neither does a consumer that abandons an
+/// [`EventStream`] the server never fed.
+///
+/// Both leaked, and were measured leaking on 2026-08-19: five cancelled unary
+/// requests left five entries, five abandoned streams left five more. The map
+/// has no capacity bound and a WebSocket connection is meant to be long-lived,
+/// so on the request path that is unbounded growth, holding a `Sender` each.
+///
+/// It is the same shape as the eviction-slot defect fixed the same day: state
+/// claimed on one code path and released on another, where cancellation runs
+/// neither. Cleanup that must survive cancellation belongs in `Drop`.
+struct PendingGuard {
+    pending: Arc<PendingMap>,
+    request_id: String,
+}
+
+impl PendingGuard {
+    /// Registers `request` and returns the guard that owns its entry.
+    ///
+    /// Registration happens **here**, on the caller's side, rather than in the
+    /// writer task. That is what makes the guard sound: if the writer inserted,
+    /// a caller cancelled between `write_tx.send` and the insert would drop its
+    /// guard first and remove nothing, and the writer would then insert an
+    /// entry with no owner. Insert-then-hand-off keeps both ends in one place,
+    /// and still satisfies the ordering the writer needed — the entry exists
+    /// before the frame is queued, let alone sent.
+    fn register(pending: &Arc<PendingMap>, request_id: String, request: PendingRequest) -> Self {
+        lock_pending(pending).insert(request_id.clone(), request);
+        Self {
+            pending: Arc::clone(pending),
+            request_id,
+        }
+    }
+}
+
+impl Drop for PendingGuard {
+    fn drop(&mut self) {
+        lock_pending(&self.pending).remove(&self.request_id);
+    }
+}
+
 /// Messages sent from the transport methods to the writer task.
 struct WriteCommand {
     text: String,
-    request_id: String,
-    pending: PendingRequest,
 }
 
 // ── WebSocketTransportConfig ─────────────────────────────────────────────────
@@ -93,10 +162,36 @@ pub struct WebSocketTransportConfig {
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
     pub extra_headers: HashMap<String, String>,
+    /// How long the connect may take: TCP, TLS, and the HTTP upgrade
+    /// handshake, together. Default: 10 seconds.
+    ///
+    /// Nothing bounded this. `connect_async_with_config` was awaited bare, and
+    /// no OS timeout covers an upgrade that is *answered late or never* — a
+    /// server that accepts the TCP connection and then goes silent held the
+    /// caller forever. Measured against such a server: still pending at 3
+    /// seconds, with no deadline to reach.
+    ///
+    /// Every sibling transport already bounded this — JSON-RPC and REST
+    /// through `ClientConfig::connection_timeout`, gRPC through
+    /// `GrpcTransportConfig::connect_timeout` — and this default matches
+    /// theirs. `ClientConfig::connection_timeout` cannot reach here: this
+    /// transport is built directly and handed to `with_custom_transport`, so
+    /// it never sees a `ClientConfig`.
+    pub connect_timeout: Duration,
+
     /// Maximum size of an incoming WebSocket message, in bytes, enforced at
-    /// the protocol level during the read. Default: 32 MiB — the same
-    /// response-size ceiling the HTTP and gRPC transports apply, replacing
+    /// the protocol level during the read. Default: 32 MiB, replacing
     /// tungstenite's 64 MiB default.
+    ///
+    /// That default is
+    /// [`DEFAULT_MAX_RESPONSE_SIZE`](crate::ClientConfig::max_response_size),
+    /// the same constant the HTTP and gRPC transports start from — **the same
+    /// value, not the same setting.** This transport is reached through
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
+    /// so it never sees a [`ClientConfig`](crate::ClientConfig) and
+    /// `max_response_size` does not reach it. The two agree until somebody
+    /// changes one, and the person who tightens a limit is the person who
+    /// decided the default was wrong for them. Set the bound here.
     pub max_message_size: usize,
 }
 
@@ -104,6 +199,7 @@ impl Default for WebSocketTransportConfig {
     fn default() -> Self {
         Self {
             request_timeout: Duration::from_secs(30),
+            connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
         }
@@ -115,6 +211,13 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
+        self
+    }
+
+    /// Sets how long the connect may take, handshake included.
+    #[must_use]
+    pub const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
@@ -155,9 +258,9 @@ struct Inner {
     /// Channel to send write commands to the background writer/router task.
     write_tx: mpsc::Sender<WriteCommand>,
     /// Pending requests keyed by JSON-RPC request ID (shared with the
-    /// reader/writer tasks). Held here so request paths can remove their
-    /// entry on timeout instead of leaking it.
-    pending: Arc<Mutex<HashMap<String, PendingRequest>>>,
+    /// reader/writer tasks). Held here so a request path can register its own
+    /// entry and hand ownership to a [`PendingGuard`].
+    pending: Arc<PendingMap>,
     /// Set once the connection is known dead (reader task exited or a write
     /// failed). New requests fail immediately instead of waiting out their
     /// full timeout against a connection that can no longer answer.
@@ -283,33 +386,40 @@ impl WebSocketTransport {
             .max_message_size(Some(config.max_message_size))
             .max_frame_size(Some(config.max_message_size));
 
-        let (ws_stream, _resp) =
-            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true)
-                .await
-                .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
+        // Bounded, because nothing below this line is. A server that accepts
+        // the TCP connection and never answers the upgrade leaves this future
+        // pending with no OS timeout to rescue it.
+        let (ws_stream, _resp) = tokio::time::timeout(
+            config.connect_timeout,
+            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true),
+        )
+        .await
+        .map_err(|_| {
+            ClientError::Transport(format!(
+                "WebSocket connect to {endpoint} did not complete within {:?}",
+                config.connect_timeout
+            ))
+        })?
+        .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
 
         let (ws_writer, ws_reader) = ws_stream.split();
 
         // Shared map of pending requests, keyed by JSON-RPC request ID.
-        let pending: Arc<Mutex<HashMap<String, PendingRequest>>> =
-            Arc::new(Mutex::new(HashMap::new()));
+        let pending: Arc<PendingMap> = Arc::new(Mutex::new(HashMap::new()));
         let closed = Arc::new(AtomicBool::new(false));
 
         // Channel for write commands from transport methods to the writer task.
         let (write_tx, mut write_rx) = mpsc::channel::<WriteCommand>(64);
 
-        // Background writer task: receives write commands, registers pending
-        // requests, and sends frames to the WebSocket.
+        // Background writer task: receives write commands and sends frames to
+        // the WebSocket. Registration is the caller's job (see
+        // `PendingGuard::register`), and has already happened by the time a
+        // command reaches this loop.
         let pending_for_writer = Arc::clone(&pending);
         let closed_for_writer = Arc::clone(&closed);
         let writer_handle = tokio::spawn(async move {
             let mut ws_writer = ws_writer;
             while let Some(cmd) = write_rx.recv().await {
-                // Register the pending request before sending the frame.
-                {
-                    let mut map = pending_for_writer.lock().await;
-                    map.insert(cmd.request_id, cmd.pending);
-                }
                 if ws_writer
                     .send(WsMessage::Text(cmd.text.into()))
                     .await
@@ -318,7 +428,7 @@ impl WebSocketTransport {
                     // The connection is dead: fail every pending request —
                     // including the one just registered — instead of leaving
                     // them to wait out their full timeouts.
-                    fail_all_pending(&pending_for_writer, &closed_for_writer).await;
+                    fail_all_pending(&pending_for_writer, &closed_for_writer);
                     break;
                 }
             }
@@ -344,7 +454,7 @@ impl WebSocketTransport {
                     Some(Ok(_)) => {}
                 }
             }
-            fail_all_pending(&pending_for_reader, &closed_for_reader).await;
+            fail_all_pending(&pending_for_reader, &closed_for_reader);
         });
 
         Ok(Self {
@@ -388,13 +498,19 @@ impl WebSocketTransport {
 
         let (tx, rx) = oneshot::channel();
 
+        // Registered before the frame is queued, and released by the guard on
+        // every exit from this function — response, error, timeout, or the
+        // caller's future being dropped mid-await. The timeout branch used to
+        // carry the only explicit removal; cancellation ran none of it.
+        let _entry = PendingGuard::register(
+            &self.inner.pending,
+            request_id.clone(),
+            PendingRequest::Unary(tx),
+        );
+
         self.inner
             .write_tx
-            .send(WriteCommand {
-                text: body,
-                request_id: request_id.clone(),
-                pending: PendingRequest::Unary(tx),
-            })
+            .send(WriteCommand { text: body })
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
@@ -402,9 +518,6 @@ impl WebSocketTransport {
             Ok(received) => received
                 .map_err(|_| ClientError::Transport("WebSocket reader task closed".into()))??,
             Err(_elapsed) => {
-                // Remove the pending entry: nothing else will, so every
-                // timed-out request would otherwise leak one map entry.
-                self.inner.pending.lock().await.remove(&request_id);
                 return Err(ClientError::Timeout("WebSocket response timed out".into()));
             }
         };
@@ -464,13 +577,21 @@ impl WebSocketTransport {
         // Create a channel-based EventStream.
         let (tx, rx) = mpsc::channel::<crate::streaming::event_stream::BodyChunk>(64);
 
+        // The entry has to outlive this function — the stream is the thing that
+        // consumes it — so the guard travels with the stream and releases the
+        // entry when the consumer drops it. `route_frame` removes the entry at
+        // end-of-stream, but only for a stream that actually reaches one: a
+        // server that answers nothing leaves the consumer to time out and walk
+        // away, and that path removed nothing at all.
+        let entry = PendingGuard::register(
+            &self.inner.pending,
+            request_id,
+            PendingRequest::Streaming(tx),
+        );
+
         self.inner
             .write_tx
-            .send(WriteCommand {
-                text: body,
-                request_id,
-                pending: PendingRequest::Streaming(tx),
-            })
+            .send(WriteCommand { text: body })
             .await
             .map_err(|_| ClientError::Transport("WebSocket writer task closed".into()))?;
 
@@ -478,7 +599,9 @@ impl WebSocketTransport {
         // transport otherwise returns a stream with no timeout at all, so a
         // server that accepts the socket but never answers this request would
         // hang the consumer forever. The bound is lifted after the first frame.
-        Ok(EventStream::new(rx).with_first_event_timeout(self.inner.request_timeout))
+        Ok(EventStream::new(rx)
+            .with_first_event_timeout(self.inner.request_timeout)
+            .holding(entry))
     }
 }
 
@@ -536,12 +659,13 @@ fn warn_dropped_per_request_headers(method: &str, extra_headers: &HashMap<String
 /// in which no pending request can ever be answered (server close, stream
 /// end, transport error, failed write). Without this, requests in flight at
 /// disconnect time hang until their full request timeout.
-async fn fail_all_pending(pending: &Mutex<HashMap<String, PendingRequest>>, closed: &AtomicBool) {
+///
+/// Not `async`: every step is synchronous — a `std` mutex, a `drain`, a
+/// non-blocking `oneshot::send` and a `try_send`. It was `async` only because
+/// the map used to be behind a Tokio mutex.
+fn fail_all_pending(pending: &PendingMap, closed: &AtomicBool) {
     closed.store(true, Ordering::Release);
-    let entries: Vec<PendingRequest> = {
-        let mut map = pending.lock().await;
-        map.drain().map(|(_, v)| v).collect()
-    };
+    let entries: Vec<PendingRequest> = lock_pending(pending).drain().map(|(_, v)| v).collect();
     for entry in entries {
         match entry {
             PendingRequest::Unary(tx) => {
@@ -568,7 +692,7 @@ async fn fail_all_pending(pending: &Mutex<HashMap<String, PendingRequest>>, clos
 ///
 /// Extracts the JSON-RPC ID from the frame and looks up the corresponding
 /// pending request in the shared map.
-async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text: &str) {
+async fn route_frame(pending: &PendingMap, text: &str) {
     // Try to extract the JSON-RPC ID to route the response.
     let Some(request_id) = extract_jsonrpc_id(text) else {
         // If we can't extract an ID, this might be a notification or malformed
@@ -584,7 +708,7 @@ async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text
     // unary timeout cleanup (FIX(C2), re-fixed). Unary delivery is a
     // non-blocking `oneshot::send`, so it stays under the lock.
     let streaming_tx = {
-        let mut map = pending.lock().await;
+        let mut map = lock_pending(pending);
         let tx = match map.get(&request_id) {
             Some(PendingRequest::Unary(_)) => {
                 if let Some(PendingRequest::Unary(tx)) = map.remove(&request_id) {
@@ -603,7 +727,7 @@ async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text
     // event: forwarding it makes the consumer's deserializer fail on a frame
     // that is not a `StreamResponse`. Drop it and close the entry instead.
     if is_stream_complete_sentinel(text) {
-        pending.lock().await.remove(&request_id);
+        lock_pending(pending).remove(&request_id);
         return;
     }
 
@@ -616,7 +740,7 @@ async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text
         .is_err()
     {
         // Consumer dropped — remove the pending entry.
-        pending.lock().await.remove(&request_id);
+        lock_pending(pending).remove(&request_id);
         return;
     }
 
@@ -626,7 +750,7 @@ async fn route_frame(pending: &Arc<Mutex<HashMap<String, PendingRequest>>>, text
     // `TASK_STATE_*` wire strings, which never matched the old lowercase-only
     // check).
     if is_stream_terminal(text) {
-        pending.lock().await.remove(&request_id);
+        lock_pending(pending).remove(&request_id);
     }
 }
 
@@ -1015,6 +1139,62 @@ mod tests {
         assert!(id.is_none());
     }
 
+    // ── the connect is bounded ────────────────────────────────────────────
+    //
+    // Measured before the fix, against the server below: still pending at 3
+    // seconds, with no deadline to reach. `connect_async_with_config` was
+    // awaited bare, and no OS timeout covers an HTTP upgrade that is answered
+    // late or never — the TCP connection succeeds, so the kernel is satisfied.
+
+    /// Accepts one connection and then says nothing, holding the socket open
+    /// for the life of the test. A closed socket would fail the handshake
+    /// promptly, which is the opposite of what this models.
+    async fn silent_server() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                std::future::pending::<()>().await;
+                drop(sock);
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn connect_gives_up_on_a_server_that_never_completes_the_handshake() {
+        let addr = silent_server().await;
+
+        let started = std::time::Instant::now();
+        let err = WebSocketTransport::connect_with_config(
+            format!("ws://{addr}"),
+            WebSocketTransportConfig::default().with_connect_timeout(Duration::from_millis(300)),
+        )
+        .await
+        .expect_err("a silent server must not yield a transport");
+
+        assert!(
+            err.to_string().contains("did not complete within"),
+            "expected a connect-deadline error, got: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the deadline was 300ms; returning after {:?} means it did not apply",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_connect_deadline_defaults_to_ten_seconds() {
+        // Matching ClientConfig::connection_timeout and
+        // GrpcTransportConfig::connect_timeout. A default that drifts from its
+        // siblings is how one transport ends up unbounded again.
+        assert_eq!(
+            WebSocketTransportConfig::default().connect_timeout,
+            Duration::from_secs(10)
+        );
+    }
+
     /// Regression (D6): a request that times out must remove its entry from
     /// the shared pending map — previously every client-side timeout leaked
     /// one entry (the server never answers, so `route_frame` never cleans
@@ -1053,9 +1233,159 @@ mod tests {
         );
 
         assert!(
-            transport.inner.pending.lock().await.is_empty(),
+            lock_pending(&transport.inner.pending).is_empty(),
             "pending map must not retain timed-out requests"
         );
+    }
+
+    /// A caller whose request future is **dropped** must not leave its entry in
+    /// the pending map.
+    ///
+    /// Until 2026-08-19 only three things removed an entry: a routed response,
+    /// the explicit timeout branch, and connection teardown. Cancellation runs
+    /// none of them. Measured against this exact server — five requests each
+    /// abandoned after 80ms, against a 30-second transport timeout — the map
+    /// held 5 entries afterwards and would have held them until the connection
+    /// died, each pinning a `oneshot::Sender`.
+    ///
+    /// It matters because the map has no capacity bound and a WebSocket
+    /// connection is meant to be long-lived: on the request path this is
+    /// unbounded growth, and a `select!` that races a request against a
+    /// shutdown signal is an ordinary way to write a client.
+    #[tokio::test]
+    async fn a_cancelled_request_does_not_leak_its_pending_entry() {
+        let addr = spawn_silent_ws_server().await;
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
+
+        for i in 0..5 {
+            // The caller gives up long before the transport's own timeout,
+            // which is what makes this cancellation rather than a timeout.
+            let outcome = tokio::time::timeout(
+                Duration::from_millis(80),
+                transport.send_request(
+                    "GetTask",
+                    serde_json::json!({ "id": format!("t{i}") }),
+                    &HashMap::new(),
+                ),
+            )
+            .await;
+            assert!(
+                outcome.is_err(),
+                "the server never answers, so it must elapse"
+            );
+        }
+
+        // The writer task registers nothing now, but give the runtime a turn
+        // anyway so a failure here can never be read as "the test looked early".
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let leaked = lock_pending(&transport.inner.pending).len();
+        assert_eq!(
+            leaked, 0,
+            "5 cancelled requests left {leaked} pending entries"
+        );
+    }
+
+    /// A consumer that abandons a stream the server never fed must not leave
+    /// its entry in the pending map either.
+    ///
+    /// This is the same defect at the other end of the transport, and it was
+    /// measured the same way: 5 abandoned streams, 5 retained entries. The
+    /// streaming entry is removed by `route_frame` on a terminal event, on the
+    /// end-of-stream sentinel, or when a send finds the consumer gone — all
+    /// three need a frame to arrive. A server that accepts the subscription and
+    /// then says nothing sends none, so the consumer times out on
+    /// `first_event_timeout`, drops the stream, and nothing ran.
+    #[tokio::test]
+    async fn an_abandoned_stream_does_not_leak_its_pending_entry() {
+        let addr = spawn_silent_ws_server().await;
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
+
+        for i in 0..5 {
+            let stream = transport
+                .send_streaming_request(
+                    "SendStreamingMessage",
+                    serde_json::json!({ "id": format!("s{i}") }),
+                    &HashMap::new(),
+                )
+                .await
+                .expect("the stream is established even though nothing answers");
+            drop(stream);
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let leaked = lock_pending(&transport.inner.pending).len();
+        assert_eq!(
+            leaked, 0,
+            "5 abandoned streams left {leaked} pending entries"
+        );
+    }
+
+    /// A live stream must keep its entry: the guard travels with the stream,
+    /// so a mistake in that hand-off would drop the entry at
+    /// `send_streaming_request`'s return and silently break every stream.
+    ///
+    /// Without this the two tests above pass for the wrong reason — removing
+    /// the entry unconditionally satisfies both.
+    #[tokio::test]
+    async fn a_live_stream_keeps_its_pending_entry() {
+        let addr = spawn_silent_ws_server().await;
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
+
+        let stream = transport
+            .send_streaming_request(
+                "SendStreamingMessage",
+                serde_json::json!({ "id": "live" }),
+                &HashMap::new(),
+            )
+            .await
+            .expect("stream opens");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            lock_pending(&transport.inner.pending).len(),
+            1,
+            "a stream still held by its consumer must stay routable"
+        );
+        drop(stream);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert_eq!(
+            lock_pending(&transport.inner.pending).len(),
+            0,
+            "and must release the entry once the consumer lets go"
+        );
+    }
+
+    /// A WebSocket server that completes the handshake, swallows every frame,
+    /// and never answers.
+    async fn spawn_silent_ws_server() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                        return;
+                    };
+                    while let Some(Ok(_)) = ws.next().await {}
+                });
+            }
+        });
+        addr
     }
 
     /// Spawns a WebSocket server that completes handshakes and hands each

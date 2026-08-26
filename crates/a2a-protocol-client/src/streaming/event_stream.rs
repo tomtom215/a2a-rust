@@ -93,6 +93,21 @@ pub struct EventStream {
     first_event_timeout: Option<std::time::Duration>,
     /// Whether at least one chunk has been received (clears `first_event_timeout`).
     first_chunk_received: bool,
+    /// A resource whose lifetime is the stream's, released when the stream is
+    /// dropped. Set by [`EventStream::holding`]; see that method for why.
+    ///
+    /// Never read — it exists to be dropped — so the `Any` bound is doing no
+    /// work beyond giving the box a base trait to be object-safe against.
+    ///
+    /// `UnwindSafe + RefUnwindSafe` are in the bound because a trait object
+    /// carries only the auto traits it names, and this field is the whole of
+    /// `EventStream`'s. Without them the type silently stopped implementing
+    /// both — a public auto-trait regression that `cargo-semver-checks` caught
+    /// and nothing else would have, since no test in this repository calls
+    /// `catch_unwind` on a stream.
+    held: Option<
+        Box<dyn std::any::Any + Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>,
+    >,
 }
 
 impl EventStream {
@@ -113,6 +128,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -135,6 +151,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -217,6 +234,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -243,6 +261,35 @@ impl EventStream {
     #[must_use]
     pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
+        self
+    }
+
+    /// Ties `resource`'s lifetime to the stream's: it is dropped when the
+    /// stream is.
+    ///
+    /// The stream already owns an `AbortHandle` for the same reason — a
+    /// consumer that walks away must not leave the transport holding state for
+    /// it. This generalises that to state the transport cannot reach from a
+    /// background task.
+    ///
+    /// The WebSocket transport is the caller: it parks the guard owning its
+    /// pending-map entry here, because the entry has to outlive
+    /// `send_streaming_request` and the only event that reliably ends its
+    /// usefulness is the consumer dropping this stream. A server that accepts a
+    /// subscription and then answers nothing produces no terminal event and no
+    /// closed channel, so nothing else was ever going to remove it.
+    #[must_use]
+    #[cfg(feature = "websocket")]
+    pub(crate) fn holding(
+        mut self,
+        resource: impl std::any::Any
+            + Send
+            + Sync
+            + std::panic::UnwindSafe
+            + std::panic::RefUnwindSafe
+            + 'static,
+    ) -> Self {
+        self.held = Some(Box::new(resource));
         self
     }
 
@@ -363,6 +410,13 @@ impl Drop for EventStream {
         if let Some(handle) = self.abort_handle.take() {
             handle.abort();
         }
+        // Release whatever a transport parked here — see `holding`. Drop glue
+        // would do this anyway; taking it explicitly is what tells `dead_code`
+        // the field is read, and puts the release next to the abort it belongs
+        // beside. Without it the field is "never read" in any build where
+        // `holding` is cfg'd out, and the crate is compiled with
+        // `-D warnings`.
+        drop(self.held.take());
     }
 }
 
@@ -386,6 +440,23 @@ const fn is_terminal(event: &StreamResponse) -> bool {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+/// `EventStream` must stay `UnwindSafe` and `RefUnwindSafe`.
+///
+/// Both are auto traits, so they are part of the public API and their loss is a
+/// semver break — `cargo-semver-checks` reported exactly that when the `held`
+/// field was added as `Box<dyn Any + Send + Sync>`, because a trait object
+/// carries only the auto traits it names.
+///
+/// A compile-time assertion rather than a test body: these are properties of
+/// the type, and a `fn` that fails to compile is the strongest form the check
+/// can take. Nothing in this repository calls `catch_unwind` on a stream, so no
+/// behavioural test would have noticed.
+#[cfg(test)]
+const fn _event_stream_is_unwind_safe() {
+    const fn assert_unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert_unwind_safe::<EventStream>();
+}
 
 #[cfg(test)]
 mod tests {

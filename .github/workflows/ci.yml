@@ -180,6 +180,29 @@ jobs:
       - name: Block scalars parse as YAML says
         run: python3 scripts/check_block_scalars.py
 
+      # A guard flag claimed with `compare_exchange(false, true, ..)` and
+      # released by a `store(false, ..)` at the end of the function is released
+      # on exactly the paths somebody thought of. Dropping the future — a
+      # `select!`, a client hanging up, a `JoinHandle::abort` — runs none of
+      # them, and the flag stays claimed for the life of the process.
+      #
+      # That is not hypothetical here. `InMemoryTaskStore::maybe_evict` had
+      # exactly this shape, and because both of that store's memory bounds ran
+      # through the flag, one cancelled sweep left the default store with no
+      # memory ceiling at all. Measured 2026-08-19; see Addendum 8 of
+      # docs/v0.9.0-post-release-review.md.
+      - name: Guard flags are released by Drop
+        run: python3 scripts/check_cancellation_release.py
+
+      # A doc comment assembled by a script that wrote `\\n` where it meant a
+      # newline renders as one run-on paragraph with the escape printed in it.
+      # Five of these shipped in `tenant_config.rs` on 2026-08-20 and no gate
+      # noticed: `cargo fmt` does not reformat inside comments, clippy does not
+      # read prose, and `cargo doc -D warnings` is satisfied because the text is
+      # valid — it is just not the text anyone wrote.
+      - name: Doc comments contain no literal escapes
+        run: python3 scripts/check_doc_escapes.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})

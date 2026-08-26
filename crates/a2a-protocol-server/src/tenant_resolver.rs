@@ -16,6 +16,45 @@
 //! | [`BearerTokenTenantResolver`] | Extracts `Authorization: Bearer <token>` and optionally maps it |
 //! | [`PathSegmentTenantResolver`] | Extracts a URL path segment by index |
 //!
+//! # Security: all three read what the caller sent
+//!
+//! A header, a bearer token and a path segment are all **client-controlled**.
+//! Nothing in this module authenticates any of them, so a resolver on its own
+//! provides no isolation at all: anyone who can reach the server can send
+//! `x-tenant-id: victim` and be treated as `victim`.
+//!
+//! [`RequestHandler::resolve_tenant`] states the model this is meant to sit
+//! inside — the resolver is the source of truth precisely *because* it reads
+//! "trusted request context (an auth token, a gateway-set header, a URL path
+//! segment)". That word **trusted** is a precondition on the deployment, and it
+//! is the whole of the security argument. It was stated where the value is
+//! consumed and not here, where the resolver is chosen, which is the wrong way
+//! round: nobody picks a resolver by reading the handler.
+//!
+//! For that precondition to hold, one of these has to be true:
+//!
+//! * a gateway or sidecar in front of this server **strips the header from
+//!   client traffic and sets it itself** from an authenticated identity — the
+//!   same discipline [`RateLimitConfig::trusted_proxy_hops`] applies to
+//!   `X-Forwarded-For`, and for a stronger reason: this decides which tenant's
+//!   data you read, not merely whose quota you spend; or
+//! * the resolver derives the tenant from something the server has already
+//!   verified — a JWT whose signature was checked, for example, via
+//!   [`BearerTokenTenantResolver::with_mapper`]; or
+//! * the deployment has exactly one tenant and this is routing, not isolation.
+//!
+//! Two more things worth knowing before relying on this:
+//!
+//! * A resolver returning `None` falls through to the shared default (`""`)
+//!   partition. `RequestHandlerBuilder::require_resolved_tenant` turns that into
+//!   a rejection instead, and is **off by default** for compatibility.
+//! * Ordering matters the same way it does for per-caller rate limiting: a
+//!   resolver that reads something an interceptor is supposed to have
+//!   established will read nothing if it runs first.
+//!
+//! [`RequestHandler::resolve_tenant`]: crate::RequestHandler
+//! [`RateLimitConfig::trusted_proxy_hops`]: crate::RateLimitConfig::trusted_proxy_hops
+//!
 //! # Example
 //!
 //! ```rust
@@ -67,6 +106,13 @@ pub trait TenantResolver: Send + Sync + 'static {
 /// By default reads `x-tenant-id`. The header name is always matched
 /// case-insensitively (keys in [`CallContext::http_headers`] are lowercased).
 ///
+/// # Safe only behind something that sets the header
+///
+/// The header is whatever the caller sent. This resolver does not and cannot
+/// check it. Unless a gateway strips it from client traffic and sets it from an
+/// authenticated identity, any caller can name any tenant — see this module's
+/// security section.
+///
 /// # Example
 ///
 /// ```rust
@@ -117,9 +163,17 @@ type TokenMapper = Arc<dyn Fn(&str) -> Option<String> + Send + Sync + 'static>;
 
 /// Extracts a tenant ID from the `Authorization: Bearer <token>` header.
 ///
-/// By default, uses the raw bearer token as the tenant identifier. An optional
-/// mapping function can transform or validate the token (e.g. decode a JWT
-/// and extract a `tenant_id` claim).
+/// # Use [`with_mapper`](Self::with_mapper); [`new`](Self::new) is for tests
+///
+/// [`new`](Self::new) uses the **raw, unverified** bearer token as the tenant
+/// identifier. No signature is checked and no expiry is honoured, so the tenant
+/// is a string the caller chose — which is the same as having no tenancy, and
+/// worse, because it looks like having some.
+///
+/// [`with_mapper`](Self::with_mapper) is the constructor for a deployment: give
+/// it a closure that verifies the token (checks the signature, checks expiry)
+/// and returns the tenant claim, or `None` to reject. The mapper is where the
+/// trust in this module's security section is established or is not.
 ///
 /// # Example
 ///
@@ -201,6 +255,10 @@ impl TenantResolver for BearerTokenTenantResolver {
 // ── PathSegmentTenantResolver ────────────────────────────────────────────────
 
 /// Extracts a tenant ID from a URL path segment by index.
+///
+/// The path is client-controlled, so this isolates nothing on its own — it is a
+/// routing convention that a gateway or an authorising interceptor has to back
+/// up. See this module's security section.
 ///
 /// Path segments are split by `/`, with empty segments (from leading `/`)
 /// removed. For example, the path `/tenants/acme/tasks` has segments

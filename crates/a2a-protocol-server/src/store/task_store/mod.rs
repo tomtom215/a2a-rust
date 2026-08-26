@@ -358,6 +358,38 @@ mod tests {
     }
 }
 
+/// The largest page a `list` call may return, when nothing narrower is asked
+/// for.
+///
+/// # Why this is a constant rather than five literals
+///
+/// It used to be five. [`TaskStoreConfig::max_page_size`] defaulted to `1000`,
+/// and each of the four SQL stores carried its own `n.min(1000)` — so the
+/// *configurable* bound and the *hardcoded* one agreed by coincidence, and the
+/// SQL stores took no `TaskStoreConfig` at all. An operator who tightened
+/// `max_page_size` to protect a database therefore changed the in-memory store
+/// and nothing else, and the book documented the field as capping `list`
+/// generally.
+///
+/// MEASURED 2026-08-19, cap set to 10 against 60 stored tasks with a client
+/// asking for 100:
+///
+/// | store | returned |
+/// |---|---|
+/// | `InMemoryTaskStore` (cap honoured) | 10 |
+/// | `SqliteTaskStore` (cap unreachable) | **60** |
+///
+/// The knob failed only once somebody set it, which is the shape this
+/// repository has now found three times — a configurable bound whose default
+/// equals the hardcoded fallback, so nothing looks wrong until the person who
+/// cares tightens it.
+///
+/// Each SQL store now takes its own cap (`with_max_page_size`) defaulting to
+/// this constant, so the two can no longer drift apart silently.
+///
+/// [`TaskStoreConfig::max_page_size`]: TaskStoreConfig
+pub const DEFAULT_MAX_PAGE_SIZE: u32 = 1000;
+
 /// Configuration for [`InMemoryTaskStore`].
 #[derive(Debug, Clone)]
 pub struct TaskStoreConfig {
@@ -397,7 +429,7 @@ impl Default for TaskStoreConfig {
             max_capacity: Some(10_000),
             task_ttl: Some(Duration::from_secs(3600)), // 1 hour
             eviction_interval: 64,
-            max_page_size: 1000,
+            max_page_size: DEFAULT_MAX_PAGE_SIZE,
         }
     }
 }

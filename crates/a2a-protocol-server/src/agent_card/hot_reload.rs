@@ -76,15 +76,13 @@ impl HotReloadAgentCardHandler {
     ///
     /// This acquires a short-lived read lock and clones the card.
     ///
-    /// # Panics
-    ///
-    /// Panics if the internal `RwLock` is poisoned (another thread panicked
-    /// while holding the write lock).
+    /// A poisoned lock is recovered from rather than propagated — see
+    /// [`update`](Self::update).
     #[must_use]
     pub fn current(&self) -> AgentCard {
         self.card
             .read()
-            .expect("agent card RwLock poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
 
@@ -92,11 +90,25 @@ impl HotReloadAgentCardHandler {
     ///
     /// All subsequent requests will see the new card immediately.
     ///
-    /// # Panics
+    /// # A poisoned lock is recovered from, not propagated
     ///
-    /// Panics if the internal `RwLock` is poisoned.
+    /// Both accessors used to `expect` on the lock, so one panic anywhere
+    /// under the write lock turned *every subsequent agent-card request* into
+    /// a panic — on the request path, in a handler whose whole purpose is to
+    /// answer `GetAgentCard`. In a release build that is worse still: this
+    /// workspace sets `panic = "abort"`, so the second panic is a process
+    /// abort rather than one failed request.
+    ///
+    /// Recovery is correct here, not merely convenient. The only write is this
+    /// whole-value assignment of an already-constructed `AgentCard`, so there
+    /// is no state in which the guarded value is half-updated for a later
+    /// reader to observe. The same reasoning the rest of this workspace
+    /// applies to its `std` mutexes.
     pub fn update(&self, card: AgentCard) {
-        let mut guard = self.card.write().expect("agent card RwLock poisoned");
+        let mut guard = self
+            .card
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *guard = card;
     }
 
@@ -160,16 +172,38 @@ impl HotReloadAgentCardHandler {
     /// Returns a [`tokio::task::JoinHandle`] that can be used to abort the
     /// watcher (via [`JoinHandle::abort`](tokio::task::JoinHandle::abort)).
     ///
+    /// If the handler cannot be registered for an ordinary I/O reason, the
+    /// watcher logs a warning and exits; reload-on-SIGHUP is then unavailable,
+    /// and [`reload_from_file`](Self::reload_from_file) and
+    /// [`spawn_poll_watcher`](Self::spawn_poll_watcher) still work.
+    ///
     /// # Panics
     ///
-    /// Panics if the tokio signal handler cannot be registered (e.g. if the
-    /// runtime was built without the `signal` feature).
+    /// Panics **here, at this call**, if the current Tokio runtime has no
+    /// signal driver — `there is no signal driver running, must be called from
+    /// the context of Tokio runtime`. That is what a runtime built by hand
+    /// without `enable_all()` (or at least `enable_io()`) gives you; the
+    /// `#[tokio::main]` default has it.
+    ///
+    /// Registration used to happen inside the spawned task, which made the
+    /// same panic much worse. It fired *after* this function had already
+    /// returned a handle, so a caller had no way to see it coming and nothing
+    /// to catch — and this workspace builds release with `panic = "abort"`, so
+    /// what a developer would meet as a failing startup in the first case is a
+    /// process abort at an arbitrary later moment in the second. Registering
+    /// synchronously does not remove the panic; it moves it to the caller's own
+    /// startup path, where it is deterministic and where this paragraph is
+    /// about the function it is attached to.
     #[cfg(unix)]
     #[must_use]
     pub fn spawn_signal_watcher(&self, path: &Path) -> tokio::task::JoinHandle<()> {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        // Registered before the spawn — see this function's `# Panics`.
+        let stream = signal(SignalKind::hangup());
         let handler = self.clone();
         let path = path.to_path_buf();
-        tokio::spawn(signal_watcher_loop(handler, path))
+        tokio::spawn(signal_watcher_loop(handler, path, stream))
     }
 }
 
@@ -248,14 +282,37 @@ async fn poll_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf, in
 }
 
 /// Background loop that reloads the agent card on `SIGHUP`.
+///
+/// Takes the already-registered stream rather than registering one, so that a
+/// registration failure is the caller's to see — see
+/// [`HotReloadAgentCardHandler::spawn_signal_watcher`].
 #[cfg(unix)]
-async fn signal_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf) {
-    use tokio::signal::unix::{signal, SignalKind};
+async fn signal_watcher_loop(
+    handler: HotReloadAgentCardHandler,
+    path: PathBuf,
+    stream: std::io::Result<tokio::signal::unix::Signal>,
+) {
+    let mut stream = match stream {
+        Ok(stream) => stream,
+        Err(e) => {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(
+                error = %e,
+                "hot-reload: could not register a SIGHUP handler; \
+                 reload-on-SIGHUP is unavailable for this process"
+            );
+            // Consumed only by `trace`-gated logging above; matches the
+            // convention the rest of this file already uses.
+            let _ = e;
+            return;
+        }
+    };
 
-    let mut stream = signal(SignalKind::hangup()).expect("failed to register SIGHUP handler");
-
-    loop {
-        stream.recv().await;
+    // `while … is_some()`, not `loop { recv().await; }`. The discarded
+    // `Option` was a latent hot loop: `None` means no further signals can
+    // arrive, and the old loop answered that by asking again immediately,
+    // forever, at whatever CPU one task can consume.
+    while stream.recv().await.is_some() {
         if let Err(e) = reload_from_file_async(&handler, &path).await {
             #[cfg(feature = "tracing")]
             tracing::warn!(
@@ -272,6 +329,97 @@ async fn signal_watcher_loop(handler: HotReloadAgentCardHandler, path: PathBuf) 
 mod tests {
     use super::*;
     use crate::agent_card::caching::tests::minimal_agent_card;
+
+    /// A runtime with no signal driver must fail *at the call site*, not
+    /// later in a detached task.
+    ///
+    /// `tokio::signal::unix::signal` panics — it does not return `Err` — with
+    /// "there is no signal driver running, must be called from the context of
+    /// Tokio runtime", which is what a hand-built runtime without
+    /// `enable_all()` gives you. Registration used to happen inside the spawned
+    /// task, so that panic arrived after `spawn_signal_watcher` had already
+    /// returned a handle: nothing to catch, nothing to see coming, and a
+    /// process abort rather than a failed request under this workspace's
+    /// release `panic = "abort"`.
+    ///
+    /// `catch_unwind` works here only because tests build with the dev
+    /// profile, which unwinds. That is precisely the asymmetry this test is
+    /// about: in release there is nothing to catch, which is why the panic has
+    /// to happen where the caller can see it instead.
+    #[cfg(unix)]
+    #[test]
+    fn a_runtime_without_a_signal_driver_fails_at_the_call_site() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_time() // deliberately not enable_all(): no I/O, no signal driver
+            .build()
+            .expect("runtime");
+        let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
+
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = rt.block_on(async {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _handle = handler.spawn_signal_watcher(Path::new("/nonexistent"));
+            }))
+        });
+        std::panic::set_hook(hook);
+
+        let payload = outcome.expect_err(
+            "registration must happen inside spawn_signal_watcher, so the failure \
+             is the caller's — returning a handle here means it fires later, detached",
+        );
+        let msg = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .unwrap_or_else(|| {
+                payload
+                    .downcast_ref::<&str>()
+                    .map_or_else(String::new, |s| (*s).to_string())
+            });
+        assert!(
+            msg.contains("signal driver"),
+            "expected tokio's missing-signal-driver panic, got: {msg}"
+        );
+    }
+
+    /// A panic under the write lock must not turn every later agent-card
+    /// request into a panic.
+    ///
+    /// Both accessors used to `expect` on the lock. Poisoning is sticky, so one
+    /// panic anywhere under it made `current()` — the function that answers
+    /// `GetAgentCard` — panic from then on. This workspace builds release with
+    /// `panic = "abort"`, which makes the second panic a process abort rather
+    /// than one failed request.
+    #[test]
+    fn a_poisoned_lock_does_not_disable_the_card_handler() {
+        let handler = HotReloadAgentCardHandler::new(minimal_agent_card());
+        let name_before = handler.current().name;
+
+        let poisoner = handler.clone();
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = poisoner.card.write().expect("uncontended");
+            panic!("poison the lock");
+        }));
+        std::panic::set_hook(hook);
+        assert!(outcome.is_err(), "the closure must actually have panicked");
+        assert!(
+            handler.card.is_poisoned(),
+            "and it must actually have poisoned the lock"
+        );
+
+        assert_eq!(
+            handler.current().name,
+            name_before,
+            "reads must still work through a poisoned lock"
+        );
+
+        let mut replacement = minimal_agent_card();
+        replacement.name = "after-poison".to_string();
+        handler.update(replacement);
+        assert_eq!(handler.current().name, "after-poison", "and so must writes");
+    }
 
     #[test]
     fn new_handler_returns_initial_card() {

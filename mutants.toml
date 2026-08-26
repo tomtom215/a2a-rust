@@ -59,6 +59,22 @@
 # reintroducing the TIMEOUTs that a tighter budget caused before. That is a
 # measured change, not a tail-of-release edit. See ROADMAP.md.
 #
+#
+# Measured 2026-08-19, cargo-mutants 27.1.0, `-p a2a-protocol-types
+# --all-features --list`, counting listed mutants:
+#
+#   no .cargo/mutants.toml (today)          731 listed, 155 of them src/proto/
+#   this file copied to .cargo/ verbatim    tool refuses to start:
+#                                           "unknown field `cap_timeout`"
+#   the same file minus cap_timeout + jobs  576 listed, 0 of them src/proto/
+#
+# So the "roughly 155" estimate above is exact for this crate, and the move is
+# a two-key edit away from working rather than a one-key edit. Note the middle
+# row: as things stand the move does not *narrow* the gate, it *stops the tool*.
+# A shard that cannot start is the one failure mode a mutation gate must not
+# have, so whoever does this should confirm the sweep still lists mutants
+# before trusting a green run.
+#
 # The hazard `cap_timeout` was written for — a hung mutant burning the whole
 # job timeout — is now handled a layer down and better, by the 45s per-test
 # kill in `.config/nextest.toml`: it bounds the hang *and* names the test.
@@ -98,6 +114,14 @@ cap_timeout = 300
 # Run mutants in parallel within each CI job.  GitHub-hosted ubuntu-latest
 # runners have 4 vCPUs, so 4 concurrent mutants is the sweet spot.
 # The CI workflow also splits crates across parallel jobs (matrix strategy).
+#
+# Also not a config key. Measured 2026-08-19 by writing each key of this file
+# into `.cargo/mutants.toml` on its own and running
+# `cargo mutants -p a2a-protocol-types --list`: `cap_timeout` and `jobs` are the
+# only two that produce `unknown field`. The banner above named `cap_timeout`
+# alone, so anyone following its "drop cap_timeout so it parses" would have hit
+# a second crash on the next line. `--jobs` is a command-line flag in 27.1.0
+# and mutants.yml already passes it.
 jobs = 4
 
 # ── Packages to test ────────────────────────────────────────────────────────

@@ -105,6 +105,33 @@ pub trait PushSender: Send + Sync + 'static {
     fn allows_private_urls(&self) -> bool {
         false
     }
+
+    /// The longest a single [`send`](Self::send) can take, if this sender can
+    /// say — its whole retry schedule, not one attempt.
+    ///
+    /// # Why this exists
+    ///
+    /// Background delivery bounds every `send` with
+    /// [`HandlerLimits::push_delivery_timeout`], and a sender whose own
+    /// schedule is longer than that bound never finishes it. At the shipped
+    /// defaults the two contradict: [`HttpPushSender`] promises three attempts
+    /// at 30s each with `[1s, 2s]` backoff — 93s — against a 5-second bound.
+    /// **Measured 2026-08-19 against a real socket: exactly one of the three
+    /// attempts reaches the webhook, and the outer timeout fires at 5.001s.**
+    /// `max_attempts` and `backoff` are, at the defaults, configuration that
+    /// cannot take effect.
+    ///
+    /// Reporting a duration here lets the server tell "your webhook is slow"
+    /// apart from "your two timeouts disagree" — see
+    /// [`push_outcome::TIMEOUT_TRUNCATED`](crate::metrics::push_outcome::TIMEOUT_TRUNCATED).
+    ///
+    /// Default: `None`, meaning "I cannot say". A `None` sender is never
+    /// reported as truncated, because nothing is known to have been cut short.
+    ///
+    /// [`HandlerLimits::push_delivery_timeout`]: crate::handler::HandlerLimits::push_delivery_timeout
+    fn max_delivery_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
 }
 
 /// Default per-request timeout for push notification delivery.
@@ -566,6 +593,32 @@ fn validate_header_value(value: &str, name: &str) -> A2aResult<()> {
 
 #[allow(clippy::manual_async_fn, clippy::too_many_lines)]
 impl PushSender for HttpPushSender {
+    /// `max_attempts` requests at `request_timeout` each, plus the backoff
+    /// between them. `backoff` is consulted by index and falls back to its
+    /// last entry, which is what the retry loop below actually does — the
+    /// arithmetic here has to match that loop or the number it reports is a
+    /// second thing to keep in step by hand.
+    fn max_delivery_duration(&self) -> Option<std::time::Duration> {
+        let attempts = self.retry_policy.max_attempts;
+        if attempts == 0 {
+            return Some(std::time::Duration::ZERO);
+        }
+        let mut total = self
+            .request_timeout
+            .saturating_mul(u32::try_from(attempts).unwrap_or(u32::MAX));
+        for attempt in 0..attempts.saturating_sub(1) {
+            if let Some(delay) = self
+                .retry_policy
+                .backoff
+                .get(attempt)
+                .or_else(|| self.retry_policy.backoff.last())
+            {
+                total = total.saturating_add(*delay);
+            }
+        }
+        Some(total)
+    }
+
     fn allows_private_urls(&self) -> bool {
         self.allow_private_urls
     }
@@ -852,6 +905,81 @@ mod tests {
     #[test]
     fn rejects_link_local() {
         assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
+    }
+
+    #[test]
+    fn max_delivery_duration_matches_the_retry_loop_it_describes() {
+        use std::time::Duration;
+
+        // 3 attempts at 30s, with [1s, 2s] between them.
+        let sender = HttpPushSender::new();
+        assert_eq!(
+            sender.max_delivery_duration(),
+            Some(Duration::from_secs(30 + 1 + 30 + 2 + 30)),
+            "the default schedule is 93 seconds"
+        );
+
+        // One attempt has no backoff at all.
+        let one = HttpPushSender::with_timeout(Duration::from_secs(7))
+            .with_retry_policy(PushRetryPolicy::default().with_max_attempts(1));
+        assert_eq!(one.max_delivery_duration(), Some(Duration::from_secs(7)));
+
+        // More attempts than backoff entries: the loop repeats the last entry,
+        // and this arithmetic has to agree with it.
+        let many = HttpPushSender::with_timeout(Duration::from_secs(1)).with_retry_policy(
+            PushRetryPolicy::default().with_max_attempts(5), // backoff [1s, 2s]
+        );
+        assert_eq!(
+            many.max_delivery_duration(),
+            Some(Duration::from_secs(5 + 1 + 2 + 2 + 2)),
+            "backoff falls back to its last entry, as `send` does"
+        );
+    }
+
+    /// The two shipped defaults contradict each other, and this records by how
+    /// much so that moving either one is a visible decision.
+    ///
+    /// Measured 2026-08-19 against a real socket: with a webhook that never
+    /// answers, exactly one request arrives and the handler's bound fires at
+    /// 5.001s — the sender's second and third attempts never happen.
+    #[test]
+    fn the_default_schedule_does_not_fit_the_default_handler_bound() {
+        use crate::handler::HandlerLimits;
+
+        let wanted = HttpPushSender::new()
+            .max_delivery_duration()
+            .expect("HttpPushSender reports its schedule");
+        let allowed = HandlerLimits::default().push_delivery_timeout;
+
+        assert!(
+            wanted > allowed,
+            "if these no longer contradict, the fix landed — update this test \
+             and the arithmetic in HandlerLimits::push_delivery_timeout's docs. \
+             sender wants {wanted:?}, handler allows {allowed:?}"
+        );
+
+        // How many attempts actually get to run, by the same arithmetic the
+        // docs quote. One attempt starts immediately; each further attempt
+        // needs the previous request's timeout plus its backoff to have fitted.
+        let policy = PushRetryPolicy::default();
+        let request = std::time::Duration::from_secs(30);
+        let mut spent = std::time::Duration::ZERO;
+        let mut attempts = 0_usize;
+        for i in 0..policy.max_attempts {
+            if spent >= allowed {
+                break;
+            }
+            attempts += 1;
+            spent += request;
+            if let Some(d) = policy.backoff.get(i).or_else(|| policy.backoff.last()) {
+                spent += *d;
+            }
+        }
+        assert_eq!(
+            attempts, 1,
+            "at the shipped defaults one attempt of {} runs",
+            policy.max_attempts
+        );
     }
 
     #[test]

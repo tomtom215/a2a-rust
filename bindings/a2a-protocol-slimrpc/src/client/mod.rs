@@ -160,6 +160,36 @@ impl SlimRpcTransportBuilder {
 }
 
 /// An A2A [`Transport`] over SLIMRPC.
+///
+/// # Message size
+///
+/// This transport has no size knob, and
+/// [`ClientConfig::max_response_size`](a2a_protocol_client::ClientConfig::max_response_size)
+/// does not reach it — that field configures the transports
+/// `ClientBuilder` constructs, and this one is supplied to
+/// `with_custom_transport` already built.
+///
+/// The bound that does apply was traced through the dependency stack rather
+/// than chosen here, so it is written down rather than left to be rediscovered:
+///
+/// | Layer | Bound |
+/// |---|---|
+/// | `Pb` (this crate's codec) | none — it decodes an already-assembled `Vec<u8>` |
+/// | `slim_rpc` 2.3 | none — `Encoder`/`Decoder` move `Vec<u8>` |
+/// | `agntcy-slim-datapath` 0.18 | none — builds its client as `DataPlaneServiceClient::new(channel)` |
+/// | `tonic` 0.14 defaults | **receive 4 MiB**, send unbounded (`usize::MAX`) |
+///
+/// So a response over SLIMRPC is capped at 4 MiB — eight times tighter than
+/// the 32 MiB `max_response_size` documents as the client default — and a
+/// request is not capped at all.
+///
+/// Neither is settable from here. The limit belongs to a tonic client the
+/// datapath constructs internally, and no layer in between exposes it. Adding
+/// a length check to [`Pb`](crate::codec::Pb) would not change this: by the
+/// time the codec is called tonic has already accepted the bytes and enforced
+/// its own limit, so the check could only reject what was already admitted and
+/// buffered. Raising the receive cap needs the bound widened upstream, in
+/// `agntcy-slim-datapath`.
 pub struct SlimRpcTransport {
     channel: Channel,
     remote: SlimName,

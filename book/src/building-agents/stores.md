@@ -60,7 +60,7 @@ Features:
   - The sequence is a collision-free integer pagination cursor; every write
     re-positions its task to the front of the update order
 - Automatic TTL eviction on access (maintains all indexes)
-- Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — hard capacity guarantee
+- Capacity eviction (oldest terminal tasks first; falls back to non-terminal tasks when needed) when limit exceeded — `save` does not return with the store over capacity. Measured with 16 concurrent writers against a capacity of 100: a concurrent reader saw a peak of 102 and a final count of exactly 100, so the transient overshoot is bounded by the number of writes in flight
 - Cursor-based pagination, most-recently-updated first
 - Filtering by `context_id` (index-accelerated) and `status`
 
@@ -249,17 +249,45 @@ Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not met
 
 ### TaskStoreConfig Fields
 
+**`TaskStoreConfig` configures `InMemoryTaskStore` only.** The SQL stores take
+a connection URL, not a config — `max_capacity`, `task_ttl` and
+`eviction_interval` have no meaning for them (the database holds the rows, and
+retention is `purge_expired`), and each carries its own page-size cap via
+`with_max_page_size`. Until 2026-08-19 that cap was a hardcoded `1000` that
+happened to equal this table's default, so setting `max_page_size` to something
+tighter changed the in-memory store and nothing else: measured with the cap at
+10 and a client asking for 100, the in-memory store returned 10 and SQLite
+returned all 60 rows it held.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
 | `task_ttl` | `Option<Duration>` | `Some(1 hour)` | TTL for terminal-state tasks; `None` disables eviction |
-| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes O(n) cost) |
+| `eviction_interval` | `u64` | 64 | Writes between automatic eviction sweeps (amortizes O(n) cost) — see the note below |
 | `max_page_size` | `u32` | 1000 | Maximum allowed page size for list queries |
+
+#### `eviction_interval` is a tail-latency knob
+
+The TTL sweep is not spawned: it is awaited inside `save`, and it holds the
+store's write lock for its whole duration, so the write that triggers it pays
+for it and every concurrent writer waits. Measured (debug profile, 50,000
+terminal tasks, `eviction_interval` 1000): the quietest of 1,000 consecutive
+saves took 3.99 µs and the one that swept took **4.54 ms** — about 1,100×.
+
+The scan is O(n) unavoidably, which is why it is amortized behind the interval
+rather than run per write. If p99.9 write latency matters to you, raise
+`eviction_interval` and drive cleanup yourself with `run_eviction()` on your own
+schedule, so the stall lands where you chose it. The capacity pass is far
+cheaper (measured 3.5× and 3.7× on two runs at 10,000 entries) because it
+removes the overflow instead of scanning for it.
 
 ### Pagination
 
 The `list` method receives `ListTasksParams` with:
-- `page_size` — Number of results per page (capped by `TaskStoreConfig::max_page_size`, default 1,000)
+- `page_size` — Number of results per page. Capped by
+  `TaskStoreConfig::max_page_size` on `InMemoryTaskStore`, and by
+  `with_max_page_size` on each SQL store; both default to
+  `DEFAULT_MAX_PAGE_SIZE` (1,000)
 - `page_token` — Opaque cursor for the next page
 - Various filter fields
 

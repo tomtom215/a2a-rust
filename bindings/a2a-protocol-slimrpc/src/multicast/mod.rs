@@ -61,12 +61,11 @@ use crate::error::rpc_error_to_client_error;
 use crate::method;
 use crate::SlimName;
 
+mod fanout;
 mod outcome;
 
+use fanout::{fan_out_to_members, MEMBER_STREAM_CAPACITY};
 pub use outcome::{MemberOutcome, MulticastOutcome};
-
-/// Buffer depth for each member's event stream in a streaming broadcast.
-const MEMBER_STREAM_CAPACITY: usize = 64;
 
 /// A group of A2A agents addressable with one message.
 pub struct SlimRpcMulticast {
@@ -282,8 +281,11 @@ impl SlimRpcMulticast {
         let request = pb::SendMessageRequest::try_from(params)
             .map_err(|e| ClientError::Transport(format!("cannot represent send params: {e}")))?;
 
-        // One channel per invited agent, so a slow or silent agent cannot hold
-        // up another's events.
+        // One channel per invited agent, so a silent agent cannot hold up
+        // another's events — and, with the non-blocking send below, neither
+        // can a slow *consumer*. The split alone was not enough for the
+        // second: every member's frames arrive through the one loop below, so
+        // a full channel parked it and stalled the whole group.
         let mut senders: HashMap<String, tokio::sync::mpsc::Sender<ClientResult<StreamResponse>>> =
             HashMap::new();
         let mut streams: Vec<(SlimName, EventStream)> = Vec::with_capacity(self.members.len());
@@ -295,39 +297,9 @@ impl SlimRpcMulticast {
 
         let channel = self.channel.clone();
         let timeout = self.timeout;
-        tokio::spawn(async move {
-            let frames = channel.multicast_unary_stream::<_, Pb<pb::StreamResponse>>(
-                A2A_SERVICE_NAME,
-                method::SEND_STREAMING_MESSAGE,
-                Pb(request),
-                timeout,
-                metadata,
-            );
-            futures::pin_mut!(frames);
-
-            while let Some(frame) = frames.next().await {
-                let Ok(MulticastItem { context, message }) = frame else {
-                    // An unattributable transport error cannot be routed to a
-                    // member's stream; the affected member's stream simply ends
-                    // when this loop does.
-                    continue;
-                };
-                let key = proto_name_key(&context.source);
-                let Some(tx) = senders.get(&key) else {
-                    // A frame from an agent that was never invited. Dropping it
-                    // is deliberate: the caller asked a specific group, and
-                    // surfacing a stranger's events would break that contract.
-                    continue;
-                };
-                let event = StreamResponse::try_from(message.into_inner())
-                    .map_err(|e| ClientError::Transport(format!("malformed event: {e}")));
-                // A send failure means that member's consumer dropped its
-                // stream. The others keep going — one caller losing interest in
-                // one agent is not a reason to end anybody else's stream.
-                let _ = tx.send(event).await;
-            }
-            // Dropping `senders` ends every member stream that is still open.
-        });
+        tokio::spawn(fan_out_to_members(
+            channel, request, timeout, metadata, senders,
+        ));
 
         Ok(streams)
     }
@@ -354,7 +326,7 @@ impl SlimRpcMulticast {
 }
 
 /// The key a [`SlimName`] is matched on when pairing responses to members.
-fn member_key(name: &SlimName) -> String {
+pub(super) fn member_key(name: &SlimName) -> String {
     format!("{}/{}/{}", name.domain, name.namespace, name.service)
 }
 
@@ -370,7 +342,7 @@ fn member_key(name: &SlimName) -> String {
 /// Keying on the full rendering instead is what the first version of this did,
 /// and every response then filed under a name no member matched, so every
 /// member came back as a timeout while all of them had in fact answered.
-fn proto_name_key(source: &ProtoName) -> String {
+pub(super) fn proto_name_key(source: &ProtoName) -> String {
     source
         .to_string()
         .split('/')

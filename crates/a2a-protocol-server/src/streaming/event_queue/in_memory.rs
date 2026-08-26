@@ -59,12 +59,17 @@ pub struct InMemoryQueueWriter {
     tx: broadcast::Sender<A2aResult<StreamResponse>>,
     /// Optional dedicated channel for the background persistence processor.
     /// Unlike the broadcast channel, this mpsc channel is not affected by
-    /// slow SSE consumers and will never lag.
+    /// slow SSE consumers, so it cannot lag in the broadcast sense — a slow
+    /// reader makes it *full*, which `write` reports, rather than making it
+    /// silently skip. It said "will never lag" until 2026-08-19, three fields
+    /// above the `write_timeout` that exists because a full one is a real state.
     persistence_tx: Option<mpsc::Sender<A2aResult<StreamResponse>>>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,
-    /// Retained for API compatibility with `new_in_memory_queue_with_options`.
-    #[allow(dead_code)]
+    /// Deadline for handing one event to the persistence channel.
+    ///
+    /// Applies to `persistence_tx` only; the broadcast send below cannot block.
+    /// See [`super::DEFAULT_WRITE_TIMEOUT`] for why this exists.
     write_timeout: std::time::Duration,
 }
 
@@ -141,9 +146,37 @@ impl EventQueueWriter for InMemoryQueueWriter {
             }
             // Send to the persistence channel first (if configured) — this
             // channel is independent of SSE consumer backpressure.
+            //
+            // Bounded by `write_timeout`. A plain `send().await` on a full
+            // bounded mpsc waits with no deadline, so a stalled background
+            // processor used to stop the executor outright: measured, the
+            // channel filled after 1,024 events and `write` was still parked
+            // eight seconds later with nothing logged and no metric moved.
+            // A closed channel stays non-fatal — the processor is gone, the
+            // stream can still serve live subscribers — but a full one is
+            // reported, because the caller is producing state that will not be
+            // persisted and only the caller can decide to stop.
             if let Some(ref persistence_tx) = self.persistence_tx {
-                if let Err(_e) = persistence_tx.send(Ok(event.clone())).await {
-                    trace_warn!("persistence channel closed, event not persisted");
+                match persistence_tx
+                    .send_timeout(Ok(event.clone()), self.write_timeout)
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(mpsc::error::SendTimeoutError::Closed(_)) => {
+                        trace_warn!("persistence channel closed, event not persisted");
+                    }
+                    Err(mpsc::error::SendTimeoutError::Timeout(_)) => {
+                        trace_warn!(
+                            timeout_ms =
+                                u64::try_from(self.write_timeout.as_millis()).unwrap_or(u64::MAX),
+                            "persistence channel full; background processor is not draining"
+                        );
+                        return Err(A2aError::internal(format!(
+                            "event queue: the persistence channel was still full after {:?}; \
+                             the background processor is not draining events",
+                            self.write_timeout
+                        )));
+                    }
                 }
             }
             // Broadcast to live SSE subscribers. Zero receivers is NOT an
@@ -389,8 +422,8 @@ impl EventQueueReader for InMemoryQueueReader {
 mod tests {
     use super::*;
     use crate::streaming::event_queue::{
-        new_in_memory_queue, new_in_memory_queue_with_options, DEFAULT_MAX_EVENT_SIZE,
-        DEFAULT_WRITE_TIMEOUT,
+        new_in_memory_queue, new_in_memory_queue_with_options,
+        new_in_memory_queue_with_persistence, DEFAULT_MAX_EVENT_SIZE, DEFAULT_WRITE_TIMEOUT,
     };
     use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
     use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
@@ -870,5 +903,126 @@ mod tests {
 
         let r = reader.read().await;
         assert!(r.is_some(), "reader should receive the event");
+    }
+
+    // ── write_timeout on the persistence channel ─────────────────────────
+    //
+    // Before 2026-08-19 the persistence send was a bare `send().await` on a
+    // bounded mpsc, and `write_timeout` — public, plumbed through four layers,
+    // printed in `EventQueueManager`'s `Debug` — was `#[allow(dead_code)]`.
+    // A stalled background processor therefore parked the executor forever:
+    // measured, `write` blocked after 1,024 events and was still blocked eight
+    // seconds later. These three tests pin the deadline, the error it produces,
+    // and the case that must stay non-fatal.
+
+    /// The receiver is held but never read, so the channel fills and stays
+    /// full. `write` must give up after `write_timeout` instead of parking.
+    #[tokio::test]
+    async fn a_full_persistence_channel_fails_the_write_within_the_timeout() {
+        let timeout = std::time::Duration::from_millis(150);
+        let (writer, _sse, _held_receiver) =
+            new_in_memory_queue_with_persistence(1, DEFAULT_MAX_EVENT_SIZE, timeout);
+
+        // Capacity is `max(1 * 16, 1024)`; fill it, then one more.
+        //
+        // Each write is wrapped in an outer timeout an order of magnitude past
+        // the deadline. Without the fix this test does not fail, it *hangs* —
+        // and a hang burns the whole CI job rather than naming the defect.
+        let mut accepted = 0_usize;
+        let start = std::time::Instant::now();
+        loop {
+            let attempt = tokio::time::timeout(
+                timeout * 10,
+                writer.write(make_status_event("t1", TaskState::Working)),
+            )
+            .await
+            .expect("write parked past its own deadline: write_timeout is not being applied");
+            match attempt {
+                Ok(()) => accepted += 1,
+                Err(e) => {
+                    assert!(
+                        e.to_string().contains("persistence channel"),
+                        "the error must name the channel that is full, got: {e}"
+                    );
+                    break;
+                }
+            }
+            assert!(
+                accepted <= 4096,
+                "write never reported a full channel after {accepted} events"
+            );
+        }
+        assert_eq!(
+            accepted, 1024,
+            "the persistence channel's capacity is max(capacity * 16, 1024)"
+        );
+        // Generous upper bound: the first 1,024 writes are near-instant and the
+        // failing one waits out the deadline once.
+        assert!(
+            start.elapsed() < timeout * 10,
+            "write should fail after roughly one timeout, took {:?}",
+            start.elapsed()
+        );
+    }
+
+    /// The same situation, timed directly: one write into an already-full
+    /// channel returns an error in about `write_timeout`, not never.
+    #[tokio::test]
+    async fn the_failing_write_waits_about_one_write_timeout() {
+        let timeout = std::time::Duration::from_millis(200);
+        let (writer, _sse, _held_receiver) =
+            new_in_memory_queue_with_persistence(1, DEFAULT_MAX_EVENT_SIZE, timeout);
+        for _ in 0..1024 {
+            writer
+                .write(make_status_event("t1", TaskState::Working))
+                .await
+                .expect("the channel has room until it is full");
+        }
+
+        let start = std::time::Instant::now();
+        let err = tokio::time::timeout(
+            timeout * 10,
+            writer.write(make_status_event("t1", TaskState::Working)),
+        )
+        .await
+        .expect("write parked past its own deadline: write_timeout is not being applied")
+        .expect_err("the channel is full");
+        let waited = start.elapsed();
+
+        assert!(waited >= timeout, "returned early after {waited:?}");
+        assert!(
+            waited < timeout * 4,
+            "waited far past the deadline: {waited:?}"
+        );
+        assert!(
+            err.to_string().contains("not draining"),
+            "the message must say what is wrong, got: {err}"
+        );
+    }
+
+    /// A *closed* persistence channel is not a full one: the processor has
+    /// gone, live SSE subscribers can still be served, and the executor is not
+    /// producing state that is being silently dropped. This must stay `Ok`.
+    #[tokio::test]
+    async fn a_closed_persistence_channel_is_still_not_an_error() {
+        let (writer, _sse, persistence_rx) = new_in_memory_queue_with_persistence(
+            16,
+            DEFAULT_MAX_EVENT_SIZE,
+            std::time::Duration::from_millis(50),
+        );
+        drop(persistence_rx);
+
+        let start = std::time::Instant::now();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            writer.write(make_status_event("t1", TaskState::Working)),
+        )
+        .await
+        .expect("a closed channel must be observed at once, never waited out")
+        .expect("a closed persistence channel must not fail the write");
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(50),
+            "a closed channel must be detected immediately, not waited out"
+        );
     }
 }

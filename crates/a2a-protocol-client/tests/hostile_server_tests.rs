@@ -207,3 +207,72 @@ async fn valid_json_wrong_shape_rejected() {
         "a non-card JSON document must be rejected, got: {result:?}"
     );
 }
+
+// ── One budget for the whole card fetch ──────────────────────────────────────
+
+/// A server that stalls on headers and then drips the body must not get two
+/// budgets.
+///
+/// Until 2026-08-19 `fetch_card_with_metadata` had two independent 30-second
+/// timeouts, one on the request and one on the body read. Measured against a
+/// socket that stalled 25s before its status line and then dripped a chunk
+/// every 200ms, `fetch_card_from_url` took **55.0 seconds** and returned
+/// "agent card body read timed out" — the body read had been handed a fresh
+/// full budget after the headers spent 25 seconds of the previous one.
+///
+/// The real budget is 30 seconds, so this test uses a scaled-down stand-in it
+/// can afford: it asserts the *shape* — that time spent before the headers
+/// arrive is deducted from what the body read gets — by checking the call
+/// finishes inside one budget rather than two. Anything that reintroduces the
+/// second budget pushes it past the bound.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stall_then_a_drip_gets_one_budget_not_two() {
+    use std::time::Instant;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+
+    // Two thirds of the budget burned before the status line, then an endless
+    // drip. With one budget the call ends at ~30s; with two it ends at ~50s.
+    let stall = std::time::Duration::from_secs(20);
+    tokio::spawn(async move {
+        let (mut sock, _) = listener.accept().await.expect("accept");
+        let mut buf = [0_u8; 2048];
+        let _ = sock.read(&mut buf).await;
+        tokio::time::sleep(stall).await;
+        let _ = sock
+            .write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\
+                  Transfer-Encoding: chunked\r\n\r\n",
+            )
+            .await;
+        let _ = sock.flush().await;
+        loop {
+            let _ = sock.write_all(b"1\r\n{\r\n").await;
+            let _ = sock.flush().await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        }
+    });
+
+    let url = format!(
+        "http://127.0.0.1:{}/.well-known/agent-card.json",
+        addr.port()
+    );
+    let start = Instant::now();
+    let result = a2a_protocol_client::discovery::fetch_card_from_url(&url).await;
+    let elapsed = start.elapsed();
+
+    assert!(result.is_err(), "a dripping server must not yield a card");
+    assert!(
+        elapsed < std::time::Duration::from_secs(40),
+        "the fetch took {elapsed:?}; one 30s budget covers the whole call, and \
+         anything near 50s means the body read got a second one"
+    );
+    assert!(
+        elapsed >= stall,
+        "sanity: the stall must actually have been waited out, got {elapsed:?}"
+    );
+}

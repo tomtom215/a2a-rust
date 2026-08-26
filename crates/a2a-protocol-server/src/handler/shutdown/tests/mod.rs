@@ -18,6 +18,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::builder::RequestHandlerBuilder;
+
+#[cfg(feature = "tracing")]
+mod warning;
 use crate::executor::AgentExecutor;
 use crate::request_context::RequestContext;
 use crate::streaming::EventQueueWriter;
@@ -54,179 +57,6 @@ fn make_handler() -> RequestHandler {
 // operator, and a warning on every clean shutdown is worse than none,
 // because it trains the operator to ignore it. So it is asserted rather
 // than skipped, the only way it can be: by capturing what was emitted.
-#[cfg(feature = "tracing")]
-mod warning {
-    use super::*;
-
-    use std::sync::{Arc, Mutex};
-    use tracing::subscriber::with_default;
-    use tracing::Level;
-    use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
-    use tracing_subscriber::Registry;
-
-    /// Records the message of every WARN event.
-    #[derive(Clone, Default)]
-    struct WarnCapture(Arc<Mutex<Vec<String>>>);
-
-    impl<S: tracing::Subscriber> Layer<S> for WarnCapture {
-        fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
-            struct Visit(String);
-            impl tracing::field::Visit for Visit {
-                fn record_debug(
-                    &mut self,
-                    field: &tracing::field::Field,
-                    value: &dyn std::fmt::Debug,
-                ) {
-                    if field.name() == "message" {
-                        self.0 = format!("{value:?}");
-                    }
-                }
-            }
-
-            if *event.metadata().level() != Level::WARN {
-                return;
-            }
-            let mut v = Visit(String::new());
-            event.record(&mut v);
-            self.0.lock().expect("warn log").push(v.0);
-        }
-    }
-
-    /// An executor whose shutdown hook never returns.
-    struct HangingExecutor;
-
-    impl AgentExecutor for HangingExecutor {
-        fn execute<'a>(
-            &'a self,
-            _ctx: &'a RequestContext,
-            _queue: &'a dyn EventQueueWriter,
-        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
-            Box::pin(async { Ok(()) })
-        }
-
-        fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
-            Box::pin(async { std::future::pending::<()>().await })
-        }
-    }
-
-    fn warnings_during<F>(f: F) -> Vec<String>
-    where
-        F: FnOnce(),
-    {
-        let capture = WarnCapture::default();
-        let subscriber = Registry::default().with(capture.clone());
-        with_default(subscriber, f);
-        let out = capture.0.lock().expect("warn log").clone();
-        out
-    }
-
-    fn mentions_cleanup(warnings: &[String]) -> bool {
-        warnings.iter().any(|w| w.contains("executor cleanup"))
-    }
-
-    /// A clean shutdown must emit no cleanup warning.
-    ///
-    /// This is the half that fails when the `!` is deleted.
-    #[test]
-    fn clean_shutdown_warns_about_nothing() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .expect("runtime");
-
-        let warnings = warnings_during(|| {
-            rt.block_on(async {
-                let handler = make_handler();
-                let report = handler
-                    .shutdown_with_timeout(Duration::from_millis(50))
-                    .await;
-                assert!(
-                    report.executor_cleanup_completed,
-                    "the no-op executor's cleanup returns immediately"
-                );
-            });
-        });
-
-        assert!(
-            !mentions_cleanup(&warnings),
-            "a clean shutdown must not warn about executor cleanup; got {warnings:?}"
-        );
-    }
-
-    /// The same two properties for `shutdown()`, which carries its own
-    /// fixed 10-second cleanup budget rather than taking one.
-    ///
-    /// Time is paused so the budget elapses instantly: with nothing else
-    /// runnable, Tokio advances the clock to the timer deadline. Without
-    /// this the hung case would take ten real seconds, and the `!` at that
-    /// call site would stay unasserted for the sake of a fast suite —
-    /// which is how it came to be unasserted in the first place.
-    #[test]
-    fn fixed_budget_shutdown_warns_only_when_cleanup_hangs() {
-        let rt = || {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_time()
-                .start_paused(true)
-                .build()
-                .expect("runtime")
-        };
-
-        let clean = warnings_during(|| {
-            rt().block_on(async {
-                let handler = make_handler();
-                let report = handler.shutdown().await;
-                assert!(report.executor_cleanup_completed);
-            });
-        });
-        assert!(
-            !mentions_cleanup(&clean),
-            "a clean shutdown() must not warn about executor cleanup; got {clean:?}"
-        );
-
-        let hung = warnings_during(|| {
-            rt().block_on(async {
-                let handler = RequestHandlerBuilder::new(HangingExecutor)
-                    .build()
-                    .expect("builder should succeed");
-                let report = handler.shutdown().await;
-                assert!(!report.executor_cleanup_completed);
-            });
-        });
-        assert!(
-            mentions_cleanup(&hung),
-            "a hung cleanup under shutdown() must be warned about; got {hung:?}"
-        );
-    }
-
-    /// A shutdown whose executor cleanup times out must say so.
-    #[test]
-    fn hung_cleanup_is_warned_about() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .expect("runtime");
-
-        let warnings = warnings_during(|| {
-            rt.block_on(async {
-                let handler = RequestHandlerBuilder::new(HangingExecutor)
-                    .build()
-                    .expect("builder should succeed");
-                let report = handler
-                    .shutdown_with_timeout(Duration::from_millis(50))
-                    .await;
-                assert!(
-                    !report.executor_cleanup_completed,
-                    "a hanging cleanup must be reported as incomplete"
-                );
-            });
-        });
-
-        assert!(
-            mentions_cleanup(&warnings),
-            "a hung executor cleanup must be warned about; got {warnings:?}"
-        );
-    }
-}
 
 // ── shutdown ───────────────────────────────────────────────────────────
 
@@ -339,13 +169,85 @@ async fn shutdown_with_timeout_cancels_tokens() {
     );
 }
 
-#[tokio::test]
-async fn shutdown_with_zero_timeout_still_completes() {
+/// A zero budget must return at once — and must still run a cleanup hook that
+/// is ready immediately, because `tokio::time::timeout` polls the future once
+/// before checking an already-elapsed deadline. The second half is what makes
+/// "give the executor whatever is left" safe when nothing is left.
+///
+/// This asserted nothing until 2026-08-19; it called `shutdown_with_timeout`
+/// and discarded the report under a comment saying it "should not panic or
+/// hang", which no assertion checked and no failure could have shown.
+#[tokio::test(start_paused = true)]
+async fn shutdown_with_zero_timeout_returns_at_once_and_still_runs_instant_cleanup() {
     let handler = make_handler();
-    // A zero-duration timeout should not panic or hang.
-    let _ = handler
+    let start = tokio::time::Instant::now();
+    let report = handler
         .shutdown_with_timeout(Duration::from_millis(0))
         .await;
+    assert!(
+        start.elapsed() < Duration::from_millis(1),
+        "a zero budget must not wait, took {:?}",
+        start.elapsed()
+    );
+    assert!(
+        report.executor_cleanup_completed,
+        "NoopExecutor's cleanup is ready immediately and must still be run"
+    );
+    assert_eq!(report.queues_force_destroyed, 0, "no queues were active");
+}
+
+/// `timeout` is the budget for the whole call, not for each phase of it.
+///
+/// It was per-phase until 2026-08-19: the drain loop ran to `now + timeout`,
+/// then the cleanup hook was given a *fresh* full `timeout`. Measured with an
+/// undrainable queue and a hook that never returns,
+/// `shutdown_with_timeout(30s)` took 60s — exactly 2x. The number an operator
+/// puts here is the number they put in `terminationGracePeriodSeconds`, and
+/// overrunning it means `SIGKILL` part-way through the cleanup this method
+/// exists to perform.
+#[tokio::test(start_paused = true)]
+async fn shutdown_with_timeout_is_a_total_budget_not_a_per_phase_one() {
+    use a2a_protocol_types::task::TaskId;
+
+    /// Nothing drains, nothing cleans up: both phases run to their deadline.
+    struct NeverFinishes;
+
+    impl AgentExecutor for NeverFinishes {
+        fn execute<'a>(
+            &'a self,
+            _ctx: &'a RequestContext,
+            _queue: &'a dyn EventQueueWriter,
+        ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn on_shutdown<'a>(&'a self) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+            Box::pin(async { std::future::pending::<()>().await })
+        }
+    }
+
+    let handler = RequestHandlerBuilder::new(NeverFinishes)
+        .build()
+        .expect("builder should succeed with defaults");
+    // An active queue nothing will ever drain, so the drain phase runs out.
+    let (_writer, _reader) = handler
+        .event_queue_manager
+        .get_or_create(&TaskId::new("t-budget"))
+        .await;
+
+    let asked = Duration::from_secs(30);
+    let start = tokio::time::Instant::now();
+    let report = handler.shutdown_with_timeout(asked).await;
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed <= asked,
+        "shutdown_with_timeout({asked:?}) took {elapsed:?} — the caller's budget \
+         is the whole call, and overrunning it is what gets a pod SIGKILLed"
+    );
+    // Both phases hit their limit, and both say so.
+    assert_eq!(report.queues_force_destroyed, 1);
+    assert!(!report.executor_cleanup_completed);
 }
 
 #[tokio::test]

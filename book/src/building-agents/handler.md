@@ -84,7 +84,7 @@ let handler = RequestHandlerBuilder::new(MyExecutor)
 | `with_task_store_arc(Arc<dyn TaskStore>)` | — | Share a store instance via `Arc` |
 | `with_metrics(impl Metrics)` | `NoopMetrics` | Metrics observer for handler activity |
 | `with_tenant_resolver(impl TenantResolver)` | None | Multi-tenant tenant extraction |
-| `with_tenant_config(PerTenantConfig)` | None | Per-tenant differentiated limits |
+| `with_tenant_config(PerTenantConfig)` | None | Per-tenant concurrency, executor timeout and queue capacity. `rate_limit_rps` additionally needs the same config on `RateLimitInterceptor::with_tenant_config` |
 
 ### HandlerLimits
 

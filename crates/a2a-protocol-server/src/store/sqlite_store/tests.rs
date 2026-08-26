@@ -191,6 +191,56 @@ fn task_without_artifacts_always_falls_back() {
     );
 }
 
+/// The page-size cap is the store's own, and it is reachable.
+///
+/// `TaskStoreConfig::max_page_size` is documented as capping `list` — and the
+/// book says so under Design Considerations, not under any one store — but
+/// this store takes no `TaskStoreConfig`. It carried a hardcoded `min(1000)`
+/// that happened to equal that config's default, so the two agreed by
+/// coincidence and the knob did nothing here.
+///
+/// MEASURED 2026-08-19 before the fix, cap set to 10 against 60 stored tasks
+/// with a client asking for 100: the in-memory store returned 10 and this one
+/// returned all 60.
+///
+/// The asserted numbers matter in a specific way. `asked` is deliberately
+/// larger than `stored`, so a store that ignored the cap would return
+/// everything — the pre-fix behaviour — rather than a number that happens to
+/// look bounded.
+#[tokio::test]
+async fn list_honours_this_stores_own_page_size_cap() {
+    const STORED: usize = 60;
+    const CAP: u32 = 10;
+    const ASKED: u32 = 100;
+
+    let store = SqliteTaskStore::new("sqlite::memory:")
+        .await
+        .expect("open")
+        .with_max_page_size(CAP);
+
+    for i in 0..STORED {
+        store
+            .save(&make_task(&format!("t{i:03}"), "ctx", TaskState::Completed))
+            .await
+            .expect("save");
+    }
+
+    let page = store
+        .list(&ListTasksParams {
+            page_size: Some(ASKED),
+            ..Default::default()
+        })
+        .await
+        .expect("list");
+
+    assert_eq!(
+        page.tasks.len(),
+        CAP as usize,
+        "a client asking for {ASKED} against a cap of {CAP} must get {CAP}, not \
+         whatever the store happens to hold"
+    );
+}
+
 #[tokio::test]
 async fn save_and_get_round_trip() {
     let store = make_store().await;

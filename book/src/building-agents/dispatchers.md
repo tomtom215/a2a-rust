@@ -210,10 +210,48 @@ HTTP 400.
 | **Concurrent tasks per connection** | 64 | Per-connection `Semaphore(64)` prevents unbounded task spawning |
 | **Incoming message size** | 4 MiB | Oversized WebSocket frames are rejected at the protocol level |
 | **Handshake timeout** | 10 s (configurable via `with_handshake_timeout`) | A peer that never completes the upgrade is disconnected instead of pinning a connection |
+| **Concurrent connections** | unbounded (`with_max_connections`) | The permit is taken before `accept()`, so load past the ceiling waits in the kernel's listen backlog rather than as spawned tasks |
+| **Idle connection** | off (`with_idle_timeout`) | Closes a connection carrying no traffic in either direction for the given period |
 
 Transient `accept()` errors (per-connection aborts, fd-table exhaustion)
 never terminate the accept loop — it retries with the same backoff policy
 as the HTTP serve path.
+
+### Bounding a connection after the handshake
+
+The handshake timeout only covers the part before the upgrade completes. A
+peer that completes it and then goes silent held a task, a socket and a file
+descriptor for the life of the process. Two knobs bound that, both opt-in:
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_server::WebSocketDispatcher;
+# use std::sync::Arc;
+# use std::time::Duration;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
+let dispatcher = Arc::new(
+    WebSocketDispatcher::new(handler)
+        .with_max_connections(1024)
+        .with_idle_timeout(Duration::from_secs(75)),
+);
+# }
+```
+
+`with_idle_timeout` is **off by default**, unlike the equivalent on
+`ServeConfig` for the HTTP bindings, and the difference is
+deliberate. On HTTP, silence means nothing is happening. On a WebSocket it may
+mean a subscription is waiting for its next event, which is a legitimate thing
+to do for hours — a default that closed those would be a knob nobody enables.
+
+What makes it safe to enable: at the halfway point of the budget the server
+sends a WebSocket Ping. Every conformant client library answers it
+automatically, and that Pong is traffic. So the timeout closes peers that are
+**unresponsive**, not peers that are merely quiet. Outbound frames count too,
+so a stream pushing events to a silent consumer keeps its own connection
+alive.
 
 ## GrpcDispatcher
 
@@ -255,6 +293,36 @@ let bound = dispatcher.serve_with_listener(listener)?;
 | `max_message_size` | `usize` | 4 MiB | Maximum inbound/outbound message size |
 | `concurrency_limit` | `usize` | 256 | Maximum concurrent gRPC requests per connection |
 | `stream_channel_capacity` | `usize` | 64 | Bounded channel for streaming responses |
+
+### Bounding an idle gRPC connection
+
+`GrpcConfig` bounds message size and per-connection concurrency. Neither bounds
+a connection that simply exists: measured, 400 TCP connections opened and left
+silent were all accepted, and the oldest was still alive twelve seconds later.
+
+```rust,no_run
+# use a2a_protocol_sdk::prelude::*;
+# use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+# use std::sync::Arc;
+# use std::time::Duration;
+# struct MyAgent;
+# agent_executor!(MyAgent, |_ctx, _queue| async { Ok(()) });
+# fn main() {
+# let handler = Arc::new(RequestHandlerBuilder::new(MyAgent).build().expect("handler"));
+let dispatcher = GrpcDispatcher::new(handler, GrpcConfig::default())
+    .with_http2_keepalive(Duration::from_secs(30), Duration::from_secs(10))
+    .with_max_connection_age(Duration::from_secs(600));
+# }
+```
+
+Both are opt-in. HTTP/2 keepalive PINGs an idle connection and closes it if the
+peer does not answer — and a conformant client's HTTP/2 stack answers without
+the application being involved, so this closes peers that are **unresponsive**,
+not peers that are merely quiet. A streaming RPC waiting for its next event is
+left alone. `with_max_connection_age` is the different question: it bounds a
+peer that answers perfectly and never leaves, which is what makes a fleet
+behind a load balancer drift into imbalance. tonic sends GOAWAY and drains
+in-flight RPCs, so it is a reconnect rather than a failure.
 
 ### Protocol
 

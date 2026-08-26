@@ -23,6 +23,29 @@
 #   scripts/preflight.sh --full       # every gate in the fmt/clippy/test/doc jobs
 #   scripts/preflight.sh --list       # show the CI gate inventory and exit
 #   scripts/preflight.sh --fail-fast  # stop at the first failing gate
+#   scripts/preflight.sh --force      # skip the free-space precheck
+#
+# What `--full` needs that a laptop may not have, all measured 2026-08-19 and
+# all reported by the precheck before any gate runs:
+#
+#   ~17 GB of target/ space    16.6-17.2 GB measured across both target dirs on
+#                              two complete runs; up to 29 GB if the tree also
+#                              holds non-CI artifacts. Warns below 24 GB free,
+#                              refuses below 8.
+#   PostgreSQL on :5432        4 gates set A2A_TEST_POSTGRES_URL, per ci.yml
+#   SPIRE binaries             1 gate runs the binding's SPIFFE suites
+#
+# The two services are *not* optional in the sense of being skipped: those
+# gates fail without them, exactly as they should — `tests/common/spire.rs`
+# panics rather than passing quietly, and it is right to. What was missing is
+# any warning before ninety minutes of compiling, after which the summary said
+# "Do not push" to somebody whose only problem was an uninstalled service.
+#
+# A third precheck reports the same kind of fact about the *tree* rather than
+# the machine: `cargo package` refuses a dirty working directory, so with an
+# uncommitted file the `package` gate fails on arrival, 39 gates and fifty
+# minutes in, with a message that reads like a finding about the diff. Measured
+# on 2026-08-19; the warning now precedes the first compile.
 #
 # Every gate runs even after one fails, so a single run tells you everything
 # that is broken rather than only the first thing.
@@ -32,6 +55,12 @@
 # been building without them, the first preflight rebuilds the workspace and
 # keeps a second set of artifacts in target/. That is the cost of testing what
 # CI tests; `cargo clean` if disk is tight.
+#
+# "If disk is tight" was the whole of that warning until 2026-08-19, when a
+# --full run on a 30 GB allowance died with `No space left on device` 19 gates
+# in, having grown target/ to 29 GB over a tree already built without CI's
+# flags. Learning a number from an ENOSPC inside an unrelated cargo invocation
+# forty minutes in is expensive, so the run measures first.
 
 set -Eeuo pipefail
 
@@ -48,6 +77,7 @@ LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/a2a-preflight.XXXXXX")
 
 TIER=default
 FAIL_FAST=0
+FORCE=0
 
 # ── CI workflow parsing ──────────────────────────────────────────────────────
 
@@ -298,7 +328,33 @@ summarise() {
         return 1
     fi
     printf '\n\033[32mAll gates passed.\033[0m\n'
+    report_jobs_not_run
     return 0
+}
+
+# Names the CI jobs preflight does not run, on a green summary.
+#
+# "%d of %d CI gate commands run locally" counts only the gates extracted from
+# GATE_JOBS, so the three jobs in NON_GATE_JOBS are not in either number. A
+# reader who sees "55 of 55" and "All gates passed" concludes CI will pass, and
+# on 2026-08-20 that reader was wrong: `semver` failed on a deliberate breaking
+# change that no local gate could have caught, because `semver` is not a local
+# gate.
+#
+# This is the same overstatement the gate's own history records — a comment
+# claiming `cargo-semver-checks` "reports rather than hard-fails" when there was
+# no `continue-on-error` — moved up one level, from what the job does to what
+# this summary implies. Both cost a cycle to discover.
+#
+# Printed only on success: after a failure the reader has something concrete to
+# fix and does not need a second list.
+report_jobs_not_run() {
+    printf '\n  Not run here: %s.\n' \
+        "$(printf '%s' "$NON_GATE_JOBS" | sed 's/[\^$()]//g; s/|/, /g')"
+    printf '  They need a published baseline, a nightly toolchain, or an\n'
+    printf '  advisory database. A green run above does not cover them —\n'
+    printf '  `cargo semver-checks` in particular blocks any 0.x break until\n'
+    printf '  the minor version is bumped (see RELEASING.md).\n'
 }
 
 # ── Tiers ────────────────────────────────────────────────────────────────────
@@ -321,6 +377,15 @@ tier_full() {
     printf '%s\n' "$ALL_GATES"
 }
 
+# ── Prechecks ────────────────────────────────────────────────────────────────
+#
+# `check_free_disk`, `report_external_prerequisites` and `report_dirty_worktree`,
+# in their own file for the same reason ci_gates.sh is: this one crossed 500
+# lines when they were added, and the ratchet's answer for a script is helpers
+# it sources.
+# shellcheck source=lib/preflight_prechecks.sh
+. "$REPO_ROOT/scripts/lib/preflight_prechecks.sh"
+
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 while [ $# -gt 0 ]; do
@@ -328,6 +393,7 @@ while [ $# -gt 0 ]; do
         --fmt)       TIER=fmt ;;
         --full)      TIER=full ;;
         --fail-fast) FAIL_FAST=1 ;;
+        --force)     FORCE=1 ;;
         --list)
             note_skipped_steps
             # Derived from GATE_JOBS, not restated. The literal that stood
@@ -364,6 +430,9 @@ if [ ! -f "$CI_YML" ]; then
     exit 2
 fi
 
+check_free_disk
+report_external_prerequisites
+report_dirty_worktree
 note_skipped_steps
 apply_ci_env
 

@@ -54,7 +54,7 @@
 //!    buckets every caller together. Nothing rejects that ordering; it just
 //!    stops being per-caller.
 //!
-//!    [`JwtAuthInterceptor`](crate::auth::jwt::JwtAuthInterceptor) records the
+//!    `JwtAuthInterceptor` (the `auth-jwt` feature) records the
 //!    validated `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)
 //!    and [`BearerTokenAuthInterceptor`](crate::BearerTokenAuthInterceptor)
 //!    record a label when built with `with_labelled_keys` /
@@ -91,10 +91,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::AtomicU64;
 
-use a2a_protocol_types::error::{A2aError, A2aResult};
+use a2a_protocol_types::error::A2aResult;
 use tokio::sync::RwLock;
 
 use crate::call_context::CallContext;
@@ -105,6 +104,7 @@ mod config;
 mod identity;
 mod shared;
 mod unwind_safety;
+mod window;
 pub use config::{RateLimitConfig, DEFAULT_MAX_BUCKETS};
 #[cfg(feature = "postgres")]
 pub use shared::PostgresRateLimitCounter;
@@ -141,6 +141,11 @@ pub struct RateLimitInterceptor {
     /// — it is what the shared path falls back to when the backend is
     /// unreachable.
     shared: Option<std::sync::Arc<dyn RateLimitCounter>>,
+    /// Per-tenant limits, when the deployment declares any.
+    ///
+    /// `None` leaves the caller limit as the only one, which is what every
+    /// caller before this had.
+    tenant_config: Option<crate::tenant_config::PerTenantConfig>,
 }
 
 /// Number of `check()` calls between stale-bucket cleanup sweeps.
@@ -183,6 +188,7 @@ impl RateLimitInterceptor {
             config,
             buckets: RwLock::new(HashMap::new()),
             shared: None,
+            tenant_config: None,
             check_count: AtomicU64::new(0),
         })
     }
@@ -205,7 +211,7 @@ impl RateLimitInterceptor {
     /// | counter | per request |
     /// |---|---:|
     /// | in-process (the default) | **0.2us** |
-    /// | [`PostgresRateLimitCounter`] | **232us** (231-239 across runs) |
+    /// | `PostgresRateLimitCounter` (the `postgres` feature) | **232us** (231-239 across runs) |
     /// | the same on a durable pool | **598us** |
     ///
     /// Three orders of magnitude, and on loopback — a counter across a real
@@ -239,201 +245,56 @@ impl RateLimitInterceptor {
         self
     }
 
-    /// Returns the current window number for the given timestamp.
-    const fn window_number(&self, now_secs: u64) -> u64 {
-        now_secs / self.config.window_secs
-    }
-
-    /// Removes buckets whose window is older than the previous window.
-    fn evict_stale(buckets: &mut HashMap<String, CallerBucket>, current_window: u64) {
-        buckets.retain(|_, bucket| {
-            bucket.window_start.load(Ordering::Relaxed) >= current_window.saturating_sub(1)
-        });
-    }
-
-    /// Removes buckets whose window is older than the current window.
+    /// Enforces [`TenantLimits::rate_limit_rps`] alongside the caller limit.
     ///
-    /// Called periodically (every [`CLEANUP_INTERVAL`] checks) to prevent
-    /// unbounded growth of the bucket map from departed callers.
-    async fn cleanup_stale_buckets(&self) {
-        let now_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let current_window = self.window_number(now_secs);
-
-        let mut buckets = self.buckets.write().await;
-        Self::evict_stale(&mut buckets, current_window);
+    /// # Two scopes, one limiter
+    ///
+    /// The caller limit and the tenant limit answer different questions — *is
+    /// this client sending too fast* and *is this customer using more than
+    /// they bought* — so a request is counted against both and must pass both.
+    /// They share this interceptor's window, bucket map and
+    /// [`max_buckets`](RateLimitConfig::max_buckets) budget: a tenant bucket is
+    /// an ordinary bucket keyed `tenant:<id>`, so a deployment with many
+    /// tenants should size `max_buckets` for callers *plus* tenants.
+    ///
+    /// This is one limiter with two keys, not two limiters. A second limiter
+    /// with its own window and its own map would let the two disagree about
+    /// when a window starts, and a request refused by one and admitted by the
+    /// other is a bug nobody can reproduce.
+    ///
+    /// # The unit is not the same and is converted, not reinterpreted
+    ///
+    /// [`TenantLimits::rate_limit_rps`] is documented in requests per
+    /// **second**; [`RateLimitConfig::requests_per_window`] is per window. The
+    /// tenant's per-window allowance is therefore `rate_limit_rps ×
+    /// window_secs`, saturating. Treating the number as a drop-in replacement
+    /// for `requests_per_window` would silently mean something else at every
+    /// window length except one second.
+    ///
+    /// A tenant whose `rate_limit_rps` is `None` — including the default
+    /// limits, for a tenant with no override — is not counted against any
+    /// tenant bucket at all, which is what "no tenant-level rate limit" says.
+    ///
+    /// [`TenantLimits::rate_limit_rps`]: crate::TenantLimits::rate_limit_rps
+    #[must_use]
+    pub fn with_tenant_config(mut self, config: crate::tenant_config::PerTenantConfig) -> Self {
+        self.tenant_config = Some(config);
+        self
     }
 
-    /// Checks rate limit for the caller. Returns `Ok(())` if allowed, `Err` if exceeded.
-    #[allow(clippy::too_many_lines)]
-    /// Counts one request against a bucket already known to be in the current
-    /// window, and rejects it if that puts the caller over the limit.
+    /// The current tenant's per-window allowance, if it declares one.
     ///
-    /// Extracted because `check` had this five-line body twice — once on the
-    /// read-lock fast path and once in the write-lock double-check — and only
-    /// the fast path was reachable from a single-threaded test. The duplicate
-    /// therefore held its own copies of the `+ 1` and the `>` comparison that
-    /// no test could reach, which is what mutation testing kept reporting.
-    /// One code path means one set of operators, covered by the fast-path
-    /// tests that already exist.
-    fn admit_within_window(&self, bucket: &CallerBucket) -> A2aResult<()> {
-        let count = bucket.count.fetch_add(1, Ordering::Relaxed) + 1;
-        if count > self.config.requests_per_window {
-            return Err(A2aError::internal(format!(
-                "rate limit exceeded: {} requests per {} seconds",
-                self.config.requests_per_window, self.config.window_secs
-            )));
-        }
-        Ok(())
-    }
-
-    /// Counts a request against a bucket held under the **write** lock, rolling
-    /// the window first if it has advanced.
-    ///
-    /// Extracted so it can be tested at all. Inline in `check`, this decision
-    /// was reachable only through the write-lock double-check — which fires
-    /// only when a bucket is absent under the read lock and present by the time
-    /// the write lock is acquired. That is a genuine race between two callers,
-    /// not something a test can force, so inverting the window comparison
-    /// (admitting when the window *has* rolled, resetting when it has not)
-    /// changed nothing observable. As a method taking the bucket directly it is
-    /// an ordinary state transition with an ordinary assertion.
-    ///
-    /// Exclusive access is the caller's contract: unlike the fast path, which
-    /// CASes because readers race each other, this runs under the write lock
-    /// and so may store unconditionally.
-    fn admit_or_roll_window(&self, bucket: &CallerBucket, current_window: u64) -> A2aResult<()> {
-        if bucket.window_start.load(Ordering::Acquire) == current_window {
-            return self.admit_within_window(bucket);
-        }
-        bucket.window_start.store(current_window, Ordering::Release);
-        bucket.count.store(1, Ordering::Release);
-        Ok(())
-    }
-
-    /// The write-lock path: joins a bucket another caller just inserted, or
-    /// creates one, rejecting if the bucket map is full.
-    ///
-    /// The *slow* half is the one extracted, deliberately. Pulling out the
-    /// read-lock fast path instead (which this replaced) created an equivalent
-    /// mutant: that path is a pure optimization, so replacing the whole
-    /// function with `None` still produced correct decisions via this path and
-    /// nothing could observe the difference. This half is not optional —
-    /// stubbing it out means no bucket is ever created and every caller is
-    /// admitted forever, which the enforcement tests catch immediately.
-    async fn create_or_join_bucket(&self, key: &str, current_window: u64) -> A2aResult<()> {
-        let mut buckets = self.buckets.write().await;
-        // Double-check: another task may have inserted while we waited.
-        if let Some(bucket) = buckets.get(key) {
-            return self.admit_or_roll_window(bucket, current_window);
-        }
-        if buckets.len() >= self.config.max_buckets {
-            // Try to reclaim capacity from stale windows before rejecting.
-            Self::evict_stale(&mut buckets, current_window);
-            if buckets.len() >= self.config.max_buckets {
-                return Err(A2aError::internal(format!(
-                    "rate limiter caller capacity exhausted ({} buckets); request rejected",
-                    self.config.max_buckets
-                )));
-            }
-        }
-        buckets.insert(
-            key.to_string(),
-            CallerBucket {
-                window_start: AtomicU64::new(current_window),
-                count: AtomicU64::new(1),
-            },
-        );
-        drop(buckets);
-        Ok(())
-    }
-
-    /// Applies the limit to a count that came from the shared counter.
-    ///
-    /// Split out so the comparison exists once. Inline, this would be a third
-    /// copy of `count > limit` — and the two that already existed are what
-    /// mutation testing kept reporting, because only one of them was
-    /// reachable from a test.
-    fn admit_shared_count(&self, count: u64) -> A2aResult<()> {
-        if count > self.config.requests_per_window {
-            return Err(A2aError::internal(format!(
-                "rate limit exceeded: {} requests per {} seconds",
-                self.config.requests_per_window, self.config.window_secs
-            )));
-        }
-        Ok(())
-    }
-
-    async fn check(&self, key: &str) -> A2aResult<()> {
-        let now_secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let current_window = self.window_number(now_secs);
-
-        // The shared counter is the authority when there is one. On failure
-        // this falls through to the local path rather than returning, so an
-        // unreachable counter degrades to per-process limiting instead of
-        // refusing traffic — see `with_shared_counter`.
-        if let Some(counter) = &self.shared {
-            match counter
-                .count(key, current_window, self.config.window_secs)
-                .await
-            {
-                Ok(count) => return self.admit_shared_count(count),
-                Err(_e) => {
-                    trace_warn!(
-                        error = %_e,
-                        "shared rate-limit counter unavailable; counting in this process only"
-                    );
-                }
-            }
-        }
-
-        // Amortized stale-bucket cleanup to prevent unbounded memory growth.
-        let count = self.check_count.fetch_add(1, Ordering::Relaxed);
-        if count > 0 && count.is_multiple_of(CLEANUP_INTERVAL) {
-            self.cleanup_stale_buckets().await;
-        }
-
-        // Fast path: try read lock first. Inline rather than extracted — as a
-        // function it is a pure optimization and replacing it wholesale is an
-        // equivalent mutant (see `create_or_join_bucket`).
-        {
-            let buckets = self.buckets.read().await;
-            if let Some(bucket) = buckets.get(key) {
-                // CAS loop to atomically reset window or increment counter.
-                // Avoids the TOCTOU race where two threads both see an old
-                // window and both reset count to 1.
-                loop {
-                    let bucket_window = bucket.window_start.load(Ordering::Acquire);
-                    if bucket_window == current_window {
-                        return self.admit_within_window(bucket);
-                    }
-                    // Window has advanced — atomically swap to the new window.
-                    // Only one thread succeeds the CAS; others loop and see the
-                    // updated window on the next iteration.
-                    if bucket
-                        .window_start
-                        .compare_exchange(
-                            bucket_window,
-                            current_window,
-                            Ordering::AcqRel,
-                            Ordering::Acquire,
-                        )
-                        .is_ok()
-                    {
-                        bucket.count.store(1, Ordering::Release);
-                        return Ok(());
-                    }
-                    // CAS failed — another thread updated the window. Retry.
-                }
-            }
-        }
-
-        self.create_or_join_bucket(key, current_window).await
+    /// Reads `TenantContext::current()`, which is correct here because the
+    /// handler opens its tenant scope before running the interceptor chain —
+    /// measured with a probe that recorded `"acme"` inside
+    /// [`ServerInterceptor::before`](crate::ServerInterceptor::before).
+    fn tenant_window_allowance(&self) -> Option<(String, u64)> {
+        let tenant = crate::store::tenant::TenantContext::current();
+        let rps = self.tenant_config.as_ref()?.get(&tenant).rate_limit_rps?;
+        Some((
+            tenant,
+            u64::from(rps).saturating_mul(self.config.window_secs),
+        ))
     }
 }
 
@@ -444,7 +305,11 @@ impl ServerInterceptor for RateLimitInterceptor {
     ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
         Box::pin(async move {
             let key = identity::caller_key(ctx, self.config.trusted_proxy_hops);
-            self.check(&key).await
+            self.check(&key, self.config.requests_per_window).await?;
+            if let Some((tenant, allowance)) = self.tenant_window_allowance() {
+                self.check(&format!("tenant:{tenant}"), allowance).await?;
+            }
+            Ok(())
         })
     }
 

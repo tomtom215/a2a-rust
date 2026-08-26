@@ -24,7 +24,15 @@ categories             = ["network-programming", "web-programming"]
 default = ["tls-rustls"]
 ## Enable HTTPS support via rustls (no OpenSSL system dependency).
 tls-rustls = ["dep:hyper-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:webpki-roots"]
-## Enable agent card signing verification.
+## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
+##
+## This forwards the types-crate feature and nothing more: no code in this crate
+## calls `verify_agent_card`, and `resolve_agent_card`/`fetch_card_from_url`
+## return the card they fetched without checking its `signatures`. Verifying
+## needs a trust anchor the client cannot invent, so the decision is the
+## caller's — call `verify_agent_card` yourself against a key you trust. The
+## description here used to read "Enable agent card signing verification", which
+## claimed an integration that does not exist.
 signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]

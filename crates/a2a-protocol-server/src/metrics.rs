@@ -149,6 +149,28 @@ pub mod push_outcome {
     pub const FAILED: &str = "failed";
     /// The delivery did not complete within the configured timeout.
     pub const TIMEOUT: &str = "timeout";
+    /// The delivery was cut short by `push_delivery_timeout` while the sender's
+    /// own schedule still had attempts left.
+    ///
+    /// Distinct from [`TIMEOUT`], which is a webhook that did not answer inside
+    /// the time it was given. This one is a *configuration* result: the sender
+    /// reports (via `PushSender::max_delivery_duration`) that it wanted longer
+    /// than the handler allows, so retries it advertises can never run. At the
+    /// shipped defaults that is exactly the case — 93 seconds of schedule
+    /// against a 5-second bound, measured at one attempt of three — and it is
+    /// worth its own label because the fix is a config change, not a webhook
+    /// investigation.
+    pub const TIMEOUT_TRUNCATED: &str = "timeout_truncated";
+    /// The per-event delivery budget ran out before this config was reached,
+    /// so nothing was sent to it at all.
+    ///
+    /// Distinct from [`TIMEOUT`], which means a delivery was attempted and did
+    /// not finish. A skipped config was never contacted. The two need separate
+    /// labels because they call for different responses: a timeout points at
+    /// one webhook, a run of skips points at the arithmetic between
+    /// `max_push_configs_per_task`, `push_delivery_timeout` and the 30-second
+    /// per-event budget.
+    pub const SKIPPED: &str = "skipped";
 }
 
 /// A no-op [`Metrics`] implementation that discards all events.
