@@ -99,6 +99,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The WebSocket client's connect had no deadline.** `connect_async_with_config`
+  was awaited bare, so `WebSocketTransport::connect*` could wait indefinitely on
+  a server that completed the TCP handshake and then never answered the HTTP
+  upgrade — the connection is established, so no OS timeout applies. Measured
+  against a listener that accepts and holds the socket open in silence: still
+  pending at 3 seconds, with no deadline to reach. Every sibling transport
+  already bounded this (JSON-RPC and REST via `ClientConfig::connection_timeout`,
+  gRPC via `GrpcTransportConfig::connect_timeout`), and
+  `connection_timeout`'s own documentation names the hazard. `WebSocketTransportConfig`
+  now carries `connect_timeout`, defaulting to the same 10 seconds and applied
+  around the whole handshake — TCP, TLS, and upgrade. Reverting the fix does not
+  fail the new test; it hangs the suite, killed at 120 s having never returned.
+
 - **`ClientConfig::preferred_bindings` selected nothing.** The field documented
   an ordered client preference — *"the client tries each in order, selecting the
   first one supported by the target agent's card"* — and no code read it.
@@ -385,10 +398,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tenant-aware stores' partitioning, not through any limit here.
 
 - **`ClientConfig::max_response_size` now states what it reaches.** It governs
-  every transport `ClientBuilder` constructs (JSON-RPC and REST directly; gRPC
-  and WebSocket as their `max_message_size`) and not a transport supplied to
-  `with_custom_transport`. `SlimRpcTransport` is the shipped instance of the
-  latter, and its real bound was traced through the stack rather than assumed:
+  every transport `ClientBuilder` constructs — JSON-RPC and REST directly, gRPC
+  as its `max_message_size` — and not a transport supplied to
+  `with_custom_transport`. Two shipped transports are in the latter position.
+
+  `WebSocketTransport` is the nearer one, and the more misleading:
+  `WebSocketTransportConfig::max_message_size` defaults to the *same constant*
+  as `max_response_size`, and its doc said it was "the same response-size
+  ceiling the HTTP and gRPC transports apply" — true of the default, and
+  reading as though the two were connected. They are not. Tightening
+  `max_response_size` to 1 MiB and connecting over WebSocket still admits
+  32 MiB. Both ends now say so, and point at the setting that works.
+
+  `SlimRpcTransport` is the other, and its real bound was traced through the
+  stack rather than assumed:
   the binding's codec, `slim_rpc` 2.3 and `agntcy-slim-datapath` 0.18 all set
   none, so what applies is tonic 0.14's default — **4 MiB on receive**, eight
   times tighter than the 32 MiB documented here, and unbounded on send. Neither

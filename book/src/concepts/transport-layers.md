@@ -147,13 +147,37 @@ dispatcher.serve("0.0.0.0:3002").await?;
 ### Client
 
 ```rust,ignore
-use a2a_protocol_client::WebSocketTransport;
+use std::time::Duration;
+use a2a_protocol_client::{WebSocketTransport, WebSocketTransportConfig};
 
+// Defaults are fine for a trusted agent on a local network:
 let transport = WebSocketTransport::connect("ws://agent.example.com:3002").await?;
-let client = ClientBuilder::new("ws://agent.example.com:3002")
+
+// Or set the bounds explicitly — see the table below for what each one covers:
+let transport = WebSocketTransport::connect_with_config(
+    "wss://agent.example.com:3002",
+    WebSocketTransportConfig::default()
+        .with_connect_timeout(Duration::from_secs(5))   // TCP + TLS + upgrade
+        .with_request_timeout(Duration::from_secs(30))  // per-request response wait
+        .with_max_message_size(4 * 1024 * 1024),        // incoming frame ceiling
+)
+.await?;
+
+let client = ClientBuilder::new("wss://agent.example.com:3002")
     .with_custom_transport(transport)
     .build()?;
 ```
+
+Because the transport is built before the client and handed to
+`with_custom_transport`, it never sees the `ClientConfig` — so `with_timeout`,
+`with_connection_timeout` and `with_max_response_size` on the builder do not
+reach it. Its equivalents are the three above:
+
+| Knob | Default | Bounds |
+|------|---------|--------|
+| `connect_timeout` | 10s | the whole handshake — a server that accepts TCP and never upgrades |
+| `request_timeout` | 30s | waiting for one response on an established connection |
+| `max_message_size` | 32 MiB | an incoming frame, at the protocol level |
 
 ### When to Use WebSocket
 

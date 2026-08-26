@@ -162,10 +162,36 @@ pub struct WebSocketTransportConfig {
     /// `Authorization` header produced by an
     /// [`AuthInterceptor`](crate::AuthInterceptor)).
     pub extra_headers: HashMap<String, String>,
+    /// How long the connect may take: TCP, TLS, and the HTTP upgrade
+    /// handshake, together. Default: 10 seconds.
+    ///
+    /// Nothing bounded this. `connect_async_with_config` was awaited bare, and
+    /// no OS timeout covers an upgrade that is *answered late or never* — a
+    /// server that accepts the TCP connection and then goes silent held the
+    /// caller forever. Measured against such a server: still pending at 3
+    /// seconds, with no deadline to reach.
+    ///
+    /// Every sibling transport already bounded this — JSON-RPC and REST
+    /// through `ClientConfig::connection_timeout`, gRPC through
+    /// `GrpcTransportConfig::connect_timeout` — and this default matches
+    /// theirs. `ClientConfig::connection_timeout` cannot reach here: this
+    /// transport is built directly and handed to `with_custom_transport`, so
+    /// it never sees a `ClientConfig`.
+    pub connect_timeout: Duration,
+
     /// Maximum size of an incoming WebSocket message, in bytes, enforced at
-    /// the protocol level during the read. Default: 32 MiB — the same
-    /// response-size ceiling the HTTP and gRPC transports apply, replacing
+    /// the protocol level during the read. Default: 32 MiB, replacing
     /// tungstenite's 64 MiB default.
+    ///
+    /// That default is
+    /// [`DEFAULT_MAX_RESPONSE_SIZE`](crate::ClientConfig::max_response_size),
+    /// the same constant the HTTP and gRPC transports start from — **the same
+    /// value, not the same setting.** This transport is reached through
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
+    /// so it never sees a [`ClientConfig`](crate::ClientConfig) and
+    /// `max_response_size` does not reach it. The two agree until somebody
+    /// changes one, and the person who tightens a limit is the person who
+    /// decided the default was wrong for them. Set the bound here.
     pub max_message_size: usize,
 }
 
@@ -173,6 +199,7 @@ impl Default for WebSocketTransportConfig {
     fn default() -> Self {
         Self {
             request_timeout: Duration::from_secs(30),
+            connect_timeout: Duration::from_secs(10),
             extra_headers: HashMap::new(),
             max_message_size: crate::transport::DEFAULT_MAX_RESPONSE_SIZE,
         }
@@ -184,6 +211,13 @@ impl WebSocketTransportConfig {
     #[must_use]
     pub const fn with_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
+        self
+    }
+
+    /// Sets how long the connect may take, handshake included.
+    #[must_use]
+    pub const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
         self
     }
 
@@ -352,10 +386,21 @@ impl WebSocketTransport {
             .max_message_size(Some(config.max_message_size))
             .max_frame_size(Some(config.max_message_size));
 
-        let (ws_stream, _resp) =
-            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true)
-                .await
-                .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
+        // Bounded, because nothing below this line is. A server that accepts
+        // the TCP connection and never answers the upgrade leaves this future
+        // pending with no OS timeout to rescue it.
+        let (ws_stream, _resp) = tokio::time::timeout(
+            config.connect_timeout,
+            tokio_tungstenite::connect_async_with_config(ws_request, Some(ws_config), true),
+        )
+        .await
+        .map_err(|_| {
+            ClientError::Transport(format!(
+                "WebSocket connect to {endpoint} did not complete within {:?}",
+                config.connect_timeout
+            ))
+        })?
+        .map_err(|e| ClientError::Transport(format!("WebSocket connect failed: {e}")))?;
 
         let (ws_writer, ws_reader) = ws_stream.split();
 
@@ -1092,6 +1137,62 @@ mod tests {
     fn extract_jsonrpc_id_missing_returns_none() {
         let id = extract_jsonrpc_id(r#"{"jsonrpc":"2.0","result":{}}"#);
         assert!(id.is_none());
+    }
+
+    // ── the connect is bounded ────────────────────────────────────────────
+    //
+    // Measured before the fix, against the server below: still pending at 3
+    // seconds, with no deadline to reach. `connect_async_with_config` was
+    // awaited bare, and no OS timeout covers an HTTP upgrade that is answered
+    // late or never — the TCP connection succeeds, so the kernel is satisfied.
+
+    /// Accepts one connection and then says nothing, holding the socket open
+    /// for the life of the test. A closed socket would fail the handshake
+    /// promptly, which is the opposite of what this models.
+    async fn silent_server() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((sock, _)) = listener.accept().await {
+                std::future::pending::<()>().await;
+                drop(sock);
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn connect_gives_up_on_a_server_that_never_completes_the_handshake() {
+        let addr = silent_server().await;
+
+        let started = std::time::Instant::now();
+        let err = WebSocketTransport::connect_with_config(
+            format!("ws://{addr}"),
+            WebSocketTransportConfig::default().with_connect_timeout(Duration::from_millis(300)),
+        )
+        .await
+        .expect_err("a silent server must not yield a transport");
+
+        assert!(
+            err.to_string().contains("did not complete within"),
+            "expected a connect-deadline error, got: {err}"
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "the deadline was 300ms; returning after {:?} means it did not apply",
+            started.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn the_connect_deadline_defaults_to_ten_seconds() {
+        // Matching ClientConfig::connection_timeout and
+        // GrpcTransportConfig::connect_timeout. A default that drifts from its
+        // siblings is how one transport ends up unbounded again.
+        assert_eq!(
+            WebSocketTransportConfig::default().connect_timeout,
+            Duration::from_secs(10)
+        );
     }
 
     /// Regression (D6): a request that times out must remove its entry from

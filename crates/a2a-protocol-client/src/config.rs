@@ -122,10 +122,17 @@ pub struct ClientConfig {
     /// It does **not** reach a transport supplied by
     /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
     /// which never sees this config and carries whatever bound it was built
-    /// with. The SLIMRPC binding is the shipped instance of that: see
-    /// `SlimRpcTransport` in `a2a-protocol-slimrpc`, whose receive cap is
-    /// tonic's inherited 4 MiB — eight times tighter than this default, and
-    /// not settable from here.
+    /// with. Two shipped transports are in that position:
+    ///
+    /// * [`WebSocketTransport`](crate::WebSocketTransport) — bounded by
+    ///   [`WebSocketTransportConfig::max_message_size`](crate::WebSocketTransportConfig),
+    ///   which *defaults to this same constant*. So the two agree until you
+    ///   change one: tightening `max_response_size` to 1 MiB and connecting
+    ///   over WebSocket still admits 32 MiB. Set it on
+    ///   `WebSocketTransportConfig` instead.
+    /// * `SlimRpcTransport` in `a2a-protocol-slimrpc` — receive cap is tonic's
+    ///   inherited 4 MiB, eight times *tighter* than this default, and not
+    ///   settable at all.
     pub max_response_size: usize,
 
     /// TLS configuration.
