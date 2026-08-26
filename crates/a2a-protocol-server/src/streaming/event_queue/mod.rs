@@ -47,11 +47,26 @@ pub const DEFAULT_QUEUE_CAPACITY: usize = 256;
 /// Default maximum event size in bytes (16 MiB).
 pub const DEFAULT_MAX_EVENT_SIZE: usize = 16 * 1024 * 1024;
 
-/// Default write timeout for event queue sends (5 seconds).
+/// Default deadline for handing one event to the background persistence
+/// processor (5 seconds).
 ///
-/// Retained for API compatibility. Broadcast sends are non-blocking, so
-/// this value is not actively used for backpressure. It may be used by
-/// future queue implementations.
+/// This bounds the *persistence* send, not the broadcast one. Broadcast sends
+/// really are non-blocking — a lagging SSE consumer is dropped events, never a
+/// stalled writer — and reasoning only about that channel is why this constant
+/// was plumbed through four layers and applied by nothing until 2026-08-19.
+/// The persistence channel is a bounded `mpsc`, and `send` on a full bounded
+/// `mpsc` waits for a free slot with no deadline of its own. With the
+/// background processor stalled (a webhook absorbing up to
+/// [`HandlerLimits::push_delivery_timeout`] per config, or a slow store),
+/// [`EventQueueWriter::write`] blocked forever once the channel filled —
+/// measured at 1,024 events, still blocked eight seconds later.
+///
+/// Exceeding this deadline is reported to the executor as an error rather than
+/// dropped: an event that cannot reach the persistence processor is task state
+/// that will not be stored, and failing the task says so where silently
+/// discarding it would leave the store disagreeing with what the agent did.
+///
+/// [`HandlerLimits::push_delivery_timeout`]: crate::handler::HandlerLimits::push_delivery_timeout
 pub const DEFAULT_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 // ── EventQueueWriter ─────────────────────────────────────────────────────────
