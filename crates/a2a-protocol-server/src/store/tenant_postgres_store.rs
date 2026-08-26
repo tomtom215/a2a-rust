@@ -49,9 +49,24 @@ use super::tenant::TenantContext;
 #[derive(Debug, Clone)]
 pub struct TenantAwarePostgresTaskStore {
     pool: PgPool,
+    /// Largest page `list` will return. See
+    /// [`with_max_page_size`](TenantAwarePostgresTaskStore::with_max_page_size).
+    max_page_size: u32,
 }
 
 impl TenantAwarePostgresTaskStore {
+    /// Caps the page size `list` returns, however large a page is asked for.
+    ///
+    /// Defaults to [`DEFAULT_MAX_PAGE_SIZE`], which explains why this store
+    /// needs its own knob rather than reading [`TaskStoreConfig`].
+    ///
+    /// [`TaskStoreConfig`]: crate::store::TaskStoreConfig
+    /// [`DEFAULT_MAX_PAGE_SIZE`]: crate::store::DEFAULT_MAX_PAGE_SIZE
+    #[must_use]
+    pub const fn with_max_page_size(mut self, max: u32) -> Self {
+        self.max_page_size = max;
+        self
+    }
     /// Opens a `PostgreSQL` connection pool and initializes the schema.
     ///
     /// # Errors
@@ -106,7 +121,10 @@ impl TenantAwarePostgresTaskStore {
         .execute(&pool)
         .await?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            max_page_size: crate::store::DEFAULT_MAX_PAGE_SIZE,
+        })
     }
 
     /// Deletes terminal tasks that have outlived `policy`.
@@ -266,7 +284,7 @@ impl TaskStore for TenantAwarePostgresTaskStore {
 
             let page_size = match params.page_size {
                 Some(0) | None => 50_u32,
-                Some(n) => n.min(1000),
+                Some(n) => n.min(self.max_page_size),
             };
 
             let limit = super::pagination::fetch_limit(page_size);

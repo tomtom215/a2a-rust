@@ -112,6 +112,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how many events it missed rather than a stream with a silent hole in it —
   the same contract the SSE fan-out already has through broadcast's `Lagged`.
 
+- **`TaskStoreConfig::max_page_size` did nothing on any SQL store.** The four
+  SQL stores hold a connection pool and no config, and each carried its own
+  hardcoded `n.min(1000)` — the same number `TaskStoreConfig` uses as its
+  default, so the configurable bound and the hardcoded one agreed by
+  coincidence. Measured with the cap set to 10 against 60 stored tasks and a
+  client asking for 100: `InMemoryTaskStore` returned 10 and `SqliteTaskStore`
+  returned all 60. The book documented the field as capping `list` generally,
+  under Design Considerations rather than under any one store. Each SQL store
+  now takes `with_max_page_size`, all five sites default to the new
+  `DEFAULT_MAX_PAGE_SIZE`, and the book says which config applies to which
+  store. Third instance of one shape: a configurable bound whose default equals
+  the hardcoded fallback, inert until the person who cares tightens it.
+
 - **Concurrent creates walked straight through the per-task push-config cap.**
   `max_push_configs_per_task` is enforced by reading the task's configs,
   deciding, then storing — two `.await` points apart, with nothing held across

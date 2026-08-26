@@ -249,6 +249,16 @@ Tenant isolation uses `tokio::task_local!` via `TenantContext::scope()`, not met
 
 ### TaskStoreConfig Fields
 
+**`TaskStoreConfig` configures `InMemoryTaskStore` only.** The SQL stores take
+a connection URL, not a config — `max_capacity`, `task_ttl` and
+`eviction_interval` have no meaning for them (the database holds the rows, and
+retention is `purge_expired`), and each carries its own page-size cap via
+`with_max_page_size`. Until 2026-08-19 that cap was a hardcoded `1000` that
+happened to equal this table's default, so setting `max_page_size` to something
+tighter changed the in-memory store and nothing else: measured with the cap at
+10 and a client asking for 100, the in-memory store returned 10 and SQLite
+returned all 60 rows it held.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `max_capacity` | `Option<usize>` | `Some(10_000)` | Max tasks in store; oldest evicted when exceeded |
@@ -274,7 +284,10 @@ removes the overflow instead of scanning for it.
 ### Pagination
 
 The `list` method receives `ListTasksParams` with:
-- `page_size` — Number of results per page (capped by `TaskStoreConfig::max_page_size`, default 1,000)
+- `page_size` — Number of results per page. Capped by
+  `TaskStoreConfig::max_page_size` on `InMemoryTaskStore`, and by
+  `with_max_page_size` on each SQL store; both default to
+  `DEFAULT_MAX_PAGE_SIZE` (1,000)
 - `page_token` — Opaque cursor for the next page
 - Various filter fields
 
