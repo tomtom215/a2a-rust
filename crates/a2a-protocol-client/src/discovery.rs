@@ -40,6 +40,28 @@ pub const AGENT_CARD_PATH: &str = "/.well-known/agent-card.json";
 /// compromised endpoint.
 pub(crate) const MAX_CARD_BODY_SIZE: u64 = 2 * 1024 * 1024;
 
+/// Total budget for one agent-card fetch — connect, headers **and** body.
+///
+/// One deadline for the whole call, not one per phase. Until 2026-08-19 there
+/// were two independent 30-second timeouts here, one on `client.request` and
+/// one on the body read, so a server that stalled inside the first and then
+/// slow-dripped the body held the caller for both. Measured against a socket
+/// that stalled 25s before its status line and then dripped one chunk every
+/// 200ms: **55.0 seconds**, ending in "agent card body read timed out" — the
+/// body read had been handed a fresh full budget after the header fetch spent
+/// 25 seconds of the previous one.
+///
+/// This is the same defect `transport/jsonrpc.rs` fixed and wrote down: "Single
+/// deadline across header fetch AND body read, so `request_timeout` is a true
+/// per-call budget rather than being applied twice (headers, then body) — which
+/// previously let a slow server hold the call for up to 2× the configured
+/// timeout." Same crate, same fix, and discovery never got it.
+///
+/// Discovery is the *first* thing a client does against an unknown peer, which
+/// makes it the worst place to have an unbounded-looking budget: nothing has
+/// authenticated the far end yet.
+pub(crate) const CARD_FETCH_BUDGET: Duration = Duration::from_secs(30);
+
 /// Returns `true` when `len` is strictly greater than `max`. Extracted so that
 /// the boundary condition is directly testable — a size exactly equal to the
 /// maximum is allowed.
@@ -238,7 +260,10 @@ async fn fetch_card_with_metadata(
         .body(Full::new(Bytes::new()))
         .map_err(|e| ClientError::Transport(e.to_string()))?;
 
-    let resp = tokio::time::timeout(Duration::from_secs(30), client.request(req))
+    // One deadline for the whole fetch. See CARD_FETCH_BUDGET.
+    let deadline = tokio::time::Instant::now() + CARD_FETCH_BUDGET;
+
+    let resp = tokio::time::timeout_at(deadline, client.request(req))
         .await
         .map_err(|_| ClientError::Transport("agent card fetch timed out".into()))?
         .map_err(|e| ClientError::HttpClient(e.to_string()))?;
@@ -291,8 +316,9 @@ async fn fetch_card_with_metadata(
     // before any size check. `Limited` aborts the read the moment the cap is
     // exceeded, bounding memory regardless of framing.
     let cap = usize::try_from(max_card_body_size).unwrap_or(usize::MAX);
-    let body_bytes = match tokio::time::timeout(
-        Duration::from_secs(30),
+    // Whatever is left of the same budget — not a second one.
+    let body_bytes = match tokio::time::timeout_at(
+        deadline,
         Limited::new(resp.into_body(), cap).collect(),
     )
     .await
