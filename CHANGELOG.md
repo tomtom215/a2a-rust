@@ -61,6 +61,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A cancelled WebSocket request leaked its entry in the client's pending
+  map, and so did an abandoned stream.** The map is keyed by JSON-RPC request
+  ID, has no capacity bound, and lives as long as the connection. An entry was
+  removed on exactly three paths — a routed response, the explicit timeout
+  branch, and connection teardown — and a caller whose future is *dropped*
+  takes none of them; neither does a consumer that walks away from a stream the
+  server never fed, because all three streaming removals need a frame to
+  arrive. Measured: five cancelled requests left five entries, five abandoned
+  streams left five more, each pinning a channel sender. Registration moved to
+  the caller and both ends are now owned by a `Drop` guard, which travels with
+  the `EventStream` for the streaming case. A `select!` racing a request against
+  a shutdown signal is an ordinary way to write a client, so on a long-lived
+  connection this was unbounded growth on the request path.
+
 - **The event queue's `write_timeout` was never applied.** `DEFAULT_WRITE_TIMEOUT`
   is public, `new_in_memory_queue_with_options` takes it, `EventQueueManager`
   prints it in `Debug` — and the field was `#[allow(dead_code)]`. The

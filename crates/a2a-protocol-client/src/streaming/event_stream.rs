@@ -93,6 +93,12 @@ pub struct EventStream {
     first_event_timeout: Option<std::time::Duration>,
     /// Whether at least one chunk has been received (clears `first_event_timeout`).
     first_chunk_received: bool,
+    /// A resource whose lifetime is the stream's, released when the stream is
+    /// dropped. Set by [`EventStream::holding`]; see that method for why.
+    ///
+    /// Never read — it exists to be dropped — so the `Any` bound is doing no
+    /// work beyond giving the box a base trait to be object-safe against.
+    held: Option<Box<dyn std::any::Any + Send + Sync>>,
 }
 
 impl EventStream {
@@ -113,6 +119,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -135,6 +142,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -217,6 +225,7 @@ impl EventStream {
             jsonrpc_envelope: true,
             first_event_timeout: None,
             first_chunk_received: false,
+            held: None,
         }
     }
 
@@ -243,6 +252,27 @@ impl EventStream {
     #[must_use]
     pub(crate) const fn with_first_event_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.first_event_timeout = Some(timeout);
+        self
+    }
+
+    /// Ties `resource`'s lifetime to the stream's: it is dropped when the
+    /// stream is.
+    ///
+    /// The stream already owns an `AbortHandle` for the same reason — a
+    /// consumer that walks away must not leave the transport holding state for
+    /// it. This generalises that to state the transport cannot reach from a
+    /// background task.
+    ///
+    /// The WebSocket transport is the caller: it parks the guard owning its
+    /// pending-map entry here, because the entry has to outlive
+    /// `send_streaming_request` and the only event that reliably ends its
+    /// usefulness is the consumer dropping this stream. A server that accepts a
+    /// subscription and then answers nothing produces no terminal event and no
+    /// closed channel, so nothing else was ever going to remove it.
+    #[must_use]
+    #[cfg(feature = "websocket")]
+    pub(crate) fn holding(mut self, resource: impl std::any::Any + Send + Sync + 'static) -> Self {
+        self.held = Some(Box::new(resource));
         self
     }
 
@@ -363,6 +393,13 @@ impl Drop for EventStream {
         if let Some(handle) = self.abort_handle.take() {
             handle.abort();
         }
+        // Release whatever a transport parked here — see `holding`. Drop glue
+        // would do this anyway; taking it explicitly is what tells `dead_code`
+        // the field is read, and puts the release next to the abort it belongs
+        // beside. Without it the field is "never read" in any build where
+        // `holding` is cfg'd out, and the crate is compiled with
+        // `-D warnings`.
+        drop(self.held.take());
     }
 }
 
