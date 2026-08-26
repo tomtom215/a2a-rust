@@ -35,7 +35,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::SqlitePool;
 
 use super::task_store::TaskStore;
 use super::tenant::TenantContext;
@@ -178,23 +178,7 @@ impl TenantAwareSqliteTaskStore {
     }
 }
 
-/// Creates a `SqlitePool` with production-ready defaults (WAL, `busy_timeout`, etc.).
-async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use std::str::FromStr;
-
-    let opts = SqliteConnectOptions::from_str(url)?
-        .pragma("journal_mode", "WAL")
-        .pragma("busy_timeout", "5000")
-        .pragma("synchronous", "NORMAL")
-        .pragma("foreign_keys", "ON")
-        .create_if_missing(true);
-
-    SqlitePoolOptions::new()
-        .max_connections(8)
-        .connect_with(opts)
-        .await
-}
+use crate::sqlite_pool::sqlite_pool;
 
 fn to_a2a_error(e: &sqlx::Error) -> A2aError {
     A2aError::internal(format!("sqlite error: {e}"))

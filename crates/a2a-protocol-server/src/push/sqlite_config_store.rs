@@ -35,23 +35,7 @@ pub struct SqlitePushConfigStore {
     pool: SqlitePool,
 }
 
-/// Creates a `SqlitePool` with production-ready defaults (WAL, `busy_timeout`, etc.).
-async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use std::str::FromStr;
-
-    let opts = SqliteConnectOptions::from_str(url)?
-        .pragma("journal_mode", "WAL")
-        .pragma("busy_timeout", "5000")
-        .pragma("synchronous", "NORMAL")
-        .pragma("foreign_keys", "ON")
-        .create_if_missing(true);
-
-    sqlx::sqlite::SqlitePoolOptions::new()
-        .max_connections(8)
-        .connect_with(opts)
-        .await
-}
+use crate::sqlite_pool::sqlite_pool;
 
 /// Converts a `sqlx::Error` to an `A2aError`.
 #[allow(clippy::needless_pass_by_value)]

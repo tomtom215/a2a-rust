@@ -87,6 +87,10 @@ pub mod push;
 pub mod rate_limit;
 pub mod request_context;
 pub mod serve;
+
+// Private: the SQLite pragmas were written out four times before this.
+#[cfg(feature = "sqlite")]
+mod sqlite_pool;
 pub mod store;
 pub mod streaming;
 pub mod tenant_config;

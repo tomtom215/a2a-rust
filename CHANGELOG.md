@@ -498,6 +498,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now also matches a step running one of this repository's own scripts, which
   turns a forgotten registry entry into a failed build.
 
+- **The SQLite connection pragmas were written out four times.** `journal_mode`,
+  `busy_timeout`, `synchronous` and `foreign_keys` appeared byte-identically in
+  `store::sqlite_store`, `store::tenant_sqlite_store`, `push::sqlite_config_store`
+  and `push::tenant_sqlite_config_store`, with nothing asserting they agreed and
+  three of the four also hard-coding the same pool size. Correcting one in
+  response to a bug report would have left the other three at the old value with
+  every test still passing — the shape `DEFAULT_MAX_PAGE_SIZE` already cost this
+  repository once. They now live in one private module, with a test that asks
+  `SQLite` for the effective values on a real file rather than asserting the
+  builder was called. Measured while writing that test: removing `journal_mode`
+  or `synchronous` fails it, and removing `busy_timeout` or `foreign_keys` does
+  not, because `sqlx` already defaults both to the values being asked for. Both
+  facts are now recorded next to the pragmas.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite
