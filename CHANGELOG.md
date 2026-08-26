@@ -451,6 +451,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   --list`, and fails on everything else, a typo'd pin included. The skip is a
   warning annotation on the job, and it closes itself once the SDK is published.
 
+- **The nightly canary tested but never linted**, so it could not give notice of
+  the breakage it exists for. Rust 1.98.0 turned three clippy lints red on code
+  identical to `main`, two of which (`map_or_identity`,
+  `unused_async_trait_impl`) did not exist in 1.94.1 at all — and the canary ran
+  only `cargo test`. It now runs `cargo clippy --all-targets --all-features -D
+  warnings` as well, on the same informational job, which is where a lint
+  arrives before it reaches stable. The toolchain is still not pinned: a
+  `rust-toolchain.toml` takes precedence over the toolchain the CI action
+  selects, which would silently redirect the MSRV leg of the `1.93` matrix at
+  the pinned version instead — a worse failure than the one it would prevent.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

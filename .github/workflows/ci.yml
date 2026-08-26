@@ -362,10 +362,26 @@ jobs:
       # Deliberately un-pinned: this informational canary exists to surface
       # upcoming toolchain breakage early, so it must float with nightly.
       - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
       # protoc is bundled via the `protoc-bin-vendored` crate (see above).
       - name: Test (all features, nightly)
         run: cargo test --workspace --all-features
+
+      # The canary tested but never linted, and the breakage it exists to give
+      # notice of was a lint breakage: Rust 1.98.0 turned three clippy lints red
+      # on code identical to main (07e053d), and two of them —
+      # `map_or_identity` and `unused_async_trait_impl` — are not lints that
+      # 1.94.1 had ever heard of. Clippy lints reach nightly before they reach
+      # stable, so linting here is what gives notice; testing here never could.
+      #
+      # Run even when the tests above fail: a nightly lint and a nightly test
+      # regression are independent signals, and a step that is skipped reports
+      # nothing rather than reporting green.
+      - name: Clippy (all features, nightly)
+        if: ${{ !cancelled() }}
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   # ── Documentation ────────────────────────────────────────────────────────
   doc:
