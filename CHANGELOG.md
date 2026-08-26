@@ -98,6 +98,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than mistaken for a slow endpoint, and the arithmetic is documented on
   `HandlerLimits::push_delivery_timeout`.
 
+- **Agent-card discovery applied its 30-second timeout twice.** The request and
+  the body read each had their own, so a server that stalled on headers and then
+  drip-fed the body held the caller for both: measured at **55 seconds** against
+  a documented 30. One deadline now covers the whole fetch.
+
+- **The JWKS and OIDC-discovery body read had no deadline at all.** The
+  30-second budget bounded the request; the body was bounded by a size cap,
+  which bounds memory and not time. A server dripping one byte every 300ms held
+  the fetch open indefinitely — measured still running at 45 seconds. This sits
+  on the request path, because a `kid` that misses the cache forces a JWKS
+  refetch inside token validation.
+
 - **`codecov.yml`'s PostgreSQL exclusion has never applied.** All five listed
   paths are still in the coverage denominator, together with two never listed:
   957 lines and 881 of 2,096 missed lines — 42% of every uncovered line in the
