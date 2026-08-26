@@ -360,6 +360,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **RUSTSEC-2026-0258** — h2 raised to 0.4.16, without the dependency downgrade
   the advisory's own suggested fix would have pulled in.
 
+### Changed
+
+- **`ClientConfig::max_response_size` now states what it reaches.** It governs
+  every transport `ClientBuilder` constructs (JSON-RPC and REST directly; gRPC
+  and WebSocket as their `max_message_size`) and not a transport supplied to
+  `with_custom_transport`. `SlimRpcTransport` is the shipped instance of the
+  latter, and its real bound was traced through the stack rather than assumed:
+  the binding's codec, `slim_rpc` 2.3 and `agntcy-slim-datapath` 0.18 all set
+  none, so what applies is tonic 0.14's default — **4 MiB on receive**, eight
+  times tighter than the 32 MiB documented here, and unbounded on send. Neither
+  is settable from this repository; both are now written down where a reader
+  hits them.
 
 ## [0.9.0] - 2026-08-16
 

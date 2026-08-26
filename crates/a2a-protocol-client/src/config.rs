@@ -112,6 +112,20 @@ pub struct ClientConfig {
     /// being buffered without bound. Defaults to 32 MiB — large enough for
     /// big task histories and inline artifacts while still bounding client
     /// memory against a hostile or buggy server.
+    ///
+    /// # What it reaches
+    ///
+    /// Every transport [`ClientBuilder`](crate::ClientBuilder) constructs:
+    /// JSON-RPC and REST enforce it directly, and gRPC and WebSocket receive
+    /// it as their `max_message_size`.
+    ///
+    /// It does **not** reach a transport supplied by
+    /// [`with_custom_transport`](crate::ClientBuilder::with_custom_transport),
+    /// which never sees this config and carries whatever bound it was built
+    /// with. The SLIMRPC binding is the shipped instance of that: see
+    /// `SlimRpcTransport` in `a2a-protocol-slimrpc`, whose receive cap is
+    /// tonic's inherited 4 MiB — eight times tighter than this default, and
+    /// not settable from here.
     pub max_response_size: usize,
 
     /// TLS configuration.
