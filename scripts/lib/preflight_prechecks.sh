@@ -83,8 +83,17 @@ check_free_disk() {
     #
     # `du` over the whole tree would be the slow path made slower, so this only
     # measures the incremental directories, which is the reclaimable part.
+    #
+    # The `|| true` is load-bearing, and this script exited 1 without printing
+    # anything until it was there. When no incremental directory exists the
+    # glob does not expand, `du` fails on the literal path, and `pipefail`
+    # makes the whole substitution fail — so `set -e` killed preflight at the
+    # precheck, silently. The state that triggers it is the state this very
+    # message tells people to create: run the `rm -rf` it recommends, and the
+    # next run dies before its first gate with no output to explain why.
     local incr_kb incr_note=""
-    incr_kb=$(du -sk "$where"/*/incremental 2>/dev/null | awk '{t += $1} END {print t+0}')
+    incr_kb=$(du -sk "$where"/*/incremental 2>/dev/null | awk '{t += $1} END {print t+0}' || true)
+    incr_kb=${incr_kb:-0}
     if [ "${incr_kb:-0}" -gt $(( 1024 * 1024 )) ]; then
         incr_note="      rm -rf ${where}/*/incremental   # $(( incr_kb / 1024 / 1024 )) GB here right now, no rebuild of anything CI keeps"
     fi
