@@ -77,6 +77,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`InMemoryTaskStore`'s documentation described a design it does not have.**
+  It said eviction "runs as a background task" and that "writers are not
+  blocked during the O(n) cleanup". There is no `spawn`: the sweep is awaited
+  inside `save` and holds the write lock for its whole duration, so the write
+  that triggers it pays for it and every concurrent writer waits. Measured at
+  50,000 terminal tasks with `eviction_interval` 1000, the quietest of 1,000
+  consecutive saves took 3.99 µs and the one that swept took 4.54 ms — about
+  1,100×. The behaviour is reasonable and unchanged; what was wrong is that the
+  paragraph an operator reads to size a latency budget named the two properties
+  that would have made the number not matter. Corrected with the measurements
+  and a note that `eviction_interval` is a tail-latency knob. The observable
+  half — `save` never returns with the store over capacity — now has a test.
+
 - **A cancelled WebSocket request leaked its entry in the client's pending
   map, and so did an abandoned stream.** The map is keyed by JSON-RPC request
   ID, has no capacity bound, and lives as long as the connection. An entry was

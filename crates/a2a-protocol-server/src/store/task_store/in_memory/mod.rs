@@ -201,16 +201,46 @@ impl StoreData {
 ///
 /// # Eviction behavior
 ///
-/// Eviction runs as a background task every N writes (configurable via
+/// Eviction runs every N writes (configurable via
 /// [`TaskStoreConfig::eviction_interval`]) and whenever the store exceeds
-/// `max_capacity`. The eviction sweep is decoupled from the `save()` write
-/// lock so that writers are not blocked during the O(n) cleanup. However,
-/// if the system goes idle (no `save()` calls), completed tasks may persist
-/// in memory longer than their TTL.
+/// `max_capacity`. If the system goes idle (no `save()` calls), completed
+/// tasks persist in memory past their TTL.
 ///
 /// **Operators should call [`run_eviction()`](Self::run_eviction) periodically**
 /// (e.g. every 60 seconds via `tokio::time::interval`) to ensure timely
 /// cleanup of terminal tasks during idle periods.
+///
+/// ## The write that triggers a sweep pays for it
+///
+/// This paragraph used to say the sweep "runs as a background task" and that
+/// "writers are not blocked during the O(n) cleanup". Neither is true and both
+/// were corrected on 2026-08-19. There is no `spawn`: the sweep is awaited
+/// inside `save`, so the caller that triggers it waits for it, and it holds the
+/// write lock for its whole duration, so every other writer waits too. What is
+/// genuinely decoupled is only the *lock acquisition* — the insert's write lock
+/// is released before the sweep takes its own.
+///
+/// The size of that, MEASURED (debug profile, `tokio` multi-thread, 50,000
+/// terminal tasks, `eviction_interval` 1000):
+///
+/// | | latency |
+/// |---|---|
+/// | quietest of 1,000 consecutive saves | 3.99 µs |
+/// | slowest of the same 1,000 (the one that swept) | **4.54 ms** |
+///
+/// One write in `eviction_interval` costs about 1,100× a quiet one at that
+/// size, and it stalls every concurrent writer, not just itself. The capacity
+/// pass is much cheaper — measured 3.7× at 10,000 entries — because it removes
+/// only the overflow rather than scanning for it.
+///
+/// This is a shape to plan for, not a defect to route around: the TTL pass is
+/// O(n) unavoidably (finding expired entries means looking at all of them),
+/// which is exactly why it is amortized behind `eviction_interval` rather than
+/// run per write. What it means in practice is that `eviction_interval` is a
+/// tail-latency knob as much as a cleanliness one, and that a deployment
+/// sensitive to p99.9 write latency should raise it and call
+/// [`run_eviction()`](Self::run_eviction) from its own scheduler instead —
+/// where the stall lands somewhere it chose.
 ///
 /// # Concurrency
 ///
@@ -1277,6 +1307,44 @@ mod tests {
 
     // ── max capacity eviction ────────────────────────────────────────────
 
+    /// `save` does not return with the store over capacity.
+    ///
+    /// The sweep is awaited inside `save` — it is not spawned — and this is
+    /// the observable consequence. It is worth a test of its own because the
+    /// type's documentation asserted the opposite until 2026-08-19 ("runs as a
+    /// background task", "writers are not blocked"), and an operator sizing a
+    /// latency budget reads that paragraph, not this module.
+    ///
+    /// The assertion is deliberately made with no intervening sleep or yield:
+    /// a spawned sweep would not have run yet.
+    #[tokio::test]
+    async fn save_does_not_return_with_the_store_over_capacity() {
+        let store = InMemoryTaskStore::with_config(TaskStoreConfig {
+            max_capacity: Some(4),
+            task_ttl: None,
+            eviction_interval: 0,
+            max_page_size: 100,
+        });
+
+        for i in 0..4 {
+            store
+                .save(&make_task(&format!("t{i}"), TaskState::Completed))
+                .await
+                .unwrap();
+        }
+        assert_eq!(store.count().await.unwrap(), 4, "filled to capacity");
+
+        store
+            .save(&make_task("overflow", TaskState::Completed))
+            .await
+            .unwrap();
+        assert_eq!(
+            store.count().await.unwrap(),
+            4,
+            "the write that goes over capacity pays for the sweep before it returns"
+        );
+    }
+
     #[tokio::test]
     async fn max_capacity_eviction_removes_oldest_terminal_tasks() {
         let config = TaskStoreConfig {
@@ -1304,10 +1372,13 @@ mod tests {
             .await
             .unwrap();
 
-        // The third save triggers should_evict (over max_capacity).
-        // Give the maybe_evict background task a moment to complete.
-        tokio::time::sleep(Duration::from_millis(10)).await;
-
+        // The third save triggers should_evict (over max_capacity). No sleep:
+        // the sweep is awaited inside `save`, so it has already happened. The
+        // 10ms sleep that used to be here, and the comment calling it "the
+        // maybe_evict background task", described a design this store does not
+        // have — see the type's docs. Removing it makes the test assert the
+        // property that matters, which is that `save` does not return over
+        // capacity.
         assert!(
             store.get(&TaskId::new("oldest")).await.unwrap().is_none(),
             "oldest terminal task should be evicted when over capacity"
