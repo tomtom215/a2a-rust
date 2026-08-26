@@ -45,7 +45,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`TaskState::ALL`** — the nine protocol states as an array, for exhaustive
   iteration over a `#[non_exhaustive]` enum.
 
+- **Constructors for `AgentCard`, `AgentInterface` and `AgentSkill`.** Building
+  a card required a struct literal naming all fifteen fields — no `new`, no
+  builder, no `Default` — which is the first thing anyone has to do with this
+  SDK. `AgentCard::new(name, version, interface)` takes exactly what
+  `AgentCard::validate` requires, so a constructed card is valid by
+  construction, and the rest is chained `with_*` in the style
+  `AgentCapabilities` already used. `AgentInterface::jsonrpc/grpc/rest` spell
+  the spec's own binding names and default `protocol_version` to
+  `A2A_VERSION`. This repository contained 125 `AgentCard { .. }` literals when
+  the constructors were written.
+
+- **`push_outcome::SKIPPED`**, reported once per push-notification config the
+  per-event delivery budget never reaches.
+
 ### Fixed
+
+- **The event queue's `write_timeout` was never applied.** `DEFAULT_WRITE_TIMEOUT`
+  is public, `new_in_memory_queue_with_options` takes it, `EventQueueManager`
+  prints it in `Debug` — and the field was `#[allow(dead_code)]`. The
+  persistence channel is a bounded `mpsc` whose `send` waits with no deadline of
+  its own, so a stalled background processor parked the executor indefinitely:
+  measured, `write` blocked after 1,024 events and was still blocked eight
+  seconds later, with no metric and no trace. The deadline is now enforced and a
+  full channel returns an error naming the cause. A *closed* channel is still
+  not an error.
+
+- **Push-notification configs the delivery budget never reached were invisible.**
+  At the shipped defaults — 100 configs per task, a 5-second per-delivery
+  timeout, a 30-second per-event budget — a webhook estate that is timing out
+  receives 6 of 100 and the other 94 were reported by a single `trace_warn!`,
+  which compiles to nothing without the non-default `tracing` feature. Each
+  skipped config now increments `push_outcome::SKIPPED`. The `Semaphore::new(16)`
+  built per event, described in a comment as a cap on concurrent deliveries that
+  the sequential loop never performed, has been removed.
+
+- **Four broken rustdoc intra-doc links** in `rate_limit/` that resolved only
+  under workspace feature unification, so `cargo doc -p a2a-protocol-server`
+  emitted four warnings while CI's `cargo doc --workspace` emitted none.
+
+- **`signing` feature descriptions overstated what they enable.** Neither
+  `a2a-protocol-client` nor `a2a-protocol-server` contains any
+  `#[cfg(feature = "signing")]` code; both forward the types-crate feature so
+  you can call `sign_agent_card` / `verify_agent_card` yourself. The client's
+  read "Enable agent card signing verification", which claimed an integration
+  that does not exist.
 
 - **Per-caller rate limiting was not per-caller.** `caller_identity` existed on
   the interceptor and no code path ever set it, so every caller shared a single
