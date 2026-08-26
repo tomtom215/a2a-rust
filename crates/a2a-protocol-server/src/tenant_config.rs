@@ -48,11 +48,11 @@
 //! # The limit that is not here
 //!
 //! A per-tenant cap on *stored tasks* lives on the store, as
-//! [`TenantStoreConfig::overrides`](crate::TenantStoreConfig), because only
-//! the store can enforce it — a store is constructed independently and handed
-//! to the builder, and never sees a `PerTenantConfig`. `TenantLimits` carried
-//! a `max_stored_tasks` field until 0.10.0 that nothing read, for exactly that
-//! reason.
+//! [`TenantAwareInMemoryTaskStore::with_tenant_override`](crate::TenantAwareInMemoryTaskStore::with_tenant_override),
+//! because only the store can enforce it — a store is constructed
+//! independently and handed to the builder, and never sees a
+//! `PerTenantConfig`. [`TenantLimits::max_stored_tasks`] is the deprecated
+//! field that tried to be it from this side and that nothing could read.
 //!
 //! # Example
 //!
@@ -134,6 +134,29 @@ pub struct TenantLimits {
     /// was created with.
     pub event_queue_capacity: Option<usize>,
 
+    /// Maximum tasks stored for this tenant. **Deprecated and not enforced.**
+    ///
+    /// Nothing ever read this, and nothing can: it sits on
+    /// [`PerTenantConfig`], which the handler holds, and a store is
+    /// constructed independently and handed to the builder — a store never
+    /// sees one. The working equivalent is
+    /// [`TenantAwareInMemoryTaskStore::with_tenant_override`](crate::TenantAwareInMemoryTaskStore::with_tenant_override),
+    /// which gives a named tenant its own [`TaskStoreConfig`] and so its own
+    /// `max_capacity`.
+    ///
+    /// Kept rather than removed because removing a public field is a semver
+    /// break, and this crate's version is bumped as step 1 of a release
+    /// (see `RELEASING.md`) rather than mid-branch. The deprecation is the
+    /// point: every use site now gets a compiler warning naming the
+    /// replacement, which is louder than the silence this field had before.
+    ///
+    /// [`TaskStoreConfig`]: crate::TaskStoreConfig
+    #[deprecated(
+        note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
+                to give a tenant its own TaskStoreConfig::max_capacity"
+    )]
+    pub max_stored_tasks: Option<usize>,
+
     /// Tenant-wide rate limit, in requests per second. `None` = no
     /// tenant-level rate limit.
     ///
@@ -170,6 +193,7 @@ pub struct TenantLimitsBuilder {
     max_concurrent_tasks: Option<usize>,
     executor_timeout: Option<Duration>,
     event_queue_capacity: Option<usize>,
+    max_stored_tasks: Option<usize>,
     rate_limit_rps: Option<u32>,
 }
 
@@ -195,6 +219,18 @@ impl TenantLimitsBuilder {
         self
     }
 
+    /// Sets the maximum stored tasks. **Deprecated and not enforced** — see
+    /// [`TenantLimits::max_stored_tasks`].
+    #[must_use]
+    #[deprecated(
+        note = "never enforced; use TenantAwareInMemoryTaskStore::with_tenant_override \
+                to give a tenant its own TaskStoreConfig::max_capacity"
+    )]
+    pub const fn max_stored_tasks(mut self, n: usize) -> Self {
+        self.max_stored_tasks = Some(n);
+        self
+    }
+
     /// Sets the rate limit in requests per second.
     #[must_use]
     pub const fn rate_limit_rps(mut self, rps: u32) -> Self {
@@ -204,11 +240,13 @@ impl TenantLimitsBuilder {
 
     /// Builds the [`TenantLimits`].
     #[must_use]
+    #[allow(deprecated)]
     pub const fn build(self) -> TenantLimits {
         TenantLimits {
             max_concurrent_tasks: self.max_concurrent_tasks,
             executor_timeout: self.executor_timeout,
             event_queue_capacity: self.event_queue_capacity,
+            max_stored_tasks: self.max_stored_tasks,
             rate_limit_rps: self.rate_limit_rps,
         }
     }

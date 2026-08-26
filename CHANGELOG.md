@@ -10,24 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
+### Deprecated
 
-- **`TenantLimits::max_stored_tasks` is removed**, and per-tenant store bounds
-  move to `TenantStoreConfig::overrides` (`a2a-protocol-server`). The field
-  named a cap on stored tasks and nothing read it, for a structural reason: it
-  sat on `PerTenantConfig`, which the handler holds, and a store is constructed
-  independently and handed to the builder — a store never sees one. The cap that
-  works is `TaskStoreConfig::max_capacity`, and `TenantStoreConfig` now takes a
-  map of per-tenant `TaskStoreConfig` overrides so it can differ by tenant.
-  Migration: replace `TenantLimits::builder().max_stored_tasks(n)` with an entry
-  in `TenantStoreConfig::overrides` holding `TaskStoreConfig { max_capacity:
-  Some(n), .. }`. Every `TaskStoreConfig` field is overridable that way, not
-  just capacity.
+- **`TenantLimits::max_stored_tasks`** (`a2a-protocol-server`). It named a cap
+  on stored tasks and nothing ever read it, for a structural reason: it sits on
+  `PerTenantConfig`, which the handler holds, and a store is constructed
+  independently and handed to the builder — a store never sees one. The working
+  equivalent is the new `TenantAwareInMemoryTaskStore::with_tenant_override`,
+  which gives a named tenant its own `TaskStoreConfig` and so its own
+  `max_capacity`.
 
-- **`TenantStoreConfig` has a new public field**, `overrides`. Struct literals
-  need it, or `..TenantStoreConfig::default()`.
+  Deprecated rather than removed: removing a public field is a semver break, and
+  this crate's version is bumped as step 1 of a release (`RELEASING.md`), not
+  mid-branch. The deprecation carries the whole point anyway — every use site
+  now gets a compiler warning naming the replacement, which is louder than the
+  silence the field had before.
 
 ### Added
+
+- **`TenantAwareInMemoryTaskStore::with_tenant_override`** — gives a named
+  tenant its own `TaskStoreConfig`, so `max_capacity`, `task_ttl`,
+  `eviction_interval` and `max_page_size` can all differ by tenant. It lives on
+  the store rather than on `TenantStoreConfig` because that config is
+  exhaustively constructible through its public fields, so adding one would
+  break every downstream struct literal.
 
 
 - **Task retention for the persistent stores.** `purge_expired` on
@@ -121,7 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TenantLimits` fields were stored, resolvable, and read by nothing in the
   request path, under a module header that advised operators to set
   `max_concurrent_tasks` for noisy-neighbour isolation. Four are now enforced
-  and the fifth moved to the store (see Breaking, above):
+  and the fifth is deprecated in favour of a store-level equivalent (see
+  Deprecated, above):
 
   | Limit | Where | On exceeding |
   |---|---|---|

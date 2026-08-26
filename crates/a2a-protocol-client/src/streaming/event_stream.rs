@@ -98,7 +98,16 @@ pub struct EventStream {
     ///
     /// Never read — it exists to be dropped — so the `Any` bound is doing no
     /// work beyond giving the box a base trait to be object-safe against.
-    held: Option<Box<dyn std::any::Any + Send + Sync>>,
+    ///
+    /// `UnwindSafe + RefUnwindSafe` are in the bound because a trait object
+    /// carries only the auto traits it names, and this field is the whole of
+    /// `EventStream`'s. Without them the type silently stopped implementing
+    /// both — a public auto-trait regression that `cargo-semver-checks` caught
+    /// and nothing else would have, since no test in this repository calls
+    /// `catch_unwind` on a stream.
+    held: Option<
+        Box<dyn std::any::Any + Send + Sync + std::panic::UnwindSafe + std::panic::RefUnwindSafe>,
+    >,
 }
 
 impl EventStream {
@@ -271,7 +280,15 @@ impl EventStream {
     /// closed channel, so nothing else was ever going to remove it.
     #[must_use]
     #[cfg(feature = "websocket")]
-    pub(crate) fn holding(mut self, resource: impl std::any::Any + Send + Sync + 'static) -> Self {
+    pub(crate) fn holding(
+        mut self,
+        resource: impl std::any::Any
+            + Send
+            + Sync
+            + std::panic::UnwindSafe
+            + std::panic::RefUnwindSafe
+            + 'static,
+    ) -> Self {
         self.held = Some(Box::new(resource));
         self
     }
@@ -423,6 +440,23 @@ const fn is_terminal(event: &StreamResponse) -> bool {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+/// `EventStream` must stay `UnwindSafe` and `RefUnwindSafe`.
+///
+/// Both are auto traits, so they are part of the public API and their loss is a
+/// semver break — `cargo-semver-checks` reported exactly that when the `held`
+/// field was added as `Box<dyn Any + Send + Sync>`, because a trait object
+/// carries only the auto traits it names.
+///
+/// A compile-time assertion rather than a test body: these are properties of
+/// the type, and a `fn` that fails to compile is the strongest form the check
+/// can take. Nothing in this repository calls `catch_unwind` on a stream, so no
+/// behavioural test would have noticed.
+#[cfg(test)]
+const fn _event_stream_is_unwind_safe() {
+    const fn assert_unwind_safe<T: std::panic::UnwindSafe + std::panic::RefUnwindSafe>() {}
+    assert_unwind_safe::<EventStream>();
+}
 
 #[cfg(test)]
 mod tests {

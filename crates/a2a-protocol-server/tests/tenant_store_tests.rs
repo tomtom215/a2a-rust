@@ -174,7 +174,6 @@ async fn tenant_task_store_max_tenants() {
     let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
         per_tenant: TaskStoreConfig::default(),
         max_tenants: 2,
-        ..TenantStoreConfig::default()
     });
 
     TenantContext::scope("t1", async { store.save(&make_task("a")).await.unwrap() }).await;

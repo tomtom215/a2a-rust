@@ -328,7 +328,33 @@ summarise() {
         return 1
     fi
     printf '\n\033[32mAll gates passed.\033[0m\n'
+    report_jobs_not_run
     return 0
+}
+
+# Names the CI jobs preflight does not run, on a green summary.
+#
+# "%d of %d CI gate commands run locally" counts only the gates extracted from
+# GATE_JOBS, so the three jobs in NON_GATE_JOBS are not in either number. A
+# reader who sees "55 of 55" and "All gates passed" concludes CI will pass, and
+# on 2026-08-20 that reader was wrong: `semver` failed on a deliberate breaking
+# change that no local gate could have caught, because `semver` is not a local
+# gate.
+#
+# This is the same overstatement the gate's own history records — a comment
+# claiming `cargo-semver-checks` "reports rather than hard-fails" when there was
+# no `continue-on-error` — moved up one level, from what the job does to what
+# this summary implies. Both cost a cycle to discover.
+#
+# Printed only on success: after a failure the reader has something concrete to
+# fix and does not need a second list.
+report_jobs_not_run() {
+    printf '\n  Not run here: %s.\n' \
+        "$(printf '%s' "$NON_GATE_JOBS" | sed 's/[\^$()]//g; s/|/, /g')"
+    printf '  They need a published baseline, a nightly toolchain, or an\n'
+    printf '  advisory database. A green run above does not cover them —\n'
+    printf '  `cargo semver-checks` in particular blocks any 0.x break until\n'
+    printf '  the minor version is bumped (see RELEASING.md).\n'
 }
 
 # ── Tiers ────────────────────────────────────────────────────────────────────
