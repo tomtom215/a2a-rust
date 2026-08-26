@@ -15,26 +15,38 @@
 #
 # The caller must set REPO_ROOT, TIER, FORCE and ALL_GATES before sourcing.
 
-# Free space, in GB, per tier. Measured 2026-08-19 on this repository,
-# 4 vCPU, rustc 1.94.1:
+# Free space, in GB. Measured 2026-08-19 on this repository, 4 vCPU,
+# rustc 1.94.1, by sampling `du` through two complete `--full` runs:
 #
-#   --full from an empty target/            peaked under 20 GB
-#   --full over a tree built without CI's   reached 29 GB, then ENOSPC
-#     RUSTFLAGS (the common case)             19 gates into 53
+#   --full from a single-fingerprint tree   target/ peaked at 10.2 GB, and the
+#                                           binding's own target/ at 6.4 GB —
+#                                           16.6 GB of artifacts in total
+#   --full over a tree also built without   target/ alone reached 29 GB, then
+#     CI's RUSTFLAGS (the common case)      ENOSPC, 19 gates into 53
 #
-# The threshold is the second measurement plus headroom, because the second is
-# what most people will be running: anyone who has typed `cargo test` has a
-# target/ full of artifacts with a different fingerprint, and this script adds
-# a second set beside them rather than replacing them.
-REQUIRED_GB_full=32
-REQUIRED_GB_default=12
-REQUIRED_GB_fmt=1
+# Which of the two you are in is not knowable from outside target/, so this
+# **warns and continues** above a hard floor rather than refusing at the
+# advisory figure. A precheck that fires on a warm tree teaches people to pass
+# --force, and a --force people always pass is not a precheck — the same
+# argument check_file_lengths.sh makes for not blocking growth of a file that
+# is already listed.
+#
+# The floor is where continuing is close to pointless: below it, the binding's
+# 379-dependency build alone cannot land.
+ADVISE_GB_full=20
+ADVISE_GB_default=10
+ADVISE_GB_fmt=0
+FLOOR_GB_full=8
+FLOOR_GB_default=4
+FLOOR_GB_fmt=0
 
 check_free_disk() {
     [ "$FORCE" -eq 1 ] && return 0
 
-    local need avail_kb avail_gb where
-    eval "need=\${REQUIRED_GB_$TIER:-1}"
+    local advise floor avail_kb avail_gb where
+    eval "advise=\${ADVISE_GB_$TIER:-0}"
+    eval "floor=\${FLOOR_GB_$TIER:-0}"
+    [ "$advise" -eq 0 ] && return 0
 
     # Measure the filesystem that will hold the artifacts, not $PWD's: target/
     # can be redirected with CARGO_TARGET_DIR and is a separate mount on some
@@ -49,19 +61,16 @@ check_free_disk() {
         return 0
     fi
     avail_gb=$(( avail_kb / 1024 / 1024 ))
-    [ "$avail_gb" -ge "$need" ] && return 0
+    [ "$avail_gb" -ge "$advise" ] && return 0
 
-    cat >&2 <<EOF
+    if [ "$avail_gb" -lt "$floor" ]; then
+        cat >&2 <<EOF
 
-preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier wants ${need} GB.
+preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier cannot finish under ${floor} GB.
 
-  This exports CI's RUSTFLAGS and CARGO_PROFILE_DEV_DEBUG, which are part of
-  cargo's fingerprint, so it builds a second set of artifacts beside anything
-  compiled without them. Measured 2026-08-19: a --full run over such a tree
-  grew target/ to 29 GB and died with "No space left on device" 19 gates in,
-  inside a cargo invocation that had nothing to do with the real problem.
-
-  Free space first:
+  Refusing rather than failing forty minutes in with "No space left on device"
+  from inside an unrelated cargo invocation, which is how this figure was
+  measured. Free space:
 
       cargo clean                       # one fingerprint instead of two
       rm -rf target/debug/incremental   # cheaper, often enough
@@ -71,7 +80,20 @@ preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier wants ${need} GB.
       scripts/preflight.sh --${TIER} --force
 
 EOF
-    exit 2
+        exit 2
+    fi
+
+    cat >&2 <<EOF
+
+preflight: ${avail_gb} GB free at ${where}; the ${TIER} tier usually wants ${advise} GB.
+
+  Continuing — a warm target/ already holds most of what it needs. But this
+  exports CI's RUSTFLAGS and CARGO_PROFILE_DEV_DEBUG, which are part of cargo's
+  fingerprint, so a tree also built without them keeps two sets of artifacts:
+  measured, that reached 29 GB and then ENOSPC. \`cargo clean\` if this run dies
+  in an unexpected place.
+
+EOF
 }
 
 # Says which external services the selected tier needs and whether they are

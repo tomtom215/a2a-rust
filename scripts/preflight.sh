@@ -28,7 +28,9 @@
 # What `--full` needs that a laptop may not have, all measured 2026-08-19 and
 # all reported by the precheck before any gate runs:
 #
-#   ~32 GB free for target/    see check_free_disk
+#   ~17 GB of target/ space    16.6 GB measured across both target dirs; up to
+#                              29 GB if the tree also holds non-CI artifacts.
+#                              Warns below 20 GB free, refuses below 8.
 #   PostgreSQL on :5432        4 gates set A2A_TEST_POSTGRES_URL, per ci.yml
 #   SPIRE binaries             1 gate runs the binding's SPIFFE suites
 #
