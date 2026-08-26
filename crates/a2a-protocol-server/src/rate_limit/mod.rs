@@ -54,7 +54,7 @@
 //!    buckets every caller together. Nothing rejects that ordering; it just
 //!    stops being per-caller.
 //!
-//!    [`JwtAuthInterceptor`](crate::auth::jwt::JwtAuthInterceptor) records the
+//!    `JwtAuthInterceptor` (the `auth-jwt` feature) records the
 //!    validated `sub`; [`ApiKeyAuthInterceptor`](crate::ApiKeyAuthInterceptor)
 //!    and [`BearerTokenAuthInterceptor`](crate::BearerTokenAuthInterceptor)
 //!    record a label when built with `with_labelled_keys` /
@@ -205,7 +205,7 @@ impl RateLimitInterceptor {
     /// | counter | per request |
     /// |---|---:|
     /// | in-process (the default) | **0.2us** |
-    /// | [`PostgresRateLimitCounter`] | **232us** (231-239 across runs) |
+    /// | `PostgresRateLimitCounter` (the `postgres` feature) | **232us** (231-239 across runs) |
     /// | the same on a durable pool | **598us** |
     ///
     /// Three orders of magnitude, and on loopback — a counter across a real
