@@ -176,7 +176,7 @@ easy to get wrong:
 > `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
 > returns an `AgentInterface`, so `a2a-protocol-server` and
 > `a2a-protocol-types` are **public dependencies**. Its requirement on them is
-> therefore a tight `0.8`, not a range — allow two and cargo links both, and
+> therefore a tight `0.9`, not a range — allow two and cargo links both, and
 > callers get `expected RequestHandler, found RequestHandler`.
 
 So **every SDK minor release requires a follow-up release of the binding**:
@@ -189,10 +189,37 @@ So **every SDK minor release requires a follow-up release of the binding**:
 Skipping step 4 leaves the newest binding on crates.io pinned to a superseded
 SDK, which is the failure mode this note exists to prevent.
 
+#### The window between step 1 and step 2, and why CI stays green across it
+
+The version bump that must precede the tag is the same commit that puts the
+binding out of resolution, so between the release-prep commit and publication
+there is no pin value the binding can hold:
+
+| pin | in-tree | build / clippy / test | `cargo package` |
+| --- | --- | --- | --- |
+| `0.10` | 0.10.0 | pass | fails — 0.10.0 not on the index yet |
+| `0.9` | 0.10.0 | **fails** — didn't match 0.10.0 | fails |
+
+Locally the `path` wins, so the binding builds and tests against the in-tree
+crates either way; `cargo package` strips the path, and the requirement then
+resolves against crates.io. Reverting the pin does not rescue it — it breaks the
+build instead — and a range is refused for the public-dependency reason above.
+
+`ci.yml` therefore runs `scripts/package_binding.py` rather than `cargo package`
+directly. It skips **registry resolution alone** when every pin names the
+version that is in the tree and that version is absent from the index, proves
+the rest of packaging with `cargo package --list`, and fails on everything else
+— including a pin naming a version that is neither in-tree nor published. The
+skip is annotated as a warning on the job, not hidden, and it closes by itself
+once step 4 publishes.
+
+Nothing about this changes the order: step 2 still follows step 1. What it
+changes is that the release-prep commit is now a commit CI can pass.
+
 ## Path to 1.0.0
 
-All four crates are pre-1.0 despite a multi-release history (`a2a-protocol-server`
-is at 0.8.0; the rest at 0.7.0 as of this writing). Nothing below is a promise
+All four crates are pre-1.0 despite a multi-release history (all four are at
+0.9.0 as of this writing). Nothing below is a promise
 about timing — it exists so "are we ready for 1.0" has a checklist instead of
 a feeling, and so this is answered before, not during, any external review
 (donation, security audit, or otherwise) that asks for it.

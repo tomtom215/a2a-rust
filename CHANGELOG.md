@@ -439,6 +439,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SLIMRPC did not transmit or check the protocol version**, and leaked
   internal transport metadata into the A2A header map that applications see.
 
+- **The SLIMRPC binding's packaging gate could not pass during a release.** The
+  binding depends on the SDK crates by `version` *and* `path`; `cargo package`
+  strips the path, so the pin resolves against crates.io — where the version
+  being prepared does not exist yet. Reverting the pin broke the binding's build
+  instead, so no pin value was green between the version bump and publication,
+  and the 0.10.0 prep was reverted rather than accommodated. `ci.yml` now runs
+  `scripts/package_binding.py`, which skips registry resolution alone for
+  exactly that state — every pin naming the in-tree version, and that version
+  absent from the index — proves the rest of packaging with `cargo package
+  --list`, and fails on everything else, a typo'd pin included. The skip is a
+  warning annotation on the job, and it closes itself once the SDK is published.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

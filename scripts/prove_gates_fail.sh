@@ -302,7 +302,6 @@ injection_for() {
                 "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
                 "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
                 "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
-                "cargo package"*) echo "package_manifest:$SLIMRPC_TOML" ;;
                 "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
                 *)                echo "" ;;
             esac
@@ -327,6 +326,11 @@ injection_for() {
             echo "otel_coverage" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
+        # The binding's packaging gate is a wrapper, not a bare `cargo package`
+        # (B23), so it is matched here rather than in the SLIMRPC block above.
+        # The injection is unchanged: a manifest the wrapper must still reject.
+        *"package_binding.py"*)
+            echo "package_manifest:$SLIMRPC_TOML" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"check_block_scalars.py"*)
