@@ -80,6 +80,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   built per event, described in a comment as a cap on concurrent deliveries that
   the sequential loop never performed, has been removed.
 
+- **`shutdown_with_timeout(t)` could take `2t`.** The drain phase ran to
+  `now + t` and the executor's cleanup hook was then given a *fresh* full `t`.
+  Measured: `shutdown_with_timeout(30s)` took 60 seconds. The number an operator
+  puts here is the number they put in `terminationGracePeriodSeconds`, so
+  overrunning it means `SIGKILL` part-way through the cleanup graceful shutdown
+  exists to perform. The two phases now share one deadline.
+
+- **The push retry policy could not run at the shipped defaults.**
+  `HttpPushSender::new()` schedules three attempts at a 30-second request
+  timeout with `[1s, 2s]` backoff — 93 seconds — inside a
+  `push_delivery_timeout` that defaults to 5. Measured against a real socket:
+  one attempt of three reaches the webhook. The defaults are unchanged, because
+  choosing between them is a deployment decision; what is new is
+  `PushSender::max_delivery_duration()` (a defaulted trait method) and
+  `push_outcome::TIMEOUT_TRUNCATED`, so a truncated schedule is counted rather
+  than mistaken for a slow endpoint, and the arithmetic is documented on
+  `HandlerLimits::push_delivery_timeout`.
+
+- **`codecov.yml`'s PostgreSQL exclusion has never applied.** All five listed
+  paths are still in the coverage denominator, together with two never listed:
+  957 lines and 881 of 2,096 missed lines — 42% of every uncovered line in the
+  repository. Reported coverage is 94.06%; without them it is 96.46%. The
+  patterns are deliberately unchanged (Codecov *accepts* them, so validation
+  proves nothing); `scripts/check_codecov_ignores.py` is the check that will
+  settle the next attempt.
+
 - **Four broken rustdoc intra-doc links** in `rate_limit/` that resolved only
   under workspace feature unification, so `cargo doc -p a2a-protocol-server`
   emitted four warnings while CI's `cargo doc --workspace` emitted none.
