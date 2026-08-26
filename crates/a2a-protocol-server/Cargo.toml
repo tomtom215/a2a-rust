@@ -18,7 +18,12 @@ keywords               = ["a2a", "agent2agent", "agent", "protocol", "server"]
 categories             = ["network-programming", "web-programming"]
 
 [features]
-## Enable agent card signing (JWS, RFC 8785 canonicalization).
+## Make `a2a_protocol_types::signing` available (JWS, RFC 8785 canonicalization).
+##
+## A forwarding feature: this crate contains no `#[cfg(feature = "signing")]`
+## code and never signs the card it serves. Sign your card with
+## `sign_agent_card` before handing it to `RequestHandlerBuilder`, as
+## `examples/incident-response` does.
 signing = ["a2a-protocol-types/signing"]
 ## Enable structured logging via the `tracing` crate (zero cost when disabled).
 tracing = ["dep:tracing"]
