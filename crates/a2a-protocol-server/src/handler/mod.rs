@@ -20,6 +20,7 @@
 //! | `shutdown` | Graceful shutdown with optional timeout |
 
 mod capability;
+mod concurrency;
 mod event_processing;
 mod helpers;
 mod introspection;
@@ -106,6 +107,9 @@ pub struct RequestHandler {
     /// how the map is bounded.
     pub(crate) context_locks:
         Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
+    /// One semaphore per tenant, enforcing `TenantLimits::max_concurrent_tasks`.
+    /// See [`concurrency`](self::concurrency) for how it is sized and bounded.
+    pub(crate) tenant_slots: Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
 }
 
 /// Entry in the cancellation token map, tracking creation time for eviction.
@@ -127,14 +131,40 @@ impl RequestHandler {
         self.tenant_resolver.as_deref()
     }
 
-    /// Returns the per-tenant limit declarations, if any were set.
+    /// Returns the per-tenant limits this handler enforces, if any were set.
     ///
-    /// Use this alongside [`tenant_resolver`](Self::tenant_resolver) to look up
-    /// the limits for the resolved tenant — and then to **enforce them**, which
-    /// this handler does not do. See [`tenant_config`](crate::tenant_config).
+    /// The handler applies them itself; this accessor is for inspection, and
+    /// for handing the same configuration to
+    /// [`RateLimitInterceptor::with_tenant_config`](crate::RateLimitInterceptor::with_tenant_config),
+    /// which is where `rate_limit_rps` is applied. See
+    /// [`tenant_config`](crate::tenant_config).
     #[must_use]
     pub const fn tenant_config(&self) -> Option<&PerTenantConfig> {
         self.tenant_config.as_ref()
+    }
+
+    /// The limits declared for the tenant this call is running under, if any
+    /// were configured.
+    ///
+    /// Resolves through [`TenantContext::current`](crate::store::tenant::TenantContext::current),
+    /// which is a `tokio::task_local!`. Two consequences, both measured rather
+    /// than reasoned about:
+    ///
+    /// * Every handler entry point opens a `TenantContext::scope` before doing
+    ///   anything else, and the interceptor chain runs inside it — so this is
+    ///   correct in `ServerInterceptor::before`, which saw `"acme"` in the
+    ///   probe that established this.
+    /// * A `tokio::spawn`ed task does **not** inherit the task-local. The same
+    ///   probe's executor saw `""`. Anything a spawned task needs must be
+    ///   resolved before the spawn and moved in, which is what
+    ///   `send_message_inner` does with the timeout and the concurrency permit.
+    ///
+    /// Returns `None` only when no [`PerTenantConfig`] was set at all;
+    /// otherwise [`PerTenantConfig::get`] supplies the default limits for an
+    /// unlisted tenant.
+    pub(crate) fn tenant_limits(&self) -> Option<&crate::tenant_config::TenantLimits> {
+        let config = self.tenant_config.as_ref()?;
+        Some(config.get(&crate::store::tenant::TenantContext::current()))
     }
 
     /// Resolves the authoritative tenant for a request.
@@ -216,5 +246,7 @@ pub enum SendMessageResult {
     Stream(InMemoryQueueReader),
 }
 
+#[cfg(test)]
+mod tenant_limits_tests;
 #[cfg(test)]
 mod tests;

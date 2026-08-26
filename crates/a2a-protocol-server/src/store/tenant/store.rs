@@ -24,8 +24,30 @@ use super::context::TenantContext;
 /// Configuration for [`TenantAwareInMemoryTaskStore`].
 #[derive(Debug, Clone)]
 pub struct TenantStoreConfig {
-    /// Per-tenant store configuration.
+    /// Store configuration for a tenant with no entry in
+    /// [`overrides`](Self::overrides).
     pub per_tenant: TaskStoreConfig,
+
+    /// Store configuration for named tenants, overriding
+    /// [`per_tenant`](Self::per_tenant) entry for entry.
+    ///
+    /// This is where a per-tenant store bound belongs, and it is here because
+    /// `TenantLimits::max_stored_tasks` tried to be it from the wrong side.
+    /// That field sat on [`PerTenantConfig`](crate::PerTenantConfig), which the
+    /// handler holds and a store never sees — a store is constructed
+    /// independently and handed in — so nothing could enforce it and nothing
+    /// did. `TaskStoreConfig::max_capacity` is the cap that works, and this map
+    /// is what makes it differ by tenant.
+    ///
+    /// Every field of [`TaskStoreConfig`] is overridable this way, not just
+    /// capacity: a tenant can also get its own TTL, eviction interval and page
+    /// cap. An override replaces the whole config rather than merging, so
+    /// build it from `per_tenant` with `..` if you mean to change one field.
+    ///
+    /// The partition is created on a tenant's first use, so an override added
+    /// for a tenant that already has one takes effect only for a store built
+    /// afterwards.
+    pub overrides: HashMap<String, TaskStoreConfig>,
 
     /// Maximum number of tenants allowed. Default: 1000.
     ///
@@ -58,6 +80,7 @@ impl Default for TenantStoreConfig {
     fn default() -> Self {
         Self {
             per_tenant: TaskStoreConfig::default(),
+            overrides: HashMap::new(),
             max_tenants: 1000,
         }
     }
@@ -157,7 +180,11 @@ impl TenantAwareInMemoryTaskStore {
         }
 
         let store = Arc::new(InMemoryTaskStore::with_config(
-            self.config.per_tenant.clone(),
+            self.config
+                .overrides
+                .get(&tenant)
+                .unwrap_or(&self.config.per_tenant)
+                .clone(),
         ));
         stores.insert(tenant, Arc::clone(&store));
         drop(stores);
@@ -320,6 +347,7 @@ mod tests {
                 ..TaskStoreConfig::default()
             },
             max_tenants: 10,
+            ..TenantStoreConfig::default()
         });
 
         TenantContext::scope("capped", async {
@@ -346,6 +374,67 @@ mod tests {
             );
         })
         .await;
+    }
+
+    /// The per-tenant store bound that `TenantLimits::max_stored_tasks` claimed
+    /// to be, in the one place that can enforce it.
+    ///
+    /// That field sat on `PerTenantConfig`, which the handler holds and a store
+    /// never sees, so nothing read it. Here the store owns the map and picks
+    /// the config as it creates the partition.
+    #[tokio::test]
+    async fn an_override_gives_that_tenant_its_own_store_config() {
+        async fn saved_then_listed(
+            store: &TenantAwareInMemoryTaskStore,
+            tenant: &'static str,
+        ) -> usize {
+            TenantContext::scope(tenant, async {
+                for i in 0..5 {
+                    store
+                        .save(&make_task(&format!("{tenant}-{i}"), TaskState::Submitted))
+                        .await
+                        .expect("save");
+                }
+                store
+                    .list(&ListTasksParams {
+                        page_size: Some(100),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("list")
+                    .tasks
+                    .len()
+            })
+            .await
+        }
+
+        let mut overrides = HashMap::new();
+        overrides.insert(
+            "small".to_owned(),
+            TaskStoreConfig {
+                max_page_size: 1,
+                ..TaskStoreConfig::default()
+            },
+        );
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig {
+                max_page_size: 50,
+                ..TaskStoreConfig::default()
+            },
+            overrides,
+            max_tenants: 10,
+        });
+
+        assert_eq!(
+            saved_then_listed(&store, "small").await,
+            1,
+            "the override caps this tenant's page size at 1"
+        );
+        assert_eq!(
+            saved_then_listed(&store, "ordinary").await,
+            5,
+            "a tenant with no override keeps per_tenant's cap of 50"
+        );
     }
 
     // ── TenantContext ────────────────────────────────────────────────────
@@ -564,6 +653,7 @@ mod tests {
         let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 2,
+            ..TenantStoreConfig::default()
         });
 
         for junk in ["junk-1", "junk-2"] {
@@ -649,6 +739,7 @@ mod tests {
         let config = TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 2,
+            ..TenantStoreConfig::default()
         };
         let store = TenantAwareInMemoryTaskStore::with_config(config);
 
@@ -684,6 +775,7 @@ mod tests {
         let config = TenantStoreConfig {
             per_tenant: TaskStoreConfig::default(),
             max_tenants: 1,
+            ..TenantStoreConfig::default()
         };
         let store = TenantAwareInMemoryTaskStore::with_config(config);
 

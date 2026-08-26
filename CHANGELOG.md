@@ -10,7 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **`TenantLimits::max_stored_tasks` is removed**, and per-tenant store bounds
+  move to `TenantStoreConfig::overrides` (`a2a-protocol-server`). The field
+  named a cap on stored tasks and nothing read it, for a structural reason: it
+  sat on `PerTenantConfig`, which the handler holds, and a store is constructed
+  independently and handed to the builder — a store never sees one. The cap that
+  works is `TaskStoreConfig::max_capacity`, and `TenantStoreConfig` now takes a
+  map of per-tenant `TaskStoreConfig` overrides so it can differ by tenant.
+  Migration: replace `TenantLimits::builder().max_stored_tasks(n)` with an entry
+  in `TenantStoreConfig::overrides` holding `TaskStoreConfig { max_capacity:
+  Some(n), .. }`. Every `TaskStoreConfig` field is overridable that way, not
+  just capacity.
+
+- **`TenantStoreConfig` has a new public field**, `overrides`. Struct literals
+  need it, or `..TenantStoreConfig::default()`.
+
 ### Added
+
 
 - **Task retention for the persistent stores.** `purge_expired` on
   `SqliteTaskStore`, `PostgresTaskStore` and their tenant-aware variants deletes
@@ -98,6 +116,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one.
 
 ### Fixed
+
+- **`PerTenantConfig` now enforces the limits it declares** (B22). All five
+  `TenantLimits` fields were stored, resolvable, and read by nothing in the
+  request path, under a module header that advised operators to set
+  `max_concurrent_tasks` for noisy-neighbour isolation. Four are now enforced
+  and the fifth moved to the store (see Breaking, above):
+
+  | Limit | Where | On exceeding |
+  |---|---|---|
+  | `max_concurrent_tasks` | per-tenant semaphore; permit taken before any side effect and held for the executor's life | `ServerError::Overloaded` |
+  | `executor_timeout` | resolved before the executor is spawned | the task fails |
+  | `event_queue_capacity` | at queue creation | the stream buffer is that deep |
+  | `rate_limit_rps` | `RateLimitInterceptor`, via the new `with_tenant_config` | the request is refused |
+
+  The permit is taken *before* the queue, the task row and the cancellation
+  token exist, so a refused request leaves nothing behind — rejecting later
+  would make the limit cost the tenant the resources it protects. A tenant at
+  its limit is refused rather than queued: queueing converts a declared bound
+  into unbounded latency and unbounded memory.
+
+  Three of the four the handler applies on its own. `rate_limit_rps` is opt-in
+  and needs the same config handed to
+  `RateLimitInterceptor::with_tenant_config`, because a request is counted in
+  an interceptor rather than in the handler. It counts against a bucket keyed
+  by tenant *in addition to* the per-caller bucket, so a tenant's allowance is
+  not multiplied by its number of callers — and the unit is converted rather
+  than reinterpreted: the per-window allowance is `rate_limit_rps ×
+  window_secs`, because the field is documented in requests per second and
+  `requests_per_window` is not.
+
+  What made this enforceable at all was measuring where the tenant is visible.
+  `TenantContext` is a `tokio::task_local!`, and a probe recording it at two
+  points of one `SendMessage` saw `"acme"` in the interceptor chain and `""` in
+  the spawned executor. So an interceptor can resolve a tenant, and anything
+  the executor needs must be resolved before the spawn and moved in — which is
+  where the timeout and the permit are now taken.
 
 - **The WebSocket client's connect had no deadline.** `connect_async_with_config`
   was awaited bare, so `WebSocketTransport::connect*` could wait indefinitely on

@@ -10,6 +10,7 @@
 
 use super::{CallerBucket, RateLimitConfig, RateLimitInterceptor};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn limiter(limit: u64) -> RateLimitInterceptor {
     RateLimitInterceptor::new(RateLimitConfig {
@@ -38,7 +39,8 @@ fn same_window_counts_the_request_rather_than_resetting() {
     let b = bucket(100, 2);
 
     assert!(
-        rl.admit_or_roll_window(&b, 100).is_ok(),
+        rl.admit_or_roll_window(&b, 100, rl.config.requests_per_window)
+            .is_ok(),
         "the third request of three is still within the limit"
     );
     assert_eq!(
@@ -55,7 +57,8 @@ fn same_window_counts_the_request_rather_than_resetting() {
     // The next one crosses the limit, which is only reachable if the
     // counter actually accumulated.
     assert!(
-        rl.admit_or_roll_window(&b, 100).is_err(),
+        rl.admit_or_roll_window(&b, 100, rl.config.requests_per_window)
+            .is_err(),
         "the fourth request of three must be rejected"
     );
 }
@@ -68,7 +71,8 @@ fn advanced_window_rolls_and_restarts_the_count() {
     let b = bucket(100, 99);
 
     assert!(
-        rl.admit_or_roll_window(&b, 101).is_ok(),
+        rl.admit_or_roll_window(&b, 101, rl.config.requests_per_window)
+            .is_ok(),
         "a request in a fresh window is admitted regardless of the old count"
     );
     assert_eq!(b.count.load(Ordering::Acquire), 1, "the count restarts");
@@ -637,7 +641,7 @@ async fn slow_path_double_check_stale_window() {
     // Now remove from the fast-path perspective by holding a write lock
     // briefly; the check method will fall through to the slow path where
     // the bucket exists but has an old window. We call check() directly.
-    let result = limiter.check(key).await;
+    let result = limiter.check(key, limiter.config.requests_per_window).await;
     assert!(
         result.is_ok(),
         "slow-path stale-window reset should succeed"
@@ -690,7 +694,7 @@ async fn slow_path_rate_limit_exceeded() {
 
     // check() should hit the slow-path double-check and see that
     // the count exceeds the limit.
-    let result = limiter.check(key).await;
+    let result = limiter.check(key, limiter.config.requests_per_window).await;
     assert!(
         result.is_err(),
         "slow-path should reject when count exceeds limit"
@@ -750,7 +754,7 @@ async fn fast_path_window_advancement_resets_count() {
 
     // check() should find the bucket in the fast-path read lock, see the old
     // window, succeed the CAS, and reset count to 1.
-    let result = limiter.check(key).await;
+    let result = limiter.check(key, limiter.config.requests_per_window).await;
     assert_eq!(
         result.unwrap(),
         (),
@@ -830,4 +834,133 @@ async fn x_forwarded_for_single_ip_with_trusted_hop() {
     assert!(limiter.before(&ctx).await.is_ok());
     // Second request should be rejected (limit is 1).
     assert!(limiter.before(&ctx).await.is_err());
+}
+
+// ── per-tenant limits ────────────────────────────────────────────────────
+
+mod tenant {
+    use super::{make_ctx, RateLimitConfig, RateLimitInterceptor};
+    use crate::store::tenant::TenantContext;
+    use crate::tenant_config::{PerTenantConfig, TenantLimits};
+    use crate::ServerInterceptor as _;
+
+    /// A limiter whose own caller limit is high enough not to interfere, so a
+    /// rejection can only have come from the tenant bucket.
+    fn limiter_with(rps: Option<u32>, window_secs: u64) -> RateLimitInterceptor {
+        let limits = rps.map_or_else(TenantLimits::default, |r| {
+            TenantLimits::builder().rate_limit_rps(r).build()
+        });
+        RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 1_000_000,
+            window_secs,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config")
+        .with_tenant_config(
+            PerTenantConfig::builder()
+                .with_override("acme", limits)
+                .build(),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_tenant_limit_applies_across_distinct_callers() {
+        // 1 rps over a 1s window = 1 request. Two different callers, so the
+        // per-caller buckets are distinct and only a tenant-keyed bucket can
+        // reject the second.
+        let rl = limiter_with(Some(1), 1);
+
+        TenantContext::scope("acme", async {
+            assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
+            assert!(
+                rl.before(&make_ctx(Some("bob"))).await.is_err(),
+                "a tenant allowance must not be multiplied by its caller count"
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_rps_unit_is_multiplied_by_the_window() {
+        // 2 rps over a 60s window is 120 requests, not 2. Reading the number
+        // as a drop-in for `requests_per_window` would reject the third.
+        let rl = limiter_with(Some(2), 60);
+
+        TenantContext::scope("acme", async {
+            for i in 0..120 {
+                assert!(
+                    rl.before(&make_ctx(Some("alice"))).await.is_ok(),
+                    "request {i} of the tenant's 2 rps x 60s allowance was refused"
+                );
+            }
+            assert!(
+                rl.before(&make_ctx(Some("alice"))).await.is_err(),
+                "the 121st request exceeds 2 rps x 60s"
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn a_tenant_without_an_rps_is_not_counted_against_any_tenant_bucket() {
+        // `None` is documented as "no tenant-level rate limit".
+        let rl = limiter_with(None, 1);
+
+        TenantContext::scope("acme", async {
+            for i in 0..50 {
+                assert!(
+                    rl.before(&make_ctx(Some("alice"))).await.is_ok(),
+                    "request {i} was refused although the tenant declares no rps"
+                );
+            }
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn an_unconfigured_limiter_is_unchanged() {
+        // No `with_tenant_config` at all: the caller limit is the only one,
+        // which is every existing deployment.
+        let rl = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 2,
+            window_secs: 60,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config");
+
+        TenantContext::scope("acme", async {
+            assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
+            assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
+            assert!(
+                rl.before(&make_ctx(Some("alice"))).await.is_err(),
+                "the caller limit of 2 must still apply on its own"
+            );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn the_caller_limit_still_applies_under_a_generous_tenant_limit() {
+        // Both scopes are live; the tighter one wins, whichever it is.
+        let rl = RateLimitInterceptor::new(RateLimitConfig {
+            requests_per_window: 1,
+            window_secs: 60,
+            ..RateLimitConfig::default()
+        })
+        .expect("valid config")
+        .with_tenant_config(
+            PerTenantConfig::builder()
+                .with_override("acme", TenantLimits::builder().rate_limit_rps(1000).build())
+                .build(),
+        );
+
+        TenantContext::scope("acme", async {
+            assert!(rl.before(&make_ctx(Some("alice"))).await.is_ok());
+            assert!(
+                rl.before(&make_ctx(Some("alice"))).await.is_err(),
+                "a generous tenant allowance must not lift the caller limit"
+            );
+        })
+        .await;
+    }
 }

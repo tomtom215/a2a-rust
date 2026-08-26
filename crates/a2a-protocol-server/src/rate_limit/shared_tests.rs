@@ -16,6 +16,7 @@
 // passed while the counter kept working perfectly.
 
 use super::*;
+use a2a_protocol_types::error::A2aError;
 
 /// Always fails, standing in for a counter whose backend is unreachable.
 struct Unreachable;

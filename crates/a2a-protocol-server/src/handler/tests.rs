@@ -35,36 +35,28 @@ fn default_build_has_no_tenant_resolver() {
     );
 }
 
-/// Pins the gap the module documentation describes, so the two cannot
-/// drift apart in silence.
+/// Resolution, which is this type's own job — enforcement is behavioural and
+/// lives in `tenant_limits_tests`.
 ///
-/// `TenantLimits::executor_timeout` and the handler's own
-/// `executor_timeout` share a name and nothing else. A tenant override set
-/// here does not reach the deadline the executor actually runs under —
-/// measured, not assumed, because the same-named field is exactly what
-/// makes this look wired when it is not.
-///
-/// **When per-tenant enforcement lands (B22), this test must fail.** That
-/// is its job: the failure is the reminder that
-/// `crate::tenant_config`'s "nothing reads it" paragraph, and the four
-/// `Not enforced` field notes beside it, have become false and need
-/// rewriting in the same change.
+/// This replaces `tenant_limits_are_stored_and_resolved_but_never_applied`,
+/// which asserted `handler.executor_timeout == Some(11s)` and carried a comment
+/// promising it would fail when B22 landed. B22 landed and it passed: the
+/// handler's field is untouched, and what enforcement changed is which value
+/// the send path *reads*. A test that pins a field cannot notice a behaviour
+/// arriving, and naming it after a behaviour did not make it one.
 #[test]
-fn tenant_limits_are_stored_and_resolved_but_never_applied() {
+fn tenant_overrides_resolve_ahead_of_the_defaults() {
     use std::time::Duration;
 
-    const HANDLER_WIDE: Duration = Duration::from_secs(11);
-    const TENANT_OVERRIDE: Duration = Duration::from_secs(999);
-
     let handler = RequestHandlerBuilder::new(DummyExecutor)
-        .with_executor_timeout(HANDLER_WIDE)
         .with_tenant_config(
             PerTenantConfig::builder()
+                .default_limits(TenantLimits::builder().max_concurrent_tasks(1).build())
                 .with_override(
                     "premium",
                     TenantLimits::builder()
-                        .executor_timeout(TENANT_OVERRIDE)
-                        .max_concurrent_tasks(1)
+                        .executor_timeout(Duration::from_secs(999))
+                        .max_concurrent_tasks(64)
                         .build(),
                 )
                 .build(),
@@ -72,21 +64,14 @@ fn tenant_limits_are_stored_and_resolved_but_never_applied() {
         .build()
         .expect("build");
 
-    // Resolution works. This is the whole of what the type does.
-    let limits = handler
-        .tenant_config()
-        .expect("tenant config")
-        .get("premium");
-    assert_eq!(limits.executor_timeout, Some(TENANT_OVERRIDE));
-    assert_eq!(limits.max_concurrent_tasks, Some(1));
+    let config = handler.tenant_config().expect("tenant config");
+    let premium = config.get("premium");
+    assert_eq!(premium.executor_timeout, Some(Duration::from_secs(999)));
+    assert_eq!(premium.max_concurrent_tasks, Some(64));
 
-    // And it reaches nothing. The deadline the executor runs under is the
-    // handler's, unchanged by a tenant override 90x its size.
-    assert_eq!(
-        handler.executor_timeout,
-        Some(HANDLER_WIDE),
-        "a per-tenant executor_timeout must not be mistaken for one that applies"
-    );
+    // An unlisted tenant falls back to the declared defaults, not to nothing.
+    assert_eq!(config.get("someone-else").max_concurrent_tasks, Some(1));
+    assert_eq!(config.get("someone-else").executor_timeout, None);
 }
 
 #[test]

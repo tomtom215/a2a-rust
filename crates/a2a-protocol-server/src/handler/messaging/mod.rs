@@ -125,6 +125,14 @@ impl RequestHandler {
         // extensions the agent card marks required.
         self.ensure_required_extensions(&call_ctx)?;
 
+        // Take the tenant's concurrency slot before anything with a side
+        // effect. A refused request must leave no queue, no task row and no
+        // cancellation token behind — rejecting after those exist would make
+        // the limit cost the tenant the very resources it is meant to protect.
+        // The permit is moved into the spawned executor below and released
+        // when that task ends, however it ends.
+        let tenant_slot = self.acquire_tenant_slot().await?;
+
         // SPEC §3.3.4: a streaming send is only permitted when the configured
         // agent card advertises `capabilities.streaming == true`. Reject with
         // UnsupportedOperationError otherwise. (No-op when no card is configured.)
@@ -336,7 +344,12 @@ impl RequestHandler {
         // left the task orphaned in `Submitted` with a leaked token.
         let (writer, reader, persistence_rx) = match self
             .event_queue_manager
-            .lease(&task_id, use_background)
+            .lease(
+                &task_id,
+                use_background,
+                self.tenant_limits()
+                    .and_then(|limits| limits.event_queue_capacity),
+            )
             .await
         {
             crate::streaming::QueueLease::Created {
@@ -484,8 +497,19 @@ impl RequestHandler {
         let task_id_for_cleanup = task_id.clone();
         let event_queue_mgr = self.event_queue_manager.clone();
         let cancel_tokens = Arc::clone(&self.cancellation_tokens);
-        let executor_timeout = self.executor_timeout;
+        // Resolved here, not inside the spawn: `TenantContext` is a task-local
+        // and `tokio::spawn` does not inherit it. A per-tenant override wins
+        // over the handler-wide default; `None` on the tenant means "use the
+        // handler's", which is what the field has always documented.
+        let executor_timeout = self
+            .tenant_limits()
+            .and_then(|limits| limits.executor_timeout)
+            .or(self.executor_timeout);
         let executor_handle = tokio::spawn(async move {
+            // Owned by this future, so the slot is returned when the executor
+            // finishes, fails, panics, or is aborted — dropping the future
+            // drops the permit.
+            let _tenant_slot = tenant_slot;
             trace_debug!(task_id = %ctx.task_id, "executor started");
 
             // FIX(L5): Use a cleanup guard so that the event queue and

@@ -292,10 +292,12 @@ impl RequestHandlerBuilder {
     /// the tenant-aware stores, so setting a resolver is what makes data
     /// isolation real.
     ///
-    /// It does **not** switch on per-tenant resource limits. Pairing it with
-    /// [`with_tenant_config`](Self::with_tenant_config) gives you a resolved
-    /// [`TenantLimits`](crate::TenantLimits) to read; enforcing it is yours.
-    /// See [`tenant_config`](crate::tenant_config).
+    /// It is also what keys per-tenant resource limits: pair it with
+    /// [`with_tenant_config`](Self::with_tenant_config) and the limits of the
+    /// resolved tenant are applied. Because every limit is keyed on what this
+    /// resolver returns, a resolver that trusts client-supplied input lets a
+    /// caller choose their own limits — see
+    /// [`tenant_config`](crate::tenant_config).
     ///
     /// Defaults to `None` (single-tenant mode).
     #[must_use]
@@ -339,17 +341,19 @@ impl RequestHandlerBuilder {
         self
     }
 
-    /// Stores per-tenant limit declarations on the handler.
+    /// Applies per-tenant resource limits.
     ///
-    /// [`PerTenantConfig`] is a lookup table, and this stores it — **it does
-    /// not switch on differentiated service levels.** Nothing in the request
-    /// path reads the limits; see [`tenant_config`](crate::tenant_config) for
-    /// what is and is not enforced, and for how to apply them yourself. Pair
-    /// with [`with_tenant_resolver`](Self::with_tenant_resolver) to identify
-    /// the tenant whose limits to look up.
+    /// The handler enforces `max_concurrent_tasks`, `executor_timeout` and
+    /// `event_queue_capacity` from this configuration for every request, keyed
+    /// on the tenant that [`with_tenant_resolver`](Self::with_tenant_resolver)
+    /// resolved. `rate_limit_rps` needs one more step — the same config passed
+    /// to [`RateLimitInterceptor::with_tenant_config`](crate::RateLimitInterceptor::with_tenant_config)
+    /// — because the request is counted in an interceptor rather than here.
     ///
-    /// Defaults to `None`. Note that setting it changes nothing about how
-    /// requests are served — limits are uniform either way.
+    /// See [`tenant_config`](crate::tenant_config) for where each limit is
+    /// applied and what exceeding it returns.
+    ///
+    /// Defaults to `None`: uniform limits for all callers.
     #[must_use]
     pub fn with_tenant_config(mut self, config: PerTenantConfig) -> Self {
         self.tenant_config = Some(config);
@@ -454,6 +458,7 @@ impl RequestHandlerBuilder {
                 std::collections::HashMap::new(),
             )),
             context_locks: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            tenant_slots: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
         })
     }
 }

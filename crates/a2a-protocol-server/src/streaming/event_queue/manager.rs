@@ -262,8 +262,20 @@ impl EventQueueManager {
     /// — the caller can then reject with a proper overload error *before*
     /// committing any side effects — instead of being indistinguishable from an
     /// existing queue.
+    /// `capacity` overrides this manager's own for the queue created by *this*
+    /// call; an existing queue keeps the size it was created with. The send
+    /// path passes the current tenant's
+    /// [`TenantLimits::event_queue_capacity`](crate::TenantLimits::event_queue_capacity),
+    /// so a tenant can be given a deeper or shallower stream buffer than the
+    /// deployment default. `None` means "use this manager's capacity".
     #[allow(clippy::option_if_let_else)]
-    pub(crate) async fn lease(&self, task_id: &TaskId, with_persistence: bool) -> QueueLease {
+    pub(crate) async fn lease(
+        &self,
+        task_id: &TaskId,
+        with_persistence: bool,
+        capacity: Option<usize>,
+    ) -> QueueLease {
+        let capacity = capacity.unwrap_or(self.capacity);
         let mut map = self.writers.write().await;
         let lease = if map.contains_key(task_id) {
             QueueLease::Existing
@@ -274,7 +286,7 @@ impl EventQueueManager {
             QueueLease::CapacityExhausted
         } else if with_persistence {
             let (writer, reader, persistence_rx) = new_in_memory_queue_with_persistence(
-                self.capacity,
+                capacity,
                 self.max_event_size,
                 self.write_timeout,
             );
@@ -286,11 +298,8 @@ impl EventQueueManager {
                 persistence_rx: Some(persistence_rx),
             }
         } else {
-            let (writer, reader) = new_in_memory_queue_with_options(
-                self.capacity,
-                self.max_event_size,
-                self.write_timeout,
-            );
+            let (writer, reader) =
+                new_in_memory_queue_with_options(capacity, self.max_event_size, self.write_timeout);
             let writer = Arc::new(writer);
             map.insert(task_id.clone(), Arc::clone(&writer));
             QueueLease::Created {
@@ -578,7 +587,7 @@ mod tests {
 
         // First lease creates the queue.
         assert!(matches!(
-            manager.lease(&task, true).await,
+            manager.lease(&task, true, None).await,
             QueueLease::Created { .. }
         ));
         assert!(manager.has_queue(&task).await, "queue should now be live");
@@ -586,7 +595,7 @@ mod tests {
         // A second lease for the same task reports Existing — the send path
         // treats this as a concurrent/leaked-executor condition and rejects.
         assert!(matches!(
-            manager.lease(&task, true).await,
+            manager.lease(&task, true, None).await,
             QueueLease::Existing
         ));
 
@@ -666,6 +675,69 @@ mod tests {
             first.is_err(),
             "a capacity-1 queue must surface an overrun to the reader; \
              got Ok, which is what DEFAULT_QUEUE_CAPACITY (256) would give"
+        );
+    }
+
+    /// The per-call capacity override, which carries
+    /// `TenantLimits::event_queue_capacity` into the queue a tenant's stream
+    /// gets.
+    ///
+    /// Same technique as the test above and for the same reason — the field is
+    /// private, so the assertion is on observable overrun behaviour. Here the
+    /// manager's own capacity is the 256-event default and the override is 1,
+    /// so an ignored override buffers both writes and the reader sees `Ok`.
+    #[tokio::test]
+    async fn lease_capacity_override_beats_the_managers_own() {
+        let manager = EventQueueManager::new();
+        let task_id = TaskId::new("override");
+        let crate::streaming::QueueLease::Created { writer, reader, .. } =
+            manager.lease(&task_id, false, Some(1)).await
+        else {
+            panic!("first lease must create a queue");
+        };
+        let mut reader = reader;
+
+        writer
+            .write(make_status_event("override", TaskState::Working))
+            .await
+            .expect("first write");
+        writer
+            .write(make_status_event("override", TaskState::Completed))
+            .await
+            .expect("second write");
+
+        assert!(
+            reader.read().await.expect("reader is still open").is_err(),
+            "the override asked for capacity 1; buffering both events is what \
+             the manager's own default (256) would do"
+        );
+    }
+
+    /// `None` means "use the manager's own", which is what every caller that
+    /// has no tenant limit passes.
+    #[tokio::test]
+    async fn lease_without_an_override_uses_the_managers_capacity() {
+        let manager = EventQueueManager::with_capacity(1);
+        let task_id = TaskId::new("no-override");
+        let crate::streaming::QueueLease::Created { writer, reader, .. } =
+            manager.lease(&task_id, false, None).await
+        else {
+            panic!("first lease must create a queue");
+        };
+        let mut reader = reader;
+
+        writer
+            .write(make_status_event("no-override", TaskState::Working))
+            .await
+            .expect("first write");
+        writer
+            .write(make_status_event("no-override", TaskState::Completed))
+            .await
+            .expect("second write");
+
+        assert!(
+            reader.read().await.expect("reader is still open").is_err(),
+            "None must fall back to the manager's capacity of 1, not to the default"
         );
     }
 
