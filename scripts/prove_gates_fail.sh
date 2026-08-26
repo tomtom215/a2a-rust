@@ -333,6 +333,8 @@ injection_for() {
             echo "block_scalars:scripts/lib/ci_gates.sh" ;;
         *"check_cancellation_release.py"*)
             echo "cancellation_release" ;;
+        *"check_doc_escapes.py"*)
+            echo "doc_escapes" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -425,6 +427,7 @@ expected_marker() {
         workflow_gates)   echo "UNPROVEN" ;;
         block_scalars)    echo "MISMATCH" ;;
         cancellation_release) echo "no \`Drop\` that releases it" ;;
+        doc_escapes)      echo "containing a literal" ;;
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
@@ -516,6 +519,13 @@ async fn probe(f: &std::sync::atomic::AtomicBool) {
 )
 PROBE
             git add -N crates/a2a-protocol-types/src/gate_probe_slot.rs >/dev/null 2>&1 || true ;;
+        doc_escapes)
+            # The exact shape that shipped: a doc comment built as one string,
+            # with its line breaks left as the two characters `\` and `n`.
+            note_touched "crates/a2a-protocol-types/src/lib.rs"
+            printf '\n/// gate probe.\\n/// second line that is not one.\n#[allow(dead_code)]\npub struct GateProbeDocEscape;\n' \
+                >>crates/a2a-protocol-types/src/lib.rs
+            ;;
         book_code)
             # Append an `ignore`d block: the exact move that would defeat the
             # book-tests crate, since a block nothing compiles cannot fail.

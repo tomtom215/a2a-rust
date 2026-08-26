@@ -194,6 +194,15 @@ jobs:
       - name: Guard flags are released by Drop
         run: python3 scripts/check_cancellation_release.py
 
+      # A doc comment assembled by a script that wrote `\\n` where it meant a
+      # newline renders as one run-on paragraph with the escape printed in it.
+      # Five of these shipped in `tenant_config.rs` on 2026-08-20 and no gate
+      # noticed: `cargo fmt` does not reformat inside comments, clippy does not
+      # read prose, and `cargo doc -D warnings` is satisfied because the text is
+      # valid — it is just not the text anyone wrote.
+      - name: Doc comments contain no literal escapes
+        run: python3 scripts/check_doc_escapes.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})
