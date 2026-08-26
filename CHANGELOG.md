@@ -77,6 +77,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **One slow multicast consumer stalled every other member's stream**
+  (`a2a-protocol-slimrpc`). `stream_message` gave each invited agent its own
+  bounded channel — under a comment saying "a slow or silent agent cannot hold
+  up another's events" — and then awaited `send` on those channels from a single
+  shared loop. The split handles a *silent* agent, which produces no frames; it
+  does nothing for a *slow consumer*, whose full channel parks the one loop
+  every member's frames arrive through. Measured with two agents emitting 300
+  events each and one consumer never polled: the live member's stream reached
+  151 events in 25 seconds and never resumed. It now reaches 300 in 220 ms. The
+  send is non-blocking, and a member that falls behind is handed an error naming
+  how many events it missed rather than a stream with a silent hole in it —
+  the same contract the SSE fan-out already has through broadcast's `Lagged`.
+
 - **A hot-reload SIGHUP watcher could abort the process, minutes after
   startup.** `spawn_signal_watcher` registered its handler *inside* the spawned
   task, and `tokio::signal::unix::signal` panics — it does not return an error
