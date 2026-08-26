@@ -24,6 +24,15 @@
 #   --full over a tree also built without   target/ alone reached 29 GB, then
 #     CI's RUSTFLAGS (the common case)      ENOSPC, 19 gates into 53
 #
+# Re-measured on a third run the same day, which is why ADVISE went from 20 to
+# 24: starting at 20 GB free, `--full` finished with **2.8 GB left**. It passed
+# the advisory without printing anything and then consumed 17.2 GB, which is
+# 16.6 plus the churn of rebuilding the binding's target from scratch. A
+# threshold that a completing run clears by three gigabytes is not advice, it is
+# a coincidence — so the advisory is now the measured consumption plus about
+# 40%, and the floor stays where it is because it answers a different question
+# (the binding's 379-dependency build alone cannot land under it).
+#
 # Which of the two you are in is not knowable from outside target/, so this
 # **warns and continues** above a hard floor rather than refusing at the
 # advisory figure. A precheck that fires on a warm tree teaches people to pass
@@ -33,7 +42,7 @@
 #
 # The floor is where continuing is close to pointless: below it, the binding's
 # 379-dependency build alone cannot land.
-ADVISE_GB_full=20
+ADVISE_GB_full=24
 ADVISE_GB_default=10
 ADVISE_GB_fmt=0
 FLOOR_GB_full=8
