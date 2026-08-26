@@ -77,6 +77,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A hot-reload SIGHUP watcher could abort the process, minutes after
+  startup.** `spawn_signal_watcher` registered its handler *inside* the spawned
+  task, and `tokio::signal::unix::signal` panics — it does not return an error
+  — when the runtime has no signal driver, which is what a hand-built runtime
+  without `enable_all()` gives you. The panic therefore arrived after the
+  function had returned a `JoinHandle`: nothing for the caller to see coming,
+  nothing to catch, and under this workspace's release `panic = "abort"` a
+  process abort rather than one lost feature. Registration now happens
+  synchronously in `spawn_signal_watcher`, so the failure lands in the caller's
+  own startup path where it is deterministic — and the `# Panics` section is now
+  attached to the function that actually panics. The loop also stops discarding
+  the `Option` from `recv()`, which was a latent hot loop: `None` means no
+  further signals can arrive, and it answered by asking again immediately,
+  forever.
+
+- **`HotReloadAgentCardHandler` turned one panic into permanent failure.** Both
+  accessors `expect`ed on their `RwLock`, and poisoning is sticky, so a single
+  panic anywhere under the write lock made `current()` — the function that
+  answers `GetAgentCard` — panic from then on, and abort the process in release.
+  Both now recover from poisoning, which is correct rather than merely
+  convenient here: the only write is a whole-value assignment of an
+  already-constructed `AgentCard`, so no reader can observe a half-updated one.
+
 - **`InMemoryTaskStore`'s documentation described a design it does not have.**
   It said eviction "runs as a background task" and that "writers are not
   blocked during the O(n) cleanup". There is no `spawn`: the sweep is awaited
