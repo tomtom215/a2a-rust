@@ -57,14 +57,16 @@ Know what you can and cannot verify about a release:
 
 | Artifact | Signed? | How to verify |
 |---|---|---|
-| Git tags (`v0.2.0` … `v0.7.0`) | **No** | Nothing to verify. All ten release tags to date are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. A tag alone does not establish who cut the release. |
+| Git tags `v0.2.0` … `v0.7.0` | **No** | Nothing to verify. These ten are lightweight — unannotated and unsigned — so they carry no tagger identity, no date, and no signature. |
+| Git tags `v0.8.0` onward | **Not signed, but annotated** | `git cat-file -t v0.9.0` prints `tag`, and `git for-each-ref` shows a tagger and a date. That establishes *who cut the release and when*; it does not establish authenticity, because nothing is GPG/SSH-signed, so `git tag -v` still cannot verify any release. `release.yml` refuses a lightweight tag, so this holds for every future release. |
 | Release binaries / SBOMs | Yes | Attested in the release workflow; see [`PROVENANCE.md`](PROVENANCE.md). |
 | Published crates | Yes (by crates.io) | Standard crates.io registry checksums. |
 
 If you need a cryptographic link between a published version and this
 repository, use the build provenance attestations described in
-`PROVENANCE.md`, not the git tag. Signed, annotated tags are a known gap and
-have not yet been adopted.
+`PROVENANCE.md`, not the git tag. Annotation was adopted at `v0.8.0` and is
+enforced; **signing is still a known gap** and needs a maintainer key and a
+documented way for adopters to obtain it.
 
 ### What to Include
 

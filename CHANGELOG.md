@@ -472,6 +472,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changed one, and it surveys the other branches: a branch-only spec must carry
   a written disposition or CI fails until somebody triages it.
 
+- **The provenance manifest had gone stale, in the project's favour.**
+  `docs/provenance-manifest.md` is written for a downstream project's counsel —
+  the A2A project and the Linux Foundation are named in it — and nothing forced
+  it to be regenerated. It still reported 749 commits and 19.4% of history
+  passing the project's own DCO gate; re-measured at `7093af3` the figures are
+  977 commits and **39.2%**. A counsel-facing document that understates the
+  project is the harder defect to notice, because nobody is motivated to check
+  it. `release.yml` now runs `scripts/check_provenance_manifest.py`, which fails
+  a release whose manifest was measured at a different commit or whose headline
+  figures do not match a fresh run, and refuses outright on a shallow clone —
+  the truncation that made the two previous hand-derived figures wrong by 2.3x.
+
+- **`SECURITY.md` understated release-artifact verifiability.** It said all
+  release tags were lightweight and unsigned, so there was "nothing to verify".
+  `v0.8.0` and `v0.9.0` are annotated tag objects carrying a tagger and a date —
+  `release.yml`'s annotated-tag gate working, in the two releases cut since it
+  landed. Signing remains a genuine gap and is still stated as one. The same
+  stale claim is corrected in `RELEASING.md`, `ROADMAP.md` and `PROVENANCE.md`.
+
+- **`prove_workflow_gates_fail.py` could not see a new script-invoking step.**
+  It discovered gates by looking for an explicit `exit` in the step body;
+  steps whose verdict is a checker's exit code were reachable only through a
+  hand-maintained list, so *adding* one left it silently unproven. Discovery
+  now also matches a step running one of this repository's own scripts, which
+  turns a forgotten registry entry into a failed build.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

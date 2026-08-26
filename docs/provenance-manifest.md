@@ -3,7 +3,15 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-11 at `c008ab0`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-26 at `7093af3`. Regenerate with `scripts/provenance_manifest.sh`.**
+
+> Re-measured because nothing forced it to be. The figures below moved a long
+> way between `c008ab0` (2026-08-11) and this run — the share of history that
+> passes the project's own DCO gate went from 19.4% to **39.2%** — and a
+> document written for counsel that silently understates the project is as
+> much a defect as one that overstates it. `release.yml` now fails a release
+> whose manifest was measured at a different commit, so this cannot drift
+> unnoticed again.
 
 This document exists to answer one question in one pass: *what is actually in
 this repository's commit history, and what would it cost to change it?*
@@ -66,37 +74,42 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `c008ab0`, **749 commits**, spanning **2026-03-15 to 2026-08-10**.
+At `7093af3`, **977 commits**, spanning **2026-03-15 to 2026-08-26**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 749 |
-| Merge commits (`dco.yml` does not examine these) | 101 |
-| **Non-merge commits — the population `dco.yml` grades** | **648** |
+| Total reachable | 977 |
+| Merge commits (`dco.yml` does not examine these) | 107 |
+| **Non-merge commits — the population `dco.yml` grades** | **870** |
 
-Git author field, all 749 commits:
+Git author field, all 977 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 127 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 115 |
-| `github-actions[bot] <41898282+…>` | 29 |
+| `Tom F. <tomf@tomtomtech.net>` | 342 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 121 |
+| `github-actions[bot] <41898282+…>` | 36 |
 
 The two `Tom F` identities are the same person: a GitHub no-reply address used
-for web-UI edits and merges, and a real address used for local commits. 99 of
-the 115 no-reply commits are merge commits created by GitHub's merge button.
+for web-UI edits and merges, and a real address used for local commits. 105 of
+the 121 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 648 non-merge commits:
+Applying `dco.yml`'s rules to all 870 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **126** | 19.4% |
-| Fail — author `noreply@anthropic.com` | 477 | 73.6% |
-| Fail — author `github-actions[bot]` | 29 | 4.5% |
-| Fail — human author, no matching `Signed-off-by` | 16 | 2.5% |
+| **Would pass** — human author, matching `Signed-off-by` | **341** | 39.2% |
+| Fail — author `noreply@anthropic.com` | 477 | 54.8% |
+| Fail — author `github-actions[bot]` | 36 | 4.1% |
+| Fail — human author, no matching `Signed-off-by` | 16 | 1.8% |
+
+The passing count more than doubled since the previous measurement — 126 to 341
+— while every failing count stayed put except the bot's. That is the shape a
+closed pattern makes: the non-compliant population is fixed and the compliant
+one grows past it.
 
 Two facts that follow, and are not visible from the table alone:
 
@@ -106,14 +119,14 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **141 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **369 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..c008ab0` | Commits |
+| Author, `b416c1a..7093af3` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 127 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 8 |
-| `github-actions[bot]` | 6 |
+| `Tom F. <tomf@tomtomtech.net>` | 342 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 14 |
+| `github-actions[bot]` | 13 |
 
 The forward policy is doing what it claims. Whatever counsel decides about the
 history, the practice that produced it has already stopped.
@@ -164,31 +177,36 @@ mechanical. Its cost is not.
 
 **There is no partial rewrite.** The earliest commit failing `dco.yml` is
 `c6b33cb`, **the initial commit** (2026-03-15, "Initial commit", no sign-off).
-Amending it changes its SHA, and therefore the SHA of all 748 descendants.
+Amending it changes its SHA, and therefore the SHA of all 976 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **749 — all of them** |
-| Release tags that must be re-cut | **10** (`v0.2.0` … `v0.7.0`) |
-| Published crates.io releases whose source link breaks | 10 versions × 4 crates |
+| Commits whose SHA changes | **977 — all of them** |
+| Release tags that must be re-cut | **12** (`v0.2.0` … `v0.9.0`) |
+| Published crates.io releases whose source link breaks | 12 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
 
-All ten tags are lightweight (they point directly at a commit object, not an
-annotated tag object), and every one is an ancestor of `main`, so every one
-moves:
+Every tag is an ancestor of `main`, so every one moves. The first ten are
+*lightweight* — they point directly at a commit object, so they carry no tagger,
+no date and no signature. `v0.8.0` and `v0.9.0` are annotated tag objects, which
+is `release.yml`'s annotated-tag gate (added 2026-08-10) working: the two
+releases cut since it landed are the first two in this project's history that
+record who cut them and when. Neither is signed; that half remains open.
 
-| Tag | Commit | Date |
-|---|---|---|
-| `v0.2.0` | `28bface` | 2026-03-16 |
-| `v0.3.0` | `c690e44` | 2026-03-20 |
-| `v0.3.1` | `ba921b9` | 2026-03-21 |
-| `v0.3.2` | `faa2976` | 2026-03-30 |
-| `v0.3.3` | `f16ac7f` | 2026-03-31 |
-| `v0.4.0` | `0e2a216` | 2026-03-31 |
-| `v0.4.1` | `82bc4ae` | 2026-03-31 |
-| `v0.5.0` | `fae120d` | 2026-04-02 |
-| `v0.6.0` | `319c79f` | 2026-06-10 |
-| `v0.7.0` | `b416c1a` | 2026-07-24 |
+| Tag | Object | Commit | Date |
+|---|---|---|---|
+| `v0.2.0` | commit | `28bface` | 2026-03-16 |
+| `v0.3.0` | commit | `c690e44` | 2026-03-20 |
+| `v0.3.1` | commit | `ba921b9` | 2026-03-21 |
+| `v0.3.2` | commit | `faa2976` | 2026-03-30 |
+| `v0.3.3` | commit | `f16ac7f` | 2026-03-31 |
+| `v0.4.0` | commit | `0e2a216` | 2026-03-31 |
+| `v0.4.1` | commit | `82bc4ae` | 2026-03-31 |
+| `v0.5.0` | commit | `fae120d` | 2026-04-02 |
+| `v0.6.0` | commit | `319c79f` | 2026-06-10 |
+| `v0.7.0` | commit | `b416c1a` | 2026-07-24 |
+| `v0.8.0` | **tag** | `031fa56` | 2026-08-14 |
+| `v0.9.0` | **tag** | `5012e90` | 2026-08-17 |
 
 The trade being offered is therefore explicit: **verifiable supply-chain
 metadata is destroyed to gain a formality that `PROVENANCE.md` §2 already

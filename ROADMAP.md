@@ -686,15 +686,15 @@ This is the category most worth clearing before any external review.
 
 ## Release engineering and supply chain
 
-* **Signed tags.** All ten release tags (`v0.2.0` … `v0.7.0`) are lightweight:
+* **Signed tags.** Ten release tags (`v0.2.0` … `v0.7.0`) are lightweight:
   no tagger, no date, no signature, despite `RELEASING.md` prescribing
   `git tag -a`. Adopting `git tag -s` needs a maintainer key and a documented
   way for adopters to obtain it — an unmade decision, not just a missing
   step. See [`RELEASING.md`](RELEASING.md).
-  **Half of this is closed as of 2026-08-10:** `release.yml` now fails the
-  release if the pushed tag is not an annotated tag, so an eleventh
-  lightweight tag cannot be created through the GitHub UI without stopping
-  the workflow. The signing half is unchanged and still needs the key
+  **Half of this is closed as of 2026-08-10, and confirmed since:**
+  `release.yml` fails the release if the pushed tag is not an annotated tag,
+  and the two releases cut under it — `v0.8.0` and `v0.9.0` — are annotated
+  tag objects carrying a tagger and a date. The signing half is unchanged and still needs the key
   decision; the check deliberately does not require a signature, because a
   gate for a key that does not exist could never fail.
 * **PGP key for security reports.** `SECURITY.md` has none, so emailed

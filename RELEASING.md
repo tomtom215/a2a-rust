@@ -101,8 +101,8 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-> **Known gap — the existing tags do not match this step.** All ten release
-> tags to date (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
+> **Known gap — the first ten tags do not match this step.** Ten release
+> tags (`v0.2.0` … `v0.7.0`) are *lightweight*: bare refs to a commit,
 > with no tagger, no date, and no signature. `git cat-file -t v0.7.0` prints
 > `commit`, not `tag`. The `-a` above was documented but not applied in
 > practice — creating a release through the GitHub UI produces a lightweight
@@ -129,6 +129,10 @@ git push origin vX.Y.Z
 > delete-and-recreate commands in the error. Creating the release through the
 > GitHub UI will now stop the workflow rather than quietly produce an
 > eleventh lightweight tag.
+>
+> **And it worked.** The two releases cut since — `v0.8.0` and `v0.9.0` — are
+> both annotated tag objects, the first two in this project's history that
+> record a tagger and a date. Neither is signed; that half is still open.
 >
 > That check deliberately does **not** require a signature. A gate for a key
 > that does not exist could never fail, and would read as signing coverage

@@ -52,11 +52,13 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # RELEASING.md step 3 says `git tag -a`. All ten tags to date are
+      # RELEASING.md step 3 says `git tag -a`. The first ten tags are
       # lightweight anyway — bare refs with no tagger, no date, no message —
       # because creating a release through the GitHub UI produces one. The
       # instruction was documented and not applied, and nothing noticed for
-      # ten releases. This is the check that notices.
+      # ten releases. This is the check that notices, and it has since worked:
+      # v0.8.0 and v0.9.0 are annotated tag objects, the first two releases in
+      # this project's history that record who cut them and when.
       #
       # Annotated, not signed. Signing needs a maintainer key and a published
       # way for adopters to obtain it, which is a decision this workflow
@@ -82,6 +84,20 @@ jobs:
             exit 1
           fi
           printf 'Tagger: %s\n' "$(git for-each-ref "refs/tags/$TAG" --format='%(taggername) %(taggerdate:iso)')"
+
+      # docs/provenance-manifest.md is written for a downstream project's
+      # counsel — the A2A project and the Linux Foundation are named in it —
+      # and nothing forced it to be regenerated. It drifted by 228 commits
+      # between 2026-08-11 and 2026-08-26, in the project's favour: it still
+      # claimed 19.4% of history passed the DCO gate when the true figure had
+      # reached 39.2%. A counsel-facing document that understates the project
+      # is the harder defect to notice, because nobody is motivated to check.
+      #
+      # Release-time rather than per-commit on purpose: every commit moves
+      # these counts, so a per-commit gate would fail constantly and be routed
+      # around. The release is the only moment the figures are cited.
+      - name: Provenance manifest describes the commit being released
+        run: ./scripts/check_provenance_manifest.py "$GITHUB_SHA"
 
       - name: Extract version metadata
         id: meta
