@@ -57,6 +57,7 @@ fn failure_callbacks_reach_their_instruments() {
         crate::metrics::push_outcome::DELIVERED,
         crate::metrics::push_outcome::FAILED,
         crate::metrics::push_outcome::TIMEOUT,
+        crate::metrics::push_outcome::SKIPPED,
     ] {
         metrics.on_push_delivery(outcome);
     }

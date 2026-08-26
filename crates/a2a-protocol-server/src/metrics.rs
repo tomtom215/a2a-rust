@@ -149,6 +149,16 @@ pub mod push_outcome {
     pub const FAILED: &str = "failed";
     /// The delivery did not complete within the configured timeout.
     pub const TIMEOUT: &str = "timeout";
+    /// The per-event delivery budget ran out before this config was reached,
+    /// so nothing was sent to it at all.
+    ///
+    /// Distinct from [`TIMEOUT`], which means a delivery was attempted and did
+    /// not finish. A skipped config was never contacted. The two need separate
+    /// labels because they call for different responses: a timeout points at
+    /// one webhook, a run of skips points at the arithmetic between
+    /// `max_push_configs_per_task`, `push_delivery_timeout` and the 30-second
+    /// per-event budget.
+    pub const SKIPPED: &str = "skipped";
 }
 
 /// A no-op [`Metrics`] implementation that discards all events.

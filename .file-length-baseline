@@ -113,7 +113,6 @@ crates/a2a-protocol-server/tests/push_sender_tests.rs
 crates/a2a-protocol-server/tests/soak_multi_replica.rs
 crates/a2a-protocol-server/tests/tenant_sqlite_store_tests.rs
 crates/a2a-protocol-server/tests/validation_edge_tests.rs
-crates/a2a-protocol-types/src/agent_card.rs
 crates/a2a-protocol-types/src/error.rs
 crates/a2a-protocol-types/src/jsonrpc.rs
 crates/a2a-protocol-types/src/lib.rs
