@@ -545,38 +545,65 @@ mod tests {
         );
     }
 
+    /// A disconnected client must stop the writer loop, and the loop stopping
+    /// must be observable — otherwise a leaked task keeps reading a queue
+    /// nobody is listening to for the lifetime of the process.
+    ///
+    /// This asserted nothing until 2026-08-19. It dropped the response, slept
+    /// 50ms, wrote one event with `let _ =` under a comment saying the result
+    /// "may or may not succeed depending on timing", and ended. It could not
+    /// fail. What makes the behaviour observable is the *second* write: the
+    /// loop only learns the client is gone when a send fails, so the first
+    /// write is the one that teaches it and the second is the one that finds
+    /// the reader dropped and no subscribers left.
     #[tokio::test]
     async fn build_sse_response_client_disconnect_stops_stream() {
-        // Covers lines 160-161: send_event returns Err when client disconnects.
         use crate::streaming::event_queue::EventQueueWriter;
         use a2a_protocol_types::events::{StreamResponse, TaskStatusUpdateEvent};
         use a2a_protocol_types::task::{ContextId, TaskId, TaskState, TaskStatus};
 
-        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
+        let event = || {
+            StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
+                task_id: TaskId::new("t1"),
+                context_id: ContextId::new("c1"),
+                status: TaskStatus {
+                    state: TaskState::Working,
+                    message: None,
+                    timestamp: None,
+                },
+                metadata: None,
+            })
+        };
 
+        let (writer, reader) = crate::streaming::event_queue::new_in_memory_queue();
         let response = build_sse_response(reader, None, None, Some(Some(serde_json::json!(1))));
 
-        // Drop the response body (simulating client disconnect).
+        // The client goes away: dropping the response drops the body receiver.
         drop(response);
-
-        // Give the background task a moment to notice the disconnect.
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        // Writing after client disconnect should still succeed at the queue level
-        // (the SSE writer loop will break when it can't send).
-        let event = StreamResponse::StatusUpdate(TaskStatusUpdateEvent {
-            task_id: TaskId::new("t1"),
-            context_id: ContextId::new("c1"),
-            status: TaskStatus {
-                state: TaskState::Working,
-                message: None,
-                timestamp: None,
-            },
-            metadata: None,
-        });
-        // The queue write may or may not succeed depending on timing.
-        let _ = writer.write(event).await;
-        drop(writer);
+        // The loop is still parked on `reader.read()` and has not yet tried to
+        // send anything, so it does not know. This write is what tells it.
+        writer
+            .write(event())
+            .await
+            .expect("the reader is still subscribed until the loop notices");
+
+        // Let the loop wake, fail its send, break, and drop the reader. Poll
+        // rather than sleeping a fixed amount: the exit is what is being
+        // asserted, and a fixed sleep either flakes or is far too long.
+        let mut observed_shutdown = false;
+        for _ in 0..200 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            if writer.write(event()).await.is_err() {
+                observed_shutdown = true;
+                break;
+            }
+        }
+        assert!(
+            observed_shutdown,
+            "the writer loop never dropped its reader after the client disconnected"
+        );
     }
 
     #[tokio::test]
