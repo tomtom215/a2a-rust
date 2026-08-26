@@ -39,6 +39,9 @@ mod demo;
 mod hardening;
 mod serving;
 
+#[cfg(test)]
+mod tests;
+
 use std::time::Duration;
 
 use a2a_protocol_server::request_context::RequestContext;

@@ -135,7 +135,7 @@ makes, and it is a materially stronger position than the document was stating.
 
    | example | LOC | files with tests |
    |---|---:|---:|
-   | `incident-response` | 3,498 | **0** |
+   | ~~`incident-response`~~ | 3,498 | **21 tests, added 2026-08-26** |
    | `harness` | 920 | 0 |
    | `echo-agent` | 692 | 0 |
    | `multi-lang-team` | 679 | 0 |
@@ -145,8 +145,12 @@ makes, and it is a materially stronger position than the document was stating.
    | `hello-agent` | 142 | 0 |
    | `agent-team` | 8,911 | 16 |
 
-   `incident-response` at 3,498 lines with nothing exercising it is the one a
-   reviewer will name.
+   `incident-response` was the one a reviewer would name, and now has 21 tests
+   covering all three executors — the pause, the question, the held alert, its
+   release on cancel, and the deterministic log search — running offline in
+   0.1s under `cargo test --workspace`. The seven remaining examples are
+   untested; `harness` at 920 lines is the next one worth doing, because the
+   other examples depend on it.
 6. **`docs/rust-sdk-assessment.md` is a dated deliverable addressed to "Linux
    Foundation / A2A project technical leadership"** whose figures (608 commits,
    ten tags) are superseded. It carries its date, which is defensible, but a

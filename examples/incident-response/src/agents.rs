@@ -30,6 +30,9 @@ use crate::{
     send_params, try_llm, user_message, INCIDENT_LOG, RUNBOOKS,
 };
 
+#[cfg(test)]
+mod tests;
+
 // ── Agent 1: logs — a deterministic tool agent (no LLM) ─────────────────────
 
 /// Searches the bundled service log for lines mentioning a service.
