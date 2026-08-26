@@ -35,7 +35,7 @@ mod transport_factory;
 
 use std::time::Duration;
 
-use a2a_protocol_types::AgentCard;
+use a2a_protocol_types::{AgentCard, AgentInterface};
 
 use crate::config::{ClientConfig, TlsConfig};
 use crate::error::{ClientError, ClientResult};
@@ -96,6 +96,34 @@ pub struct ClientBuilder {
     pub(super) config: ClientConfig,
     pub(super) preferred_binding: Option<String>,
     pub(super) retry_policy: Option<RetryPolicy>,
+    /// The card's interfaces, when this builder came from one; empty otherwise.
+    ///
+    /// Retained so that [`ClientBuilder::with_protocol_binding`] can move the
+    /// endpoint along with the binding. A card advertises each binding at its
+    /// own URL, so the two are a pair; changing one without the other points
+    /// the client at the wrong port.
+    pub(super) card_interfaces: Vec<AgentInterface>,
+}
+
+/// The interface to talk to: the first of `preferences` the card offers, or
+/// the card's own first interface when it offers none of them.
+///
+/// Comparison is ASCII-case-insensitive. The spec's canonical binding names are
+/// upper-case (`"JSONRPC"`, `"GRPC"`, `"HTTP+JSON"`), and a card written by
+/// hand or by another SDK may not match that exactly — matching case-sensitively
+/// would reintroduce, quietly, the same "preference that does not apply" this
+/// function exists to fix.
+fn select_interface<'a>(card: &'a AgentCard, preferences: &[String]) -> Option<&'a AgentInterface> {
+    for wanted in preferences {
+        if let Some(iface) = card
+            .supported_interfaces
+            .iter()
+            .find(|i| i.protocol_binding.eq_ignore_ascii_case(wanted))
+        {
+            return Some(iface);
+        }
+    }
+    card.supported_interfaces.first()
 }
 
 impl ClientBuilder {
@@ -112,20 +140,48 @@ impl ClientBuilder {
             config: ClientConfig::default(),
             preferred_binding: None,
             retry_policy: None,
+            card_interfaces: Vec::new(),
         }
     }
 
-    /// Creates a builder pre-configured from an [`AgentCard`].
-    ///
-    /// Selects the first supported interface from the card. Logs a warning
-    /// (via `tracing`, if enabled) if the agent's protocol version is not
-    /// in the supported range.
+    /// Creates a builder pre-configured from an [`AgentCard`], preferring the
+    /// bindings in [`ClientConfig::preferred_bindings`] order.
     ///
     /// # Errors
     ///
     /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
     pub fn from_card(card: &AgentCard) -> ClientResult<Self> {
-        let first = card.supported_interfaces.first().ok_or_else(|| {
+        Self::from_card_preferring(card, &ClientConfig::default().preferred_bindings)
+    }
+
+    /// Creates a builder from an [`AgentCard`], choosing the first interface
+    /// whose binding appears in `preferences`.
+    ///
+    /// `preferences` is the *client's* order, not the card's: the first
+    /// preference the agent actually offers wins. When the agent offers none
+    /// of them, the card's first interface is used, because an agent that
+    /// speaks only bindings this caller did not rank is still worth talking to
+    /// — and failing to connect would be a worse answer than connecting over
+    /// something unranked.
+    ///
+    /// # Why this exists
+    ///
+    /// [`ClientConfig::preferred_bindings`] has documented exactly this since
+    /// it was introduced — *"the client tries each in order, selecting the
+    /// first one supported by the target agent's card"* — and nothing read the
+    /// field. `from_card` took `supported_interfaces.first()`, which is the
+    /// **agent's** first choice, inverting the preference the field describes.
+    /// A caller who ranked `GRPC` first and met a card listing
+    /// `[JSONRPC, GRPC]` silently got JSONRPC.
+    ///
+    /// Logs a warning (via `tracing`, if enabled) when the agent's protocol
+    /// version is outside the supported range.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::InvalidEndpoint`] if the card has no interfaces.
+    pub fn from_card_preferring(card: &AgentCard, preferences: &[String]) -> ClientResult<Self> {
+        let first = select_interface(card, preferences).ok_or_else(|| {
             ClientError::InvalidEndpoint("agent card has no supported interfaces".into())
         })?;
         let (endpoint, binding) = (first.url.clone(), first.protocol_binding.clone());
@@ -145,13 +201,19 @@ impl ClientBuilder {
             endpoint,
             transport_override: None,
             interceptors: InterceptorChain::new(),
-            // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
             config: ClientConfig {
+                // Preserve tenant from AgentInterface for multi-tenancy (Java #772).
                 tenant: first.tenant.clone(),
+                // Record the ranking that actually chose the interface. Leaving
+                // this at the default would put the builder back in the state
+                // this method exists to fix: a `preferred_bindings` that does
+                // not describe the preference that was applied.
+                preferred_bindings: preferences.to_vec(),
                 ..ClientConfig::default()
             },
             preferred_binding: Some(binding),
             retry_policy: None,
+            card_interfaces: card.supported_interfaces.clone(),
         })
     }
 
@@ -195,12 +257,35 @@ impl ClientBuilder {
         self
     }
 
-    /// Sets the preferred protocol binding.
+    /// Sets the protocol binding, overriding any derived from the agent card.
     ///
-    /// Overrides any binding derived from the agent card.
+    /// When this builder came from [`ClientBuilder::from_card`] and the card
+    /// advertises `binding`, the endpoint and tenant move to that interface
+    /// too. A card gives each binding its own URL, so binding and endpoint are
+    /// a pair: setting only the binding left the client speaking the new
+    /// protocol to the old one's port — a card offering `JSONRPC` at `:1111`
+    /// and `GRPC` at `:2222` produced gRPC-against-`:1111`, with no error.
+    ///
+    /// If the card does not advertise `binding` — or the builder came from
+    /// [`ClientBuilder::new`] — only the binding changes and the endpoint is
+    /// left as the caller set it. There is nothing to resolve against, and the
+    /// caller is assumed to know their own URL.
+    ///
+    /// Ordering: this re-resolves the tenant from the card, so call
+    /// [`ClientBuilder::with_tenant`] *after* this to override it.
     #[must_use]
     pub fn with_protocol_binding(mut self, binding: impl Into<String>) -> Self {
-        self.preferred_binding = Some(binding.into());
+        let binding = binding.into();
+        let resolved = self
+            .card_interfaces
+            .iter()
+            .find(|i| i.protocol_binding.eq_ignore_ascii_case(&binding))
+            .map(|i| (i.url.clone(), i.tenant.clone()));
+        if let Some((url, tenant)) = resolved {
+            self.endpoint = url;
+            self.config.tenant = tenant;
+        }
+        self.preferred_binding = Some(binding);
         self
     }
 
@@ -299,7 +384,251 @@ impl std::fmt::Debug for ClientBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::{BINDING_GRPC, BINDING_HTTP_JSON, BINDING_JSONRPC, BINDING_REST};
     use std::time::Duration;
+
+    // ── binding preference ────────────────────────────────────────────────
+    //
+    // `ClientConfig::preferred_bindings` documents that "the client tries each
+    // in order, selecting the first one supported by the target agent's card".
+    // Nothing read the field: `from_card` took `supported_interfaces.first()`,
+    // which is the *agent's* first choice. These tests are built so that the
+    // two orders disagree — the card below lists JSONRPC first and GRPC second,
+    // so "caller's preference" and "card's first" name different URLs. A test
+    // on a single-interface card would pass under either behaviour and prove
+    // nothing.
+
+    fn card_with(interfaces: Vec<a2a_protocol_types::AgentInterface>) -> AgentCard {
+        use a2a_protocol_types::AgentCapabilities;
+
+        AgentCard {
+            url: None,
+            name: "prefs".into(),
+            version: "1.0".into(),
+            description: "Binding preference fixture".into(),
+            supported_interfaces: interfaces,
+            provider: None,
+            icon_url: None,
+            documentation_url: None,
+            capabilities: AgentCapabilities::none(),
+            security_schemes: None,
+            security_requirements: None,
+            default_input_modes: vec![],
+            default_output_modes: vec![],
+            skills: vec![],
+            signatures: None,
+        }
+    }
+
+    fn iface(binding: &str, url: &str) -> a2a_protocol_types::AgentInterface {
+        a2a_protocol_types::AgentInterface {
+            url: url.into(),
+            protocol_binding: binding.into(),
+            protocol_version: "1.0.0".into(),
+            tenant: None,
+        }
+    }
+
+    /// JSONRPC at `:1111` first, GRPC at `:2222` second.
+    fn jsonrpc_then_grpc() -> AgentCard {
+        card_with(vec![
+            iface(BINDING_JSONRPC, "http://localhost:1111"),
+            iface(BINDING_GRPC, "http://localhost:2222"),
+        ])
+    }
+
+    #[test]
+    fn from_card_prefers_the_callers_binding_order_over_the_cards() {
+        let builder =
+            ClientBuilder::from_card_preferring(&jsonrpc_then_grpc(), &[BINDING_GRPC.into()])
+                .expect("from_card_preferring");
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:2222",
+            "the caller ranked GRPC; the card's first interface is JSONRPC. \
+             Taking the card's order would give :1111"
+        );
+        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_GRPC));
+    }
+
+    #[test]
+    fn a_later_preference_wins_when_the_earlier_one_is_not_offered() {
+        let builder = ClientBuilder::from_card_preferring(
+            &jsonrpc_then_grpc(),
+            &[BINDING_HTTP_JSON.into(), BINDING_GRPC.into()],
+        )
+        .expect("from_card_preferring");
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:2222",
+            "HTTP+JSON is unavailable, so the second preference (GRPC) applies"
+        );
+    }
+
+    #[test]
+    fn an_unmatched_preference_falls_back_to_the_cards_first_interface() {
+        let builder =
+            ClientBuilder::from_card_preferring(&jsonrpc_then_grpc(), &[BINDING_HTTP_JSON.into()])
+                .expect("from_card_preferring");
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:1111",
+            "no ranked binding is offered, so the card's own first choice is used"
+        );
+        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_JSONRPC));
+    }
+
+    #[test]
+    fn an_empty_preference_list_takes_the_cards_first_interface() {
+        let builder = ClientBuilder::from_card_preferring(&jsonrpc_then_grpc(), &[])
+            .expect("from_card_preferring");
+
+        assert_eq!(builder.endpoint, "http://localhost:1111");
+    }
+
+    #[test]
+    fn binding_preference_matches_case_insensitively() {
+        // The spec's names are upper-case, but a card written by hand or by
+        // another SDK may not be. Case-sensitive matching would silently
+        // reintroduce "a preference that does not apply".
+        let builder =
+            ClientBuilder::from_card_preferring(&jsonrpc_then_grpc(), &["gRpC".to_owned()])
+                .expect("from_card_preferring");
+
+        assert_eq!(builder.endpoint, "http://localhost:2222");
+    }
+
+    #[test]
+    fn from_card_applies_the_default_preference_list() {
+        // Card offers GRPC *first*. The default preference is JSONRPC, so a
+        // plain `from_card` must reach past the card's first entry.
+        let card = card_with(vec![
+            iface(BINDING_GRPC, "http://localhost:2222"),
+            iface(BINDING_JSONRPC, "http://localhost:1111"),
+        ]);
+
+        let builder = ClientBuilder::from_card(&card).expect("from_card");
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:1111",
+            "from_card must honour ClientConfig's default preference (JSONRPC), \
+             not the card's own first entry (GRPC)"
+        );
+        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_JSONRPC));
+    }
+
+    #[test]
+    fn a_single_interface_card_is_used_whatever_the_preference() {
+        let card = card_with(vec![iface(BINDING_JSONRPC, "http://localhost:1111")]);
+
+        let builder = ClientBuilder::from_card_preferring(&card, &[BINDING_GRPC.into()])
+            .expect("from_card_preferring");
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:1111",
+            "an agent that speaks nothing the caller ranked is still worth \
+             talking to; refusing to connect would be a worse answer"
+        );
+    }
+
+    #[test]
+    fn the_applied_preference_is_recorded_in_the_built_config() {
+        // A config whose `preferred_bindings` does not describe the preference
+        // that was actually applied is the same defect one layer down.
+        let prefs = vec![BINDING_GRPC.to_owned(), BINDING_JSONRPC.to_owned()];
+        let builder = ClientBuilder::from_card_preferring(&jsonrpc_then_grpc(), &prefs)
+            .expect("from_card_preferring");
+
+        assert_eq!(builder.config.preferred_bindings, prefs);
+    }
+
+    // ── binding and endpoint move together ────────────────────────────────
+    //
+    // Measured before the fix: `from_card(&jsonrpc_then_grpc())
+    // .with_protocol_binding(GRPC)` produced endpoint `http://localhost:1111`
+    // — the JSONRPC interface's URL — with binding `GRPC`. The card advertises
+    // GRPC at `:2222`. The client would have spoken gRPC to the JSON-RPC port,
+    // and nothing reported it.
+
+    #[test]
+    fn switching_binding_on_a_card_builder_moves_the_endpoint_too() {
+        let builder = ClientBuilder::from_card(&jsonrpc_then_grpc())
+            .expect("from_card")
+            .with_protocol_binding(BINDING_GRPC);
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:2222",
+            "the card advertises GRPC at :2222; keeping :1111 would speak gRPC \
+             to the JSON-RPC port"
+        );
+        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_GRPC));
+    }
+
+    #[test]
+    fn switching_binding_carries_that_interfaces_tenant() {
+        let card = card_with(vec![
+            iface(BINDING_JSONRPC, "http://localhost:1111"),
+            a2a_protocol_types::AgentInterface {
+                tenant: Some("grpc-tenant".into()),
+                ..iface(BINDING_GRPC, "http://localhost:2222")
+            },
+        ]);
+
+        let builder = ClientBuilder::from_card(&card)
+            .expect("from_card")
+            .with_protocol_binding(BINDING_GRPC);
+
+        assert_eq!(
+            builder.config.tenant.as_deref(),
+            Some("grpc-tenant"),
+            "tenant is per-interface; the old interface's tenant does not \
+             survive a move to a different one"
+        );
+    }
+
+    #[test]
+    fn with_tenant_after_a_binding_switch_wins() {
+        let builder = ClientBuilder::from_card(&jsonrpc_then_grpc())
+            .expect("from_card")
+            .with_protocol_binding(BINDING_GRPC)
+            .with_tenant("explicit");
+
+        assert_eq!(builder.config.tenant.as_deref(), Some("explicit"));
+    }
+
+    #[test]
+    fn switching_to_a_binding_the_card_lacks_leaves_the_endpoint_alone() {
+        let builder = ClientBuilder::from_card(&jsonrpc_then_grpc())
+            .expect("from_card")
+            .with_protocol_binding(BINDING_HTTP_JSON);
+
+        assert_eq!(
+            builder.endpoint, "http://localhost:1111",
+            "nothing to resolve against, so the caller's endpoint stands"
+        );
+        assert_eq!(
+            builder.preferred_binding.as_deref(),
+            Some(BINDING_HTTP_JSON)
+        );
+    }
+
+    #[test]
+    fn a_plain_new_builder_keeps_its_endpoint_across_a_binding_switch() {
+        // Every call site in this repository and its book is `new(url)
+        // .with_protocol_binding(..)`. That must keep working untouched.
+        let builder =
+            ClientBuilder::new("http://localhost:8080").with_protocol_binding(BINDING_REST);
+
+        assert_eq!(builder.endpoint, "http://localhost:8080");
+        assert_eq!(builder.preferred_binding.as_deref(), Some(BINDING_REST));
+    }
+
+    #[test]
+    fn from_card_preferring_rejects_a_card_with_no_interfaces() {
+        let result =
+            ClientBuilder::from_card_preferring(&card_with(vec![]), &[BINDING_GRPC.into()]);
+        assert!(result.is_err(), "empty interfaces should return error");
+    }
 
     #[test]
     fn builder_from_card_uses_card_url() {

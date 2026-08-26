@@ -99,6 +99,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ClientConfig::preferred_bindings` selected nothing.** The field documented
+  an ordered client preference — *"the client tries each in order, selecting the
+  first one supported by the target agent's card"* — and no code read it.
+  `ClientBuilder::from_card` took `supported_interfaces.first()`, which is the
+  **agent's** first choice, the inverse of the preference the field describes;
+  the builder consulted a different, singular field with almost the same name.
+  A caller who ranked `GRPC` and met a card advertising `[JSONRPC, GRPC]`
+  silently got JSONRPC. `from_card` now honours the default preference list, and
+  the new `ClientBuilder::from_card_preferring(card, preferences)` takes an
+  explicit one. Matching is ASCII-case-insensitive, because the spec's binding
+  names are upper-case and cards written by hand are not always. The resulting
+  config records the preference that was applied rather than the default.
+
+- **`with_protocol_binding` moved the binding and left the endpoint behind.** An
+  agent card gives each binding its own URL, so the two are a pair. Measured
+  against a card advertising JSONRPC at `:1111` and GRPC at `:2222`,
+  `from_card(card).with_protocol_binding("GRPC")` produced binding `GRPC` at
+  endpoint `:1111` — a client that would speak gRPC to the JSON-RPC port, with
+  no error anywhere. A builder created from a card now retains that card's
+  interfaces and moves the endpoint and tenant with the binding. Builders made
+  with `ClientBuilder::new` are unaffected, which is every
+  `with_protocol_binding` call site in this repository and its book.
+
 - **One slow multicast consumer stalled every other member's stream**
   (`a2a-protocol-slimrpc`). `stream_message` gave each invited agent its own
   bounded channel — under a comment saying "a slow or silent agent cannot hold

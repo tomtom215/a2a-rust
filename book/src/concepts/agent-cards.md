@@ -124,7 +124,9 @@ let interface = AgentInterface {
 
 An agent must have at least one interface. Having multiple interfaces (e.g., JSON-RPC and REST) lets clients choose their preferred transport.
 
-When building a client via `ClientBuilder::from_card()`, the `tenant` field from the selected interface is automatically preserved in `ClientConfig::tenant` and applied to all requests.
+The choice is the *client's*, not the card's. `ClientBuilder::from_card()` walks `ClientConfig::preferred_bindings` in order and takes the first binding the card offers, falling back to the card's first interface only when it offers none of them. Pass your own order with `ClientBuilder::from_card_preferring(&card, &["GRPC".into()])`.
+
+Because a card gives each binding its own URL, the endpoint follows the binding: selecting `GRPC` selects that interface's `url` and `tenant` as well. The `tenant` field from the selected interface is preserved in `ClientConfig::tenant` and applied to all requests.
 
 ## Extended Agent Card
 
