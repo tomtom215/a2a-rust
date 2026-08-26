@@ -112,6 +112,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how many events it missed rather than a stream with a silent hole in it —
   the same contract the SSE fan-out already has through broadcast's `Lagged`.
 
+- **Concurrent creates walked straight through the per-task push-config cap.**
+  `max_push_configs_per_task` is enforced by reading the task's configs,
+  deciding, then storing — two `.await` points apart, with nothing held across
+  them. Every concurrent caller read a count under the cap and every one of
+  them stored. Measured against a cap of 5 with 32 concurrent creates, three
+  runs stored 12, 17 and **32** — the last being all of them, a documented
+  ceiling doing nothing at all. Unlike the task store's transient overshoot
+  this was permanent: nothing re-checks a stored config. The sequence now holds
+  a per-task lock, reusing the same bounded facility `SendMessage` already used
+  against the identical race on `context_id`; the same three runs now store
+  exactly 5. The *global* cap remains approximate across distinct tasks
+  (measured 10, 5, 5 against a cap of 5) — making it exact means one
+  server-wide lock on every create, which is a throughput decision rather than
+  a bug fix, and is recorded as backlog B20.
+
+- **`with_stream_connect_timeout` did nothing on the gRPC transport.**
+  `ClientBuilder` carries three timeouts and `build_grpc` passed two, dropping
+  the third; the gRPC transport then bounded a stream's first event on the
+  *unary request* timeout instead. Both default to 30 seconds, so the knob only
+  failed once you set it — and the sync `build()` path even rejects a zero
+  value for it while `build_grpc` silently accepted one. `build_grpc` now
+  validates and passes it, and the transport gained
+  `with_stream_connect_timeout` (on the transport rather than on
+  `GrpcTransportConfig`, whose public fields make adding one a breaking
+  change). REST and JSON-RPC were already correct; the WebSocket transport has
+  no such knob and consistently uses its own.
+
 - **A hot-reload SIGHUP watcher could abort the process, minutes after
   startup.** `spawn_signal_watcher` registered its handler *inside* the spawned
   task, and `tokio::signal::unix::signal` panics — it does not return an error

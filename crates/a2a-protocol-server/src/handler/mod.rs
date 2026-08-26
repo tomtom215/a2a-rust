@@ -25,6 +25,8 @@ mod helpers;
 mod introspection;
 mod lifecycle;
 mod limits;
+/// Per-key locks shared by the messaging and push-config paths.
+mod locks;
 mod messaging;
 mod push_config;
 mod shutdown;
@@ -99,9 +101,9 @@ pub struct RequestHandler {
     pub(crate) declared_extensions: Vec<String>,
     /// Cancellation tokens for in-flight tasks (keyed by [`TaskId`]).
     pub(crate) cancellation_tokens: Arc<tokio::sync::RwLock<HashMap<TaskId, CancellationEntry>>>,
-    /// Per-context-ID locks to serialize find + save operations for the same
-    /// context, preventing two concurrent `SendMessage` requests from both
-    /// creating new tasks for the same `context_id`.
+    /// Per-key locks that serialise a check-then-act sequence, for the two
+    /// callers that need one. See [`locks`](self::locks) for who, why, and
+    /// how the map is bounded.
     pub(crate) context_locks:
         Arc<tokio::sync::RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
 }

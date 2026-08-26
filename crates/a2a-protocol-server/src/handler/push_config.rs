@@ -75,6 +75,22 @@ impl RequestHandler {
         // config for a task already at the cap is rejected; updating an
         // existing config (matching id) is always allowed.
         let task_key = config.task_id.clone().unwrap_or_default();
+
+        // Held across the read → decide → write below, because that sequence
+        // spans two `.await` points and the cap is only as good as its
+        // atomicity. Without it, concurrent creates each read a count under
+        // the cap and each store: MEASURED 2026-08-19 against a cap of 5 with
+        // 32 concurrent creates, three runs admitted 12, 17 and 32 — the last
+        // being every single one, a documented ceiling doing nothing at all.
+        // Unlike the task store's transient overshoot this one is permanent:
+        // nothing re-checks or evicts a config once it is stored.
+        //
+        // Keyed per task, so creates for different tasks still run
+        // concurrently. The `push:` prefix keeps this out of the way of
+        // `SendMessage`'s context-keyed locks in the same map.
+        let cap_lock = self.keyed_lock(&format!("push:{task_key}")).await;
+        let _cap_guard = cap_lock.lock().await;
+
         let existing = self.push_config_store.list(&task_key).await?;
         let is_update = config
             .id
@@ -90,6 +106,18 @@ impl RequestHandler {
         // Global (per-tenant, for tenant stores) ceiling so configs spread
         // across many distinct task ids cannot grow a SQL-backed store
         // without bound. Only enforced when the backend reports a count.
+        //
+        // This one is still approximate under concurrency, and deliberately
+        // so. The lock above is keyed per task, so creates for *different*
+        // tasks reach this check together: MEASURED 2026-08-19, a cap of 5
+        // against 32 concurrent creates for 32 distinct tasks admitted 10, 5
+        // and 5 across three runs. A bounded overshoot does not defeat what
+        // this ceiling is for — it exists so unboundedly many task ids cannot
+        // grow the store without limit, and it still does that.
+        //
+        // Making it exact means one server-wide lock around every push-config
+        // create, which is a throughput decision for the deployment rather
+        // than a bug fix. Recorded as backlog B20.
         if !is_update {
             if let Some(total) = self.push_config_store.count().await? {
                 if total >= self.limits.max_total_push_configs {
@@ -367,6 +395,158 @@ mod tests {
             metadata: None,
         };
         handler.task_store.save(&task).await.unwrap();
+    }
+
+    // ── Fixtures for the concurrency test below ──────────────────────────────
+
+    /// A push sender that accepts everything; the test is about the cap, not
+    /// delivery.
+    #[derive(Debug)]
+    struct CapTestSender;
+
+    impl crate::push::PushSender for CapTestSender {
+        fn send<'a>(
+            &'a self,
+            _url: &'a str,
+            _event: &'a a2a_protocol_types::events::StreamResponse,
+            _config: &'a TaskPushNotificationConfig,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<()>>
+                    + Send
+                    + 'a,
+            >,
+        > {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    /// The in-memory store with a deliberate stall inside `list`, so the
+    /// read → decide → write window is wide enough to lose reliably.
+    ///
+    /// Without it the race is real but rare: the first version of the test
+    /// below used the plain store and, with the fix removed, still passed on
+    /// two runs out of three, because the window on a `HashMap` is a few
+    /// microseconds wide. 20ms makes it certain rather than lucky.
+    #[derive(Debug, Default)]
+    struct SlowListStore(crate::push::InMemoryPushConfigStore);
+
+    type StoreFuture<'a, T> = std::pin::Pin<
+        Box<dyn std::future::Future<Output = a2a_protocol_types::error::A2aResult<T>> + Send + 'a>,
+    >;
+
+    impl crate::push::PushConfigStore for SlowListStore {
+        fn set(
+            &self,
+            config: TaskPushNotificationConfig,
+        ) -> StoreFuture<'_, TaskPushNotificationConfig> {
+            self.0.set(config)
+        }
+        fn get<'a>(
+            &'a self,
+            task_id: &'a str,
+            id: &'a str,
+        ) -> StoreFuture<'a, Option<TaskPushNotificationConfig>> {
+            self.0.get(task_id, id)
+        }
+        fn list<'a>(
+            &'a self,
+            task_id: &'a str,
+        ) -> StoreFuture<'a, Vec<TaskPushNotificationConfig>> {
+            Box::pin(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+                self.0.list(task_id).await
+            })
+        }
+        fn delete<'a>(&'a self, task_id: &'a str, id: &'a str) -> StoreFuture<'a, ()> {
+            self.0.delete(task_id, id)
+        }
+    }
+
+    /// Concurrent creates must not push a task past its per-task cap.
+    ///
+    /// The cap is a read (`list`) then a decision then a write (`set`), and
+    /// those span two `.await` points. Without a lock held across them, every
+    /// concurrent caller reads a count under the cap and every one of them
+    /// stores. MEASURED before the fix, cap 5 against 32 concurrent creates,
+    /// three runs: 12, 17, and 32 accepted — the last being all of them, a
+    /// documented ceiling doing nothing whatsoever.
+    ///
+    /// Permanent, unlike the task store's transient overshoot: nothing
+    /// re-checks a stored config or evicts one.
+    ///
+    /// # Why the store is slow on purpose
+    ///
+    /// The first version of this test raced 32 spawned callers against the
+    /// real in-memory store and asserted the count. It passed — and with the
+    /// lock removed it still passed on two runs out of three, because the
+    /// window between `list` and `set` on a `HashMap` is a few microseconds
+    /// wide. A regression detector that fires one time in three is the
+    /// "passes for the wrong reason" failure this branch keeps finding, so it
+    /// is not left to chance: `SlowListStore` holds every `list` open for
+    /// 20ms, which makes the window certain rather than lucky. With the lock
+    /// the calls serialise and exactly `CAP` succeed; without it, all of them
+    /// read an empty store and all of them write.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+    async fn concurrent_creates_cannot_exceed_the_per_task_cap() {
+        use std::sync::Arc;
+
+        const CAP: usize = 5;
+        const WRITERS: usize = 32;
+
+        let handler = Arc::new(
+            RequestHandlerBuilder::new(DummyExecutor)
+                .with_push_sender(CapTestSender)
+                .with_push_config_store(SlowListStore::default())
+                .with_handler_limits(
+                    crate::handler::HandlerLimits::default().with_max_push_configs_per_task(CAP),
+                )
+                .build()
+                .unwrap(),
+        );
+        save_task(&handler, "task-1").await;
+
+        let mut creates = Vec::new();
+        for i in 0..WRITERS {
+            let each = Arc::clone(&handler);
+            creates.push(tokio::spawn(async move {
+                each.on_set_push_config(
+                    TaskPushNotificationConfig {
+                        tenant: None,
+                        id: Some(format!("cfg-{i}")),
+                        task_id: Some("task-1".to_owned()),
+                        url: format!("https://example.com/hook/{i}"),
+                        token: None,
+                        authentication: None,
+                    },
+                    None,
+                )
+                .await
+                .is_ok()
+            }));
+        }
+        let mut accepted = 0usize;
+        for create in creates {
+            if create.await.unwrap_or(false) {
+                accepted += 1;
+            }
+        }
+
+        let stored = handler
+            .on_list_push_configs("task-1", None, None)
+            .await
+            .expect("list")
+            .len();
+
+        assert_eq!(
+            stored, CAP,
+            "the store must hold exactly the cap; {WRITERS} concurrent creates stored {stored}"
+        );
+        assert_eq!(
+            accepted, CAP,
+            "and exactly {CAP} callers must have been told they succeeded, not {accepted} — \
+             a caller handed Ok for a config that breaks the cap was lied to"
+        );
     }
 
     // ── on_set_push_config ───────────────────────────────────────────────────

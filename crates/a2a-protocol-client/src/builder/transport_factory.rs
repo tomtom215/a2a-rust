@@ -129,6 +129,15 @@ impl ClientBuilder {
                 "request_timeout must be non-zero".into(),
             ));
         }
+        // Validated here for the same reason `build()` validates it: this path
+        // now uses it. Until 2026-08-19 it did not — `build()` rejected a zero
+        // `stream_connect_timeout` and this one silently accepted it, because
+        // it never read the field at all.
+        if self.config.stream_connect_timeout.is_zero() {
+            return Err(ClientError::Transport(
+                "stream_connect_timeout must be non-zero".into(),
+            ));
+        }
 
         let transport: Box<dyn Transport> = if let Some(t) = self.transport_override {
             t
@@ -140,7 +149,14 @@ impl ClientBuilder {
                 // a payload that fits the configured cap over JSON-RPC/REST
                 // must not be rejected by gRPC's separate decode default.
                 .with_max_message_size(self.config.max_response_size);
-            let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config).await?;
+            // The third timeout. `with_timeout`/`with_connect_timeout` above
+            // carry two of the builder's three, and this one used to be
+            // dropped on the floor — so a caller who set it got the *unary
+            // request* timeout as their stream's first-event bound. Invisible
+            // by default, because both default to 30s.
+            let t = GrpcTransport::connect_with_config(&self.endpoint, grpc_config)
+                .await?
+                .with_stream_connect_timeout(self.config.stream_connect_timeout);
             Box::new(t)
         };
 
@@ -216,6 +232,35 @@ mod tests {
             .with_stream_connect_timeout(Duration::ZERO)
             .build();
         assert!(result.is_err());
+    }
+
+    /// `build_grpc` must reject a zero `stream_connect_timeout`, exactly as
+    /// `build` does.
+    ///
+    /// Not symmetry for its own sake: the sync path validated the knob because
+    /// it used it, and the gRPC path accepted anything because it did not —
+    /// `build_grpc` passed `request_timeout` and `connection_timeout` and
+    /// dropped the third. The validation is the cheap, serverless half of
+    /// "this path reads the field at all"; the other half is
+    /// `the_first_event_bound_follows_stream_connect_timeout_when_set` in
+    /// `transport::grpc`.
+    ///
+    /// The endpoint is deliberately one nothing is listening on. Validation
+    /// runs before the connect, so a passing test here proves the error came
+    /// from the check rather than from the dial.
+    #[cfg(feature = "grpc")]
+    #[tokio::test]
+    async fn build_grpc_zero_stream_timeout_errors() {
+        let result = ClientBuilder::new("http://127.0.0.1:1")
+            .with_stream_connect_timeout(Duration::ZERO)
+            .build_grpc()
+            .await;
+        let err = result.expect_err("a zero stream_connect_timeout is invalid");
+        assert!(
+            err.to_string().contains("stream_connect_timeout"),
+            "the error must name the knob that was wrong, not the dial that \
+             never should have been attempted: {err}"
+        );
     }
 
     #[test]

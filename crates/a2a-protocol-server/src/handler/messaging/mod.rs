@@ -203,16 +203,7 @@ impl RequestHandler {
         // Acquire a per-context lock to serialize the find + save sequence for
         // the same context_id, preventing two concurrent SendMessage requests
         // from both creating new tasks for the same context.
-        let context_lock = {
-            let mut locks = self.context_locks.write().await;
-            // Prune stale entries when the map exceeds the configured limit.
-            // A lock is "stale" when no other task holds a reference to it
-            // (strong_count == 1 means only the map itself owns it).
-            if locks.len() >= self.limits.max_context_locks {
-                locks.retain(|_, v| Arc::strong_count(v) > 1);
-            }
-            locks.entry(context_id.clone()).or_default().clone()
-        };
+        let context_lock = self.keyed_lock(&context_id).await;
         let context_guard = context_lock.lock().await;
 
         // Look up existing task for continuation.
