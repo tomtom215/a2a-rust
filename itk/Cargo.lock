@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "a2a-protocol-client"
-version = "0.7.0"
+version = "0.10.0"
 dependencies = [
  "a2a-protocol-types",
  "base64",
@@ -26,7 +26,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-server"
-version = "0.7.0"
+version = "0.10.0"
 dependencies = [
  "a2a-protocol-types",
  "bytes",
@@ -49,7 +49,7 @@ dependencies = [
 
 [[package]]
 name = "a2a-protocol-types"
-version = "0.7.0"
+version = "0.10.0"
 dependencies = [
  "base64",
  "prost",

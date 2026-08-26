@@ -144,11 +144,11 @@ impl TenantAwareInMemoryTaskStore {
     /// Gives `tenant` its own [`TaskStoreConfig`], overriding
     /// [`TenantStoreConfig::per_tenant`] for that tenant alone.
     ///
-    /// This is the per-tenant store bound that
-    /// `TenantLimits::max_stored_tasks` claimed to be and could not: that field
-    /// sits on [`PerTenantConfig`](crate::PerTenantConfig), which the handler
-    /// holds and a store never sees. Here the store owns the map and reads it
-    /// as it creates the partition.
+    /// This is the per-tenant store bound that `TenantLimits::max_stored_tasks`
+    /// claimed to be and could not: that field sat on
+    /// [`PerTenantConfig`](crate::PerTenantConfig), which the handler holds and
+    /// a store never sees, so nothing ever read it. It was removed in 0.10.0.
+    /// Here the store owns the map and reads it as it creates the partition.
     ///
     /// Every field of `TaskStoreConfig` is overridden, not just capacity — a
     /// tenant can be given its own TTL, eviction interval and page cap too. The
@@ -404,8 +404,8 @@ mod tests {
     /// to be, in the one place that can enforce it.
     ///
     /// That field sat on `PerTenantConfig`, which the handler holds and a store
-    /// never sees, so nothing read it. Here the store owns the map and picks
-    /// the config as it creates the partition.
+    /// never sees, so nothing read it; it was removed in 0.10.0. Here the store
+    /// owns the map and picks the config as it creates the partition.
     #[tokio::test]
     async fn an_override_gives_that_tenant_its_own_store_config() {
         async fn saved_then_listed(

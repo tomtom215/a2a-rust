@@ -10,21 +10,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Deprecated
+## [0.10.0] - 2026-08-20
 
-- **`TenantLimits::max_stored_tasks`** (`a2a-protocol-server`). It named a cap
-  on stored tasks and nothing ever read it, for a structural reason: it sits on
-  `PerTenantConfig`, which the handler holds, and a store is constructed
-  independently and handed to the builder — a store never sees one. The working
-  equivalent is the new `TenantAwareInMemoryTaskStore::with_tenant_override`,
-  which gives a named tenant its own `TaskStoreConfig` and so its own
-  `max_capacity`.
+### Breaking
 
-  Deprecated rather than removed: removing a public field is a semver break, and
-  this crate's version is bumped as step 1 of a release (`RELEASING.md`), not
-  mid-branch. The deprecation carries the whole point anyway — every use site
-  now gets a compiler warning naming the replacement, which is louder than the
-  silence the field had before.
+- **`TenantLimits::max_stored_tasks` is removed**, along with the
+  `TenantLimitsBuilder::max_stored_tasks` setter (`a2a-protocol-server`). It
+  named a cap on stored tasks and nothing ever read it, for a structural
+  reason: it sat on `PerTenantConfig`, which the handler holds, while a store
+  is constructed independently and handed to the builder — so a store never
+  sees one and could never have enforced it.
+
+  Migration: replace `TenantLimits::builder().max_stored_tasks(n)` with
+  `TenantAwareInMemoryTaskStore::with_tenant_override(tenant, TaskStoreConfig {
+  max_capacity: n, ..Default::default() })`. The bound then lives on the store,
+  which is the only layer that can apply it. Code that set the field was
+  getting no cap at all, so the override is a behaviour change in the direction
+  the field always claimed.
+
+  It shipped deprecated rather than removed while this branch was in flight,
+  because removing a public field is a semver break and the version bump is
+  step 1 of a release (`RELEASING.md`), not a mid-branch edit. This release is
+  that bump.
 
 ### Added
 
