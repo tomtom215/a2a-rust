@@ -137,8 +137,16 @@ revert_all() {
         fi
         TOUCHED=()
     fi
-    rm -f crates/a2a-protocol-types/src/gate_probe_long.rs
-    git rm -q --cached --ignore-unmatch crates/a2a-protocol-types/src/gate_probe_long.rs 2>/dev/null || true
+    # Files an injection *creates*. `git checkout HEAD --` above cannot remove
+    # these — there is nothing in HEAD to restore them to — so each one an
+    # injection adds has to be named here. Registering the second of them was
+    # forgotten on 2026-08-19 and the run's own post-check caught it, which is
+    # what that check is for.
+    for probe in gate_probe_long gate_probe_slot; do
+        rm -f "crates/a2a-protocol-types/src/$probe.rs"
+        git rm -q --cached --ignore-unmatch "crates/a2a-protocol-types/src/$probe.rs" \
+            2>/dev/null || true
+    done
     if [ -n "$PACKAGE_CLONE" ]; then
         rm -rf "$PACKAGE_CLONE"
         PACKAGE_CLONE=""
