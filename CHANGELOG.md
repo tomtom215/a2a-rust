@@ -462,6 +462,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selects, which would silently redirect the MSRV leg of the `1.93` matrix at
   the pinned version instead — a worse failure than the one it would prevent.
 
+- **The SLIMRPC spec drift check was blind to any spec file it had not been
+  told about.** It fetched two files by URL and hash-compared them, so it could
+  report agreement about those two while upstream added a third — which is what
+  happened. `spec/v1/slimrpc-collaborative-channel.md` has existed on an
+  upstream branch, and the official `a2a-slimrpc` crate has implemented it,
+  without anything here noticing. The check now clones upstream and takes its
+  inventory from `main`, so an added or withdrawn spec file fails as loudly as a
+  changed one, and it surveys the other branches: a branch-only spec must carry
+  a written disposition or CI fails until somebody triages it.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

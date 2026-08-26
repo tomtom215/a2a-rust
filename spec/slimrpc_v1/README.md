@@ -34,9 +34,11 @@ Two checks close that:
   method inventory to the inventory named here, so a method the binding stops
   serving fails CI. Previously this was checked against the A2A proto, which is
   a reasonable proxy but is not the document the binding claims to implement.
-- **`scripts/check_slimrpc_spec.sh`** re-fetches upstream and compares hashes,
-  so a change to the specification is surfaced as a CI failure rather than
-  discovered by a user.
+- **`scripts/check_slimrpc_spec.sh`** clones upstream and takes its file
+  inventory from `main` rather than from a list kept here, so a spec file that
+  upstream *adds* fails CI as loudly as one it changes. It also surveys the
+  other branches: a spec file that exists only on a branch must be named in
+  that script with a one-line disposition, so an untriaged one fails.
 
 ## Upstream status
 
@@ -50,6 +52,30 @@ Because it is experimental, upstream may change without ceremony. A drift
 failure is therefore *information*, not necessarily a defect: read the diff,
 decide whether the binding must follow, then re-vendor and update the hashes
 above in the same commit that records the decision.
+
+## Upstream branches, and what is on them
+
+Verified 2026-08-26 by cloning all branch tips. `main` carries the two files
+vendored here. Two other branches carry specifications that have never been
+merged, and the first of them is the reason this survey exists at all:
+
+| branch | file | status |
+|---|---|---|
+| `feat/slimrpc-collaborative-channel` | `spec/v1/slimrpc-collaborative-channel.md` | **not implemented here.** The official `a2a-slimrpc` crate (v0.2.6) implements it — `experimental.slimrpc.collaborative_channel.v1.CollaborativeChannelService`, `Collaborate`, and `slim-src` sender attribution are all present in its source. |
+| `feat/slimrpc-channel-moderator` | `spec/v1/slimrpc-channel-moderator.md` | not implemented by this binding or by the official crate. |
+
+Three further branches (`feat/slimrpc-multicast-spec`, `feat/spec-versioning`,
+`fix/slimrpc-spec-myorg-to-mydomain`) carry only the pre-versioning `spec/`
+layout that `spec/v1/` on `main` superseded.
+
+Collaborative channels are **not** what this binding's multicast support does,
+and the two are not substitutes. `slimrpc-multicast.md`, which is on `main` and
+is implemented here, fans one request out to N agents and returns per-agent
+outcomes to the originating client. Collaborate is many-to-many: members see
+each other's traffic, attributed by `slim-src`. The official crate's only use of
+the word "multicast" is SLIM's `multicast_stream_stream` transport primitive,
+which is how it carries Collaborate — it does not implement the multicast
+specification. So the two implementations diverge in both directions.
 
 ## Re-vendoring
 
