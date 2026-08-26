@@ -18,9 +18,9 @@ script is the attempt to make the next one cost a run instead of a pass.
 
 This is NOT a CI gate
 ---------------------
-Signature C reports 29 candidates against 3 worth reading, and most of the 26
+Signature C reports 19 candidates against 5 worth reading, and the other 14
 are legitimate — a knob that genuinely belongs to one implementation of a
-trait. A check that cries 26 times is a check people learn to skip. Promoting
+trait. A check that cries 14 times is a check people learn to skip. Promoting
 it needs an allowlist of family/knob pairs with a reason each; that is backlog
 item B21, and the allowlist is the deliverable, not the script.
 
@@ -44,6 +44,31 @@ C  A knob honoured by some members of a family and not all, where a family is
    Read the ratio, not the count. "Majority honours it, a minority does not"
    is the shape; "one implementation honours it" is usually a knob that belongs
    to that implementation.
+
+Known blind spots, both measured
+--------------------------------
+Both signatures match on *names*, and two false "not honoured" reports in the
+first run came from that:
+
+* A knob renamed at the boundary. `ClientBuilder` passes
+  `config.request_timeout` into `GrpcTransportConfig::with_timeout`, whose
+  field is `timeout`. Signature C reports gRPC as not honouring
+  `request_timeout`; it honours it under another name.
+* A test double counted as an implementation. Handled — `test_only_files`
+  blanks a test file declared from its parent — and it mattered: doing so took
+  signature C from 29 candidates to 19, and every one of the ten that vanished
+  was a stub (`SlowDispatcher`, `Reports`, `FailInterceptor`) rather than a
+  shipped type.
+* A knob applied in a sibling file. Signature C maps a family member to the
+  files containing its `impl` blocks. `PostgresTaskStore`'s `impl TaskStore` is
+  in `store_impl.rs` and its `max_connections` is in `pool.rs`, so the bound is
+  invisible — and that split was made to satisfy `check_file_lengths.sh`. One
+  of this repository's checks blinded another.
+
+Neither is worth a rewrite: resolving them means resolving types, which is
+`cargo`'s job and not a regex's. They are worth knowing before you trust a hit,
+which is why running this by hand and explaining every result is the process
+rather than a weakness of it.
 
 B  (tried, abandoned) A literal equal to some config default, in a bound
    position — how instances 3 and 4 hid. Seventeen hits, all coincidence:
@@ -74,6 +99,7 @@ IMPL = re.compile(
     r"^\s*impl(?:<[^>]*>)?\s+(?:async\s+)?([A-Za-z_]\w*)(?:<[^>]*>)?\s+for\s+([A-Za-z_]\w*)", re.M
 )
 TRAIT_DECL = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?trait\s+([A-Za-z_]\w*)", re.M)
+CFG_TEST_FILE_MOD = re.compile(r"#\[cfg\(test\)\]\s*(?:pub\s+)?mod\s+([A-Za-z_]\w*)\s*;")
 
 # A knob is a *bound* if its name says so. "Some honour it, some do not" is a
 # defect for a bound — a cap half the implementations ignore is not a cap. For
@@ -133,13 +159,49 @@ def strip_comments(text: str) -> str:
     return "\n".join(re.sub(r"//.*$", "", line) for line in text.splitlines())
 
 
+def test_only_files(paths) -> set:
+    """Files reachable only through a `#[cfg(test)] mod name;` declaration.
+
+    `strip_tests` blanks an *inline* `#[cfg(test)] mod tests { .. }` and does
+    nothing for the convention this repository uses at least four times —
+    `handler/tests.rs`, `rate_limit/shared_tests.rs`,
+    `handler/messaging/tests.rs`, `store/sqlite_store/artifact_delta_tests.rs`
+    — where the attribute sits on the *declaration* and the file itself
+    contains no `#[cfg(test)]` at all.
+
+    Measured cost of not doing this, on this repository, in the session that
+    wrote this script: splitting `handler/mod.rs`'s tests into
+    `handler/tests.rs` to satisfy `check_file_lengths.sh` took signature A from
+    three candidates to one. The eight assertions that moved with them began
+    counting as production reads, hiding `max_concurrent_tasks` and
+    `rate_limit_rps` — two of the three findings this script had just made. The
+    output for a clean tree and for a blinded one is the same line.
+    """
+    out = set()
+    for path in paths:
+        for m in CFG_TEST_FILE_MOD.finditer(path.read_text(encoding="utf-8")):
+            name = m.group(1)
+            for candidate in (path.parent / f"{name}.rs", path.parent / name / "mod.rs"):
+                if candidate.exists():
+                    out.add(candidate.resolve())
+    return out
+
+
 def sources() -> dict:
     paths = sorted(
         list(REPO.glob("crates/*/src/**/*.rs")) + list(REPO.glob("bindings/*/src/**/*.rs"))
     )
     if not paths:
         sys.exit(f"no sources found under {REPO} — wrong repo root?")
-    return {p: strip_comments(strip_tests(p.read_text(encoding="utf-8"))) for p in paths}
+    skip = test_only_files(paths)
+    return {
+        p: (
+            ""
+            if p.resolve() in skip
+            else strip_comments(strip_tests(p.read_text(encoding="utf-8")))
+        )
+        for p in paths
+    }
 
 
 def knob_names(bodies: dict) -> set:
@@ -169,7 +231,7 @@ def signature_a(bodies: dict, knobs: set) -> int:
                 stripped = line.strip()
                 declaration = re.match(rf"pub (?:const )?{knob}\s*:", stripped)
                 initialiser = re.match(rf"{knob}\s*:", stripped)
-                setter = re.search(rf"self\.\w*\.?{knob}\s*=", stripped)
+                setter = re.search(rf"self\.\w*\.?{knob}\s*=(?![=>])", stripped)
                 if declaration or initialiser or setter:
                     continue
                 readers.append((path, stripped))
