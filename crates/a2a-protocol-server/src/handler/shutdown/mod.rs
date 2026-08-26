@@ -46,6 +46,14 @@ impl ShutdownReport {
     }
 }
 
+/// How long [`RequestHandler::shutdown`] gives the executor's cleanup hook.
+///
+/// `shutdown()` takes no timeout, so this is the bound. It is not configurable
+/// on purpose: a caller who wants to choose has
+/// [`RequestHandler::shutdown_with_timeout`], where the number is the total for
+/// the whole shutdown rather than one phase of it.
+const UNTIMED_CLEANUP_BUDGET: Duration = Duration::from_secs(10);
+
 impl RequestHandler {
     /// Initiates graceful shutdown of the handler.
     ///
@@ -80,13 +88,21 @@ impl RequestHandler {
             tokens.clear();
         }
 
-        // Give executor a chance to clean up resources (bounded to avoid hanging).
+        // Give executor a chance to clean up resources (bounded to avoid
+        // hanging). This variant takes no timeout, so the bound is this
+        // constant rather than anything the caller chose — the warning below
+        // used to say "the shutdown timeout", which named a parameter this
+        // method does not have.
         let executor_cleanup_completed =
-            tokio::time::timeout(Duration::from_secs(10), self.executor.on_shutdown())
+            tokio::time::timeout(UNTIMED_CLEANUP_BUDGET, self.executor.on_shutdown())
                 .await
                 .is_ok();
         if !executor_cleanup_completed {
-            trace_warn!("executor cleanup did not finish within the shutdown timeout");
+            trace_warn!(
+                budget_secs = UNTIMED_CLEANUP_BUDGET.as_secs(),
+                "executor cleanup did not finish within shutdown()'s fixed budget; \
+                 use shutdown_with_timeout to choose your own"
+            );
         }
 
         ShutdownReport {
@@ -95,11 +111,33 @@ impl RequestHandler {
         }
     }
 
-    /// Initiates graceful shutdown with a timeout.
+    /// Initiates graceful shutdown, returning within `timeout`.
     ///
-    /// Cancels all in-flight tasks and waits up to `timeout` for event queues
-    /// to drain before force-destroying them. This gives executors a chance
-    /// to finish writing final events before the queues are torn down.
+    /// Cancels all in-flight tasks, waits for event queues to drain, and then
+    /// runs the executor's cleanup hook — **all inside the one budget**. This
+    /// gives executors a chance to finish writing final events before the
+    /// queues are torn down.
+    ///
+    /// # `timeout` is the total, not a per-phase allowance
+    ///
+    /// It was a per-phase allowance until 2026-08-19: the drain loop ran to
+    /// `now + timeout` and then `on_shutdown` was given a *fresh* full
+    /// `timeout`, so the call could take twice what the caller asked for.
+    /// Measured on paused time with an undrainable queue and a cleanup hook
+    /// that never returns, `shutdown_with_timeout(30s)` took **60s** — exactly
+    /// 2×.
+    ///
+    /// That is not an academic overshoot. The number an operator puts here is
+    /// the number they put in `terminationGracePeriodSeconds`, and a process
+    /// that overruns it is `SIGKILL`ed part-way through the cleanup this method
+    /// exists to perform — truncating precisely the streams a graceful
+    /// shutdown was protecting.
+    ///
+    /// So the drain phase and the cleanup hook now share one deadline. If
+    /// draining consumes the whole budget, cleanup is given what is left, which
+    /// may be nothing; that is reported rather than papered over, because
+    /// "your queues would not drain" and "your cleanup hook hung" are different
+    /// problems and the caller can see which they had.
     ///
     /// Returns a [`ShutdownReport`]: a non-zero `queues_force_destroyed` means
     /// the deadline passed with work still in flight, and
@@ -116,8 +154,11 @@ impl RequestHandler {
             }
         }
 
+        // One deadline for the whole method — see the doc comment.
+        let deadline = tokio::time::Instant::now() + timeout;
+
         // Wait for event queues to drain (executors to finish), with timeout.
-        let drain_deadline = tokio::time::Instant::now() + timeout;
+        let drain_deadline = deadline;
         let mut queues_force_destroyed = 0;
         loop {
             let active = self.event_queue_manager.active_count().await;
@@ -146,11 +187,17 @@ impl RequestHandler {
             tokens.clear();
         }
 
-        // Give executor a chance to clean up resources (bounded by the same timeout
-        // to avoid hanging if the executor blocks during cleanup).
-        let executor_cleanup_completed = tokio::time::timeout(timeout, self.executor.on_shutdown())
-            .await
-            .is_ok();
+        // Give the executor whatever is left of the budget. Not a fresh
+        // `timeout`: that is what made this method take 2x what it was asked
+        // for. `saturating_duration_since` yields ZERO once the deadline has
+        // passed, and `tokio::time::timeout` still polls the future once before
+        // checking an already-elapsed deadline — so a cleanup hook that is
+        // ready immediately still succeeds even on a spent budget.
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let executor_cleanup_completed =
+            tokio::time::timeout(remaining, self.executor.on_shutdown())
+                .await
+                .is_ok();
         if !executor_cleanup_completed {
             trace_warn!("executor cleanup did not finish within the shutdown timeout");
         }
