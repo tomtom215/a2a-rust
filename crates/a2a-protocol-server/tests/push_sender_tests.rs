@@ -50,6 +50,46 @@ fn base_config(url: &str) -> TaskPushNotificationConfig {
 
 /// Starts a mock HTTP server that responds with the given status code.
 /// Returns the server address and a handle to the join handle.
+/// A mock server that records *when* each request arrived, not just how many.
+///
+/// The arrival times are what let a backoff test assert its actual claim. A
+/// total-elapsed window has to allow for however long the runner takes to do
+/// three loopback round trips, and that slack is the whole margin: on a Windows
+/// CI runner this test's `[1800ms, 2800ms)` band was measured at **2954ms** for
+/// a correct run, failing on overhead rather than on behaviour. Gaps *between*
+/// arrivals, and the gap from the last arrival to the call returning, each span
+/// one round trip instead of three, so they do not accumulate that cost.
+async fn mock_server_recording_arrivals(
+    status: u16,
+    arrivals: Arc<std::sync::Mutex<Vec<tokio::time::Instant>>>,
+) -> (SocketAddr, tokio::task::JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let handle = tokio::spawn(async move {
+        for _ in 0..5 {
+            let Ok((stream, _)) = listener.accept().await else {
+                break;
+            };
+            let arrivals = Arc::clone(&arrivals);
+            tokio::spawn(async move {
+                arrivals.lock().unwrap().push(tokio::time::Instant::now());
+                stream.readable().await.unwrap();
+                let mut buf = vec![0u8; 4096];
+                let _ = stream.try_read(&mut buf);
+
+                let response = format!(
+                    "HTTP/1.1 {status} OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                );
+                stream.writable().await.unwrap();
+                let _ = stream.try_write(response.as_bytes());
+            });
+        }
+    });
+
+    (addr, handle)
+}
+
 async fn mock_server(
     status: u16,
     request_counter: Arc<AtomicUsize>,
@@ -193,8 +233,8 @@ async fn retries_on_server_error_and_eventually_fails() {
 ///   * sleeping after every attempt (`<` → `<=`, `-` → `+`, `-` → `/`): 3500ms
 #[tokio::test]
 async fn backoff_is_paid_between_attempts_but_not_after_the_last() {
-    let counter = Arc::new(AtomicUsize::new(0));
-    let (addr, handle) = mock_server(500, Arc::clone(&counter)).await;
+    let arrivals = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let (addr, handle) = mock_server_recording_arrivals(500, Arc::clone(&arrivals)).await;
 
     let policy = a2a_protocol_server::push::PushRetryPolicy::default()
         .with_max_attempts(3)
@@ -209,24 +249,43 @@ async fn backoff_is_paid_between_attempts_but_not_after_the_last() {
     let url = format!("http://{addr}/webhook");
     let config = base_config(&url);
 
-    let started = tokio::time::Instant::now();
     let result = sender.send(&url, &status_event(), &config).await;
-    let elapsed = started.elapsed();
+    let returned_at = tokio::time::Instant::now();
 
     assert!(result.is_err(), "all three attempts return HTTP 500");
+
+    let arrivals = arrivals.lock().unwrap().clone();
     assert_eq!(
-        counter.load(Ordering::SeqCst),
+        arrivals.len(),
         3,
         "the attempt count is set by the loop, not by the backoff guard"
     );
-    // Window, not equality: the real clock also carries the (tiny) cost of
-    // three loopback round trips. 1800..2800ms admits the correct 2000ms with
-    // 300ms of slack below and 800ms above, while excluding every mutant —
-    // the nearest is 1500ms, then 3500ms.
+
+    // Each assertion spans one round trip, not three. The previous version
+    // asserted total elapsed in `[1800ms, 2800ms)`, which had to carry the cost
+    // of every round trip in its 800ms of headroom — measured at 2954ms for a
+    // correct run on a Windows runner, so it failed on the runner's speed.
+    let first_gap = arrivals[1] - arrivals[0];
+    let second_gap = arrivals[2] - arrivals[1];
     assert!(
-        elapsed >= Duration::from_millis(1800) && elapsed < Duration::from_millis(2800),
-        "exactly two backoffs (500ms + 1500ms) must elapse — one after each \
-         non-final attempt, none after the last — got {elapsed:?}"
+        first_gap >= Duration::from_millis(450),
+        "the first backoff (500ms) must be paid before attempt 2 — got {first_gap:?}"
+    );
+    assert!(
+        second_gap >= Duration::from_millis(1400),
+        "the second backoff (1500ms) must be paid before attempt 3, and it is a \
+         different value from the first — got {second_gap:?}"
+    );
+
+    // The claim in the name: *not after the last*. A trailing backoff would be
+    // the 1500ms one again, so anything under half of that excludes it while
+    // leaving room for a slow response round trip.
+    let after_last = returned_at - arrivals[2];
+    assert!(
+        after_last < Duration::from_millis(700),
+        "no backoff may be paid after the final attempt — {after_last:?} elapsed \
+         between the last request arriving and send() returning, and a trailing \
+         backoff would be 1500ms"
     );
     handle.abort();
 }

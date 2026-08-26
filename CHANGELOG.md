@@ -123,6 +123,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A push-backoff test failed on runner speed rather than on behaviour**
+  (`a2a-protocol-server`). `backoff_is_paid_between_attempts_but_not_after_the_last`
+  asserted total elapsed in `[1800ms, 2800ms)` around three real loopback round
+  trips, so its 800ms of headroom above the correct 2000ms had to absorb every
+  scrap of per-request overhead. Measured on a Windows CI runner: **2954ms for
+  a correct run**, failing by 154ms.
+
+  It now asserts the gaps *between* request arrivals and the gap from the last
+  arrival to `send()` returning. Each spans one round trip instead of three, so
+  overhead cannot accumulate into the margin — and the assertions say what the
+  test is named for: the second gap must differ from the first (1500ms, not
+  500ms), and nothing beyond a response round trip may follow the final
+  attempt. Its mutation coverage is unchanged and its messages are sharper: a
+  trailing backoff now reports "1.501256836s elapsed between the last request
+  arriving and send() returning" instead of a total that could mean anything.
+
 - **`PerTenantConfig` now enforces the limits it declares** (B22). All five
   `TenantLimits` fields were stored, resolvable, and read by nothing in the
   request path, under a module header that advised operators to set
