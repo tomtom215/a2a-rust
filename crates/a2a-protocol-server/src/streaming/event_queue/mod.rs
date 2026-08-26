@@ -148,8 +148,25 @@ pub fn new_in_memory_queue_with_options(
 ///
 /// Returns `(writer, sse_reader, persistence_rx)`. The writer sends every
 /// event to BOTH the broadcast channel (for SSE fan-out) and the mpsc
-/// channel (for the background persistence processor). The mpsc channel
-/// is not affected by slow SSE consumers and will never lose events.
+/// channel (for the background persistence processor). The mpsc channel is
+/// not affected by slow SSE consumers — that is what it is for, and it is
+/// what "lagged" means on the broadcast side.
+///
+/// # It is not a delivery guarantee
+///
+/// This paragraph said "will never lose events" until 2026-08-19. It is a
+/// bounded channel with two ways not to deliver, and knowing which one you are
+/// looking at is the whole difference between an operator restarting a
+/// processor and one chasing a phantom:
+///
+/// * **Full past the write deadline** — `write` returns an error naming the
+///   stalled processor. The caller is producing state that will not be
+///   persisted and only the caller can decide to stop.
+/// * **Closed** — the event is dropped and `write` returns `Ok`. Deliberate:
+///   the processor is gone, and the stream can still serve live subscribers.
+///   It is reported only by a `trace_warn!`, which compiles to nothing without
+///   the non-default `tracing` feature, so on a default build this loss is
+///   silent. Backlog **B18**.
 #[must_use]
 pub fn new_in_memory_queue_with_persistence(
     capacity: usize,
@@ -162,7 +179,9 @@ pub fn new_in_memory_queue_with_persistence(
 ) {
     let (tx, rx) = broadcast::channel(capacity);
     // Use a large bounded mpsc channel for persistence — the background
-    // processor is fast and must never miss events. The capacity is much
+    // processor is fast, and the capacity is sized so that it does not have
+    // to be. "must never miss events" is what this comment used to say; see
+    // the doc above for the two cases in which it does. The capacity is much
     // larger than the broadcast channel to provide ample headroom.
     let (persistence_tx, persistence_rx) = mpsc::channel(capacity.saturating_mul(16).max(1024));
     (

@@ -135,7 +135,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measured, `write` blocked after 1,024 events and was still blocked eight
   seconds later, with no metric and no trace. The deadline is now enforced and a
   full channel returns an error naming the cause. A *closed* channel is still
-  not an error.
+  not an error. The surrounding documentation, which said this channel "will
+  never lose events" / "will never lag" / that the processor "must never miss
+  events", now says what it does: full past the deadline is an error naming the
+  stalled processor, closed drops the event and returns `Ok`, and the second is
+  reported only by a `trace_warn!` that compiles to nothing without the
+  non-default `tracing` feature.
 
 - **Push-notification configs the delivery budget never reached were invisible.**
   At the shipped defaults — 100 configs per task, a 5-second per-delivery

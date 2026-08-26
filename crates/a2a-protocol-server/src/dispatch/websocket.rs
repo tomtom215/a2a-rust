@@ -465,10 +465,21 @@ impl WebSocketDispatcher {
             return reader.next().await;
         };
 
-        // Ping at the halfway mark, once per idle period. A conformant peer
-        // answers automatically and the Pong refreshes the clock; one that has
-        // stopped reading its socket does not, which is the difference this
-        // timeout is meant to detect.
+        // Ping at the halfway mark, once per call. A conformant peer answers
+        // automatically and the Pong refreshes the clock; one that has stopped
+        // reading its socket does not, which is the difference this timeout is
+        // meant to detect.
+        //
+        // `pinged` is per-call and is never reset inside the loop, which looks
+        // like a hole and is not. Any *inbound* frame — the Pong included —
+        // returns from this function, so the next call starts unpinged; the
+        // flag can only survive a period whose traffic is entirely outbound.
+        // A peer in that state has already been sent a ping and has not
+        // answered it, so it is either gone or not reading its socket, and
+        // closing it when the outbound traffic stops is the outcome this bound
+        // exists to produce. Resetting the flag on an outbound write would
+        // instead let a stream to a dead consumer re-arm the keepalive
+        // indefinitely.
         let mut pinged = false;
         loop {
             let idle_for = writer.activity.idle_for();

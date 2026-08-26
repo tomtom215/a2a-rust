@@ -144,3 +144,42 @@ report_external_prerequisites() {
     esac
 }
 
+# Says whether an uncommitted change will make a selected gate refuse before it
+# has looked at anything.
+#
+# `cargo package` (and `publish`) fail outright on a dirty working tree unless
+# passed `--allow-dirty`, and the message they print — "3 files in the working
+# directory contain changes that were not yet committed into git" — reads like a
+# finding about the diff. It is not. It cost a 50-minute `--full` run to reach
+# on 2026-08-19, 39 gates in, on a tree whose only uncommitted change was a doc
+# comment.
+#
+# Derived from the selected gates rather than hardcoded, for the same reason the
+# PostgreSQL URL above is: a gate list that stops containing `cargo package`
+# should stop producing this warning without anyone remembering to delete it.
+#
+# Warns and continues. A dirty tree is the normal state of a preflight run —
+# that is what it is for — and the gate genuinely does fail in CI on a dirty
+# tree, so skipping it would be the silent-skip failure this file argues
+# against.
+report_dirty_worktree() {
+    # `cargo package` is a `--full`-only gate, and a precheck that fires on a
+    # tier which cannot hit the problem is noise — the same argument
+    # `check_free_disk` makes about warning on a warm tree.
+    [ "$TIER" = "full" ] || return 0
+
+    local dirty offenders
+    dirty=$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null) || return 0
+    [ -n "$dirty" ] || return 0
+
+    # Gates that refuse on a dirty tree: `cargo package`/`publish` without an
+    # explicit `--allow-dirty`.
+    offenders=$(printf '%s\n' "$ALL_GATES" \
+        | grep -E 'cargo (package|publish)' | grep -vc -- '--allow-dirty' || true)
+    [ "${offenders:-0}" -gt 0 ] || return 0
+
+    printf 'preflight: %d uncommitted file(s); %d gate(s) run `cargo package` and will\n' \
+        "$(printf '%s\n' "$dirty" | grep -c .)" "$offenders" >&2
+    printf '           refuse a dirty tree. Commit first, or expect that failure to be\n' >&2
+    printf '           the working tree rather than the diff.\n' >&2
+}

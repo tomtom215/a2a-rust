@@ -268,8 +268,8 @@ The scan is O(n) unavoidably, which is why it is amortized behind the interval
 rather than run per write. If p99.9 write latency matters to you, raise
 `eviction_interval` and drive cleanup yourself with `run_eviction()` on your own
 schedule, so the stall lands where you chose it. The capacity pass is far
-cheaper (measured 3.7× at 10,000 entries) because it removes the overflow
-instead of scanning for it.
+cheaper (measured 3.5× and 3.7× on two runs at 10,000 entries) because it
+removes the overflow instead of scanning for it.
 
 ### Pagination
 

@@ -59,7 +59,10 @@ pub struct InMemoryQueueWriter {
     tx: broadcast::Sender<A2aResult<StreamResponse>>,
     /// Optional dedicated channel for the background persistence processor.
     /// Unlike the broadcast channel, this mpsc channel is not affected by
-    /// slow SSE consumers and will never lag.
+    /// slow SSE consumers, so it cannot lag in the broadcast sense — a slow
+    /// reader makes it *full*, which `write` reports, rather than making it
+    /// silently skip. It said "will never lag" until 2026-08-19, three fields
+    /// above the `write_timeout` that exists because a full one is a real state.
     persistence_tx: Option<mpsc::Sender<A2aResult<StreamResponse>>>,
     /// Maximum serialized event size in bytes.
     max_event_size: usize,

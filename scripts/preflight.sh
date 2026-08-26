@@ -41,6 +41,12 @@
 # any warning before ninety minutes of compiling, after which the summary said
 # "Do not push" to somebody whose only problem was an uninstalled service.
 #
+# A third precheck reports the same kind of fact about the *tree* rather than
+# the machine: `cargo package` refuses a dirty working directory, so with an
+# uncommitted file the `package` gate fails on arrival, 39 gates and fifty
+# minutes in, with a message that reads like a finding about the diff. Measured
+# on 2026-08-19; the warning now precedes the first compile.
+#
 # Every gate runs even after one fails, so a single run tells you everything
 # that is broken rather than only the first thing.
 #
@@ -347,9 +353,10 @@ tier_full() {
 
 # ── Prechecks ────────────────────────────────────────────────────────────────
 #
-# `check_free_disk` and `report_external_prerequisites`, in their own file for
-# the same reason ci_gates.sh is: this one crossed 500 lines when they were
-# added, and the ratchet's answer for a script is helpers it sources.
+# `check_free_disk`, `report_external_prerequisites` and `report_dirty_worktree`,
+# in their own file for the same reason ci_gates.sh is: this one crossed 500
+# lines when they were added, and the ratchet's answer for a script is helpers
+# it sources.
 # shellcheck source=lib/preflight_prechecks.sh
 . "$REPO_ROOT/scripts/lib/preflight_prechecks.sh"
 
@@ -399,6 +406,7 @@ fi
 
 check_free_disk
 report_external_prerequisites
+report_dirty_worktree
 note_skipped_steps
 apply_ci_env
 

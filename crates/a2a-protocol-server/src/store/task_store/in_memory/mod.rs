@@ -230,8 +230,8 @@ impl StoreData {
 ///
 /// One write in `eviction_interval` costs about 1,100× a quiet one at that
 /// size, and it stalls every concurrent writer, not just itself. The capacity
-/// pass is much cheaper — measured 3.7× at 10,000 entries — because it removes
-/// only the overflow rather than scanning for it.
+/// pass is much cheaper — measured 3.5× and 3.7× on two runs at 10,000
+/// entries — because it removes only the overflow rather than scanning for it.
 ///
 /// This is a shape to plan for, not a defect to route around: the TTL pass is
 /// O(n) unavoidably (finding expired entries means looking at all of them),
