@@ -278,6 +278,9 @@ mod tests {
     }
 
     /// Test `subscribe_to_task` with interceptor (covers lines 150-157).
+    // The trait declares `before`/`after` as `async`; this counting mock has
+    // nothing to await, so the signature is the trait's rather than a choice.
+    #[allow(clippy::unused_async_trait_impl)]
     #[tokio::test]
     async fn subscribe_to_task_calls_after_interceptor() {
         use std::sync::atomic::{AtomicUsize, Ordering};

@@ -92,6 +92,11 @@ pub struct SseBodyWriter {
     tx: tokio::sync::mpsc::Sender<Result<Frame<Bytes>, Infallible>>,
 }
 
+// `Err(())` is the whole error on this type: the only failure is the receiver
+// having been dropped, and the channel's own `SendError` carries back just the
+// unsent frame. A named error type would be a breaking change to a `pub use`d
+// type, so it belongs in the next minor rather than in a lint fix.
+#[allow(clippy::result_unit_err)]
 impl SseBodyWriter {
     /// Sends an SSE event frame.
     ///

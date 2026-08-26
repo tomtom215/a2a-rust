@@ -106,7 +106,7 @@ impl AgentExecutor for RunbookExecutor {
                 .find(&marker)
                 .ok_or_else(|| A2aError::internal("runbook section disappeared"))?;
             let rest = &RUNBOOKS[start + marker.len()..];
-            let end = rest.find("\n## ").map_or(rest.len(), |i| i);
+            let end = rest.find("\n## ").unwrap_or(rest.len());
             let section = rest[..end].trim();
 
             progress(queue, ctx, &format!("loading runbook for '{service}'")).await?;
