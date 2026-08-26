@@ -40,9 +40,13 @@ Verified, not taken from a document that claims it:
 | Supply chain at release | SLSA build provenance attestations **and** a per-crate CycloneDX SBOM, both produced in `release.yml`; `cargo-deny` runs on the workspace and separately on the binding's 379-dependency tree |
 | Action pinning | Every action SHA-pinned except one — see §4 |
 
-The panic-surface figure is the one worth dwelling on, because it is the
-question an adopter of a protocol library actually has: *can a malformed peer
-take my process down?* A naive `grep` cannot answer it — it counts matches
+That figure is now a CI ratchet — `scripts/check_panic_paths.py`, which closes
+B5 — so it does not decay: adding a `.unwrap()` to library code fails the build
+until the baseline is updated deliberately.
+
+The panic surface is the one worth dwelling on, because it is the question an
+adopter of a protocol library actually has: *can a malformed peer take my
+process down?* A naive `grep` cannot answer it — it counts matches
 inside doc comments, string literals, and `#[cfg(test)]` modules, which is why
 no number had been quotable. The measurement above strips comments and literals
 with a state machine and excises test modules by brace matching **and** by
@@ -51,7 +55,10 @@ of that tool was wrong in exactly the predictable way — its top hits were all
 `*tests.rs` files, whose gating attribute lives in the parent — and the number
 was only quoted after a self-check for test-named files that survived the
 filter reported one, which turned out to be an `include!`d vector file inside a
-`#[cfg(test)] mod tests`.
+`#[cfg(test)] mod tests`. A second, subtler miss surfaced when the ratchet was
+built: `#[cfg(test)]` gating is **inherited**, so a file declared by a
+test-gated module is test code too even though it carries no attribute and no
+"test" in its name. Both filters are pinned by `--self-test` now.
 
 ## 2. What was wrong, and is now fixed
 
@@ -145,10 +152,7 @@ makes, and it is a materially stronger position than the document was stating.
    ten tags) are superseded. It carries its date, which is defensible, but a
    reviewer handed it today will read stale numbers. It needs a supersession
    note pointing at the manifest.
-7. **B5 has no gate.** The panic-surface figure in §1 was measured with a
-   throwaway tool. Until that ships as a ratchet, the next `.unwrap()` added to
-   library code is invisible.
-8. **Four book chapters named in B10 are absent** from `SUMMARY.md`:
+7. **Four book chapters named in B10 are absent** from `SUMMARY.md`:
    troubleshooting, observability, multi-tenancy, security.
 
 ## 5. What this review did not examine

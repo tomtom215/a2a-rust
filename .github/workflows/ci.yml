@@ -203,6 +203,16 @@ jobs:
       - name: Doc comments contain no literal escapes
         run: python3 scripts/check_doc_escapes.py
 
+      # The question an adopter of a protocol library actually has is whether a
+      # malformed peer can take their process down. Until this gate existed the
+      # answer was unquotable — a grep for `.unwrap()` counts matches in doc
+      # comments, string literals and `#[cfg(test)]` modules, and here the test
+      # hits outnumber the real ones more than thirty to one. It is a ratchet,
+      # not a ban: several surviving sites are correct, and freezing the exact
+      # set makes adding one a reviewed act rather than an accident.
+      - name: Panic surface of the published crates is unchanged
+        run: python3 scripts/check_panic_paths.py
+
   # ── Clippy ───────────────────────────────────────────────────────────────
   clippy:
     name: Clippy (${{ matrix.rust }}, ${{ matrix.os }})

@@ -339,6 +339,8 @@ injection_for() {
             echo "cancellation_release" ;;
         *"check_doc_escapes.py"*)
             echo "doc_escapes" ;;
+        *"check_panic_paths.py"*)
+            echo "panic_path:$TYPES_LIB" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -435,6 +437,7 @@ expected_marker() {
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
+        panic_path)       echo "new panicking construct" ;;
         build_bin)        echo "GateProbeNoSuchType" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
@@ -489,6 +492,11 @@ if n != 1:
 p.write_text(s)
 PY
             ;;
+        # An `.unwrap()` in library code, in a function the compiler will not
+        # warn about, so the gate under test is the only thing that can object.
+        panic_path)
+            note_touched "$rest"
+            printf '\n#[allow(dead_code)]\nfn gate_probe_panic(v: Option<u8>) -> u8 { v.unwrap() }\n' >>"$rest" ;;
         proto)
             note_touched "tck/proto/a2a_v1/a2a.proto"
             printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;

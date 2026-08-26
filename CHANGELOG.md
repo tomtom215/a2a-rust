@@ -512,6 +512,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not, because `sqlx` already defaults both to the values being asked for. Both
   facts are now recorded next to the pragmas.
 
+- **The `unwrap`/`expect` count in library code is now a CI ratchet** rather
+  than a number typed into `CONTRIBUTING.md` that no method could reproduce
+  (B5). `scripts/check_panic_paths.py` strips comments and string literals with
+  a state machine and follows `#[cfg(test)]` gating transitively — a file
+  declared by a test-gated module is test code too, even though it carries no
+  attribute of its own and no "test" in its name. The measured surface of the
+  published crates: **0 `.unwrap()`, 10 `.expect(`, 0 `panic!`, 0 `todo!` in
+  runtime library code**, with `build.rs` reported separately. Adding one now
+  fails the build until the baseline is updated deliberately.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite
