@@ -301,6 +301,53 @@ mod tests {
         }
     }
 
+    // ── per-tenant bounds reach the per-tenant stores ────────────────────
+    //
+    // This store names none of `TaskStoreConfig`'s bounds; it holds one
+    // `InMemoryTaskStore` per tenant and forwards to it, so every bound is
+    // honoured by delegation. That is correct, and it is also invisible —
+    // reading this file shows a `list` that caps nothing. What makes the cap
+    // real is that `per_tenant` is handed to each store at construction, and
+    // nothing tested that it was. A refactor that built the per-tenant store
+    // with `InMemoryTaskStore::new()` would drop every configured bound back
+    // to its default and no test here would notice.
+
+    #[tokio::test]
+    async fn per_tenant_page_size_cap_reaches_the_delegate() {
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig {
+                max_page_size: 2,
+                ..TaskStoreConfig::default()
+            },
+            max_tenants: 10,
+        });
+
+        TenantContext::scope("capped", async {
+            for i in 0..5 {
+                store
+                    .save(&make_task(&format!("t{i}"), TaskState::Submitted))
+                    .await
+                    .expect("save");
+            }
+
+            let listed = store
+                .list(&ListTasksParams {
+                    page_size: Some(100),
+                    ..Default::default()
+                })
+                .await
+                .expect("list");
+
+            assert_eq!(
+                listed.tasks.len(),
+                2,
+                "the caller asked for 100; per_tenant.max_page_size is 2. \
+                 A delegate built with the default config would return 5"
+            );
+        })
+        .await;
+    }
+
     // ── TenantContext ────────────────────────────────────────────────────
 
     #[tokio::test]
