@@ -21,6 +21,8 @@ use crate::push::{InMemoryPushConfigStore, PushConfigStore};
 
 use super::*;
 
+mod budget;
+
 /// A push config store that always returns errors.
 struct AlwaysErrPushConfigStore;
 
@@ -229,6 +231,8 @@ impl crate::push::PushSender for SlowPushSender {
 struct CountingMetrics {
     delivered: std::sync::atomic::AtomicU64,
     skipped: std::sync::atomic::AtomicU64,
+    timed_out: std::sync::atomic::AtomicU64,
+    truncated: std::sync::atomic::AtomicU64,
     other: std::sync::atomic::AtomicU64,
 }
 
@@ -237,6 +241,8 @@ impl crate::metrics::Metrics for CountingMetrics {
         match outcome {
             push_outcome::DELIVERED => &self.delivered,
             push_outcome::SKIPPED => &self.skipped,
+            push_outcome::TIMEOUT => &self.timed_out,
+            push_outcome::TIMEOUT_TRUNCATED => &self.truncated,
             _ => &self.other,
         }
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -260,56 +266,6 @@ async fn store_with_configs(task_id: &str, count: usize) -> InMemoryPushConfigSt
             .expect("in-memory store accepts the config");
     }
     store
-}
-
-#[tokio::test(start_paused = true)]
-async fn configs_the_deadline_never_reaches_are_counted_as_skipped() {
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-
-    let task_id = TaskId::new("t-skip");
-    let event = make_status_event("t-skip", TaskState::Working);
-    // The shipped default for `max_push_configs_per_task`.
-    let store = store_with_configs("t-skip", 100).await;
-
-    let metrics = CountingMetrics::default();
-    // The shipped default: 5s per delivery against a 30s per-event budget.
-    let limits = HandlerLimits::default().with_push_delivery_timeout(Duration::from_secs(5));
-
-    deliver_push_bg(
-        &task_id,
-        &event,
-        &store,
-        Some(&SlowPushSender),
-        &limits,
-        &metrics,
-    )
-    .await;
-
-    let delivered = metrics.delivered.load(Ordering::Relaxed);
-    let skipped = metrics.skipped.load(Ordering::Relaxed);
-    assert_eq!(
-        delivered + skipped,
-        100,
-        "every config must be accounted for: {delivered} delivered, {skipped} skipped"
-    );
-    assert!(
-        skipped > 0,
-        "the 30s budget cannot reach 100 configs at 5s each; nothing was reported skipped"
-    );
-    // 30s budget / 5s each. The deadline is checked before each send, so the
-    // sixth send starts at t=25s and finishes at t=30s; the seventh is the
-    // first to find the budget spent.
-    assert_eq!(
-        delivered, 6,
-        "budget / per-delivery cost is the reachable count"
-    );
-    assert_eq!(skipped, 94, "the rest are skipped, and are now counted");
-    assert_eq!(
-        metrics.other.load(Ordering::Relaxed),
-        0,
-        "no delivery failed or timed out in this scenario"
-    );
 }
 
 /// Covers lines 70-76: the `Ok(Err(_))` branch where the push sender returns

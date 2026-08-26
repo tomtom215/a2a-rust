@@ -15,6 +15,36 @@ use crate::handler::limits::HandlerLimits;
 use crate::metrics::{push_outcome, Metrics};
 use crate::push::{PushConfigStore, PushSender};
 
+/// Which timeout label a cut-off delivery deserves.
+///
+/// Two different situations produce the same outer timeout and they call for
+/// opposite responses. A webhook that did not answer inside the time it was
+/// given is a [`push_outcome::TIMEOUT`] — go and look at the endpoint. A sender
+/// that reports (via [`PushSender::max_delivery_duration`]) that it wanted
+/// longer than `push_delivery_timeout` has been cut short by this deployment's
+/// own configuration, and the retries it advertises never ran: that is
+/// [`push_outcome::TIMEOUT_TRUNCATED`], and the fix is two numbers rather than
+/// an investigation.
+///
+/// At the shipped defaults it is the second. Measured 2026-08-19 against a real
+/// socket: `HttpPushSender::new()` schedules 93 seconds of work against a
+/// 5-second bound, and exactly one of its three attempts reaches the webhook.
+///
+/// A sender that reports nothing stays a plain `TIMEOUT` — nothing is *known*
+/// to have been truncated, and claiming it would be inventing a diagnosis.
+///
+/// [`PushSender::max_delivery_duration`]: crate::push::PushSender::max_delivery_duration
+fn timeout_outcome(sender: &dyn PushSender, limits: &HandlerLimits) -> &'static str {
+    if sender
+        .max_delivery_duration()
+        .is_some_and(|wanted| wanted > limits.push_delivery_timeout)
+    {
+        push_outcome::TIMEOUT_TRUNCATED
+    } else {
+        push_outcome::TIMEOUT
+    }
+}
+
 /// Delivers push notifications for a streaming event to all configured endpoints.
 ///
 /// Swallows errors from the push config store and does not propagate delivery
@@ -116,12 +146,14 @@ pub(super) async fn deliver_push_bg(
                 metrics.on_push_delivery(push_outcome::FAILED);
             }
             Err(_) => {
+                let outcome = timeout_outcome(sender, limits);
                 trace_warn!(
                     task_id = %task_id,
                     url = %config.url,
+                    outcome,
                     "push notification delivery timed out (background)"
                 );
-                metrics.on_push_delivery(push_outcome::TIMEOUT);
+                metrics.on_push_delivery(outcome);
             }
             Ok(Ok(())) => metrics.on_push_delivery(push_outcome::DELIVERED),
         }
