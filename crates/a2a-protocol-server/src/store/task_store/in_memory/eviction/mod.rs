@@ -74,6 +74,35 @@ impl EvictionPasses {
     }
 }
 
+/// Holds the "an eviction is running" flag for as long as one is.
+///
+/// A guard rather than a matched pair of atomic writes, because the sweep it
+/// guards has an `.await` in it: a plain `store(false)` at the end is not run
+/// when the future is dropped, and the flag it fails to clear is the one that
+/// gates every future sweep. `Drop` runs on cancellation and on unwind, which
+/// is the whole point.
+struct EvictionSlot<'a>(&'a std::sync::atomic::AtomicBool);
+
+impl<'a> EvictionSlot<'a> {
+    /// Claims the slot, or returns `None` if a sweep is already running.
+    fn claim(flag: &'a std::sync::atomic::AtomicBool) -> Option<Self> {
+        flag.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Relaxed,
+        )
+        .is_ok()
+        .then_some(Self(flag))
+    }
+}
+
+impl Drop for EvictionSlot<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
 impl InMemoryTaskStore {
     /// Runs background eviction of expired and over-capacity entries.
     ///
@@ -103,27 +132,34 @@ impl InMemoryTaskStore {
     /// Runs eviction in a separate lock acquisition if not already in progress.
     ///
     /// Uses `eviction_in_progress` to prevent multiple concurrent sweeps.
+    ///
+    /// # The slot is released by a guard, not by reaching the end
+    ///
+    /// It used to be released by a `store(false)` after the sweep, and there is
+    /// an `.await` between claiming it and getting there — the wait for the
+    /// write lock. A future dropped in that window left the flag set **for the
+    /// life of the process**, and every later call returned at the
+    /// `compare_exchange` without doing anything.
+    ///
+    /// Both of this store's memory bounds go through here, so the consequence
+    /// was not a slower sweep but no sweep: terminal tasks never expire and the
+    /// store grows past `max_capacity` without limit. Measured 2026-08-19 by
+    /// holding the write lock, aborting a parked `maybe_evict`, releasing the
+    /// lock and calling it again — the flag was still set and the later call
+    /// did nothing.
+    ///
+    /// Cancellation here is ordinary, not exotic: `save` is awaited on the
+    /// request and background paths, and a handler timeout, a dropped client
+    /// request or a shutdown cancellation drops that future wherever it happens
+    /// to be.
     pub(super) async fn maybe_evict(&self, passes: EvictionPasses) {
         // Try to claim the eviction slot. If another task is already evicting, skip.
-        if self
-            .eviction_in_progress
-            .compare_exchange(
-                false,
-                true,
-                std::sync::atomic::Ordering::AcqRel,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_err()
-        {
+        let Some(_slot) = EvictionSlot::claim(&self.eviction_in_progress) else {
             return;
-        }
+        };
 
         let mut store = self.data.write().await;
         Self::evict(&mut store, &self.config, passes);
-        drop(store);
-
-        self.eviction_in_progress
-            .store(false, std::sync::atomic::Ordering::Release);
     }
 
     /// Runs the passes `passes` asks for (must be called with write lock held).
@@ -286,6 +322,59 @@ mod tests {
             ids(&data),
             vec!["t1".to_string()],
             "the terminal task expires; the working one is kept regardless of age"
+        );
+    }
+
+    /// A cancelled sweep must not disable eviction for the life of the process.
+    ///
+    /// `maybe_evict` claims the slot and then awaits the write lock. Until
+    /// 2026-08-19 the flag was cleared by a `store(false)` after the sweep, so a
+    /// future dropped while parked on that lock left it set forever — and both
+    /// of this store's memory bounds, TTL and capacity, run through here. The
+    /// result was not a slower sweep but no sweep at all.
+    ///
+    /// Cancellation is ordinary on this path: `save` is awaited on the request
+    /// and background paths, and a handler timeout, a dropped client request or
+    /// a shutdown cancellation drops that future wherever it is.
+    #[tokio::test]
+    async fn a_cancelled_sweep_releases_the_eviction_slot() {
+        use std::sync::atomic::Ordering;
+        use std::sync::Arc;
+
+        let store = Arc::new(InMemoryTaskStore::with_config(config(Some(1), None, 1)));
+        let passes = EvictionPasses {
+            ttl: true,
+            capacity: true,
+        };
+
+        // Hold the write lock so the sweep parks after claiming the slot.
+        let guard = store.data.write().await;
+
+        let parked = Arc::clone(&store);
+        let handle = tokio::spawn(async move { parked.maybe_evict(passes).await });
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(
+            store.eviction_in_progress.load(Ordering::Acquire),
+            "sanity: the parked sweep should be holding the slot"
+        );
+
+        // The caller goes away.
+        handle.abort();
+        let _ = handle.await;
+        drop(guard);
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        assert!(
+            !store.eviction_in_progress.load(Ordering::Acquire),
+            "a cancelled sweep left the slot claimed; every later sweep is now a \
+             no-op and neither the TTL nor the capacity bound will ever run again"
+        );
+
+        // And the next sweep must actually get in.
+        store.maybe_evict(passes).await;
+        assert!(
+            !store.eviction_in_progress.load(Ordering::Acquire),
+            "the slot must be free again after a completed sweep"
         );
     }
 }
