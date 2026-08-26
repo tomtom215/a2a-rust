@@ -127,6 +127,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   further signals can arrive, and it answered by asking again immediately,
   forever.
 
+- **`InMemoryCredentialsStore`'s `Debug` panicked on a poisoned lock.**
+  Formatting runs while somebody is diagnosing the first failure, often from a
+  logging path, so a panicking `Debug` replaces the diagnosis with a second
+  failure — and a process abort in release. It now reports `<lock poisoned>`.
+  The accessors on the same type still propagate poisoning, deliberately: a
+  credentials lookup that quietly returns `None` is a silent auth downgrade,
+  which is worse than a panic. Different answers for different call sites, both
+  now written down.
+
 - **`HotReloadAgentCardHandler` turned one panic into permanent failure.** Both
   accessors `expect`ed on their `RwLock`, and poisoning is sticky, so a single
   panic anywhere under the write lock made `current()` — the function that
