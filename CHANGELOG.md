@@ -56,6 +56,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `A2A_VERSION`. This repository contained 122 `AgentCard { .. }` literals when
   the constructors were written.
 
+- **Connection bounds for `WebSocketDispatcher`:** `with_max_connections` and
+  `with_idle_timeout`. The handshake timeout — documented in that module as the
+  slowloris defence — covers only the part before the upgrade completes;
+  nothing bounded a peer that completed the handshake and then went quiet.
+  Measured: 400 idle handshaken connections accepted and held with none
+  refused, and a connection idle for 12 seconds still being served, because the
+  read loop awaited the next frame with no bound and the accept loop spawned a
+  task per socket with no ceiling. Both default to **off**, so nothing changes
+  unless you ask. `max_connections` takes its permit before `accept()`, so
+  excess load waits in the kernel's listen backlog rather than as unbounded
+  tasks. `idle_timeout` counts traffic in *both* directions and sends a
+  WebSocket Ping at the halfway mark, which conformant clients answer
+  automatically — so it closes peers that are unresponsive rather than peers
+  that are merely quiet. That distinction is why it is opt-in and why it is
+  safe to opt in: an A2A subscription may legitimately be silent for hours.
+
 - **`push_outcome::SKIPPED`**, reported once per push-notification config the
   per-event delivery budget never reaches.
 

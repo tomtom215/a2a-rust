@@ -88,7 +88,9 @@ type PendingMap = Mutex<HashMap<String, PendingRequest>>;
 /// A panic while the map was locked cannot leave a `HashMap` half-updated, so
 /// wedging the transport for the life of the connection would be the worse
 /// outcome of the two.
-fn lock_pending(pending: &PendingMap) -> std::sync::MutexGuard<'_, HashMap<String, PendingRequest>> {
+fn lock_pending(
+    pending: &PendingMap,
+) -> std::sync::MutexGuard<'_, HashMap<String, PendingRequest>> {
     pending
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -1152,10 +1154,12 @@ mod tests {
     #[tokio::test]
     async fn a_cancelled_request_does_not_leak_its_pending_entry() {
         let addr = spawn_silent_ws_server().await;
-        let transport =
-            WebSocketTransport::connect_with_timeout(format!("ws://{addr}"), Duration::from_secs(30))
-                .await
-                .expect("connect");
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
 
         for i in 0..5 {
             // The caller gives up long before the transport's own timeout,
@@ -1169,14 +1173,20 @@ mod tests {
                 ),
             )
             .await;
-            assert!(outcome.is_err(), "the server never answers, so it must elapse");
+            assert!(
+                outcome.is_err(),
+                "the server never answers, so it must elapse"
+            );
         }
 
         // The writer task registers nothing now, but give the runtime a turn
         // anyway so a failure here can never be read as "the test looked early".
         tokio::time::sleep(Duration::from_millis(100)).await;
         let leaked = lock_pending(&transport.inner.pending).len();
-        assert_eq!(leaked, 0, "5 cancelled requests left {leaked} pending entries");
+        assert_eq!(
+            leaked, 0,
+            "5 cancelled requests left {leaked} pending entries"
+        );
     }
 
     /// A consumer that abandons a stream the server never fed must not leave
@@ -1192,10 +1202,12 @@ mod tests {
     #[tokio::test]
     async fn an_abandoned_stream_does_not_leak_its_pending_entry() {
         let addr = spawn_silent_ws_server().await;
-        let transport =
-            WebSocketTransport::connect_with_timeout(format!("ws://{addr}"), Duration::from_secs(30))
-                .await
-                .expect("connect");
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
 
         for i in 0..5 {
             let stream = transport
@@ -1211,7 +1223,10 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(100)).await;
         let leaked = lock_pending(&transport.inner.pending).len();
-        assert_eq!(leaked, 0, "5 abandoned streams left {leaked} pending entries");
+        assert_eq!(
+            leaked, 0,
+            "5 abandoned streams left {leaked} pending entries"
+        );
     }
 
     /// A live stream must keep its entry: the guard travels with the stream,
@@ -1223,10 +1238,12 @@ mod tests {
     #[tokio::test]
     async fn a_live_stream_keeps_its_pending_entry() {
         let addr = spawn_silent_ws_server().await;
-        let transport =
-            WebSocketTransport::connect_with_timeout(format!("ws://{addr}"), Duration::from_secs(30))
-                .await
-                .expect("connect");
+        let transport = WebSocketTransport::connect_with_timeout(
+            format!("ws://{addr}"),
+            Duration::from_secs(30),
+        )
+        .await
+        .expect("connect");
 
         let stream = transport
             .send_streaming_request(

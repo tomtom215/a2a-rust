@@ -74,6 +74,19 @@ const MAX_WS_MESSAGE_SIZE: usize = 4 * 1024 * 1024;
 /// the process (slowloris) — `accept_async` has no timeout of its own.
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// A reasonable idle bound for [`WebSocketDispatcher::with_idle_timeout`]:
+/// how long an established connection may carry no traffic in either direction
+/// before it is closed.
+///
+/// Matches [`DEFAULT_IDLE_TIMEOUT`](crate::serve::DEFAULT_IDLE_TIMEOUT) for the
+/// HTTP bindings, and like it counts traffic in *both* directions so a
+/// subscription pushing events out is not mistaken for a dead connection.
+///
+/// Unlike the HTTP default it is **off** unless asked for — see
+/// [`WebSocketDispatcher::with_idle_timeout`] for why a WebSocket cannot
+/// safely assume silence means death.
+pub const DEFAULT_WS_IDLE_TIMEOUT: Duration = Duration::from_secs(75);
+
 /// WebSocket-based A2A dispatcher.
 ///
 /// Accepts WebSocket connections and processes JSON-RPC 2.0 messages over the
@@ -97,6 +110,8 @@ pub struct WebSocketDispatcher {
     handler: Arc<RequestHandler>,
     handshake_timeout: Duration,
     require_version_header: bool,
+    max_connections: Option<usize>,
+    idle_timeout: Option<Duration>,
 }
 
 impl WebSocketDispatcher {
@@ -107,6 +122,8 @@ impl WebSocketDispatcher {
             handler,
             handshake_timeout: DEFAULT_HANDSHAKE_TIMEOUT,
             require_version_header: true,
+            max_connections: None,
+            idle_timeout: None,
         }
     }
 
@@ -129,6 +146,68 @@ impl WebSocketDispatcher {
     #[must_use]
     pub const fn with_handshake_timeout(mut self, timeout: Duration) -> Self {
         self.handshake_timeout = timeout;
+        self
+    }
+
+    /// Caps the connections served at once. Default: unbounded.
+    ///
+    /// Without this the accept loop spawns a task per accepted socket with no
+    /// ceiling, exactly as
+    /// [`serve`](crate::serve::serve) did before [`ServeConfig`] existed.
+    /// Measured on 2026-08-19: 400 idle handshaken connections were accepted
+    /// and held, none refused, the ceiling being the process's file-descriptor
+    /// table.
+    ///
+    /// The permit is taken **before** `accept()`, so load past the ceiling
+    /// waits in the kernel's listen backlog and is refused by the kernel when
+    /// that fills — a far better failure than an unbounded task spawn that
+    /// turns a traffic spike into an OOM.
+    ///
+    /// Unbounded stays the default for the same reason it does on
+    /// [`ServeConfig::max_connections`](crate::serve::ServeConfig): a
+    /// deployment may genuinely want no ceiling, and picking one for it is
+    /// picking its capacity.
+    ///
+    /// [`ServeConfig`]: crate::serve::ServeConfig
+    #[must_use]
+    pub const fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = Some(max);
+        self
+    }
+
+    /// Closes a connection that carries no traffic in either direction for
+    /// `timeout`. Default: **off**.
+    ///
+    /// [`with_handshake_timeout`](Self::with_handshake_timeout) bounds a peer
+    /// that connects and never upgrades. Nothing bounded the peer that
+    /// *completes* the handshake and then goes silent, so one that did held a
+    /// task, a socket and a file descriptor for the life of the process —
+    /// measured, a connection idle for 12 seconds was still being served, and
+    /// the read loop has no bound at all.
+    ///
+    /// # Why this is off by default when the HTTP one is on
+    ///
+    /// On HTTP, silence means nothing is happening. On a WebSocket it may mean
+    /// a subscription is waiting for its next event, which is a legitimate
+    /// thing to do for hours. A timeout defaulted on would close healthy
+    /// subscriptions, and a knob that breaks correct programs is a knob nobody
+    /// turns on.
+    ///
+    /// What makes it *safe* to turn on: at the halfway point of the budget the
+    /// server sends a WebSocket Ping. Every conformant client library — this
+    /// SDK's included, via tungstenite — answers automatically, and that Pong
+    /// is traffic. So the timeout closes peers that are **unresponsive**, not
+    /// peers that are merely quiet. Only a client that has stopped reading its
+    /// socket, or gone away without a close frame, fails to answer.
+    ///
+    /// Outbound frames count too, so a stream pushing events to a silent
+    /// consumer keeps its own connection alive.
+    ///
+    /// [`DEFAULT_WS_IDLE_TIMEOUT`] (75s, matching the HTTP default) is a
+    /// reasonable starting point.
+    #[must_use]
+    pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(timeout);
         self
     }
 
@@ -181,7 +260,20 @@ impl WebSocketDispatcher {
 
     /// Accepts connections forever, surviving transient `accept()` errors.
     async fn accept_loop(self: Arc<Self>, listener: TcpListener) {
+        // Taken before `accept()`, so excess load waits in the kernel's listen
+        // backlog rather than as unbounded spawned tasks. `MAX_PERMITS` when no
+        // ceiling was asked for keeps one code path instead of two.
+        let limiter = Arc::new(tokio::sync::Semaphore::new(
+            self.max_connections
+                .unwrap_or(tokio::sync::Semaphore::MAX_PERMITS),
+        ));
         loop {
+            let Ok(permit) = Arc::clone(&limiter).acquire_owned().await else {
+                // The semaphore is never closed; this is unreachable and is a
+                // `return` rather than an `expect` because a panic in the
+                // accept loop takes the listener with it.
+                return;
+            };
             let (stream, _peer) = match listener.accept().await {
                 Ok(pair) => pair,
                 Err(e) => {
@@ -203,6 +295,10 @@ impl WebSocketDispatcher {
                 if let Err(_e) = dispatcher.handle_connection(stream).await {
                     trace_warn!(error = %_e, "WebSocket connection error");
                 }
+                // Held for the whole connection, not just the handshake: the
+                // ceiling is on connections being served, which is what an
+                // operator sizing it has in mind.
+                drop(permit);
             });
         }
     }
@@ -246,13 +342,16 @@ impl WebSocketDispatcher {
         let headers = Arc::new(upgrade_headers.unwrap_or_default());
 
         let (writer, reader) = ws_stream.split();
-        let writer = Arc::new(tokio::sync::Mutex::new(writer));
+        let writer: WsSink = Arc::new(Connection {
+            sink: tokio::sync::Mutex::new(writer),
+            activity: ActivityClock::new(),
+        });
 
         self.read_loop(reader, &writer, &headers).await;
 
         // Best-effort close handshake: sends any pending close reply so the
         // peer sees a clean WebSocket close rather than a bare TCP teardown.
-        let mut w = writer.lock().await;
+        let mut w = writer.sink.lock().await;
         let _ = w.close().await;
         drop(w);
 
@@ -269,7 +368,12 @@ impl WebSocketDispatcher {
         // FIX(M9): Limit concurrent tasks per connection to prevent unbounded spawning.
         let semaphore = Arc::new(tokio::sync::Semaphore::new(64));
 
-        while let Some(msg) = reader.next().await {
+        // Every arriving frame is traffic — including the Pong answering the
+        // keepalive Ping below, which is what lets a quiet-but-live
+        // subscription outlive the idle bound.
+        writer.activity.touch();
+        while let Some(msg) = Self::next_frame(&mut reader, writer, self.idle_timeout).await {
+            writer.activity.touch();
             match msg {
                 Ok(WsMessage::Text(text)) => {
                     // No size check here on purpose. `WebSocketConfig` above is
@@ -337,6 +441,66 @@ impl WebSocketDispatcher {
                 // continuous polling flushes it (a manual reply here sent a
                 // second pong per ping). Pongs and raw frames are ignored.
                 Ok(_) => {}
+            }
+        }
+    }
+
+    /// Reads the next frame, giving up if the connection stays silent past the
+    /// idle budget.
+    ///
+    /// Returns `None` to end the connection — either the stream ended or the
+    /// budget was spent.
+    ///
+    /// The budget is recomputed from the shared clock on every wake rather than
+    /// being started fresh each time round: a fixed `timeout(idle, …)` per read
+    /// would restart the budget on every frame *and* ignore outbound traffic,
+    /// so a connection could be closed while actively streaming, or held open
+    /// forever by a peer sending one byte just under the bound.
+    async fn next_frame(
+        reader: &mut futures_util::stream::SplitStream<WebSocketStream<TcpStream>>,
+        writer: &WsSink,
+        idle_timeout: Option<Duration>,
+    ) -> Option<Result<WsMessage, tokio_tungstenite::tungstenite::Error>> {
+        let Some(idle) = idle_timeout else {
+            return reader.next().await;
+        };
+
+        // Ping at the halfway mark, once per idle period. A conformant peer
+        // answers automatically and the Pong refreshes the clock; one that has
+        // stopped reading its socket does not, which is the difference this
+        // timeout is meant to detect.
+        let mut pinged = false;
+        loop {
+            let idle_for = writer.activity.idle_for();
+            if idle_for >= idle {
+                trace_debug!("WebSocket connection idle past its budget; closing");
+                return None;
+            }
+            let half = idle / 2;
+            let (wait, ping_now) = if pinged || idle_for >= half {
+                (idle.saturating_sub(idle_for), false)
+            } else {
+                (half.saturating_sub(idle_for), true)
+            };
+
+            // A frame — any frame, the peer's Pong included — is traffic, and
+            // ends the wait.
+            if let Ok(frame) = tokio::time::timeout(wait, reader.next()).await {
+                return frame;
+            }
+            // The wait elapsed. Either send the keepalive, or recheck: an
+            // outbound write may have refreshed the clock meanwhile, so this
+            // must not close on the first tick.
+            if ping_now {
+                let mut w = writer.sink.lock().await;
+                // A failed ping means the socket is already gone; let the next
+                // read observe it rather than guessing here.
+                let _ = w.send(WsMessage::Ping(Vec::new().into())).await;
+                drop(w);
+                // Deliberately *not* a `touch()`: our own keepalive must not be
+                // able to keep a dead peer's connection alive. Only the peer's
+                // answer counts.
+                pinged = true;
             }
         }
     }
@@ -447,7 +611,61 @@ impl std::fmt::Display for WsError {
     }
 }
 
-type WsSink = Arc<tokio::sync::Mutex<SplitSink<WebSocketStream<TcpStream>, WsMessage>>>;
+/// One connection's write half, plus the clock that says when it last carried
+/// traffic.
+///
+/// The two are bundled because the idle timer has to see *outbound* traffic and
+/// the write half is the only thing every outbound path already holds. A timer
+/// fed only by reads would close a healthy subscription that is streaming
+/// events to a client with nothing to say — the exact failure
+/// [`ServeConfig::idle_timeout`](crate::serve::ServeConfig) warns about for
+/// SSE.
+struct Connection {
+    sink: tokio::sync::Mutex<SplitSink<WebSocketStream<TcpStream>, WsMessage>>,
+    activity: ActivityClock,
+}
+
+type WsSink = Arc<Connection>;
+
+/// When a connection last carried a frame, as milliseconds since it was
+/// established.
+///
+/// Milliseconds in an `AtomicU64` rather than a `Mutex<Instant>`: every spawned
+/// per-message task touches this, `Instant` is not atomic, and taking a lock to
+/// record "something happened" on a path that already holds the sink lock is
+/// how a write path acquires a second contended lock for no reason.
+struct ActivityClock {
+    start: std::time::Instant,
+    last_ms: std::sync::atomic::AtomicU64,
+}
+
+impl ActivityClock {
+    fn new() -> Self {
+        Self {
+            start: std::time::Instant::now(),
+            last_ms: std::sync::atomic::AtomicU64::new(0),
+        }
+    }
+
+    /// Saturating, because a connection open for 584 million years is not the
+    /// case this code needs to be right about, and wrapping would read as
+    /// activity.
+    fn now_ms(&self) -> u64 {
+        u64::try_from(self.start.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    fn touch(&self) {
+        self.last_ms
+            .store(self.now_ms(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn idle_for(&self) -> Duration {
+        Duration::from_millis(
+            self.now_ms()
+                .saturating_sub(self.last_ms.load(std::sync::atomic::Ordering::Relaxed)),
+        )
+    }
+}
 
 /// Processes a single JSON-RPC message received over WebSocket.
 ///
@@ -688,11 +906,14 @@ async fn stream_events(
                     result: stream_resp,
                 };
                 let json = serde_json::to_string(&envelope).unwrap_or_default();
-                let mut w = writer.lock().await;
+                let mut w = writer.sink.lock().await;
                 if w.send(WsMessage::Text(json.into())).await.is_err() {
                     return; // Client disconnected
                 }
                 drop(w);
+                // This is the write that keeps a long subscription alive under
+                // an idle timeout: the consumer may say nothing for hours.
+                writer.activity.touch();
             }
             Err(e) => {
                 let err_resp =
@@ -755,9 +976,10 @@ async fn dispatch_simple<'a, F>(
 /// Sends a JSON-serializable value as a WebSocket text frame.
 async fn send_json<T: serde::Serialize + Sync>(writer: &WsSink, value: &T) {
     let json = serde_json::to_string(value).unwrap_or_default();
-    let mut w = writer.lock().await;
+    let mut w = writer.sink.lock().await;
     let _ = w.send(WsMessage::Text(json.into())).await;
     drop(w);
+    writer.activity.touch();
 }
 
 /// Sends a server error as a JSON-RPC error response.
@@ -885,6 +1107,212 @@ mod tests {
     async fn spawn_ws_server() -> std::net::SocketAddr {
         let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
         let dispatcher = Arc::new(WebSocketDispatcher::new(handler));
+        dispatcher
+            .serve_with_addr("127.0.0.1:0")
+            .await
+            .expect("bind to port 0")
+    }
+
+    // ── Connection-level bounds ──────────────────────────────────────────
+    //
+    // These three are one subject: what stops a peer that completes the
+    // handshake and then costs the server something indefinitely. Before
+    // 2026-08-19 nothing did. Measured then: 400 idle handshaken connections
+    // accepted and held with none refused, and a connection idle for 12
+    // seconds still being served, because `read_loop` awaited
+    // `reader.next()` with no bound and `accept_loop` spawned a task per
+    // socket with no ceiling. The handshake timeout — documented in this file
+    // as the slowloris defence — covers only the part before the upgrade
+    // completes.
+
+    /// A peer that completes the handshake and then stops reading its socket
+    /// is closed once its idle budget is spent.
+    ///
+    /// The client is deliberately **not** polled while the budget runs.
+    /// Polling it would make tungstenite answer the server's keepalive Ping
+    /// automatically, which is traffic — that models the healthy peer the
+    /// sibling test covers, and this test asserted it by accident on the first
+    /// attempt, passing nothing and failing loudly. What is modelled here is
+    /// the peer that has gone away without a close frame, or whose event loop
+    /// is wedged: it never answers, and it is the only peer this bound is
+    /// entitled to close.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_silent_peer_is_closed_once_its_idle_budget_is_spent() {
+        let addr = spawn_ws_server_with(|d| d.with_idle_timeout(Duration::from_secs(2))).await;
+        let mut ws = ws_connect(addr).await;
+
+        tokio::time::sleep(Duration::from_secs(4)).await;
+
+        // Now drain. The Ping sent at the halfway mark is buffered ahead of the
+        // close, so read past it to find the end.
+        let ended = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match ws.next().await {
+                    Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => {}
+                    Some(Ok(WsMessage::Close(_)) | Err(_)) | None => return,
+                    Some(Ok(other)) => panic!("unexpected frame on an idle connection: {other:?}"),
+                }
+            }
+        })
+        .await;
+
+        assert!(
+            ended.is_ok(),
+            "a connection idle past two 2s budgets must be closed; it was still open"
+        );
+    }
+
+    /// A peer that answers the keepalive keeps its connection, past several
+    /// idle budgets.
+    ///
+    /// This is the half that makes the timeout safe to enable. A WebSocket
+    /// subscription waiting for its next event is silent and healthy, and a
+    /// bound that could not tell it from a dead socket would be a bound nobody
+    /// switches on. Polling the stream is all a real client does; tungstenite
+    /// answers the Ping itself.
+    ///
+    /// Without it, `a_silent_peer_is_closed_once_its_idle_budget_is_spent`
+    /// passes for a dispatcher that simply closes every connection after two
+    /// seconds.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_peer_that_answers_the_keepalive_keeps_its_connection() {
+        let addr = spawn_ws_server_with(|d| d.with_idle_timeout(Duration::from_secs(2))).await;
+        let mut ws = ws_connect(addr).await;
+
+        // Poll for three budgets' worth. Every Ping is answered by the client
+        // library as a side effect of reading, and each Pong is traffic.
+        let died = tokio::time::timeout(Duration::from_secs(6), async {
+            loop {
+                match ws.next().await {
+                    Some(Ok(WsMessage::Ping(_) | WsMessage::Pong(_))) => {}
+                    other => return other,
+                }
+            }
+        })
+        .await;
+        assert!(
+            died.is_err(),
+            "a responsive peer must not be closed; got {died:?}"
+        );
+
+        // And it is still a working connection, not merely an open socket.
+        ws.send(WsMessage::Text(send_message_json("keepalive").into()))
+            .await
+            .expect("send after three idle budgets");
+        let text = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                match ws.next().await {
+                    Some(Ok(WsMessage::Text(t))) => return t,
+                    Some(Ok(_)) => {}
+                    other => panic!("connection died mid-request: {other:?}"),
+                }
+            }
+        })
+        .await
+        .expect("a response within 5s");
+        assert!(
+            text.contains("\"result\""),
+            "expected a JSON-RPC result, got: {text}"
+        );
+    }
+
+    /// The defaults are: no idle timeout, no connection ceiling.
+    ///
+    /// Both differ from the HTTP bindings on purpose, and a default nothing
+    /// asserts is a default that changes by accident.
+    ///
+    /// The assertion is on the fields, not only on behaviour. A behavioural
+    /// check has to pick an idle duration to wait, and any duration it picks
+    /// is shorter than some default it would then fail to notice — the first
+    /// version of this test idled for three seconds and passed unchanged
+    /// against a 75-second default, which is a test that names a property it
+    /// does not check. The behavioural half stays, because the field being
+    /// `None` is only interesting if `None` means what it should.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_defaults_are_no_idle_timeout_and_no_connection_ceiling() {
+        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let default = WebSocketDispatcher::new(handler);
+        assert!(
+            default.idle_timeout.is_none(),
+            "the idle timeout is opt-in: a WebSocket subscription may be legitimately \
+             silent for hours, and a default that closes it is a knob nobody enables"
+        );
+        assert!(
+            default.max_connections.is_none(),
+            "unbounded by default, matching ServeConfig::max_connections"
+        );
+
+        let addr = spawn_ws_server().await;
+        let mut ws = ws_connect(addr).await;
+        let died = tokio::time::timeout(Duration::from_secs(3), ws.next()).await;
+        assert!(
+            died.is_err(),
+            "with no idle timeout nothing should arrive or close: {died:?}"
+        );
+        ws.send(WsMessage::Text(send_message_json("still-here").into()))
+            .await
+            .expect("send after idling");
+        let text = read_text(&mut ws).await;
+        assert!(
+            text.contains("\"result\""),
+            "expected a result, got: {text}"
+        );
+    }
+
+    /// The connection ceiling is a ceiling: past it, a new peer's handshake
+    /// does not complete.
+    ///
+    /// The permit is taken before `accept()`, so the excess sits in the
+    /// kernel's listen backlog rather than as a spawned task — which is why
+    /// this asserts "does not complete" rather than "is refused".
+    #[tokio::test(flavor = "multi_thread")]
+    async fn max_connections_bounds_accepted_connections() {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
+
+        let addr = spawn_ws_server_with(|d| d.with_max_connections(2)).await;
+
+        let first = ws_connect(addr).await;
+        let second = ws_connect(addr).await;
+
+        let mut req = format!("ws://{addr}").into_client_request().expect("url");
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().expect("header"));
+        let third = tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio_tungstenite::connect_async(req),
+        )
+        .await;
+        assert!(
+            third.is_err(),
+            "the third handshake must not complete against a ceiling of 2; got {:?}",
+            third.map(|r| r.is_ok())
+        );
+
+        // And the ceiling is on connections being *served*: closing one frees
+        // a permit, which is what makes it a ceiling rather than a lifetime
+        // quota.
+        drop(first);
+        let mut req = format!("ws://{addr}").into_client_request().expect("url");
+        req.headers_mut()
+            .insert("a2a-version", "1.0".parse().expect("header"));
+        let replacement = tokio::time::timeout(
+            Duration::from_secs(5),
+            tokio_tungstenite::connect_async(req),
+        )
+        .await;
+        assert!(
+            matches!(replacement, Ok(Ok(_))),
+            "a freed permit must admit the next peer"
+        );
+        drop(second);
+    }
+
+    /// Spawns a dispatcher configured by `configure`, for the bound tests.
+    async fn spawn_ws_server_with(
+        configure: impl FnOnce(WebSocketDispatcher) -> WebSocketDispatcher,
+    ) -> std::net::SocketAddr {
+        let handler = Arc::new(RequestHandlerBuilder::new(EchoExec).build().unwrap());
+        let dispatcher = Arc::new(configure(WebSocketDispatcher::new(handler)));
         dispatcher
             .serve_with_addr("127.0.0.1:0")
             .await
