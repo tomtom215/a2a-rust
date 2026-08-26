@@ -112,6 +112,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   how many events it missed rather than a stream with a silent hole in it —
   the same contract the SSE fan-out already has through broadcast's `Lagged`.
 
+- **The Axum router ignored `body_read_timeout`.** `DispatchConfig` carries two
+  body bounds; this router honoured `max_request_body_size` — wired in
+  deliberately, with a comment explaining that Axum's `Bytes` extractor would
+  otherwise fall back to its own `DefaultBodyLimit` and make the knob a no-op —
+  and never applied the timeout sitting beside it. Measured with
+  `body_read_timeout(1s)`, announcing a 1000-byte body and sending 8:
+  `JsonRpcDispatcher` answered at 1.002 s and the Axum router had said nothing
+  after 12 seconds. A slowloris body is what the knob is for, and the one shape
+  a size cap cannot catch — the bytes never arrive, so the cap is never
+  reached. A `TimedBody` extractor now reads the body under the configured
+  deadline and answers `408 Request Timeout`; measured at 1.002 s.
+
 - **`TaskStoreConfig::max_page_size` did nothing on any SQL store.** The four
   SQL stores hold a connection pool and no config, and each carried its own
   hardcoded `n.min(1000)` — the same number `TaskStoreConfig` uses as its

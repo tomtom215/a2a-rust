@@ -638,3 +638,75 @@ async fn axum_tenant_prefixed_paths_are_not_routed() {
     let (status, _) = http_request("GET", &format!("{base}/tasks/{task_id}")).await;
     assert_eq!(status, 200);
 }
+
+/// A dribbling request body is cut off at `body_read_timeout`.
+///
+/// `DispatchConfig` carries two body bounds and this router honoured one.
+/// `max_request_body_size` was wired in deliberately — the comment on
+/// `into_router` says why, that Axum's `Bytes` extractor would otherwise fall
+/// back to its own `DefaultBodyLimit` and make the knob a no-op — and
+/// `body_read_timeout` sitting beside it was not. The config scopes a field
+/// when it is limited (`max_query_string_length` says "REST only"); this one
+/// said nothing, and its own doc example sets both together.
+///
+/// MEASURED 2026-08-19, announcing a 1000-byte body and sending 8 of them with
+/// `body_read_timeout(1s)`: `JsonRpcDispatcher` answered at 1.002s and this
+/// router had said nothing after 12 seconds. A slowloris body is exactly what
+/// the knob is for, and the one shape a size cap cannot catch — the bytes
+/// never arrive, so the cap is never reached.
+///
+/// Raw TCP rather than an HTTP client, because the point is a request that is
+/// never completed, and a client that completes its request cannot express it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dribbling_body_is_cut_off_at_the_configured_timeout() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let handler = Arc::new(
+        RequestHandlerBuilder::new(EchoExecutor)
+            .with_agent_card(test_card())
+            .build()
+            .expect("build handler"),
+    );
+    let config = a2a_protocol_server::dispatch::DispatchConfig::default()
+        .with_body_read_timeout(std::time::Duration::from_secs(1));
+    let app = A2aRouter::with_config(handler, config).into_router();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
+    let mut sock = tokio::net::TcpStream::connect(addr).await.expect("connect");
+    sock.write_all(
+        b"POST /message:send HTTP/1.1\r\nHost: x\r\nA2A-Version: 1.0\r\n\
+          Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n",
+    )
+    .await
+    .expect("headers");
+    // Eight bytes of a body that claims a thousand, then silence.
+    sock.write_all(b"{\"messag").await.expect("partial body");
+    sock.flush().await.expect("flush");
+
+    let mut buf = [0u8; 256];
+    // Generous relative to the 1s bound, so a pass means the bound fired and
+    // not that the test was lucky; the pre-fix behaviour blows straight
+    // through it.
+    let read = tokio::time::timeout(std::time::Duration::from_secs(10), sock.read(&mut buf))
+        .await
+        .expect("the server must answer or close rather than hold a stalled body open");
+    let n = read.expect("read");
+    let status_line = String::from_utf8_lossy(&buf[..n])
+        .lines()
+        .next()
+        .unwrap_or("")
+        .to_owned();
+
+    assert!(
+        status_line.contains("408"),
+        "a body that never arrives must be refused with 408, got: {status_line:?}"
+    );
+}
