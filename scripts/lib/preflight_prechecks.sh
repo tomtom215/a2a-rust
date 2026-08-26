@@ -162,7 +162,39 @@ report_external_prerequisites() {
     elif command -v spire-server >/dev/null 2>&1 && command -v spire-agent >/dev/null 2>&1; then
         spire_state='present'
     else
-        spire_state='MISSING — 1 gate will fail; see ci.yml "Install SPIRE"'
+        # Third case, and the one that cost something: installed but invisible.
+        #
+        # ci.yml's "Install SPIRE" step unpacks to /tmp/spire-<version>/bin and
+        # exports SPIRE_BIN_DIR from that same step. A developer who ran that
+        # install by hand — or a container that carries it — has both binaries
+        # on disk with nothing pointing at them, and `spire_bin_dir` panics
+        # rather than skipping. Both checks above then say MISSING, which is
+        # true of the environment and false about the machine.
+        #
+        # Measured here on 2026-08-20: this precheck printed MISSING and
+        # "those gate failures are the machine, not the diff" on a host where
+        # /tmp/spire-1.11.2/bin held both binaries, and the gate passed as soon
+        # as SPIRE_BIN_DIR named that directory. A precheck that says a gate is
+        # unrunnable when it is runnable does not cost a false alarm — it costs
+        # the verification, because the failure it predicted arrives looking
+        # exactly as predicted and gets waved through.
+        #
+        # No glob pipeline here, deliberately: `du -sk "$where"/*/incremental`
+        # one function above exited this script with `set -e` when its glob
+        # matched nothing. A loop with `[ -x ]` guards cannot.
+        local candidate spire_found=''
+        for candidate in /tmp/spire-*/bin; do
+            [ -x "$candidate/spire-server" ] && [ -x "$candidate/spire-agent" ] || continue
+            spire_found=$candidate
+            break
+        done
+        if [ -n "$spire_found" ]; then
+            spire_state="MISSING from the environment — 1 gate will fail, but the"
+            spire_state="$spire_state binaries are here. Run:
+                     export SPIRE_BIN_DIR=$spire_found"
+        else
+            spire_state='MISSING — 1 gate will fail; see ci.yml "Install SPIRE"'
+        fi
     fi
 
     printf 'preflight: PostgreSQL %s\n' "$pg_state"
