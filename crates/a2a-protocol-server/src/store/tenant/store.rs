@@ -27,8 +27,30 @@ pub struct TenantStoreConfig {
     /// Per-tenant store configuration.
     pub per_tenant: TaskStoreConfig,
 
-    /// Maximum number of tenants allowed. Prevents unbounded memory growth
-    /// from tenant enumeration attacks. Default: 1000.
+    /// Maximum number of tenants allowed. Default: 1000.
+    ///
+    /// # What it prevents, and what it converts the problem into
+    ///
+    /// It bounds memory against tenant enumeration — that much was already
+    /// written here. What was not: a tenant id is whatever the handler's
+    /// tenant resolution produced, and every bundled
+    /// [`TenantResolver`](crate::TenantResolver) reads client-controlled input
+    /// (see [that module's](crate::tenant_resolver) security section). So
+    /// a caller who can send N distinct tenant ids creates N partitions, and
+    /// once this cap is reached **every new tenant is refused, including
+    /// legitimate ones**. The memory bound holds; availability for new tenants
+    /// is what pays for it.
+    ///
+    /// [`prune_empty_tenants`](TenantAwareInMemoryTaskStore::prune_empty_tenants)
+    /// is the reclamation path, and it is not automatic — nothing calls it —
+    /// and it only removes partitions whose task count is **zero**. A
+    /// partition created by a `save` holds a task until that task is evicted,
+    /// so at the shipped one-hour TTL a burst of 1,000 junk tenant ids locks
+    /// out new tenants for an hour even with pruning scheduled.
+    ///
+    /// The mitigation is the same precondition the resolvers state: the tenant
+    /// id must come from something authenticated, not from a header a client
+    /// chose. Raise this only alongside that.
     pub max_tenants: usize,
 }
 
@@ -170,7 +192,16 @@ impl TenantAwareInMemoryTaskStore {
 
     /// Removes empty tenant partitions to reclaim memory.
     ///
-    /// A partition is considered empty when its task count is zero.
+    /// A partition is considered empty when its task count is zero, so this
+    /// reclaims a slot only once every task in that partition is gone —
+    /// evicted by TTL, by capacity, or deleted. It is the only way a
+    /// [`max_tenants`](TenantStoreConfig::max_tenants) slot is ever given
+    /// back, and nothing calls it for you: schedule it alongside
+    /// [`run_eviction_all`](Self::run_eviction_all), which is what makes
+    /// partitions empty in the first place.
+    ///
+    /// Calling it will not relieve a store that is at its cap because of live
+    /// tasks; see `max_tenants` for why that matters.
     pub async fn prune_empty_tenants(&self) {
         let mut stores = self.stores.write().await;
         let mut empty_tenants = Vec::new();
@@ -471,6 +502,76 @@ mod tests {
     }
 
     // ── tenant_count and max_tenants ─────────────────────────────────────
+
+    /// Reaching `max_tenants` refuses *new* tenants, and `prune_empty_tenants`
+    /// does not get the slots back while the tasks are alive.
+    ///
+    /// Both halves matter, and only the first was written down. The cap's doc
+    /// said it "prevents unbounded memory growth from tenant enumeration
+    /// attacks", which is true and stops one step short: tenant ids come from
+    /// resolvers that all read client-controlled input, so an enumerator does
+    /// not get memory — it gets a lockout of every tenant that arrives
+    /// afterwards, for as long as its junk partitions hold a task.
+    #[tokio::test]
+    async fn a_full_tenant_table_refuses_new_tenants_and_pruning_does_not_help() {
+        let store = TenantAwareInMemoryTaskStore::with_config(TenantStoreConfig {
+            per_tenant: TaskStoreConfig::default(),
+            max_tenants: 2,
+        });
+
+        for junk in ["junk-1", "junk-2"] {
+            TenantContext::scope(junk, async {
+                store
+                    .save(&make_task("t", TaskState::Working))
+                    .await
+                    .expect("a fresh tenant partition is created on demand");
+            })
+            .await;
+        }
+        assert_eq!(store.tenant_count().await, 2, "the table is full");
+
+        let refused = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(
+            refused.is_err(),
+            "a new tenant must be refused once the cap is reached"
+        );
+
+        // The documented reclamation path, run exactly as an operator would.
+        store.prune_empty_tenants().await;
+        assert_eq!(
+            store.tenant_count().await,
+            2,
+            "pruning reclaims nothing while the junk partitions hold live tasks"
+        );
+
+        let still_refused = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(
+            still_refused.is_err(),
+            "so the lockout outlives the pruning that is supposed to end it"
+        );
+
+        // And it does end, once the partitions are actually empty.
+        for junk in ["junk-1", "junk-2"] {
+            TenantContext::scope(junk, async {
+                store.delete(&TaskId::new("t")).await.expect("delete");
+            })
+            .await;
+        }
+        store.prune_empty_tenants().await;
+        assert_eq!(store.tenant_count().await, 0, "now the slots come back");
+
+        let admitted = TenantContext::scope("legitimate", async {
+            store.save(&make_task("t", TaskState::Working)).await
+        })
+        .await;
+        assert!(admitted.is_ok(), "and the legitimate tenant gets in");
+    }
 
     #[tokio::test]
     async fn tenant_count_reflects_active_tenants() {

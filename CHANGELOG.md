@@ -113,6 +113,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   convenient here: the only write is a whole-value assignment of an
   already-constructed `AgentCard`, so no reader can observe a half-updated one.
 
+- **`max_tenants` was documented by the half of its effect that is
+  comfortable.** "Prevents unbounded memory growth from tenant enumeration
+  attacks" is true and stops one step short: tenant ids come from resolvers
+  that all read client-controlled input, so an enumerator does not get memory —
+  it gets a lockout of every tenant that arrives afterwards. The reclamation
+  path, `prune_empty_tenants`, is not automatic and only removes partitions
+  whose task count is zero, so at the shipped one-hour TTL a burst of 1,000
+  junk tenant ids locks out new tenants for an hour even with pruning
+  scheduled. Both methods now document that, with a test pinning it.
+
 - **`InMemoryTaskStore`'s documentation described a design it does not have.**
   It said eviction "runs as a background task" and that "writers are not
   blocked during the O(n) cleanup". There is no `spawn`: the sweep is awaited
