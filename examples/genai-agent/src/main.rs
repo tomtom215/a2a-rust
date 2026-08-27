@@ -283,16 +283,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
         let url = format!("http://{addr}");
+
+        // SSRF posture. Server-only mode models a real deployment, so the
+        // webhook SSRF guard is ON by default: a push-notification URL that
+        // resolves to a loopback/private/link-local address is rejected at
+        // registration, and re-checked with DNS resolution + IP pinning at
+        // delivery. This example previously hard-coded `.allow_private_urls()`
+        // here, which silently disabled that guard for anyone using it as a
+        // deployment template. Set A2A_ALLOW_PRIVATE_WEBHOOKS=1 only for local
+        // testing where the webhook endpoint itself lives on localhost.
+        let allow_private = std::env::var("A2A_ALLOW_PRIVATE_WEBHOOKS")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        let push_sender = if allow_private {
+            HttpPushSender::new().allow_private_urls()
+        } else {
+            HttpPushSender::new()
+        };
+
         let handler = Arc::new(
             RequestHandlerBuilder::new(GenaiAgentExecutor::new(&model))
                 .with_agent_card(make_agent_card(&url, &model))
                 .with_push_config_store(InMemoryPushConfigStore::new())
-                .with_push_sender(HttpPushSender::new().allow_private_urls())
+                .with_push_sender(push_sender)
                 .allow_unauthenticated_extended_card()
                 .build()?,
         );
         serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
         println!("Genai A2A agent listening on {url}");
+        println!(
+            "webhook SSRF guard: {}",
+            if allow_private {
+                "OFF (A2A_ALLOW_PRIVATE_WEBHOOKS set — private/loopback webhooks permitted)"
+            } else {
+                "ON (private/loopback/link-local webhooks rejected)"
+            }
+        );
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }
