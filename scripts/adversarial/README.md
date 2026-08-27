@@ -4,9 +4,17 @@ Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 -->
 # Adversarial probe
 
-A black-box, over-the-wire adversarial harness for a **running** A2A JSON-RPC
-server. It is the third leg of this project's negative-input testing, distinct
-from the other two:
+Black-box, over-the-wire adversarial harnesses for a **running** A2A server —
+one per request binding:
+
+| Probe | Binding | Deps |
+|---|---|---|
+| `probe.py` | JSON-RPC (spec §9) | stdlib only |
+| `probe_ws.py` | WebSocket (spec §12) | stdlib only (RFC 6455 client built in) |
+| `probe_grpc.py` | gRPC (spec §10) | `pip install grpcio grpcio-tools` (compiles the proto at startup) |
+
+They are the third leg of this project's negative-input testing, distinct from
+the other two:
 
 | Layer | Where | What it proves |
 |---|---|---|
@@ -41,6 +49,28 @@ python3 scripts/adversarial/probe.py --port 8080
 ```
 
 No third-party Python packages are needed (standard library only).
+
+### The WebSocket and gRPC bindings
+
+`genai-agent` server mode serves JSON-RPC only by default, but it will also
+bind gRPC and WebSocket on request — the three then share one process, so the
+companion probes use the JSON-RPC port for process liveness:
+
+```bash
+GENAI_MODEL='qwen3.5:0.8b' \
+  A2A_BIND_ADDR=127.0.0.1:8080 \
+  A2A_GRPC_ADDR=127.0.0.1:8081 \
+  A2A_WS_ADDR=127.0.0.1:8082 \
+  cargo run -p genai-a2a-agent &
+
+python3 scripts/adversarial/probe_ws.py   --ws-port 8082   --http-port 8080
+pip install grpcio grpcio-tools   # gRPC probe only
+python3 scripts/adversarial/probe_grpc.py --grpc-port 8081 --http-port 8080
+```
+
+`probe_grpc.py` compiles the repo proto to stubs at startup (stripping the
+google.api gateway options, which does not change any wire format), so it needs
+`grpcio`/`grpcio-tools`; the other two are stdlib-only.
 
 ### Options
 
@@ -100,10 +130,18 @@ recognise them rather than cry wolf:
 
 ## History
 
-This harness was written to stress the SDK against a live `llama-server`
-(Qwen3.5-0.8B, Apache-2.0) before a public release. It found one issue — the
-registration-time webhook filter did not normalise integer/hex/octal IPv4
-encodings, so `http://2852039166/` (== `169.254.169.254`) was stored though
-delivery still blocked it — which is fixed and now regression-tested here (`F17`
-– `F19`) and in `crates/a2a-protocol-server/src/push/sender.rs`. The full
-account is in the book: **Testing & Deployment → Adversarial Testing**.
+These harnesses were written to stress the SDK against a live `llama-server`
+(Qwen3.5-0.8B, Apache-2.0) before a public release. They found two issues, both
+fixed and regression-tested:
+
+* the registration-time webhook filter did not normalise integer/hex/octal IPv4
+  encodings, so `http://2852039166/` (== `169.254.169.254`) was stored though
+  delivery still blocked it (`probe.py` `F17`–`F19`, and
+  `crates/a2a-protocol-server/src/push/sender.rs`);
+* the gRPC binding processed a request with no `a2a-version`, while JSON-RPC and
+  WebSocket rejected the same request per spec §3.6.2 — a cross-binding
+  inconsistency only visible because `probe_grpc.py` hits every binding with
+  the same attack (`crates/a2a-protocol-server/src/dispatch/grpc/`).
+
+The full account is in the book: **Testing & Deployment → Adversarial
+Testing**.

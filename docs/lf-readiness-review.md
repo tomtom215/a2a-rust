@@ -244,9 +244,27 @@ explicit opt-in for local webhooks, and the posture is printed at startup.
 
 The probe is a permanent, reusable artifact with a bidirectional CI check (it
 exits non-zero against a guard-off server), documented in the book under
-**Adversarial Testing**. It did not exercise the gRPC/WebSocket bindings (the
-tested server exposes only JSON-RPC), authentication, or sustained load — those
-stay on the open list below.
+**Adversarial Testing**.
+
+The run was then extended to the other two request bindings by having the same
+server expose gRPC and WebSocket alongside JSON-RPC, with two companion probes
+(`probe_ws.py`, 32 cases; `probe_grpc.py`, 22 cases). Both bindings held up with
+zero crashes: WebSocket answered every RFC 6455 violation with the correct
+CLOSE and rejected a version-less handshake; gRPC returned clean decode errors
+for malformed protobuf, enforced the 4 MiB message cap, and rejected the SSRF
+webhook — the guard holds there too.
+
+**A second finding, fixed.** The gRPC binding *processed* a request with no
+`a2a-version`, while JSON-RPC and WebSocket *rejected* the same request — the
+spec (§3.6.2, §737) says an absent value is protocol 0.3, which a 1.x server
+must refuse with `VersionNotSupported`. gRPC's metadata validator checked the
+version only when present, and its docstring wrongly claimed it mirrored the
+other bindings. It now delegates to the shared validator all four bindings use;
+a version-less gRPC request returns `UNIMPLEMENTED` / `VERSION_NOT_SUPPORTED`,
+regression-tested at the helper and through the real method path. This is the
+class of bug only a probe that hits *every* binding with the *same* attack
+finds. Authentication and sustained load remain unexercised — on the open list
+below.
 
 ## 5. What this review did not examine
 

@@ -309,7 +309,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .allow_unauthenticated_extended_card()
                 .build()?,
         );
-        serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
+        serve(
+            listener,
+            Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler))),
+        );
         println!("Genai A2A agent listening on {url}");
         println!(
             "webhook SSRF guard: {}",
@@ -319,6 +322,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "ON (private/loopback/link-local webhooks rejected)"
             }
         );
+
+        // Optional additional bindings on the same handler (same executor,
+        // same secure push posture). Off by default — server mode is one
+        // binding — but a multi-protocol deployment, or exercising the
+        // gRPC/WebSocket surface, can opt in without a code change.
+        if let Ok(grpc_addr) = std::env::var("A2A_GRPC_ADDR") {
+            use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+            let grpc_listener = tokio::net::TcpListener::bind(&grpc_addr).await?;
+            let addr = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                .serve_with_listener(grpc_listener)?;
+            println!("gRPC also listening on {addr}");
+        }
+        if let Ok(ws_addr) = std::env::var("A2A_WS_ADDR") {
+            use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
+            let ws = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)));
+            let addr = ws.serve_with_addr(ws_addr.as_str()).await?;
+            println!("WebSocket also listening on ws://{addr}");
+        }
+
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }

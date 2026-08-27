@@ -132,15 +132,55 @@ mode is now **secure by default**; a localhost webhook for local testing is an
 explicit opt-in (`A2A_ALLOW_PRIVATE_WEBHOOKS=1`), and the active posture is
 printed at startup.
 
+## Beyond JSON-RPC: gRPC and WebSocket
+
+The same server was then made to expose all three request bindings at once
+(`A2A_GRPC_ADDR` / `A2A_WS_ADDR` alongside `A2A_BIND_ADDR`), and two companion
+probes attacked the other two. Both share the JSON-RPC process, so each case
+checks process liveness *and* that its own binding still accepts a fresh
+connection.
+
+* **`probe_ws.py` — WebSocket (spec §12), 32 cases.** Handshake attacks
+  (missing/bogus `A2A-Version`, missing key, wrong ws-version), RFC 6455 framing
+  attacks (unmasked client frame, reserved/undefined opcodes, RSV bits, binary
+  frame, invalid UTF-8, fragmentation, lying length, ping/pong, an 8 MB frame),
+  and the JSON-RPC payload attacks as text frames. **Zero crashes.** Every
+  protocol violation drew the correct RFC 6455 CLOSE, a ping drew a pong, the
+  handshake was rejected (HTTP 400) without the version header, and the
+  oversized frame was bounded.
+
+* **`probe_grpc.py` — gRPC (spec §10), 22 cases.** Hostile field values over
+  well-formed framing, unknown method paths, missing/bogus `a2a-version`
+  metadata, malformed message bodies (truncated / garbage / wrong-wire-type
+  protobuf sent through a passthrough serializer), an 8 MB message against the
+  4 MiB cap, and raw transport garbage. **Zero crashes.** Malformed protobuf
+  drew a clean decode error, the oversized message `OUT_OF_RANGE`, the SSRF
+  webhook `INVALID_ARGUMENT` (the guard holds on gRPC too), and non-HTTP/2
+  bytes were closed without incident.
+
+### The finding: version negotiation disagreed across bindings
+
+The gRPC run surfaced one real gap. A request with **no `a2a-version`** was
+*processed* on gRPC, while the identical request on JSON-RPC and WebSocket was
+*rejected* — the spec (§3.6.2, §737) says an absent value is protocol 0.3,
+which a 1.x server must refuse with `VersionNotSupported`. The gRPC helper did
+its version check only when a value was present, and its docstring even claimed
+it mirrored the other bindings when it did not. It now delegates to the same
+shared validator the HTTP and WebSocket bindings use, so all four agree; a
+gRPC request with no version returns `UNIMPLEMENTED` / `VERSION_NOT_SUPPORTED`,
+regression-tested at the helper and through the real method path. This is the
+kind of cross-binding inconsistency only a probe that hits *every* binding with
+the *same* attack will find.
+
 ## What this did and did not establish
 
-It established that the JSON-RPC surface of a real, model-backed server holds
-up under a broad, deliberately hostile input set, and that the one gap it
-surfaced is closed and regression-tested in both the unit suite and the probe.
+It established that all three request bindings of a real, model-backed server —
+JSON-RPC, gRPC, and WebSocket — hold up under a broad, deliberately hostile
+input set, and that the two gaps the runs surfaced (the numeric-IP SSRF filter
+and the gRPC version negotiation) are closed and regression-tested.
 
-It did **not** exercise the gRPC or WebSocket bindings (the tested server
-exposes only JSON-RPC), authentication bypass (the example runs
-unauthenticated by design), or sustained high-concurrency load. Those remain
-open surfaces; see [Security → Known gaps](./security.md#known-gaps). Stating
-the boundary is the point — a security page, or a security test, that lists
-only what it covered is not one.
+It did **not** exercise authentication bypass (the example runs unauthenticated
+by design) or sustained high-concurrency load. Those remain open surfaces; see
+[Security → Known gaps](./security.md#known-gaps). Stating the boundary is the
+point — a security page, or a security test, that lists only what it covered is
+not one.
