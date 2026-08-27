@@ -170,7 +170,7 @@ above, and `release.yml` does not touch it. It lives outside the workspace with
 its own `Cargo.lock`, so it needs its own `cargo package` and `cargo publish`
 run from `bindings/a2a-protocol-slimrpc/`.
 
-It is versioned independently — `0.2.0` against the SDK's `0.9.0`. Numbering it
+It is versioned independently — `0.2.0` against the SDK's `0.10.0`. Numbering it
 to match would claim API stability it has not earned and force a bump on every
 SDK release even when nothing in it changed.
 
@@ -180,7 +180,7 @@ easy to get wrong:
 > `SlimRpcServer::builder` takes `Arc<RequestHandler>` and `agent_interface()`
 > returns an `AgentInterface`, so `a2a-protocol-server` and
 > `a2a-protocol-types` are **public dependencies**. Its requirement on them is
-> therefore a tight `0.9`, not a range — allow two and cargo links both, and
+> therefore a tight `0.10`, not a range — allow two and cargo links both, and
 > callers get `expected RequestHandler, found RequestHandler`.
 
 So **every SDK minor release requires a follow-up release of the binding**:
@@ -223,7 +223,7 @@ changes is that the release-prep commit is now a commit CI can pass.
 ## Path to 1.0.0
 
 All four crates are pre-1.0 despite a multi-release history (all four are at
-0.9.0 as of this writing). Nothing below is a promise
+0.10.0 as of this writing). Nothing below is a promise
 about timing — it exists so "are we ready for 1.0" has a checklist instead of
 a feeling, and so this is answered before, not during, any external review
 (donation, security audit, or otherwise) that asks for it.

@@ -12,7 +12,7 @@ The easiest way to use a2a-rust is through the umbrella SDK crate, which re-expo
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.9"
+a2a-protocol-sdk = "0.10"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -94,7 +94,7 @@ Enable features in your `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = { version = "0.9", features = ["tracing", "signing"] }
+a2a-protocol-sdk = { version = "0.10", features = ["tracing", "signing"] }
 
 # Or with individual crates:
 a2a-protocol-server = { version = "0.8", features = ["tracing", "sqlite"] }

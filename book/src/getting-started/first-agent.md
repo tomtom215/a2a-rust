@@ -15,7 +15,7 @@ Add dependencies to `Cargo.toml`:
 
 ```toml
 [dependencies]
-a2a-protocol-sdk = "0.9"
+a2a-protocol-sdk = "0.10"
 tokio = { version = "1", features = ["full"] }
 uuid = { version = "1", features = ["v4"] }
 ```

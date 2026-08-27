@@ -48,7 +48,7 @@ deployment needs, not on which crate looks more complete — neither is.
 ```toml
 [dependencies]
 a2a-protocol-slimrpc = "0.2"
-a2a-protocol-server  = "0.9"
+a2a-protocol-server  = "0.10"
 ```
 
 ### Why two version numbers
