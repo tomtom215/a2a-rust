@@ -20,8 +20,10 @@ routed around within a week — the argument `check_file_lengths.sh` makes about
 its own ratchet. Tying it to the release instead means the manifest is exactly
 true at each published version, which is the only moment anyone cites it.
 
-Exit 0 if the manifest's pinned commit is the one being released and every
-headline figure matches a fresh measurement. Non-zero otherwise.
+Exit 0 if the manifest is measured at the released commit — or at an ancestor
+of it whose tree differs by nothing but this file, since a manifest cannot pin
+the commit that adds it — and every headline figure matches a fresh measurement
+at that commit. Non-zero otherwise.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DOC = ROOT / "docs" / "provenance-manifest.md"
 GENERATOR = ROOT / "scripts" / "provenance_manifest.sh"
+MANIFEST_REL = DOC.relative_to(ROOT).as_posix()  # path as `git diff` reports it
 
 PINNED = re.compile(r"\*\*Measured (\d{4}-\d{2}-\d{2}) at `([0-9a-f]{7,40})`")
 
@@ -92,13 +95,43 @@ def main() -> int:
 
     head = subprocess.run(["git", "rev-parse", rev], capture_output=True,
                           text=True, cwd=ROOT).stdout.strip()
-    if not head.startswith(pinned_sha):
-        return fail(
-            f"the manifest is pinned at {pinned_sha}, but this release is {head[:len(pinned_sha)]}",
-            "so its figures describe a different commit than the one being published",
-        )
 
-    gen = subprocess.run([str(GENERATOR), rev], capture_output=True, text=True, cwd=ROOT)
+    # A file cannot state the SHA of the commit that adds it, so the regenerated
+    # manifest can never pin the commit it ships in — demanding an exact match
+    # with the released commit is unsatisfiable the moment it is committed. The
+    # property that actually matters is weaker: the manifest must be measured at
+    # a commit whose tree differs from the release by *nothing but this file*.
+    # Then its figures are true for the released code — only the manifest itself
+    # moved since the measurement — and any real drift, which by definition
+    # touches some other file, still fails here. That keeps the anti-staleness
+    # guarantee (228 commits of drift could not slip through: the source changed
+    # over them) while letting a release actually pass.
+    pinned_full = subprocess.run(["git", "rev-parse", pinned_sha], capture_output=True,
+                                 text=True, cwd=ROOT).stdout.strip()
+    if pinned_full != head:
+        if subprocess.run(["git", "merge-base", "--is-ancestor", pinned_full, head],
+                          cwd=ROOT).returncode != 0:
+            return fail(
+                f"the manifest is pinned at {pinned_sha}, which is neither the released "
+                f"commit ({head[:12]}) nor an ancestor of it",
+                "so its figures describe a commit that is not being published",
+            )
+        changed = subprocess.run(["git", "diff", "--name-only", pinned_full, head],
+                                 capture_output=True, text=True, cwd=ROOT).stdout.split()
+        drifted = [f for f in changed if f != MANIFEST_REL]
+        if drifted:
+            return fail(
+                f"the source tree changed between the pinned commit ({pinned_sha}) and the "
+                f"release ({head[:12]}), so the manifest's figures no longer describe what "
+                "is being published. Files that changed besides the manifest itself:",
+                *(f"  {f}" for f in drifted[:8]),
+                f"Regenerate at the release commit: {GENERATOR.name} HEAD",
+            )
+
+    # Measure at the commit the manifest names, not at the release: the two
+    # differ only by this file (asserted above), and the manifest cannot count
+    # the commit that adds it. `rev` is used only to locate the released tree.
+    gen = subprocess.run([str(GENERATOR), pinned_full], capture_output=True, text=True, cwd=ROOT)
     if gen.returncode != 0:
         return fail(f"{GENERATOR.name} exited {gen.returncode}", *gen.stderr.strip().splitlines()[:4])
 
@@ -129,7 +162,9 @@ def main() -> int:
     if problems:
         return fail(*problems)
 
-    print(f"check_provenance_manifest: {DOC.name} is measured at {head[:7]} and all "
+    where = (f"at {pinned_full[:7]}" if pinned_full == head
+             else f"at {pinned_full[:7]}, the release {head[:7]} minus only this file")
+    print(f"check_provenance_manifest: {DOC.name} is measured {where} and all "
           f"{len(DOC_ROWS)} headline figures match a fresh run")
     return 0
 
