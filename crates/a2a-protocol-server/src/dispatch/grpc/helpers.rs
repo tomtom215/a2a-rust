@@ -27,28 +27,25 @@ pub(super) fn extract_metadata(metadata: &tonic::metadata::MetadataMap) -> HashM
 }
 
 /// Extracts gRPC metadata into headers and validates the `a2a-version`
-/// service parameter (§3.6.2, §10.2), mirroring the JSON-RPC/REST/WebSocket
-/// bindings: any `1.x` is accepted, an empty/absent value is accepted
-/// (legacy clients), and anything else fails with `VersionNotSupported`
-/// carrying its `google.rpc.ErrorInfo` detail.
+/// service parameter (§3.6.2, §10.2) through the **same shared validator** the
+/// JSON-RPC, REST and WebSocket bindings use, so all four agree: any `1.x` is
+/// accepted; an empty or absent value is interpreted as protocol 0.3 and, when
+/// `require_version` is set (the default), rejected with `VersionNotSupported`
+/// carrying its `google.rpc.ErrorInfo` detail — the identical rejection the
+/// other bindings produce. `require_version = false` admits versionless legacy
+/// clients.
+///
+/// Before this delegated to the shared validator it accepted an absent value
+/// unconditionally, which let a gRPC caller skip the version negotiation the
+/// HTTP and WebSocket bindings enforce — a cross-binding conformance gap.
 #[allow(clippy::result_large_err)]
 pub(super) fn validated_metadata(
     metadata: &tonic::metadata::MetadataMap,
+    require_version: bool,
 ) -> Result<HashMap<String, String>, Status> {
     let headers = extract_metadata(metadata);
-    if let Some(v) = headers.get("a2a-version") {
-        let v = v.trim();
-        if !v.is_empty() {
-            let major = v.split('.').next().and_then(|s| s.parse::<u32>().ok());
-            if major != Some(1) {
-                return Err(server_error_to_status(&ServerError::Protocol(
-                    a2a_protocol_types::error::A2aError::version_not_supported(format!(
-                        "unsupported A2A version: {v}; this server supports 1.x"
-                    )),
-                )));
-            }
-        }
-    }
+    crate::dispatch::validate_version_metadata(&headers, require_version)
+        .map_err(|e| server_error_to_status(&ServerError::Protocol(e)))?;
     Ok(headers)
 }
 
@@ -226,15 +223,42 @@ mod tests {
     // ── validated_metadata (§3.6.2 / §10.2 version negotiation) ──────────
 
     #[test]
-    fn validated_metadata_accepts_1x_and_absent() {
-        for version in [Some("1.0"), Some("1.5"), Some(""), None] {
+    fn validated_metadata_accepts_1x() {
+        for version in ["1.0", "1.5", "1.0.3"] {
+            let mut meta = tonic::metadata::MetadataMap::new();
+            meta.insert("a2a-version", version.parse().unwrap());
+            assert!(
+                validated_metadata(&meta, true).is_ok(),
+                "version {version:?} must be accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn validated_metadata_rejects_absent_version_by_default() {
+        // Absent or empty is interpreted as protocol 0.3 (§3.6.2), which this
+        // 1.x server does not support, so the strict default rejects it — the
+        // same negotiation the JSON-RPC, REST and WebSocket bindings enforce.
+        // Regression guard: this used to be accepted, letting a gRPC caller
+        // skip the version check the other bindings apply.
+        use tonic_types::StatusExt as _;
+        for version in [Some(""), None] {
             let mut meta = tonic::metadata::MetadataMap::new();
             if let Some(v) = version {
                 meta.insert("a2a-version", v.parse().unwrap());
             }
+            let status = validated_metadata(&meta, true)
+                .expect_err("absent/empty version must be rejected under the strict default");
+            assert_eq!(status.code(), tonic::Code::Unimplemented);
+            let info = status
+                .get_details_error_info()
+                .expect("version rejection must carry ErrorInfo");
+            assert_eq!(info.reason, "VERSION_NOT_SUPPORTED");
+            // The escape hatch the other bindings also offer: when the version
+            // is not required, a versionless legacy client is admitted.
             assert!(
-                validated_metadata(&meta).is_ok(),
-                "version {version:?} must be accepted"
+                validated_metadata(&meta, false).is_ok(),
+                "version {version:?} must be accepted when require_version is false"
             );
         }
     }
@@ -246,7 +270,7 @@ mod tests {
             let mut meta = tonic::metadata::MetadataMap::new();
             meta.insert("a2a-version", version.parse().unwrap());
             let status =
-                validated_metadata(&meta).expect_err("unsupported version must be rejected");
+                validated_metadata(&meta, true).expect_err("unsupported version must be rejected");
             assert_eq!(status.code(), tonic::Code::Unimplemented);
             let info = status
                 .get_details_error_info()

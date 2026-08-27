@@ -26,6 +26,13 @@ pub struct GrpcConfig {
     pub concurrency_limit: usize,
     /// Channel capacity for streaming responses. Default: 64.
     pub stream_channel_capacity: usize,
+    /// Whether to reject a request whose `a2a-version` metadata is absent or
+    /// empty. Per spec §3.6.2 an absent value is interpreted as protocol 0.3,
+    /// which this 1.x server does not support, so the strict default (`true`)
+    /// rejects it with `VersionNotSupported` — matching the JSON-RPC, REST and
+    /// WebSocket bindings. Set `false` only to admit versionless legacy
+    /// clients. Default: `true`.
+    pub require_version_header: bool,
 }
 
 impl Default for GrpcConfig {
@@ -34,6 +41,7 @@ impl Default for GrpcConfig {
             max_message_size: 4 * 1024 * 1024,
             concurrency_limit: 256,
             stream_channel_capacity: 64,
+            require_version_header: true,
         }
     }
 }
@@ -57,6 +65,13 @@ impl GrpcConfig {
     #[must_use]
     pub const fn with_stream_channel_capacity(mut self, capacity: usize) -> Self {
         self.stream_channel_capacity = capacity;
+        self
+    }
+
+    /// Sets whether an absent/empty `a2a-version` is rejected (see the field).
+    #[must_use]
+    pub const fn with_require_version_header(mut self, require: bool) -> Self {
+        self.require_version_header = require;
         self
     }
 }

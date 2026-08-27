@@ -109,7 +109,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<apb::SendMessageResponse>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -133,7 +133,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SendMessageRequest>,
     ) -> Result<Response<Self::SendStreamingMessageStream>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::MessageSendParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -161,7 +161,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskQueryParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_get_task(params, Some(&headers)).await {
@@ -174,7 +174,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTasksRequest>,
     ) -> Result<Response<apb::ListTasksResponse>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListTasksParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_list_tasks(params, Some(&headers)).await {
@@ -187,7 +187,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::CancelTaskRequest>,
     ) -> Result<Response<apb::Task>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::CancelTaskParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self.handler.on_cancel_task(params, Some(&headers)).await {
@@ -202,7 +202,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::SubscribeToTaskRequest>,
     ) -> Result<Response<Self::SubscribeToTaskStream>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::TaskIdParams = request.into_inner().into();
         match self.handler.on_resubscribe(params, Some(&headers)).await {
             Ok(reader) => Ok(Response::new(reader_to_native_stream(
@@ -219,7 +219,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::TaskPushNotificationConfig>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let config: a2a_protocol_types::push::TaskPushNotificationConfig =
             request.into_inner().into();
         match self
@@ -236,7 +236,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetTaskPushNotificationConfigRequest>,
     ) -> Result<Response<apb::TaskPushNotificationConfig>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::GetPushConfigParams = request.into_inner().into();
         match self
             .handler
@@ -252,7 +252,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::ListTaskPushNotificationConfigsRequest>,
     ) -> Result<Response<apb::ListTaskPushNotificationConfigsResponse>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::ListPushConfigsParams =
             request.into_inner().try_into().map_err(bad_request)?;
         match self
@@ -274,7 +274,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::DeleteTaskPushNotificationConfigRequest>,
     ) -> Result<Response<()>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         let params: a2a_protocol_types::params::DeletePushConfigParams =
             request.into_inner().into();
         match self
@@ -293,7 +293,7 @@ impl A2aService for A2aServiceImpl {
         &self,
         request: Request<apb::GetExtendedAgentCardRequest>,
     ) -> Result<Response<apb::AgentCard>, Status> {
-        let headers = validated_metadata(request.metadata())?;
+        let headers = validated_metadata(request.metadata(), self.config.require_version_header)?;
         match self
             .handler
             .on_get_extended_agent_card(Some(&headers))
@@ -441,6 +441,12 @@ mod tests {
     }
 
     fn service() -> A2aServiceImpl {
+        // These tests exercise method behaviour, not version negotiation, so
+        // they relax the `a2a-version` requirement rather than stamp the
+        // metadata on every request. Version handling itself is covered by the
+        // `validated_metadata_*` tests in `helpers.rs`, and that the default
+        // config actually rejects a versionless RPC through the method path is
+        // covered by `default_config_rejects_a_versionless_rpc` below.
         A2aServiceImpl {
             handler: Arc::new(
                 RequestHandlerBuilder::new(NoopExecutor)
@@ -452,7 +458,7 @@ mod tests {
                     .build()
                     .expect("default build should succeed"),
             ),
-            config: GrpcConfig::default(),
+            config: GrpcConfig::default().with_require_version_header(false),
         }
     }
 
@@ -543,6 +549,43 @@ mod tests {
             .expect_err("an unknown id must not resolve");
 
         assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    #[tokio::test]
+    async fn default_config_rejects_a_versionless_rpc() {
+        use tonic_types::StatusExt as _;
+        // The default config requires the `a2a-version` service parameter, so a
+        // request with no version metadata is rejected through the real method
+        // path (not only in the helper) — the same negotiation the JSON-RPC,
+        // REST and WebSocket bindings enforce. This is the method-level
+        // counterpart to `service()` relaxing the requirement for its callers.
+        let svc = A2aServiceImpl {
+            handler: Arc::new(
+                RequestHandlerBuilder::new(NoopExecutor)
+                    .with_agent_card(test_card())
+                    .with_push_sender(NoopSender)
+                    .allow_unauthenticated_extended_card()
+                    .build()
+                    .expect("default build should succeed"),
+            ),
+            config: GrpcConfig::default(),
+        };
+        let status = svc
+            .get_task(Request::new(apb::GetTaskRequest {
+                tenant: String::new(),
+                id: "any".into(),
+                history_length: None,
+            }))
+            .await
+            .expect_err("a versionless RPC must be rejected under the default config");
+        assert_eq!(status.code(), tonic::Code::Unimplemented);
+        assert_eq!(
+            status
+                .get_details_error_info()
+                .expect("version rejection carries ErrorInfo")
+                .reason,
+            "VERSION_NOT_SUPPORTED"
+        );
     }
 
     #[tokio::test]
