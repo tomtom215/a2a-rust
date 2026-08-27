@@ -608,9 +608,19 @@ PROBE
 import pathlib
 p = pathlib.Path("book/src/reference/benchmarks.md")
 s = p.read_text()
+before = s
 s = s.replace(
-    "Connection reuse saves 123.5 µs (39.5%) on loopback",
+    "Connection reuse saves 122.5 µs (42.7%) on loopback",
     "Connection reuse saves ~140µs (9%) on loopback",
+)
+# The injected drift must actually change the page, or the gate is proving
+# nothing. `benchmarks.md` is regenerated from measurements, so the exact
+# figure here moves between releases; when it does and this string is not
+# updated with it, the replace becomes a silent no-op and the gate reports
+# UNPROVEN. Fail loudly instead of injecting nothing.
+assert s != before, (
+    "benchmark_prose injection matched no text — the connection-reuse figure "
+    "in book/src/reference/benchmarks.md changed and this string is stale"
 )
 p.write_text(s)
 PY
