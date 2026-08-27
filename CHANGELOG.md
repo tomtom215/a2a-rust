@@ -121,7 +121,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `clippy::await_holding_lock` covers the inverse case; nothing covered this
   one.
 
+- **A reusable over-the-wire adversarial probe suite** (`scripts/adversarial/`),
+  the third leg of this project's negative-input testing beside the
+  unit/property tests and the libFuzzer harnesses. Seven black-box probes — one
+  per request binding (JSON-RPC, WebSocket, gRPC), plus authentication,
+  sustained concurrency, SSE streaming and outbound push delivery — send
+  malformed, hostile and edge-case requests to a *running* server backed by a
+  real model and, after every request, re-probe the agent card to confirm the
+  process stayed up. They are standard-library only (the gRPC leg compiles the
+  repo proto at startup) and exit `0`/`1`, so they double as CI gates.
+  Documented in the book under **Testing & Deployment → Adversarial Testing**,
+  with the full account of the three defects they found (see Fixed and Security,
+  below). The push probe counts how many times the server actually dialed each
+  hostile receiver, so a run that exercises nothing fails loudly rather than
+  passing vacuously — the trap a wrong push-config field name
+  (`pushNotificationConfig` for the correct `taskPushNotificationConfig`) had
+  already sprung once.
+
 ### Fixed
+
+- **The gRPC binding processed a request with no `a2a-version`.** JSON-RPC and
+  WebSocket reject an absent protocol version — spec §3.6.2 reads absent as
+  protocol 0.3, and §737 requires `VersionNotSupported` for a version this
+  server does not speak, so a 1.x-only server must refuse it — and the gRPC
+  binding did not, a cross-binding inconsistency only visible because the
+  adversarial probe hits every binding with the same attack. `validated_metadata`
+  ran its version check only when the value was present, so absent fell through
+  to accepted, under a docstring that claimed it "mirror[ed]" the other bindings
+  — which reject it. It now delegates to the shared `validate_version_metadata`
+  the other three use, so all four agree. `GrpcConfig` gains
+  `require_version_header` (default true, `with_require_version_header` to relax
+  it), matching `DispatchConfig`. Verified over the wire: a versionless gRPC call
+  now returns the same `VersionNotSupported` the other bindings emit, and the
+  client-driven surface sweep stays 44/44, because the client injects the
+  version.
+
+- **Non-streaming `SendMessage` delivered webhooks on the request path.** The
+  synchronous collector awaited push-notification delivery inline, so a webhook
+  the caller registered on that same request delayed the response by up to the
+  30-second delivery budget — measured 15 seconds against a hanging webhook for a
+  three-event task. Streaming and `returnImmediately=true` were already
+  unaffected, and it did not starve other clients (the blocked work is an async
+  task, not a thread), but it coupled a caller's latency to a client-controlled
+  endpoint and held task-store slots for up to 30 seconds, for a
+  fire-and-forget notification whose errors are swallowed anyway — the webhook
+  anti-pattern, and inconsistent with the streaming path, which already delivers
+  off-path. Delivery is now buffered during collection and handed to a single
+  spawned task that sends the events in order under the same budget and
+  per-delivery timeout, with the tenant context carried across the spawn exactly
+  as the streaming background processor does. Verified over the wire:
+  `SendMessage` against a hanging webhook returns in 0.01 s (was 15 s) and the
+  webhook is still dialed in the background. A regression test asserts the
+  collector returns in under a second even against a sender that would sleep an
+  hour.
 
 - **A push-backoff test failed on runner speed rather than on behaviour**
   (`a2a-protocol-server`). `backoff_is_paid_between_attempts_but_not_after_the_last`
@@ -591,6 +643,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delta.
 
 ### Security
+
+- **The registration-time webhook filter now normalizes numeric IPv4
+  encodings.** `validate_webhook_url` accepted the non-canonical forms the C
+  resolver (`inet_aton`, and so `tokio`'s `lookup_host`) maps to private
+  addresses — `http://2852039166/`, `http://0xA9FEA9FE/` and
+  `http://0251.0376.0251.0376/` all denote `169.254.169.254`, the cloud metadata
+  endpoint — because `Ipv4Addr::from_str` only accepts dotted-quad. Delivery
+  already blocked them (`lookup_host` resolves the integer and the IP-range check
+  re-runs on the resolved address), so this was a defense-in-depth gap rather
+  than a live SSRF; it is nonetheless the exact attack class the filter targets,
+  which already rejected the IPv4-mapped and NAT64 spellings of the same address.
+  The static check now decodes the decimal, hex and octal forms and applies the
+  same private-range test; public numeric hosts still pass, matching delivery.
+  Found by an over-the-wire adversarial run against a live model — 20/20 hostile
+  webhook URLs rejected with the guard on, up from 19/20.
+
+- **`examples/genai-agent` no longer ships with the SSRF guard disabled.** Its
+  server mode — labelled "the real deployment shape" in its own comment —
+  hard-coded `allow_private_urls()`, silently turning the guard off for anyone
+  adopting the example as a deployment template. It is now secure by default;
+  `A2A_ALLOW_PRIVATE_WEBHOOKS=1` re-enables loopback webhooks for local testing,
+  and the active posture is printed at startup. (Example crate, `publish =
+  false`, so no published crate changed — but the template did.)
 
 - **RUSTSEC-2026-0258** — h2 raised to 0.4.16, without the dependency downgrade
   the advisory's own suggested fix would have pulled in.
