@@ -779,8 +779,8 @@ mod tests {
         let store = InMemoryTaskStore::new();
         let params = ListTasksParams::default();
         let response = store.list(&params).await.unwrap();
-        assert!(response.tasks.is_empty());
-        assert!(response.next_page_token.is_empty());
+        assert_eq!(response.tasks, [] as [a2a_protocol_types::Task; 0]);
+        assert_eq!(response.next_page_token, "");
     }
 
     #[tokio::test]

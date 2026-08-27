@@ -13,7 +13,7 @@ license.workspace    = true
 
 [dependencies]
 a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
-a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc"] }
+a2a-protocol-server = { path = "../../crates/a2a-protocol-server", features = ["websocket", "grpc", "auth-jwt"] }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
 a2a-example-harness = { path = "../harness" }
 
@@ -27,3 +27,8 @@ uuid           = { workspace = true }
 
 # genai — multi-provider LLM client (https://crates.io/crates/genai)
 genai = "0.5"
+
+[dev-dependencies]
+# `start_paused` for the slow-marker test, so it asserts on a virtual clock
+# instead of sleeping 400ms on every CI run.
+tokio = { workspace = true, features = ["test-util"] }

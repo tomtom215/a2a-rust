@@ -356,6 +356,9 @@ pub fn claims() -> Vec<FeatureClaim> {
     ]
 }
 
+#[cfg(test)]
+mod tests;
+
 /// One human-readable capability claim, and the tests that evidence it.
 pub struct FeatureClaim {
     /// What the summary line says.

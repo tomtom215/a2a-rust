@@ -49,6 +49,12 @@
 // here rather than the prose being bent to satisfy a renderer nobody uses.
 #![allow(clippy::doc_lazy_continuation)]
 
+// Registered even though all three of its Rust blocks are `ignore`d — the page
+// explains why, and registering it means a block that stops being ignored is
+// compiled rather than silently skipped.
+#[doc = include_str!("../../book/src/bindings/slimrpc.md")]
+pub mod page_bindings_slimrpc {}
+
 #[doc = include_str!("../../book/src/building-agents/authentication.md")]
 pub mod page_building_agents_authentication {}
 
@@ -112,12 +118,33 @@ pub mod page_deployment_dogfooding_tests {}
 #[doc = include_str!("../../book/src/deployment/dogfooding.md")]
 pub mod page_deployment_dogfooding {}
 
+#[doc = include_str!("../../book/src/deployment/dogfooding-real-model.md")]
+pub mod page_deployment_dogfooding_real_model {}
+
+#[doc = include_str!("../../book/src/deployment/multi-tenancy.md")]
+pub mod page_deployment_multi_tenancy {}
+
+#[doc = include_str!("../../book/src/deployment/observability.md")]
+pub mod page_deployment_observability {}
+
 #[doc = include_str!("../../book/src/deployment/production.md")]
 #[doc = include_str!("../../book/src/deployment/horizontal-scaling.md")]
 pub mod page_deployment_production {}
 
+#[doc = include_str!("../../book/src/deployment/security.md")]
+pub mod page_deployment_security {}
+
+#[doc = include_str!("../../book/src/deployment/security-testing.md")]
+pub mod page_deployment_security_testing {}
+
 #[doc = include_str!("../../book/src/deployment/testing.md")]
 pub mod page_deployment_testing {}
+
+#[doc = include_str!("../../book/src/deployment/troubleshooting.md")]
+pub mod page_deployment_troubleshooting {}
+
+#[doc = include_str!("../../book/src/examples/deploy-agent.md")]
+pub mod page_examples_deploy_agent {}
 
 #[doc = include_str!("../../book/src/examples/agent-team.md")]
 pub mod page_examples_agent_team {}
@@ -160,6 +187,9 @@ pub mod page_introduction {}
 
 #[doc = include_str!("../../book/src/reference/adrs.md")]
 pub mod page_reference_adrs {}
+
+#[doc = include_str!("../../book/src/reference/api-docs.md")]
+pub mod page_reference_api_docs {}
 
 #[doc = include_str!("../../book/src/reference/api-reference.md")]
 pub mod page_reference_api_reference {}

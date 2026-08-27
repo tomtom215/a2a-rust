@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-27
+
 ### Deprecated
 
 - **`TenantLimits::max_stored_tasks`** (`a2a-protocol-server`). It named a cap
@@ -121,7 +123,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `clippy::await_holding_lock` covers the inverse case; nothing covered this
   one.
 
+- **A reusable over-the-wire adversarial probe suite** (`scripts/adversarial/`),
+  the third leg of this project's negative-input testing beside the
+  unit/property tests and the libFuzzer harnesses. Seven black-box probes — one
+  per request binding (JSON-RPC, WebSocket, gRPC), plus authentication,
+  sustained concurrency, SSE streaming and outbound push delivery — send
+  malformed, hostile and edge-case requests to a *running* server backed by a
+  real model and, after every request, re-probe the agent card to confirm the
+  process stayed up. They are standard-library only (the gRPC leg compiles the
+  repo proto at startup) and exit `0`/`1`, so they double as CI gates.
+  Documented in the book under **Testing & Deployment → Adversarial Testing**,
+  with the full account of the three defects they found (see Fixed and Security,
+  below). The push probe counts how many times the server actually dialed each
+  hostile receiver, so a run that exercises nothing fails loudly rather than
+  passing vacuously — the trap a wrong push-config field name
+  (`pushNotificationConfig` for the correct `taskPushNotificationConfig`) had
+  already sprung once.
+
 ### Fixed
+
+- **The gRPC binding processed a request with no `a2a-version`.** JSON-RPC and
+  WebSocket reject an absent protocol version — spec §3.6.2 reads absent as
+  protocol 0.3, and §737 requires `VersionNotSupported` for a version this
+  server does not speak, so a 1.x-only server must refuse it — and the gRPC
+  binding did not, a cross-binding inconsistency only visible because the
+  adversarial probe hits every binding with the same attack. `validated_metadata`
+  ran its version check only when the value was present, so absent fell through
+  to accepted, under a docstring that claimed it "mirror[ed]" the other bindings
+  — which reject it. It now delegates to the shared `validate_version_metadata`
+  the other three use, so all four agree. `GrpcConfig` gains
+  `require_version_header` (default true, `with_require_version_header` to relax
+  it), matching `DispatchConfig`. Verified over the wire: a versionless gRPC call
+  now returns the same `VersionNotSupported` the other bindings emit, and the
+  client-driven surface sweep stays 44/44, because the client injects the
+  version.
+
+- **Non-streaming `SendMessage` delivered webhooks on the request path.** The
+  synchronous collector awaited push-notification delivery inline, so a webhook
+  the caller registered on that same request delayed the response by up to the
+  30-second delivery budget — measured 15 seconds against a hanging webhook for a
+  three-event task. Streaming and `returnImmediately=true` were already
+  unaffected, and it did not starve other clients (the blocked work is an async
+  task, not a thread), but it coupled a caller's latency to a client-controlled
+  endpoint and held task-store slots for up to 30 seconds, for a
+  fire-and-forget notification whose errors are swallowed anyway — the webhook
+  anti-pattern, and inconsistent with the streaming path, which already delivers
+  off-path. Delivery is now buffered during collection and handed to a single
+  spawned task that sends the events in order under the same budget and
+  per-delivery timeout, with the tenant context carried across the spawn exactly
+  as the streaming background processor does. Verified over the wire:
+  `SendMessage` against a hanging webhook returns in 0.01 s (was 15 s) and the
+  webhook is still dialed in the background. A regression test asserts the
+  collector returns in under a second even against a sender that would sleep an
+  hour.
 
 - **A push-backoff test failed on runner speed rather than on behaviour**
   (`a2a-protocol-server`). `backoff_is_paid_between_attempts_but_not_after_the_last`
@@ -439,6 +493,151 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SLIMRPC did not transmit or check the protocol version**, and leaked
   internal transport metadata into the A2A header map that applications see.
 
+- **The SLIMRPC binding's packaging gate could not pass during a release.** The
+  binding depends on the SDK crates by `version` *and* `path`; `cargo package`
+  strips the path, so the pin resolves against crates.io — where the version
+  being prepared does not exist yet. Reverting the pin broke the binding's build
+  instead, so no pin value was green between the version bump and publication,
+  and the 0.10.0 prep was reverted rather than accommodated. `ci.yml` now runs
+  `scripts/package_binding.py`, which skips registry resolution alone for
+  exactly that state — every pin naming the in-tree version, and that version
+  absent from the index — proves the rest of packaging with `cargo package
+  --list`, and fails on everything else, a typo'd pin included. The skip is a
+  warning annotation on the job, and it closes itself once the SDK is published.
+
+- **The nightly canary tested but never linted**, so it could not give notice of
+  the breakage it exists for. Rust 1.98.0 turned three clippy lints red on code
+  identical to `main`, two of which (`map_or_identity`,
+  `unused_async_trait_impl`) did not exist in 1.94.1 at all — and the canary ran
+  only `cargo test`. It now runs `cargo clippy --all-targets --all-features -D
+  warnings` as well, on the same informational job, which is where a lint
+  arrives before it reaches stable. The toolchain is still not pinned: a
+  `rust-toolchain.toml` takes precedence over the toolchain the CI action
+  selects, which would silently redirect the MSRV leg of the `1.93` matrix at
+  the pinned version instead — a worse failure than the one it would prevent.
+
+- **The SLIMRPC spec drift check was blind to any spec file it had not been
+  told about.** It fetched two files by URL and hash-compared them, so it could
+  report agreement about those two while upstream added a third — which is what
+  happened. `spec/v1/slimrpc-collaborative-channel.md` has existed on an
+  upstream branch, and the official `a2a-slimrpc` crate has implemented it,
+  without anything here noticing. The check now clones upstream and takes its
+  inventory from `main`, so an added or withdrawn spec file fails as loudly as a
+  changed one, and it surveys the other branches: a branch-only spec must carry
+  a written disposition or CI fails until somebody triages it.
+
+- **The provenance manifest had gone stale, in the project's favour.**
+  `docs/provenance-manifest.md` is written for a downstream project's counsel —
+  the A2A project and the Linux Foundation are named in it — and nothing forced
+  it to be regenerated. It still reported 749 commits and 19.4% of history
+  passing the project's own DCO gate; re-measured at `7093af3` the figures are
+  977 commits and **39.2%**. A counsel-facing document that understates the
+  project is the harder defect to notice, because nobody is motivated to check
+  it. `release.yml` now runs `scripts/check_provenance_manifest.py`, which fails
+  a release whose manifest was measured at a different commit or whose headline
+  figures do not match a fresh run, and refuses outright on a shallow clone —
+  the truncation that made the two previous hand-derived figures wrong by 2.3x.
+
+- **`SECURITY.md` understated release-artifact verifiability.** It said all
+  release tags were lightweight and unsigned, so there was "nothing to verify".
+  `v0.8.0` and `v0.9.0` are annotated tag objects carrying a tagger and a date —
+  `release.yml`'s annotated-tag gate working, in the two releases cut since it
+  landed. Signing remains a genuine gap and is still stated as one. The same
+  stale claim is corrected in `RELEASING.md`, `ROADMAP.md` and `PROVENANCE.md`.
+
+- **`prove_workflow_gates_fail.py` could not see a new script-invoking step.**
+  It discovered gates by looking for an explicit `exit` in the step body;
+  steps whose verdict is a checker's exit code were reachable only through a
+  hand-maintained list, so *adding* one left it silently unproven. Discovery
+  now also matches a step running one of this repository's own scripts, which
+  turns a forgotten registry entry into a failed build.
+
+- **The SQLite connection pragmas were written out four times.** `journal_mode`,
+  `busy_timeout`, `synchronous` and `foreign_keys` appeared byte-identically in
+  `store::sqlite_store`, `store::tenant_sqlite_store`, `push::sqlite_config_store`
+  and `push::tenant_sqlite_config_store`, with nothing asserting they agreed and
+  three of the four also hard-coding the same pool size. Correcting one in
+  response to a bug report would have left the other three at the old value with
+  every test still passing — the shape `DEFAULT_MAX_PAGE_SIZE` already cost this
+  repository once. They now live in one private module, with a test that asks
+  `SQLite` for the effective values on a real file rather than asserting the
+  builder was called. Measured while writing that test: removing `journal_mode`
+  or `synchronous` fails it, and removing `busy_timeout` or `foreign_keys` does
+  not, because `sqlx` already defaults both to the values being asked for. Both
+  facts are now recorded next to the pragmas.
+
+- **The `unwrap`/`expect` count in library code is now a CI ratchet** rather
+  than a number typed into `CONTRIBUTING.md` that no method could reproduce
+  (B5). `scripts/check_panic_paths.py` strips comments and string literals with
+  a state machine and follows `#[cfg(test)]` gating transitively — a file
+  declared by a test-gated module is test code too, even though it carries no
+  attribute of its own and no "test" in its name. The measured surface of the
+  published crates: **0 `.unwrap()`, 10 `.expect(`, 0 `panic!`, 0 `todo!` in
+  runtime library code**, with `build.rs` reported separately. Adding one now
+  fails the build until the baseline is updated deliberately.
+
+- **`AgentExecutor::cancel`'s documentation described behaviour it stopped
+  having in 0.7.** The rustdoc said "the default implementation returns an error
+  indicating the task is not cancelable. Override this to support task
+  cancellation." The default has cancelled since 0.7 — it emits the terminal
+  `Canceled` status — and the inline comment beside it says the refusing default
+  was removed precisely because it left `Working` tasks uncancelable out of the
+  box. A reader of docs.rs would have believed the opposite of what the code
+  does, and would have written an override to get behaviour they already had.
+
+- **Four book chapters, and a gate that could not see whether they compiled.**
+  `deployment/{troubleshooting,observability,multi-tenancy,security}.md` close
+  B10. Separately: `a2a-book-tests` registers pages by hand, and nothing checked
+  the list — an unregistered page's Rust was never compiled and nothing said so,
+  because a page with no `ignore`d blocks looks exactly like a page being
+  compiled. Four pages were already unregistered. `check_book_code.sh` now fails
+  on an unregistered page, and on an exclusion whose page no longer exists.
+
+- **The example coverage matrix could print a total larger than the grid.**
+  `a2a-example-harness` scores which A2A methods ran over which bindings, and
+  its summary took "exercised" from one collection and "not applicable" from
+  another — two collections a single cell can be in at once. A cell that was
+  both excused and then exercised, or excused twice, was counted twice, so the
+  line read `1 exercised, 1 not applicable, 43 missing, of 44 cells`. Both
+  numbers now come from one classification of the grid, so the three buckets
+  partition it by construction; `excuse` deduplicates as `record` always has;
+  and an excuse for a cell that was then exercised no longer prints under "Not
+  applicable" while the grid shows it as `ok`.
+
+- **Four examples each carried their own copy of the agent card's interface
+  list.** `Endpoints` and `interfaces()` were byte-identical in `genai-agent`,
+  `rig-agent` and `multi-lang-team`, and `echo-agent` wrote the same four
+  `AgentInterface` literals inline. Each copy hand-wrote `"HTTP+JSON"` — the
+  string the SDK ships `AgentInterface::rest` to avoid, its own documentation
+  saying a typo there "is a card that lies". All four now use one
+  implementation in `a2a-example-harness`, built from the SDK's constructors,
+  and a test asserts the card's `protocolBinding` values match the coverage
+  matrix's column labels, which were two independent spellings of the same
+  four names.
+
+- **The three LLM-backed examples had no tests, and their success paths were
+  assumed untestable.** `genai-agent`, `rig-agent` and `multi-lang-team` now
+  have 19 tests between them, none of which touch a network or a model.
+  `genai`'s service target is overridable, so the unreachable-provider branch
+  runs against a dead endpoint identically on a laptop with `llama-server` up
+  and on a CI runner with nothing; `rig`'s executor is generic over
+  `CompletionModel`, so a fake that answers makes the *success* path testable
+  with no provider at all — including that a real answer is not dressed as a
+  mechanical fallback. Every example in the repository now has tests.
+
+- **Every example was run end to end against a real model** — `Qwen3.5-0.8B`
+  under `llama.cpp` — rather than only against fakes: 44/44 protocol cells
+  each, 102/102 for `agent-team`, and zero mechanical fallbacks in any LLM
+  run, so the fallback paths the unit tests exercise really are the degraded
+  path. Recorded with the model's size and sha256 in
+  `docs/lf-readiness-review.md` so the run is reproducible.
+
+- **`rig-agent`'s README pointed at a llama.cpp download that 404s.** Its
+  quickstart fetched `releases/latest/download/llama-bin-ubuntu-x64.tar.gz`;
+  llama.cpp's release assets carry the tag in the filename, so no tag-less
+  `latest/download` URL can resolve. Replaced with a from-source build,
+  verified by running the commands exactly as written into a clean directory.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite
@@ -447,10 +646,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The registration-time webhook filter now normalizes numeric IPv4
+  encodings.** `validate_webhook_url` accepted the non-canonical forms the C
+  resolver (`inet_aton`, and so `tokio`'s `lookup_host`) maps to private
+  addresses — `http://2852039166/`, `http://0xA9FEA9FE/` and
+  `http://0251.0376.0251.0376/` all denote `169.254.169.254`, the cloud metadata
+  endpoint — because `Ipv4Addr::from_str` only accepts dotted-quad. Delivery
+  already blocked them (`lookup_host` resolves the integer and the IP-range check
+  re-runs on the resolved address), so this was a defense-in-depth gap rather
+  than a live SSRF; it is nonetheless the exact attack class the filter targets,
+  which already rejected the IPv4-mapped and NAT64 spellings of the same address.
+  The static check now decodes the decimal, hex and octal forms and applies the
+  same private-range test; public numeric hosts still pass, matching delivery.
+  Found by an over-the-wire adversarial run against a live model — 20/20 hostile
+  webhook URLs rejected with the guard on, up from 19/20.
+
+- **`examples/genai-agent` no longer ships with the SSRF guard disabled.** Its
+  server mode — labelled "the real deployment shape" in its own comment —
+  hard-coded `allow_private_urls()`, silently turning the guard off for anyone
+  adopting the example as a deployment template. It is now secure by default;
+  `A2A_ALLOW_PRIVATE_WEBHOOKS=1` re-enables loopback webhooks for local testing,
+  and the active posture is printed at startup. (Example crate, `publish =
+  false`, so no published crate changed — but the template did.)
+
 - **RUSTSEC-2026-0258** — h2 raised to 0.4.16, without the dependency downgrade
   the advisory's own suggested fix would have pulled in.
 
 ### Changed
+
+- **The SLIMRPC binding now states where it diverges from the official
+  `a2a-slimrpc` crate**, in its README, the book chapter and
+  `spec/slimrpc_v1/README.md`. Both implement all eleven A2A methods, but
+  neither is a superset of the other: this crate implements the multicast
+  specification on upstream `main` and the official one does not; the official
+  one implements Collaborate, whose specification is on an unmerged upstream
+  branch, and this one does not. The two are different operations rather than
+  two names for one, so "which is more complete" is the wrong question — the
+  docs now say so with a comparison table instead of leaving a reader to infer
+  it. Tracked as B24.
 
 - **`PerTenantConfig` and `TenantLimits` now document that nothing enforces
   them** (`a2a-protocol-server`). All five per-tenant limits are stored,

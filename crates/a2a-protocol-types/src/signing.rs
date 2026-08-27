@@ -573,8 +573,8 @@ mod tests {
             .unwrap();
 
         let sig = sign_agent_card(&card, pkcs8.as_ref(), Some("test-key")).unwrap();
-        assert!(!sig.protected.is_empty());
-        assert!(!sig.signature.is_empty());
+        assert_ne!(sig.protected, "");
+        assert_ne!(sig.signature, "");
 
         // Extract public key.
         let key_pair = EcdsaKeyPair::from_pkcs8(

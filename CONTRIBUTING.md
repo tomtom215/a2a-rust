@@ -142,32 +142,44 @@ Use `?`, `map_err`, `ok_or_else`, or explicit `match`. `expect()` is also
 forbidden unless the message explains an invariant that is *impossible* to
 violate at runtime (documented with `// SAFETY:` style comment).
 
-**This rule is convention, not a lint.** All four crates set
+**Enforced as a ratchet, not as a lint.** All four crates set
 `#![deny(missing_docs)]`, `#![forbid(unsafe_code)]` and
 `#![warn(clippy::all, pedantic, nursery)]`, but **not**
-`clippy::unwrap_used` / `clippy::expect_used`. Nothing mechanically enforces
-the paragraph above.
+`clippy::unwrap_used` / `clippy::expect_used`. What holds the line instead is
+`scripts/check_panic_paths.py`, which runs in `ci.yml` and fails when the set
+changes in either direction:
 
-Measured 2026-08-10, over `crates/*/src/**/*.rs`:
+```sh
+scripts/check_panic_paths.py            # check
+scripts/check_panic_paths.py --update   # after a reviewed change
+```
 
-| | Occurrences | Files |
-|---|---:|---:|
-| Raw `.unwrap(` / `.expect(` | 1872 | 92 |
-| **Excluding in-file `#[cfg(test)]` modules** | **26** | **14** |
+**Do not type the number here — run the script.** Every hand-written count this
+section has carried has been wrong, in the same direction, for the same reason.
+A grep counts matches inside doc comments, inside string literals, and inside
+`#[cfg(test)]` modules; in this repository the test hits outnumber the real ones
+more than thirty to one, so a naive grep measures how thoroughly the crate is
+tested and reports it as a defect count.
 
-Quote the second row, never the first. The raw count is 98.6% test code, where
-`unwrap()` is the correct thing to write — a test that swallows an error
-instead of panicking is a worse test. A grep that does not strip `#[cfg(test)]`
-blocks measures how thoroughly the crate is tested and reports it as a defect
-count.
+Stripping *in-file* `#[cfg(test)]` blocks is not enough either, which is what
+the previous figure in this section got wrong. A file declared by its parent as
+`#[cfg(test)] mod tests;` carries no such attribute of its own, and gating is
+inherited — so everything that module declares is test code too. Counting
+`crates/*/src/**/*.rs` without following that gives a number several times too
+high and attributes test assertions to library code.
 
-26 in non-test code is a reviewable number, not a systemic problem, which is
-why turning the lint on is a live option rather than a large project. It has
-not been done: each of the 26 needs a judgement call between `?`, a documented
-invariant, and an `#[allow]` with a reason, and doing that badly at 26 sites
-to gain a lint would trade a real property for a green check. Left as a
-maintainer decision, recorded here so the next person starts from the measured
-number rather than the grep.
+The script does all of it, and its `--self-test` pins the exclusions on a
+synthetic file so the tool is checked before its output is believed. `build.rs`
+is reported separately: a panic there fails somebody's build, loudly, at a
+moment they are already watching, and lumping it in overstates the runtime
+hazard.
+
+The surviving sites are a reviewable set, not a systemic problem, and several
+are correct as written — a rustls provider that cannot fail, a loop bound that
+makes an `Option` provably `Some`, and a deliberate fail-fast on a poisoned
+credentials lock where returning `None` would be a silent auth downgrade.
+Turning the lint on remains a live maintainer decision; the ratchet means
+nothing is added to the pile while that decision waits.
 
 ### `unsafe` blocks
 

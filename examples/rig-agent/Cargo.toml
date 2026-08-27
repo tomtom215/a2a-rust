@@ -27,3 +27,8 @@ uuid           = { workspace = true }
 
 # rig — LLM agent framework (https://github.com/0xPlaygrounds/rig)
 rig-core       = "0.38.2"
+
+[dev-dependencies]
+# `start_paused` for the slow-marker test, so it asserts on a virtual clock
+# instead of sleeping 400ms on every CI run.
+tokio = { workspace = true, features = ["test-util"] }

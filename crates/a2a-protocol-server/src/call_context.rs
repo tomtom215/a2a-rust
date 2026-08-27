@@ -263,7 +263,7 @@ mod tests {
         let ctx = CallContext::new("method");
         assert_eq!(ctx.method(), "method");
         assert!(ctx.caller_identity().is_none());
-        assert!(ctx.extensions().is_empty());
+        assert_eq!(ctx.extensions(), [] as [String; 0]);
         assert!(ctx.request_id().is_none());
         assert!(ctx.http_headers().is_empty());
     }

@@ -25,6 +25,9 @@
 //! for a complete one. CI runs it with `--all-features` (`ci.yml`, job
 //! `dogfood`).
 
+#[cfg(test)]
+mod registration;
+
 pub mod basic;
 pub mod coverage_gaps;
 pub mod dogfood;

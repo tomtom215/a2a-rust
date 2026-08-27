@@ -367,9 +367,10 @@ mod tests {
         );
 
         // No header at all → nothing activated.
-        assert!(handler
-            .activated_extensions(&std::collections::HashMap::new())
-            .is_empty());
+        assert_eq!(
+            handler.activated_extensions(&std::collections::HashMap::new()),
+            [] as [std::string::String; 0]
+        );
     }
 
     /// End-to-end: a data-plane operation on a handler whose card requires an

@@ -313,6 +313,66 @@ fn is_private_v4(v4: Ipv4Addr) -> bool {
         || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64) // 100.64.0.0/10 (CGNAT)
 }
 
+/// Parses the non-canonical numeric IPv4 encodings that `Ipv4Addr::from_str`
+/// rejects but the C resolver (`inet_aton`, and therefore `getaddrinfo` /
+/// `tokio::net::lookup_host`) accepts: a single 32-bit integer, `0x…` hex and
+/// leading-`0` octal parts, and the packed 1-, 2-, and 3-part short forms.
+///
+/// Returns `None` for anything that is not one of these forms — including every
+/// ordinary DNS hostname, which necessarily contains a non-numeric label — so a
+/// caller can normalize-then-check without misclassifying real hostnames.
+///
+/// This mirrors the address delivery will actually dial, closing the gap where
+/// e.g. `http://2852039166/` or `http://0xA9FEA9FE/` (both == 169.254.169.254,
+/// the cloud metadata endpoint) passed the registration-time host check while
+/// resolving to a link-local address at connect time.
+fn parse_numeric_ipv4(host: &str) -> Option<Ipv4Addr> {
+    // `inet_aton` accepts 1..=4 dot-separated C-integer parts.
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.is_empty() || parts.len() > 4 {
+        return None;
+    }
+    let mut vals: Vec<u64> = Vec::with_capacity(parts.len());
+    for p in &parts {
+        vals.push(parse_c_integer(p)?);
+    }
+    // Pack per `inet_aton`'s part-count rules: the final part absorbs all the
+    // low-order bytes the earlier parts did not name.
+    let addr: u64 = match vals.as_slice() {
+        [a] => *a,
+        [a, b] if *a <= 0xff && *b <= 0x00ff_ffff => (a << 24) | b,
+        [a, b, c] if *a <= 0xff && *b <= 0xff && *c <= 0xffff => (a << 24) | (b << 16) | c,
+        [a, b, c, d] if *a <= 0xff && *b <= 0xff && *c <= 0xff && *d <= 0xff => {
+            (a << 24) | (b << 16) | (c << 8) | d
+        }
+        _ => return None,
+    };
+    if addr > u64::from(u32::MAX) {
+        return None;
+    }
+    #[allow(clippy::cast_possible_truncation)] // bounded by the check above
+    Some(Ipv4Addr::from((addr as u32).to_be_bytes()))
+}
+
+/// Parses one C-style integer: `0x`/`0X` hex, a leading `0` octal, otherwise
+/// decimal. Overflow of `u64` (an over-long literal) yields `None`, so the
+/// caller rejects the host rather than wrapping to an attacker-chosen value.
+fn parse_c_integer(s: &str) -> Option<u64> {
+    if s.is_empty() {
+        return None;
+    }
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        if hex.is_empty() {
+            return None;
+        }
+        u64::from_str_radix(hex, 16).ok()
+    } else if s.len() > 1 && s.starts_with('0') {
+        u64::from_str_radix(&s[1..], 8).ok()
+    } else {
+        s.parse::<u64>().ok()
+    }
+}
+
 /// Recovers an embedded IPv4 address from the IPv6 forms that actually route to
 /// IPv4: IPv4-mapped (`::ffff:a.b.c.d`, what dual-stack sockets dial), the NAT64
 /// well-known prefix (`64:ff9b::a.b.c.d`, RFC 6052), and the deprecated
@@ -399,6 +459,18 @@ pub(crate) fn validate_webhook_url(url: &str) -> A2aResult<()> {
         if is_private_ip(ip) {
             return Err(A2aError::invalid_params(format!(
                 "webhook URL targets private/loopback address: {host}"
+            )));
+        }
+    } else if let Some(v4) = parse_numeric_ipv4(host_bare) {
+        // The canonical parse above only accepts dotted-quad / IPv6. A C-style
+        // numeric host (decimal/hex/octal, and the packed short forms) is not a
+        // valid DNS name but resolves to an IPv4 address at connect time, so
+        // apply the same private-range check to the address it denotes. Without
+        // this, delivery is the only thing that stops `http://2852039166/` from
+        // being stored as a webhook for 169.254.169.254.
+        if is_private_v4(v4) {
+            return Err(A2aError::invalid_params(format!(
+                "webhook URL targets private/loopback address: {host} ({v4})"
             )));
         }
     }
@@ -905,6 +977,74 @@ mod tests {
     #[test]
     fn rejects_link_local() {
         assert!(validate_webhook_url("http://169.254.169.254/latest").is_err());
+    }
+
+    #[test]
+    fn parse_numeric_ipv4_matches_the_resolver() {
+        let v4 = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+        // The three encodings of 169.254.169.254 that getaddrinfo accepts.
+        assert_eq!(
+            parse_numeric_ipv4("2852039166"),
+            Some(v4("169.254.169.254"))
+        ); // decimal
+        assert_eq!(
+            parse_numeric_ipv4("0xA9FEA9FE"),
+            Some(v4("169.254.169.254"))
+        ); // hex
+        assert_eq!(
+            parse_numeric_ipv4("0xa9fea9fe"),
+            Some(v4("169.254.169.254"))
+        ); // hex lower
+        assert_eq!(
+            parse_numeric_ipv4("0251.0376.0251.0376"),
+            Some(v4("169.254.169.254")) // octal dotted
+        );
+        // Packed short forms of loopback.
+        assert_eq!(parse_numeric_ipv4("2130706433"), Some(v4("127.0.0.1"))); // 1-part
+        assert_eq!(parse_numeric_ipv4("127.1"), Some(v4("127.0.0.1"))); // 2-part
+        assert_eq!(parse_numeric_ipv4("0x7f.0.0.1"), Some(v4("127.0.0.1"))); // mixed radix
+                                                                             // A public integer maps through unchanged (8.8.8.8), so we do not
+                                                                             // over-reject legitimate — if unusual — numeric hosts.
+        assert_eq!(parse_numeric_ipv4("134744072"), Some(v4("8.8.8.8")));
+        // Real hostnames and out-of-range / malformed forms are not numeric IPs.
+        assert_eq!(parse_numeric_ipv4("example.com"), None);
+        assert_eq!(parse_numeric_ipv4("printer.local"), None);
+        assert_eq!(parse_numeric_ipv4("256.1.1.1"), None); // octet overflow
+        assert_eq!(parse_numeric_ipv4("1.2.3.4.5"), None); // too many parts
+        assert_eq!(parse_numeric_ipv4("99999999999999999999"), None); // u64 overflow
+        assert_eq!(parse_numeric_ipv4("0x"), None); // empty hex
+        assert_eq!(parse_numeric_ipv4("1e10"), None); // decimal parse fails
+    }
+
+    #[test]
+    fn rejects_decimal_integer_metadata() {
+        // http://2852039166/ resolves to 169.254.169.254 (cloud metadata) but
+        // is not a canonical dotted-quad — the classic SSRF-filter bypass.
+        assert!(validate_webhook_url("http://2852039166/latest/meta-data").is_err());
+    }
+
+    #[test]
+    fn rejects_hex_integer_metadata() {
+        assert!(validate_webhook_url("http://0xA9FEA9FE/latest").is_err());
+    }
+
+    #[test]
+    fn rejects_octal_dotted_metadata() {
+        assert!(validate_webhook_url("http://0251.0376.0251.0376/latest").is_err());
+    }
+
+    #[test]
+    fn rejects_packed_short_form_loopback() {
+        assert!(validate_webhook_url("http://2130706433/webhook").is_err()); // 127.0.0.1
+        assert!(validate_webhook_url("http://127.1/webhook").is_err()); // 127.0.0.1
+        assert!(validate_webhook_url("http://0x7f.0.0.1/webhook").is_err());
+    }
+
+    #[test]
+    fn accepts_public_numeric_ip() {
+        // 8.8.8.8 in integer form is public and must still be accepted, so the
+        // normalization blocks private targets without banning numeric hosts.
+        assert!(validate_webhook_url("http://134744072/webhook").is_ok());
     }
 
     #[test]

@@ -302,7 +302,6 @@ injection_for() {
                 "cargo fmt"*)     echo "fmt:$SLIMRPC_LIB" ;;
                 "cargo clippy"*)  echo "clippy_always:$SLIMRPC_LIB" ;;
                 "cargo build"*)   echo "build_bin:$SLIMRPC_BIN" ;;
-                "cargo package"*) echo "package_manifest:$SLIMRPC_TOML" ;;
                 "cargo test"*)    echo "test_always:$SLIMRPC_LIB" ;;
                 *)                echo "" ;;
             esac
@@ -321,12 +320,19 @@ injection_for() {
             echo "benchmark_prose" ;;
         "./scripts/check_book_code.sh")
             echo "book_code" ;;
+        *"gen_sitemap.py --check"*)
+            echo "sitemap" ;;
         *"check_api_reference.py"*)
             echo "api_reference" ;;
         *"check_otel_metrics_coverage.py"*)
             echo "otel_coverage" ;;
         *"check_package_excludes.py"*)
             echo "package_excludes" ;;
+        # The binding's packaging gate is a wrapper, not a bare `cargo package`
+        # (B23), so it is matched here rather than in the SLIMRPC block above.
+        # The injection is unchanged: a manifest the wrapper must still reject.
+        *"package_binding.py"*)
+            echo "package_manifest:$SLIMRPC_TOML" ;;
         *"prove_workflow_gates_fail.py"*)
             echo "workflow_gates" ;;
         *"check_block_scalars.py"*)
@@ -335,6 +341,8 @@ injection_for() {
             echo "cancellation_release" ;;
         *"check_doc_escapes.py"*)
             echo "doc_escapes" ;;
+        *"check_panic_paths.py"*)
+            echo "panic_path:$TYPES_LIB" ;;
         *"--test postgres_store_tests"*)
             echo "postgres_ignored" ;;
         *"--test multi_replica"*)
@@ -421,6 +429,7 @@ expected_marker() {
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
+        sitemap)          echo "out of sync with SUMMARY.md" ;;
         api_reference)    echo "are not defined in crates/" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
@@ -431,6 +440,7 @@ expected_marker() {
         doc)              echo "NoSuchItemAnywhere" ;;
         package)          echo "NO_SUCH_README.md" ;;
         package_manifest) echo "NO_SUCH_README.md" ;;
+        panic_path)       echo "new panicking construct" ;;
         build_bin)        echo "GateProbeNoSuchType" ;;
         dogfood)          echo "CLAIM TABLE DRIFT" ;;
         example_surface)  echo "matrix cell(s) never ran" ;;
@@ -485,6 +495,11 @@ if n != 1:
 p.write_text(s)
 PY
             ;;
+        # An `.unwrap()` in library code, in a function the compiler will not
+        # warn about, so the gate under test is the only thing that can object.
+        panic_path)
+            note_touched "$rest"
+            printf '\n#[allow(dead_code)]\nfn gate_probe_panic(v: Option<u8>) -> u8 { v.unwrap() }\n' >>"$rest" ;;
         proto)
             note_touched "tck/proto/a2a_v1/a2a.proto"
             printf '\n// gate probe: injected drift\n' >>tck/proto/a2a_v1/a2a.proto ;;
@@ -536,6 +551,16 @@ PROBE
             printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
                 >>book/src/concepts/streaming.md
             ;;
+        sitemap)
+            # Add a page to the table of contents without regenerating the
+            # sitemap — the exact drift this gate exists to catch. The sitemap
+            # is generated from SUMMARY.md, so a new SUMMARY entry the committed
+            # sitemap does not carry must make `--check` disagree. `>>` appends
+            # to the last section, which is all the parser needs to emit a URL
+            # the sitemap lacks.
+            note_touched "book/src/SUMMARY.md"
+            printf '\n- [Gate Probe](./reference/gate-probe.md)\n' >>book/src/SUMMARY.md
+            ;;
         api_reference)
             # Rename a type on the page and leave the code alone — the exact
             # decay this gate exists for. A hand-written listing goes stale the
@@ -583,9 +608,19 @@ PROBE
 import pathlib
 p = pathlib.Path("book/src/reference/benchmarks.md")
 s = p.read_text()
+before = s
 s = s.replace(
-    "Connection reuse saves 123.5 µs (39.5%) on loopback",
+    "Connection reuse saves 122.5 µs (42.7%) on loopback",
     "Connection reuse saves ~140µs (9%) on loopback",
+)
+# The injected drift must actually change the page, or the gate is proving
+# nothing. `benchmarks.md` is regenerated from measurements, so the exact
+# figure here moves between releases; when it does and this string is not
+# updated with it, the replace becomes a silent no-op and the gate reports
+# UNPROVEN. Fail loudly instead of injecting nothing.
+assert s != before, (
+    "benchmark_prose injection matched no text — the connection-reuse figure "
+    "in book/src/reference/benchmarks.md changed and this string is stale"
 )
 p.write_text(s)
 PY

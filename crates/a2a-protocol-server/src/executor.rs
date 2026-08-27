@@ -93,13 +93,29 @@ pub trait AgentExecutor: Send + Sync + 'static {
 
     /// Cancels an in-progress task.
     ///
-    /// The default implementation returns an error indicating the task is not
-    /// cancelable. Override this to support task cancellation.
+    /// **The default implementation cancels.** It emits the terminal
+    /// `Canceled` status so subscribers see it, best-effort: a task with no
+    /// live subscribers has no queue receivers, and that must not fail the
+    /// cancel, because the handler persists the state either way. Cancellation
+    /// in A2A is *cooperative* — by the time this runs the handler has already
+    /// triggered [`RequestContext::cancellation_token`], which a running
+    /// `execute` is expected to observe.
+    ///
+    /// Override this when the task holds something that must be released —
+    /// a reserved slot, a parked message, an open handle. Overriding is about
+    /// releasing state, not about opting in to cancellation.
+    ///
+    /// Before 0.7 the default refused with `TaskNotCancelable`, which left
+    /// `Working` tasks uncancelable out of the box and reported it as the
+    /// task's fault. Every reference SDK requires agents to support cancel.
     ///
     /// # Errors
     ///
-    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if cancellation fails
-    /// or is not supported.
+    /// Returns an [`A2aError`](a2a_protocol_types::error::A2aError) if an
+    /// override fails to release what the task holds. The default
+    /// implementation does not return an error.
+    ///
+    /// [`RequestContext::cancellation_token`]: crate::request_context::RequestContext::cancellation_token
     fn cancel<'a>(
         &'a self,
         ctx: &'a RequestContext,

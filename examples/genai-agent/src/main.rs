@@ -44,6 +44,9 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod surface;
+
+#[cfg(test)]
+mod tests;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_server::request_context::RequestContext;
@@ -260,6 +263,13 @@ fn serve(listener: tokio::net::TcpListener, dispatcher: Arc<JsonRpcDispatcher>) 
     });
 }
 
+/// Reads a boolean environment flag: `1` or `true` (any case) is on.
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let model = std::env::var("GENAI_MODEL").unwrap_or_else(|_| "qwen3.5:0.8b".to_string());
@@ -280,16 +290,119 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         let addr: SocketAddr = listener.local_addr()?;
         let url = format!("http://{addr}");
-        let handler = Arc::new(
-            RequestHandlerBuilder::new(GenaiAgentExecutor::new(&model))
-                .with_agent_card(make_agent_card(&url, &model))
-                .with_push_config_store(InMemoryPushConfigStore::new())
-                .with_push_sender(HttpPushSender::new().allow_private_urls())
-                .allow_unauthenticated_extended_card()
-                .build()?,
+
+        // SSRF posture. Server-only mode models a real deployment, so the
+        // webhook SSRF guard is ON by default: a push-notification URL that
+        // resolves to a loopback/private/link-local address is rejected at
+        // registration, and re-checked with DNS resolution + IP pinning at
+        // delivery. This example previously hard-coded `.allow_private_urls()`
+        // here, which silently disabled that guard for anyone using it as a
+        // deployment template. Set A2A_ALLOW_PRIVATE_WEBHOOKS=1 only for local
+        // testing where the webhook endpoint itself lives on localhost.
+        let allow_private = env_flag("A2A_ALLOW_PRIVATE_WEBHOOKS");
+        let push_sender = if allow_private {
+            HttpPushSender::new().allow_private_urls()
+        } else {
+            HttpPushSender::new()
+        };
+
+        // A2A_ALLOW_FALLBACK lets the agent complete a task with a labelled
+        // mechanical answer when no model is reachable, instead of failing it.
+        // Off by default (a real deployment should surface an unreachable
+        // model, not fake a reply); it exists so the server can be driven —
+        // e.g. under sustained load — without a live model in the loop.
+        let allow_fallback = env_flag("A2A_ALLOW_FALLBACK");
+        let executor = if allow_fallback {
+            GenaiAgentExecutor::with_fallback(&model)
+        } else {
+            GenaiAgentExecutor::new(&model)
+        };
+
+        let mut builder = RequestHandlerBuilder::new(executor)
+            .with_agent_card(make_agent_card(&url, &model))
+            .with_push_config_store(InMemoryPushConfigStore::new())
+            .with_push_sender(push_sender)
+            .allow_unauthenticated_extended_card();
+
+        // A2A_MAX_CONCURRENT_TASKS caps how many tasks a tenant may run at once;
+        // a request past the cap is refused with `Overloaded`, not queued. Unset
+        // means unlimited (the default). Exposed so the refusal path can be
+        // driven under load rather than only in unit tests.
+        if let Some(n) = std::env::var("A2A_MAX_CONCURRENT_TASKS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            use a2a_protocol_server::tenant_config::{PerTenantConfig, TenantLimits};
+            builder = builder.with_tenant_config(
+                PerTenantConfig::builder()
+                    .default_limits(TenantLimits::builder().max_concurrent_tasks(n).build())
+                    .build(),
+            );
+            println!("max concurrent tasks per tenant: {n}");
+        }
+
+        // Optional authentication. Each scheme set here adds an interceptor that
+        // guards every method on every binding (the plain agent card stays
+        // public by design; the extended card becomes protected). Interceptors
+        // compose with AND semantics — set one scheme. Off by default.
+        if let Ok(token) = std::env::var("A2A_BEARER_TOKEN") {
+            builder =
+                builder.with_interceptor(a2a_protocol_server::BearerTokenAuthInterceptor::new([
+                    token,
+                ]));
+            println!("auth: Bearer token required (Authorization: Bearer <token>)");
+        }
+        if let Ok(key) = std::env::var("A2A_API_KEY") {
+            builder =
+                builder.with_interceptor(a2a_protocol_server::ApiKeyAuthInterceptor::new([key]));
+            println!("auth: API key required (x-api-key: <key>)");
+        }
+        if let Ok(secret) = std::env::var("A2A_JWT_HS256_SECRET") {
+            use a2a_protocol_server::auth::{Jwks, JwtAuthInterceptor, JwtValidator};
+            let mut validator = JwtValidator::new().with_hs256_secret(secret.into_bytes());
+            if let Ok(iss) = std::env::var("A2A_JWT_ISS") {
+                validator = validator.with_issuer(iss);
+            }
+            if let Ok(aud) = std::env::var("A2A_JWT_AUD") {
+                validator = validator.with_audience(aud);
+            }
+            builder = builder.with_interceptor(JwtAuthInterceptor::new(validator, Jwks::new()));
+            println!("auth: JWT HS256 required (Authorization: Bearer <jwt>)");
+        }
+
+        let handler = Arc::new(builder.build()?);
+        serve(
+            listener,
+            Arc::new(JsonRpcDispatcher::new(Arc::clone(&handler))),
         );
-        serve(listener, Arc::new(JsonRpcDispatcher::new(handler)));
         println!("Genai A2A agent listening on {url}");
+        println!(
+            "webhook SSRF guard: {}",
+            if allow_private {
+                "OFF (A2A_ALLOW_PRIVATE_WEBHOOKS set — private/loopback webhooks permitted)"
+            } else {
+                "ON (private/loopback/link-local webhooks rejected)"
+            }
+        );
+
+        // Optional additional bindings on the same handler (same executor,
+        // same secure push posture). Off by default — server mode is one
+        // binding — but a multi-protocol deployment, or exercising the
+        // gRPC/WebSocket surface, can opt in without a code change.
+        if let Ok(grpc_addr) = std::env::var("A2A_GRPC_ADDR") {
+            use a2a_protocol_server::dispatch::grpc::{GrpcConfig, GrpcDispatcher};
+            let grpc_listener = tokio::net::TcpListener::bind(&grpc_addr).await?;
+            let addr = GrpcDispatcher::new(Arc::clone(&handler), GrpcConfig::default())
+                .serve_with_listener(grpc_listener)?;
+            println!("gRPC also listening on {addr}");
+        }
+        if let Ok(ws_addr) = std::env::var("A2A_WS_ADDR") {
+            use a2a_protocol_server::dispatch::websocket::WebSocketDispatcher;
+            let ws = Arc::new(WebSocketDispatcher::new(Arc::clone(&handler)));
+            let addr = ws.serve_with_addr(ws_addr.as_str()).await?;
+            println!("WebSocket also listening on ws://{addr}");
+        }
+
         tokio::signal::ctrl_c().await?;
         return Ok(());
     }

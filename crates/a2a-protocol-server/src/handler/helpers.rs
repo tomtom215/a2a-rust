@@ -402,7 +402,7 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert("authorization".to_owned(), "Bearer tok".to_owned());
         let ctx = build_call_context("message/send", Some(&headers));
-        assert!(ctx.extensions().is_empty());
+        assert_eq!(ctx.extensions(), [] as [String; 0]);
     }
 
     #[test]

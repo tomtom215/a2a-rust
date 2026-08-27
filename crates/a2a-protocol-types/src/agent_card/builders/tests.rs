@@ -107,9 +107,9 @@ fn the_literal_it_replaces() -> AgentCard {
 fn new_leaves_every_optional_field_unset() {
     let card = AgentCard::new("a", "1.0.0", AgentInterface::jsonrpc("http://x"));
     assert!(card.url.is_none());
-    assert!(card.description.is_empty());
-    assert!(card.default_input_modes.is_empty());
-    assert!(card.default_output_modes.is_empty());
+    assert_eq!(card.description, "");
+    assert_eq!(card.default_input_modes, [] as [std::string::String; 0]);
+    assert_eq!(card.default_output_modes, [] as [std::string::String; 0]);
     assert!(card.skills.is_empty());
     assert!(card.provider.is_none());
     assert!(card.icon_url.is_none());

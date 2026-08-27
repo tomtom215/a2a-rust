@@ -52,6 +52,9 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod surface;
+
+#[cfg(test)]
+mod tests;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::push::{HttpPushSender, InMemoryPushConfigStore};
 use a2a_protocol_server::request_context::RequestContext;

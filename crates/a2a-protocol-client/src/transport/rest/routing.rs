@@ -273,7 +273,7 @@ mod tests {
             route_for("GetExtendedAgentCard").expect("GetExtendedAgentCard should have a route");
         assert_eq!(r.http_method, HttpMethod::Get);
         assert_eq!(r.path_template, "/extendedAgentCard");
-        assert!(r.path_params.is_empty());
+        assert_eq!(r.path_params, [] as [&str; 0]);
         assert!(!r.streaming);
     }
 }

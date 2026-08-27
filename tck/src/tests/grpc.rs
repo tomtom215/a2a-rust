@@ -19,8 +19,9 @@
 //! *names* are shared with the other bindings so a run can be compared across
 //! them; the assertions are the binding's own.
 
-use tonic::transport::Channel;
-use tonic::{Code, Request};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::{Channel, Endpoint};
+use tonic::{Code, Request, Status};
 
 /// The TCK's own generated client and message types.
 ///
@@ -40,22 +41,51 @@ pub mod pb {
 
 use pb::a2a_service_client::A2aServiceClient;
 
-type Client = A2aServiceClient<Channel>;
+/// A plain function pointer, so the client type stays nameable in the alias.
+type VersionInterceptor = fn(Request<()>) -> Result<Request<()>, Status>;
+type Client = A2aServiceClient<InterceptedService<Channel, VersionInterceptor>>;
 
 /// Connects to the gRPC endpoint named by the agent card.
 ///
 /// A gRPC target is a name-resolver string, but `tonic`'s `Endpoint` wants a
 /// URI, so a scheme is added when the card omits one (`127.0.0.1:9998` is the
 /// correct advertisement, per the note in `tck/sut/src/main.rs`).
+///
+/// The channel carries an interceptor that stamps the `a2a-version` service
+/// parameter on every request (see [`inject_a2a_version`]).
 pub async fn connect(target: &str) -> Result<Client, String> {
     let uri = if target.contains("://") {
         target.to_owned()
     } else {
         format!("http://{target}")
     };
-    A2aServiceClient::connect(uri.clone())
+    let channel = Endpoint::from_shared(uri.clone())
+        .map_err(|e| format!("gRPC endpoint {uri}: {e}"))?
+        .connect()
         .await
-        .map_err(|e| format!("gRPC connect to {uri} failed: {e}"))
+        .map_err(|e| format!("gRPC connect to {uri} failed: {e}"))?;
+    Ok(A2aServiceClient::with_interceptor(
+        channel,
+        inject_a2a_version as VersionInterceptor,
+    ))
+}
+
+/// Stamps the `a2a-version` service parameter on every gRPC request.
+///
+/// §3.6.1 / §712: a conformant client sends `A2A-Version` on every request, and
+/// a 1.x server rejects a request that omits it (an absent value is protocol
+/// 0.3, which the server must refuse). The HTTP, REST and WebSocket probes in
+/// this kit already send it — this makes the gRPC path conformant too, so the
+/// binding is exercised with the requests a real client sends rather than
+/// versionless ones the server is required to reject. A value a caller set for
+/// itself is left untouched.
+fn inject_a2a_version(mut req: Request<()>) -> Result<Request<()>, Status> {
+    if req.metadata().get("a2a-version").is_none() {
+        if let Ok(value) = tonic::metadata::MetadataValue::try_from("1.0") {
+            req.metadata_mut().insert("a2a-version", value);
+        }
+    }
+    Ok(req)
 }
 
 /// A `SendMessageRequest` carrying one text part, matching what the other

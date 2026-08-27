@@ -571,6 +571,20 @@ def build_registry() -> dict[str, Probe | Exempt]:
         "exits 3 rather than reporting agreement when upstream is unreachable"
     )
 
+    # Needs the full commit history and a manifest measured at the release
+    # commit, neither of which a fixture tree can supply. Verified by hand on
+    # 2026-08-26 against four separate defects, each restored afterwards: a
+    # wrong count, a pin naming a different commit, a percentage inconsistent
+    # with its own counts, and four verdict counts that do not sum. All exit 1;
+    # the clean tree exits 0. It also refuses outright on a shallow clone,
+    # because a shallow clone truncates the oldest history and so produces a
+    # figure that is not merely wrong but flattering.
+    reg["release.yml::validate::Provenance manifest describes the commit being released"] = Exempt(
+        "requires full repository history and a manifest pinned at the release "
+        "commit; verified by hand against four injected defects, and it refuses "
+        "on a shallow clone rather than reporting a flattering figure"
+    )
+
     # ── docs.yml ─────────────────────────────────────────────────────────────
     #
     # The step stages rustdoc under /api/ and then asserts each crate's
@@ -1105,8 +1119,18 @@ def _release_fixture(
 # ── Drift guard ──────────────────────────────────────────────────────────────
 
 
+# A step that runs one of this repository's own scripts is a gate: the script's
+# exit code is the whole verdict. Until 2026-08-26 such steps were reachable
+# only through `curated_extra`, i.e. only if somebody remembered to list them,
+# so *adding* one left it silently unproven — the docstring below claims
+# existence is enforced, and it is, but only for entries that are already
+# there. That is the same shape as the SLIMRPC spec check fixed the same day:
+# a check that verifies what it knows and is silent about what it does not.
+SCRIPT_GATE = re.compile(r"(?:^|[\s|&;(])(?:\./)?(?:python3?\s+)?scripts/[\w./-]+\.(?:sh|py)\b")
+
+
 def discover(steps: list[Step]) -> list[Step]:
-    return [s for s in steps if EXPLICIT_FAIL.search(s.run)]
+    return [s for s in steps if EXPLICIT_FAIL.search(s.run) or SCRIPT_GATE.search(s.run)]
 
 
 def curated_extra(steps: list[Step], registry: dict[str, Probe | Exempt]) -> list[Step]:

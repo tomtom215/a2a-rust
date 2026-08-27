@@ -54,7 +54,13 @@
 - [Dogfooding: The Agent Team](./deployment/dogfooding.md)
     - [Bugs Found & Fixed](./deployment/dogfooding-bugs.md)
     - [Test Coverage Matrix](./deployment/dogfooding-tests.md)
+    - [Dogfooding Against a Real Model](./deployment/dogfooding-real-model.md)
 - [Production Hardening](./deployment/production.md)
+- [Security](./deployment/security.md)
+- [Adversarial Testing](./deployment/security-testing.md)
+- [Multi-Tenancy](./deployment/multi-tenancy.md)
+- [Observability](./deployment/observability.md)
+- [Troubleshooting](./deployment/troubleshooting.md)
 - [Running More Than One Replica](./deployment/horizontal-scaling.md)
 - [GitHub Pages & CI/CD](./deployment/cicd.md)
 

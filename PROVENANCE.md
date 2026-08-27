@@ -118,11 +118,13 @@ commits described above were made. None of those 608 commits carries a
 per-commit `Signed-off-by:` trailer, because no such requirement was in force
 when they were written.
 
-Rather than rewrite the repository's history — which would invalidate all ten
-release tags, break the SLSA provenance attestations bound to the published
-`v0.2.0`–`v0.7.0` crates, and sever the link between the crates.io releases and
-their source commits — the project adopts the DCO by way of the following
-one-time blanket certification.
+Rather than rewrite the repository's history — which would invalidate every
+release tag, break the SLSA provenance attestations bound to every published
+crate version, and sever the link between the crates.io releases and their
+source commits — the project adopts the DCO by way of the following one-time
+blanket certification. The current cost of that rewrite is measured in
+[`docs/provenance-manifest.md`](docs/provenance-manifest.md), which
+`release.yml` now re-checks at every release so the figure cannot go stale.
 
 > ### Certification
 >
@@ -165,8 +167,10 @@ mechanism for adopting the DCO mid-project and is accepted by a number of
 Linux Foundation projects in that situation. If the receiving project requires
 a literal per-commit `Signed-off-by:` trailer on historical commits instead,
 that can be produced by rewriting the history with `git filter-repo`; the
-consequences (new SHAs for all 608 commits, ten tags re-cut, published SLSA
-attestations no longer resolving) are understood and the maintainer is willing
+consequences (new SHAs for every commit, every release tag re-cut, published
+SLSA attestations no longer resolving — measured, with current figures, in
+[`docs/provenance-manifest.md`](docs/provenance-manifest.md)) are understood
+and the maintainer is willing
 to do it on request. It was not done unprompted because it destroys verifiable
 supply-chain metadata to gain a formality this document already supplies.
 

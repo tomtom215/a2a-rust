@@ -512,7 +512,7 @@ mod unrecognized_param_tests {
     fn non_object_params_report_nothing() {
         let accepted = ListTasksParams::accepted_fields();
         for params in [json!([1, 2, 3]), json!("string"), json!(null)] {
-            assert!(unrecognized_params(accepted, &params).is_empty());
+            assert_eq!(unrecognized_params(accepted, &params), [] as [&str; 0]);
         }
     }
 

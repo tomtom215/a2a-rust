@@ -533,7 +533,7 @@ mod tests {
         // We can't easily construct a full RequestHandler in a unit test,
         // but we can test the Debug impl via the struct definition.
         let debug_output = "RestDispatcher";
-        assert!(!debug_output.is_empty());
+        assert_ne!(debug_output, "");
     }
 
     #[test]

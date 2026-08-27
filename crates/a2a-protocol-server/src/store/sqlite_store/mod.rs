@@ -26,7 +26,7 @@ use a2a_protocol_types::error::{A2aError, A2aResult};
 use a2a_protocol_types::params::ListTasksParams;
 use a2a_protocol_types::responses::TaskListResponse;
 use a2a_protocol_types::task::{Task, TaskId};
-use sqlx::sqlite::{SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::SqlitePool;
 
 use super::task_store::{ArtifactDelta, TaskStore};
 
@@ -224,31 +224,10 @@ impl SqliteTaskStore {
     }
 }
 
-/// Creates a `SqlitePool` with production-ready defaults:
-/// - WAL journal mode for better concurrency
-/// - 5-second busy timeout to avoid `SQLITE_BUSY` errors
-/// - Configurable pool size (default: 8)
-async fn sqlite_pool(url: &str) -> Result<SqlitePool, sqlx::Error> {
-    sqlite_pool_with_size(url, 8).await
-}
-
-/// Creates a `SqlitePool` with a specific max connection count.
-async fn sqlite_pool_with_size(url: &str, max_connections: u32) -> Result<SqlitePool, sqlx::Error> {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use std::str::FromStr;
-
-    let opts = SqliteConnectOptions::from_str(url)?
-        .pragma("journal_mode", "WAL")
-        .pragma("busy_timeout", "5000")
-        .pragma("synchronous", "NORMAL")
-        .pragma("foreign_keys", "ON")
-        .create_if_missing(true);
-
-    SqlitePoolOptions::new()
-        .max_connections(max_connections)
-        .connect_with(opts)
-        .await
-}
+// The pragmas these two apply were written out here and in three other
+// modules, byte-identical and unguarded. They live in one place now; see
+// `crate::sqlite_pool` for what each one is load-bearing for.
+use crate::sqlite_pool::sqlite_pool;
 
 pub(super) mod journal;
 

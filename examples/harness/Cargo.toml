@@ -16,3 +16,9 @@ a2a-protocol-types  = { path = "../../crates/a2a-protocol-types" }
 a2a-protocol-client = { path = "../../crates/a2a-protocol-client", features = ["websocket", "grpc"] }
 uuid                = { workspace = true }
 tokio               = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+# One test builds a `ClientError::Serialization` to prove it is not counted as
+# a protocol refusal. A dev-dependency, so the example's own dependency
+# surface is unchanged.
+serde_json = { workspace = true }

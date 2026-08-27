@@ -48,8 +48,8 @@ use a2a_protocol_client::{resolve_agent_card, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_types::agent_card::AgentCapabilities;
 
-use a2a_example_harness::{counter, sweep, Binding, Matrix};
-use agent::{make_agent_card, EchoExecutor, Endpoints};
+use a2a_example_harness::{counter, sweep, Binding, Endpoints, Matrix};
+use agent::{make_agent_card, EchoExecutor};
 
 /// A webhook sink so push configs point somewhere real.
 ///

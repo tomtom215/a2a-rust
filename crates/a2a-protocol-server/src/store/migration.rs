@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(first, expected);
 
         let second = runner.run_pending().await.unwrap();
-        assert!(second.is_empty());
+        assert_eq!(second, [] as [u32; 0]);
 
         let latest = BUILTIN_MIGRATIONS
             .last()
@@ -402,8 +402,8 @@ mod tests {
 
         assert_eq!(rows.len(), BUILTIN_MIGRATIONS.len());
         assert_eq!(rows[0].get::<i32, _>("version"), 1);
-        assert!(!rows[0].get::<String, _>("description").is_empty());
-        assert!(!rows[0].get::<String, _>("applied_at").is_empty());
+        assert_ne!(rows[0].get::<String, _>("description"), "");
+        assert_ne!(rows[0].get::<String, _>("applied_at"), "");
     }
 
     #[tokio::test]
