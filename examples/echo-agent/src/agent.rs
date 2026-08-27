@@ -95,8 +95,160 @@ pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
 
 #[cfg(test)]
 mod tests {
-    use super::make_agent_card;
+    use super::{make_agent_card, EchoExecutor, SLOW_PREFIX};
     use a2a_example_harness::{Binding, Endpoints};
+    use a2a_protocol_server::executor::AgentExecutor;
+    use a2a_protocol_server::request_context::RequestContext;
+    use a2a_protocol_server::streaming::event_queue::new_in_memory_queue;
+    use a2a_protocol_server::streaming::EventQueueReader;
+    use a2a_protocol_types::error::A2aResult;
+    use a2a_protocol_types::events::StreamResponse;
+    use a2a_protocol_types::message::{Message, MessageId, MessageRole, Part, PartContent};
+    use a2a_protocol_types::task::{TaskId, TaskState};
+
+    fn ctx_with(parts: Vec<Part>) -> RequestContext {
+        RequestContext::new(
+            Message {
+                id: MessageId::new("m-1"),
+                role: MessageRole::User,
+                parts,
+                task_id: None,
+                context_id: None,
+                reference_task_ids: None,
+                extensions: None,
+                metadata: None,
+            },
+            TaskId::new("t-1"),
+            "ctx-1".to_owned(),
+        )
+    }
+
+    fn ctx(text: &str) -> RequestContext {
+        ctx_with(vec![Part::text(text)])
+    }
+
+    async fn drive(ctx: &RequestContext) -> (A2aResult<()>, Vec<StreamResponse>) {
+        let (writer, mut reader) = new_in_memory_queue();
+        let result = EchoExecutor.execute(ctx, &writer).await;
+        drop(writer);
+        let mut events = Vec::new();
+        while let Some(item) = reader.read().await {
+            events.push(item.expect("the queue delivered an error rather than an event"));
+        }
+        (result, events)
+    }
+
+    fn states(events: &[StreamResponse]) -> Vec<TaskState> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                StreamResponse::StatusUpdate(s) => Some(s.status.state),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn artifacts(events: &[StreamResponse]) -> Vec<(String, String)> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                StreamResponse::ArtifactUpdate(a) => Some((
+                    a.artifact.id.0.clone(),
+                    a.artifact
+                        .parts
+                        .iter()
+                        .filter_map(|p| match &p.content {
+                            PartContent::Text(t) => Some(t.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Working before the artifact, Completed after it. A client that sees the
+    /// artifact without a preceding Working has no non-terminal state to
+    /// subscribe to.
+    #[tokio::test]
+    async fn an_echo_narrates_then_delivers_then_completes() {
+        let (result, events) = drive(&ctx("hello")).await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(
+            states(&events),
+            vec![TaskState::Working, TaskState::Completed]
+        );
+        let arts = artifacts(&events);
+        assert_eq!(arts.len(), 1);
+        assert_eq!(arts[0].0, "echo-artifact");
+        assert_eq!(arts[0].1, "Echo: hello");
+    }
+
+    /// A textless message echoes a placeholder rather than failing.
+    ///
+    /// This is a deliberate difference from `genai-agent` and `rig-agent`,
+    /// which refuse one with `InvalidParams`: those spend a provider call on
+    /// an empty prompt, and this spends nothing. Pinned so the divergence is a
+    /// decision rather than a drift.
+    #[tokio::test]
+    async fn a_textless_message_echoes_a_placeholder_rather_than_failing() {
+        let (result, events) = drive(&ctx_with(vec![Part::raw("aGk=")])).await;
+        assert!(result.is_ok(), "echo does not refuse a textless message");
+        assert_eq!(artifacts(&events)[0].1, "Echo: <no text>");
+    }
+
+    /// The marker is echoed, not stripped. The demo matches on the text it
+    /// gets back, so silently removing the prefix would make a slow turn
+    /// indistinguishable from a fast one in the transcript.
+    #[tokio::test]
+    async fn the_slow_marker_is_echoed_not_consumed() {
+        let (_, events) = drive(&ctx(&format!("{SLOW_PREFIX}wait"))).await;
+        assert_eq!(artifacts(&events)[0].1, format!("Echo: {SLOW_PREFIX}wait"));
+    }
+
+    /// The marker holds the task open so `SubscribeToTask` has a non-terminal
+    /// task to attach to — its success path is unreachable otherwise, because
+    /// re-attaching to a terminal task is `UnsupportedOperation`. Asserted on
+    /// tokio's paused clock, so it costs no wall-clock time.
+    #[tokio::test(start_paused = true)]
+    async fn the_slow_marker_holds_the_task_open() {
+        let start = tokio::time::Instant::now();
+        drive(&ctx("plain")).await.0.expect("plain turn");
+        let plain = start.elapsed();
+
+        let start = tokio::time::Instant::now();
+        drive(&ctx(&format!("{SLOW_PREFIX}wait")))
+            .await
+            .0
+            .expect("slow turn");
+        let slow = start.elapsed();
+
+        assert!(
+            slow >= std::time::Duration::from_millis(400),
+            "the slow marker did not delay the turn: {slow:?}"
+        );
+        assert!(plain < slow, "a plain turn took as long as a slow one");
+    }
+
+    /// Every binding binds loopback and reports the port it actually got.
+    /// A demo that bound `0.0.0.0` would expose an unauthenticated agent on
+    /// every interface of whatever machine ran it.
+    #[tokio::test]
+    async fn listeners_bind_loopback_on_an_ephemeral_port() {
+        let (listener, addr) = crate::serve::bind_listener().await;
+        assert!(
+            addr.ip().is_loopback(),
+            "bound a non-loopback address: {addr}"
+        );
+        assert_ne!(
+            addr.port(),
+            0,
+            "reported the wildcard port, not the real one"
+        );
+        assert_eq!(listener.local_addr().expect("local_addr"), addr);
+    }
 
     fn card() -> a2a_protocol_types::agent_card::AgentCard {
         make_agent_card(&Endpoints {
