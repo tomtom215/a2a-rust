@@ -225,16 +225,66 @@ each a hard assertion:
   while sampling the server's memory and file descriptors: RSS stays flat
   (~60 MB) and the fd count does not grow, so there is no per-request leak.
 
+## Streaming (SSE)
+
+Streaming is where a black-box probe earns its keep: a client that opens a
+stream and walks away, or reads too slowly, exercises cleanup and backpressure
+paths no request/response test reaches. `probe_stream.py` opens thousands of
+streams and abandons them mid-flight (a RST while the task is still producing),
+holds hundreds open at once, and stalls a reader past the write timeout.
+
+**No leak — but establishing that took care.** A naive measurement (settle 1.5 s,
+then read RSS) looked like a 25× memory leak. It was not: draining past the 5 s
+write timeout and running two equal bursts showed the growth converge (burst two
+grew a fraction of burst one), and the fd count returned to baseline every time
+— the earlier figure was allocator high-water-mark from the abandoned streams'
+transient cleanup, not retained per-stream state. This is the discipline the
+whole page rests on: a scary number that isn't a finding is worth exactly as
+much verification as one that is.
+
+## Push delivery — the server as an outbound HTTP client
+
+Registering a webhook turns the server into an HTTP client dialing an address
+the caller chose — a different threat model from every inbound probe.
+`probe_push.py` bundles hostile receivers (hang, drip, a 50 MB response, an
+abrupt reset, a 302 to the cloud metadata endpoint) and — crucially — counts how
+often the server actually dialed each, so a run that delivers nothing fails
+loudly instead of passing vacuously.
+
+That counter earned its place immediately: the first run delivered nothing,
+because the config field is `taskPushNotificationConfig` and the intuitive
+`pushNotificationConfig` is silently dropped by the parser. With the field
+fixed, the defended properties hold — the client reads the webhook's status, not
+its (50 MB) body, so a flooding receiver cannot grow its memory; it does not
+follow the 302 to metadata; and `http` targets are IP-pinned against rebinding.
+
+### The finding: sync delivery blocked the response
+
+But delivery revealed a real gap. A non-streaming `SendMessage` **awaited
+webhook delivery inline**: a webhook the caller registered on that same request
+delayed it by up to the 30 s delivery budget — 15 s measured against a hanging
+webhook for a three-event task. Streaming and `returnImmediately=true` were
+unaffected, and it did not starve other clients (the blocked work is an async
+task, not a thread) — but it coupled a caller's request latency to a
+client-controlled endpoint, held task-store slots for up to 30 s, and did it for
+a fire-and-forget notification whose delivery errors are swallowed anyway. That
+is the webhook anti-pattern every production system avoids, and the streaming
+path already delivered off-path. Delivery is now spawned off the request path on
+the sync path too; `SendMessage` against a hanging webhook returns in ~10 ms
+instead of 15 s, the webhook is still dialed in the background, and a regression
+test pins it.
+
 ## What this did and did not establish
 
 It established that all three request bindings of a real, model-backed server —
 JSON-RPC, gRPC, and WebSocket — hold up under a broad, deliberately hostile
 input set; that the authentication layer rejects every forged, expired, and
-malformed credential across every binding with no bypass and no oracle; and
-that the server stays correct, bounded, and leak-free under sustained
-concurrency. The two gaps the runs surfaced (the numeric-IP SSRF filter and the
-gRPC version negotiation) are closed and regression-tested; the auth and load
-runs found none.
+malformed credential across every binding with no bypass and no oracle; that
+the server stays correct, bounded, and leak-free under sustained concurrency and
+under abandoned/stalled streams; and that it withstands a hostile webhook
+receiver. Three gaps the runs surfaced — the numeric-IP SSRF filter, the gRPC
+version negotiation, and inline push delivery on the blocking `SendMessage`
+path — are closed and regression-tested.
 
 It did **not** exercise a real identity provider's rotating RSA keys under
 load, nor multi-node deployments behind a shared store, nor a formal

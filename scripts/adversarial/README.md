@@ -14,6 +14,8 @@ one per request binding:
 | `probe_grpc.py` | gRPC binding (spec §10) | `pip install grpcio grpcio-tools` (compiles the proto at startup) |
 | `probe_auth.py` | authentication (all bindings) | stdlib (forges HS256 JWTs); gRPC leg needs grpcio |
 | `probe_load.py` | correctness under sustained concurrency | stdlib only |
+| `probe_stream.py` | SSE streaming: disconnect leaks, backpressure | stdlib only |
+| `probe_push.py` | the server as an outbound HTTP client (webhooks) | stdlib (bundles hostile receivers) |
 
 They are the third leg of this project's negative-input testing, distinct from
 the other two:
@@ -102,6 +104,27 @@ probe sample the server's RSS and fd count for leaks. `probe_auth.py` forges its
 own HS256 tokens; pass `--secret/--iss/--aud` if you configured the server
 differently.
 
+### Streaming and push delivery
+
+```bash
+# Streaming (SSE): disconnect leaks, concurrent streams, backpressure.
+A2A_BIND_ADDR=127.0.0.1:8080 A2A_ALLOW_FALLBACK=1 cargo run -p genai-a2a-agent &
+python3 scripts/adversarial/probe_stream.py --port 8080 --server-pid <pid>
+
+# Push delivery (outbound HTTP client). Needs a server that accepts a loopback
+# webhook, so the SSRF guard is off here (the guard itself is covered by
+# probe.py's F category); the probe bundles its own hostile receivers.
+A2A_BIND_ADDR=127.0.0.1:8085 A2A_ALLOW_FALLBACK=1 A2A_ALLOW_PRIVATE_WEBHOOKS=1 \
+  cargo run -p genai-a2a-agent &
+python3 scripts/adversarial/probe_push.py --port 8085 --server-pid <pid>
+```
+
+`probe_push.py` counts how many times the server actually dialed each hostile
+receiver — a run where nothing was dialed fails loudly rather than passing
+vacuously (the push config field is `taskPushNotificationConfig`; the intuitive
+`pushNotificationConfig` is silently ignored, which is exactly the trap the
+hit-counter guards against).
+
 ### Options
 
 ```
@@ -173,11 +196,20 @@ fixed and regression-tested:
   inconsistency only visible because `probe_grpc.py` hits every binding with
   the same attack (`crates/a2a-protocol-server/src/dispatch/grpc/`).
 
-The later `probe_auth.py` (27 cases) and `probe_load.py` (five phases) runs
-found **no** defects — the auth layer rejected every forged/expired/malformed
-credential across all bindings with no bypass and no oracle, and the server
-stayed correct and leak-free under sustained concurrency. Reported as a pass,
-not padded into a finding.
+`probe_auth.py` (27 cases) and `probe_load.py` (five phases) found **no**
+defects — the auth layer rejected every forged/expired/malformed credential
+across all bindings with no bypass and no oracle, and the server stayed correct
+and leak-free under sustained concurrency.
+
+`probe_push.py` then found a third, fixed issue: non-streaming `SendMessage`
+awaited webhook delivery inline, so a webhook the caller registered on that
+request delayed it by up to the 30s delivery budget (15s measured against a
+hanging webhook). Delivery is now spawned off the request path, matching the
+streaming binding (`crates/a2a-protocol-server/src/handler/event_processing/sync_collector.rs`).
+`probe_stream.py` found no leak — but only after the disconnect test was made to
+drain past the 5s write timeout, because a naive single-settle measurement
+looked like a 25x leak that a two-burst convergence test showed was allocator
+high-water-mark, not a leak.
 
 The full account is in the book: **Testing & Deployment → Adversarial
 Testing**.

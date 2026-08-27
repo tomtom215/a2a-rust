@@ -282,9 +282,33 @@ accounted for every one of hundreds of concurrently-created tasks exactly once
 (the store's race-condition test), refused a permit-holding burst past the
 concurrency cap with a structured `Overloaded` (16 served, 112 refused),
 recovered to baseline latency afterwards, and held RSS (~60 MB) and file
-descriptors flat over tens of thousands of requests — no leak. What stays
-unexercised: a real IdP's rotating RSA keys under load, multi-node deployments
-behind a shared store, and a formal capacity benchmark.
+descriptors flat over tens of thousands of requests — no leak.
+
+**Streaming and outbound-client probing found a third gap, fixed.** Two more
+probes closed the remaining surfaces. `probe_stream.py` abandoned thousands of
+SSE streams mid-flight, held hundreds open, and stalled readers past the write
+timeout: no leak — established only after a naive settle-then-measure looked
+like a 25× leak and a drain-and-two-burst method showed it was allocator
+high-water-mark, not retained state (fds returned to baseline every time).
+`probe_push.py` turned the server into an outbound HTTP client against hostile
+webhook receivers (hang, drip, 50 MB response, reset, 302-to-metadata),
+counting deliveries so a vacuous run fails loudly — which caught that the first
+run delivered nothing (the config field is `taskPushNotificationConfig`, not the
+intuitive `pushNotificationConfig`). With that fixed it surfaced a real gap: a
+non-streaming `SendMessage` awaited webhook delivery **inline**, so a webhook
+the caller registered delayed that request up to the 30s delivery budget (15s
+measured against a hanging webhook). It did not starve other clients (async
+task, not a thread) and streaming already delivered off-path, but it coupled
+request latency to a client-controlled endpoint for a fire-and-forget
+notification whose errors are swallowed. Delivery is now spawned off the sync
+request path too (ordering, budget, and tenant context preserved); the call
+returns in ~10ms instead of 15s, with a regression test. The defended webhook
+properties held throughout: the client reads the response status not its body
+(a 50 MB flood cannot grow memory), does not follow redirects to metadata, and
+pins `http` targets against rebinding.
+
+What stays unexercised: a real IdP's rotating RSA keys under load, multi-node
+deployments behind a shared store, and a formal capacity benchmark.
 
 ## 5. What this review did not examine
 
