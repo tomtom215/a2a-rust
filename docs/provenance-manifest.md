@@ -3,11 +3,11 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-27 at `83f30e8`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-27 at `4844d65`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured because nothing forced it to be. The figures below moved a long
 > way between `c008ab0` (2026-08-11) and this run — the share of history that
-> passes the project's own DCO gate went from 19.4% to **41.2%** — and a
+> passes the project's own DCO gate went from 19.4% to **41.4%** — and a
 > document written for counsel that silently understates the project is as
 > much a defect as one that overstates it. `release.yml` now fails a release
 > whose manifest was measured at a different commit, so this cannot drift
@@ -74,20 +74,20 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `83f30e8`, **1007 commits**, spanning **2026-03-15 to 2026-08-27**.
+At `4844d65`, **1009 commits**, spanning **2026-03-15 to 2026-08-27**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1007 |
+| Total reachable | 1009 |
 | Merge commits (`dco.yml` does not examine these) | 107 |
-| **Non-merge commits — the population `dco.yml` grades** | **900** |
+| **Non-merge commits — the population `dco.yml` grades** | **902** |
 
-Git author field, all 1007 commits:
+Git author field, all 1009 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 372 |
+| `Tom F. <tomf@tomtomtech.net>` | 374 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 121 |
 | `github-actions[bot] <41898282+…>` | 36 |
 
@@ -97,16 +97,16 @@ the 121 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 900 non-merge commits:
+Applying `dco.yml`'s rules to all 902 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **371** | 41.2% |
-| Fail — author `noreply@anthropic.com` | 477 | 53.0% |
+| **Would pass** — human author, matching `Signed-off-by` | **373** | 41.4% |
+| Fail — author `noreply@anthropic.com` | 477 | 52.9% |
 | Fail — author `github-actions[bot]` | 36 | 4.0% |
 | Fail — human author, no matching `Signed-off-by` | 16 | 1.8% |
 
-The passing count more than doubled since the previous measurement — 126 to 371
+The passing count more than doubled since the previous measurement — 126 to 373
 — while every failing count stayed put except the bot's. That is the shape a
 closed pattern makes: the non-compliant population is fixed and the compliant
 one grows past it.
@@ -119,12 +119,12 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **399 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **401 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..83f30e8` | Commits |
+| Author, `b416c1a..4844d65` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 372 |
+| `Tom F. <tomf@tomtomtech.net>` | 374 |
 | `Tom F <tomtom215@users.noreply.github.com>` | 14 |
 | `github-actions[bot]` | 13 |
 
@@ -177,11 +177,11 @@ mechanical. Its cost is not.
 
 **There is no partial rewrite.** The earliest commit failing `dco.yml` is
 `c6b33cb`, **the initial commit** (2026-03-15, "Initial commit", no sign-off).
-Amending it changes its SHA, and therefore the SHA of all 1006 descendants.
+Amending it changes its SHA, and therefore the SHA of all 1008 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **1007 — all of them** |
+| Commits whose SHA changes | **1009 — all of them** |
 | Release tags that must be re-cut | **12** (`v0.2.0` … `v0.9.0`) |
 | Published crates.io releases whose source link breaks | 12 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
