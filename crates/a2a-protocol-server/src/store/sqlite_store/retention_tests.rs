@@ -253,7 +253,7 @@ async fn max_batches_bounds_the_sweep_and_says_it_did() {
     let rest = store.purge_expired(&policy).await.expect("purge");
     assert_eq!(rest.tasks_deleted, 1);
     assert!(rest.complete);
-    assert!(ids(&store).await.is_empty());
+    assert_eq!(ids(&store).await, [] as [std::string::String; 0]);
 }
 
 #[tokio::test]

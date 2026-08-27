@@ -247,7 +247,7 @@ mod tests {
             .on_list_tasks(params, None)
             .await
             .expect("list_tasks with tenant should succeed");
-        assert!(result.tasks.is_empty());
+        assert_eq!(result.tasks, [] as [a2a_protocol_types::Task; 0]);
     }
 
     #[tokio::test]
@@ -261,7 +261,7 @@ mod tests {
             .on_list_tasks(params, Some(&headers))
             .await
             .expect("list_tasks with headers should succeed");
-        assert!(result.tasks.is_empty());
+        assert_eq!(result.tasks, [] as [a2a_protocol_types::Task; 0]);
     }
 
     // ── historyLength ────────────────────────────────────────────────────────
