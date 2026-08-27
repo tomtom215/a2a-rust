@@ -118,6 +118,9 @@ pub mod page_deployment_dogfooding_tests {}
 #[doc = include_str!("../../book/src/deployment/dogfooding.md")]
 pub mod page_deployment_dogfooding {}
 
+#[doc = include_str!("../../book/src/deployment/dogfooding-real-model.md")]
+pub mod page_deployment_dogfooding_real_model {}
+
 #[doc = include_str!("../../book/src/deployment/multi-tenancy.md")]
 pub mod page_deployment_multi_tenancy {}
 
@@ -130,6 +133,9 @@ pub mod page_deployment_production {}
 
 #[doc = include_str!("../../book/src/deployment/security.md")]
 pub mod page_deployment_security {}
+
+#[doc = include_str!("../../book/src/deployment/security-testing.md")]
+pub mod page_deployment_security_testing {}
 
 #[doc = include_str!("../../book/src/deployment/testing.md")]
 pub mod page_deployment_testing {}

@@ -59,7 +59,11 @@ something stops it. The bundled `HttpPushSender` does:
 
 * private and loopback addresses are rejected **at config creation and again at
   delivery time** — defence in depth, because the two moments can disagree;
-* IPv4-in-IPv6 smuggling is rejected;
+* IPv4-in-IPv6 smuggling is rejected (`::ffff:` mapped, NAT64 `64:ff9b::`, and
+  the deprecated `::a.b.c.d`);
+* the non-canonical numeric IPv4 encodings a C resolver still accepts are
+  normalised and rejected — `http://2852039166/`, `http://0xA9FEA9FE/` and
+  `http://0251.0376.0251.0376/` all denote `169.254.169.254`;
 * the validated IP is pinned, so DNS rebinding between check and connect does
   not help an attacker;
 * credentials are checked for `\r` and `\n` before they reach a header;
@@ -68,6 +72,12 @@ something stops it. The bundled `HttpPushSender` does:
 If you replace the sender, you inherit all of that as your responsibility. The
 validation helpers are public and reusable — use them rather than reimplementing
 the list above.
+
+That "the two moments can disagree" is not hypothetical: the numeric-IPv4 line
+above was added after an [adversarial run](./security-testing.md) found the
+registration check accepting an integer-encoded metadata URL that delivery still
+blocked. The gap is closed and regression-tested in both the unit suite and the
+over-the-wire probe.
 
 ## Input handling
 

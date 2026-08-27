@@ -207,6 +207,47 @@ The one gap this run did not close is `incident-response`'s PostgreSQL
 persistence check, which reports `[NOT RUN]` without `A2A_TEST_POSTGRES_URL`
 and correctly refuses to score itself as passing.
 
+## 4b. Adversarial run against the live server
+
+Added 2026-08-27. Having a real model in the loop made it worth attacking the
+running server directly, rather than only asserting robustness in unit tests. A
+black-box probe (`scripts/adversarial/probe.py`) was pointed at the
+`genai-agent` server mode backed by the same `llama-server`, and re-checked
+liveness (`GET /.well-known/agent-card.json`) after every request. 69 cases
+across six categories — parser/framing, field abuse, state/numeric, task
+lifecycle, HTTP surface, and push-config SSRF.
+
+**Robustness: 69 cases, zero crashes, zero process-wide hangs, zero resets,
+zero 5xx, zero path/panic leaks, not one server-side error logged.** Every
+malformed input returned a structured JSON-RPC error; every hostile-but-valid
+input (unknown fields, a U+202E override plus a NUL byte in message text) was
+processed and answered by the model. The 8 MB-body and lying-`Content-Length`
+cases confirmed the 4 MiB fast-path rejection and the bounded body read.
+
+**One finding, fixed.** The push-webhook SSRF filter rejected
+`169.254.169.254` and its IPv6 spellings but accepted the same address written
+as a single integer (`http://2852039166/`), hex (`http://0xA9FEA9FE/`) and
+octal (`http://0251.0376.0251.0376/`) — encodings the C resolver still maps to
+link-local, verified on this machine. It was a **defense-in-depth gap, not a
+live SSRF**: delivery re-resolves and re-checks the IP, so these never left the
+process. But the registration-time filter — the documented first boundary — was
+inconsistent with its own threat model. `validate_webhook_url` now normalises
+the `inet_aton` numeric forms and applies the same private-range test (public
+numeric hosts still pass); six unit tests and the probe pin it. Over the wire,
+the SSRF category went from 19/20 to 20/20 rejected with the guard on.
+
+**One footgun in an example, fixed.** `genai-agent`'s server mode — its own
+comment calls it the "real deployment shape" — hard-coded
+`allow_private_urls()`, shipping the SSRF guard disabled to anyone copying it.
+Server mode is now secure by default, with `A2A_ALLOW_PRIVATE_WEBHOOKS=1` as an
+explicit opt-in for local webhooks, and the posture is printed at startup.
+
+The probe is a permanent, reusable artifact with a bidirectional CI check (it
+exits non-zero against a guard-off server), documented in the book under
+**Adversarial Testing**. It did not exercise the gRPC/WebSocket bindings (the
+tested server exposes only JSON-RPC), authentication, or sustained load — those
+stay on the open list below.
+
 ## 5. What this review did not examine
 
 Stated so that a clean report is not mistaken for a complete one.

@@ -113,6 +113,14 @@ jobs:
       - name: Book code blocks (ignore ratchet)
         run: ./scripts/check_book_code.sh
 
+      # The documentation sitemap is generated from book/src/SUMMARY.md by
+      # scripts/gen_sitemap.py. It used to be hand-maintained and drifted —
+      # 16 pages missing, one dead URL. This step fails if it no longer
+      # matches the table of contents, so adding a page without regenerating
+      # the sitemap is caught here rather than as a silent SEO loss.
+      - name: Sitemap matches the book table of contents
+        run: python3 scripts/gen_sitemap.py --check
+
       # The API Quick Reference is 299 hand-written lines listing every public
       # type, trait and function — and nothing generated or checked it, so it
       # could only get less true with every rename. Same decay class as the

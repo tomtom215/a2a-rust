@@ -320,6 +320,8 @@ injection_for() {
             echo "benchmark_prose" ;;
         "./scripts/check_book_code.sh")
             echo "book_code" ;;
+        *"gen_sitemap.py --check"*)
+            echo "sitemap" ;;
         *"check_api_reference.py"*)
             echo "api_reference" ;;
         *"check_otel_metrics_coverage.py"*)
@@ -427,6 +429,7 @@ expected_marker() {
         mutation_scope)   echo "MUTATION SCOPE GAP" ;;
         benchmark_prose)  echo "DRIFT" ;;
         book_code)        echo "GREW" ;;
+        sitemap)          echo "out of sync with SUMMARY.md" ;;
         api_reference)    echo "are not defined in crates/" ;;
         otel_coverage)    echo "the bundled exporter drops" ;;
         package_excludes) echo "not excluded" ;;
@@ -547,6 +550,16 @@ PROBE
             note_touched "book/src/concepts/streaming.md"
             printf '\n```rust,ignore\nlet _: GateProbeNonexistentType = todo!();\n```\n' \
                 >>book/src/concepts/streaming.md
+            ;;
+        sitemap)
+            # Add a page to the table of contents without regenerating the
+            # sitemap — the exact drift this gate exists to catch. The sitemap
+            # is generated from SUMMARY.md, so a new SUMMARY entry the committed
+            # sitemap does not carry must make `--check` disagree. `>>` appends
+            # to the last section, which is all the parser needs to emit a URL
+            # the sitemap lacks.
+            note_touched "book/src/SUMMARY.md"
+            printf '\n- [Gate Probe](./reference/gate-probe.md)\n' >>book/src/SUMMARY.md
             ;;
         api_reference)
             # Rename a type on the page and leave the code alone — the exact
