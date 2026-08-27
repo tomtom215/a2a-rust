@@ -57,6 +57,11 @@ server, which is the point of both being OpenAI-compatible.
 `GENAI_MODEL=qwen3.5:0.8b cargo run -p genai-a2a-agent`.)
 
 Set `A2A_BIND_ADDR=127.0.0.1:8080` for a fixed port instead of a random one.
+This "server mode" is the deployment shape, and its webhook SSRF guard is **on
+by default**: a push-notification URL that resolves to a loopback, private, or
+link-local address is rejected. For local testing where the webhook itself
+lives on localhost, set `A2A_ALLOW_PRIVATE_WEBHOOKS=1` to permit them; the
+active posture is printed at startup.
 
 ## How it works
 
