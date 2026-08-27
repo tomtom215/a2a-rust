@@ -550,6 +550,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an excuse for a cell that was then exercised no longer prints under "Not
   applicable" while the grid shows it as `ok`.
 
+- **Four examples each carried their own copy of the agent card's interface
+  list.** `Endpoints` and `interfaces()` were byte-identical in `genai-agent`,
+  `rig-agent` and `multi-lang-team`, and `echo-agent` wrote the same four
+  `AgentInterface` literals inline. Each copy hand-wrote `"HTTP+JSON"` — the
+  string the SDK ships `AgentInterface::rest` to avoid, its own documentation
+  saying a typo there "is a card that lies". All four now use one
+  implementation in `a2a-example-harness`, built from the SDK's constructors,
+  and a test asserts the card's `protocolBinding` values match the coverage
+  matrix's column labels, which were two independent spellings of the same
+  four names.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

@@ -292,9 +292,11 @@ impl Matrix {
 mod tests;
 
 pub mod counter;
+pub mod endpoints;
 pub mod sweep;
 
 pub use counter::CounterOutcome;
+pub use endpoints::{interfaces, Endpoints};
 pub use sweep::{make_send_params, sweep, SweepOutcome};
 
 // ── One-call surface phase ───────────────────────────────────────────────────

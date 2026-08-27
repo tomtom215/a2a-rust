@@ -3,7 +3,8 @@
 
 //! The echo executor and the agent card it is served behind.
 
-use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentInterface, AgentSkill};
+use a2a_example_harness::{interfaces, Endpoints};
+use a2a_protocol_types::agent_card::{AgentCapabilities, AgentCard, AgentSkill};
 use a2a_protocol_types::message::Part;
 use a2a_protocol_types::task::TaskState;
 
@@ -50,19 +51,6 @@ agent_executor!(EchoExecutor, |ctx, queue| async {
     Ok(())
 });
 
-/// Where each binding is listening. Built before the handler so the card names
-/// real addresses rather than placeholders.
-pub struct Endpoints {
-    /// JSON-RPC over HTTP (§9).
-    pub jsonrpc: String,
-    /// HTTP+JSON / REST (§11).
-    pub rest: String,
-    /// gRPC (§10), as `host:port` — not a URL.
-    pub grpc: String,
-    /// WebSocket (§12 custom binding), as a `ws://` URL.
-    pub websocket: String,
-}
-
 /// The card this example serves.
 ///
 /// Advertises all four bindings and all three optional capabilities. That is
@@ -79,32 +67,7 @@ pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
         name: "Echo Agent".into(),
         description: "A simple echo agent that mirrors your input".into(),
         version: "1.0.0".into(),
-        supported_interfaces: vec![
-            AgentInterface {
-                url: ep.jsonrpc.clone(),
-                protocol_binding: "JSONRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: ep.rest.clone(),
-                protocol_binding: "HTTP+JSON".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: ep.grpc.clone(),
-                protocol_binding: "GRPC".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-            AgentInterface {
-                url: ep.websocket.clone(),
-                protocol_binding: "WEBSOCKET".into(),
-                protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-                tenant: None,
-            },
-        ],
+        supported_interfaces: interfaces(ep),
         default_input_modes: vec!["text/plain".into()],
         default_output_modes: vec!["text/plain".into()],
         skills: vec![AgentSkill {
@@ -132,8 +95,8 @@ pub fn make_agent_card(ep: &Endpoints) -> AgentCard {
 
 #[cfg(test)]
 mod tests {
-    use super::{make_agent_card, Endpoints};
-    use a2a_example_harness::Binding;
+    use super::make_agent_card;
+    use a2a_example_harness::{Binding, Endpoints};
 
     fn card() -> a2a_protocol_types::agent_card::AgentCard {
         make_agent_card(&Endpoints {

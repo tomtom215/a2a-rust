@@ -20,6 +20,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use a2a_example_harness::Binding;
+use a2a_example_harness::{interfaces, Endpoints};
 use a2a_protocol_client::{A2aClient, ClientBuilder};
 use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::{JsonRpcDispatcher, RestDispatcher};
@@ -30,18 +31,6 @@ use a2a_protocol_types::agent_card::AgentCapabilities;
 use crate::{make_coordinator_card, CoordinatorExecutor, Worker};
 
 type BoxErr = Box<dyn std::error::Error>;
-
-/// Where the agent is listening, per binding.
-pub struct Endpoints {
-    /// JSON-RPC (§9). Shares a socket with REST.
-    pub jsonrpc: String,
-    /// HTTP+JSON (§11). Shares a socket with JSON-RPC.
-    pub rest: String,
-    /// gRPC (§10), as `host:port`.
-    pub grpc: String,
-    /// WebSocket (§12 custom), as a `ws://` URL.
-    pub websocket: String,
-}
 
 async fn bind() -> Result<(tokio::net::TcpListener, SocketAddr), BoxErr> {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
@@ -92,22 +81,6 @@ pub async fn start(reachable: Vec<&'static Worker>) -> Result<Endpoints, BoxErr>
     }
 
     Ok(ep)
-}
-
-/// The four interfaces the card must advertise.
-pub fn interfaces(ep: &Endpoints) -> Vec<a2a_protocol_types::agent_card::AgentInterface> {
-    let iface = |url: &str, binding: &str| a2a_protocol_types::agent_card::AgentInterface {
-        url: url.to_owned(),
-        protocol_binding: binding.to_owned(),
-        protocol_version: a2a_protocol_types::A2A_VERSION.into(),
-        tenant: None,
-    };
-    vec![
-        iface(&ep.jsonrpc, "JSONRPC"),
-        iface(&ep.rest, "HTTP+JSON"),
-        iface(&ep.grpc, "GRPC"),
-        iface(&ep.websocket, "WEBSOCKET"),
-    ]
 }
 
 /// JSON-RPC and REST on one socket, routed by request shape.
