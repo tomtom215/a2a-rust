@@ -50,6 +50,13 @@ struct CollectState {
     /// update or an artifact. A `Task` snapshot counts too — an agent that
     /// hands back a whole task is plainly not doing a message-only exchange.
     saw_task_shaped_event: bool,
+    /// Events to push to registered webhooks, buffered during collection and
+    /// delivered from a spawned task *after* the response is built. Delivery is
+    /// fire-and-forget (best-effort), so it must not sit on the request path:
+    /// awaiting it inline let a hanging webhook the caller registered delay
+    /// their own blocking `SendMessage` by up to the 30s delivery budget.
+    /// Streaming already delivers off-path; this makes the sync path match.
+    push_events: Vec<StreamResponse>,
 }
 
 /// Restores an artifact to its pre-append state after a failed save.
@@ -104,6 +111,7 @@ impl RequestHandler {
                 .ok_or_else(|| ServerError::TaskNotFound(task_id.clone()))?,
             first_message: None,
             saw_task_shaped_event: false,
+            push_events: Vec::new(),
         };
 
         // Pin the executor handle so we can poll it alongside the reader.
@@ -143,6 +151,12 @@ impl RequestHandler {
                 break;
             }
         }
+
+        // Deliver the buffered events to registered webhooks from a spawned
+        // task, so a slow or hanging webhook cannot delay the response we are
+        // about to return. Ordering and the 30s budget are preserved inside
+        // that task; delivery is best-effort, exactly as it was inline.
+        self.spawn_push_delivery(task_id.clone(), std::mem::take(&mut state.push_events));
 
         // A message-only interaction is one where the agent said something and
         // did nothing else. Anything task-shaped means the task *is* the
@@ -213,7 +227,7 @@ impl RequestHandler {
                 };
                 self.task_store.save(last_task).await?;
                 state.saw_task_shaped_event = true;
-                self.deliver_push(task_id, stream_resp).await;
+                state.push_events.push(stream_resp.clone());
             }
             Ok(ref stream_resp @ StreamResponse::ArtifactUpdate(ref update)) => {
                 // Validate artifact has at least one part per A2A spec (unless appending).
@@ -275,7 +289,7 @@ impl RequestHandler {
                             return Err(ServerError::from(e));
                         }
                         state.saw_task_shaped_event = true;
-                        self.deliver_push(task_id, stream_resp).await;
+                        state.push_events.push(stream_resp.clone());
                         return Ok(());
                     }
                     // Artifact ID not found — fall through to push as new.
@@ -291,7 +305,7 @@ impl RequestHandler {
                     artifacts.push(update.artifact.clone());
                     self.task_store.save(last_task).await?;
                     state.saw_task_shaped_event = true;
-                    self.deliver_push(task_id, stream_resp).await;
+                    state.push_events.push(stream_resp.clone());
                 }
             }
             Ok(StreamResponse::Task(task)) => {
@@ -346,54 +360,78 @@ impl RequestHandler {
         Ok(())
     }
 
-    /// Delivers push notifications for a streaming event if configs exist.
+    /// Spawns a background task that delivers the collected `events` to every
+    /// webhook registered for `task_id`, in order, under a total 30s budget.
     ///
-    /// Push deliveries are sequential per-config, but each delivery is bounded
-    /// by a timeout to prevent one slow webhook from blocking all subsequent
-    /// deliveries indefinitely.
-    async fn deliver_push(&self, task_id: &TaskId, event: &StreamResponse) {
-        let Some(ref sender) = self.push_sender else {
+    /// Delivery is best-effort — failures and timeouts are logged, never
+    /// propagated — and, crucially, runs **off the request path**. Awaiting it
+    /// inline (as this did before) let a webhook the caller registered on their
+    /// own `SendMessage` delay that call by up to the 30s budget: for a
+    /// three-event task against a hanging webhook, ~15s of the caller's request
+    /// spent delivering a fire-and-forget notification. Each delivery is still
+    /// bounded by [`HandlerLimits::push_delivery_timeout`], and the streaming
+    /// path already delivers this way — this makes the two consistent.
+    ///
+    /// Empty inputs (no sender, no events) spawn nothing.
+    fn spawn_push_delivery(&self, task_id: TaskId, events: Vec<StreamResponse>) {
+        let Some(sender) = self.push_sender.clone() else {
             return;
         };
-        let Ok(configs) = self.push_config_store.list(task_id.as_ref()).await else {
+        if events.is_empty() {
             return;
-        };
-
-        // FIX(#4): Cap total push delivery time to prevent amplification.
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-
-        for config in &configs {
-            if tokio::time::Instant::now() >= deadline {
-                trace_warn!(
-                    task_id = %task_id,
-                    "push delivery deadline exceeded; skipping remaining configs"
-                );
-                break;
-            }
-            let result = tokio::time::timeout(
-                self.limits.push_delivery_timeout,
-                sender.send(&config.url, event, config),
-            )
-            .await;
-            match result {
-                Ok(Err(_err)) => {
-                    trace_warn!(
-                        task_id = %task_id,
-                        url = %config.url,
-                        error = %_err,
-                        "push notification delivery failed"
-                    );
-                }
-                Err(_) => {
-                    trace_warn!(
-                        task_id = %task_id,
-                        url = %config.url,
-                        "push notification delivery timed out"
-                    );
-                }
-                Ok(Ok(())) => {}
-            }
         }
+        let store = std::sync::Arc::clone(&self.push_config_store);
+        let per_delivery_timeout = self.limits.push_delivery_timeout;
+        // `task_local` tenant context does not cross `tokio::spawn`, so capture
+        // it explicitly, exactly as the streaming background processor does.
+        let tenant = crate::store::tenant::TenantContext::current();
+        tokio::spawn(crate::store::tenant::TenantContext::scope(
+            tenant,
+            async move {
+                let Ok(configs) = store.list(task_id.as_ref()).await else {
+                    return;
+                };
+                if configs.is_empty() {
+                    return;
+                }
+                // FIX(#4): cap total push delivery time to prevent amplification.
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+                for event in &events {
+                    for config in &configs {
+                        if tokio::time::Instant::now() >= deadline {
+                            trace_warn!(
+                                task_id = %task_id,
+                                "push delivery deadline exceeded; skipping remaining"
+                            );
+                            return;
+                        }
+                        match tokio::time::timeout(
+                            per_delivery_timeout,
+                            sender.send(&config.url, event, config),
+                        )
+                        .await
+                        {
+                            Ok(Err(_err)) => {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    url = %config.url,
+                                    error = %_err,
+                                    "push notification delivery failed"
+                                );
+                            }
+                            Err(_) => {
+                                trace_warn!(
+                                    task_id = %task_id,
+                                    url = %config.url,
+                                    "push notification delivery timed out"
+                                );
+                            }
+                            Ok(Ok(())) => {}
+                        }
+                    }
+                }
+            },
+        ));
     }
 }
 
@@ -1129,10 +1167,19 @@ mod tests {
             .await;
 
         assert!(result.is_ok());
-        // The push sender should have been called for each status update event.
+        // Delivery now runs in a task spawned off the request path, so it may
+        // not have run by the time `collect_events` returns — poll for it. A
+        // per-event webhook that hangs must not be able to hold the response
+        // hostage, which is exactly why this is no longer awaited inline.
+        let delivered = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while counter.load(Ordering::Relaxed) < 2 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
         assert!(
-            counter.load(Ordering::Relaxed) >= 2,
-            "push sender should have been called at least twice"
+            delivered.is_ok(),
+            "off-path push delivery should reach the sender for each status event"
         );
     }
 
@@ -1371,9 +1418,94 @@ mod tests {
             result.is_ok(),
             "collect_events should succeed despite push failure"
         );
+        // The sender runs off the request path now, so poll for the (failing)
+        // delivery attempt; the failure is swallowed and never touches collect.
+        let attempted = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while counter.load(Ordering::Relaxed) < 1 {
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+        })
+        .await;
         assert!(
-            counter.load(Ordering::Relaxed) >= 1,
-            "push sender should have been called"
+            attempted.is_ok(),
+            "push sender should have been called off the request path"
+        );
+    }
+
+    /// Regression guard for the finding that non-streaming `SendMessage` awaited
+    /// push delivery inline: a webhook that hangs must not delay the response.
+    /// A sender that would sleep far past the delivery timeout is registered;
+    /// `collect_events` must still return promptly, because delivery is now
+    /// spawned. Before the fix this took roughly `events * push_delivery_timeout`.
+    #[tokio::test]
+    async fn push_delivery_does_not_block_the_sync_response() {
+        use std::future::Future;
+        use std::pin::Pin;
+
+        use a2a_protocol_types::error::A2aResult;
+        use a2a_protocol_types::push::TaskPushNotificationConfig;
+
+        struct HangingPushSender;
+        impl crate::push::PushSender for HangingPushSender {
+            fn send<'a>(
+                &'a self,
+                _url: &'a str,
+                _event: &'a a2a_protocol_types::events::StreamResponse,
+                _config: &'a TaskPushNotificationConfig,
+            ) -> Pin<Box<dyn Future<Output = A2aResult<()>> + Send + 'a>> {
+                // Longer than any delivery timeout; the spawned task is aborted
+                // when the test's runtime drops, so this never actually waits.
+                Box::pin(async {
+                    tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+                    Ok(())
+                })
+            }
+        }
+
+        let task_store = Arc::new(InMemoryTaskStore::new());
+        task_store
+            .save(&make_task("t-hang", TaskState::Submitted))
+            .await
+            .unwrap();
+        let handler = RequestHandlerBuilder::new(DummyExecutor)
+            .with_task_store_arc(Arc::clone(&task_store) as Arc<dyn crate::store::TaskStore>)
+            .with_push_sender(HangingPushSender)
+            .build()
+            .unwrap();
+        handler
+            .push_config_store
+            .set(TaskPushNotificationConfig {
+                tenant: None,
+                id: Some("cfg-1".to_owned()),
+                task_id: Some("t-hang".to_owned()),
+                url: "https://example.com/webhook".to_owned(),
+                token: None,
+                authentication: None,
+            })
+            .await
+            .unwrap();
+
+        let (writer, reader) = new_in_memory_queue();
+        writer
+            .write(make_status_event("t-hang", TaskState::Working))
+            .await
+            .unwrap();
+        writer
+            .write(make_status_event("t-hang", TaskState::Completed))
+            .await
+            .unwrap();
+        drop(writer);
+
+        let start = std::time::Instant::now();
+        let result = handler
+            .collect_events(reader, TaskId::new("t-hang"), tokio::spawn(async {}))
+            .await;
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok());
+        assert!(
+            elapsed < std::time::Duration::from_secs(1),
+            "sync collection must not wait on push delivery, but took {elapsed:?}"
         );
     }
 
