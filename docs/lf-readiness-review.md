@@ -166,6 +166,47 @@ makes, and it is a materially stronger position than the document was stating.
 7. **Seven examples still have no tests.** `harness` at 920 lines is the next
    one worth doing, because the other examples depend on it.
 
+## 4a. Every example, run end to end against a real model
+
+Added 2026-08-27, because "the tests pass" and "the example works" are
+different claims and this project makes the second one in nine READMEs.
+
+The three LLM-backed examples now have hermetic unit tests — a dead endpoint
+for `genai`, fake `CompletionModel`s for `rig` — which is the right shape for
+CI. It is not evidence that the integration works. So all six runnable
+examples were driven end to end against a real model on this machine:
+
+| | |
+|---|---|
+| Model | `Qwen/Qwen3.5-0.8B`, Apache-2.0, as `ggml-org/Qwen3.5-0.8B-GGUF` Q4_0 |
+| File | 563,036,064 bytes, `sha256:57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf` |
+| Server | `llama.cpp` built from source at `d7a2074`, `llama-server` on `127.0.0.1:11434` |
+
+| example | result | LLM |
+|---|---|---|
+| `genai-agent` | 44/44 cells, exit 0 | **real** — "'qwen3.5:0.8b' answered a real request", zero mechanical fallbacks |
+| `rig-agent` | 44/44 cells, exit 0 | **real** — same, zero fallbacks |
+| `incident-response` | 44/44 cells, all five acts, 15/15 hardening checks, exit 0 | **real** — AI-summarised runbook guidance, zero degraded output |
+| `agent-team` | **102/102 tests**, every feature claim `[x]`, exit 0 | n/a |
+| `echo-agent` | 44/44 cells, exit 0 | n/a |
+| `multi-lang-team` | 44/44 cells, exit 0 | n/a |
+
+Two things this establishes that the unit tests cannot:
+
+* **The fallback labels are not load-bearing in practice, and that is the
+  point.** Every LLM run reported zero mechanical fallbacks, so the label
+  paths the unit tests exercise are genuinely the *degraded* path and not what
+  a reader with a model gets.
+* **`multi-lang-team` told the truth about itself.** With no workers running
+  it completed its own A2A surface and printed "cross-language delegation was
+  NOT exercised — no worker agents were reachable", which is exactly the
+  disclosure its new unit test asserts. The claim and the behaviour were
+  verified independently and agree.
+
+The one gap this run did not close is `incident-response`'s PostgreSQL
+persistence check, which reports `[NOT RUN]` without `A2A_TEST_POSTGRES_URL`
+and correctly refuses to score itself as passing.
+
 ## 5. What this review did not examine
 
 Stated so that a clean report is not mistaken for a complete one.
@@ -178,8 +219,8 @@ Stated so that a clean report is not mistaken for a complete one.
   unchanged code earlier. A green local run here does not imply a green CI run,
   and this session deliberately does not claim one.
 * **The full test suite.** Subsets were run — the SQLite store, push config
-  store, and the new pragma test. `cargo test --workspace --all-features` was
-  not run to completion.
+  store, the pragma test, and every example crate's tests.
+  `cargo test --workspace --all-features` was still not run to completion.
 * **`cargo deny` was not executed.** Its configuration is present in both
   places; that it currently passes is **UNVERIFIED** here.
 * **Coverage, mutation, fuzz, soak, benchmarks, and the cross-language TCK.**

@@ -571,6 +571,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with no provider at all — including that a real answer is not dressed as a
   mechanical fallback. Every example in the repository now has tests.
 
+- **Every example was run end to end against a real model** — `Qwen3.5-0.8B`
+  under `llama.cpp` — rather than only against fakes: 44/44 protocol cells
+  each, 102/102 for `agent-team`, and zero mechanical fallbacks in any LLM
+  run, so the fallback paths the unit tests exercise really are the degraded
+  path. Recorded with the model's size and sha256 in
+  `docs/lf-readiness-review.md` so the run is reproducible.
+
+- **`rig-agent`'s README pointed at a llama.cpp download that 404s.** Its
+  quickstart fetched `releases/latest/download/llama-bin-ubuntu-x64.tar.gz`;
+  llama.cpp's release assets carry the tag in the filename, so no tag-less
+  `latest/download` URL can resolve. Replaced with a from-source build,
+  verified by running the commands exactly as written into a clean directory.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

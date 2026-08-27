@@ -37,16 +37,22 @@ verified walkthrough with [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
 `llama-server` and the Apache-2.0 Qwen3.5-0.8B model (~500 MB):
 
 ```bash
-# 1. Get a prebuilt llama-server (pick the latest release tag) and a model
-curl -L -o llama.tar.gz \
-  'https://github.com/ggml-org/llama.cpp/releases/latest/download/llama-bin-ubuntu-x64.tar.gz' \
-  || echo 'grab the llama-<tag>-bin-<os>.tar.gz asset for your platform'
-tar xzf llama.tar.gz
+# 1. Build llama-server, and fetch the model
+#
+# From source rather than a release asset: llama.cpp's prebuilt tarballs carry
+# the release tag in the filename, so there is no stable
+# `releases/latest/download/<name>` URL to give you. An earlier revision of
+# this file offered one and it 404s. Building takes about three minutes on
+# four cores and needs only cmake and a C++ compiler.
+git clone --depth 1 https://github.com/ggml-org/llama.cpp
+cmake -S llama.cpp -B llama.cpp/build -DLLAMA_CURL=OFF
+cmake --build llama.cpp/build --target llama-server -j"$(nproc)"
+
 curl -L -o model.gguf \
   'https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf'
 
 # 2. Serve it (OpenAI-compatible API on :11434)
-./llama-*/llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
+./llama.cpp/build/bin/llama-server -m model.gguf --port 11434 --alias qwen3.5:0.8b \
   --chat-template-kwargs '{"enable_thinking":false}' &   # direct answers, no thinking preamble
 
 # 3. Point the rig agent at it
