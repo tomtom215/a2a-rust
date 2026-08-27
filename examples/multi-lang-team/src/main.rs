@@ -47,6 +47,9 @@ use a2a_protocol_server::builder::RequestHandlerBuilder;
 use a2a_protocol_server::dispatch::JsonRpcDispatcher;
 
 mod surface;
+
+#[cfg(test)]
+mod tests;
 use a2a_protocol_server::executor::AgentExecutor;
 use a2a_protocol_server::request_context::RequestContext;
 use a2a_protocol_server::streaming::EventQueueWriter;

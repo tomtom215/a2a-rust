@@ -561,6 +561,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matrix's column labels, which were two independent spellings of the same
   four names.
 
+- **The three LLM-backed examples had no tests, and their success paths were
+  assumed untestable.** `genai-agent`, `rig-agent` and `multi-lang-team` now
+  have 19 tests between them, none of which touch a network or a model.
+  `genai`'s service target is overridable, so the unreachable-provider branch
+  runs against a dead endpoint identically on a laptop with `llama-server` up
+  and on a CI runner with nothing; `rig`'s executor is generic over
+  `CompletionModel`, so a fake that answers makes the *success* path testable
+  with no provider at all — including that a real answer is not dressed as a
+  mechanical fallback. Every example in the repository now has tests.
+
 ### Performance
 
 - **Streaming artifact appends no longer pay for the stream so far.** SQLite

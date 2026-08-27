@@ -27,3 +27,8 @@ uuid           = { workspace = true }
 
 # genai — multi-provider LLM client (https://crates.io/crates/genai)
 genai = "0.5"
+
+[dev-dependencies]
+# `start_paused` for the slow-marker test, so it asserts on a virtual clock
+# instead of sleeping 400ms on every CI run.
+tokio = { workspace = true, features = ["test-util"] }
