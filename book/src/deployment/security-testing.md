@@ -172,15 +172,74 @@ regression-tested at the helper and through the real method path. This is the
 kind of cross-binding inconsistency only a probe that hits *every* binding with
 the *same* attack will find.
 
+## Authentication
+
+Auth is not a transport filter here — each interceptor runs inside the
+transport-agnostic handler, so one interceptor guards every method on every
+binding, and the plain agent card stays public by design. To attack it,
+`genai-agent` server mode was configured with JWT-HS256 auth (`A2A_JWT_HS256_SECRET`
+with an issuer and audience), and `probe_auth.py` forged HS256 tokens in the
+standard library to hit it with the full matrix — **27 cases, zero bypasses**:
+
+* **Signature / algorithm** — `alg:none`, `alg:NONE`, an `RS256` header against
+  a server with no JWKS, `HS512` (outside the allowlist), a wrong secret, a
+  tampered payload, and a corrupted signature are all rejected. The allowlist
+  is `{HS256, RS256, ES256}`; `none` and everything else fall through to a hard
+  reject, and HS256 verifies only against the configured secret, so the
+  RS256→HS256 confusion attack has nothing to grip.
+* **Claims** — expired, not-yet-valid (`nbf`), missing `exp`, wrong issuer, and
+  wrong audience are all rejected; an `aud` array that contains the accepted
+  value is accepted, per spec.
+* **No oracle** — missing, malformed, and wrong-credential all return one
+  generic `authentication required`, so the error cannot be used to
+  distinguish "no token" from "wrong token".
+* **Every binding** — the same rejection holds over gRPC (metadata
+  `authorization`) and WebSocket (the credential is read from the upgrade
+  request), not only JSON-RPC.
+
+The valid token is accepted throughout, and the process stays healthy. The
+credential comparison is constant-time (only token *length* is treated as
+non-secret), and rejected tokens set no caller identity, so they cannot poison
+a rate-limit bucket.
+
+## Sustained concurrent load
+
+`probe_load.py` is a correctness-under-pressure test, not a throughput
+benchmark: driven by a deterministic model-free executor, it isolates the SDK's
+task store, dispatch, and concurrency limit from model saturation. Five phases,
+each a hard assertion:
+
+* **Read storm** — 64 concurrent workers for several seconds: ~3,600 req/s with
+  **zero transport errors** and a bounded latency tail (p99 ≈ 50 ms).
+* **Store integrity** — hundreds of tasks created concurrently, then listed:
+  **every task the server acknowledged appears exactly once**, none lost or
+  duplicated. This is the race-condition test, and it is the one that matters
+  most — a store that drops or double-counts under concurrency is a silent data
+  bug no single-request probe can reach.
+* **Limit enforcement** — a burst of permit-holding requests past
+  `max_concurrent_tasks` is refused with a structured `Overloaded`, never
+  dropped or crashed (16 served, 112 cleanly refused at a cap of 16).
+* **Recovery** — after the storms, single-request latency returns to baseline
+  (≈1 ms), so nothing stayed wedged.
+* **Soak / leak** — moderate mixed load over tens of thousands of requests
+  while sampling the server's memory and file descriptors: RSS stays flat
+  (~60 MB) and the fd count does not grow, so there is no per-request leak.
+
 ## What this did and did not establish
 
 It established that all three request bindings of a real, model-backed server —
 JSON-RPC, gRPC, and WebSocket — hold up under a broad, deliberately hostile
-input set, and that the two gaps the runs surfaced (the numeric-IP SSRF filter
-and the gRPC version negotiation) are closed and regression-tested.
+input set; that the authentication layer rejects every forged, expired, and
+malformed credential across every binding with no bypass and no oracle; and
+that the server stays correct, bounded, and leak-free under sustained
+concurrency. The two gaps the runs surfaced (the numeric-IP SSRF filter and the
+gRPC version negotiation) are closed and regression-tested; the auth and load
+runs found none.
 
-It did **not** exercise authentication bypass (the example runs unauthenticated
-by design) or sustained high-concurrency load. Those remain open surfaces; see
+It did **not** exercise a real identity provider's rotating RSA keys under
+load, nor multi-node deployments behind a shared store, nor a formal
+throughput/latency benchmark (the numbers here characterise the SDK on one box,
+not a capacity guarantee). Those remain open surfaces; see
 [Security → Known gaps](./security.md#known-gaps). Stating the boundary is the
 point — a security page, or a security test, that lists only what it covered is
 not one.

@@ -263,8 +263,28 @@ other bindings. It now delegates to the shared validator all four bindings use;
 a version-less gRPC request returns `UNIMPLEMENTED` / `VERSION_NOT_SUPPORTED`,
 regression-tested at the helper and through the real method path. This is the
 class of bug only a probe that hits *every* binding with the *same* attack
-finds. Authentication and sustained load remain unexercised — on the open list
-below.
+finds.
+
+**Authentication and sustained load — probed, no defects.** Two further probes
+closed the surfaces the earlier round left open, and both came back clean;
+they are recorded here as passes rather than padded into findings.
+`probe_auth.py` configured the server with JWT-HS256 auth and forged tokens in
+the standard library to run 27 cases with **zero bypasses**: `alg:none`,
+RS256-without-JWKS, HS512, wrong secret, tampered payload, corrupt signature,
+expired, `nbf`-in-future, missing `exp`, wrong issuer, and wrong audience are
+all rejected; the valid token is accepted; a single generic
+`authentication required` gives no missing-vs-wrong oracle; the public agent
+card stays reachable without a credential; and the rejection holds identically
+on gRPC and WebSocket. `probe_load.py` drove the server with a deterministic
+model-free executor to isolate the SDK from model saturation: under 64-way
+concurrency it sustained ~3,600 read req/s with zero transport errors,
+accounted for every one of hundreds of concurrently-created tasks exactly once
+(the store's race-condition test), refused a permit-holding burst past the
+concurrency cap with a structured `Overloaded` (16 served, 112 refused),
+recovered to baseline latency afterwards, and held RSS (~60 MB) and file
+descriptors flat over tens of thousands of requests — no leak. What stays
+unexercised: a real IdP's rotating RSA keys under load, multi-node deployments
+behind a shared store, and a formal capacity benchmark.
 
 ## 5. What this review did not examine
 

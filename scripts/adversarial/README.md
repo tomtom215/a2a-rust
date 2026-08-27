@@ -7,11 +7,13 @@ Copyright 2026 Tom F. <tomf@tomtomtech.net> (https://github.com/tomtom215)
 Black-box, over-the-wire adversarial harnesses for a **running** A2A server —
 one per request binding:
 
-| Probe | Binding | Deps |
+| Probe | Surface | Deps |
 |---|---|---|
-| `probe.py` | JSON-RPC (spec §9) | stdlib only |
-| `probe_ws.py` | WebSocket (spec §12) | stdlib only (RFC 6455 client built in) |
-| `probe_grpc.py` | gRPC (spec §10) | `pip install grpcio grpcio-tools` (compiles the proto at startup) |
+| `probe.py` | JSON-RPC binding (spec §9) | stdlib only |
+| `probe_ws.py` | WebSocket binding (spec §12) | stdlib only (RFC 6455 client built in) |
+| `probe_grpc.py` | gRPC binding (spec §10) | `pip install grpcio grpcio-tools` (compiles the proto at startup) |
+| `probe_auth.py` | authentication (all bindings) | stdlib (forges HS256 JWTs); gRPC leg needs grpcio |
+| `probe_load.py` | correctness under sustained concurrency | stdlib only |
 
 They are the third leg of this project's negative-input testing, distinct from
 the other two:
@@ -71,6 +73,34 @@ python3 scripts/adversarial/probe_grpc.py --grpc-port 8081 --http-port 8080
 `probe_grpc.py` compiles the repo proto to stubs at startup (stripping the
 google.api gateway options, which does not change any wire format), so it needs
 `grpcio`/`grpcio-tools`; the other two are stdlib-only.
+
+### Authentication and load
+
+Both target a server driven by the same example with opt-in env knobs (all off
+by default):
+
+```bash
+# Auth: require a JWT-HS256 credential on every binding.
+A2A_ALLOW_FALLBACK=1 \
+  A2A_JWT_HS256_SECRET=top-secret-shared-key-0123456789 \
+  A2A_JWT_ISS=https://issuer.test A2A_JWT_AUD=a2a-agent \
+  A2A_BIND_ADDR=127.0.0.1:8090 A2A_GRPC_ADDR=127.0.0.1:8091 A2A_WS_ADDR=127.0.0.1:8092 \
+  cargo run -p genai-a2a-agent &
+python3 scripts/adversarial/probe_auth.py --port 8090 --grpc-port 8091 --ws-port 8092
+
+# Load: fast model-free executor + a concurrency cap so refusals are reachable.
+A2A_BIND_ADDR=127.0.0.1:8080 A2A_ALLOW_FALLBACK=1 A2A_MAX_CONCURRENT_TASKS=16 \
+  cargo run -p genai-a2a-agent &
+python3 scripts/adversarial/probe_load.py --port 8080 --server-pid <pid>
+```
+
+`A2A_ALLOW_FALLBACK` completes tasks with a labelled mechanical answer when no
+model is reachable, so the server can be driven without a model in the loop —
+which is the *point* of the load probe: it measures the SDK (task store,
+dispatch, concurrency limit), not a language model. `--server-pid` lets the load
+probe sample the server's RSS and fd count for leaks. `probe_auth.py` forges its
+own HS256 tokens; pass `--secret/--iss/--aud` if you configured the server
+differently.
 
 ### Options
 
@@ -142,6 +172,12 @@ fixed and regression-tested:
   WebSocket rejected the same request per spec §3.6.2 — a cross-binding
   inconsistency only visible because `probe_grpc.py` hits every binding with
   the same attack (`crates/a2a-protocol-server/src/dispatch/grpc/`).
+
+The later `probe_auth.py` (27 cases) and `probe_load.py` (five phases) runs
+found **no** defects — the auth layer rejected every forged/expired/malformed
+credential across all bindings with no bypass and no oracle, and the server
+stayed correct and leak-free under sustained concurrency. Reported as a pass,
+not padded into a finding.
 
 The full account is in the book: **Testing & Deployment → Adversarial
 Testing**.
