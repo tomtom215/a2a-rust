@@ -139,6 +139,40 @@ jobs:
 
       - name: Commit benchmark results to book
         run: |
+          # Do not touch main while a release is in flight.
+          #
+          # `check_provenance_manifest.py` requires the released tree to differ
+          # from the manifest's pinned commit by nothing but the manifest. This
+          # commit adds two files to it, so a push landing between a release
+          # merge and its tag fails the release outright. That is what happened
+          # to v0.11.0 on 2026-08-30: this job pushed `chore: update benchmark
+          # results` at 20:25, and the tag cut afterwards failed immediately.
+          #
+          # It was not a race anyone lost by being slow. This workflow triggers
+          # on push to main filtered to `benches/**`, `crates/**`, `Cargo.toml`
+          # and `Cargo.lock`, and every release bumps four crate versions and
+          # both lockfiles — so *merging a release PR is itself what makes this
+          # job run*, and its push always lands in the window. Every release
+          # that touches `crates/**`, which is all of them, hit this.
+          #
+          # The signal for "in flight" is an in-tree version with no matching
+          # tag: true from the moment the release-prep merge lands until the tag
+          # is pushed, and false at every other time. Nothing is lost by
+          # skipping — results are regenerated from scratch on each run, so the
+          # first run after the tag publishes them.
+          #
+          # Fails safe: if the tag fetch fails, no tag is found and the push is
+          # skipped. Leaving main untouched is the conservative direction.
+          git fetch --tags --force --quiet origin || true
+          VERSION=$(grep -m1 '^version' crates/a2a-protocol-types/Cargo.toml | sed 's/.*"\(.*\)".*/\1/')
+          if ! git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "::notice::in-tree version is v${VERSION} with no such tag — a release is in flight."
+            echo "Not pushing benchmark results: they would invalidate the provenance manifest"
+            echo "that the release gate checks. The first run after v${VERSION} is tagged will"
+            echo "publish them."
+            exit 0
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add book/src/reference/benchmarks.md book/src/reference/benchmark-dashboard.html
