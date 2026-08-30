@@ -371,7 +371,9 @@ jobs:
             --jobs 4 \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
+            -- --all-features --run-ignored all \
+               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
@@ -434,6 +436,53 @@ jobs:
           fi
 
           echo "Report present under mutants.out/."
+
+          # Present is not the same as populated. cargo-mutants writes
+          # mutants.json up front listing every mutant this job selected, then
+          # files each tested mutant into exactly one of the four outcome
+          # lists. When the *baseline* fails — "cargo test failed in an
+          # unmutated tree" — it writes all four empty and stops, and every
+          # check above still passes: the files exist and are readable, they
+          # just describe nothing.
+          #
+          # Measured, not hypothetical. On 2026-08-30 all eight shards of the
+          # incremental job reported success on a run whose own log said
+          # "no mutants were tested", and the aggregator agreed. The gate was
+          # green while measuring nothing, which is the failure mode the step
+          # above already names ("A missing report is not 'zero surviving
+          # mutants'") and did not actually cover.
+          #
+          # This is the same hole `--min-graded` closes for the official-TCK
+          # gate, for the same reason: an all-skipped report and a perfect one
+          # are indistinguishable to a check that only counts failures.
+          #
+          # A shard whose slice is empty has an empty mutants.json too, so it
+          # still passes: nothing selected, nothing to account for.
+          SELECTED=$(python3 -c 'import json;print(len(json.load(open("mutants.out/mutants.json"))))')
+          ACCOUNTED=0
+          for f in caught missed timeout unviable; do
+            n=$(grep -c . "mutants.out/${f}.txt" 2>/dev/null || true)
+            ACCOUNTED=$(( ACCOUNTED + ${n:-0} ))
+          done
+          echo "Mutants selected: ${SELECTED}; outcomes recorded: ${ACCOUNTED}."
+
+          if [ "$SELECTED" -gt 0 ] && [ "$ACCOUNTED" -eq 0 ]; then
+            echo "::error::${SELECTED} mutant(s) selected, none graded — this run measured nothing."
+            echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+            echo ""
+            echo "Zero graded is not zero survivors. The usual cause is a"
+            echo "failed baseline: the unmutated tree must pass the same test"
+            echo "command before any mutant can be judged against it."
+            echo ""
+            echo "First 40 lines of the run log:"
+            sed -n '1,40p' /tmp/mutants-run.log 2>/dev/null || echo "  (run log unavailable)"
+            exit 1
+          fi
+
+          if [ "$ACCOUNTED" -lt "$SELECTED" ]; then
+            echo "::error::only ${ACCOUNTED} of ${SELECTED} selected mutant(s) were graded — the run did not finish."
+            exit 1
+          fi
 
       # ── Per-crate report ─────────────────────────────────────────────────
       - name: Generate per-crate report
@@ -974,7 +1023,9 @@ jobs:
             --shard ${{ matrix.shard }}/${{ env.INCREMENTAL_SHARDS }} \
             --test-tool=nextest \
             --profile=mutants \
-            -- --all-features --run-ignored all 2>&1 | tee /tmp/mutants-run.log
+            -- --all-features --run-ignored all \
+               -E 'not (binary(soak) or binary(soak_multi_replica))' \
+               2>&1 | tee /tmp/mutants-run.log
           MUTANTS_EXIT=$?
           set -e
 
@@ -1000,6 +1051,53 @@ jobs:
           if [ -f mutants.out/caught.txt ] && [ -f mutants.out/missed.txt ]; then
             echo "empty_selection=false" >> "$GITHUB_OUTPUT"
             echo "Report present under mutants.out/."
+
+            # Present is not the same as populated. cargo-mutants writes
+            # mutants.json up front listing every mutant this job selected, then
+            # files each tested mutant into exactly one of the four outcome
+            # lists. When the *baseline* fails — "cargo test failed in an
+            # unmutated tree" — it writes all four empty and stops, and every
+            # check above still passes: the files exist and are readable, they
+            # just describe nothing.
+            #
+            # Measured, not hypothetical. On 2026-08-30 all eight shards of the
+            # incremental job reported success on a run whose own log said
+            # "no mutants were tested", and the aggregator agreed. The gate was
+            # green while measuring nothing, which is the failure mode the step
+            # above already names ("A missing report is not 'zero surviving
+            # mutants'") and did not actually cover.
+            #
+            # This is the same hole `--min-graded` closes for the official-TCK
+            # gate, for the same reason: an all-skipped report and a perfect one
+            # are indistinguishable to a check that only counts failures.
+            #
+            # A shard whose slice is empty has an empty mutants.json too, so it
+            # still passes: nothing selected, nothing to account for.
+            SELECTED=$(python3 -c 'import json;print(len(json.load(open("mutants.out/mutants.json"))))')
+            ACCOUNTED=0
+            for f in caught missed timeout unviable; do
+              n=$(grep -c . "mutants.out/${f}.txt" 2>/dev/null || true)
+              ACCOUNTED=$(( ACCOUNTED + ${n:-0} ))
+            done
+            echo "Mutants selected: ${SELECTED}; outcomes recorded: ${ACCOUNTED}."
+
+            if [ "$SELECTED" -gt 0 ] && [ "$ACCOUNTED" -eq 0 ]; then
+              echo "::error::${SELECTED} mutant(s) selected, none graded — this run measured nothing."
+              echo "cargo-mutants exit code was: ${{ steps.mutants.outputs.exit_code }}"
+              echo ""
+              echo "Zero graded is not zero survivors. The usual cause is a"
+              echo "failed baseline: the unmutated tree must pass the same test"
+              echo "command before any mutant can be judged against it."
+              echo ""
+              echo "First 40 lines of the run log:"
+              sed -n '1,40p' /tmp/mutants-run.log 2>/dev/null || echo "  (run log unavailable)"
+              exit 1
+            fi
+
+            if [ "$ACCOUNTED" -lt "$SELECTED" ]; then
+              echo "::error::only ${ACCOUNTED} of ${SELECTED} selected mutant(s) were graded — the run did not finish."
+              exit 1
+            fi
             exit 0
           fi
 

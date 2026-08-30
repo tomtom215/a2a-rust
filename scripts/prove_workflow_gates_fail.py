@@ -335,16 +335,39 @@ def write_report(path: Path, report: dict) -> None:
     path.write_text(json.dumps(report))
 
 
-def mutants_out(root: Path, *, caught: int, missed: int, drop: str | None = None) -> None:
-    """A `mutants.out/` directory as cargo-mutants leaves it."""
+def mutants_out(
+    root: Path,
+    *,
+    caught: int,
+    missed: int,
+    drop: str | None = None,
+    selected: int | None = None,
+) -> None:
+    """A `mutants.out/` directory as cargo-mutants leaves it.
+
+    `mutants.json` lists every mutant the run *selected*, written up front,
+    before any is tested; the four outcome lists between them account for the
+    ones actually graded. `selected` defaults to `caught + missed` so the
+    fixture is self-consistent.
+
+    It was a bare `[]` until 2026-08-30, which made the healthy shape claim
+    nothing had been selected while ten mutants were caught. Harmless while
+    nothing read the file — and it meant the accounting check added to that
+    step could not be proven by this harness, because every fixture looked
+    like an empty selection. Setting `selected` above the outcome counts is
+    how the failed-baseline shape is expressed: mutants chosen, none graded.
+    """
     d = root / "mutants.out"
     d.mkdir(parents=True, exist_ok=True)
+    n_selected = caught + missed if selected is None else selected
     files = {
         "caught.txt": "".join(f"src/lib.rs:{i}: replace foo\n" for i in range(1, caught + 1)),
         "missed.txt": "".join(f"src/lib.rs:{i}: replace bar\n" for i in range(1, missed + 1)),
         "timeout.txt": "",
         "unviable.txt": "",
-        "mutants.json": "[]",
+        "mutants.json": json.dumps(
+            [{"function": f"f{i}", "file": "src/lib.rs"} for i in range(n_selected)]
+        ),
     }
     for name, content in files.items():
         if name == drop:
@@ -764,6 +787,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 lambda d: None,
                 "is missing",
             ),
+            # The shape that was green across all eight shards in CI on
+            # 2026-08-30: the baseline failed, so cargo-mutants wrote the four
+            # outcome lists empty and stopped. Every file is present and
+            # readable, and the run measured nothing.
+            Defect(
+                "report present but nothing graded (failed baseline)",
+                lambda d: mutants_out(d, caught=0, missed=0, selected=12),
+                "none graded",
+            ),
         ],
         context={"steps.mutants.outputs.exit_code": "0"},
     )
@@ -827,6 +859,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
 
         return setup
 
+    def incr_report_selected(selected: int, log: str) -> Setup:
+        """A report whose lists are present and empty, with mutants selected."""
+
+        def setup(d: Path) -> None:
+            mutants_out(d, caught=0, missed=0, selected=selected)
+            (d / "mutants-run.log").write_text(log)
+
+        return setup
+
     reg["mutants.yml::mutants-incremental-shard::Require a readable mutation report"] = Probe(
         healthy=incr_report(3, "ran fine\n"),
         defects=[
@@ -834,7 +875,12 @@ def build_registry() -> dict[str, Probe | Exempt]:
                 "no report, and the log does not claim an empty selection",
                 incr_report(None, "cargo-mutants died halfway\n"),
                 "no mutation report was produced",
-            )
+            ),
+            Defect(
+                "report present but nothing graded (failed baseline)",
+                incr_report_selected(12, "ERROR cargo test failed in an unmutated tree\n"),
+                "none graded",
+            ),
         ],
         context={"steps.mutants.outputs.exit_code": "0", "matrix.shard": "0"},
     )
