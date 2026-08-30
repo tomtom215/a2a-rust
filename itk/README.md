@@ -39,9 +39,16 @@ SDKs — skipped with `--skip` (reported, never silent) in CI:
 **A skip is a claim about someone else's software.** Every entry asserts that
 a named third party is wrong, so each one needs re-checking against the
 current release. This kit exits 1 on a `--skip`ped test that passes, which
-catches a stale entry — but only once the pin moves. Three of the four
-entries this table carried were cleared on 2026-08-30, and the reasons are
-worth keeping:
+catches a stale entry — but only once the pin moves.
+
+Moving it is [`pin-freshness.yml`](../.github/workflows/pin-freshness.yml)'s
+job: every three weeks it re-resolves each official SDK to its latest release
+and re-grades against this table, so decay is reported rather than waiting to
+be noticed. It never commits a pin bump — which version this repository
+grades against stays a human decision.
+
+Three of the four entries this table carried were cleared on 2026-08-30, and
+the reasons are worth keeping:
 
 **`@a2a-js/sdk` `list_tasks_basic` — was real, now fixed.** In 1.0.0,
 `ListTasksRequest.fromJSON({})` materialised the proto3 default

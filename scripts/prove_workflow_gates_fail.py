@@ -404,6 +404,15 @@ SIGNED = "Signed-off-by: A Human <human@example.com>"
 
 TCK_BASELINE = "tck/conformance-baseline.json"
 
+# Shared by every "start a server, then poll until it answers" step. Extracted
+# rather than repeated so the five call sites cannot drift into five slightly
+# different justifications for the same exemption.
+READINESS_POLL = (
+    "a readiness poll against a server this harness would have to build and "
+    "run; its failure mode (agent never came up) is already loud, and the "
+    "conformance verdict it guards is the a2a-tck run that follows"
+)
+
 
 def _tck_gate_probe(report_name: str, healthy_graded: int) -> Probe:
     """Shared shape for the three `check_conformance.py` gate steps.
@@ -949,11 +958,15 @@ def build_registry() -> dict[str, Probe | Exempt]:
         ("tck-cross-language", "Wait for agent to be ready"),
         ("official-client-vs-rust-server", "Build and start our echo agent"),
     ):
-        reg[f"tck.yml::{job}::{name}"] = Exempt(
-            "a readiness poll against a server this harness would have to build and "
-            "run; its failure mode (agent never came up) is already loud, and the "
-            "conformance verdict it guards is the a2a-tck run that follows"
-        )
+        reg[f"tck.yml::{job}::{name}"] = Exempt(READINESS_POLL)
+
+    # ── pin-freshness.yml ────────────────────────────────────────────────────
+    # Same shape and same reason as the readiness polls above. Every other step
+    # in that workflow either lets a command's own exit status stand (the two
+    # `a2a-tck` runs, whose verdict is the kit's exit code) or writes to
+    # `$GITHUB_OUTPUT` without deciding to fail, so this is the only one the
+    # discovery pass finds.
+    reg["pin-freshness.yml::freshness::Wait for agent to be ready"] = Exempt(READINESS_POLL)
     # Guards what PR #103 added: all four listeners actually advertised. If the
     # card silently loses one, the leg for that binding resolves nothing and the
     # job reports a config error dressed as a conformance verdict.
