@@ -1214,7 +1214,10 @@ mod tests {
             binding_for("HTTPS://A2A-RUST.COM/BINDINGS/WEBSOCKET/V1"),
             None
         );
-        // An unrelated project's custom binding is still skipped, not driven.
+        // An unrelated project's custom binding is still skipped, not driven
+        // — and this is §5.8's own illustrative value, so it is the URI most
+        // likely to be copied into a card verbatim by someone reading the
+        // spec. Sharing a path with ours does not make it our binding.
         assert_eq!(
             binding_for("https://example.com/bindings/websocket/v1"),
             None
