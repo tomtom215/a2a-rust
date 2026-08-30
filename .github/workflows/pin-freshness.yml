@@ -114,23 +114,33 @@ jobs:
               cd itk/agents/js-sdk && PORT=9111 node index.js &
           - sdk: go-sdk
             port: 9112
+            # `go list -m`, not an awk over go.mod. The first version of this
+            # step used `awk '/a2a-go/ {print $2}'`, which prints the module
+            # path — the version is `$3` on a bare `require` line and `$2`
+            # only inside a `require (` block, and `go mod tidy` moves the
+            # line between those shapes. It reported
+            # "github.com/a2aproject/a2a-go/v2" as the resolved version, which
+            # is a freshness report that cannot show drift because it never
+            # contains a version at all.
             resolve: |
               cd itk/agents/go-sdk
               go get -u github.com/a2aproject/a2a-go/v2@latest
               go mod tidy
-              awk '/a2aproject\/a2a-go/ {print $2; exit}' go.mod > /tmp/resolved
+              go list -m -f '{{.Version}}' github.com/a2aproject/a2a-go/v2 > /tmp/resolved
             pinned: 'itk/agents/go-sdk/go.mod'
             start: |
               cd itk/agents/go-sdk && PORT=9112 go run . &
           - sdk: java-sdk
             port: 9113
-            # Unverified locally — this leg needs a Maven build, so it has not
-            # been exercised outside CI. If `versions:update-properties` proves
-            # to be the wrong incantation, the leg fails loudly on its first
-            # firing rather than reporting a fresh pin it never resolved.
+            # `-DincludeProperties`, not `-Dproperties`. The latter does not
+            # scope the update: run with `-Dproperties=a2a.sdk.version` it
+            # also bumped `quarkus.platform.version` (3.35.2 -> 3.39.1), so
+            # the leg would have upgraded the agent's own build framework
+            # underneath the SDK it is supposed to be grading, and reported
+            # any resulting breakage as SDK drift.
             resolve: |
               cd itk/agents/java-sdk
-              mvn -q -B versions:update-properties -Dproperties=a2a.sdk.version -DallowSnapshots=false
+              mvn -q -B versions:update-properties -DincludeProperties=a2a.sdk.version -DallowSnapshots=false
               mvn -q -B help:evaluate -Dexpression=a2a.sdk.version -DforceStdout > /tmp/resolved
             pinned: 'itk/agents/java-sdk/pom.xml (a2a.sdk.version)'
             start: |
