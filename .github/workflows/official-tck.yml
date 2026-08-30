@@ -311,7 +311,23 @@ jobs:
           # Copy the report before propagating the suite's status, so the
           # requirement-level gate below can still say precisely what broke.
           cp reports/compatibility.json /tmp/minimal-compatibility.json
-          exit "$suite_status"
+          # pytest's exit 1 means "tests failed", which is precisely the
+          # requirement-level verdict the gate below adjudicates against
+          # `tck/conformance-baseline.json`. Propagating it here pre-empts that
+          # gate and fails the job on a *baselined* failure the gate would pass.
+          # Harmless while the baseline was empty — every exit 1 was then a real
+          # regression — and wrong from the moment it gained an entry, which is
+          # what happened on 2026-08-30 (see docs/official-tck-findings.md §20).
+          #
+          # Every other non-zero code is a genuine suite-level failure and still
+          # hard-fails: 2 interrupted, 3 internal error, 4 usage error, 5 no
+          # tests collected. That is the distinction the comment above draws
+          # between "suite-level failures" and "requirement-level ones", now
+          # actually implemented rather than approximated by "non-zero".
+          case "$suite_status" in
+            0|1) ;;
+            *) exit "$suite_status" ;;
+          esac
 
       # `always()` so a suite-level failure above still gets a
       # requirement-level diagnosis rather than just a red X.
@@ -362,7 +378,23 @@ jobs:
             -k "TestCapabilityExtensionRequired" \
             2>&1 | tee /tmp/tck-extension.log || suite_status=$?
           cp reports/compatibility.json /tmp/extension-compatibility.json
-          exit "$suite_status"
+          # pytest's exit 1 means "tests failed", which is precisely the
+          # requirement-level verdict the gate below adjudicates against
+          # `tck/conformance-baseline.json`. Propagating it here pre-empts that
+          # gate and fails the job on a *baselined* failure the gate would pass.
+          # Harmless while the baseline was empty — every exit 1 was then a real
+          # regression — and wrong from the moment it gained an entry, which is
+          # what happened on 2026-08-30 (see docs/official-tck-findings.md §20).
+          #
+          # Every other non-zero code is a genuine suite-level failure and still
+          # hard-fails: 2 interrupted, 3 internal error, 4 usage error, 5 no
+          # tests collected. That is the distinction the comment above draws
+          # between "suite-level failures" and "requirement-level ones", now
+          # actually implemented rather than approximated by "non-zero".
+          case "$suite_status" in
+            0|1) ;;
+            *) exit "$suite_status" ;;
+          esac
 
       # `--require-pass` is load-bearing here, not decoration. A scoped run
       # that selects zero tests reports zero failures, which the differential
