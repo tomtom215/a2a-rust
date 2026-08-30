@@ -258,14 +258,25 @@ jobs:
               PORT=9111 node index.js &
               sleep 3
             port: 9111
-            # Documented @a2a-js/sdk 1.0.0 bugs (not our deviations):
-            # - ListTasks: ListTasksRequest.fromJSON({}) materializes the
-            #   proto3 default status=TASK_STATE_UNSPECIFIED and the store
-            #   filters on it, so an unfiltered list always returns empty.
-            # - application/a2a+json requests are rejected despite spec §6.1
-            #   examples using that media type (Python/Go SDKs accept it).
-            skip_jsonrpc: list_tasks_basic,a2a_media_type_accepted
-            skip_rest: list_tasks_basic
+            # No skips. Both entries this leg carried until 2026-08-30 are
+            # gone, for different reasons:
+            #
+            # `list_tasks_basic` was a real 1.0.0 bug —
+            # `ListTasksRequest.fromJSON({})` materialised the proto3 default
+            # `status=TASK_STATE_UNSPECIFIED` and the store filtered on it, so
+            # an unfiltered list always came back empty. Fixed in 1.1.0 and
+            # verified on both bindings, so the pin moved and the skip went
+            # with it. This kit exits 1 on a skipped test that passes, which
+            # is what surfaced it once the pin finally moved.
+            #
+            # `a2a_media_type_accepted` was never this SDK's bug. It rejects
+            # `application/a2a+json` on JSON-RPC exactly as §9 describes —
+            # §9 specifies `application/json`, and §14.1.1 scopes the A2A
+            # media type to §11's REST binding. Our own check was asking for
+            # it on the wrong binding; the check is REST-only now, and this
+            # SDK's REST binding accepts the media type. A skip is a claim
+            # about someone else's software, and this one was false for a
+            # year.
           - sdk: go-sdk
             setup: |
               cd itk/agents/go-sdk && go mod tidy && PORT=9112 go run . &
@@ -280,10 +291,17 @@ jobs:
               PORT=9113 java -jar itk/agents/java-sdk/target/quarkus-app/quarkus-run.jar &
               sleep 5
             port: 9113
-            # Documented a2a-java 1.0.0.CR1 divergence: rejects
-            # application/a2a+json (spec §6.1 examples use it; Python/Go
-            # reference SDKs accept it).
-            skip_jsonrpc: a2a_media_type_accepted
+            # a2a-java 1.0.0.CR1 rejects `application/a2a+json`. The
+            # JSON-RPC half of this skip is gone: §9 specifies
+            # `application/json` and §14.1.1 scopes the A2A media type to
+            # §11, so rejecting it there is conformant and our check no
+            # longer runs on that binding.
+            #
+            # The REST half stays, and is the one genuine divergence left in
+            # this table: §11 says the media type SHOULD be used for requests
+            # and responses. Unverified locally — this leg needs a Maven
+            # build — so it is retained until a run says otherwise, which the
+            # stale-skip check will do on its own if it is also fixed.
             skip_rest: a2a_media_type_accepted
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
