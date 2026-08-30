@@ -3,7 +3,7 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-30 at `db795c2`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-30 at `c322cec`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured because nothing forced it to be. The figures below moved a long
 > way between `c008ab0` (2026-08-11) and this run — the share of history that
@@ -74,22 +74,22 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `db795c2`, **1030 commits**, spanning **2026-03-15 to 2026-08-30**.
+At `c322cec`, **1034 commits**, spanning **2026-03-15 to 2026-08-30**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1030 |
-| Merge commits (`dco.yml` does not examine these) | 108 |
-| **Non-merge commits — the population `dco.yml` grades** | **922** |
+| Total reachable | 1034 |
+| Merge commits (`dco.yml` does not examine these) | 109 |
+| **Non-merge commits — the population `dco.yml` grades** | **925** |
 
-Git author field, all 1030 commits:
+Git author field, all 1034 commits:
 
 | Author | Commits |
 |---|---:|
 | `Claude <noreply@anthropic.com>` | 478 |
-| `Tom F. <tomf@tomtomtech.net>` | 393 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 122 |
-| `github-actions[bot] <41898282+…>` | 37 |
+| `Tom F. <tomf@tomtomtech.net>` | 395 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 123 |
+| `github-actions[bot] <41898282+…>` | 38 |
 
 The two `Tom F` identities are the same person: a GitHub no-reply address used
 for web-UI edits and merges, and a real address used for local commits. 106 of
@@ -97,16 +97,16 @@ the 122 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 922 non-merge commits:
+Applying `dco.yml`'s rules to all 925 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
-| **Would pass** — human author, matching `Signed-off-by` | **392** | 42.5% |
-| Fail — author `noreply@anthropic.com` | 477 | 51.7% |
-| Fail — author `github-actions[bot]` | 37 | 4.0% |
+| **Would pass** — human author, matching `Signed-off-by` | **394** | 42.6% |
+| Fail — author `noreply@anthropic.com` | 477 | 51.6% |
+| Fail — author `github-actions[bot]` | 38 | 4.1% |
 | Fail — human author, no matching `Signed-off-by` | 16 | 1.7% |
 
-The passing count has tripled since the 2026-08-11 measurement — 126 to 392.
+The passing count has tripled since the 2026-08-11 measurement — 126 to 394.
 The AI-authored count has not moved at all, which is the shape a closed pattern
 makes: that population is fixed and the compliant one grows past it.
 
@@ -124,14 +124,14 @@ authorship rule, which short-circuits before the sign-off check.
 
 **The pattern is closed, not ongoing.** The AI-authored commits run
 2026-03-15 to **2026-07-24** and stop there. `b416c1a` (2026-07-24, tagged
-`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **422 commits since**,
+`v0.7.0`) is where `PROVENANCE.md` §3.2 took effect. Of the **426 commits since**,
 **zero** are AI-authored:
 
-| Author, `b416c1a..db795c2` | Commits |
+| Author, `b416c1a..c322cec` | Commits |
 |---|---:|
-| `Tom F. <tomf@tomtomtech.net>` | 393 |
-| `Tom F <tomtom215@users.noreply.github.com>` | 15 |
-| `github-actions[bot]` | 14 |
+| `Tom F. <tomf@tomtomtech.net>` | 395 |
+| `Tom F <tomtom215@users.noreply.github.com>` | 16 |
+| `github-actions[bot]` | 15 |
 
 The forward policy is doing what it claims. Whatever counsel decides about the
 history, the practice that produced it has already stopped.
@@ -164,7 +164,7 @@ Every one is documentation. None is source.
 
 ### 2.2 The bot commits are ongoing and will not stop
 
-The 37 `github-actions[bot]` commits run 2026-03-20 to 2026-08-27 and will keep
+The 38 `github-actions[bot]` commits run 2026-03-20 to 2026-08-30 and will keep
 accruing: the benchmarks workflow commits generated results and pushes to
 `main` directly. `dco.yml` triggers on `pull_request` only, so these never pass
 through it.
