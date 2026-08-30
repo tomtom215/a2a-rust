@@ -3,7 +3,7 @@
 
 # Provenance Manifest
 
-**Measured 2026-08-30 at `0e84ee1`. Regenerate with `scripts/provenance_manifest.sh`.**
+**Measured 2026-08-30 at `9625502`. Regenerate with `scripts/provenance_manifest.sh`.**
 
 > Re-measured because nothing forced it to be. The figures below moved a long
 > way between `c008ab0` (2026-08-11) and this run — the share of history that
@@ -74,15 +74,15 @@ scripts/provenance_manifest.sh
 
 ## 1. What the history contains
 
-At `0e84ee1`, **1018 commits**, spanning **2026-03-15 to 2026-08-30**.
+At `9625502`, **1019 commits**, spanning **2026-03-15 to 2026-08-30**.
 
 | | Commits |
 |---|---:|
-| Total reachable | 1018 |
+| Total reachable | 1019 |
 | Merge commits (`dco.yml` does not examine these) | 108 |
-| **Non-merge commits — the population `dco.yml` grades** | **910** |
+| **Non-merge commits — the population `dco.yml` grades** | **911** |
 
-Git author field, all 1018 commits:
+Git author field, all 1019 commits:
 
 | Author | Commits |
 |---|---:|
@@ -97,14 +97,14 @@ the 121 no-reply commits are merge commits created by GitHub's merge button.
 
 ## 2. Verdict under the project's own DCO gate
 
-Applying `dco.yml`'s rules to all 910 non-merge commits:
+Applying `dco.yml`'s rules to all 911 non-merge commits:
 
 | Outcome | Commits | Share |
 |---|---:|---:|
 | **Would pass** — human author, matching `Signed-off-by` | **375** | 41.2% |
 | Fail — author `noreply@anthropic.com` | 477 | 52.4% |
 | Fail — author `github-actions[bot]` | 37 | 4.1% |
-| Fail — human author, no matching `Signed-off-by` | 21 | 2.3% |
+| Fail — human author, no matching `Signed-off-by` | 22 | 2.4% |
 
 The passing count more than doubled since the 2026-08-11 measurement — 126 to 375
 — while every failing count stayed put except the bot's. That is the shape a
@@ -181,7 +181,7 @@ Amending it changes its SHA, and therefore the SHA of all 1008 descendants.
 
 | | |
 |---|---|
-| Commits whose SHA changes | **1018 — all of them** |
+| Commits whose SHA changes | **1019 — all of them** |
 | Release tags that must be re-cut | **12** (`v0.2.0` … `v0.9.0`) |
 | Published crates.io releases whose source link breaks | 12 versions × 4 crates |
 | SLSA provenance attestations that stop resolving | all, for every published tag |
