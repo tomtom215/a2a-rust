@@ -293,10 +293,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn server_error_task_not_cancelable_maps_to_409() {
+    async fn server_error_task_not_cancelable_maps_to_400() {
         let err = ServerError::TaskNotCancelable("t1".into());
         let resp = server_error_to_response(&err);
-        assert_eq!(resp.status().as_u16(), 409);
+        assert_eq!(resp.status().as_u16(), 400);
     }
 
     #[tokio::test]

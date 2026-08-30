@@ -25,7 +25,23 @@ async fn rest_rejects_wrong_content_type_on_post() {
         .unwrap();
 
     let resp = client.request(req).await.expect("request");
-    assert_eq!(resp.status(), 415, "wrong content type should return 415");
+    // 400, not 415: §5.4 assigns `ContentTypeNotSupportedError` a 400.
+    //
+    // The body carries the discrimination the status no longer does. This
+    // request's params are well-formed, so today only the Content-Type check
+    // can reject it — but asserting 400 alone would keep passing if that
+    // check were replaced by any other 400-answering rejection.
+    assert_eq!(
+        resp.status(),
+        400,
+        "wrong content type should be refused per §5.4"
+    );
+    let body = resp.into_body().collect().await.unwrap().to_bytes();
+    let body = String::from_utf8_lossy(&body);
+    assert!(
+        body.contains("unsupported Content-Type"),
+        "the Content-Type must be what refused this: {body}"
+    );
 }
 
 #[tokio::test]

@@ -168,14 +168,38 @@ impl ErrorCode {
     }
 
     /// Returns the HTTP status code for this error, per Section 5.4 of the spec.
+    ///
+    /// # Provenance
+    ///
+    /// These values are §5.4's table as published at
+    /// <https://github.com/a2aproject/A2A/blob/main/docs/specification.md>,
+    /// re-read on 2026-08-30. Three of them changed from what this crate
+    /// shipped before that date — `TaskNotCancelable` 409→400,
+    /// `ContentTypeNotSupported` 415→400, and `InvalidAgentResponse` 502→500 —
+    /// because the vendored copy of the specification in
+    /// `docs/implementation/v1.0.0-specification-complete.md` was a snapshot
+    /// taken 2026-03-31 and upstream has since amended the table in place,
+    /// under the same `1.0.0` version string.
+    ///
+    /// The drift was found by running this repository's TCK against an agent
+    /// built on the official Python SDK (`a2a-sdk` 1.1.2): the kit failed it
+    /// for answering `400` where the kit expected `409`, and the SDK was
+    /// right. Nothing caught it earlier because the kit and this crate read
+    /// the same stale table, so they agreed with each other — the symmetric
+    /// misreading the TCK's own README warns about.
+    ///
+    /// Some of the statuses here are more natural than §5.4's choice —
+    /// `415 Unsupported Media Type` says more than `400` about a bad
+    /// Content-Type. Conformance is not a place to be more helpful than the
+    /// specification: a client written against §5.4 matches on the code the
+    /// table names, and a "better" status is one it does not recognise.
     #[must_use]
     pub const fn http_status(self) -> u16 {
         match self {
             Self::TaskNotFound | Self::MethodNotFound => 404,
-            Self::TaskNotCancelable => 409,
-            Self::ContentTypeNotSupported => 415,
-            Self::InvalidAgentResponse => 502,
-            Self::PushNotificationNotSupported
+            Self::TaskNotCancelable
+            | Self::ContentTypeNotSupported
+            | Self::PushNotificationNotSupported
             | Self::UnsupportedOperation
             | Self::ExtendedAgentCardNotConfigured
             | Self::ExtensionSupportRequired
@@ -183,7 +207,7 @@ impl ErrorCode {
             | Self::ParseError
             | Self::InvalidRequest
             | Self::InvalidParams => 400,
-            Self::InternalError => 500,
+            Self::InvalidAgentResponse | Self::InternalError => 500,
         }
     }
 
@@ -194,11 +218,19 @@ impl ErrorCode {
             Self::TaskNotFound => "NOT_FOUND",
             Self::TaskNotCancelable
             | Self::ExtendedAgentCardNotConfigured
-            | Self::ExtensionSupportRequired => "FAILED_PRECONDITION",
-            Self::PushNotificationNotSupported
+            | Self::ExtensionSupportRequired
+            // Three rows §5.4 moved off `UNIMPLEMENTED` (see `http_status`'s
+            // provenance note). The distinction the table now draws is worth
+            // keeping straight: `UNIMPLEMENTED` means the *method* is not
+            // served, while these three mean the method is served and refused
+            // — a capability the agent does not offer, a protocol version it
+            // does not speak. `MethodNotFound` keeps `UNIMPLEMENTED` below
+            // because it is the one that really does mean "no such method",
+            // and it is a JSON-RPC code §5.4's table does not cover.
+            | Self::PushNotificationNotSupported
             | Self::UnsupportedOperation
-            | Self::VersionNotSupported
-            | Self::MethodNotFound => "UNIMPLEMENTED",
+            | Self::VersionNotSupported => "FAILED_PRECONDITION",
+            Self::MethodNotFound => "UNIMPLEMENTED",
             Self::ContentTypeNotSupported
             | Self::InvalidParams
             | Self::InvalidRequest
@@ -859,18 +891,20 @@ mod tests {
     }
 
     #[test]
-    fn http_status_task_not_cancelable_is_409() {
-        assert_eq!(ErrorCode::TaskNotCancelable.http_status(), 409);
+    fn http_status_task_not_cancelable_is_400() {
+        assert_eq!(ErrorCode::TaskNotCancelable.http_status(), 400);
     }
 
     #[test]
-    fn http_status_content_type_not_supported_is_415() {
-        assert_eq!(ErrorCode::ContentTypeNotSupported.http_status(), 415);
+    fn http_status_content_type_not_supported_is_400() {
+        // Not 415. §5.4 assigns 400 even though 415 is the more descriptive
+        // HTTP status; see the provenance note on `http_status`.
+        assert_eq!(ErrorCode::ContentTypeNotSupported.http_status(), 400);
     }
 
     #[test]
-    fn http_status_invalid_agent_response_is_502() {
-        assert_eq!(ErrorCode::InvalidAgentResponse.http_status(), 502);
+    fn http_status_invalid_agent_response_is_500() {
+        assert_eq!(ErrorCode::InvalidAgentResponse.http_status(), 500);
     }
 
     #[test]
@@ -950,27 +984,42 @@ mod tests {
     }
 
     #[test]
-    fn grpc_status_push_not_supported_is_unimplemented() {
+    fn grpc_status_push_not_supported_is_failed_precondition() {
         assert_eq!(
             ErrorCode::PushNotificationNotSupported.grpc_status(),
-            "UNIMPLEMENTED"
+            "FAILED_PRECONDITION"
         );
     }
 
     #[test]
-    fn grpc_status_unsupported_operation_is_unimplemented() {
+    fn grpc_status_unsupported_operation_is_failed_precondition() {
         assert_eq!(
             ErrorCode::UnsupportedOperation.grpc_status(),
-            "UNIMPLEMENTED"
+            "FAILED_PRECONDITION"
         );
     }
 
     #[test]
-    fn grpc_status_version_not_supported_is_unimplemented() {
+    fn grpc_status_version_not_supported_is_failed_precondition() {
         assert_eq!(
             ErrorCode::VersionNotSupported.grpc_status(),
-            "UNIMPLEMENTED"
+            "FAILED_PRECONDITION"
         );
+    }
+
+    /// `MethodNotFound` must stay `UNIMPLEMENTED` while the three above move
+    /// off it: the distinction between "no such method" and "served, and
+    /// refused" is the whole reason §5.4 separates them.
+    #[test]
+    fn grpc_status_method_not_found_stays_unimplemented_while_refusals_move() {
+        assert_eq!(ErrorCode::MethodNotFound.grpc_status(), "UNIMPLEMENTED");
+        for refusal in [
+            ErrorCode::PushNotificationNotSupported,
+            ErrorCode::UnsupportedOperation,
+            ErrorCode::VersionNotSupported,
+        ] {
+            assert_ne!(refusal.grpc_status(), "UNIMPLEMENTED");
+        }
     }
 
     #[test]

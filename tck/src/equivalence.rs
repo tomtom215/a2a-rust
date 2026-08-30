@@ -199,19 +199,35 @@ impl Availability {
 /// Classifies a JSON-RPC error code from a **ghost-id** probe as "this method
 /// does not exist here".
 ///
-/// `-32601` is JSON-RPC 2.0's Method not found. `-32004` is A2A's
-/// `UnsupportedOperationError`, which §5.4 maps to gRPC `UNIMPLEMENTED`.
+/// Only `-32601`, JSON-RPC 2.0's *Method not found*. §5.4 draws the line this
+/// follows: `UNIMPLEMENTED` — and its JSON-RPC counterpart `-32601` — means
+/// the method is not served, while `UnsupportedOperationError` (`-32004`,
+/// gRPC `FAILED_PRECONDITION`, HTTP `400`) means the method *is* served and
+/// the agent refused it.
 ///
-/// The ghost id is what makes including `-32004` safe, and the first version
-/// of this probe got it wrong. Servers also use `-32004` for a *state*
-/// refusal: this SDK answers `SubscribeToTask` on a completed task with
-/// `-32004 … is in terminal state 'TASK_STATE_COMPLETED' and cannot be
-/// subscribed to`. Probed with a live task, that reads as "the binding does
-/// not offer SubscribeToTask" and reports a fabricated §5.1 violation — which
-/// is exactly what it did. A task that does not exist has no state to refuse
-/// on, so the only remaining meaning of `-32004` is genuine non-support.
+/// `-32004` was on this list until 2026-08-30, and it made the three bindings
+/// answer differently about the same agent. Against an agent built on the
+/// official Python SDK that serves `GetExtendedAgentCard` on both bindings and
+/// declines it on both — `-32004` on JSON-RPC, `400` with
+/// `reason: UNSUPPORTED_OPERATION` on HTTP+JSON — this read "JSONRPC does not
+/// offer it, HTTP+JSON does" and reported a `BIND-EQUIV-001` violation that
+/// was not there. The REST arm below has always required `404`/`501`, and the
+/// gRPC arm `UNIMPLEMENTED`; only the JSON-RPC arm treated a refusal as an
+/// absence.
+///
+/// Two consequences worth stating rather than discovering:
+///
+/// * The state-refusal hazard the ghost id was introduced for is gone as a
+///   side effect. This SDK answers `SubscribeToTask` on a completed task with
+///   `-32004 … is in terminal state …`; that is a refusal, and a refusal is
+///   no longer read as an absence whatever id it was probed with. The ghost
+///   id is kept because it still separates "no such method" from "no such
+///   task" on a binding whose error model hides the difference.
+/// * An agent that signals genuine non-support with `-32004` rather than
+///   `-32601` now reads as "offered". That is what §5.4 says those codes
+///   mean, and grading it the other way is what produced the false positive.
 const fn ghost_probe_says_unimplemented(code: i64) -> bool {
-    code == -32601 || code == -32004
+    code == -32601
 }
 
 /// Probes one operation on one binding.
@@ -507,7 +523,11 @@ const FAULTS: &[Fault] = &[
     Fault {
         error_type: "TaskNotCancelableError",
         jsonrpc: -32002,
-        http: 409,
+        // 400, not 409. Graded against 409 until 2026-08-30, which failed a
+        // conformant agent built on the official Python SDK — the kit and
+        // this repository's SDK were reading the same stale copy of §5.4, so
+        // they agreed with each other and with nobody else.
+        http: 400,
         grpc: ("FAILED_PRECONDITION", 9),
         why_untriggerable: "the fixture task never reached a terminal state, so \
                             cancelling it is a legitimate success on every binding",

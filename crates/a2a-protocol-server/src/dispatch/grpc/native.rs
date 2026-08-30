@@ -578,7 +578,7 @@ mod tests {
             }))
             .await
             .expect_err("a versionless RPC must be rejected under the default config");
-        assert_eq!(status.code(), tonic::Code::Unimplemented);
+        assert_eq!(status.code(), tonic::Code::FailedPrecondition);
         assert_eq!(
             status
                 .get_details_error_info()

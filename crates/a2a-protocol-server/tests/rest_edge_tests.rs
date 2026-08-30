@@ -189,7 +189,7 @@ async fn a2a_content_type_accepted() {
             "parts": [{"text": "hello"}]
         }
     });
-    let (status, _) = http_request(
+    let (status, resp_body) = http_request(
         addr,
         "POST",
         "/message:send",
@@ -197,11 +197,17 @@ async fn a2a_content_type_accepted() {
         Some("application/a2a+json"),
     )
     .await;
-    // Content type should be accepted (not 415). The response may be 200 or 500
+    // The Content-Type must be accepted; the response may be 200 or 500
     // depending on whether the executor completes successfully.
-    assert_ne!(
-        status, 415,
-        "application/a2a+json should be accepted as content type"
+    //
+    // This asserted `status != 415` until §5.4's table was re-read on
+    // 2026-08-30 and the refusal moved to 400. Nothing emits 415 any more, so
+    // that assertion had become one that could not fail — it is the refusal's
+    // message, not its status, that identifies it now.
+    assert!(
+        !resp_body.contains("unsupported Content-Type"),
+        "application/a2a+json should be accepted as content type; \
+         got {status}: {resp_body}"
     );
 }
 

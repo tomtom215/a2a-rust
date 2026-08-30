@@ -127,8 +127,13 @@ impl RestDispatcher {
                 if !ct_str.starts_with("application/json")
                     && !ct_str.starts_with(a2a_protocol_types::A2A_CONTENT_TYPE)
                 {
+                    // 400, not 415. `ContentTypeNotSupportedError` is the
+                    // A2A error this is, and §5.4 assigns it 400 — even
+                    // though 415 is the more descriptive HTTP status, and
+                    // this answered 415 until the table was re-read on
+                    // 2026-08-30.
                     return error_json_response(
-                        415,
+                        a2a_protocol_types::ErrorCode::ContentTypeNotSupported.http_status(),
                         &format!("unsupported Content-Type: {ct_str}; expected application/json or application/a2a+json"),
                     );
                 }
